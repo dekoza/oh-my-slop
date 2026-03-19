@@ -20,7 +20,7 @@ Use this skill for Django 6.0 framework implementation and integration. Django i
 2. **select_related/prefetch_related** - Use `.select_related()` for FK and `.prefetch_related()` for M2M to prevent N+1 queries. This is the #1 Django performance bug.
 3. **distinct() after M2M filtering** - Always call `.distinct()` after filtering through M2M or reverse FK relations to prevent duplicate rows.
 4. **auto_now=True bypass** - Fields with `auto_now=True` cannot be set via `.save()`. Use `.objects.filter().update(field=value)` to override.
-5. **TemplateResponse over render()** - Prefer `TemplateResponse` in views that need middleware compatibility. `render()` bypasses middleware context modification.
+5. **TemplateResponse for deferred rendering** - Use `TemplateResponse` when middleware must inspect or modify template context after the view returns (e.g., injecting user data, modifying variables). Use `render()` for simple views where context is final and no middleware interaction is needed.
 6. **URL patterns are hierarchical** - Child URLconf should NOT repeat parent prefix. Catch-all patterns (`path("")`) must be LAST in `urlpatterns`.
 7. **Circular import prevention** - Use PEP 562 lazy `__getattr__` in `__init__.py` or place deferred imports inside functions with `# Circular import:` comments.
 8. **Cross-context imports via public API** - Import from public interface (`from apps.context import Symbol`), never from internal modules (`from apps.context.models import Symbol`).

@@ -21,7 +21,7 @@ Use this skill for HTMX implementation and integration. Read only the reference 
 2. **Attribute inheritance** - Most attributes inherit to children. **Not inherited:** `hx-trigger`, `hx-on*`, `hx-swap-oob`, `hx-preserve`, `hx-history-elt`, `hx-validate`. Use `hx-disinherit` or `unset` to stop inheritance
 3. **Default swap is innerHTML** - Always confirm the intended swap method
 4. **Form values auto-included** - Non-GET requests automatically include the closest enclosing form's values
-5. **Progressive enhancement** - Use `hx-boost="true"` — pages must work without JS
+5. **Progressive enhancement** - Build HTML that degrades gracefully without JS. Use `hx-boost` for enhancing traditional link/form navigation; see `references/gotchas.md` for hx-boost scope and pitfalls
 6. **Escape user content** - Escape all user-supplied content server-side to prevent XSS
 7. **CSS lifecycle classes** - HTMX adds/removes CSS classes during requests — use for transitions and indicators
 8. **data-prefix supported** - All `hx-*` attributes can also be written as `data-hx-*` for HTML validation compliance
