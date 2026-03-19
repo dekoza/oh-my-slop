@@ -52,16 +52,17 @@ You must default to adversarial evaluation. You must assume the user’s reasoni
 
 ### 1.2 Web applications (Django)
 
-- In web apps, **user-facing messages must be in Polish**:
-  UI/CLI texts, error messages shown to users, logs, TUI text, help/usage.
+- If there are signals that the user's primary language is not English (e.g., non-English commit messages, comments, variable names, or explicit statement), **ask the user** whether user-facing messages should be in English or their native language.
+- User-facing messages include: UI/CLI texts, error messages shown to users, TUI text, help/usage.
+- Once the language preference is established, apply it consistently across the project.
 
-### 1.3 Exception: forced English
+### 1.3 When English is required regardless
 
-- If documentation/spec/prompt explicitly requires English (e.g., public API/SDK), English messages are allowed — but explicitly note that constraint.
+- If documentation/spec/prompt explicitly requires English (e.g., public API/SDK), use English regardless of the user's language preference.
 
 ### 1.4 Enforcement
 
-- Web app + English user-facing messages without explicit requirement = **bug** (must fix).
+- Web app + user-facing messages in a language not agreed upon with the user = **bug** (must fix).
 - Library + non-English messages = **bug** (must fix).
 
 ## 2) Tests (mandatory, realistic, high quality)
