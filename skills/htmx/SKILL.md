@@ -17,7 +17,7 @@ Use this skill for HTMX implementation and integration. Read only the reference 
 
 ## Critical Rules
 
-1. **HTML responses** - HTMX expects HTML responses from the server, not JSON
+1. **HTML responses** - HTMX expects HTML responses from the server, not JSON. Keep the HTMX paradigm: backend renders HTML; frontend is minimal
 2. **Attribute inheritance** - Most attributes inherit to children. **Not inherited:** `hx-trigger`, `hx-on*`, `hx-swap-oob`, `hx-preserve`, `hx-history-elt`, `hx-validate`. Use `hx-disinherit` or `unset` to stop inheritance
 3. **Default swap is innerHTML** - Always confirm the intended swap method
 4. **Form values auto-included** - Non-GET requests automatically include the closest enclosing form's values
@@ -25,6 +25,23 @@ Use this skill for HTMX implementation and integration. Read only the reference 
 6. **Escape user content** - Escape all user-supplied content server-side to prevent XSS
 7. **CSS lifecycle classes** - HTMX adds/removes CSS classes during requests — use for transitions and indicators
 8. **data-prefix supported** - All `hx-*` attributes can also be written as `data-hx-*` for HTML validation compliance
+
+## Development Constraints
+
+- Prefer backend-rendered components and partials.
+- Default structure: templates plus includes/partials/macros.
+- Use partials/includes/macros to avoid duplication and reduce inline HTML.
+- JavaScript is disallowed by default unless explicitly required.
+- Allowed JavaScript is limited to minimal wrappers for WebSocket, Local Storage, or strictly within a PWA context.
+- Frontend tool preference order:
+  1) plain HTML + CSS
+  2) if needed → **HTMX**
+  3) last resort → **Hyperscript**
+
+## Common Pitfalls
+
+- Detect the `HX-Request` header in server views to choose partial responses versus full-page responses.
+- Use template variables for dynamic markers (for example `{{ result_marker }}`) instead of hardcoded strings so templates and tests stay in sync.
 
 ## Reference Map
 

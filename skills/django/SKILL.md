@@ -27,6 +27,43 @@ Use this skill for Django 6.0 framework implementation and integration. Django i
 9. **Test fixtures and migrations** - Check model constraints and field types before writing test fixtures. Use `update_or_create()` to avoid unique constraint violations.
 10. **Form validation at the model level** - Django forms inherit model validation. Always define custom validation in model `clean()` and form `clean_*()` methods.
 
+## Django Web Development Defaults
+
+- Primary web framework context: **Django** with templates/partials as the default rendering approach.
+- Keep HTML generation in templates whenever possible; avoid embedding large markup strings in Python code.
+
+## Template and Rendering Boundaries
+
+- **Inline HTML in Python is last resort only** and must stay minimal.
+- Readability limit: do not exceed ~60 characters (hard max: 66) of inline HTML **total per indentation block**.
+- If markup grows beyond that threshold, move it into a Django template/include/partial.
+
+## Backend Partials and HTMX Mindset
+
+- Prefer backend-rendered components (django-partials style).
+- Default composition path in Django: templates + includes/partials/macros.
+- Keep the HTMX paradigm: server renders HTML fragments, frontend JS remains minimal.
+- Use partials/includes/macros to reduce duplication and keep presentation logic out of Python.
+
+## Additional Django Pitfalls
+
+- **Model field rename safety**: when renaming model fields, grep all usages across views, services, serializers, forms, templates, test fixtures, factories, and admin.
+- **WhiteNoise ordering**: `WhiteNoiseMiddleware` must be second in `MIDDLEWARE`, directly after `SecurityMiddleware`.
+- **JSON in TextField**: values stored in `TextField` are strings; call `json.loads()` before dictionary-style access.
+
+## Django Testing Guardrails
+
+- Avoid `factory_boy` `django_get_or_create` in uniqueness tests; use `Sequence` for guaranteed unique values.
+- Use test-only prefixes (for example `TEST_xxx`) to avoid collisions with seed or migration data.
+
+## Playwright + Django E2E Pitfalls
+
+- Prevent redirect loops: when `live_server` fixture is used, always navigate with `live_server.url`.
+- Ensure navigation target is explicit: missing `base_url`/`live_server.url` can silently route tests to localhost and fail.
+- Static assets are not automatically served by Django `live_server`; configure static handling for test runs.
+- If static assets are required, run `manage.py collectstatic --noinput` before launching browser E2E tests.
+- Fallback when browser E2E is unavailable: cover flow behavior with Django test client integration tests (or `httpx` transport where appropriate).
+
 ## Reference Map
 
 | File | Domain | Patterns |
@@ -60,5 +97,4 @@ Use this skill for Django 6.0 framework implementation and integration. Django i
 - **Async views, tasks, celery, or background jobs** -> `references/async-tasks.md`
 - **Django 6.0 new features or deprecations** -> `references/django6-new.md`
 - **Django internals, metaprogramming, or deep framework behavior** -> `references/internals.md`
-
 

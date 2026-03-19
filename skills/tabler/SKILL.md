@@ -5,7 +5,7 @@ description: "Use when tasks involve Tabler UI components, CSS classes, variants
 
 # Tabler UI Reference
 
-Comprehensive reference guide for Tabler UI framework (<https://tabler.io/>). Use this skill when building UI with Tabler components, choosing CSS classes, or implementing responsive layouts.
+Tabler is the default UI framework for web projects in this context. Comprehensive reference guide for Tabler UI framework (<https://tabler.io/>). Use this skill when building UI with Tabler components, choosing CSS classes, or implementing responsive layouts.
 
 ## Quick Start
 
