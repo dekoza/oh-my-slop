@@ -15,6 +15,7 @@ def should_skip_reference(reference: str) -> bool:
         lowered.startswith("http://")
         or lowered.startswith("https://")
         or reference.startswith("#")
+        or any(token in reference for token in ("*", "?", "[", "]"))
     )
 
 
@@ -50,21 +51,28 @@ def validate_repo(repo_root: Path) -> list[str]:
     skills_dir = repo_root / "skills"
     broken_references: list[str] = []
 
-    for markdown_file in sorted(skills_dir.rglob("*.md")):
-        for line_number, reference in iter_references(markdown_file):
-            if should_skip_reference(reference):
-                continue
+    if not skills_dir.is_dir():
+        return broken_references
 
-            resolved_path = (markdown_file.parent / reference).resolve()
-            if not resolved_path.exists() and reference.startswith("references/"):
-                skill_root = markdown_file.parent
-                if skill_root.name == "references":
-                    skill_root = skill_root.parent
-                resolved_path = (skill_root / reference).resolve()
+    for skill_dir in sorted(skills_dir.iterdir()):
+        if not skill_dir.is_dir() or not (skill_dir / "SKILL.md").exists():
+            continue
 
-            if not resolved_path.exists():
-                source_path = markdown_file.relative_to(repo_root).as_posix()
-                broken_references.append(f"{source_path}:{line_number}:{reference}")
+        for markdown_file in sorted(skill_dir.rglob("*.md")):
+            for line_number, reference in iter_references(markdown_file):
+                if should_skip_reference(reference):
+                    continue
+
+                resolved_path = (markdown_file.parent / reference).resolve()
+                if not resolved_path.exists() and reference.startswith("references/"):
+                    skill_root = markdown_file.parent
+                    if skill_root.name == "references":
+                        skill_root = skill_root.parent
+                    resolved_path = (skill_root / reference).resolve()
+
+                if not resolved_path.exists():
+                    source_path = markdown_file.relative_to(repo_root).as_posix()
+                    broken_references.append(f"{source_path}:{line_number}:{reference}")
 
     return broken_references
 

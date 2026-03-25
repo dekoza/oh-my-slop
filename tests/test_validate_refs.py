@@ -123,3 +123,50 @@ def test_references_path_from_nested_reference_file(tmp_path: Path) -> None:
     result = run_validator(tmp_path)
 
     assert result.returncode == 0
+
+
+def test_glob_like_reference_patterns_are_ignored(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "foo"
+    refs_dir = skill_dir / "references"
+    refs_dir.mkdir(parents=True)
+    _ = (refs_dir / "real.md").write_text("# Real\n", encoding="utf-8")
+    _ = (skill_dir / "SKILL.md").write_text(
+        "Use `references/*.md` as a narrative pattern\n"
+        "and still validate `references/real.md`.\n",
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 0
+
+
+def test_workspace_markdown_is_ignored(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "foo"
+    refs_dir = skill_dir / "references"
+    refs_dir.mkdir(parents=True)
+    _ = (refs_dir / "real.md").write_text("# Real\n", encoding="utf-8")
+    _ = (skill_dir / "SKILL.md").write_text(
+        "See `references/real.md`\n", encoding="utf-8"
+    )
+
+    workspace_output = (
+        tmp_path
+        / "skills"
+        / "foo-workspace"
+        / "iteration-1"
+        / "eval-1"
+        / "with_skill"
+        / "run-1"
+        / "outputs"
+        / "response.md"
+    )
+    workspace_output.parent.mkdir(parents=True)
+    _ = workspace_output.write_text(
+        "Narrative output mentioning `references/not-a-real-file.md`\n",
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 0
