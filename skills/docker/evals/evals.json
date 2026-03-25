@@ -1,0 +1,114 @@
+{
+  "skill_name": "docker",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Review this Dockerfile for a Python web app. It currently copies the whole repo before installing dependencies, uses `ENV PIP_INDEX_URL` for a private package token, runs as root, and produces a huge image. Rewrite it using current Docker best practices and explain the important changes.",
+      "expected_output": "The response works from the described scenario even without an attached file, gives a corrected Dockerfile example, fixes layer ordering and secret handling, and explains the riskiest Dockerfile footguns explicitly.",
+      "files": [],
+      "expectations": [
+        "It works from the described Dockerfile scenario even if no file was attached, instead of refusing to help.",
+        "It rejects secrets in `ARG` or `ENV` and recommends BuildKit `--secret` or `--ssh` mounts.",
+        "It improves cache behavior by copying dependency metadata before bulk source code.",
+        "It uses or clearly recommends a multi-stage build.",
+        "It addresses both non-root runtime execution and build-context hygiene such as `.dockerignore`.",
+        "It includes `Primary boundary`, `References used`, `Verification`, and `Highest-risk footgun`."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Write a `compose.yaml` for a local app stack with `web`, `db`, and `redis`. The app should not start serving traffic until Postgres is actually ready, the database data must persist, and only the web service should be reachable from the host.",
+      "expected_output": "The response produces an actual Compose file, models readiness and persistence with Compose-native semantics, and explains why short `depends_on` alone is not enough.",
+      "files": [],
+      "expectations": [
+        "It provides a concrete `compose.yaml` example, not only prose.",
+        "It uses a real Postgres healthcheck and long-form `depends_on` with `condition: service_healthy` for `web`.",
+        "It persists Postgres data with a named volume.",
+        "It keeps only `web` published to the host; `db` and `redis` stay internal.",
+        "It explains that readiness needs healthchecks plus long-form `depends_on`, not short syntax alone.",
+        "It includes `Primary boundary: Compose`, `References used`, `Verification`, and `Highest-risk footgun`."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I keep getting `Cannot connect to the Docker daemon`. I sometimes use a remote Docker host over SSH, and I also experimented with rootless Docker. Give me a diagnostic checklist in the right order so I can stop guessing.",
+      "expected_output": "The response starts with client-target checks, branches correctly between local, remote, and rootless daemon cases, and ends with concrete verification after connectivity is restored.",
+      "files": [],
+      "expectations": [
+        "It starts with `docker context`, `DOCKER_HOST` or `DOCKER_CONTEXT` checks before service restarts.",
+        "It explicitly distinguishes the rootless socket (`/run/user/<uid>/docker.sock`) from the default rootful socket.",
+        "It separates local daemon debugging from remote SSH-context debugging on the remote host.",
+        "It includes concrete verification steps such as `docker info` or a minimal container run after connectivity is restored.",
+        "It includes `Primary boundary`, `References used`, `Verification`, and `Highest-risk footgun`."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "My bind mount works on my laptop, but in CI the container says the source path does not exist. The CI job talks to a remote Docker daemon. Explain what is happening and how I should redesign this.",
+      "expected_output": "The response identifies the remote daemon boundary cleanly, explains why bind mounts fail there, and proposes a redesign that does not depend on client-side paths.",
+      "files": [],
+      "expectations": [
+        "It explains that bind mounts resolve on the daemon host, not on the CLI machine.",
+        "It identifies the remote-daemon or client-daemon boundary as the root cause.",
+        "It recommends redesigning with image contents, named volumes, `docker cp`, or another daemon-host-friendly workflow.",
+        "It gives a concrete verification step such as checking `docker context ls` or `docker info` in CI.",
+        "It includes `Primary boundary`, `References used`, `Verification`, and `Highest-risk footgun`."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "We have a private registry at `registry.internal:5000`. `docker login` works on one machine but pulls fail on another with TLS complaints. Someone suggested adding `insecure-registries`, someone else said to install the CA cert. What is the right approach and what are the tradeoffs?",
+      "expected_output": "The response treats this as a registry trust problem, prefers CA installation over insecure mode, explains the daemon-side trust boundary, and calls out the security tradeoff explicitly.",
+      "files": [],
+      "expectations": [
+        "It prefers installing or trusting the registry CA over using `insecure-registries`.",
+        "It makes clear that `insecure-registries` is daemon-level configuration and a last resort.",
+        "It distinguishes `docker login` success from later pull trust failures.",
+        "It calls out the MITM or disabled-TLS-verification risk of `insecure-registries`.",
+        "It explains that the working and failing machines likely differ in daemon-side trust configuration.",
+        "It includes `Primary boundary`, `References used`, `Verification`, and `Highest-risk footgun`."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Containers on my Linux host can reach the internet, but they cannot resolve our internal company hostnames. The host uses a local `dnsmasq` resolver. Diagnose the likely issue and tell me the cleanest Docker-side fix.",
+      "expected_output": "The response recognizes the host loopback DNS trap, avoids recommending loopback resolvers inside Docker DNS settings, and suggests a reachable non-loopback daemon-side fix.",
+      "files": [],
+      "expectations": [
+        "It explains why host loopback resolver addresses like `127.0.0.1` or `127.0.0.53` break inside container namespaces.",
+        "It does not recommend pointing Docker DNS at `127.0.0.1` or `127.0.0.53`.",
+        "It recommends a daemon-level DNS setting or dnsmasq reconfiguration that uses a reachable non-loopback host or bridge address.",
+        "It keeps the diagnosis in Docker networking and daemon terms rather than generic DNS advice.",
+        "It includes `Primary boundary`, `References used`, `Verification`, and `Highest-risk footgun`."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "My `docker buildx build --platform linux/amd64,linux/arm64 -t myapp:latest .` command completed, but I cannot see the image locally and CI expected a pushed multi-platform image with SBOM and provenance. Explain what I got wrong and show the right commands.",
+      "expected_output": "The response reasons from Buildx output semantics and builder behavior, explains why the image is not local, uses the right `--push` or `--load` split, and includes attestation plus verification guidance.",
+      "files": [],
+      "expectations": [
+        "It explains why the multi-platform build result is not automatically visible in the local image store.",
+        "It distinguishes `--load`, `--push`, and build output or export behavior instead of treating them as interchangeable.",
+        "It makes clear that CI should use `--push` for a multi-platform image and that local `--load` is for a local or single-platform workflow.",
+        "It includes SBOM and provenance flags or equivalent BuildKit attestation syntax.",
+        "It gives a concrete verification step such as `docker buildx imagetools inspect`.",
+        "It includes `Primary boundary`, `References used`, `Verification`, and `Highest-risk footgun`."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "I have `compose.yaml`, `compose.override.yaml`, and `compose.prod.yaml`. Developers say `docker compose up` behaves differently from `docker compose -f compose.yaml -f compose.prod.yaml up`, and nobody trusts what config is actually being applied. Explain the merge rules, the default file discovery behavior, and how to verify the final model before running it.",
+      "expected_output": "The response explains default file discovery versus explicit file stacks in Compose CLI terms, covers merge order and path resolution, and uses `docker compose config` as the ground-truth verification step.",
+      "files": [],
+      "expectations": [
+        "It explains that `docker compose up` automatically reads `compose.yaml` plus optional `compose.override.yaml` when no `-f` is supplied.",
+        "It explains that explicit `-f compose.yaml -f compose.prod.yaml` bypasses automatic override loading.",
+        "It explains merge order and path resolution relative to the first file.",
+        "It uses `docker compose config` as the canonical verification step and may add `--format json` or `--dry-run`.",
+        "It stays in Compose CLI behavior rather than generic YAML merge talk.",
+        "It includes `Primary boundary: Compose`, `References used`, `Verification`, and `Highest-risk footgun`."
+      ]
+    }
+  ]
+}

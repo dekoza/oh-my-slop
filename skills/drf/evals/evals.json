@@ -1,0 +1,103 @@
+{
+  "skill_name": "drf",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "My DRF ModelSerializer accepts nested order items in POST, but .save() silently ignores them — only the parent order gets created. The nested items are valid and I can see them in validated_data. What's wrong and how do I fix it?",
+      "expected_output": "The response explains that ModelSerializer does NOT handle writable nested representations by default, shows explicit .create() and .update() overrides that pop nested data and create child objects, and warns about the update strategy choice (delete-and-recreate vs. merge).",
+      "files": [],
+      "expectations": [
+        "It states that ModelSerializer.create() and .update() do not support writable nested serializers by default.",
+        "It shows an explicit .create() override that pops nested data and creates child objects.",
+        "It shows or mentions an .update() override with a strategy for handling nested updates.",
+        "It grounds the fix in DRF serializer internals rather than generic Python advice."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I have a DRF ViewSet with TokenAuthentication. Unauthenticated requests get 403 instead of 401. I expected 401 with a WWW-Authenticate header. What's happening?",
+      "expected_output": "The response explains the 401 vs 403 response rules in DRF: 401 requires at least one authenticator with authenticate_header() returning a value, and SessionAuthentication (if also present) returns None for authenticate_header on unauthenticated requests. It identifies the likely cause and fix.",
+      "files": [],
+      "expectations": [
+        "It explains that 401 is returned only when the first authenticator's authenticate_header() returns a value.",
+        "It identifies that having SessionAuthentication before TokenAuthentication in the list (or as default) can cause 403 instead of 401.",
+        "It references DRF's 401-to-403 coercion logic in handle_exception or the dispatch flow.",
+        "It suggests reordering authentication_classes or removing SessionAuthentication as the fix."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Write a DRF API test for a books endpoint that uses TokenAuthentication and pagination. The test should verify that creating a book returns 201, listing books returns paginated results, and unauthenticated requests are rejected.",
+      "expected_output": "The response uses DRF's APIClient or APITestCase, demonstrates force_authenticate or credentials for token auth, checks paginated response structure (count, results, next/previous), and tests the unauthenticated case.",
+      "files": [],
+      "expectations": [
+        "It uses DRF's APIClient or APITestCase rather than plain Django TestCase.",
+        "It uses force_authenticate() or client.credentials() for token auth setup.",
+        "It verifies 201 status on successful creation.",
+        "It checks paginated response structure (count/results keys or next/previous links).",
+        "It tests that unauthenticated requests return 401 or 403."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I set up CursorPagination on my DRF list view and it crashes with a FieldError. My model has a 'created_at' field but not a 'created' field. What's going on and how do I configure it correctly?",
+      "expected_output": "The response explains that CursorPagination defaults to ordering='-created' and the model must have a 'created' field, or the ordering attribute must be overridden to match the actual model field. It shows the correct subclass pattern.",
+      "files": [],
+      "expectations": [
+        "It identifies that CursorPagination defaults to ordering='-created'.",
+        "It explains the FieldError is caused by the model not having a 'created' field.",
+        "It shows a CursorPagination subclass with ordering='-created_at' or the correct field name.",
+        "It mentions cursor ordering field requirements (unchanging, unique/nearly unique, indexed)."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "I have a ModelViewSet with different serializers for list vs create vs update actions. How do I select the right serializer per action? Also, for the 'destroy' action I want only admin users to have permission while create is open to any authenticated user.",
+      "expected_output": "The response shows overriding get_serializer_class() with self.action branching and overriding get_permissions() returning instantiated permission objects per action.",
+      "files": [],
+      "expectations": [
+        "It overrides get_serializer_class() and branches on self.action.",
+        "It overrides get_permissions() and returns instantiated permission objects (not classes).",
+        "It warns that self.action is NOT available in get_parsers(), get_authenticators(), or get_content_negotiator().",
+        "It does NOT suggest using @action decorator for standard CRUD actions (list, create, update, destroy)."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "I'm building a DRF endpoint that accepts both JSON and multipart file uploads. The JSON requests work fine but file uploads fail with a parse error. How do I support both content types?",
+      "expected_output": "The response explains parser configuration, shows setting parser_classes to include both JSONParser and MultiPartParser (and optionally FormParser), and explains that request.data handles both parsed JSON and file data uniformly.",
+      "files": [],
+      "expectations": [
+        "It configures parser_classes with both JSONParser and MultiPartParser.",
+        "It explains that request.data unifies parsed body regardless of content type.",
+        "It mentions FormParser as needed for non-file form submissions.",
+        "It does NOT suggest using Django's request.FILES directly — uses request.data instead."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "I have a custom exception handler in DRF but ValidationError responses don't go through it. I'm using a generic CreateAPIView. What am I missing?",
+      "expected_output": "The response explains that generic views call serializer.is_valid(raise_exception=True) which raises ValidationError, and this IS caught by the exception handler. The problem must be elsewhere — perhaps the handler returns None for ValidationError, or the user is manually returning Response(errors, status=400) instead of raising.",
+      "files": [],
+      "expectations": [
+        "It states that generic views call is_valid(raise_exception=True), so ValidationError IS raised and goes through the exception handler.",
+        "It identifies that manually returning Response(serializer.errors, status=400) bypasses the exception handler.",
+        "It does NOT claim that generic view validation bypasses the exception handler.",
+        "It suggests checking that the custom exception handler properly handles ValidationError (not returning None for it)."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "I'm debugging a DRF view where authentication passes but permissions fail silently — I get a 403 with no useful error message. Walk me through the exact dispatch flow so I can figure out where to add debugging.",
+      "expected_output": "The response provides the dispatch flow showing initialize_request → initial (perform_authentication → check_permissions → check_throttles) → handler → finalize_response, and identifies check_permissions as the place to debug. It mentions the permission_denied method and how 401 vs 403 is decided.",
+      "files": [],
+      "expectations": [
+        "It describes the dispatch flow: initialize_request → initial → handler → finalize_response.",
+        "It lists the order within initial(): authentication → permissions → throttling.",
+        "It identifies check_permissions() as the method to override or add logging for debugging.",
+        "It mentions permission_denied() and/or handle_exception() as additional debugging hooks.",
+        "It references internals.md content (dispatch flow diagram or overridable hooks table)."
+      ]
+    }
+  ]
+}

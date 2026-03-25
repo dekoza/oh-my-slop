@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I have a `Litestar` app with `@post('/documents')`; I need it to accept a PDF plus a `title` field from a multipart form and map it into typed params instead of hand-parsing `request.form()`. What's the right Litestar pattern?",
+    "should_trigger": true
+  },
+  {
+    "query": "Why does my controller exception handler in Litestar never catch 405 when a user POSTs to a GET route? I also expected my controller middleware to see it. Explain what layer I actually need to fix.",
+    "should_trigger": true
+  },
+  {
+    "query": "I wrote a `websocket_stream` endpoint in Litestar that injects a DB session via dependency, then keeps that session alive the whole time the browser is connected. Show the safe Litestar design for long-lived streams.",
+    "should_trigger": true
+  },
+  {
+    "query": "After moving imports behind `TYPE_CHECKING` to break cycles, my Litestar app now crashes at startup saying handler annotations can't be resolved. Do I need `signature_namespace` or something else?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm using `Provide` and `DTOConfig` on a controller and the wrong DTO keeps winning at runtime. How does precedence work between app, router, and controller layers?",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you show the current way to serve Jinja templates plus a `/static` directory in Litestar? I keep finding examples that use `StaticFilesConfig` and I don't know what's actually current.",
+    "should_trigger": true
+  },
+  {
+    "query": "My Litestar project logs warnings about sync handlers. One endpoint does blocking S3 work and another just formats in-memory data. How should I set `sync_to_thread` for each?",
+    "should_trigger": true
+  },
+  {
+    "query": "I need a Litestar test for a websocket listener and also one startup check that catches bad handler annotations before deployment. What's the right testing setup?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm building a custom `Request` subclass because I want extra auth context on every handler, and I also need reverse URL generation from inside handlers. Which Litestar hooks/classes should I use?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm migrating from FastAPI to Litestar and I keep writing generic `APIRouter`-style code. Can you show the idiomatic Litestar controller/router structure with typed handlers and guards?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm in FastAPI, not Litestar. I have an `UploadFile`, `BackgroundTasks`, and a `Depends` chain and I want the idiomatic FastAPI version for a multipart endpoint.",
+    "should_trigger": false
+  },
+  {
+    "query": "My Starlette middleware order is weird: app-level middleware runs but router-level logic doesn't catch 404/405 the way I expect. Explain Starlette's exception flow, not Litestar.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need Django class-based views and custom `handler404` and `handler405` behavior on an admin page that feels controller-like. What's the Django fix?",
+    "should_trigger": false
+  },
+  {
+    "query": "My HTMX fragment is rendered by a Python backend, but the real problem is `hx-trigger='revealed'` versus `load` and how `hx-swap='outerHTML'` behaves. Ignore backend framework specifics and explain the HTMX semantics.",
+    "should_trigger": false
+  },
+  {
+    "query": "I'm using SQLAlchemy 2.0 inside a Litestar app, but I do not need framework advice. I need help designing repository boundaries, session scoping, and transaction patterns.",
+    "should_trigger": false
+  },
+  {
+    "query": "Can you help me debug nginx plus CloudFront caching for static assets in front of my Litestar app? The app code is fine; I need infra headers and CDN behavior.",
+    "should_trigger": false
+  },
+  {
+    "query": "I'm on aiohttp websockets, not Litestar. I need a broadcast loop that doesn't leak tasks when clients reconnect.",
+    "should_trigger": false
+  },
+  {
+    "query": "I want a generic ASGI explanation of lifespan, middleware ordering, and exception handling that applies equally to FastAPI, Starlette, and Quart.",
+    "should_trigger": false
+  },
+  {
+    "query": "I have a Django + HTMX + Tabler app and need a server-rendered partial plus form validation flow. No Litestar anywhere.",
+    "should_trigger": false
+  },
+  {
+    "query": "I'm choosing between `msgspec` and Pydantic for a Python library API. DTOs came up in a Litestar blog post, but this is really a framework-agnostic serialization decision.",
+    "should_trigger": false
+  }
+]

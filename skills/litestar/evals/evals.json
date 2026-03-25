@@ -1,0 +1,54 @@
+{
+  "skill_name": "litestar",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I am building a Litestar endpoint that should accept a multipart form with a PDF upload and a title, parse it into a typed handler argument, and return JSON metadata. Show the correct Litestar pattern and call out any request-parsing gotchas.",
+      "expected_output": "The response routes to Litestar request and handler guidance, uses `Body(media_type=RequestEncodingType.MULTI_PART)`, types file input with `UploadFile`, and avoids generic FastAPI or Starlette advice.",
+      "files": [],
+      "expectations": [
+        "It prefers Litestar's semantic HTTP decorators instead of generic routing advice.",
+        "It explains that request body parsing defaults to JSON and multipart needs explicit `Body(media_type=...)`.",
+        "It types uploaded files with `UploadFile` rather than raw bytes or untyped form access.",
+        "It names the Litestar references used and mentions verification such as request tests or startup checks."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "My Litestar app has a custom exception handler on a controller, but 404 and 405 still return the default JSON response and my middleware never sees them. Explain what is wrong and what the correct fix is.",
+      "expected_output": "The response explains Litestar's app-layer handling for router-generated 404 and 405, notes that these happen before most middleware and lower-layer exception handlers, and recommends app-level exception handlers.",
+      "files": [],
+      "expectations": [
+        "It states that router-generated 404 and 405 are only affected by app-level exception handlers.",
+        "It states that 404 and 405 are raised before the middleware stack is called.",
+        "It does not claim that controller-level or router-level handlers can fix those responses.",
+        "It stays specific to Litestar instead of drifting into generic ASGI exception theory."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I want a Litestar websocket endpoint that streams status updates forever, but right now it grabs a database session from a dependency and holds it open until the client disconnects. Show the right Litestar design and explain why the current one is broken.",
+      "expected_output": "The response routes to Litestar websocket guidance, explains connection-scoped dependencies for streams, warns against holding scarce resources for the full stream lifetime, and recommends acquiring resources inside the generator when needed.",
+      "files": [],
+      "expectations": [
+        "It explains that websocket stream dependencies are scoped to the lifetime of the handler or connection.",
+        "It warns against holding locks, database sessions, or similar scarce resources in long-lived stream dependencies.",
+        "It recommends acquiring such resources ad hoc inside the generator body instead.",
+        "It references Litestar websocket APIs such as `websocket_stream` or `send_websocket_stream()` appropriately.",
+        "It names the Litestar references used and gives at least one websocket verification step."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "My Litestar app started failing at startup after I moved some handler-related imports behind TYPE_CHECKING to avoid cycles. Now the annotations cannot be resolved. Explain the real Litestar issue and show the safe fix.",
+      "expected_output": "The response explains that Litestar inspects handler and dependency annotations at runtime, that TYPE_CHECKING-only imports can break signature parsing, and that the fix is to keep runtime types available or provide `signature_namespace` / `signature_types` rather than giving generic typing advice.",
+      "files": [],
+      "expectations": [
+        "It states that Litestar inspects handler or dependency annotations at runtime during startup.",
+        "It explains that moving imports behind `TYPE_CHECKING` can break signature parsing or startup.",
+        "It recommends a Litestar-specific fix such as keeping runtime imports available or supplying `signature_namespace` / `signature_types`.",
+        "It stays Litestar-specific and mentions a startup verification step."
+      ]
+    }
+  ]
+}
