@@ -35,12 +35,12 @@ Use this skill for HTMX implementation and integration. Read only the reference 
 - Prefer backend-rendered components and partials.
 - Default structure: templates plus includes/partials/macros.
 - Use partials/includes/macros to avoid duplication and reduce inline HTML.
-- JavaScript is disallowed by default unless explicitly required.
-- Allowed JavaScript is limited to minimal wrappers for WebSocket, Local Storage, or strictly within a PWA context.
 - Frontend tool preference order:
   1) plain HTML + CSS
   2) if needed → **HTMX**
-  3) last resort → **Hyperscript**
+  3) for localized DOM/event behavior beyond HTMX → **Hyperscript**
+  4) last resort → **vanilla JavaScript** (only when its use can be justified)
+- JavaScript requires explicit justification. Legitimate cases: WebSocket client logic, Local Storage, PWA service workers, third-party library integration where no HTMX-compatible alternative exists.
 
 ## Common Pitfalls
 
