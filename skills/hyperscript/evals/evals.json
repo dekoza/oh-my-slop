@@ -1,0 +1,88 @@
+{
+  "skill_name": "hyperscript",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I'm adding new DOM elements via JavaScript's appendChild after an AJAX call, and the hyperscript on those elements isn't firing. I used _=\"on click ...\" on the new elements but nothing happens when I click them. How do I make hyperscript recognize dynamically inserted DOM?",
+      "expected_output": "The response explains that hyperscript needs to process dynamically inserted DOM via _hyperscript.processNode() and distinguishes this from HTMX swaps and hyperscript's own put command, which handle processing automatically.",
+      "files": [],
+      "expectations": [
+        "It tells the user to call `_hyperscript.processNode()` on the newly inserted DOM element.",
+        "It explains that HTMX swaps and hyperscript's `put` command process inserted fragments automatically, so processNode is only needed for manual JS DOM insertion.",
+        "It does not suggest re-initializing the entire page or reloading the script tag."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I have a button that fetches data on click. If the user clicks rapidly, I get duplicate requests piling up. I'm using `on click fetch /api/data then put it into #results`. What's happening and how do I queue or control it?",
+      "expected_output": "The response explains hyperscript's event queue semantics, identifies the default queue last behavior, and recommends the appropriate queue strategy for the use case.",
+      "files": [],
+      "expectations": [
+        "It explains that `queue last` is the default, which drops intermediate events and keeps only the last pending one.",
+        "It contrasts at least two queue strategies (e.g., `queue none` to drop all events during execution vs `queue all` to process sequentially).",
+        "It mentions the `every` prefix as the parallel execution alternative with no queuing.",
+        "It does not invent queue behavior that does not exist in hyperscript."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I need to build a tab component in hyperscript: clicking a tab should add an .active class to the clicked tab, remove .active from all other tabs, and show the corresponding panel while hiding the others. The panels are divs with data-tab attributes.",
+      "expected_output": "The response uses hyperscript DOM commands like toggle, take, add, remove, show, hide, or closest appropriately for a tab switching interaction.",
+      "files": [],
+      "expectations": [
+        "It uses `take` for exclusive class ownership across tabs, or an equivalent combination of `remove` from siblings + `add` to the clicked tab.",
+        "It uses DOM query expressions like `<div/>` or class/attribute selectors to find panels.",
+        "It uses `show` and `hide` or class toggling to control panel visibility.",
+        "It keeps the solution in hyperscript rather than falling back to JavaScript for DOM manipulation."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Write hyperscript that fetches JSON from /api/status, updates a #status-text element with the response message field, and ensures a loading spinner is shown during the request and hidden afterward even if the fetch fails.",
+      "expected_output": "The response uses the hyperscript fetch command with as json, updates the DOM with put, and uses a finally block for cleanup of the loading state.",
+      "files": [],
+      "expectations": [
+        "It uses `fetch /api/status as json` or equivalent fetch with JSON conversion.",
+        "It accesses the response via `it` or `result` and uses a property access to get the message field.",
+        "It uses `finally` to guarantee the spinner is hidden regardless of success or failure.",
+        "It does not use raw JavaScript fetch() or XMLHttpRequest."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "I'm using HTMX with hx-post for a form submission. I want to disable the submit button while the request is in flight and re-enable it when done. Should I use hyperscript or HTMX for this? Show me the code.",
+      "expected_output": "The response recommends hyperscript for the local button state management around HTMX lifecycle events, keeps HTMX in charge of the request, and shows concise hyperscript code.",
+      "files": [],
+      "expectations": [
+        "It uses hyperscript to listen to htmx lifecycle events like `htmx:beforeRequest` and `htmx:afterRequest`.",
+        "It adds and removes the disabled attribute or class on the button element.",
+        "It does not replicate HTMX request logic in hyperscript.",
+        "It keeps the hyperscript focused on the button's own state, not on coordinating the request."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "I want to use hyperscript to read a value from localStorage, check if it's expired based on a timestamp, and conditionally show a banner. Should I use hyperscript for this or JavaScript?",
+      "expected_output": "The response evaluates whether hyperscript is the right tool, uses call/get for localStorage access if appropriate, and warns against overusing js ... end blocks.",
+      "files": [],
+      "expectations": [
+        "It uses `call` or `get` to access `localStorage.getItem()` from hyperscript rather than embedding a large `js ... end` block.",
+        "It warns that if the solution becomes mostly `js ... end` blocks, JavaScript should be used directly instead.",
+        "It does not invent hyperscript-native localStorage commands that do not exist.",
+        "It acknowledges the boundary between hyperscript DOM glue and JavaScript for complex logic."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "I want to create a reusable Collapsible behavior in hyperscript that I can install on multiple elements. Each element should toggle a .collapsed class on click, and some elements need a custom trigger button passed as a parameter. Also, I want to use a Web Worker for an expensive calculation. What scripts do I need to include?",
+      "expected_output": "The response shows correct behavior definition with parameters and init defaults, correct install syntax, and correctly identifies that workers require a separate script include.",
+      "files": [],
+      "expectations": [
+        "It defines a `behavior` with a parameter for the trigger button and uses `init` to set a default.",
+        "It uses `install Collapsible(...)` syntax with named arguments on the target elements.",
+        "It states that `worker` requires `/dist/workers.js` or the 'Whole 9 Yards' bundle, not the default hyperscript include.",
+        "It notes that behavior definitions must appear before elements that install them."
+      ]
+    }
+  ]
+}
