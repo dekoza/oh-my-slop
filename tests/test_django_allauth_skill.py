@@ -170,6 +170,8 @@ def test_django_allauth_reference_files_cover_core_topics() -> None:
     assert "Google" in provider_index_text
     assert "Apple" in provider_index_text
     assert "/accounts/<provider>/login/callback/" in provider_index_text
+    assert "/accounts/oidc/{provider_id}/login/callback/" in provider_index_text
+    assert "/accounts/saml/<organization_slug>/acs/" in provider_index_text
     assert "OAuth 2.0" in provider_index_text
     assert "OAuth 1.0a" in provider_index_text or "OAuth 1a" in provider_index_text
     assert "OpenID" in provider_index_text
@@ -219,10 +221,15 @@ def test_django_allauth_reference_files_cover_core_topics() -> None:
     assert "token strategy" in headless_text.lower()
     assert "adapter" in headless_text.lower()
     assert "X-Session-Token" in headless_text
+    assert "HEADLESS_ADAPTER" in headless_text
+    assert "HEADLESS_FRONTEND_URLS" in headless_text
+    assert "HEADLESS_ONLY" in headless_text
+    assert "HEADLESS_TOKEN_STRATEGY" in headless_text
     assert "HEADLESS_JWT_ALGORITHM" in headless_text
     assert "HEADLESS_JWT_PRIVATE_KEY" in headless_text
     assert "HEADLESS_JWT_STATEFUL_VALIDATION_ENABLED" in headless_text
     assert "HEADLESS_JWT_ROTATE_REFRESH_TOKEN" in headless_text
+    assert 'path("_allauth/", include("allauth.headless.urls"))' in headless_text
     assert (
         "not truly stateless" in headless_text.lower()
         or "stateless" in headless_text.lower()
@@ -345,6 +352,9 @@ def test_provider_index_enforces_family_routing_and_boundary_contrasts() -> None
     ) == [
         "- Standard provider callback URLs follow `/accounts/<provider>/login/callback/`.",
         "- The provider docs explicitly use examples such as `/accounts/twitter/login/callback/` and `/accounts/soundcloud/login/callback/`.",
+        "- That generic pattern does not cover OpenID Connect or SAML.",
+        "- OpenID Connect uses `/accounts/oidc/{provider_id}/login/callback/`.",
+        "- SAML uses organization-scoped endpoints such as `/accounts/saml/<organization_slug>/acs/`.",
         "- If login breaks after redirect, verify callback host, `SITE_ID`, and `SocialApp` site assignment before assuming a provider-specific bug.",
     ]
     assert _bullet_lines(
@@ -395,6 +405,69 @@ def test_provider_index_enforces_family_routing_and_boundary_contrasts() -> None
         in saml_body
     )
     assert "Do not mix it with OpenID Connect." in openid_body
+
+
+def test_headless_reference_has_explicit_installation_configuration_and_routing() -> (
+    None
+):
+    headless_text = _read_reference("headless.md")
+
+    assert [line for line in headless_text.splitlines() if line.startswith("## ")] == [
+        "## Owning Surface",
+        "## Installation And Wiring",
+        "## Primary Settings To Reach For First",
+        "## Token Strategies",
+        "## CORS And API Boundaries",
+        "## Routing",
+    ]
+    assert _bullet_lines(
+        _section_body(headless_text, "## Installation And Wiring")
+    ) == [
+        '- Install the extra with `pip install "django-allauth[headless]"`.',
+        "- Add `allauth.headless` to `INSTALLED_APPS`; keep `allauth`, `allauth.account`, and any optional `socialaccount`/`mfa`/`usersessions` apps aligned with the flows you actually expose.",
+        '- Include `path("accounts/", include("allauth.urls"))` for provider handshakes and `path("_allauth/", include("allauth.headless.urls"))` for the API endpoints.',
+        "- Configure `HEADLESS_FRONTEND_URLS` when confirmation, reset, signup, or provider-error links must land on your SPA/frontend instead of server-rendered `account` views.",
+        "- `HEADLESS_ONLY = True` disables the normal account views while keeping third-party provider callback endpoints available through `allauth.urls`.",
+    ]
+    assert _bullet_lines(
+        _section_body(headless_text, "## Primary Settings To Reach For First")
+    ) == [
+        "- `HEADLESS_ADAPTER`",
+        "- `HEADLESS_CLIENTS`",
+        "- `HEADLESS_FRONTEND_URLS`",
+        "- `HEADLESS_ONLY`",
+        "- `HEADLESS_SERVE_SPECIFICATION`",
+        "- `HEADLESS_SPECIFICATION_TEMPLATE_NAME`",
+        "- `HEADLESS_TOKEN_STRATEGY`",
+        "- `HEADLESS_JWT_ALGORITHM`",
+        "- `HEADLESS_JWT_PRIVATE_KEY`",
+        "- `HEADLESS_JWT_ACCESS_TOKEN_EXPIRES_IN`",
+        "- `HEADLESS_JWT_REFRESH_TOKEN_EXPIRES_IN`",
+        "- `HEADLESS_JWT_AUTHORIZATION_HEADER_SCHEME`",
+        "- `HEADLESS_JWT_STATEFUL_VALIDATION_ENABLED`",
+        "- `HEADLESS_JWT_ROTATE_REFRESH_TOKEN`",
+    ]
+    assert _bullet_lines(_section_body(headless_text, "## Routing")) == [
+        "- Server-rendered signup/login/email flows -> `references/account.md`",
+        "- Provider callback or `SocialApp` handshake issues -> `references/socialaccount-core.md`",
+        "- DRF architecture outside documented allauth headless support -> pair `drf`",
+        "- Release-sensitive token strategy behavior -> `references/version-notes.md`",
+    ]
+
+
+def test_provider_index_calls_out_oidc_and_saml_callback_exceptions() -> None:
+    provider_index_text = _read_reference("providers-index.md")
+
+    shared_callback_body = _section_body(
+        provider_index_text, "## Shared Callback Pattern"
+    )
+
+    assert (
+        "That generic pattern does not cover OpenID Connect or SAML."
+        in shared_callback_body
+    )
+    assert "/accounts/oidc/{provider_id}/login/callback/" in shared_callback_body
+    assert "/accounts/saml/<organization_slug>/acs/" in shared_callback_body
 
 
 def test_django_allauth_skill_evals_define_specific_boundary_scenarios() -> None:

@@ -6,6 +6,9 @@ Use this file to route provider questions across the documented provider catalog
 
 - Standard provider callback URLs follow `/accounts/<provider>/login/callback/`.
 - The provider docs explicitly use examples such as `/accounts/twitter/login/callback/` and `/accounts/soundcloud/login/callback/`.
+- That generic pattern does not cover OpenID Connect or SAML.
+- OpenID Connect uses `/accounts/oidc/{provider_id}/login/callback/`.
+- SAML uses organization-scoped endpoints such as `/accounts/saml/<organization_slug>/acs/`.
 - If login breaks after redirect, verify callback host, `SITE_ID`, and `SocialApp` site assignment before assuming a provider-specific bug.
 
 ## Provider Families
