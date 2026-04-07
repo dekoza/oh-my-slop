@@ -11,6 +11,42 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPO_ROOT / "skills" / "django-allauth"
 
 
+def _read_reference(name: str) -> str:
+    return (SKILL_ROOT / "references" / name).read_text(encoding="utf-8")
+
+
+def _heading_level(line: str) -> int:
+    return len(line) - len(line.lstrip("#"))
+
+
+def _section_body(markdown: str, heading: str) -> str:
+    lines = markdown.splitlines()
+    start = lines.index(heading)
+    current_level = _heading_level(heading)
+    body: list[str] = []
+
+    for line in lines[start + 1 :]:
+        if line.startswith("#") and _heading_level(line) <= current_level:
+            break
+        body.append(line)
+
+    return "\n".join(body).strip()
+
+
+def _bullet_lines(markdown: str) -> list[str]:
+    return [line.strip() for line in markdown.splitlines() if line.startswith("- ")]
+
+
+def _evals_by_id() -> dict[int, dict[str, object]]:
+    evals_path = SKILL_ROOT / "evals" / "evals.json"
+    payload = json.loads(evals_path.read_text(encoding="utf-8"))
+    assert payload["skill_name"] == "django-allauth"
+    evals = payload["evals"]
+    assert len(evals) == 8
+    assert len({item["id"] for item in evals}) == len(evals)
+    return {item["id"]: item for item in evals}
+
+
 def test_django_allauth_skill_references_resolve_in_isolation(tmp_path: Path) -> None:
     target_root = tmp_path / "skills" / "django-allauth"
     shutil.copytree(SKILL_ROOT, target_root)
@@ -78,40 +114,18 @@ def test_django_allauth_reference_index_covers_all_major_domains() -> None:
 
 
 def test_django_allauth_reference_files_cover_core_topics() -> None:
-    installation_text = (
-        SKILL_ROOT / "references" / "installation-and-wiring.md"
-    ).read_text(encoding="utf-8")
-    account_text = (SKILL_ROOT / "references" / "account.md").read_text(
-        encoding="utf-8"
-    )
-    social_text = (SKILL_ROOT / "references" / "socialaccount-core.md").read_text(
-        encoding="utf-8"
-    )
-    provider_index_text = (SKILL_ROOT / "references" / "providers-index.md").read_text(
-        encoding="utf-8"
-    )
-    provider_major_text = (SKILL_ROOT / "references" / "providers-major.md").read_text(
-        encoding="utf-8"
-    )
-    mfa_text = (SKILL_ROOT / "references" / "mfa.md").read_text(encoding="utf-8")
-    usersessions_text = (SKILL_ROOT / "references" / "usersessions.md").read_text(
-        encoding="utf-8"
-    )
-    headless_text = (SKILL_ROOT / "references" / "headless.md").read_text(
-        encoding="utf-8"
-    )
-    idp_text = (SKILL_ROOT / "references" / "idp-openid-connect.md").read_text(
-        encoding="utf-8"
-    )
-    common_text = (SKILL_ROOT / "references" / "common-customization.md").read_text(
-        encoding="utf-8"
-    )
-    testing_text = (
-        SKILL_ROOT / "references" / "testing-and-troubleshooting.md"
-    ).read_text(encoding="utf-8")
-    version_text = (SKILL_ROOT / "references" / "version-notes.md").read_text(
-        encoding="utf-8"
-    )
+    installation_text = _read_reference("installation-and-wiring.md")
+    account_text = _read_reference("account.md")
+    social_text = _read_reference("socialaccount-core.md")
+    provider_index_text = _read_reference("providers-index.md")
+    provider_major_text = _read_reference("providers-major.md")
+    mfa_text = _read_reference("mfa.md")
+    usersessions_text = _read_reference("usersessions.md")
+    headless_text = _read_reference("headless.md")
+    idp_text = _read_reference("idp-openid-connect.md")
+    common_text = _read_reference("common-customization.md")
+    testing_text = _read_reference("testing-and-troubleshooting.md")
+    version_text = _read_reference("version-notes.md")
 
     assert "INSTALLED_APPS" in installation_text
     assert "SITE_ID" in installation_text or "django.contrib.sites" in installation_text
@@ -263,70 +277,240 @@ def test_django_allauth_reference_files_cover_core_topics() -> None:
     assert "rate limit" in version_text.lower()
 
 
-def test_django_allauth_skill_evals_cover_core_risk_areas() -> None:
-    evals_path = SKILL_ROOT / "evals" / "evals.json"
-    payload = json.loads(evals_path.read_text(encoding="utf-8"))
+def test_account_reference_has_explicit_sections_and_boundary_rules() -> None:
+    account_text = _read_reference("account.md")
 
-    assert payload["skill_name"] == "django-allauth"
-    evals = payload["evals"]
-    assert len(evals) >= 8
-    assert len({item["id"] for item in evals}) == len(evals)
+    assert [line for line in account_text.splitlines() if line.startswith("## ")] == [
+        "## Primary Settings To Reach For First",
+        "## Boundary Rules",
+        "## High-Value Behaviors To Remember",
+        "## Account Signals",
+        "## Routing",
+    ]
+    assert _bullet_lines(
+        _section_body(account_text, "## Primary Settings To Reach For First")
+    ) == [
+        "- `ACCOUNT_ADAPTER`",
+        "- `ACCOUNT_FORMS`",
+        "- `ACCOUNT_SIGNUP_FORM_CLASS`",
+        "- `ACCOUNT_SIGNUP_FIELDS`",
+        "- `ACCOUNT_LOGIN_METHODS`",
+        "- `ACCOUNT_RATE_LIMITS`",
+        "- `ACCOUNT_PREVENT_ENUMERATION`",
+        "- `ACCOUNT_EMAIL_VERIFICATION`",
+        "- `ACCOUNT_EMAIL_VERIFICATION_BY_CODE_ENABLED`",
+        "- `ACCOUNT_LOGIN_BY_CODE_ENABLED`",
+        "- `ACCOUNT_PASSWORD_RESET_BY_CODE_ENABLED`",
+        "- `ACCOUNT_REAUTHENTICATION_REQUIRED`",
+        "- `ACCOUNT_SIGNUP_REDIRECT_URL`",
+        "- `ACCOUNT_EMAIL_SUBJECT_PREFIX`",
+    ]
+    assert _bullet_lines(_section_body(account_text, "## Boundary Rules")) == [
+        "- Prefer existing extension points before overriding built-in views.",
+        "- For extra signup fields, start with `ACCOUNT_SIGNUP_FORM_CLASS` and, if needed, `ACCOUNT_ADAPTER`.",
+        "- Keep email verification explicit. Signup customization is not separate from `ACCOUNT_EMAIL_VERIFICATION` or `ACCOUNT_EMAIL_VERIFICATION_BY_CODE_*` behavior.",
+        "- `ACCOUNT_LOGIN_METHODS` should align with `ACCOUNT_SIGNUP_FIELDS`; the docs call misalignment a configuration smell.",
+        '- Enumeration prevention is nuanced. With optional or disabled verification, `ACCOUNT_PREVENT_ENUMERATION = True` still leaks uniqueness; only `"strict"` allows duplicate unverified addresses to avoid that leak.',
+    ]
+    assert _bullet_lines(_section_body(account_text, "## Routing")) == [
+        "- Social provider login or account linking -> `references/socialaccount-core.md`",
+        "- Shared templates/messages/email delivery/rate limits -> `references/common-customization.md`",
+        "- Broken confirmation links or failing tests -> `references/testing-and-troubleshooting.md`",
+    ]
 
-    prompts = [item["prompt"] for item in evals]
 
-    assert any(
-        "adapter" in prompt.lower() and "signup" in prompt.lower() for prompt in prompts
-    )
-    assert any(
-        "SocialApp" in prompt or "provider" in prompt.lower() for prompt in prompts
-    )
-    assert any("OpenID Connect" in prompt or "OIDC" in prompt for prompt in prompts)
-    assert any("headless" in prompt.lower() or "SPA" in prompt for prompt in prompts)
-    assert any("MFA" in prompt or "WebAuthn" in prompt for prompt in prompts)
-    assert any(
-        "usersessions" in prompt.lower() or "session" in prompt.lower()
-        for prompt in prompts
-    )
-    assert any(
-        "callback" in prompt.lower() or "SITE_ID" in prompt for prompt in prompts
-    )
-    assert all(item["expectations"] and item["expected_output"] for item in evals)
-    assert any(
-        "settings or SocialApp" in prompt or "SocialApp" in prompt for prompt in prompts
-    )
-    assert any("JWT" in prompt and "X-Session-Token" in prompt for prompt in prompts)
-    assert any(
-        "identity provider" in prompt.lower() and "OpenID Connect" in prompt
-        for prompt in prompts
-    )
+def test_provider_index_enforces_family_routing_and_boundary_contrasts() -> None:
+    provider_index_text = _read_reference("providers-index.md")
 
+    assert [
+        line for line in provider_index_text.splitlines() if line.startswith("## ")
+    ] == [
+        "## Shared Callback Pattern",
+        "## Provider Families",
+        "## Real Catalog Anchors",
+        "## Routing Rules",
+        "## Boundary Reminders",
+    ]
+    assert [
+        line for line in provider_index_text.splitlines() if line.startswith("### ")
+    ] == [
+        "### OAuth 2.0",
+        "### OAuth 1.0a",
+        "### OpenID Connect",
+        "### SAML",
+        "### OpenID",
+    ]
+    assert _bullet_lines(
+        _section_body(provider_index_text, "## Shared Callback Pattern")
+    ) == [
+        "- Standard provider callback URLs follow `/accounts/<provider>/login/callback/`.",
+        "- The provider docs explicitly use examples such as `/accounts/twitter/login/callback/` and `/accounts/soundcloud/login/callback/`.",
+        "- If login breaks after redirect, verify callback host, `SITE_ID`, and `SocialApp` site assignment before assuming a provider-specific bug.",
+    ]
+    assert _bullet_lines(
+        _section_body(provider_index_text, "## Real Catalog Anchors")
+    ) == [
+        "- Google",
+        "- Apple",
+        "- GitHub",
+        "- Microsoft",
+        "- Auth0",
+        "- Keycloak",
+        "- Okta",
+        "- NetIQ/Microfocus AccessManager",
+        "- OpenID Connect",
+        "- OpenID",
+        "- SAML",
+    ]
+    assert _bullet_lines(_section_body(provider_index_text, "## Routing Rules")) == [
+        "- Provider discovery or “is this documented by allauth?” -> stay here.",
+        "- Mainstream OAuth provider setup -> `references/providers-major.md`.",
+        "- Enterprise OIDC or multiple OIDC subproviders -> `references/providers-major.md`.",
+        "- SAML organization or metadata questions -> `references/providers-major.md`.",
+        "- If the task exceeds documented allauth integration points, say upstream provider docs are required instead of guessing.",
+    ]
+    assert _bullet_lines(
+        _section_body(provider_index_text, "## Boundary Reminders")
+    ) == [
+        "- Many production failures are really `SocialApp`, settings-vs-database, `django.contrib.sites`, or callback URL alignment issues.",
+        "- Do not confuse external-provider consumer login under `socialaccount` with django-allauth identity-provider mode under `allauth.idp`.",
+    ]
 
-def test_django_allauth_evals_target_discriminating_failure_modes() -> None:
-    evals_path = SKILL_ROOT / "evals" / "evals.json"
-    payload = json.loads(evals_path.read_text(encoding="utf-8"))
-    evals = payload["evals"]
+    oauth2_body = _section_body(provider_index_text, "### OAuth 2.0")
+    oidc_body = _section_body(provider_index_text, "### OpenID Connect")
+    saml_body = _section_body(provider_index_text, "### SAML")
+    openid_body = _section_body(provider_index_text, "### OpenID")
 
-    expectations = "\n".join(
-        expectation for item in evals for expectation in item["expectations"]
-    )
-
+    assert "Google, Apple, GitHub, Microsoft, and many others" in oauth2_body
+    assert "Auth0, Keycloak, Okta, NetIQ/Microfocus AccessManager" in oauth2_body
     assert (
-        "settings, adapters, forms, signals, templates" in expectations
-        or "existing extension point" in expectations
+        "Route Google, Apple, GitHub, Microsoft, OpenID Connect, and SAML to `references/providers-major.md`"
+        in oauth2_body
     )
-    assert "SocialApp" in expectations
-    assert "identity-provider" in expectations or "IdP" in expectations
-    assert "headless" in expectations and (
-        "session" in expectations.lower() or "JWT" in expectations
-    )
-    assert "release notes" in expectations.lower() or "version" in expectations.lower()
+    assert "dedicated OpenID Connect provider" in oidc_body
+    assert "not generic OAuth advice" in oidc_body
+    assert "organization-scoped endpoints and metadata handling" in saml_body
     assert (
-        "provider-specific" in expectations.lower()
-        or "do not guess" in expectations.lower()
+        "ACS, metadata, entity ID, attribute mapping, or HTTPS/reverse-proxy concerns"
+        in saml_body
     )
-    assert "owning allauth surface" in expectations or "owning surface" in expectations
-    assert (
-        "settings-vs-database" in expectations
-        or "settings-vs-SocialApp" in expectations
+    assert "Do not mix it with OpenID Connect." in openid_body
+
+
+def test_django_allauth_skill_evals_define_specific_boundary_scenarios() -> None:
+    evals = _evals_by_id()
+
+    assert set(evals) == {1, 2, 3, 4, 5, 6, 7, 8}
+
+    eval_1 = evals[1]
+    assert "company name" in eval_1["prompt"]
+    assert "override the signup view, the form, or an adapter" in eval_1["prompt"]
+    assert eval_1["expected_output"] == (
+        "The response identifies `account` as the owning allauth surface, prefers the documented signup extension points over a custom view override, and keeps email verification behavior explicit."
     )
-    assert "X-Session-Token" in expectations or "session token" in expectations.lower()
+    assert eval_1["expectations"] == [
+        "It identifies `account` as the owning allauth surface rather than a generic Django auth question.",
+        "It prefers existing extension points such as settings, adapters, forms, signals, templates over overriding the built-in view without cause.",
+        "It mentions `ACCOUNT_SIGNUP_FORM_CLASS` and/or `ACCOUNT_ADAPTER` as the likely extension point.",
+        "It keeps `ACCOUNT_EMAIL_VERIFICATION` or email verification behavior explicit instead of ignoring it.",
+    ]
+
+    eval_2 = evals[2]
+    assert "Google login works locally" in eval_2["prompt"]
+    assert "SocialApp in admin" in eval_2["prompt"]
+    assert "SITE_ID problem" in eval_2["prompt"]
+    assert eval_2["expected_output"] == (
+        "The response treats this as a `socialaccount` plus provider-configuration boundary problem, checks `SITE_ID`, callback URL alignment, and `SocialApp` assignment first, and avoids invented Google behavior."
+    )
+    assert eval_2["expectations"] == [
+        "It identifies `socialaccount` as the owning allauth surface.",
+        "It mentions `SocialApp` and the settings-vs-database configuration boundary.",
+        "It mentions `SITE_ID` or `django.contrib.sites` as a likely boundary.",
+        "It mentions callback URL alignment before speculative code changes.",
+        "It does not guess provider-specific behavior beyond documented Google/allauth guidance.",
+        "It does not confuse provider consumer login with allauth IdP mode.",
+    ]
+
+    eval_3 = evals[3]
+    assert "enterprise SSO" in eval_3["prompt"]
+    assert "identity provider itself" in eval_3["prompt"]
+    assert eval_3["expected_output"] == (
+        "The response cleanly distinguishes `socialaccount` consumer OIDC from allauth IdP mode and routes each case to the correct subsystem."
+    )
+    assert eval_3["expectations"] == [
+        "It distinguishes external-provider login under `socialaccount` from identity-provider mode under `allauth.idp.oidc`.",
+        "It identifies the owning allauth surface for each half of the question.",
+        "It routes enterprise consumer login through OpenID Connect/socialaccount guidance.",
+        "It routes 'allauth as provider' through the IdP reference instead of mixing the two.",
+        "It does not answer in vague protocol-only terms divorced from allauth surfaces.",
+    ]
+
+    eval_4 = evals[4]
+    assert "React SPA" in eval_4["prompt"]
+    assert "headless JWT" in eval_4["prompt"]
+    assert "X-Session-Token" in eval_4["prompt"]
+    assert eval_4["expected_output"] == (
+        "The response identifies `headless` as the owning allauth surface, distinguishes `X-Session-Token` session-token flows from JWT flows, mentions CORS, and does not collapse the answer into browser-session guidance."
+    )
+    assert eval_4["expectations"] == [
+        "It identifies `headless` as the owning allauth surface.",
+        "It mentions `X-Session-Token` as part of the documented session-token strategy.",
+        "It mentions JWT settings or JWT-token strategy boundaries.",
+        "It mentions CORS and does not treat this as ordinary server-rendered browser auth.",
+        "It does not claim JWT is fully stateless without qualification.",
+    ]
+
+    eval_5 = evals[5]
+    assert "MFA with WebAuthn" in eval_5["prompt"]
+    assert "django-allauth-2fa" in eval_5["prompt"]
+    assert eval_5["expected_output"] == (
+        "The response routes to `allauth.mfa`, mentions WebAuthn, and treats `django-allauth-2fa` as migration context rather than the primary path."
+    )
+    assert eval_5["expectations"] == [
+        "It identifies `mfa` as the owning allauth surface.",
+        "It mentions WebAuthn explicitly.",
+        "It mentions forms and/or adapter hooks such as `MFA_ADAPTER`.",
+        "It keeps legacy `django-allauth-2fa` notes in migration context only.",
+    ]
+
+    eval_6 = evals[6]
+    assert "revoke their active sessions" in eval_6["prompt"]
+    assert "usersessions" in eval_6["prompt"]
+    assert eval_6["expected_output"] == (
+        "The response identifies `usersessions` as the owning allauth surface, explains that it must be installed explicitly, and mentions its configuration and signals."
+    )
+    assert eval_6["expectations"] == [
+        "It identifies `usersessions` as the owning allauth surface.",
+        "It mentions installation/configuration instead of pretending this is automatically present.",
+        "It mentions `USERSESSIONS_TRACK_ACTIVITY` and/or `UserSessionsMiddleware` if activity tracking is discussed.",
+        "It mentions `session_client_changed` and/or the usersessions adapter surface.",
+    ]
+
+    eval_7 = evals[7]
+    assert "email confirmation and password reset links" in eval_7["prompt"]
+    assert "callback host is wrong" in eval_7["prompt"]
+    assert "provider callbacks break only in CI" in eval_7["prompt"]
+    assert eval_7["expected_output"] == (
+        "The response gives a configuration-boundary checklist centered on owning surface selection, `SITE_ID`, callback URLs, `SocialApp` placement, and email-link generation."
+    )
+    assert eval_7["expectations"] == [
+        "It starts with the owning allauth surface instead of generic Django debugging.",
+        "It mentions `SITE_ID` or `django.contrib.sites`.",
+        "It mentions callback URL boundaries.",
+        "It mentions `SocialApp` or settings-vs-database config placement.",
+        "It mentions email confirmation or password-reset link generation explicitly.",
+        "It does not make up provider behavior to explain failures.",
+    ]
+
+    eval_8 = evals[8]
+    assert "blog post from 2024" in eval_8["prompt"]
+    assert "installed version is much newer" in eval_8["prompt"]
+    assert "release notes or current docs" in eval_8["prompt"]
+    assert eval_8["expected_output"] == (
+        "The response treats this as version-sensitive, points to release-note verification, and names the high-drift subsystems that changed recently."
+    )
+    assert eval_8["expectations"] == [
+        "It tells the reader to verify release notes or current docs before trusting older guidance.",
+        "It mentions recent drift areas such as headless, MFA, usersessions, IdP, or rate-limit proxy handling.",
+        "It mentions version-sensitive settings or recent releases instead of presenting stale behavior as authoritative.",
+    ]
