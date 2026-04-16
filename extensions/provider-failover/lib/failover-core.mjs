@@ -54,7 +54,7 @@ export function buildWrapperModel(wrapper, backendModels) {
     name: wrapper.name,
     api: FAILOVER_API,
     provider: FAILOVER_PROVIDER_NAME,
-    reasoning: backendModels.every((model) => model.reasoning === true),
+    reasoning: backendModels.some((model) => model.reasoning === true),
     input: commonInput,
     cost: { ...first.cost },
     contextWindow: Math.min(...backendModels.map((model) => model.contextWindow)),

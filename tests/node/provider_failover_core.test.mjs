@@ -42,7 +42,7 @@ test('orderCandidates moves sticky route to the front without dropping others', 
   assert.deepEqual(ordered.map((candidate) => candidate.key), ['anthropic', 'primary', 'openai']);
 });
 
-test('buildWrapperModel uses conservative capabilities across all backends', () => {
+test('buildWrapperModel: reasoning true if any backend supports it, other caps are minimum', () => {
   const wrapper = buildWrapperModel(
     { id: 'copilot-coder', name: 'Copilot coder' },
     [
@@ -71,7 +71,7 @@ test('buildWrapperModel uses conservative capabilities across all backends', () 
   assert.equal(wrapper.name, 'Copilot coder');
   assert.equal(wrapper.api, FAILOVER_API);
   assert.equal(wrapper.provider, FAILOVER_PROVIDER_NAME);
-  assert.equal(wrapper.reasoning, false);
+  assert.equal(wrapper.reasoning, true);
   assert.deepEqual(wrapper.input, ['text']);
   assert.equal(wrapper.contextWindow, 128000);
   assert.equal(wrapper.maxTokens, 8000);
