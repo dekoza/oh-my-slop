@@ -1,9 +1,10 @@
 export const ROUTING_PROVIDERS = ['openrouter', 'zai'];
-export const DEFAULT_ORIGINAL_PROVIDERS = ['openai', 'anthropic', 'google', 'xai'];
+export const DEFAULT_ORIGINAL_PROVIDERS = ['openai-codex', 'anthropic', 'google', 'xai'];
 
 const PROVIDER_NOISE = new Set([
   'anthropic',
   'openai',
+  'openai-codex',
   'google',
   'github',
   'copilot',
@@ -14,7 +15,7 @@ const PROVIDER_NOISE = new Set([
 const DECORATION_NOISE = new Set(['preview', 'experimental', 'latest', 'thinking', 'chat']);
 const FAMILY_PROVIDER_MAP = new Map([
   ['claude', 'anthropic'],
-  ['gpt', 'openai'],
+  ['gpt', 'openai-codex'],
   ['gemini', 'google'],
   ['grok', 'xai'],
 ]);
@@ -27,6 +28,7 @@ export function normalizeModelName(name) {
 
   return name
     .toLowerCase()
+    .replace(/\bopenai codex\b/g, ' ')
     .replace(/\([^)]*\)/g, ' ')
     .replace(/\b20\d{2}(?:[- ]?\d{2}(?:[- ]?\d{2})?)?\b/g, ' ')
     .replace(/(\d)\.(\d)/g, '$1dotmark$2')

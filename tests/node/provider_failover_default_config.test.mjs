@@ -13,7 +13,7 @@ import {
 
 test('normalizeModelName strips provider noise and release suffixes', () => {
   assert.equal(normalizeModelName('Anthropic Claude Sonnet 4.5 (20250929)'), 'claude sonnet 4.5');
-  assert.equal(normalizeModelName('OpenAI GPT-5 Codex 2025-11-13'), 'gpt 5 codex');
+  assert.equal(normalizeModelName('OpenAI Codex GPT-5 Codex 2025-11-13'), 'gpt 5 codex');
   assert.equal(normalizeModelName('Google Gemini 2.5 Pro Preview'), 'gemini 2.5 pro');
 });
 
@@ -23,7 +23,7 @@ test('resolvePreferredProviders prefers active routing providers ahead of origin
     { provider: 'openrouter', id: 'router-claude', name: 'Claude Sonnet 4.5' },
     { provider: 'zai', id: 'z-claude', name: 'Claude Sonnet 4.5' },
     { provider: 'anthropic', id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' },
-    { provider: 'openai', id: 'gpt-5-codex', name: 'GPT-5 Codex' },
+    { provider: 'openai-codex', id: 'gpt-5-codex', name: 'GPT-5 Codex' },
   ]);
 
   assert.deepEqual(providers, ['openrouter', 'zai', ...DEFAULT_ORIGINAL_PROVIDERS]);
@@ -37,7 +37,7 @@ test('buildDefaultConfig prefers routing providers when they are active', () => 
     { provider: 'github-copilot', id: 'copilot-gemini', name: 'Gemini 2.5 Pro' },
     { provider: 'github-copilot', id: 'copilot-grok', name: 'Grok 4' },
     { provider: 'anthropic', id: 'claude-sonnet-4-5-20250929', name: 'Anthropic Claude Sonnet 4.5 (20250929)' },
-    { provider: 'openai', id: 'gpt-5-codex', name: 'OpenAI GPT-5 Codex 2025-11-13' },
+    { provider: 'openai-codex', id: 'gpt-5-codex', name: 'OpenAI Codex GPT-5 Codex 2025-11-13' },
     { provider: 'google', id: 'gemini-2.5-pro', name: 'Google Gemini 2.5 Pro Preview' },
     { provider: 'xai', id: 'grok-4', name: 'xAI Grok 4' },
     { provider: 'openrouter', id: 'router-claude', name: 'Claude Sonnet 4.5' },
@@ -73,7 +73,7 @@ test('buildDefaultConfig prefers routing providers when they are active', () => 
         strategy: [
           { provider: 'github-copilot', model: 'copilot-gpt' },
           { provider: 'openrouter', model: 'router-gpt' },
-          { provider: 'openai', model: 'gpt-5-codex' },
+          { provider: 'openai-codex', model: 'gpt-5-codex' },
         ],
         sticky: true,
       },
@@ -120,7 +120,7 @@ test('inspectGenerationPlan reports matched and unmatched copilot models', () =>
     { provider: 'github-copilot', id: 'copilot-gpt', name: 'GPT-5 Codex' },
     { provider: 'github-copilot', id: 'copilot-unknown', name: 'Mystery Model 1' },
     { provider: 'openrouter', id: 'router-claude', name: 'Claude Sonnet 4.5' },
-    { provider: 'openai', id: 'gpt-5-codex', name: 'GPT-5 Codex' },
+    { provider: 'openai-codex', id: 'gpt-5-codex', name: 'GPT-5 Codex' },
   ]);
 
   assert.deepEqual(plan.preferredProviders, ['openrouter', ...DEFAULT_ORIGINAL_PROVIDERS]);
@@ -139,7 +139,7 @@ test('inspectGenerationPlan reports matched and unmatched copilot models', () =>
       name: 'GPT-5 Codex',
       strategy: [
         { provider: 'github-copilot', model: 'copilot-gpt' },
-        { provider: 'openai', model: 'gpt-5-codex' },
+        { provider: 'openai-codex', model: 'gpt-5-codex' },
       ],
       sticky: true,
     },
@@ -151,7 +151,7 @@ test('inspectGenerationPlan reports matched and unmatched copilot models', () =>
 
 test('formatGenerationPlan prints provider order, matches, and unmatched copilot models', () => {
   const output = formatGenerationPlan({
-    preferredProviders: ['openrouter', 'zai', 'openai', 'anthropic'],
+    preferredProviders: ['openrouter', 'zai', 'openai-codex', 'anthropic'],
     matchedModels: [
       {
         id: 'copilot-claude',
@@ -169,7 +169,7 @@ test('formatGenerationPlan prints provider order, matches, and unmatched copilot
     ],
   });
 
-  assert.match(output, /Preferred provider order: openrouter -> zai -> openai -> anthropic/);
+  assert.match(output, /Preferred provider order: openrouter -> zai -> openai-codex -> anthropic/);
   assert.match(output, /Claude Sonnet 4\.5 \(copilot-claude\)/);
   assert.match(output, /github-copilot\/copilot-claude/);
   assert.match(output, /openrouter\/router-claude/);

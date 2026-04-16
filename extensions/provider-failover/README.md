@@ -41,7 +41,7 @@ If `config.json` does not exist, the extension generates it automatically on sta
 3. taking every `github-copilot` model
 4. matching each Copilot model by normalized name against providers in this plan:
    - active routing providers first: `openrouter`, `zai`
-   - then original providers: `openai`, `anthropic`, `google`, `xai`
+   - then original providers: `openai-codex`, `anthropic`, `google`, `xai`
 5. writing the result to `config.json`
 
 Only matched models are included. Unmatched Copilot models are skipped.
@@ -107,6 +107,6 @@ Generated configs look like this:
 ## Notes
 
 - wrapper model capabilities are conservative: the extension uses the minimum context window/output limit and the shared input types across the configured backends
-- default config generation prefers active routing providers (`openrouter`, `zai`) before the original providers (`openai`, `anthropic`, `google`, `xai`)
+- default config generation prefers active routing providers (`openrouter`, `zai`) before the original providers (`openai-codex`, `anthropic`, `google`, `xai`)
 - failover only happens before output starts; once a provider has begun streaming, the extension will not hop to another provider mid-answer
 - non-rate-limit failures are passed through unchanged
