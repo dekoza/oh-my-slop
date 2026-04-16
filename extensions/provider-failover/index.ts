@@ -60,6 +60,7 @@ interface SkippedCandidate {
 }
 
 const CONFIG_PATH = fileURLToPath(new URL("./config.json", import.meta.url));
+const STATE_PATH = fileURLToPath(new URL("./state.json", import.meta.url));
 
 function zeroUsage() {
 	return {
@@ -93,6 +94,37 @@ async function fileExists(path: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
+}
+
+async function loadState(): Promise<Map<string, string>> {
+	if (!(await fileExists(STATE_PATH))) {
+		return new Map();
+	}
+	try {
+		const raw = JSON.parse(await readFile(STATE_PATH, "utf8")) as unknown;
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+			return new Map();
+		}
+		const stickyRoutes = (raw as { stickyRoutes?: unknown }).stickyRoutes;
+		if (!stickyRoutes || typeof stickyRoutes !== "object" || Array.isArray(stickyRoutes)) {
+			return new Map();
+		}
+		return new Map(
+			Object.entries(stickyRoutes as Record<string, unknown>).filter(
+				(entry): entry is [string, string] => typeof entry[1] === "string",
+			),
+		);
+	} catch {
+		return new Map();
+	}
+}
+
+async function saveState(stickyRoutes: Map<string, string>): Promise<void> {
+	await writeFile(
+		STATE_PATH,
+		`${JSON.stringify({ stickyRoutes: Object.fromEntries(stickyRoutes) }, null, 2)}\n`,
+		"utf8",
+	);
 }
 
 async function loadConfig(): Promise<{ path: string; config: FailoverFileConfig } | undefined> {
@@ -370,6 +402,13 @@ export default function (pi: ExtensionAPI) {
 			if (result.ok) {
 				if (configuredModel.sticky) {
 					runtime.stickyRouteByModelId.set(model.id, result.usedCandidate.key);
+					try {
+						await saveState(runtime.stickyRouteByModelId);
+					} catch (saveError) {
+						runtime.notices.push(
+							`provider-failover: failed to persist sticky route: ${saveError instanceof Error ? saveError.message : String(saveError)}`,
+						);
+					}
 				}
 				stream.end();
 				return;
@@ -397,6 +436,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		runtime.ctx = ctx;
+		runtime.stickyRouteByModelId = await loadState();
 		await ensureProviderRegistered(ctx);
 	});
 
@@ -420,11 +460,13 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				runtime.stickyRouteByModelId.delete(modelId);
+				await saveState(runtime.stickyRouteByModelId);
 				ctx.ui.notify(`provider-failover: reset sticky route for ${modelId}`, "info");
 				return;
 			}
 
 			runtime.stickyRouteByModelId.clear();
+			await saveState(runtime.stickyRouteByModelId);
 			ctx.ui.notify("provider-failover: reset sticky routes for all failover models", "info");
 		},
 	});
@@ -434,6 +476,7 @@ export default function (pi: ExtensionAPI) {
 		handler: async (_args, ctx) => {
 			await generateDefaultConfig(ctx);
 			runtime.stickyRouteByModelId.clear();
+			await saveState(runtime.stickyRouteByModelId);
 			await ensureProviderRegistered(ctx);
 			ctx.ui.notify("provider-failover: regenerated config and reloaded failover models", "info");
 		},
