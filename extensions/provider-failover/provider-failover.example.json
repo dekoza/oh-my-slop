@@ -1,0 +1,23 @@
+{
+  "models": [
+    {
+      "id": "copilot-coder",
+      "name": "Copilot coder with automatic failover",
+      "strategy": [
+        {
+          "provider": "github-copilot",
+          "model": "REPLACE_WITH_YOUR_COPILOT_MODEL_ID"
+        },
+        {
+          "provider": "openai",
+          "model": "REPLACE_WITH_YOUR_OPENAI_MODEL_ID"
+        },
+        {
+          "provider": "anthropic",
+          "model": "REPLACE_WITH_YOUR_ANTHROPIC_MODEL_ID"
+        }
+      ],
+      "sticky": true
+    }
+  ]
+}
