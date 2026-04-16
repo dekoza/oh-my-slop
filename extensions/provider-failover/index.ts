@@ -18,7 +18,11 @@ import {
 	orderCandidates,
 	pipeFailoverStream,
 } from "./lib/failover-core.mjs";
-import { buildDefaultConfig, resolvePreferredProviders } from "./lib/default-config.mjs";
+import {
+	formatGenerationPlan,
+	inspectGenerationPlan,
+	resolvePreferredProviders,
+} from "./lib/default-config.mjs";
 
 interface FailoverRouteConfig {
 	provider: string;
@@ -99,24 +103,29 @@ async function loadConfig(): Promise<{ path: string; config: FailoverFileConfig 
 	return { path: CONFIG_PATH, config: validateConfig(rawConfig, CONFIG_PATH) };
 }
 
+async function getGenerationPlan(ctx: ExtensionContext) {
+	const availableModels = await ctx.modelRegistry.getAvailable();
+	const preferredProviders = resolvePreferredProviders(availableModels);
+	return inspectGenerationPlan(availableModels, preferredProviders);
+}
+
 async function generateDefaultConfig(
 	ctx: ExtensionContext,
 ): Promise<{ path: string; config: FailoverFileConfig; preferredProviders: string[] }> {
-	const availableModels = await ctx.modelRegistry.getAvailable();
-	const preferredProviders = resolvePreferredProviders(availableModels);
-	const generatedConfig = buildDefaultConfig(availableModels, preferredProviders);
+	const plan = await getGenerationPlan(ctx);
+	const generatedConfig = { models: plan.matchedModels };
 	if (generatedConfig.models.length === 0) {
 		throw new Error(
-			`Could not generate ${CONFIG_PATH}. No GitHub Copilot models matched providers from this plan: ${preferredProviders.join(", ")}.`,
+			`Could not generate ${CONFIG_PATH}. No GitHub Copilot models matched providers from this plan: ${plan.preferredProviders.join(", ")}.`,
 		);
 	}
 
 	await writeFile(CONFIG_PATH, `${JSON.stringify(generatedConfig, null, 2)}\n`, "utf8");
 	ctx.ui.notify(
-		`provider-failover: generated default config at ${CONFIG_PATH} using provider plan ${preferredProviders.join(" -> ")}`,
+		`provider-failover: generated default config at ${CONFIG_PATH} using provider plan ${plan.preferredProviders.join(" -> ")}`,
 		"info",
 	);
-	return { path: CONFIG_PATH, config: generatedConfig, preferredProviders };
+	return { path: CONFIG_PATH, config: generatedConfig, preferredProviders: plan.preferredProviders };
 }
 
 function validateConfig(rawConfig: unknown, sourcePath: string): FailoverFileConfig {
@@ -424,6 +433,20 @@ export default function (pi: ExtensionAPI) {
 			runtime.stickyRouteByModelId.clear();
 			await ensureProviderRegistered(ctx);
 			ctx.ui.notify("provider-failover: regenerated config and reloaded failover models", "info");
+		},
+	});
+
+	pi.registerCommand("failover-show-plan", {
+		description: "Show the current provider preference order and Copilot failover matches",
+		handler: async (_args, ctx) => {
+			const plan = await getGenerationPlan(ctx);
+			const planText = formatGenerationPlan(plan);
+			if (!ctx.hasUI) {
+				ctx.ui.notify("provider-failover: failover-show-plan requires interactive or RPC UI", "error");
+				return;
+			}
+
+			await ctx.ui.editor("Provider failover plan", planText);
 		},
 	});
 }

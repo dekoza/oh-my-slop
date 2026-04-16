@@ -18,6 +18,7 @@ const FAMILY_PROVIDER_MAP = new Map([
   ['gemini', 'google'],
   ['grok', 'xai'],
 ]);
+const ALLOWED_BACKUP_PROVIDERS = new Set([...ROUTING_PROVIDERS, ...DEFAULT_ORIGINAL_PROVIDERS]);
 
 export function normalizeModelName(name) {
   if (typeof name !== 'string') {
@@ -110,13 +111,14 @@ function isModelDescriptor(model) {
   return model && typeof model.provider === 'string' && typeof model.id === 'string' && typeof model.name === 'string';
 }
 
-export function resolvePreferredProviders(models) {
-  const availableProviders = new Set(
-    (Array.isArray(models) ? models : [])
-      .filter(isModelDescriptor)
-      .map((model) => model.provider),
+function getActiveProviders(models) {
+  return uniqueInOrder(
+    sortByName((Array.isArray(models) ? models : []).filter(isModelDescriptor)).map((model) => model.provider),
   );
+}
 
+export function resolvePreferredProviders(models) {
+  const availableProviders = new Set(getActiveProviders(models));
   const activeRouters = ROUTING_PROVIDERS.filter((provider) => availableProviders.has(provider));
   return [...activeRouters, ...DEFAULT_ORIGINAL_PROVIDERS];
 }
@@ -140,23 +142,15 @@ function resolveProviderSearchOrder(family, preferredProviders) {
   return preferredProviders;
 }
 
-export function buildDefaultConfig(models, preferredProviders = resolvePreferredProviders(models)) {
-  const availableModels = Array.isArray(models) ? models : [];
-  const allowedProviders = new Set([...ROUTING_PROVIDERS, ...DEFAULT_ORIGINAL_PROVIDERS]);
-
-  const copilotModels = sortByName(
-    availableModels.filter((model) =>
-      isModelDescriptor(model) && model.provider === 'github-copilot',
-    ),
-  );
-
+function getBackupModelsByProvider(models, preferredProviders) {
   const backupModelsByProvider = new Map();
+
   for (const provider of uniqueInOrder(preferredProviders)) {
-    if (!allowedProviders.has(provider)) {
+    if (!ALLOWED_BACKUP_PROVIDERS.has(provider)) {
       continue;
     }
 
-    const providerModels = availableModels
+    const providerModels = (Array.isArray(models) ? models : [])
       .filter((model) => isModelDescriptor(model) && model.provider === provider)
       .map((model) => ({
         provider: model.provider,
@@ -167,16 +161,32 @@ export function buildDefaultConfig(models, preferredProviders = resolvePreferred
     backupModelsByProvider.set(provider, providerModels);
   }
 
-  const configuredModels = [];
+  return backupModelsByProvider;
+}
+
+export function inspectGenerationPlan(models, preferredProviders = resolvePreferredProviders(models)) {
+  const availableModels = Array.isArray(models) ? models : [];
+  const normalizedPreferredProviders = uniqueInOrder(preferredProviders).filter((provider) =>
+    ALLOWED_BACKUP_PROVIDERS.has(provider),
+  );
+  const activeProviders = getActiveProviders(availableModels);
+  const copilotModels = sortByName(
+    availableModels.filter((model) => isModelDescriptor(model) && model.provider === 'github-copilot'),
+  );
+  const backupModelsByProvider = getBackupModelsByProvider(availableModels, normalizedPreferredProviders);
+
+  const matchedModels = [];
+  const unmatchedCopilotModels = [];
 
   for (const copilotModel of copilotModels) {
     const normalizedName = normalizeModelName(copilotModel.name);
     if (!normalizedName) {
+      unmatchedCopilotModels.push({ id: copilotModel.id, name: copilotModel.name });
       continue;
     }
 
     const family = detectFamily(normalizedName);
-    const providerSearchOrder = resolveProviderSearchOrder(family, uniqueInOrder(preferredProviders));
+    const providerSearchOrder = resolveProviderSearchOrder(family, normalizedPreferredProviders);
     const strategy = [{ provider: 'github-copilot', model: copilotModel.id }];
 
     for (const provider of providerSearchOrder) {
@@ -198,10 +208,11 @@ export function buildDefaultConfig(models, preferredProviders = resolvePreferred
     }
 
     if (strategy.length < 2) {
+      unmatchedCopilotModels.push({ id: copilotModel.id, name: copilotModel.name });
       continue;
     }
 
-    configuredModels.push({
+    matchedModels.push({
       id: copilotModel.id,
       name: copilotModel.name,
       strategy,
@@ -209,5 +220,53 @@ export function buildDefaultConfig(models, preferredProviders = resolvePreferred
     });
   }
 
-  return { models: configuredModels };
+  return {
+    activeProviders,
+    preferredProviders: normalizedPreferredProviders,
+    matchedModels,
+    unmatchedCopilotModels,
+  };
+}
+
+export function buildDefaultConfig(models, preferredProviders = resolvePreferredProviders(models)) {
+  const plan = inspectGenerationPlan(models, preferredProviders);
+  return { models: plan.matchedModels };
+}
+
+export function formatGenerationPlan(plan) {
+  const activeProviders = Array.isArray(plan?.activeProviders) ? plan.activeProviders : [];
+  const preferredProviders = Array.isArray(plan?.preferredProviders) ? plan.preferredProviders : [];
+  const matchedModels = Array.isArray(plan?.matchedModels) ? plan.matchedModels : [];
+  const unmatchedCopilotModels = Array.isArray(plan?.unmatchedCopilotModels) ? plan.unmatchedCopilotModels : [];
+
+  const lines = [];
+
+  lines.push(`Preferred provider order: ${preferredProviders.length > 0 ? preferredProviders.join(' -> ') : '(none)'}`);
+  lines.push(`Active providers with available models: ${activeProviders.length > 0 ? activeProviders.join(', ') : '(none)'}`);
+  lines.push('');
+  lines.push('Matched GitHub Copilot models:');
+
+  if (matchedModels.length === 0) {
+    lines.push('- none');
+  } else {
+    for (const matchedModel of matchedModels) {
+      lines.push(`- ${matchedModel.name} (${matchedModel.id})`);
+      for (const route of matchedModel.strategy) {
+        lines.push(`  - ${route.provider}/${route.model}`);
+      }
+    }
+  }
+
+  lines.push('');
+  lines.push('Unmatched GitHub Copilot models:');
+
+  if (unmatchedCopilotModels.length === 0) {
+    lines.push('- none');
+  } else {
+    for (const unmatchedModel of unmatchedCopilotModels) {
+      lines.push(`- ${unmatchedModel.name} (${unmatchedModel.id})`);
+    }
+  }
+
+  return lines.join('\n');
 }

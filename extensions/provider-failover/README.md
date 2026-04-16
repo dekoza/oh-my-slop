@@ -68,7 +68,7 @@ All listed providers must already be authenticated through `/login` or API keys,
 5. Work normally.
 6. If the Copilot route responds with a 429-style failure before streaming output, the extension retries the same prompt on the matched original provider.
 7. When a backup succeeds, that backup becomes the first route for future prompts until you run `/failover-reset`.
-8. If you later log into new providers or enable new models, run `/failover-regenerate-config`.
+8. If you later log into new providers or enable new models, run `/failover-show-plan` first to inspect the current routing plan, then `/failover-regenerate-config`.
 
 ## Config format
 
@@ -101,6 +101,7 @@ Generated configs look like this:
 
 - `/failover-reset` - clear sticky routes for all failover models
 - `/failover-reset <model-id>` - clear the sticky route for one failover model
+- `/failover-show-plan` - show the current provider preference order, matched Copilot models, and unmatched Copilot models before changing config
 - `/failover-regenerate-config` - rebuild `config.json` from the models currently available in your pi setup and reload the failover provider
 
 ## Notes

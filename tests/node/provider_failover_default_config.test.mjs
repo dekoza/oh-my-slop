@@ -5,6 +5,8 @@ import {
   DEFAULT_ORIGINAL_PROVIDERS,
   ROUTING_PROVIDERS,
   buildDefaultConfig,
+  formatGenerationPlan,
+  inspectGenerationPlan,
   normalizeModelName,
   resolvePreferredProviders,
 } from '../../extensions/provider-failover/lib/default-config.mjs';
@@ -110,4 +112,68 @@ test('buildDefaultConfig keeps only routing and original providers and skips unm
       },
     ],
   });
+});
+
+test('inspectGenerationPlan reports matched and unmatched copilot models', () => {
+  const plan = inspectGenerationPlan([
+    { provider: 'github-copilot', id: 'copilot-claude', name: 'Claude Sonnet 4.5' },
+    { provider: 'github-copilot', id: 'copilot-gpt', name: 'GPT-5 Codex' },
+    { provider: 'github-copilot', id: 'copilot-unknown', name: 'Mystery Model 1' },
+    { provider: 'openrouter', id: 'router-claude', name: 'Claude Sonnet 4.5' },
+    { provider: 'openai', id: 'gpt-5-codex', name: 'GPT-5 Codex' },
+  ]);
+
+  assert.deepEqual(plan.preferredProviders, ['openrouter', ...DEFAULT_ORIGINAL_PROVIDERS]);
+  assert.deepEqual(plan.matchedModels, [
+    {
+      id: 'copilot-claude',
+      name: 'Claude Sonnet 4.5',
+      strategy: [
+        { provider: 'github-copilot', model: 'copilot-claude' },
+        { provider: 'openrouter', model: 'router-claude' },
+      ],
+      sticky: true,
+    },
+    {
+      id: 'copilot-gpt',
+      name: 'GPT-5 Codex',
+      strategy: [
+        { provider: 'github-copilot', model: 'copilot-gpt' },
+        { provider: 'openai', model: 'gpt-5-codex' },
+      ],
+      sticky: true,
+    },
+  ]);
+  assert.deepEqual(plan.unmatchedCopilotModels, [
+    { id: 'copilot-unknown', name: 'Mystery Model 1' },
+  ]);
+});
+
+test('formatGenerationPlan prints provider order, matches, and unmatched copilot models', () => {
+  const output = formatGenerationPlan({
+    preferredProviders: ['openrouter', 'zai', 'openai', 'anthropic'],
+    matchedModels: [
+      {
+        id: 'copilot-claude',
+        name: 'Claude Sonnet 4.5',
+        strategy: [
+          { provider: 'github-copilot', model: 'copilot-claude' },
+          { provider: 'openrouter', model: 'router-claude' },
+          { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+        ],
+        sticky: true,
+      },
+    ],
+    unmatchedCopilotModels: [
+      { id: 'copilot-unknown', name: 'Mystery Model 1' },
+    ],
+  });
+
+  assert.match(output, /Preferred provider order: openrouter -> zai -> openai -> anthropic/);
+  assert.match(output, /Claude Sonnet 4\.5 \(copilot-claude\)/);
+  assert.match(output, /github-copilot\/copilot-claude/);
+  assert.match(output, /openrouter\/router-claude/);
+  assert.match(output, /anthropic\/claude-sonnet-4-5/);
+  assert.match(output, /Unmatched GitHub Copilot models:/);
+  assert.match(output, /Mystery Model 1 \(copilot-unknown\)/);
 });
