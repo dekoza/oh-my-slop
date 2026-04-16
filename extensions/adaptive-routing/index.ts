@@ -1,16 +1,36 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type {
+	BashToolCallEvent,
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionContext,
 	ModelSelectEvent,
 } from "@mariozechner/pi-coding-agent";
+import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import { classifyPrompt } from "./classifier.js";
 import { getAdaptiveRoutingConfigPath, readAdaptiveRoutingConfig } from "./config.js";
+import {
+	appendCommitTrail,
+	attributeFixToOriginalCommits,
+	buildTrailEntry,
+	extractCommitHash,
+	findTrailEntry,
+	isFixCommit,
+} from "./commit-trail.js";
 import { decideRoute } from "./engine.js";
 import { generateDefaultConfig, type InitModelInfo } from "./init.js";
 import { normalizeRouteCandidates } from "./normalize.js";
+import {
+	formatScoreReport,
+	getScoreAdjustment,
+	readModelScores,
+	recordFixAttribution,
+	recordSuccessfulSession,
+	shouldPenalise,
+	toModelKey,
+	writeModelScores,
+} from "./scoring.js";
 import { readAdaptiveRoutingState, writeAdaptiveRoutingState } from "./state.js";
 import {
 	appendTelemetryEvent,
@@ -24,9 +44,13 @@ import {
 import type {
 	AdaptiveRoutingMode,
 	AdaptiveRoutingState,
+	CommitTrailEntry,
+	ModelScoreStore,
 	ProviderUsageState,
 	RouteDecision,
+	RouteEvidenceEntry,
 	RouteFeedbackCategory,
+	RouteIntent,
 	RouteThinkingLevel,
 } from "./types.js";
 
@@ -40,6 +64,12 @@ type RuntimeState = {
 	lastDecisionTurnCount: number;
 	lastDecisionOverridden: boolean;
 	applyingRoute: boolean;
+	/** Model actually in use (may differ from routed model if user overrode). */
+	actualModel?: string;
+	actualThinking?: RouteThinkingLevel;
+	scoreStore: ModelScoreStore;
+	/** Pending commit command waiting for its tool_result hash. */
+	pendingCommitCommand?: string;
 };
 
 export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
@@ -51,13 +81,13 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 		lastDecisionTurnCount: 0,
 		lastDecisionOverridden: false,
 		applyingRoute: false,
+		scoreStore: readModelScores(),
 	};
 
+	// ── Helpers ───────────────────────────────────────────────────────────────
+
 	function persistState(): void {
-		writeAdaptiveRoutingState({
-			...runtime.state,
-			lastDecision: runtime.lastDecision,
-		});
+		writeAdaptiveRoutingState({ ...runtime.state, lastDecision: runtime.lastDecision });
 	}
 
 	function getEffectiveMode(): AdaptiveRoutingMode {
@@ -67,13 +97,12 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 
 	function currentRouteLabel(): string | undefined {
 		const mode = getEffectiveMode();
-		if (mode === "off") {
-			return undefined;
-		}
+		if (mode === "off") return undefined;
 		const lockLabel = runtime.state.lock ? ` 🔒 ${runtime.state.lock.model}:${runtime.state.lock.thinking}` : "";
 		const decision = runtime.lastDecision;
+		const chanceLabel = decision?.isChanceTrial ? " [chance]" : "";
 		return decision
-			? `${mode} → ${decision.selectedModel}:${decision.selectedThinking}${lockLabel}`
+			? `${mode} → ${decision.selectedModel}:${decision.selectedThinking}${chanceLabel}${lockLabel}`
 			: `${mode}${lockLabel}`;
 	}
 
@@ -84,6 +113,8 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 	function refreshUsageSnapshot(): void {
 		pi.events.emit("usage:query");
 	}
+
+	// ── Event: usage limits ────────────────────────────────────────────────────
 
 	pi.events.on("usage:limits", (payload) => {
 		const providers: ProviderUsageState["providers"] = {};
@@ -105,37 +136,47 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 		};
 	});
 
+	// ── Event: session start ───────────────────────────────────────────────────
+
 	pi.on("session_start", async (_event, ctx) => {
 		runtime.state = readAdaptiveRoutingState();
+		runtime.scoreStore = readModelScores();
 		refreshUsageSnapshot();
 		updateStatus(ctx);
 	});
 
+	// ── Event: model select ────────────────────────────────────────────────────
+
 	pi.on("model_select", async (event, ctx) => {
-		if (!runtime.applyingRoute && shouldRecordOverride(event, runtime.lastDecision)) {
-			appendTelemetryEvent(readAdaptiveRoutingConfig().telemetry, {
-				type: "route_override",
-				timestamp: Date.now(),
-				decisionId: runtime.lastDecision?.id,
-				from: {
-					model: runtime.lastDecision?.selectedModel ?? "unknown",
-					thinking: runtime.lastDecision?.selectedThinking ?? "off",
-				},
-				to: {
-					model: `${event.model.provider}/${event.model.id}`,
-					thinking: pi.getThinkingLevel() as RouteThinkingLevel,
-				},
-				reason: "manual",
-			});
-			runtime.lastDecisionOverridden = true;
+		if (!runtime.applyingRoute) {
+			runtime.actualModel = `${event.model.provider}/${event.model.id}`;
+			runtime.actualThinking = pi.getThinkingLevel() as RouteThinkingLevel;
+
+			if (shouldRecordOverride(event, runtime.lastDecision)) {
+				appendTelemetryEvent(readAdaptiveRoutingConfig().telemetry, {
+					type: "route_override",
+					timestamp: Date.now(),
+					decisionId: runtime.lastDecision?.id,
+					from: {
+						model: runtime.lastDecision?.selectedModel ?? "unknown",
+						thinking: runtime.lastDecision?.selectedThinking ?? "off",
+					},
+					to: {
+						model: runtime.actualModel,
+						thinking: runtime.actualThinking,
+					},
+					reason: "manual",
+				});
+				runtime.lastDecisionOverridden = true;
+			}
 		}
 		updateStatus(ctx);
 	});
 
+	// ── Event: agent end ───────────────────────────────────────────────────────
+
 	pi.on("agent_end", async (_event, _ctx) => {
-		if (!runtime.lastDecision?.id) {
-			return;
-		}
+		if (!runtime.lastDecision?.id) return;
 		appendTelemetryEvent(readAdaptiveRoutingConfig().telemetry, {
 			type: "route_outcome",
 			timestamp: Date.now(),
@@ -146,9 +187,92 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 		});
 	});
 
+	// ── Event: turn end ────────────────────────────────────────────────────────
+
 	pi.on("turn_end", async () => {
 		runtime.lastDecisionTurnCount += 1;
 	});
+
+	// ── Event: tool_call — intercept git commits ───────────────────────────────
+
+	pi.on("tool_call", async (event) => {
+		if (!isToolCallEventType("bash", event)) return;
+		const cmd = (event as BashToolCallEvent).input.command;
+		if (/\bgit\s+commit\b/.test(cmd) && /-m\s+["']/.test(cmd)) {
+			runtime.pendingCommitCommand = cmd;
+		}
+	});
+
+	// ── Event: tool_result — process git commit result ────────────────────────
+
+	pi.on("tool_result", async (event, ctx) => {
+		if (event.toolName !== "bash" || !runtime.pendingCommitCommand) return;
+		const bashResult = event as { toolName: "bash"; result: { output: string; exitCode?: number } };
+		if (bashResult.result?.exitCode !== 0 && bashResult.result?.exitCode !== undefined) {
+			runtime.pendingCommitCommand = undefined;
+			return;
+		}
+
+		const output = bashResult.result?.output ?? "";
+		const hash = extractCommitHash(output);
+		runtime.pendingCommitCommand = undefined;
+		if (!hash || !runtime.lastDecision) return;
+
+		// Build trail entry — track the actual model, not just the routed one
+		const actualModel = runtime.actualModel ?? runtime.lastDecision.selectedModel;
+		const actualThinking = runtime.actualThinking ?? runtime.lastDecision.selectedThinking;
+		const trailEntry = buildTrailEntry(
+			hash,
+			runtime.lastDecision,
+			actualModel,
+			actualThinking,
+			runtime.lastDecisionTurnCount,
+		);
+		appendCommitTrail(trailEntry);
+
+		// If this is a fix commit, attempt attribution and update scores
+		const cmd = runtime.pendingCommitCommand ?? "";
+		if (isFixCommit(cmd)) {
+			void processFixCommit(hash, trailEntry, ctx.cwd);
+		}
+	});
+
+	async function processFixCommit(fixHash: string, _fixEntry: CommitTrailEntry, cwd: string): Promise<void> {
+		const blamedHashes = attributeFixToOriginalCommits(fixHash, cwd);
+		const config = readAdaptiveRoutingConfig();
+		let store = readModelScores();
+
+		for (const blamedHash of blamedHashes) {
+			const originalEntry = findTrailEntry(blamedHash);
+			if (!originalEntry) continue;
+
+			const modelKey = toModelKey(originalEntry.actualModel);
+			const { record } = getScoreAdjustment(modelKey, store, config.scoring);
+			const { penalised } = shouldPenalise(record, config.scoring);
+
+			const evidence: RouteEvidenceEntry = {
+				commitHash: fixHash,
+				fixedHash: blamedHash,
+				intent: originalEntry.intent,
+				thinking: originalEntry.actualThinking,
+				turns: originalEntry.turns,
+				isChanceTrial: originalEntry.isChanceTrial,
+				timestamp: Date.now(),
+			};
+			store = recordFixAttribution(store, modelKey, evidence, config.scoring);
+
+			// Check if we just crossed the penalty threshold
+			const { penalised: nowPenalised } = shouldPenalise(store.scores[modelKey], config.scoring);
+			if (!penalised && nowPenalised) {
+				console.warn(`[adaptive-routing] ${modelKey} has crossed the fix threshold — scoring penalty applied.`);
+			}
+		}
+
+		writeModelScores(store);
+		runtime.scoreStore = store;
+	}
+
+	// ── Event: before_agent_start — main routing logic ────────────────────────
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		const config = readAdaptiveRoutingConfig();
@@ -162,7 +286,7 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 		refreshUsageSnapshot();
 		const availableModels = ctx.modelRegistry.getAvailable();
 		const candidates = normalizeRouteCandidates(availableModels).filter(
-			(candidate) => !config.models.excluded.some((entry) => entry === candidate.fullId || entry === candidate.modelId),
+			(c) => !config.models.excluded.some((entry) => entry === c.fullId || entry === c.modelId),
 		);
 		if (candidates.length === 0) {
 			ctx.ui.setStatus(STATUS_KEY, `${mode} → no eligible models`);
@@ -172,6 +296,7 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 		const classification = await classifyPrompt(event.prompt, config, ctx, candidates);
 		const currentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
 		const currentThinking = pi.getThinkingLevel() as RouteThinkingLevel;
+
 		const decision = decideRoute({
 			config,
 			candidates,
@@ -180,6 +305,7 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 			currentThinking,
 			usage: runtime.usage,
 			lock: runtime.state.lock,
+			scoreStore: runtime.scoreStore,
 		});
 		if (!decision) {
 			ctx.ui.setStatus(STATUS_KEY, `${mode} → no route`);
@@ -194,41 +320,30 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 		runtime.state.lastDecision = decision;
 		persistState();
 
+		// Track the routed model as the initial "actual" model (may be updated by model_select)
+		runtime.actualModel = decision.selectedModel;
+		runtime.actualThinking = decision.selectedThinking;
+
 		appendTelemetryEvent(config.telemetry, {
 			type: "route_decision",
 			timestamp: Date.now(),
 			decisionId: decision.id,
 			promptHash: runtime.lastDecisionPromptHash,
 			mode,
-			selected: {
-				model: decision.selectedModel,
-				thinking: decision.selectedThinking,
-			},
+			selected: { model: decision.selectedModel, thinking: decision.selectedThinking },
 			fallbacks: decision.fallbacks,
 			classifier: classification,
 			quota: decision.explanation.quota,
 			candidates: decision.explanation.candidates,
 			explanationCodes: decision.explanation.codes,
+			isChanceTrial: decision.isChanceTrial,
 		});
 
 		if (mode === "shadow") {
-			if (currentModel && (currentModel !== decision.selectedModel || currentThinking !== decision.selectedThinking)) {
-				appendTelemetryEvent(config.telemetry, {
-					type: "route_shadow_disagreement",
-					timestamp: Date.now(),
-					decisionId: decision.id,
-					promptHash: runtime.lastDecisionPromptHash,
-					suggested: {
-						model: decision.selectedModel,
-						thinking: decision.selectedThinking,
-					},
-					actual: {
-						model: currentModel,
-						thinking: currentThinking,
-					},
-				});
-			}
-			ctx.ui.notify(`Adaptive route suggestion: ${decision.selectedModel} · ${decision.selectedThinking}`, "info");
+			ctx.ui.notify(
+				`Adaptive route suggestion: ${decision.selectedModel} · ${decision.selectedThinking}${decision.isChanceTrial ? " [chance trial]" : ""}`,
+				"info",
+			);
 			updateStatus(ctx);
 			return;
 		}
@@ -237,12 +352,13 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 		updateStatus(ctx);
 	});
 
+	// ── /route command ─────────────────────────────────────────────────────────
+
 	pi.registerCommand("route", {
 		description:
-			"Adaptive routing controls: /route [status|on|off|shadow|auto|explain|lock|unlock|refresh|feedback|stats|init]",
+			"Adaptive routing controls: /route [status|on|off|shadow|auto|explain|lock|unlock|refresh|feedback|stats|scores|init]",
 		async handler(args, ctx) {
-			const command = args.trim();
-			const [head, ...rest] = command.split(/\s+/).filter(Boolean);
+			const [head, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 			const subcommand = (head ?? "status").toLowerCase();
 			runtime.state = readAdaptiveRoutingState();
 
@@ -293,7 +409,8 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 				case "refresh":
 					refreshUsageSnapshot();
 					runtime.state = readAdaptiveRoutingState();
-					ctx.ui.notify("Adaptive routing config and usage refreshed.", "info");
+					runtime.scoreStore = readModelScores();
+					ctx.ui.notify("Adaptive routing config, scores, and usage refreshed.", "info");
 					updateStatus(ctx);
 					return;
 				case "feedback": {
@@ -312,6 +429,9 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 					ctx.ui.notify(`Recorded route feedback: ${category}.`, "info");
 					return;
 				}
+				case "scores":
+					await openOverlay(ctx, formatScoreReport(runtime.scoreStore));
+					return;
 				case "stats":
 					await openOverlay(ctx, formatStats(computeStats(readTelemetryEvents())));
 					return;
@@ -328,6 +448,8 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 	});
 }
 
+// ── Apply decision ────────────────────────────────────────────────────────────
+
 async function applyDecision(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
@@ -337,11 +459,9 @@ async function applyDecision(
 ): Promise<void> {
 	const currentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
 	const currentThinking = pi.getThinkingLevel() as RouteThinkingLevel;
-	if (currentModel === decision.selectedModel && currentThinking === decision.selectedThinking) {
-		return;
-	}
+	if (currentModel === decision.selectedModel && currentThinking === decision.selectedThinking) return;
 
-	const target = candidates.find((candidate) => candidate.fullId === decision.selectedModel);
+	const target = candidates.find((c) => c.fullId === decision.selectedModel);
 	if (!target) {
 		ctx.ui.notify(`Adaptive route target unavailable: ${decision.selectedModel}`, "warning");
 		return;
@@ -359,44 +479,38 @@ async function applyDecision(
 		if (currentThinking !== decision.selectedThinking) {
 			pi.setThinkingLevel(decision.selectedThinking);
 		}
-		ctx.ui.notify(`Adaptive route applied: ${decision.selectedModel} · ${decision.selectedThinking}`, "info");
+		const chanceLabel = decision.isChanceTrial ? " [chance trial — give it a chance]" : "";
+		ctx.ui.notify(
+			`Adaptive route applied: ${decision.selectedModel} · ${decision.selectedThinking}${chanceLabel}`,
+			"info",
+		);
 	} finally {
 		runtime.applyingRoute = false;
 	}
 }
 
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
 function shouldRecordOverride(event: ModelSelectEvent, lastDecision: RouteDecision | undefined): boolean {
-	if (!(lastDecision && event.model)) {
-		return false;
-	}
+	if (!(lastDecision && event.model)) return false;
 	return `${event.model.provider}/${event.model.id}` !== lastDecision.selectedModel;
 }
 
 function extractQuotaConfidence(value: unknown): ProviderUsageState["providers"][string]["confidence"] {
-	if (!value || typeof value !== "object") {
-		return "unknown";
-	}
-	if (Array.isArray(value.windows) && value.windows.length > 0) {
-		return "authoritative";
-	}
-	if (value.stale) {
-		return "estimated";
-	}
+	if (!value || typeof value !== "object") return "unknown";
+	if (Array.isArray((value as { windows?: unknown }).windows) && (value as { windows: unknown[] }).windows.length > 0) return "authoritative";
+	if ((value as { stale?: unknown }).stale) return "estimated";
 	return "unknown";
 }
 
 function extractRemainingPct(value: unknown): number | undefined {
-	if (!value || typeof value !== "object" || !Array.isArray(value.windows)) {
-		return undefined;
-	}
-	const percentages = value.windows
-		.map((window) =>
-			window && typeof window === "object" ? Number((window as { remainingPct?: unknown }).remainingPct) : Number.NaN,
+	if (!value || typeof value !== "object" || !Array.isArray((value as { windows?: unknown }).windows)) return undefined;
+	const percentages = (value as { windows: unknown[] }).windows
+		.map((w) =>
+			w && typeof w === "object" ? Number((w as { remainingPct?: unknown }).remainingPct) : Number.NaN,
 		)
 		.filter((pct: number) => Number.isFinite(pct));
-	if (percentages.length === 0) {
-		return undefined;
-	}
+	if (percentages.length === 0) return undefined;
 	return Math.min(...percentages);
 }
 
@@ -421,22 +535,19 @@ function buildStatusLine(
 	mode: AdaptiveRoutingMode,
 ): string {
 	const parts = [`mode=${mode}`];
-	if (state.lock) {
-		parts.push(`lock=${state.lock.model}:${state.lock.thinking}`);
-	}
+	if (state.lock) parts.push(`lock=${state.lock.model}:${state.lock.thinking}`);
 	if (decision) {
-		parts.push(`last=${decision.selectedModel}:${decision.selectedThinking}`);
+		const chance = decision.isChanceTrial ? " [chance]" : "";
+		parts.push(`last=${decision.selectedModel}:${decision.selectedThinking}${chance}`);
 	}
 	return `adaptive routing · ${parts.join(" · ")}`;
 }
 
 function buildExplanationLines(decision: RouteDecision | undefined, usage: ProviderUsageState | undefined): string[] {
-	if (!decision) {
-		return ["Adaptive Routing", "No route decision recorded yet."];
-	}
+	if (!decision) return ["Adaptive Routing", "No route decision recorded yet."];
 	const lines = [
 		"Adaptive Routing",
-		`Selected: ${decision.selectedModel}`,
+		`Selected: ${decision.selectedModel}${decision.isChanceTrial ? " [chance trial]" : ""}`,
 		`Thinking: ${decision.selectedThinking}`,
 		`Summary: ${decision.explanation.summary}`,
 		`Codes: ${decision.explanation.codes.join(", ") || "none"}`,
@@ -449,20 +560,16 @@ function buildExplanationLines(decision: RouteDecision | undefined, usage: Provi
 		lines.push(`Reason: ${c.reason}`);
 	}
 	if (decision.explanation.cost) {
-		const selected = decision.explanation.cost.selectedMultiplier;
+		const sel = decision.explanation.cost.selectedMultiplier;
 		const max = decision.explanation.cost.maxMultiplier;
-		lines.push(`Multiplier: ${selected ?? "unknown"}${max === undefined ? "" : ` · budget ≤ ${max}`}`);
+		lines.push(`Multiplier: ${sel ?? "unknown"}${max === undefined ? "" : ` · budget ≤ ${max}`}`);
 	}
-	if (decision.fallbacks.length > 0) {
-		lines.push(`Fallbacks: ${decision.fallbacks.join(" → ")}`);
-	}
+	if (decision.fallbacks.length > 0) lines.push(`Fallbacks: ${decision.fallbacks.join(" → ")}`);
 	if (decision.explanation.candidates?.length) {
 		lines.push("Top candidates:");
-		for (const candidate of decision.explanation.candidates) {
-			const multiplier = candidate.multiplier === undefined ? "" : ` · x${candidate.multiplier}`;
-			lines.push(
-				`  - ${candidate.model} (${candidate.score.toFixed(1)}${multiplier}) [${candidate.reasons.join(", ")}]`,
-			);
+		for (const c of decision.explanation.candidates) {
+			const m = c.multiplier === undefined ? "" : ` · x${c.multiplier}`;
+			lines.push(`  - ${c.model} (${c.score.toFixed(1)}${m}) [${c.reasons.join(", ")}]`);
 		}
 	}
 	if (usage && Object.keys(usage.providers).length > 0) {
@@ -486,13 +593,9 @@ async function openOverlay(ctx: ExtensionCommandContext, lines: string[]): Promi
 					done(undefined);
 					return;
 				}
-				if (data === "r") {
-					tui.requestRender();
-				}
+				if (data === "r") tui.requestRender();
 			},
-			dispose() {
-				// No-op overlay cleanup.
-			},
+			dispose() {},
 		}),
 		{ overlay: true, overlayOptions: { anchor: "center", width: 96, maxHeight: 28 } },
 	);
@@ -519,29 +622,26 @@ async function runInit(ctx: ExtensionCommandContext): Promise<void> {
 	}));
 
 	const generated = generateDefaultConfig(modelInfos);
-	const config = { ...generated };
-	const json = `${JSON.stringify(config, null, 2)}\n`;
-
+	const json = `${JSON.stringify(generated, null, 2)}\n`;
 	mkdirSync(dirname(configPath), { recursive: true });
 	writeFileSync(configPath, json, "utf-8");
 
-	const categoryNames = Object.keys(config.delegatedRouting.categories);
+	const categoryNames = Object.keys(generated.delegatedRouting.categories);
 	const summary =
 		categoryNames.length > 0
 			? `Created ${configPath} with categories: ${categoryNames.join(", ")}`
 			: `Created ${configPath} (no models detected — add categories manually)`;
-
 	ctx.ui.notify(summary, "info");
 
 	const lines = [
 		"Adaptive Routing — Config Generated",
 		"",
 		`File: ${configPath}`,
-		`Mode: ${config.mode}`,
-		`Delegated routing: ${config.delegatedRouting.enabled ? "enabled" : "disabled"}`,
+		`Mode: ${generated.mode}`,
+		`Delegated routing: ${generated.delegatedRouting.enabled ? "enabled" : "disabled"}`,
 		"",
 	];
-	for (const [name, cat] of Object.entries(config.delegatedRouting.categories)) {
+	for (const [name, cat] of Object.entries(generated.delegatedRouting.categories)) {
 		lines.push(`  ${name}:`);
 		lines.push(`    thinking: ${cat.defaultThinking ?? "default"}`);
 		lines.push(`    models: ${(cat.candidates ?? []).join(", ")}`);
@@ -550,6 +650,8 @@ async function runInit(ctx: ExtensionCommandContext): Promise<void> {
 	lines.push("Edit the file to customize categories and model order.");
 	lines.push("Run /route on to enable auto-routing.");
 	lines.push("");
+	lines.push("Commit trailer format for agent commits:");
+	lines.push("  Pi-Route: model=<id> intent=<intent> complexity=<n> thinking=<level> turns=<n>");
 	lines.push("Press q, esc, space, or enter to close.");
 
 	await openOverlay(ctx, lines);

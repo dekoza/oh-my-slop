@@ -7,14 +7,19 @@ export type QuotaConfidence = "authoritative" | "estimated" | "unknown";
 
 export type RouteIntent =
 	| "quick-qna"
+	| "explain"
 	| "planning"
 	| "research"
 	| "implementation"
+	| "test-writing"
 	| "debugging"
-	| "design"
-	| "architecture"
 	| "review"
 	| "refactor"
+	| "migration"
+	| "optimization"
+	| "documentation"
+	| "design"
+	| "architecture"
 	| "autonomous";
 
 export type RouteComplexity = 1 | 2 | 3 | 4 | 5;
@@ -87,6 +92,73 @@ export interface AdaptiveRoutingCostPolicy {
 	defaultMaxMultiplier?: number;
 }
 
+// ── Scoring ──────────────────────────────────────────────────────────────────
+
+/** One piece of evidence tied to a specific commit. */
+export interface RouteEvidenceEntry {
+	/** The commit hash that produced this evidence (e.g. the fix commit). */
+	commitHash: string;
+	/** Hash of the commit being blamed (the one that introduced the defect). */
+	fixedHash?: string;
+	intent: RouteIntent;
+	thinking: RouteThinkingLevel;
+	/** Number of turns in the session that produced this commit. */
+	turns: number;
+	/** True when this trial was a "give it a chance" exploration slot. */
+	isChanceTrial: boolean;
+	/** Unix ms. */
+	timestamp: number;
+}
+
+/** Persistent score record for a single model. */
+export interface ModelScoreRecord {
+	/** e.g. "claude-sonnet-4.6" (without provider prefix). */
+	modelKey: string;
+	/** Cumulative adjusted score. Starts at headStart. */
+	score: number;
+	/** Total evidence entries. */
+	totalTrials: number;
+	/** Evidence entries that are fix attributions (fixedHash set). */
+	fixCount: number;
+	/** Evidence list (kept for auditing; may be trimmed to last N). */
+	evidence: RouteEvidenceEntry[];
+	/** Unix ms of last update. */
+	updatedAt: number;
+}
+
+export interface ModelScoreStore {
+	/** Map of modelKey → record. */
+	scores: Record<string, ModelScoreRecord>;
+	/** Threshold of fix attributions before penalty applies. Default 3. */
+	penaltyThreshold: number;
+	/** Head-start score for unknown models. Default 2. */
+	headStart: number;
+	updatedAt: number;
+}
+
+// ── Commit trail ─────────────────────────────────────────────────────────────
+
+/** One entry written when a successful git commit is detected. */
+export interface CommitTrailEntry {
+	/** Resolved git hash (short). */
+	hash: string;
+	/** Decision ID from the routing engine. */
+	decisionId?: string;
+	/** The model that actually ran this session (may differ from routed model). */
+	actualModel: string;
+	actualThinking: RouteThinkingLevel;
+	/** The model the router originally chose. */
+	routedModel?: string;
+	routedThinking?: RouteThinkingLevel;
+	intent: RouteIntent;
+	complexity: RouteComplexity;
+	turns: number;
+	isChanceTrial: boolean;
+	timestamp: number;
+}
+
+// ── Config ───────────────────────────────────────────────────────────────────
+
 export interface AdaptiveRoutingConfig {
 	mode: AdaptiveRoutingMode;
 	routerModels: string[];
@@ -99,7 +171,23 @@ export interface AdaptiveRoutingConfig {
 	providerReserves: Partial<Record<string, ProviderReservePolicy>>;
 	fallbackGroups: Record<string, FallbackGroupPolicy>;
 	delegatedRouting: DelegatedRoutingConfig;
+	scoring: AdaptiveRoutingScoringConfig;
 }
+
+export interface AdaptiveRoutingScoringConfig {
+	/** Penalty threshold (number of fix attributions before score penalty). */
+	penaltyThreshold: number;
+	/** Head-start score for models with no evidence. */
+	headStart: number;
+	/** Score penalty applied per fix attribution above threshold. */
+	penaltyPerFix: number;
+	/** 1-in-N chance to trial a penalised model anyway. 0 = never. */
+	chanceTrialRate: number;
+	/** Max evidence entries retained per model. */
+	maxEvidenceEntries: number;
+}
+
+// ── Classification ────────────────────────────────────────────────────────────
 
 export interface PromptRouteClassification {
 	intent: RouteIntent;
@@ -116,6 +204,8 @@ export interface PromptRouteClassification {
 	classifierMode?: "heuristic" | "llm";
 }
 
+// ── Engine ───────────────────────────────────────────────────────────────────
+
 export interface RouteCandidateScore {
 	model: string;
 	score: number;
@@ -127,6 +217,28 @@ export interface RouteQuotaSnapshot {
 	confidence: QuotaConfidence;
 	remainingPct?: number;
 }
+
+export type AdaptiveRoutingExplanationCode =
+	| "intent_design_bias"
+	| "intent_architecture_bias"
+	| "premium_allowed"
+	| "premium_reserved"
+	| "quota_low"
+	| "quota_unknown"
+	| "thinking_clamped"
+	| "current_model_sticky"
+	| "fallback_group_applied"
+	| "manual_lock_applied"
+	| "shadow_disagreement"
+	| "classifier_fallback"
+	| "cost_free_bias"
+	| "cost_low_bias"
+	| "cost_budget_applied"
+	| "cost_over_budget"
+	| "context_window_fit"
+	| "score_penalised"
+	| "score_boosted"
+	| "chance_trial";
 
 export interface RouteExplanation {
 	summary: string;
@@ -149,6 +261,7 @@ export interface RouteDecision {
 	selectedModel: string;
 	selectedThinking: RouteThinkingLevel;
 	fallbacks: string[];
+	isChanceTrial: boolean;
 	explanation: RouteExplanation;
 }
 
@@ -197,26 +310,12 @@ export interface NormalizedRouteCandidate {
 	available: boolean;
 	authenticated: boolean;
 	model: Model<Api>;
+	/** Score adjustment from SwampCastle evidence. Undefined = no data. */
+	scoreAdjustment?: number;
+	isChanceTrialCandidate?: boolean;
 }
 
-export type AdaptiveRoutingExplanationCode =
-	| "intent_design_bias"
-	| "intent_architecture_bias"
-	| "premium_allowed"
-	| "premium_reserved"
-	| "quota_low"
-	| "quota_unknown"
-	| "thinking_clamped"
-	| "current_model_sticky"
-	| "fallback_group_applied"
-	| "manual_lock_applied"
-	| "shadow_disagreement"
-	| "classifier_fallback"
-	| "cost_free_bias"
-	| "cost_low_bias"
-	| "cost_budget_applied"
-	| "cost_over_budget"
-	| "context_window_fit";
+// ── Telemetry ─────────────────────────────────────────────────────────────────
 
 interface TelemetryEventBase {
 	type: string;
@@ -238,6 +337,7 @@ export interface RouteDecisionTelemetryEvent extends TelemetryEventBase {
 	quota?: Record<string, RouteQuotaSnapshot>;
 	candidates?: RouteCandidateScore[];
 	explanationCodes: AdaptiveRoutingExplanationCode[];
+	isChanceTrial: boolean;
 }
 
 export interface RouteOverrideTelemetryEvent extends TelemetryEventBase {
@@ -265,29 +365,15 @@ export interface RouteOutcomeTelemetryEvent extends TelemetryEventBase {
 	userOverrideOccurred: boolean;
 }
 
-export interface RouteShadowDisagreementTelemetryEvent extends TelemetryEventBase {
-	type: "route_shadow_disagreement";
-	suggested: {
-		model: string;
-		thinking: RouteThinkingLevel;
-	};
-	actual: {
-		model: string | null;
-		thinking: RouteThinkingLevel;
-	};
-}
-
 export type AdaptiveRoutingTelemetryEvent =
 	| RouteDecisionTelemetryEvent
 	| RouteOverrideTelemetryEvent
 	| RouteFeedbackTelemetryEvent
-	| RouteOutcomeTelemetryEvent
-	| RouteShadowDisagreementTelemetryEvent;
+	| RouteOutcomeTelemetryEvent;
 
 export interface AdaptiveRoutingStats {
 	decisions: number;
 	feedback: Partial<Record<RouteFeedbackCategory, number>>;
 	overrides: number;
-	shadowDisagreements: number;
 	lastDecisionAt?: number;
 }

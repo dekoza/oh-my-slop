@@ -1,6 +1,8 @@
 import { matchesModelRef } from "./normalize.js";
+import { getScoreAdjustment, shouldPenalise, toModelKey } from "./scoring.js";
 import type {
 	AdaptiveRoutingConfig,
+	ModelScoreStore,
 	NormalizedRouteCandidate,
 	PromptRouteClassification,
 	ProviderUsageState,
@@ -22,22 +24,22 @@ export interface RoutingDecisionInput {
 	currentThinking?: RouteThinkingLevel;
 	usage?: ProviderUsageState;
 	lock?: RouteLock;
+	scoreStore?: ModelScoreStore;
 }
 
 export function decideRoute(input: RoutingDecisionInput): RouteDecision | undefined {
 	const { config, candidates, classification, usage, lock } = input;
-	if (candidates.length === 0) {
-		return undefined;
-	}
+	if (candidates.length === 0) return undefined;
 
 	if (lock) {
-		const lockedCandidate = candidates.find((candidate) => matchesModelRef(lock.model, candidate));
+		const lockedCandidate = candidates.find((c) => matchesModelRef(lock.model, c));
 		if (lockedCandidate) {
 			const appliedThinking = clampThinking(lock.thinking, lockedCandidate.maxThinkingLevel);
 			return {
 				selectedModel: lockedCandidate.fullId,
 				selectedThinking: appliedThinking,
 				fallbacks: buildFallbacks(candidates, lockedCandidate.fullId, config, classification),
+				isChanceTrial: false,
 				explanation: {
 					summary: `locked to ${lockedCandidate.fullId} · ${appliedThinking}`,
 					codes: ["manual_lock_applied"],
@@ -50,40 +52,57 @@ export function decideRoute(input: RoutingDecisionInput): RouteDecision | undefi
 		}
 	}
 
-	const scores = candidates.map((candidate) => scoreCandidate(candidate, input));
+	// Annotate candidates with scoring data
+	const annotated = annotateCandidatesWithScores(candidates, input);
+
+	const scores = annotated.map((candidate) => scoreCandidate(candidate, input));
 	scores.sort(
 		(a, b) => b.score - a.score || compareMultiplier(a.multiplier, b.multiplier) || a.model.localeCompare(b.model),
 	);
 	const best = scores[0];
-	if (!best) {
-		return undefined;
-	}
+	if (!best) return undefined;
 
-	const selected = candidates.find((candidate) => candidate.fullId === best.model);
-	if (!selected) {
-		return undefined;
-	}
+	const selected = annotated.find((c) => c.fullId === best.model);
+	if (!selected) return undefined;
 
 	const selectedThinking = clampThinking(resolveRequestedThinking(config, classification), selected.maxThinkingLevel);
-	const explanation = buildExplanation(
-		selected,
-		selectedThinking,
-		best,
-		scores.slice(0, 3),
-		classification,
-		config,
-		usage,
-	);
+	const isChanceTrial = selected.isChanceTrialCandidate ?? false;
+	const explanation = buildExplanation(selected, selectedThinking, best, scores.slice(0, 3), classification, config, usage);
 
 	return {
 		selectedModel: selected.fullId,
 		selectedThinking,
-		fallbacks: scores.slice(1, 4).map((score) => score.model),
+		fallbacks: scores.slice(1, 4).map((s) => s.model),
+		isChanceTrial,
 		explanation,
 	};
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: candidate scoring intentionally combines multiple weighted routing signals.
+// ── Scoring annotation ────────────────────────────────────────────────────────
+
+function annotateCandidatesWithScores(
+	candidates: NormalizedRouteCandidate[],
+	input: RoutingDecisionInput,
+): NormalizedRouteCandidate[] {
+	const { config, scoreStore } = input;
+	if (!scoreStore) return candidates;
+
+	return candidates.map((candidate) => {
+		const modelKey = toModelKey(candidate.fullId);
+		const { adjustment, record } = getScoreAdjustment(modelKey, scoreStore, config.scoring);
+		const { penalised, isChanceTrial } = shouldPenalise(record, config.scoring);
+
+		return {
+			...candidate,
+			scoreAdjustment: penalised ? -(config.scoring.penaltyPerFix * 3) : adjustment,
+			isChanceTrialCandidate: isChanceTrial,
+		};
+	});
+}
+
+// ── Candidate scoring ─────────────────────────────────────────────────────────
+
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: candidate scoring combines multiple weighted routing signals intentionally.
 function scoreCandidate(candidate: NormalizedRouteCandidate, input: RoutingDecisionInput): RouteCandidateScore {
 	const reasons: string[] = [];
 	let score = 0;
@@ -92,22 +111,26 @@ function scoreCandidate(candidate: NormalizedRouteCandidate, input: RoutingDecis
 	const multiplier = resolveModelMultiplier(config, candidate);
 	const maxMultiplier = resolveMaxMultiplier(config, classification.intent);
 
+	// Explicit ranking (user-defined order)
 	const rankingIndex = config.models.ranked.findIndex((entry) => matchesModelRef(entry, candidate));
 	if (rankingIndex >= 0) {
 		score += Math.max(30 - rankingIndex * 3, 3);
 		reasons.push(`rank:${rankingIndex + 1}`);
 	}
 
+	// Explicit per-intent preferred models
 	if (intentPolicy?.preferredModels?.some((entry) => matchesModelRef(entry, candidate))) {
 		score += 28;
 		reasons.push("intent-model");
 	}
 
+	// Per-intent preferred provider
 	if (intentPolicy?.preferredProviders?.includes(candidate.provider)) {
 		score += 14;
 		reasons.push("intent-provider");
 	}
 
+	// Tier alignment
 	const tierDelta = Math.abs(tierOrder(candidate.tier) - tierOrder(classification.recommendedTier));
 	if (tierDelta === 0) {
 		score += 18;
@@ -119,6 +142,7 @@ function scoreCandidate(candidate: NormalizedRouteCandidate, input: RoutingDecis
 		score -= 8;
 	}
 
+	// Thinking capability fit
 	if (supportsRequestedThinking(candidate.maxThinkingLevel, resolveRequestedThinking(config, classification))) {
 		score += 6;
 		reasons.push("thinking-fit");
@@ -126,24 +150,13 @@ function scoreCandidate(candidate: NormalizedRouteCandidate, input: RoutingDecis
 		score -= 5;
 	}
 
-	if (classification.intent === "design" && candidate.tags.includes("design")) {
-		score += 12;
-		reasons.push("design-fit");
-	}
-
-	if (
-		["architecture", "debugging", "autonomous", "refactor"].includes(classification.intent) &&
-		candidate.tags.includes("architecture")
-	) {
-		score += 10;
-		reasons.push("reasoning-fit");
-	}
-
+	// Sticky model (avoid thrashing)
 	if (currentModel && currentModel === candidate.fullId && config.stickyTurns > 0) {
 		score += 5;
 		reasons.push("sticky");
 	}
 
+	// Provider quota reserve
 	const reserve = config.providerReserves[candidate.provider];
 	const providerQuota = usage?.providers[candidate.provider];
 	if (reserve && shouldApplyReserve(reserve.applyToTiers, candidate.tier)) {
@@ -160,22 +173,24 @@ function scoreCandidate(candidate: NormalizedRouteCandidate, input: RoutingDecis
 		}
 	}
 
+	// Risk alignment
 	if (classification.risk === "high" && (candidate.tier === "premium" || candidate.tier === "peak")) {
 		score += 8;
 		reasons.push("risk-fit");
 	}
 
+	// Cheap-tier boost for quick tasks
 	if (classification.intent === "quick-qna" && candidate.tier === "cheap") {
 		score += 8;
 		reasons.push("cheap-fit");
 	}
 
+	// Context window fit
 	const contextAdjustment = scoreContextWindow(candidate.contextWindow, classification.contextBreadth);
 	score += contextAdjustment.score;
-	if (contextAdjustment.reason) {
-		reasons.push(contextAdjustment.reason);
-	}
+	if (contextAdjustment.reason) reasons.push(contextAdjustment.reason);
 
+	// Cost multiplier scoring
 	if (typeof multiplier === "number") {
 		if (multiplier === 0) {
 			score += 12;
@@ -210,13 +225,23 @@ function scoreCandidate(candidate: NormalizedRouteCandidate, input: RoutingDecis
 		}
 	}
 
-	return {
-		model: candidate.fullId,
-		score,
-		reasons,
-		multiplier,
-	};
+	// SwampCastle evidence score adjustment
+	if (typeof candidate.scoreAdjustment === "number") {
+		score += candidate.scoreAdjustment;
+		if (candidate.scoreAdjustment > 0) reasons.push("score-boosted");
+		else if (candidate.scoreAdjustment < 0) reasons.push("score-penalised");
+	}
+
+	// Chance trial — restore score so the candidate can actually win
+	if (candidate.isChanceTrialCandidate) {
+		score += config.scoring.penaltyPerFix * 3;
+		reasons.push("chance-trial");
+	}
+
+	return { model: candidate.fullId, score, reasons, multiplier };
 }
+
+// ── Explanation builder ───────────────────────────────────────────────────────
 
 function buildExplanation(
 	selected: NormalizedRouteCandidate,
@@ -229,53 +254,31 @@ function buildExplanation(
 ): RouteExplanation {
 	const requestedThinking = classification.recommendedThinking;
 	const codes = new Set<RouteExplanation["codes"][number]>();
+
 	for (const reason of best.reasons) {
-		if (reason === "design-fit") {
-			codes.add("intent_design_bias");
-		}
-		if (reason === "reasoning-fit") {
-			codes.add("intent_architecture_bias");
-		}
-		if (reason === "sticky") {
-			codes.add("current_model_sticky");
-		}
-		if (reason === "reserve-ok") {
-			codes.add("premium_allowed");
-		}
-		if (reason === "quota-unknown") {
-			codes.add("quota_unknown");
-		}
-		if (reason === "cost-free") {
-			codes.add("cost_free_bias");
-		}
-		if (reason === "cost-low") {
-			codes.add("cost_low_bias");
-		}
-		if (reason === "cost-over-budget") {
-			codes.add("cost_over_budget");
-		}
-		if (reason === "context-fit") {
-			codes.add("context_window_fit");
-		}
+		if (reason === "sticky") codes.add("current_model_sticky");
+		if (reason === "reserve-ok") codes.add("premium_allowed");
+		if (reason === "quota-unknown") codes.add("quota_unknown");
+		if (reason === "cost-free") codes.add("cost_free_bias");
+		if (reason === "cost-low") codes.add("cost_low_bias");
+		if (reason === "cost-over-budget") codes.add("cost_over_budget");
+		if (reason === "context-fit") codes.add("context_window_fit");
+		if (reason === "score-boosted") codes.add("score_boosted");
+		if (reason === "score-penalised") codes.add("score_penalised");
+		if (reason === "chance-trial") codes.add("chance_trial");
 	}
-	if (topCandidates.some((candidate) => candidate.reasons.includes("cost-over-budget"))) {
-		codes.add("cost_budget_applied");
-	}
-	if (topCandidates.some((candidate) => candidate.reasons.includes("reserve-low"))) {
-		codes.add("premium_reserved");
-	}
-	if (selectedThinking !== requestedThinking) {
-		codes.add("thinking_clamped");
-	}
-	if (selected.fallbackGroups.length > 0) {
-		codes.add("fallback_group_applied");
-	}
+	if (topCandidates.some((c) => c.reasons.includes("cost-over-budget"))) codes.add("cost_budget_applied");
+	if (topCandidates.some((c) => c.reasons.includes("reserve-low"))) codes.add("premium_reserved");
+	if (selectedThinking !== requestedThinking) codes.add("thinking_clamped");
+	if (selected.fallbackGroups.length > 0) codes.add("fallback_group_applied");
 
 	const selectedMultiplier = best.multiplier;
 	const maxMultiplier = resolveMaxMultiplier(config, classification.intent);
 
+	const chanceLabel = selected.isChanceTrialCandidate ? " [chance]" : "";
+
 	return {
-		summary: `${selected.fullId} · ${selectedThinking} · ${classification.intent} · ${classification.recommendedTier}${typeof selectedMultiplier === "number" ? ` · x${selectedMultiplier}` : ""}`,
+		summary: `${selected.fullId}${chanceLabel} · ${selectedThinking} · ${classification.intent} · ${classification.recommendedTier}${typeof selectedMultiplier === "number" ? ` · x${selectedMultiplier}` : ""}`,
 		codes: Array.from(codes),
 		classification,
 		clampedThinking:
@@ -283,14 +286,13 @@ function buildExplanation(
 		quota: buildQuotaSummary(usage),
 		cost:
 			typeof selectedMultiplier === "number" || typeof maxMultiplier === "number"
-				? {
-						selectedMultiplier,
-						maxMultiplier,
-					}
+				? { selectedMultiplier, maxMultiplier }
 				: undefined,
 		candidates: topCandidates,
 	};
 }
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
 
 function buildFallbacks(
 	candidates: NormalizedRouteCandidate[],
@@ -299,14 +301,12 @@ function buildFallbacks(
 	classification: PromptRouteClassification,
 ): string[] {
 	return candidates
-		.filter((candidate) => candidate.fullId !== excludedModel)
+		.filter((c) => c.fullId !== excludedModel)
 		.sort((a, b) => tierOrder(b.tier) - tierOrder(a.tier) || a.fullId.localeCompare(b.fullId))
-		.filter((candidate) => !config.models.excluded.some((entry) => matchesModelRef(entry, candidate)))
-		.filter(
-			(candidate) => matchesTier(candidate.tier, classification.recommendedTier) || candidate.fallbackGroups.length > 0,
-		)
+		.filter((c) => !config.models.excluded.some((entry) => matchesModelRef(entry, c)))
+		.filter((c) => matchesTier(c.tier, classification.recommendedTier) || c.fallbackGroups.length > 0)
 		.slice(0, 3)
-		.map((candidate) => candidate.fullId);
+		.map((c) => c.fullId);
 }
 
 export function resolveRequestedThinking(
@@ -321,9 +321,7 @@ function resolveModelMultiplier(
 	candidate: Pick<NormalizedRouteCandidate, "fullId" | "modelId">,
 ): number | undefined {
 	const direct = config.costs.modelMultipliers[candidate.fullId];
-	if (typeof direct === "number") {
-		return direct;
-	}
+	if (typeof direct === "number") return direct;
 	const byModelId = config.costs.modelMultipliers[candidate.modelId];
 	return typeof byModelId === "number" ? byModelId : undefined;
 }
@@ -333,15 +331,9 @@ function resolveMaxMultiplier(config: AdaptiveRoutingConfig, intent: RouteIntent
 }
 
 function compareMultiplier(left: number | undefined, right: number | undefined): number {
-	if (left === right) {
-		return 0;
-	}
-	if (left === undefined) {
-		return 1;
-	}
-	if (right === undefined) {
-		return -1;
-	}
+	if (left === right) return 0;
+	if (left === undefined) return 1;
+	if (right === undefined) return -1;
 	return left - right;
 }
 
@@ -349,25 +341,15 @@ function scoreContextWindow(
 	contextWindow: number | undefined,
 	contextBreadth: PromptRouteClassification["contextBreadth"],
 ): { score: number; reason?: string } {
-	if (!contextWindow) {
-		return { score: 0 };
-	}
+	if (!contextWindow) return { score: 0 };
 	if (contextBreadth === "large") {
-		if (contextWindow >= 500_000) {
-			return { score: 12, reason: "context-fit" };
-		}
-		if (contextWindow >= 200_000) {
-			return { score: 4, reason: "context-fit" };
-		}
+		if (contextWindow >= 500_000) return { score: 12, reason: "context-fit" };
+		if (contextWindow >= 200_000) return { score: 4, reason: "context-fit" };
 		return { score: -8 };
 	}
 	if (contextBreadth === "medium") {
-		if (contextWindow >= 200_000) {
-			return { score: 5, reason: "context-fit" };
-		}
-		if (contextWindow >= 128_000) {
-			return { score: 2 };
-		}
+		if (contextWindow >= 200_000) return { score: 5, reason: "context-fit" };
+		if (contextWindow >= 128_000) return { score: 2 };
 		return { score: -3 };
 	}
 	return { score: 0 };
@@ -383,9 +365,7 @@ function supportsRequestedThinking(maxSupported: RouteThinkingLevel, requested: 
 }
 
 function buildQuotaSummary(usage?: ProviderUsageState): Record<string, RouteQuotaSnapshot> | undefined {
-	if (!usage) {
-		return undefined;
-	}
+	if (!usage) return undefined;
 	const summary: Record<string, RouteQuotaSnapshot> = {};
 	for (const [provider, state] of Object.entries(usage.providers)) {
 		summary[provider] = { confidence: state.confidence, remainingPct: state.remainingPct };
@@ -399,14 +379,10 @@ function shouldApplyReserve(applyToTiers: RouteTier[] | undefined, recommendedTi
 
 function tierOrder(tier: RouteTier): number {
 	switch (tier) {
-		case "cheap":
-			return 0;
-		case "balanced":
-			return 1;
-		case "premium":
-			return 2;
-		case "peak":
-			return 3;
+		case "cheap": return 0;
+		case "balanced": return 1;
+		case "premium": return 2;
+		case "peak": return 3;
 	}
 }
 
@@ -415,15 +391,21 @@ function matchesTier(candidateTier: RouteTier, requestedTier: RouteTier): boolea
 }
 
 export function buildFallbackClassification(intent: RouteIntent): PromptRouteClassification {
+	const isHeavy = ["design", "architecture", "autonomous", "migration"].includes(intent);
+	const isCheap = ["quick-qna", "explain"].includes(intent);
 	return {
 		intent,
-		complexity: intent === "design" || intent === "architecture" ? 4 : 3,
-		risk: intent === "quick-qna" ? "low" : "medium",
-		expectedTurns: intent === "quick-qna" ? "one" : "few",
-		toolIntensity: intent === "implementation" || intent === "debugging" ? "high" : "medium",
-		contextBreadth: intent === "architecture" ? "large" : "medium",
-		recommendedTier: intent === "design" || intent === "architecture" ? "premium" : "balanced",
-		recommendedThinking: intent === "quick-qna" ? "minimal" : "medium",
+		complexity: isHeavy ? 4 : isCheap ? 1 : 3,
+		risk: isCheap ? "low" : isHeavy ? "high" : "medium",
+		expectedTurns: isCheap ? "one" : isHeavy ? "many" : "few",
+		toolIntensity: ["implementation", "debugging", "test-writing", "migration", "autonomous"].includes(intent)
+			? "high"
+			: isCheap
+				? "low"
+				: "medium",
+		contextBreadth: ["architecture", "autonomous"].includes(intent) ? "large" : isCheap ? "small" : "medium",
+		recommendedTier: isHeavy ? "premium" : isCheap ? "cheap" : "balanced",
+		recommendedThinking: isCheap ? "minimal" : isHeavy ? "high" : "medium",
 		confidence: 0.35,
 		reason: "Fallback classification applied.",
 		classifierMode: "heuristic",

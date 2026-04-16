@@ -7,6 +7,7 @@ import type {
 	AdaptiveRoutingMode,
 	AdaptiveRoutingModelPreferences,
 	AdaptiveRoutingPrivacyLevel,
+	AdaptiveRoutingScoringConfig,
 	AdaptiveRoutingTelemetryConfig,
 	AdaptiveRoutingTelemetryMode,
 	FallbackGroupPolicy,
@@ -20,14 +21,19 @@ import type {
 
 const ROUTE_INTENTS = new Set<RouteIntent>([
 	"quick-qna",
+	"explain",
 	"planning",
 	"research",
 	"implementation",
+	"test-writing",
 	"debugging",
-	"design",
-	"architecture",
 	"review",
 	"refactor",
+	"migration",
+	"optimization",
+	"documentation",
+	"design",
+	"architecture",
 	"autonomous",
 ]);
 
@@ -76,6 +82,7 @@ function normalizeAdaptiveRoutingConfigWithWarnings(raw: unknown): NormalizedCon
 			providerReserves: normalizeProviderReserves(cfg.providerReserves, fallback.providerReserves),
 			fallbackGroups: normalizeFallbackGroups(cfg.fallbackGroups, fallback.fallbackGroups),
 			delegatedRouting: normalizeDelegatedRouting(cfg.delegatedRouting, fallback.delegatedRouting, warnings),
+			scoring: normalizeScoringConfig(cfg.scoring, fallback.scoring, warnings),
 		},
 		warnings,
 	};
@@ -346,6 +353,30 @@ function normalizeDelegatedCategoryPolicy(
 	if (fallbackGroup) result.fallbackGroup = fallbackGroup;
 	if (defaultThinking) result.defaultThinking = defaultThinking;
 	return result;
+}
+
+function normalizeScoringConfig(
+	value: unknown,
+	fallback: AdaptiveRoutingScoringConfig,
+	warnings?: string[],
+): AdaptiveRoutingScoringConfig {
+	if (!value || typeof value !== "object") {
+		if (value !== undefined) warnings?.push("Skipped invalid scoring section; using fallback.");
+		return { ...fallback };
+	}
+	const cfg = value as Record<string, unknown>;
+	return {
+		penaltyThreshold: normalizePositiveInt(cfg.penaltyThreshold, fallback.penaltyThreshold),
+		headStart: normalizePositiveInt(cfg.headStart, fallback.headStart),
+		penaltyPerFix: normalizePositiveInt(cfg.penaltyPerFix, fallback.penaltyPerFix),
+		chanceTrialRate: normalizePositiveInt(cfg.chanceTrialRate, fallback.chanceTrialRate),
+		maxEvidenceEntries: normalizePositiveInt(cfg.maxEvidenceEntries, fallback.maxEvidenceEntries),
+	};
+}
+
+function normalizePositiveInt(value: unknown, fallback: number): number {
+	const parsed = Math.round(Number(value));
+	return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 function normalizeStickyTurns(value: unknown, fallback: number): number {

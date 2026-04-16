@@ -1,3 +1,4 @@
+import { DEFAULT_SCORING_CONFIG } from "./defaults.js";
 import type {
 	AdaptiveRoutingConfig,
 	DelegatedCategoryPolicy,
@@ -16,7 +17,7 @@ export interface InitModelInfo {
 type ModelTier = "cheap" | "balanced" | "premium" | "peak";
 
 type GeneratedInitConfig = Pick<AdaptiveRoutingConfig, "mode" | "delegatedRouting"> &
-	Partial<Pick<AdaptiveRoutingConfig, "routerModels" | "stickyTurns" | "models" | "costs" | "intents">>;
+	Partial<Pick<AdaptiveRoutingConfig, "routerModels" | "stickyTurns" | "models" | "costs" | "intents" | "scoring">>;
 
 function classifyModelTier(model: InitModelInfo): ModelTier {
 	const id = model.id.toLowerCase();
@@ -135,6 +136,58 @@ const COPILOT_MODEL_MULTIPLIERS: Record<string, number> = {
 };
 
 const COPILOT_INTENT_POLICIES: Record<string, IntentRoutingPolicy> = {
+	explain: {
+		preferredTier: "cheap",
+		defaultThinking: "minimal",
+		preferredModels: [
+			"github-copilot/gpt-5-mini",
+			"github-copilot/gemini-3-flash-preview",
+			"github-copilot/claude-haiku-4.5",
+			"github-copilot/gpt-4.1",
+		],
+		maxMultiplier: 0.33,
+	},
+	"test-writing": {
+		preferredTier: "balanced",
+		defaultThinking: "medium",
+		preferredModels: [
+			"github-copilot/claude-sonnet-4.6",
+			"github-copilot/gemini-3.1-pro-preview",
+			"github-copilot/gpt-5.3-codex",
+		],
+		maxMultiplier: 1,
+	},
+	migration: {
+		preferredTier: "premium",
+		defaultThinking: "high",
+		preferredModels: [
+			"github-copilot/claude-sonnet-4.6",
+			"github-copilot/gemini-3.1-pro-preview",
+			"github-copilot/gpt-5.4",
+		],
+		maxMultiplier: 1,
+	},
+	optimization: {
+		preferredTier: "premium",
+		defaultThinking: "high",
+		preferredModels: [
+			"github-copilot/claude-sonnet-4.6",
+			"github-copilot/gemini-3.1-pro-preview",
+			"github-copilot/gpt-5.3-codex",
+			"github-copilot/gpt-5.4",
+		],
+		maxMultiplier: 1,
+	},
+	documentation: {
+		preferredTier: "balanced",
+		defaultThinking: "medium",
+		preferredModels: [
+			"github-copilot/claude-sonnet-4.6",
+			"github-copilot/gpt-5-mini",
+			"github-copilot/gemini-3-flash-preview",
+		],
+		maxMultiplier: 0.33,
+	},
 	"quick-qna": {
 		preferredTier: "cheap",
 		defaultThinking: "minimal",
@@ -401,6 +454,7 @@ function buildCopilotAwareConfig(availableModels: InitModelInfo[]): GeneratedIni
 			defaultMaxMultiplier: 1,
 		},
 		intents,
+		scoring: DEFAULT_SCORING_CONFIG,
 		delegatedRouting: {
 			enabled: true,
 			categories,

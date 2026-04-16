@@ -1,6 +1,7 @@
 import type {
 	AdaptiveRoutingConfig,
 	AdaptiveRoutingExplanationCode,
+	AdaptiveRoutingScoringConfig,
 	DelegatedRoutingConfig,
 	FallbackGroupPolicy,
 	IntentRoutingPolicy,
@@ -8,8 +9,6 @@ import type {
 } from "./types.js";
 
 export const ADAPTIVE_ROUTING_EXPLANATION_CODES: AdaptiveRoutingExplanationCode[] = [
-	"intent_design_bias",
-	"intent_architecture_bias",
 	"premium_allowed",
 	"premium_reserved",
 	"quota_low",
@@ -22,10 +21,18 @@ export const ADAPTIVE_ROUTING_EXPLANATION_CODES: AdaptiveRoutingExplanationCode[
 	"cost_budget_applied",
 	"cost_over_budget",
 	"context_window_fit",
+	"score_penalised",
+	"score_boosted",
+	"chance_trial",
 ];
 
 export const DEFAULT_INTENT_POLICIES: Record<RouteIntent, IntentRoutingPolicy> = {
 	"quick-qna": {
+		preferredTier: "cheap",
+		defaultThinking: "minimal",
+		fallbackGroup: "cheap-router",
+	},
+	explain: {
 		preferredTier: "cheap",
 		defaultThinking: "minimal",
 		fallbackGroup: "cheap-router",
@@ -42,29 +49,43 @@ export const DEFAULT_INTENT_POLICIES: Record<RouteIntent, IntentRoutingPolicy> =
 		preferredTier: "balanced",
 		defaultThinking: "medium",
 	},
+	"test-writing": {
+		preferredTier: "balanced",
+		defaultThinking: "medium",
+	},
 	debugging: {
 		preferredTier: "premium",
 		defaultThinking: "high",
 	},
+	review: {
+		preferredTier: "premium",
+		defaultThinking: "high",
+	},
+	refactor: {
+		preferredTier: "premium",
+		defaultThinking: "high",
+	},
+	migration: {
+		preferredTier: "premium",
+		defaultThinking: "high",
+	},
+	optimization: {
+		preferredTier: "premium",
+		defaultThinking: "high",
+	},
+	documentation: {
+		preferredTier: "balanced",
+		defaultThinking: "medium",
+	},
 	design: {
 		preferredTier: "premium",
 		defaultThinking: "high",
-		preferredProviders: ["anthropic"],
 		fallbackGroup: "design-premium",
 	},
 	architecture: {
 		preferredTier: "peak",
 		defaultThinking: "xhigh",
-		preferredProviders: ["openai"],
 		fallbackGroup: "peak-reasoning",
-	},
-	review: {
-		preferredTier: "balanced",
-		defaultThinking: "medium",
-	},
-	refactor: {
-		preferredTier: "premium",
-		defaultThinking: "high",
 	},
 	autonomous: {
 		preferredTier: "peak",
@@ -101,6 +122,14 @@ export const DEFAULT_DELEGATED_ROUTING_CONFIG: DelegatedRoutingConfig = {
 		"peak-reasoning": { taskClass: "peak", defaultThinking: "xhigh" },
 		"visual-engineering": { fallbackGroup: "design-premium", defaultThinking: "high" },
 	},
+};
+
+export const DEFAULT_SCORING_CONFIG: AdaptiveRoutingScoringConfig = {
+	penaltyThreshold: 3,
+	headStart: 2,
+	penaltyPerFix: 8,
+	chanceTrialRate: 10,
+	maxEvidenceEntries: 100,
 };
 
 export const DEFAULT_ADAPTIVE_ROUTING_CONFIG: AdaptiveRoutingConfig = {
@@ -148,4 +177,5 @@ export const DEFAULT_ADAPTIVE_ROUTING_CONFIG: AdaptiveRoutingConfig = {
 	},
 	fallbackGroups: DEFAULT_FALLBACK_GROUPS,
 	delegatedRouting: DEFAULT_DELEGATED_ROUTING_CONFIG,
+	scoring: DEFAULT_SCORING_CONFIG,
 };
