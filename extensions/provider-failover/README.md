@@ -109,4 +109,5 @@ Generated configs look like this:
 - wrapper model capabilities are conservative: the extension uses the minimum context window/output limit and the shared input types across the configured backends
 - default config generation prefers active routing providers (`openrouter`, `zai`) before the original providers (`openai-codex`, `anthropic`, `google`, `xai`)
 - failover only happens before output starts; once a provider has begun streaming, the extension will not hop to another provider mid-answer
+- the synthetic `failover` provider uses internal placeholder `baseUrl` and `apiKey` values only to satisfy pi's provider registration validation; real requests still use the matched downstream provider credentials
 - non-rate-limit failures are passed through unchanged

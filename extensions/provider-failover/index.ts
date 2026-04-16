@@ -18,6 +18,7 @@ import {
 	orderCandidates,
 	pipeFailoverStream,
 } from "./lib/failover-core.mjs";
+import { buildFailoverProviderConfig } from "./lib/provider-registration.mjs";
 import {
 	formatGenerationPlan,
 	inspectGenerationPlan,
@@ -255,11 +256,13 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			pi.registerProvider(FAILOVER_PROVIDER_NAME, {
-				api: FAILOVER_API as Api,
-				models: registeredModels,
-				streamSimple: (model, context, options) => streamWithFailover(model as Model<Api>, context, options),
-			});
+			pi.registerProvider(
+				FAILOVER_PROVIDER_NAME,
+				buildFailoverProviderConfig(
+					registeredModels,
+					(model, context, options) => streamWithFailover(model as Model<Api>, context, options),
+				),
+			);
 
 			if (registrationErrors.length > 0) {
 				ctx.ui.notify(`provider-failover: ${registrationErrors.join(" ")}`, "warning");
