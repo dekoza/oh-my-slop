@@ -25,14 +25,12 @@ Then reload pi with `/reload`.
 
 ## Configure
 
-The extension expects exactly one config file:
+The extension persists its runtime files under pi's agent data directory:
 
-- `config.json` in the same directory as `index.ts`
+- `getAgentDir()/extensions/provider-failover/config.json`
+- `getAgentDir()/extensions/provider-failover/state.json`
 
-Typical paths:
-
-- project-local install: `.pi/extensions/provider-failover/config.json`
-- global install: `~/.pi/agent/extensions/provider-failover/config.json`
+On startup, the extension migrates legacy colocated files from the extension directory into that persistent location if needed.
 
 If `config.json` does not exist, the extension generates it automatically on startup by:
 
@@ -63,7 +61,7 @@ All listed providers must already be authenticated through `/login` or API keys,
 
 1. Install the extension in `.pi/extensions/provider-failover/`.
 2. Reload pi.
-3. Let the extension generate `.pi/extensions/provider-failover/config.json`.
+3. Let the extension generate its persistent config file under `getAgentDir()/extensions/provider-failover/config.json`.
 4. Open `/model` and select one of the generated `failover/...` models.
 5. Work normally.
 6. If the Copilot route responds with a 429-style failure before streaming output, the extension retries the same prompt on the matched original provider.
@@ -102,7 +100,7 @@ Generated configs look like this:
 - `/failover-reset` - clear sticky routes for all failover models
 - `/failover-reset <model-id>` - clear the sticky route for one failover model
 - `/failover-show-plan` - show the current provider preference order, matched Copilot models, and unmatched Copilot models before changing config
-- `/failover-regenerate-config` - rebuild `config.json` from the models currently available in your pi setup and reload the failover provider
+- `/failover-regenerate-config` - rebuild the persistent config file from the models currently available in your pi setup and reload the failover provider
 
 ## Notes
 

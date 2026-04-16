@@ -6,7 +6,7 @@ import {
 	type Model,
 	type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { access, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
@@ -24,6 +24,12 @@ import {
 	inspectGenerationPlan,
 	resolvePreferredProviders,
 } from "./lib/default-config.mjs";
+import {
+	ensureFailoverStoragePath,
+	getFailoverConfigPath,
+	getFailoverStatePath,
+	migrateLegacyFile,
+} from "./lib/storage.mjs";
 
 interface FailoverRouteConfig {
 	provider: string;
@@ -59,8 +65,10 @@ interface SkippedCandidate {
 	reason: string;
 }
 
-const CONFIG_PATH = fileURLToPath(new URL("./config.json", import.meta.url));
-const STATE_PATH = fileURLToPath(new URL("./state.json", import.meta.url));
+const LEGACY_CONFIG_PATH = fileURLToPath(new URL("./config.json", import.meta.url));
+const LEGACY_STATE_PATH = fileURLToPath(new URL("./state.json", import.meta.url));
+const CONFIG_PATH = getFailoverConfigPath(getAgentDir());
+const STATE_PATH = getFailoverStatePath(getAgentDir());
 
 function zeroUsage() {
 	return {
@@ -97,6 +105,8 @@ async function fileExists(path: string): Promise<boolean> {
 }
 
 async function loadState(): Promise<Map<string, string>> {
+	migrateLegacyFile(LEGACY_STATE_PATH, STATE_PATH);
+
 	if (!(await fileExists(STATE_PATH))) {
 		return new Map();
 	}
@@ -120,6 +130,7 @@ async function loadState(): Promise<Map<string, string>> {
 }
 
 async function saveState(stickyRoutes: Map<string, string>): Promise<void> {
+	ensureFailoverStoragePath(STATE_PATH);
 	await writeFile(
 		STATE_PATH,
 		`${JSON.stringify({ stickyRoutes: Object.fromEntries(stickyRoutes) }, null, 2)}\n`,
@@ -128,6 +139,8 @@ async function saveState(stickyRoutes: Map<string, string>): Promise<void> {
 }
 
 async function loadConfig(): Promise<{ path: string; config: FailoverFileConfig } | undefined> {
+	migrateLegacyFile(LEGACY_CONFIG_PATH, CONFIG_PATH);
+
 	if (!(await fileExists(CONFIG_PATH))) {
 		return undefined;
 	}
@@ -153,6 +166,7 @@ async function generateDefaultConfig(
 		);
 	}
 
+	ensureFailoverStoragePath(CONFIG_PATH);
 	await writeFile(CONFIG_PATH, `${JSON.stringify(generatedConfig, null, 2)}\n`, "utf8");
 	ctx.ui.notify(
 		`provider-failover: generated default config at ${CONFIG_PATH} using provider plan ${plan.preferredProviders.join(" -> ")}`,
