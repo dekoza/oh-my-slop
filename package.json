@@ -1,0 +1,24 @@
+{
+  "name": "oh-my-slop",
+  "version": "0.1.0",
+  "description": "Pi package with opinionated skills and extensions for coding agents.",
+  "private": true,
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "skills",
+    "extensions"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/*/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*"
+  }
+}

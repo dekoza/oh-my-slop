@@ -41,6 +41,21 @@ Case in point: The agent messed up two times while creating this repo (deleting 
 
 These skills are built for [OpenCode](https://github.com/opencode-ai/opencode) agents. Drop the skill directories into your OpenCode skills path and reference them in your agent configuration.
 
+### Install with pi
+
+This repository now exposes a root `pi` package manifest, so pi can discover both the bundled skills and the nested extension entrypoints after installation.
+
+```bash
+pi install git:github.com/dekoza/dekoza-skills
+# or from a local checkout
+pi install .
+```
+
+After installation, pi will load:
+
+- skills from `./skills`
+- extensions from `./extensions/*/index.ts`
+
 Each skill follows the same structure:
 
 ```
