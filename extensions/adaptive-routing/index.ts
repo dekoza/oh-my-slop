@@ -430,7 +430,12 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 					return;
 				}
 				case "scores":
-					await openOverlay(ctx, formatScoreReport(runtime.scoreStore));
+					if (rest[0]?.toLowerCase() === "sync") {
+						syncScoresToSwampCastle(pi, runtime.scoreStore);
+						ctx.ui.notify("SwampCastle sync request queued — see injected message.", "info");
+					} else {
+						await openOverlay(ctx, formatScoreReport(runtime.scoreStore));
+					}
 					return;
 				case "stats":
 					await openOverlay(ctx, formatStats(computeStats(readTelemetryEvents())));
@@ -446,6 +451,37 @@ export default function adaptiveRoutingExtension(pi: ExtensionAPI) {
 			}
 		},
 	});
+}
+
+// ── SwampCastle sync ──────────────────────────────────────────────────────────
+
+/**
+ * Injects a structured prompt that asks the agent to persist model scores to
+ * SwampCastle (wing: model-routing, room: scores). The extension cannot call
+ * MCP tools directly, so it delegates to the agent via sendUserMessage.
+ */
+function syncScoresToSwampCastle(pi: ExtensionAPI, store: ModelScoreStore): void {
+	const records = Object.values(store.scores).sort((a, b) => b.score - a.score);
+	const lines = [
+		"[adaptive-routing] Sync model routing scores to SwampCastle.",
+		"Wing: model-routing  Room: scores",
+		"",
+		"For each record below, call swampcastle_kg_add with:",
+		'  subject = modelKey, predicate = "routing_score", object = JSON snippet',
+		"",
+		"Records:",
+	];
+	for (const r of records) {
+		lines.push(
+			`  ${r.modelKey}: score=${r.score} fixCount=${r.fixCount} totalTrials=${r.totalTrials} updatedAt=${r.updatedAt}`,
+		);
+	}
+	lines.push("");
+	lines.push(`Store metadata: penaltyThreshold=${store.penaltyThreshold} headStart=${store.headStart} updatedAt=${store.updatedAt}`);
+	lines.push("");
+	lines.push("After writing all records, confirm with a brief summary.");
+
+	pi.sendUserMessage(lines.join("\n"));
 }
 
 // ── Apply decision ────────────────────────────────────────────────────────────
