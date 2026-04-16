@@ -54,7 +54,8 @@ pi install .
 After installation, pi will load:
 
 - skills from `./skills`
-- extensions from `./extensions/*/index.ts`
+- extensions from `./extensions/adaptive-routing/index.ts`
+- extensions from `./extensions/provider-failover/index.ts`
 
 Each skill follows the same structure:
 

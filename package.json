@@ -11,7 +11,8 @@
   ],
   "pi": {
     "extensions": [
-      "./extensions/*/index.ts"
+      "./extensions/adaptive-routing/index.ts",
+      "./extensions/provider-failover/index.ts"
     ],
     "skills": [
       "./skills"

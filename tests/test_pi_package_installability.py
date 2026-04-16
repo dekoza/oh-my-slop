@@ -18,10 +18,41 @@ def load_package_manifest() -> dict:
 
 def iter_package_extension_entrypoints() -> list[Path]:
     manifest = load_package_manifest()
-    patterns = manifest["pi"]["extensions"]
     entrypoints: list[Path] = []
-    for pattern in patterns:
-        entrypoints.extend(sorted(REPO_ROOT.glob(pattern.removeprefix("./"))))
+
+    for entry in manifest["pi"]["extensions"]:
+        resolved_entry = REPO_ROOT / entry.removeprefix("./")
+
+        if resolved_entry.is_file():
+            entrypoints.append(resolved_entry)
+            continue
+
+        if resolved_entry.is_dir():
+            nested_manifest_path = resolved_entry / "package.json"
+            if nested_manifest_path.exists():
+                nested_manifest = json.loads(nested_manifest_path.read_text(encoding="utf-8"))
+                nested_entries = nested_manifest.get("pi", {}).get("extensions", [])
+                for nested_entry in nested_entries:
+                    nested_resolved = resolved_entry / nested_entry.removeprefix("./")
+                    if not nested_resolved.exists():
+                        raise AssertionError(
+                            f"Package manifest entry {entry!r} declares a missing nested extension {nested_entry!r}"
+                        )
+                    entrypoints.append(nested_resolved)
+                if nested_entries:
+                    continue
+
+            for candidate_name in ("index.ts", "index.js"):
+                candidate = resolved_entry / candidate_name
+                if candidate.exists():
+                    entrypoints.append(candidate)
+                    break
+            else:
+                raise AssertionError(f"Package manifest entry {entry!r} does not expose an extension entrypoint")
+            continue
+
+        raise AssertionError(f"Package manifest entry {entry!r} does not resolve to a file or directory")
+
     return entrypoints
 
 
