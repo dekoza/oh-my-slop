@@ -1,0 +1,22 @@
+wing: oh_my_slop
+rooms:
+- name: extensions
+  description: Files from extensions/
+  keywords:
+  - extensions
+- name: scripts
+  description: Files from scripts/
+  keywords:
+  - scripts
+- name: skills
+  description: Files from skills/
+  keywords:
+  - skills
+- name: testing
+  description: Files from tests/
+  keywords:
+  - testing
+  - tests
+- name: general
+  description: Files that don't fit other rooms
+  keywords: []
