@@ -7,11 +7,11 @@ import {
 	type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { existsSync, readFileSync } from "node:fs";
 import { access, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import {
-	FAILOVER_API,
 	FAILOVER_PROVIDER_NAME,
 	buildWrapperModel,
 	formatAttemptSummary,
@@ -30,10 +30,19 @@ import {
 	getFailoverStatePath,
 	migrateLegacyFile,
 } from "./lib/storage.mjs";
+import { buildBootstrapWrapperModel, buildPersistedWrapperSnapshot } from "./lib/bootstrap-models.mjs";
 
 interface FailoverRouteConfig {
 	provider: string;
 	model: string;
+}
+
+interface FailoverWrapperConfig {
+	reasoning: boolean;
+	input: string[];
+	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	contextWindow: number;
+	maxTokens: number;
 }
 
 interface FailoverModelConfig {
@@ -41,6 +50,7 @@ interface FailoverModelConfig {
 	name: string;
 	strategy: FailoverRouteConfig[];
 	sticky?: boolean;
+	wrapper?: FailoverWrapperConfig;
 }
 
 interface FailoverFileConfig {
@@ -149,6 +159,17 @@ async function loadConfig(): Promise<{ path: string; config: FailoverFileConfig 
 	return { path: CONFIG_PATH, config: validateConfig(rawConfig, CONFIG_PATH) };
 }
 
+function loadConfigSync(): { path: string; config: FailoverFileConfig } | undefined {
+	migrateLegacyFile(LEGACY_CONFIG_PATH, CONFIG_PATH);
+
+	if (!existsSync(CONFIG_PATH)) {
+		return undefined;
+	}
+
+	const rawConfig = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as unknown;
+	return { path: CONFIG_PATH, config: validateConfig(rawConfig, CONFIG_PATH) };
+}
+
 async function getGenerationPlan(ctx: ExtensionContext) {
 	const availableModels = await ctx.modelRegistry.getAvailable();
 	const preferredProviders = resolvePreferredProviders(availableModels);
@@ -159,20 +180,56 @@ async function generateDefaultConfig(
 	ctx: ExtensionContext,
 ): Promise<{ path: string; config: FailoverFileConfig; preferredProviders: string[] }> {
 	const plan = await getGenerationPlan(ctx);
-	const generatedConfig = { models: plan.matchedModels };
+	const generatedConfig = await hydrateWrapperMetadata({ models: plan.matchedModels }, ctx);
 	if (generatedConfig.models.length === 0) {
 		throw new Error(
 			`Could not generate ${CONFIG_PATH}. No GitHub Copilot models matched providers from this plan: ${plan.preferredProviders.join(", ")}.`,
 		);
 	}
 
-	ensureFailoverStoragePath(CONFIG_PATH);
-	await writeFile(CONFIG_PATH, `${JSON.stringify(generatedConfig, null, 2)}\n`, "utf8");
+	await saveConfig(generatedConfig);
 	ctx.ui.notify(
 		`provider-failover: generated default config at ${CONFIG_PATH} using provider plan ${plan.preferredProviders.join(" -> ")}`,
 		"info",
 	);
 	return { path: CONFIG_PATH, config: generatedConfig, preferredProviders: plan.preferredProviders };
+}
+
+async function saveConfig(config: FailoverFileConfig): Promise<void> {
+	ensureFailoverStoragePath(CONFIG_PATH);
+	await writeFile(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+}
+
+async function hydrateWrapperMetadata(config: FailoverFileConfig, ctx: ExtensionContext): Promise<FailoverFileConfig> {
+	const models: FailoverModelConfig[] = [];
+
+	for (const configuredModel of config.models) {
+		const backendModels = configuredModel.strategy.map((route) => ctx.modelRegistry.find(route.provider, route.model));
+		if (backendModels.some((model) => !model)) {
+			models.push(configuredModel);
+			continue;
+		}
+
+		try {
+			const wrapperModel = buildWrapperModel(
+				{ id: configuredModel.id, name: configuredModel.name },
+				backendModels as Model<Api>[],
+			) as Model<Api>;
+			models.push({ ...configuredModel, wrapper: buildPersistedWrapperSnapshot(wrapperModel) });
+		} catch {
+			models.push(configuredModel);
+		}
+	}
+
+	return { models };
+}
+
+function wrappersEqual(left: FailoverWrapperConfig | undefined, right: FailoverWrapperConfig | undefined): boolean {
+	if (!left || !right) {
+		return left === right;
+	}
+
+	return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function validateConfig(rawConfig: unknown, sourcePath: string): FailoverFileConfig {
@@ -200,6 +257,7 @@ function validateModelConfig(rawModel: unknown, sourcePath: string, index: numbe
 		name?: unknown;
 		strategy?: unknown;
 		sticky?: unknown;
+		wrapper?: unknown;
 	};
 
 	if (typeof model.id !== "string" || model.id.trim() === "") {
@@ -218,7 +276,63 @@ function validateModelConfig(rawModel: unknown, sourcePath: string, index: numbe
 		id: model.id,
 		name: model.name,
 		sticky: model.sticky !== false,
+		wrapper: validateWrapperConfig(model.wrapper),
 		strategy: model.strategy.map((route, routeIndex) => validateRouteConfig(route, sourcePath, model.id, routeIndex)),
+	};
+}
+
+function validateWrapperConfig(rawWrapper: unknown): FailoverWrapperConfig | undefined {
+	if (!rawWrapper || typeof rawWrapper !== "object" || Array.isArray(rawWrapper)) {
+		return undefined;
+	}
+
+	const wrapper = rawWrapper as {
+		reasoning?: unknown;
+		input?: unknown;
+		cost?: unknown;
+		contextWindow?: unknown;
+		maxTokens?: unknown;
+	};
+
+	if (typeof wrapper.reasoning !== "boolean") {
+		return undefined;
+	}
+
+	if (!Array.isArray(wrapper.input) || wrapper.input.some((item) => typeof item !== "string")) {
+		return undefined;
+	}
+
+	const cost = wrapper.cost as
+		| { input?: unknown; output?: unknown; cacheRead?: unknown; cacheWrite?: unknown }
+		| undefined;
+	if (!cost) {
+		return undefined;
+	}
+
+	const costValues = [cost.input, cost.output, cost.cacheRead, cost.cacheWrite];
+	if (costValues.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
+		return undefined;
+	}
+
+	if (typeof wrapper.contextWindow !== "number" || !Number.isFinite(wrapper.contextWindow)) {
+		return undefined;
+	}
+
+	if (typeof wrapper.maxTokens !== "number" || !Number.isFinite(wrapper.maxTokens)) {
+		return undefined;
+	}
+
+	return {
+		reasoning: wrapper.reasoning,
+		input: [...wrapper.input],
+		cost: {
+			input: cost.input,
+			output: cost.output,
+			cacheRead: cost.cacheRead,
+			cacheWrite: cost.cacheWrite,
+		},
+		contextWindow: wrapper.contextWindow,
+		maxTokens: wrapper.maxTokens,
 	};
 }
 
@@ -268,12 +382,19 @@ export default function (pi: ExtensionAPI) {
 
 		try {
 			const loaded = (await loadConfig()) ?? (await generateDefaultConfig(ctx));
+			const hydratedConfig = await hydrateWrapperMetadata(loaded.config, ctx);
+			const configChanged = hydratedConfig.models.some(
+				(model, index) => !wrappersEqual(model.wrapper, loaded.config.models[index]?.wrapper),
+			);
+			if (configChanged) {
+				await saveConfig(hydratedConfig);
+			}
 
 			runtime.configPath = loaded.path;
 			const registeredModels: Model<Api>[] = [];
 			const registrationErrors: string[] = [];
 
-			for (const configuredModel of loaded.config.models) {
+			for (const configuredModel of hydratedConfig.models) {
 				const backendModels = configuredModel.strategy.map((route) => ctx.modelRegistry.find(route.provider, route.model));
 				if (backendModels.some((model) => !model)) {
 					const missingTargets = configuredModel.strategy
@@ -447,6 +568,40 @@ export default function (pi: ExtensionAPI) {
 
 		return stream;
 	};
+
+	const bootstrapPersistedProvider = () => {
+		try {
+			const loaded = loadConfigSync();
+			if (!loaded) {
+				return;
+			}
+
+			runtime.configPath = loaded.path;
+			const bootstrapModels = loaded.config.models.map((configuredModel) => {
+				const wrapperModel = buildBootstrapWrapperModel(configuredModel) as Model<Api>;
+				runtime.models.set(configuredModel.id, { ...configuredModel, wrapperModel });
+				return wrapperModel;
+			});
+
+			if (bootstrapModels.length === 0) {
+				return;
+			}
+
+			pi.registerProvider(
+				FAILOVER_PROVIDER_NAME,
+				buildFailoverProviderConfig(
+					bootstrapModels,
+					(model, context, options) => streamWithFailover(model as Model<Api>, context, options),
+				),
+			);
+		} catch (error) {
+			console.warn(
+				`provider-failover: failed to bootstrap persisted models: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	};
+
+	bootstrapPersistedProvider();
 
 	pi.on("session_start", async (_event, ctx) => {
 		runtime.ctx = ctx;
