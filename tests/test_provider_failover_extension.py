@@ -5,12 +5,12 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-NODE_TEST = REPO_ROOT / "tests" / "node" / "provider_failover_core.test.mjs"
+NODE_TEST_GLOB = "tests/node/*.mjs"
 
 
 def test_provider_failover_node_suite() -> None:
     result = subprocess.run(
-        ["node", "--test", str(NODE_TEST)],
+        ["bash", "-lc", f"node --test {NODE_TEST_GLOB}"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,

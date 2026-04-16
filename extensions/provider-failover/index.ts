@@ -7,9 +7,8 @@ import {
 	type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { access, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { access, readFile, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 import {
 	FAILOVER_API,
@@ -19,6 +18,7 @@ import {
 	orderCandidates,
 	pipeFailoverStream,
 } from "./lib/failover-core.mjs";
+import { buildDefaultConfig } from "./lib/default-config.mjs";
 
 interface FailoverRouteConfig {
 	provider: string;
@@ -54,8 +54,7 @@ interface SkippedCandidate {
 	reason: string;
 }
 
-const PROJECT_CONFIG = ".pi/provider-failover.json";
-const GLOBAL_CONFIG = join(homedir(), ".pi", "agent", "provider-failover.json");
+const CONFIG_PATH = fileURLToPath(new URL("./config.json", import.meta.url));
 
 function zeroUsage() {
 	return {
@@ -91,15 +90,27 @@ async function fileExists(path: string): Promise<boolean> {
 	}
 }
 
-async function loadConfig(cwd: string): Promise<{ path: string; config: FailoverFileConfig } | undefined> {
-	const projectPath = resolve(cwd, PROJECT_CONFIG);
-	const configPath = (await fileExists(projectPath)) ? projectPath : (await fileExists(GLOBAL_CONFIG) ? GLOBAL_CONFIG : undefined);
-	if (!configPath) {
+async function loadConfig(): Promise<{ path: string; config: FailoverFileConfig } | undefined> {
+	if (!(await fileExists(CONFIG_PATH))) {
 		return undefined;
 	}
 
-	const rawConfig = JSON.parse(await readFile(configPath, "utf8")) as unknown;
-	return { path: configPath, config: validateConfig(rawConfig, configPath) };
+	const rawConfig = JSON.parse(await readFile(CONFIG_PATH, "utf8")) as unknown;
+	return { path: CONFIG_PATH, config: validateConfig(rawConfig, CONFIG_PATH) };
+}
+
+async function generateDefaultConfig(ctx: ExtensionContext): Promise<{ path: string; config: FailoverFileConfig }> {
+	const availableModels = await ctx.modelRegistry.getAvailable();
+	const generatedConfig = buildDefaultConfig(availableModels);
+	if (generatedConfig.models.length === 0) {
+		throw new Error(
+			`Could not generate ${CONFIG_PATH}. No GitHub Copilot models matched OpenAI, Anthropic, Google, or xAI models available in your current pi setup.`,
+		);
+	}
+
+	await writeFile(CONFIG_PATH, `${JSON.stringify(generatedConfig, null, 2)}\n`, "utf8");
+	ctx.ui.notify(`provider-failover: generated default config at ${CONFIG_PATH}`, "info");
+	return { path: CONFIG_PATH, config: generatedConfig };
 }
 
 function validateConfig(rawConfig: unknown, sourcePath: string): FailoverFileConfig {
@@ -194,15 +205,7 @@ export default function (pi: ExtensionAPI) {
 		pi.unregisterProvider(FAILOVER_PROVIDER_NAME);
 
 		try {
-			const loaded = await loadConfig(ctx.cwd);
-			if (!loaded) {
-				runtime.configPath = undefined;
-				ctx.ui.notify(
-					`provider-failover: no config found at ${PROJECT_CONFIG} or ${GLOBAL_CONFIG}`,
-					"warning",
-				);
-				return;
-			}
+			const loaded = (await loadConfig()) ?? (await generateDefaultConfig(ctx));
 
 			runtime.configPath = loaded.path;
 			const registeredModels: Model<Api>[] = [];

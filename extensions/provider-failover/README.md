@@ -7,9 +7,10 @@ The point is simple: you select one failover model once, and pi keeps working ev
 ## What it does
 
 - routes one prompt across a configured provider chain
-- falls through to the next provider only when the current one fails before producing output
+- falls through to the next provider only when the current provider fails before producing output
 - keeps the successful backup provider sticky by default, so the next prompt does not keep hammering the same throttled primary
 - exposes `/failover-reset` to clear the sticky route and try the primary first again
+- generates `config.json` automatically if it does not exist yet
 
 It does **not** splice two model outputs together. If a provider already started streaming text and then errors, the extension stops there and preserves the real failure instead of mixing partial output from one model with fresh output from another.
 
@@ -24,52 +25,62 @@ Then reload pi with `/reload`.
 
 ## Configure
 
-Create one of these files:
+The extension expects exactly one config file:
 
-- project-local: `.pi/provider-failover.json`
-- global: `~/.pi/agent/provider-failover.json`
+- `config.json` in the same directory as `index.ts`
 
-Project-local wins over global.
+Typical paths:
 
-Start from [`provider-failover.example.json`](./provider-failover.example.json).
+- project-local install: `.pi/extensions/provider-failover/config.json`
+- global install: `~/.pi/agent/extensions/provider-failover/config.json`
+
+If `config.json` does not exist, the extension generates it automatically on startup by:
+
+1. listing models currently available in your pi setup
+2. taking every `github-copilot` model
+3. matching each Copilot model by normalized name against the original providers in this order:
+   - `openai`
+   - `anthropic`
+   - `google`
+   - `xai`
+4. writing the result to `config.json`
+
+Only matched models are included. Unmatched Copilot models are skipped.
 
 ### Important
 
-Do **not** guess provider/model IDs.
+Do **not** guess provider or model IDs when you edit the generated file.
 
 Use pi itself to inspect the exact IDs available in your setup:
 
 - `/model`
 - `pi --list-models`
 
-Then copy those exact `provider` and `model` values into the config.
-
-All listed providers must already be authenticated through `/login` or API keys.
+All listed providers must already be authenticated through `/login` or API keys, otherwise they will not appear in the generated config.
 
 ## Example flow
 
-1. Configure a failover model whose strategy is:
-   1. GitHub Copilot model
-   2. OpenAI backup
-   3. Anthropic backup
+1. Install the extension in `.pi/extensions/provider-failover/`.
 2. Reload pi.
-3. Open `/model` and select `failover/copilot-coder`.
-4. Work normally.
-5. If Copilot responds with a 429-style failure before streaming output, the extension retries the same prompt on OpenAI, then Anthropic.
-6. When a backup succeeds, that backup becomes the first route for future prompts until you run `/failover-reset`.
+3. Let the extension generate `.pi/extensions/provider-failover/config.json`.
+4. Open `/model` and select one of the generated `failover/...` models.
+5. Work normally.
+6. If the Copilot route responds with a 429-style failure before streaming output, the extension retries the same prompt on the matched original provider.
+7. When a backup succeeds, that backup becomes the first route for future prompts until you run `/failover-reset`.
 
 ## Config format
+
+Generated configs look like this:
 
 ```json
 {
   "models": [
     {
-      "id": "copilot-coder",
-      "name": "Copilot coder with automatic failover",
+      "id": "copilot-claude-sonnet-4-5",
+      "name": "Claude Sonnet 4.5",
       "strategy": [
-        { "provider": "github-copilot", "model": "...exact model id..." },
-        { "provider": "openai", "model": "...exact model id..." },
-        { "provider": "anthropic", "model": "...exact model id..." }
+        { "provider": "github-copilot", "model": "copilot-claude-sonnet-4-5" },
+        { "provider": "anthropic", "model": "claude-sonnet-4-5-20250929" }
       ],
       "sticky": true
     }
@@ -81,7 +92,7 @@ All listed providers must already be authenticated through `/login` or API keys.
 
 - `id`: wrapper model id shown under the synthetic `failover` provider
 - `name`: label shown in pi's model selector
-- `strategy`: ordered provider/model chain; first item is the primary route
+- `strategy`: ordered provider/model chain; first item is always the GitHub Copilot route
 - `sticky`: when `true` (default), the most recent successful route stays first until reset
 
 ## Command
@@ -92,5 +103,6 @@ All listed providers must already be authenticated through `/login` or API keys.
 ## Notes
 
 - wrapper model capabilities are conservative: the extension uses the minimum context window/output limit and the shared input types across the configured backends
+- default config generation only considers the original providers: `openai`, `anthropic`, `google`, `xai`
 - failover only happens before output starts; once a provider has begun streaming, the extension will not hop to another provider mid-answer
 - non-rate-limit failures are passed through unchanged
