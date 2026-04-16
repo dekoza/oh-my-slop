@@ -377,9 +377,6 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	const ensureProviderRegistered = async (ctx: ExtensionContext) => {
-		runtime.models.clear();
-		pi.unregisterProvider(FAILOVER_PROVIDER_NAME);
-
 		try {
 			const loaded = (await loadConfig()) ?? (await generateDefaultConfig(ctx));
 			const hydratedConfig = await hydrateWrapperMetadata(loaded.config, ctx);
@@ -392,6 +389,7 @@ export default function (pi: ExtensionAPI) {
 
 			runtime.configPath = loaded.path;
 			const registeredModels: Model<Api>[] = [];
+			const nextRuntimeModels = new Map<string, RegisteredFailoverModel>();
 			const registrationErrors: string[] = [];
 
 			for (const configuredModel of hydratedConfig.models) {
@@ -411,7 +409,7 @@ export default function (pi: ExtensionAPI) {
 						backendModels as Model<Api>[],
 					) as Model<Api>;
 					registeredModels.push(wrapperModel);
-					runtime.models.set(configuredModel.id, { ...configuredModel, wrapperModel });
+					nextRuntimeModels.set(configuredModel.id, { ...configuredModel, wrapperModel });
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					registrationErrors.push(`Skipping ${configuredModel.id}: ${message}`);
@@ -421,6 +419,11 @@ export default function (pi: ExtensionAPI) {
 			if (registeredModels.length === 0) {
 				ctx.ui.notify(`provider-failover: ${registrationErrors.join(" ")}`, "error");
 				return;
+			}
+
+			runtime.models.clear();
+			for (const [modelId, modelConfig] of nextRuntimeModels.entries()) {
+				runtime.models.set(modelId, modelConfig);
 			}
 
 			pi.registerProvider(
