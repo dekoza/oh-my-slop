@@ -2,8 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  DEFAULT_ORIGINAL_PROVIDERS,
+  ROUTING_PROVIDERS,
   buildDefaultConfig,
   normalizeModelName,
+  resolvePreferredProviders,
 } from '../../extensions/provider-failover/lib/default-config.mjs';
 
 test('normalizeModelName strips provider noise and release suffixes', () => {
@@ -12,7 +15,20 @@ test('normalizeModelName strips provider noise and release suffixes', () => {
   assert.equal(normalizeModelName('Google Gemini 2.5 Pro Preview'), 'gemini 2.5 pro');
 });
 
-test('buildDefaultConfig maps github-copilot models to original providers by normalized name', () => {
+test('resolvePreferredProviders prefers active routing providers ahead of originals', () => {
+  const providers = resolvePreferredProviders([
+    { provider: 'github-copilot', id: 'copilot-claude', name: 'Claude Sonnet 4.5' },
+    { provider: 'openrouter', id: 'router-claude', name: 'Claude Sonnet 4.5' },
+    { provider: 'zai', id: 'z-claude', name: 'Claude Sonnet 4.5' },
+    { provider: 'anthropic', id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' },
+    { provider: 'openai', id: 'gpt-5-codex', name: 'GPT-5 Codex' },
+  ]);
+
+  assert.deepEqual(providers, ['openrouter', 'zai', ...DEFAULT_ORIGINAL_PROVIDERS]);
+  assert.deepEqual(ROUTING_PROVIDERS, ['openrouter', 'zai']);
+});
+
+test('buildDefaultConfig prefers routing providers when they are active', () => {
   const config = buildDefaultConfig([
     { provider: 'github-copilot', id: 'copilot-claude', name: 'Claude Sonnet 4.5' },
     { provider: 'github-copilot', id: 'copilot-gpt', name: 'GPT-5 Codex' },
@@ -23,6 +39,8 @@ test('buildDefaultConfig maps github-copilot models to original providers by nor
     { provider: 'google', id: 'gemini-2.5-pro', name: 'Google Gemini 2.5 Pro Preview' },
     { provider: 'xai', id: 'grok-4', name: 'xAI Grok 4' },
     { provider: 'openrouter', id: 'router-claude', name: 'Claude Sonnet 4.5' },
+    { provider: 'openrouter', id: 'router-gpt', name: 'GPT-5 Codex' },
+    { provider: 'zai', id: 'z-gemini', name: 'Gemini 2.5 Pro' },
   ]);
 
   assert.deepEqual(config, {
@@ -32,6 +50,7 @@ test('buildDefaultConfig maps github-copilot models to original providers by nor
         name: 'Claude Sonnet 4.5',
         strategy: [
           { provider: 'github-copilot', model: 'copilot-claude' },
+          { provider: 'openrouter', model: 'router-claude' },
           { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
         ],
         sticky: true,
@@ -41,6 +60,7 @@ test('buildDefaultConfig maps github-copilot models to original providers by nor
         name: 'Gemini 2.5 Pro',
         strategy: [
           { provider: 'github-copilot', model: 'copilot-gemini' },
+          { provider: 'zai', model: 'z-gemini' },
           { provider: 'google', model: 'gemini-2.5-pro' },
         ],
         sticky: true,
@@ -50,6 +70,7 @@ test('buildDefaultConfig maps github-copilot models to original providers by nor
         name: 'GPT-5 Codex',
         strategy: [
           { provider: 'github-copilot', model: 'copilot-gpt' },
+          { provider: 'openrouter', model: 'router-gpt' },
           { provider: 'openai', model: 'gpt-5-codex' },
         ],
         sticky: true,
@@ -67,12 +88,13 @@ test('buildDefaultConfig maps github-copilot models to original providers by nor
   });
 });
 
-test('buildDefaultConfig keeps only preferred original providers and skips unmatched copilot models', () => {
+test('buildDefaultConfig keeps only routing and original providers and skips unmatched copilot models', () => {
   const config = buildDefaultConfig([
     { provider: 'github-copilot', id: 'copilot-claude', name: 'Claude Sonnet 4.5' },
     { provider: 'github-copilot', id: 'copilot-unknown', name: 'Mystery Model 1' },
     { provider: 'anthropic', id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' },
-    { provider: 'openrouter', id: 'router-mystery', name: 'Mystery Model 1' },
+    { provider: 'groq', id: 'groq-claude', name: 'Claude Sonnet 4.5' },
+    { provider: 'groq', id: 'groq-mystery', name: 'Mystery Model 1' },
   ]);
 
   assert.deepEqual(config, {

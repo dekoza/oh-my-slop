@@ -18,7 +18,7 @@ import {
 	orderCandidates,
 	pipeFailoverStream,
 } from "./lib/failover-core.mjs";
-import { buildDefaultConfig } from "./lib/default-config.mjs";
+import { buildDefaultConfig, resolvePreferredProviders } from "./lib/default-config.mjs";
 
 interface FailoverRouteConfig {
 	provider: string;
@@ -99,18 +99,24 @@ async function loadConfig(): Promise<{ path: string; config: FailoverFileConfig 
 	return { path: CONFIG_PATH, config: validateConfig(rawConfig, CONFIG_PATH) };
 }
 
-async function generateDefaultConfig(ctx: ExtensionContext): Promise<{ path: string; config: FailoverFileConfig }> {
+async function generateDefaultConfig(
+	ctx: ExtensionContext,
+): Promise<{ path: string; config: FailoverFileConfig; preferredProviders: string[] }> {
 	const availableModels = await ctx.modelRegistry.getAvailable();
-	const generatedConfig = buildDefaultConfig(availableModels);
+	const preferredProviders = resolvePreferredProviders(availableModels);
+	const generatedConfig = buildDefaultConfig(availableModels, preferredProviders);
 	if (generatedConfig.models.length === 0) {
 		throw new Error(
-			`Could not generate ${CONFIG_PATH}. No GitHub Copilot models matched OpenAI, Anthropic, Google, or xAI models available in your current pi setup.`,
+			`Could not generate ${CONFIG_PATH}. No GitHub Copilot models matched providers from this plan: ${preferredProviders.join(", ")}.`,
 		);
 	}
 
 	await writeFile(CONFIG_PATH, `${JSON.stringify(generatedConfig, null, 2)}\n`, "utf8");
-	ctx.ui.notify(`provider-failover: generated default config at ${CONFIG_PATH}`, "info");
-	return { path: CONFIG_PATH, config: generatedConfig };
+	ctx.ui.notify(
+		`provider-failover: generated default config at ${CONFIG_PATH} using provider plan ${preferredProviders.join(" -> ")}`,
+		"info",
+	);
+	return { path: CONFIG_PATH, config: generatedConfig, preferredProviders };
 }
 
 function validateConfig(rawConfig: unknown, sourcePath: string): FailoverFileConfig {
@@ -408,6 +414,16 @@ export default function (pi: ExtensionAPI) {
 
 			runtime.stickyRouteByModelId.clear();
 			ctx.ui.notify("provider-failover: reset sticky routes for all failover models", "info");
+		},
+	});
+
+	pi.registerCommand("failover-regenerate-config", {
+		description: "Regenerate config.json from currently available providers and models",
+		handler: async (_args, ctx) => {
+			await generateDefaultConfig(ctx);
+			runtime.stickyRouteByModelId.clear();
+			await ensureProviderRegistered(ctx);
+			ctx.ui.notify("provider-failover: regenerated config and reloaded failover models", "info");
 		},
 	});
 }

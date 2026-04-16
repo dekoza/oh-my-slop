@@ -37,15 +37,16 @@ Typical paths:
 If `config.json` does not exist, the extension generates it automatically on startup by:
 
 1. listing models currently available in your pi setup
-2. taking every `github-copilot` model
-3. matching each Copilot model by normalized name against the original providers in this order:
-   - `openai`
-   - `anthropic`
-   - `google`
-   - `xai`
-4. writing the result to `config.json`
+2. inferring the active provider plan from that set
+3. taking every `github-copilot` model
+4. matching each Copilot model by normalized name against providers in this plan:
+   - active routing providers first: `openrouter`, `zai`
+   - then original providers: `openai`, `anthropic`, `google`, `xai`
+5. writing the result to `config.json`
 
 Only matched models are included. Unmatched Copilot models are skipped.
+
+This means if you are currently using routing providers like OpenRouter or ZAI, the generated config prefers them over the direct original providers.
 
 ### Important
 
@@ -67,6 +68,7 @@ All listed providers must already be authenticated through `/login` or API keys,
 5. Work normally.
 6. If the Copilot route responds with a 429-style failure before streaming output, the extension retries the same prompt on the matched original provider.
 7. When a backup succeeds, that backup becomes the first route for future prompts until you run `/failover-reset`.
+8. If you later log into new providers or enable new models, run `/failover-regenerate-config`.
 
 ## Config format
 
@@ -95,14 +97,15 @@ Generated configs look like this:
 - `strategy`: ordered provider/model chain; first item is always the GitHub Copilot route
 - `sticky`: when `true` (default), the most recent successful route stays first until reset
 
-## Command
+## Commands
 
 - `/failover-reset` - clear sticky routes for all failover models
 - `/failover-reset <model-id>` - clear the sticky route for one failover model
+- `/failover-regenerate-config` - rebuild `config.json` from the models currently available in your pi setup and reload the failover provider
 
 ## Notes
 
 - wrapper model capabilities are conservative: the extension uses the minimum context window/output limit and the shared input types across the configured backends
-- default config generation only considers the original providers: `openai`, `anthropic`, `google`, `xai`
+- default config generation prefers active routing providers (`openrouter`, `zai`) before the original providers (`openai`, `anthropic`, `google`, `xai`)
 - failover only happens before output starts; once a provider has begun streaming, the extension will not hop to another provider mid-answer
 - non-rate-limit failures are passed through unchanged
