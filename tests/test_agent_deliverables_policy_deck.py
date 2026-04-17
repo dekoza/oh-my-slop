@@ -43,5 +43,11 @@ def test_agent_deliverables_policy_deck_uses_tighter_horizontal_spacing() -> Non
 
     assert "--slide-padding-x: clamp(24px, 3vw, 34px);" in html
     assert "padding: 42px var(--slide-padding-x) 38px;" in html
-    assert "width: min(1320px, 100%);" in html
-    assert "padding: 16px;" in html
+
+
+def test_agent_deliverables_policy_deck_removes_outer_left_margin() -> None:
+    html = DECK_PATH.read_text(encoding="utf-8")
+
+    assert "width: 100%;" in html
+    assert "max-width: none;" in html
+    assert "padding: 0;" in html
