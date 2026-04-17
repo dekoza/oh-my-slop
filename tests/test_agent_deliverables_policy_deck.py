@@ -36,3 +36,12 @@ def test_agent_deliverables_policy_deck_covers_required_content() -> None:
     assert "performance" in html.lower()
     assert "data migration" in html.lower()
     assert "security" in html.lower()
+
+
+def test_agent_deliverables_policy_deck_uses_tighter_horizontal_spacing() -> None:
+    html = DECK_PATH.read_text(encoding="utf-8")
+
+    assert "--slide-padding-x: clamp(24px, 3vw, 34px);" in html
+    assert "padding: 42px var(--slide-padding-x) 38px;" in html
+    assert "width: min(1320px, 100%);" in html
+    assert "padding: 16px;" in html

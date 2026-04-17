@@ -17,6 +17,7 @@
         --accent-3: #34d399;
         --danger: #fda4af;
         --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+        --slide-padding-x: clamp(24px, 3vw, 34px);
       }
 
       * {
@@ -39,11 +40,11 @@
       body {
         display: grid;
         place-items: center;
-        padding: 24px;
+        padding: 16px;
       }
 
       .deck-shell {
-        width: min(1200px, 100%);
+        width: min(1320px, 100%);
       }
 
       .topbar {
@@ -79,7 +80,7 @@
         width: 100%;
         flex: 0 0 100%;
         min-height: 760px;
-        padding: 52px;
+        padding: 42px var(--slide-padding-x) 38px;
         display: grid;
         grid-template-rows: auto auto 1fr auto;
         gap: 28px;
@@ -294,12 +295,12 @@
 
       @media (max-width: 960px) {
         body {
-          padding: 14px;
+          padding: 12px;
         }
 
         .slide {
           min-height: auto;
-          padding: 28px;
+          padding: 28px 20px 24px;
         }
 
         .grid.two,
