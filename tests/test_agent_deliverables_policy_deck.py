@@ -45,9 +45,14 @@ def test_agent_deliverables_policy_deck_uses_tighter_horizontal_spacing() -> Non
     assert "padding: 42px var(--slide-padding-x) 38px;" in html
 
 
-def test_agent_deliverables_policy_deck_removes_outer_left_margin() -> None:
+def test_agent_deliverables_policy_deck_fills_the_viewport_without_outer_margins() -> None:
     html = DECK_PATH.read_text(encoding="utf-8")
 
     assert "width: 100%;" in html
     assert "max-width: none;" in html
     assert "padding: 0;" in html
+    assert "height: 100vh;" in html
+    assert "grid-template-rows: auto minmax(0, 1fr) auto;" in html
+    assert "min-height: 0;" in html
+    assert "min-height: 100%;" in html
+    assert "overflow: auto;" in html
