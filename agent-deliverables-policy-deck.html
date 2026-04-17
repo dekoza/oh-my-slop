@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Deliverables Policy Feedback</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #06111f;
+        --panel: rgba(8, 20, 38, 0.86);
+        --panel-strong: rgba(10, 24, 46, 0.95);
+        --text: #ebf3ff;
+        --muted: #96abc9;
+        --accent: #6ee7ff;
+        --accent-2: #8b5cf6;
+        --accent-3: #34d399;
+        --danger: #fda4af;
+        --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(110, 231, 255, 0.18), transparent 28%),
+          radial-gradient(circle at top right, rgba(139, 92, 246, 0.18), transparent 34%),
+          linear-gradient(160deg, #040b16 0%, #09172a 45%, #07111d 100%);
+        color: var(--text);
+      }
+
+      body {
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+
+      .deck-shell {
+        width: min(1200px, 100%);
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 18px;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .topbar strong {
+        color: var(--text);
+      }
+
+      .viewer {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid rgba(150, 171, 201, 0.16);
+        border-radius: 28px;
+        background: linear-gradient(180deg, rgba(13, 28, 50, 0.92), rgba(5, 14, 27, 0.96));
+        box-shadow: var(--shadow);
+      }
+
+      .slides {
+        display: flex;
+        transition: transform 320ms ease;
+        will-change: transform;
+      }
+
+      .slide {
+        width: 100%;
+        flex: 0 0 100%;
+        min-height: 760px;
+        padding: 52px;
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        gap: 28px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        width: fit-content;
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #04111d;
+        background: linear-gradient(135deg, var(--accent), #c4b5fd);
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+      }
+
+      h1 {
+        font-size: clamp(2.9rem, 6vw, 5.2rem);
+        max-width: 11ch;
+      }
+
+      h2 {
+        font-size: clamp(2.2rem, 4vw, 3.4rem);
+      }
+
+      p,
+      li {
+        font-size: 1.08rem;
+        line-height: 1.6;
+        color: var(--text);
+      }
+
+      .lede {
+        max-width: 70ch;
+        font-size: 1.24rem;
+        color: #d6e5ff;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .grid {
+        display: grid;
+        gap: 18px;
+      }
+
+      .grid.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid.three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .card {
+        padding: 22px;
+        border-radius: 22px;
+        background: var(--panel);
+        border: 1px solid rgba(150, 171, 201, 0.12);
+      }
+
+      .card strong,
+      .card h3 {
+        color: var(--text);
+      }
+
+      .card h3 {
+        margin: 0 0 10px;
+        font-size: 1.18rem;
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 1.15rem;
+      }
+
+      .summary-band {
+        display: grid;
+        grid-template-columns: 1.35fr 1fr;
+        gap: 18px;
+      }
+
+      .summary-band .card:first-child {
+        background:
+          linear-gradient(155deg, rgba(13, 29, 54, 0.98), rgba(8, 19, 37, 0.92));
+      }
+
+      .pill-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .pill {
+        padding: 9px 12px;
+        border-radius: 999px;
+        background: rgba(110, 231, 255, 0.11);
+        border: 1px solid rgba(110, 231, 255, 0.24);
+        color: #dffbff;
+        font-size: 0.95rem;
+      }
+
+      .quote {
+        font-size: 1.5rem;
+        line-height: 1.45;
+        max-width: 34ch;
+      }
+
+      .accent {
+        color: var(--accent);
+      }
+
+      .accent-2 {
+        color: #c4b5fd;
+      }
+
+      .accent-3 {
+        color: #86efac;
+      }
+
+      .danger {
+        color: var(--danger);
+      }
+
+      .footer-note {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        color: var(--muted);
+        font-size: 0.95rem;
+        padding-top: 4px;
+      }
+
+      .nav {
+        margin-top: 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 18px;
+      }
+
+      .nav button {
+        appearance: none;
+        border: 0;
+        border-radius: 999px;
+        padding: 12px 18px;
+        font: inherit;
+        font-weight: 700;
+        color: #04111d;
+        background: linear-gradient(135deg, var(--accent), #b6c7ff);
+        cursor: pointer;
+        box-shadow: 0 16px 28px rgba(110, 231, 255, 0.18);
+      }
+
+      .nav button[disabled] {
+        opacity: 0.35;
+        cursor: not-allowed;
+        box-shadow: none;
+      }
+
+      .progress {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        background: rgba(150, 171, 201, 0.28);
+        border: 1px solid rgba(150, 171, 201, 0.18);
+      }
+
+      .dot.active {
+        background: linear-gradient(135deg, var(--accent), #c4b5fd);
+      }
+
+      .kpi {
+        display: grid;
+        gap: 8px;
+      }
+
+      .kpi span {
+        color: var(--muted);
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .kpi strong {
+        font-size: 1.55rem;
+      }
+
+      .two-column-copy {
+        columns: 2;
+        column-gap: 28px;
+      }
+
+      @media (max-width: 960px) {
+        body {
+          padding: 14px;
+        }
+
+        .slide {
+          min-height: auto;
+          padding: 28px;
+        }
+
+        .grid.two,
+        .grid.three,
+        .summary-band {
+          grid-template-columns: 1fr;
+        }
+
+        .two-column-copy {
+          columns: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="deck-shell">
+      <div class="topbar">
+        <div><strong>Single-file HTML deck</strong> for the proposed agent deliverables policy</div>
+        <div>Navigate with buttons or <strong>Arrow keys</strong></div>
+      </div>
+
+      <div class="viewer">
+        <div class="slides" id="slides">
+          <section class="slide">
+            <div class="eyebrow">Executive summary</div>
+            <div>
+              <h1>Use a short global rule plus dedicated skills</h1>
+            </div>
+            <div class="summary-band">
+              <div class="card">
+                <p class="lede">
+                  <span class="accent">Hybrid recommendation</span>: AGENTS.md should define the policy,
+                  skills should own the workflow. That keeps the expectation consistent without
+                  stuffing operational detail into global instructions.
+                </p>
+                <div class="pill-list">
+                  <div class="pill">Research -> single-file HTML deck</div>
+                  <div class="pill">Web UI features -> navigable demo artifact</div>
+                  <div class="pill">Fallbacks when tooling is unavailable</div>
+                  <div class="pill">Artifacts supplement tests; they do not replace them</div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="kpi">
+                  <span>Core judgment</span>
+                  <strong>Good idea. Bad as a blanket rule.</strong>
+                </div>
+                <div class="kpi">
+                  <span>Policy split</span>
+                  <strong>Expectation in AGENTS.md, implementation in skills</strong>
+                </div>
+                <div class="kpi">
+                  <span>Highest-risk confusion</span>
+                  <strong>Pretty deliverables can fake confidence without proving correctness</strong>
+                </div>
+              </div>
+            </div>
+            <div class="footer-note">
+              <div>Why this matters: better review artifacts, less ambiguity, less hidden workflow drift.</div>
+              <div>1 / 7</div>
+            </div>
+          </section>
+
+          <section class="slide">
+            <div class="eyebrow">Proposal 1</div>
+            <div>
+              <h2>Research -> single-file HTML deck</h2>
+            </div>
+            <div class="grid two">
+              <div class="card">
+                <h3>What survives scrutiny</h3>
+                <ul>
+                  <li>Forces synthesis instead of raw note dumping.</li>
+                  <li>Gives you a portable artifact you can open anywhere.</li>
+                  <li>Fits comparisons, recommendations, architecture options, and technical investigations.</li>
+                  <li>Single-file HTML is a good constraint: simple to store, inspect, and share.</li>
+                </ul>
+              </div>
+              <div class="card">
+                <h3>What needs tightening</h3>
+                <ul>
+                  <li><span class="danger">Beautiful</span> is too vague. Replace it with concrete standards.</li>
+                  <li>Not every tiny lookup deserves a slide deck.</li>
+                  <li>The deck needs a fixed structure so quality does not depend on mood or model style.</li>
+                </ul>
+              </div>
+              <div class="card">
+                <h3>Better standard</h3>
+                <ul>
+                  <li>Self-contained single HTML file.</li>
+                  <li>No external dependencies.</li>
+                  <li>Readable typography and clear section hierarchy.</li>
+                  <li>Explicit recommendation, tradeoffs, risks, and evidence appendix.</li>
+                </ul>
+              </div>
+              <div class="card">
+                <h3>Where the rule should apply</h3>
+                <ul>
+                  <li>Non-trivial research</li>
+                  <li>Comparisons and vendor evaluations</li>
+                  <li>Architecture option analysis</li>
+                  <li>Recommendation memos for decisions with real cost</li>
+                </ul>
+              </div>
+            </div>
+            <div class="footer-note">
+              <div>Good default for complex research. Bad default for quick factual lookups.</div>
+              <div>2 / 7</div>
+            </div>
+          </section>
+
+          <section class="slide">
+            <div class="eyebrow">Proposal 2</div>
+            <div>
+              <h2>Web UI features -> navigable demo artifact</h2>
+            </div>
+            <div class="grid two">
+              <div class="card">
+                <h3>Why the idea is strong</h3>
+                <ul>
+                  <li>It proves discoverability, not just isolated functionality.</li>
+                  <li>It catches orphan screens and broken navigation.</li>
+                  <li>It gives fast review evidence for UX and workflow quality.</li>
+                  <li>It aligns with the rule that E2E flows should navigate through the UI.</li>
+                </ul>
+              </div>
+              <div class="card">
+                <h3>Critical constraint</h3>
+                <p class="quote">
+                  <span class="accent-2">tests prove correctness; demo artifacts prove reachability and usability</span>
+                </p>
+                <p class="muted">
+                  A smooth demo can still hide broken validation, auth gaps, state bugs, or unhappy-path failures.
+                </p>
+              </div>
+              <div class="card">
+                <h3>Scope it correctly</h3>
+                <ul>
+                  <li>Apply it to user-facing web UI features.</li>
+                  <li>Do not force it on backend-only, plumbing-only, or tiny non-visual changes.</li>
+                  <li>For internal tools, use judgment: demo only if the UI itself is part of the deliverable.</li>
+                </ul>
+              </div>
+              <div class="card">
+                <h3>Required flow</h3>
+                <ul>
+                  <li>Start from the app main page.</li>
+                  <li>Reach the feature through visible navigation.</li>
+                  <li>Show the core happy path.</li>
+                  <li>Show the visible result or saved state.</li>
+                  <li>Use video when possible, annotated screenshots or an HTML walkthrough when not.</li>
+                </ul>
+              </div>
+            </div>
+            <div class="footer-note">
+              <div>This is a review artifact for UI work, not a substitute for automated verification.</div>
+              <div>3 / 7</div>
+            </div>
+          </section>
+
+          <section class="slide">
+            <div class="eyebrow">Decision</div>
+            <div>
+              <h2>What belongs in AGENTS.md vs skills</h2>
+            </div>
+            <div class="grid two">
+              <div class="card">
+                <h3>Put this in AGENTS.md</h3>
+                <ul>
+                  <li>Which task categories should produce review artifacts.</li>
+                  <li>What those artifacts are meant to prove.</li>
+                  <li>Fallback expectations when tooling is unavailable.</li>
+                  <li>The rule that artifacts supplement tests and written summaries.</li>
+                </ul>
+              </div>
+              <div class="card">
+                <h3>Put this in skills</h3>
+                <ul>
+                  <li>How to build the deck well.</li>
+                  <li>How to record or assemble the demo artifact well.</li>
+                  <li>Section templates, quality bars, navigation requirements, and fallback workflows.</li>
+                  <li>Tooling guidance for generating HTML, screenshots, or video files.</li>
+                </ul>
+              </div>
+            </div>
+            <div class="card">
+              <h3>Recommended skill split</h3>
+              <div class="grid two">
+                <div>
+                  <p><strong>research-slide-deck</strong></p>
+                  <p class="muted">For non-trivial research, comparisons, recommendations, and architecture-option analysis.</p>
+                </div>
+                <div>
+                  <p><strong>webapp-feature-demo</strong></p>
+                  <p class="muted">For completed user-facing web features that need a reachability and usability walkthrough.</p>
+                </div>
+              </div>
+            </div>
+            <div class="footer-note">
+              <div>Policy in one place. Operational detail in reusable workflows. That is the clean split.</div>
+              <div>4 / 7</div>
+            </div>
+          </section>
+
+          <section class="slide">
+            <div class="eyebrow">Suggested wording</div>
+            <div>
+              <h2>Global rule: concise, explicit, enforceable</h2>
+            </div>
+            <div class="card">
+              <p class="lede">
+                For complex deliverables, produce a review artifact suited to the task. Non-trivial research should default to a self-contained single-file HTML slide deck unless the user asks for another format. User-facing web-app features should include a UI walkthrough artifact showing how the feature is reached and used from the main page or existing navigation. Prefer video; if video capture is unavailable, use annotated screenshots or an HTML walkthrough. These artifacts supplement tests and written summaries; they do not replace them.
+              </p>
+            </div>
+            <div class="grid three">
+              <div class="card">
+                <h3>Why it works</h3>
+                <p>It defines expectations without hard-coding one brittle production process into AGENTS.md.</p>
+              </div>
+              <div class="card">
+                <h3>Why it avoids failure</h3>
+                <p>It gives the model a fallback path instead of pretending video or browser tooling will always be available.</p>
+              </div>
+              <div class="card">
+                <h3>Why it stays honest</h3>
+                <p>It explicitly keeps testing and reasoning as first-class evidence rather than letting presentation masquerade as proof.</p>
+              </div>
+            </div>
+            <div class="footer-note">
+              <div>Short enough for AGENTS.md. Specific enough to shape behavior.</div>
+              <div>5 / 7</div>
+            </div>
+          </section>
+
+          <section class="slide">
+            <div class="eyebrow">Extensions</div>
+            <div>
+              <h2>More complex task categories</h2>
+            </div>
+            <div class="grid three">
+              <div class="card">
+                <h3>Backend / API feature</h3>
+                <p>Ship a runnable API demo pack: example requests, responses, auth notes, happy path, and one failure path.</p>
+              </div>
+              <div class="card">
+                <h3>Bug fix</h3>
+                <p>Ship a repro + fix evidence bundle: reproduction, root cause, before/after evidence, tests added, regression risk.</p>
+              </div>
+              <div class="card">
+                <h3>Refactor</h3>
+                <p>Ship an architecture delta brief: what changed, what did not, boundary shifts, and proof behavior stayed intact.</p>
+              </div>
+              <div class="card">
+                <h3>Performance</h3>
+                <p>Ship a benchmark report with baseline, environment, workload, variance, charts, and tradeoffs.</p>
+              </div>
+              <div class="card">
+                <h3>Data migration</h3>
+                <p>Ship a migration readiness pack: assumptions, dry-run results, edge failures, rollback plan, sample before/after rows.</p>
+              </div>
+              <div class="card">
+                <h3>Security-sensitive work</h3>
+                <p>Ship a threat-model memo: attack surface, trust boundaries, abuse paths, mitigations, and residual risk.</p>
+              </div>
+            </div>
+            <div class="footer-note">
+              <div>Different task classes need different proof artifacts. One format for everything is lazy.</div>
+              <div>6 / 7</div>
+            </div>
+          </section>
+
+          <section class="slide">
+            <div class="eyebrow">Bottom line</div>
+            <div>
+              <h2>Recommended next move</h2>
+            </div>
+            <div class="grid two">
+              <div class="card">
+                <h3>Adopt now</h3>
+                <ul>
+                  <li>Add one short policy paragraph to global AGENTS.md.</li>
+                  <li>Create a <strong>research-slide-deck</strong> skill.</li>
+                  <li>Create a <strong>webapp-feature-demo</strong> skill.</li>
+                  <li>Treat both outputs as review evidence, not proof of correctness.</li>
+                </ul>
+              </div>
+              <div class="card">
+                <h3>Do not do</h3>
+                <ul>
+                  <li>Do not require decks for trivial research.</li>
+                  <li>Do not require videos for backend-only work.</li>
+                  <li>Do not use vague words like <span class="danger">beautiful</span> without explicit quality criteria.</li>
+                  <li>Do not let polished demos excuse missing tests.</li>
+                </ul>
+              </div>
+            </div>
+            <div class="card">
+              <p class="lede">
+                The idea is worth adopting because it improves review quality. It only becomes bad when phrased as a universal rule instead of a task-specific artifact policy with well-defined workflows.
+              </p>
+            </div>
+            <div class="footer-note">
+              <div>Best implementation: short policy + two dedicated skills + explicit fallbacks.</div>
+              <div>7 / 7</div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div class="nav">
+        <button type="button" id="prev" aria-label="Previous slide">← Previous</button>
+        <div class="progress" id="progress" aria-label="Slide progress"></div>
+        <button type="button" id="next" aria-label="Next slide">Next →</button>
+      </div>
+    </div>
+
+    <script>
+      const slides = Array.from(document.querySelectorAll('.slide'));
+      const slideTrack = document.getElementById('slides');
+      const progress = document.getElementById('progress');
+      const prevButton = document.getElementById('prev');
+      const nextButton = document.getElementById('next');
+      let index = 0;
+
+      function renderDots() {
+        progress.innerHTML = '';
+        slides.forEach((_, slideIndex) => {
+          const dot = document.createElement('button');
+          dot.type = 'button';
+          dot.className = slideIndex === index ? 'dot active' : 'dot';
+          dot.setAttribute('aria-label', `Go to slide ${slideIndex + 1}`);
+          dot.addEventListener('click', () => goTo(slideIndex));
+          progress.appendChild(dot);
+        });
+      }
+
+      function render() {
+        slideTrack.style.transform = `translateX(-${index * 100}%)`;
+        prevButton.disabled = index === 0;
+        nextButton.disabled = index === slides.length - 1;
+        renderDots();
+      }
+
+      function goTo(nextIndex) {
+        index = Math.max(0, Math.min(slides.length - 1, nextIndex));
+        render();
+      }
+
+      prevButton.addEventListener('click', () => goTo(index - 1));
+      nextButton.addEventListener('click', () => goTo(index + 1));
+
+      window.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') {
+          goTo(index + 1);
+        }
+
+        if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
+          goTo(index - 1);
+        }
+      });
+
+      render();
+    </script>
+  </body>
+</html>
