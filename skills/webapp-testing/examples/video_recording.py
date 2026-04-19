@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from playwright.sync_api import BrowserContext, sync_playwright
+from playwright.sync_api import BrowserContext, Locator, Page, sync_playwright
 
 
 ARTIFACT_DIR = Path("/tmp/webapp-testing-example")
@@ -8,16 +8,16 @@ VIDEO_DIR = ARTIFACT_DIR / "raw-videos"
 FINAL_VIDEO_PATH = ARTIFACT_DIR / "homepage-walkthrough.webm"
 ORANGE_POINTER_COLOR = "#ff8c00"
 POINTER_OVERLAY_SCRIPT = f"""
-(() => {
-  const setup = () => {
-    if (window.__videoPointerOverlayInstalled) {
+(() => {{
+  const setup = () => {{
+    if (window.__videoPointerOverlayInstalled) {{
       return;
-    }
+    }}
     window.__videoPointerOverlayInstalled = true;
 
     const pointer = document.createElement('div');
     pointer.setAttribute('data-video-pointer', 'true');
-    Object.assign(pointer.style, {
+    Object.assign(pointer.style, {{
       position: 'fixed',
       width: '14px',
       height: '14px',
@@ -31,17 +31,17 @@ POINTER_OVERLAY_SCRIPT = f"""
       left: '-100px',
       top: '-100px',
       transition: 'left 20ms linear, top 20ms linear',
-    });
+    }});
     document.documentElement.appendChild(pointer);
 
-    const movePointer = (event) => {
-      pointer.style.left = `${event.clientX}px`;
-      pointer.style.top = `${event.clientY}px`;
-    };
+    const movePointer = (event) => {{
+      pointer.style.left = `${{event.clientX}}px`;
+      pointer.style.top = `${{event.clientY}}px`;
+    }};
 
-    const showRipple = (event) => {
+    const showRipple = (event) => {{
       const ripple = document.createElement('div');
-      Object.assign(ripple.style, {
+      Object.assign(ripple.style, {{
         position: 'fixed',
         width: '18px',
         height: '18px',
@@ -52,29 +52,29 @@ POINTER_OVERLAY_SCRIPT = f"""
         transformOrigin: 'center',
         pointerEvents: 'none',
         zIndex: '2147483647',
-        left: `${event.clientX}px`,
-        top: `${event.clientY}px`,
+        left: `${{event.clientX}}px`,
+        top: `${{event.clientY}}px`,
         opacity: '1',
         transition: 'transform 320ms ease-out, opacity 320ms ease-out',
-      });
+      }});
       document.documentElement.appendChild(ripple);
-      requestAnimationFrame(() => {
+      requestAnimationFrame(() => {{
         ripple.style.transform = 'translate(-50%, -50%) scale(2.8)';
         ripple.style.opacity = '0';
-      });
+      }});
       window.setTimeout(() => ripple.remove(), 360);
-    };
+    }};
 
     window.addEventListener('mousemove', movePointer, true);
     window.addEventListener('click', showRipple, true);
-  };
+  }};
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', setup, { once: true });
-  } else {
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', setup, {{ once: true }});
+  }} else {{
     setup();
-  }
-})();
+  }}
+}})();
 """
 
 
@@ -82,8 +82,18 @@ def install_video_pointer_overlay(context: BrowserContext) -> None:
     context.add_init_script(POINTER_OVERLAY_SCRIPT)
 
 
-def move_pointer_smoothly_and_click(page, x: float, y: float) -> None:
+def move_pointer_smoothly(page: Page, x: float, y: float) -> None:
     page.mouse.move(x, y, steps=24)
+
+
+def present_click(page: Page, locator: Locator) -> None:
+    box = locator.bounding_box()
+    if box is None:
+        raise RuntimeError("Cannot present-click a locator without a visible bounding box.")
+
+    x = box["x"] + box["width"] / 2
+    y = box["y"] + box["height"] / 2
+    move_pointer_smoothly(page, x, y)
     page.wait_for_timeout(180)
     page.mouse.click(x, y)
     page.wait_for_timeout(220)
@@ -113,13 +123,7 @@ def main() -> None:
         page.wait_for_timeout(400)
 
         first_link = page.locator("a, button").first
-        box = first_link.bounding_box()
-        if box is not None:
-            move_pointer_smoothly_and_click(
-                page,
-                box["x"] + box["width"] / 2,
-                box["y"] + box["height"] / 2,
-            )
+        present_click(page, first_link)
 
         page.wait_for_timeout(400)
         page.screenshot(path=str(ARTIFACT_DIR / "homepage.png"), full_page=True)

@@ -60,6 +60,11 @@ def test_webapp_testing_skill_example_records_and_names_video_artifacts() -> Non
     assert "mouse.move" in example_text
     assert "steps=" in example_text
     assert "wait_for_timeout" in example_text
+    assert "def present_click(" in example_text
+    assert "Locator" in example_text
+    assert "bounding_box()" in example_text
+    assert "present_click(page, first_link)" in example_text
+    assert "move_pointer_smoothly_and_click(page," not in example_text
 
 
 def test_webapp_testing_skill_evals_cover_video_repro_and_walkthrough_cases() -> None:
