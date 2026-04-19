@@ -49,6 +49,7 @@
         "It keeps the browser headless instead of switching to a headed fallback by default.",
         "It calls `context.close()` so the video artifact is fully written.",
         "For a human-facing recording, it adds pointer tracking with an orange dot and click feedback with a ripple effect.",
+        "For demo-grade output, it works at the pace of a human and uses smooth pointer movement instead of jumpy cursor teleports.",
         "It reports the final video path explicitly, ideally via `video.save_as(...)` or an equivalent saved-path workflow.",
         "It still reports console errors or browser-side findings instead of treating the recording as sufficient by itself."
       ]
@@ -63,6 +64,7 @@
         "It treats this as a UI walkthrough case where recording a video is appropriate.",
         "It records video via Playwright context settings such as `record_video_dir` and `record_video_size`.",
         "It adds pointer tracking with an orange dot and click feedback with a ripple effect so the walkthrough is readable.",
+        "It keeps the walkthrough at the pace of a human and uses smooth pointer movement rather than abrupt jumps.",
         "It navigates through the UI instead of assuming a direct settings URL.",
         "It uses `context.close()` and reports the saved video path explicitly to the user."
       ]

@@ -82,6 +82,13 @@ def install_video_pointer_overlay(context: BrowserContext) -> None:
     context.add_init_script(POINTER_OVERLAY_SCRIPT)
 
 
+def move_pointer_smoothly_and_click(page, x: float, y: float) -> None:
+    page.mouse.move(x, y, steps=24)
+    page.wait_for_timeout(180)
+    page.mouse.click(x, y)
+    page.wait_for_timeout(220)
+
+
 def main() -> None:
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     VIDEO_DIR.mkdir(parents=True, exist_ok=True)
@@ -103,6 +110,18 @@ def main() -> None:
 
         page.goto("http://localhost:5173")
         page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(400)
+
+        first_link = page.locator("a, button").first
+        box = first_link.bounding_box()
+        if box is not None:
+            move_pointer_smoothly_and_click(
+                page,
+                box["x"] + box["width"] / 2,
+                box["y"] + box["height"] / 2,
+            )
+
+        page.wait_for_timeout(400)
         page.screenshot(path=str(ARTIFACT_DIR / "homepage.png"), full_page=True)
 
         if video is not None:

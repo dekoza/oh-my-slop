@@ -37,6 +37,9 @@ def test_webapp_testing_skill_frontmatter_and_guardrails_cover_video_workflow() 
     assert "Video supplements" in skill_text
     assert "orange dot" in skill_text.lower()
     assert "ripple effect" in skill_text.lower()
+    assert "pace of a human" in skill_text.lower()
+    assert "smooth" in skill_text.lower()
+    assert "jump" in skill_text.lower()
     assert "Xvfb" not in skill_text
     assert "headless=False" not in skill_text
 
@@ -54,6 +57,9 @@ def test_webapp_testing_skill_example_records_and_names_video_artifacts() -> Non
     assert "orange" in example_text.lower()
     assert "ripple" in example_text.lower()
     assert "add_init_script" in example_text
+    assert "mouse.move" in example_text
+    assert "steps=" in example_text
+    assert "wait_for_timeout" in example_text
 
 
 def test_webapp_testing_skill_evals_cover_video_repro_and_walkthrough_cases() -> None:
@@ -78,6 +84,8 @@ def test_webapp_testing_skill_evals_cover_video_repro_and_walkthrough_cases() ->
     assert "video path" in expectations
     assert "orange dot" in expectations.lower()
     assert "ripple" in expectations.lower()
+    assert "pace of a human" in expectations.lower()
+    assert "smooth" in expectations.lower()
     assert "UI" in prompts or "click" in prompts
 
 

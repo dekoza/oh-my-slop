@@ -88,7 +88,7 @@ Record video when at least one of these is true:
 
 Do **not** default to video for every task. For trivial static checks, one screenshot plus assertions is usually enough.
 
-For human-facing recordings, make cursor intent visible: add pointer tracking with an **orange dot** and show clicks with a **ripple effect** so the viewer can see where the interaction happened.
+For human-facing recordings, make cursor intent visible: add pointer tracking with an **orange dot** and show clicks with a **ripple effect** so the viewer can see where the interaction happened. When the recording is a demo or feature presentation, move at the **pace of a human** and keep pointer motion **smooth** rather than teleporting or jumping between targets.
 
 **Video supplements logs, assertions, and written findings. It does not replace them.**
 
@@ -136,6 +136,8 @@ print(f"Video saved to: {final_video_path}")
 - If you want one video per tested flow, use **one fresh browser context** and one page for that flow.
 - For human review videos, inject a lightweight overlay that shows pointer tracking as an **orange dot** and click feedback as a **ripple effect**.
 - Keep the overlay non-interactive with `pointer-events: none` so it does not break the tested UI.
+- For demos and walkthroughs, drive the flow at the **pace of a human**: add short pauses around key state changes and avoid machine-gun navigation.
+- Move the pointer smoothly with `page.mouse.move(..., steps=...)` or an equivalent stepped motion. Do not jump instantly from one control to another unless the task is pure debugging and the recording is not meant for humans.
 - Capture the `video = page.video` handle early if you plan to rename or move the artifact.
 - `context.close()` is mandatory. The video is finalized only when the browser context closes.
 - If the final filename matters, call `video.save_as(...)` and report the saved path explicitly.
@@ -159,6 +161,7 @@ print(f"Video saved to: {final_video_path}")
 - Prefer explicit waits for state changes: `wait_for_selector()`, locator `.wait_for()`, or URL assertions.
 - For HTMX or JS swaps, wait for the swapped target to appear instead of assuming `networkidle` is enough.
 - Keep the automation script self-contained and report artifact paths clearly.
+- For presentation-grade videos, prefer small deliberate pauses and stepped cursor movement over maximum execution speed.
 
 ## Playwright Python (sync) API gotchas
 
@@ -206,4 +209,4 @@ locator.press_sequentially("text", delay=80)
 - `examples/element_discovery.py` — inspect buttons, links, and inputs on a page
 - `examples/static_html_automation.py` — automate a local `file://` HTML target
 - `examples/console_logging.py` — capture console logs during automation
-- `examples/video_recording.py` — record and name a browser-video artifact with an orange-dot pointer overlay and click ripple effect
+- `examples/video_recording.py` — record and name a browser-video artifact with an orange-dot pointer overlay, click ripple effect, and human-paced smooth pointer movement
