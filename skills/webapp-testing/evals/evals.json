@@ -1,0 +1,69 @@
+{
+  "skill_name": "webapp-testing",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Test my local Vite app: start the dev server, open the homepage, wait for it to settle, click the login button, and tell me about any console errors or broken interactions you see.",
+      "expected_output": "The response uses the local-webapp testing workflow rather than ad hoc browser automation. It starts the server safely, performs rendered-state reconnaissance after the page settles, drives the requested interaction, and reports browser findings.",
+      "files": [],
+      "expectations": [
+        "It uses the `with_server.py` helper or equivalent managed server lifecycle rather than leaving a stray dev server running.",
+        "It waits for the page to settle, such as `networkidle`, before choosing selectors and interacting.",
+        "It performs rendered-state inspection instead of guessing selectors from source alone.",
+        "It captures and reports relevant console errors or browser-visible failures.",
+        "It runs Chromium headless and closes the browser cleanly."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I have a static HTML file with a form in it. Use Playwright to load it, fill the fields, submit it, and verify the success banner. Treat it like a static file, not a whole web app stack.",
+      "expected_output": "The response handles the page as a static HTML target rather than inventing unnecessary app-server steps. It loads the file, inspects the rendered DOM, drives the form, and verifies the success state.",
+      "files": [],
+      "expectations": [
+        "It treats the target as a static HTML case rather than assuming a full dev-server workflow.",
+        "It uses Playwright to inspect the rendered DOM before automating the form interaction.",
+        "It verifies the success state in the rendered UI rather than assuming submission worked.",
+        "It keeps the browser run headless and self-contained."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "There is already a server running on localhost:3000. Inspect the rendered page first, figure out the right selectors, submit the search form, and tell me what changed in the DOM and browser logs.",
+      "expected_output": "The response uses the existing running server rather than starting a duplicate one. It performs reconnaissance first, then automates the interaction and reports both DOM changes and browser-side findings.",
+      "files": [],
+      "expectations": [
+        "It does not start a duplicate server when a running server is already supplied.",
+        "It performs rendered-state reconnaissance before choosing selectors.",
+        "It automates the requested interaction and reports the observed DOM change.",
+        "It reports relevant browser logs or console errors from the run."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Start my local app, reproduce the disappearing toast after login, record a video of the repro, and tell me where the video file was saved along with any console errors.",
+      "expected_output": "The response treats the task as a timing-sensitive bug repro, enables video recording before page creation, preserves browser logs, and returns a concrete saved video artifact path.",
+      "files": [],
+      "expectations": [
+        "It recognizes that a transient toast bug is a good reason to record a video.",
+        "It configures video on `browser.new_context(...)` with `record_video_dir` before creating the page.",
+        "It keeps the browser headless instead of switching to a headed fallback by default.",
+        "It calls `context.close()` so the video artifact is fully written.",
+        "It reports the final video path explicitly, ideally via `video.save_as(...)` or an equivalent saved-path workflow.",
+        "It still reports console errors or browser-side findings instead of treating the recording as sufficient by itself."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Use the running app on localhost:3000, click through the UI to the profile settings screen, record a walkthrough video, and tell me where the video file was saved.",
+      "expected_output": "The response records a user-facing walkthrough from the existing running app, reaches the destination through the UI rather than guessing a deep link, and reports a saved video artifact path.",
+      "files": [],
+      "expectations": [
+        "It does not start a second server when the app is already running.",
+        "It treats this as a UI walkthrough case where recording a video is appropriate.",
+        "It records video via Playwright context settings such as `record_video_dir` and `record_video_size`.",
+        "It navigates through the UI instead of assuming a direct settings URL.",
+        "It uses `context.close()` and reports the saved video path explicitly to the user."
+      ]
+    }
+  ]
+}
