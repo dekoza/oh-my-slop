@@ -35,6 +35,8 @@ def test_webapp_testing_skill_frontmatter_and_guardrails_cover_video_workflow() 
     assert "headless=True" in skill_text
     assert "one fresh browser context" in skill_text
     assert "Video supplements" in skill_text
+    assert "orange dot" in skill_text.lower()
+    assert "ripple effect" in skill_text.lower()
     assert "Xvfb" not in skill_text
     assert "headless=False" not in skill_text
 
@@ -49,6 +51,9 @@ def test_webapp_testing_skill_example_records_and_names_video_artifacts() -> Non
     assert "video.save_as" in example_text
     assert "context.close()" in example_text
     assert "headless=True" in example_text
+    assert "orange" in example_text.lower()
+    assert "ripple" in example_text.lower()
+    assert "add_init_script" in example_text
 
 
 def test_webapp_testing_skill_evals_cover_video_repro_and_walkthrough_cases() -> None:
@@ -71,6 +76,8 @@ def test_webapp_testing_skill_evals_cover_video_repro_and_walkthrough_cases() ->
     assert "record_video_dir" in expectations
     assert "context.close()" in expectations
     assert "video path" in expectations
+    assert "orange dot" in expectations.lower()
+    assert "ripple" in expectations.lower()
     assert "UI" in prompts or "click" in prompts
 
 

@@ -88,6 +88,8 @@ Record video when at least one of these is true:
 
 Do **not** default to video for every task. For trivial static checks, one screenshot plus assertions is usually enough.
 
+For human-facing recordings, make cursor intent visible: add pointer tracking with an **orange dot** and show clicks with a **ripple effect** so the viewer can see where the interaction happened.
+
 **Video supplements logs, assertions, and written findings. It does not replace them.**
 
 ## Preferred video recording pattern
@@ -132,6 +134,8 @@ print(f"Video saved to: {final_video_path}")
 
 - Configure `record_video_dir` and `record_video_size` on `browser.new_context(...)`, not on the page.
 - If you want one video per tested flow, use **one fresh browser context** and one page for that flow.
+- For human review videos, inject a lightweight overlay that shows pointer tracking as an **orange dot** and click feedback as a **ripple effect**.
+- Keep the overlay non-interactive with `pointer-events: none` so it does not break the tested UI.
 - Capture the `video = page.video` handle early if you plan to rename or move the artifact.
 - `context.close()` is mandatory. The video is finalized only when the browser context closes.
 - If the final filename matters, call `video.save_as(...)` and report the saved path explicitly.
@@ -202,4 +206,4 @@ locator.press_sequentially("text", delay=80)
 - `examples/element_discovery.py` — inspect buttons, links, and inputs on a page
 - `examples/static_html_automation.py` — automate a local `file://` HTML target
 - `examples/console_logging.py` — capture console logs during automation
-- `examples/video_recording.py` — record and name a browser-video artifact for a test run
+- `examples/video_recording.py` — record and name a browser-video artifact with an orange-dot pointer overlay and click ripple effect

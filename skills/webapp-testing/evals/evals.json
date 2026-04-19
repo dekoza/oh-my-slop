@@ -48,6 +48,7 @@
         "It configures video on `browser.new_context(...)` with `record_video_dir` before creating the page.",
         "It keeps the browser headless instead of switching to a headed fallback by default.",
         "It calls `context.close()` so the video artifact is fully written.",
+        "For a human-facing recording, it adds pointer tracking with an orange dot and click feedback with a ripple effect.",
         "It reports the final video path explicitly, ideally via `video.save_as(...)` or an equivalent saved-path workflow.",
         "It still reports console errors or browser-side findings instead of treating the recording as sufficient by itself."
       ]
@@ -61,6 +62,7 @@
         "It does not start a second server when the app is already running.",
         "It treats this as a UI walkthrough case where recording a video is appropriate.",
         "It records video via Playwright context settings such as `record_video_dir` and `record_video_size`.",
+        "It adds pointer tracking with an orange dot and click feedback with a ripple effect so the walkthrough is readable.",
         "It navigates through the UI instead of assuming a direct settings URL.",
         "It uses `context.close()` and reports the saved video path explicitly to the user."
       ]
