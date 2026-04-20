@@ -82,6 +82,7 @@ def run_single_query(
     timeout: int,
     project_root: str,
     model: str | None = None,
+    max_attempts_per_run: int = 2,
 ) -> bool:
     """Run a single query and return whether the skill was triggered."""
     with tempfile.TemporaryDirectory(
@@ -105,15 +106,26 @@ def run_single_query(
         if model:
             cmd.extend(["--model", model])
 
-        result = subprocess.run(
-            args=cmd,
-            capture_output=True,
-            text=True,
-            cwd=project_root,
-            timeout=timeout,
-        )
+        last_timeout: subprocess.TimeoutExpired | None = None
+        for _attempt in range(1, max_attempts_per_run + 1):
+            try:
+                result = subprocess.run(
+                    args=cmd,
+                    capture_output=True,
+                    text=True,
+                    cwd=project_root,
+                    timeout=timeout,
+                )
+            except subprocess.TimeoutExpired as exc:
+                last_timeout = exc
+                continue
 
-        return detect_skill_trigger(result.stdout.splitlines(), skill_name)
+            return detect_skill_trigger(result.stdout.splitlines(), skill_name)
+
+        if last_timeout is not None:
+            return False
+
+        return False
 
 
 def run_eval(
@@ -126,6 +138,7 @@ def run_eval(
     runs_per_query: int = 1,
     trigger_threshold: float = 0.5,
     model: str | None = None,
+    max_attempts_per_run: int = 2,
 ) -> dict:
     """Run the full eval set and return results."""
     results = []
@@ -142,6 +155,7 @@ def run_eval(
                     timeout,
                     str(project_root),
                     model,
+                    max_attempts_per_run,
                 )
                 future_to_info[future] = (item, run_idx)
 
@@ -203,13 +217,19 @@ def main():
         "--description", default=None, help="Override description to test"
     )
     parser.add_argument(
-        "--num-workers", type=int, default=10, help="Number of parallel workers"
+        "--num-workers", type=int, default=4, help="Number of parallel workers"
     )
     parser.add_argument(
         "--timeout", type=int, default=30, help="Timeout per query in seconds"
     )
     parser.add_argument(
         "--runs-per-query", type=int, default=3, help="Number of runs per query"
+    )
+    parser.add_argument(
+        "--max-attempts-per-run",
+        type=int,
+        default=2,
+        help="Retry timed out opencode runs up to this many attempts per run",
     )
     parser.add_argument(
         "--trigger-threshold", type=float, default=0.5, help="Trigger rate threshold"
@@ -248,6 +268,7 @@ def main():
         runs_per_query=args.runs_per_query,
         trigger_threshold=args.trigger_threshold,
         model=args.model,
+        max_attempts_per_run=args.max_attempts_per_run,
     )
 
     if args.verbose:

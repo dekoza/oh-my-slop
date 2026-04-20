@@ -54,6 +54,7 @@ def run_loop(
     timeout: int,
     max_iterations: int,
     runs_per_query: int,
+    max_attempts_per_run: int,
     trigger_threshold: float,
     holdout: float,
     model: str,
@@ -101,6 +102,7 @@ def run_loop(
             runs_per_query=runs_per_query,
             trigger_threshold=trigger_threshold,
             model=model,
+            max_attempts_per_run=max_attempts_per_run,
         )
         eval_elapsed = time.time() - t0
 
@@ -301,7 +303,7 @@ def main():
         "--description", default=None, help="Override starting description"
     )
     parser.add_argument(
-        "--num-workers", type=int, default=10, help="Number of parallel workers"
+        "--num-workers", type=int, default=4, help="Number of parallel workers"
     )
     parser.add_argument(
         "--timeout", type=int, default=30, help="Timeout per query in seconds"
@@ -311,6 +313,12 @@ def main():
     )
     parser.add_argument(
         "--runs-per-query", type=int, default=3, help="Number of runs per query"
+    )
+    parser.add_argument(
+        "--max-attempts-per-run",
+        type=int,
+        default=2,
+        help="Retry timed out opencode runs up to this many attempts per run",
     )
     parser.add_argument(
         "--trigger-threshold", type=float, default=0.5, help="Trigger rate threshold"
@@ -382,6 +390,7 @@ def main():
         timeout=args.timeout,
         max_iterations=args.max_iterations,
         runs_per_query=args.runs_per_query,
+        max_attempts_per_run=args.max_attempts_per_run,
         trigger_threshold=args.trigger_threshold,
         holdout=args.holdout,
         model=args.model,

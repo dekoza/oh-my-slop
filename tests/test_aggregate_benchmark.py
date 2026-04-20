@@ -13,7 +13,9 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS_DIR = Path("/home/minder/.config/opencode/skills/skill-creator/scripts")
+SCRIPTS_DIR = (
+    Path(__file__).resolve().parents[1] / "skills" / "skill-creator" / "scripts"
+)
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from aggregate_benchmark import generate_benchmark, load_run_results, calculate_stats

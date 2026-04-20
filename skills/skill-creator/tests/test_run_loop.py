@@ -80,6 +80,7 @@ class RunLoopStoppingTests(unittest.TestCase):
             timeout=30,
             max_iterations=2,
             runs_per_query=1,
+            max_attempts_per_run=2,
             trigger_threshold=0.5,
             holdout=0.4,
             model="github-copilot/gpt-5.4",
@@ -89,6 +90,12 @@ class RunLoopStoppingTests(unittest.TestCase):
         self.assertEqual(result["iterations_run"], 2)
         self.assertEqual(result["best_description"], "improved description")
         self.assertEqual(mock_run_eval.call_count, 2)
+        self.assertTrue(
+            all(
+                call.kwargs["max_attempts_per_run"] == 2
+                for call in mock_run_eval.call_args_list
+            )
+        )
         mock_improve_description.assert_called_once()
 
     @mock.patch("scripts.run_loop.improve_description")
@@ -128,6 +135,7 @@ class RunLoopStoppingTests(unittest.TestCase):
             timeout=30,
             max_iterations=3,
             runs_per_query=1,
+            max_attempts_per_run=2,
             trigger_threshold=0.5,
             holdout=0,
             model="github-copilot/gpt-5.4",
@@ -136,6 +144,7 @@ class RunLoopStoppingTests(unittest.TestCase):
 
         self.assertEqual(result["iterations_run"], 1)
         self.assertEqual(mock_run_eval.call_count, 1)
+        self.assertEqual(mock_run_eval.call_args.kwargs["max_attempts_per_run"], 2)
         mock_improve_description.assert_not_called()
 
 

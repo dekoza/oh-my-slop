@@ -1,4 +1,5 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -42,6 +43,63 @@ class DetectSkillTriggerTests(unittest.TestCase):
         ]
 
         self.assertTrue(run_eval.detect_skill_trigger(events, "litestar"))
+
+
+class RunSingleQueryRetryTests(unittest.TestCase):
+    @mock.patch("scripts.run_eval.subprocess.run")
+    def test_retries_timeout_before_succeeding(
+        self, mock_subprocess_run: mock.Mock
+    ) -> None:
+        mock_subprocess_run.side_effect = [
+            subprocess.TimeoutExpired(cmd=["opencode"], timeout=30),
+            mock.Mock(
+                stdout=json.dumps(
+                    {
+                        "type": "tool_use",
+                        "part": {
+                            "tool": "skill",
+                            "state": {"input": {"name": "litestar"}},
+                        },
+                    }
+                )
+                + "\n"
+            ),
+        ]
+
+        result = run_eval.run_single_query(
+            query="review this litestar API design",
+            skill_name="litestar",
+            skill_description="Use when reviewing Litestar work.",
+            timeout=30,
+            project_root="/tmp/project",
+            model="github-copilot/gpt-5.4",
+            max_attempts_per_run=2,
+        )
+
+        self.assertTrue(result)
+        self.assertEqual(mock_subprocess_run.call_count, 2)
+
+    @mock.patch("scripts.run_eval.subprocess.run")
+    def test_returns_false_after_exhausting_timeout_retries(
+        self, mock_subprocess_run: mock.Mock
+    ) -> None:
+        mock_subprocess_run.side_effect = [
+            subprocess.TimeoutExpired(cmd=["opencode"], timeout=30),
+            subprocess.TimeoutExpired(cmd=["opencode"], timeout=30),
+        ]
+
+        result = run_eval.run_single_query(
+            query="review this litestar API design",
+            skill_name="litestar",
+            skill_description="Use when reviewing Litestar work.",
+            timeout=30,
+            project_root="/tmp/project",
+            model="github-copilot/gpt-5.4",
+            max_attempts_per_run=2,
+        )
+
+        self.assertFalse(result)
+        self.assertEqual(mock_subprocess_run.call_count, 2)
 
 
 class ClassifyEventTests(unittest.TestCase):
