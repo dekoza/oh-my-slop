@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I'm redesigning a fintech SaaS dashboard for ops managers. I need a design system, color palette, typography pairing, chart guidance, and UX risks called out before we start coding in React.",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you propose a landing page direction for a healthcare service? I care about accessibility, strong light mode contrast, trustworthy colors, and what patterns to avoid.",
+    "should_trigger": true
+  },
+  {
+    "query": "Review this dashboard direction like a hostile design lead: is it professional enough for enterprise buyers, are the interactions trustworthy, and what would you change before implementation?",
+    "should_trigger": true
+  },
+  {
+    "query": "I need a reusable design system for a B2B admin app, then page-specific guidance for the billing screen. Give me the visual direction and how the page override should differ from the master rules.",
+    "should_trigger": true
+  },
+  {
+    "query": "Help me choose typography, icon style, and a color direction for a mental health mobile app. I need something calm, readable, and accessible, not trendy nonsense.",
+    "should_trigger": true
+  },
+  {
+    "query": "We're shipping a Tailwind marketing site for a security product. I want a landing page structure, CTA placement, trust signals, and anti-patterns that would make it look amateur.",
+    "should_trigger": true
+  },
+  {
+    "query": "Pick the right chart types and dashboard visual treatment for a real-time logistics control panel. I need practical UI advice, not just data-viz theory.",
+    "should_trigger": true
+  },
+  {
+    "query": "Before we build this shadcn dashboard, recommend a design direction that balances dense data, accessibility, and clean hover states. Include what visual shortcuts to avoid.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm not asking for code yet. I need a UI critique of this e-commerce homepage direction: layout hierarchy, conversion friction, typography tone, and whether the palette supports trust.",
+    "should_trigger": true
+  },
+  {
+    "query": "Design-wise, what should a SwiftUI finance app use for color hierarchy, typography mood, and interaction polish if we want it to feel premium but not flashy?",
+    "should_trigger": true
+  },
+  {
+    "query": "The Tailwind build is dropping classes in production. Find the purge/config issue and fix the CSS bug.",
+    "should_trigger": false
+  },
+  {
+    "query": "Turn this Figma frame into a pixel-perfect React component. I already know the design; I just need the implementation code.",
+    "should_trigger": false
+  },
+  {
+    "query": "Use Playwright to reproduce a flaky modal bug and record a video of the failure. I care about the browser trace, not design recommendations.",
+    "should_trigger": false
+  },
+  {
+    "query": "My CSS grid collapses on mobile Safari. Debug the layout bug and explain the browser quirk.",
+    "should_trigger": false
+  },
+  {
+    "query": "Wire up a Next.js dashboard route with server components and fix the data fetching waterfall. Don't change the visual design.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need a DRF endpoint for analytics cards on a dashboard. Focus on serializers, permissions, and response shape.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a prompt I can paste into Midjourney for a neon cyberpunk landing page illustration.",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up Storybook and snapshot tests for our component library. We already have the design tokens; this is tooling work.",
+    "should_trigger": false
+  },
+  {
+    "query": "This React form rerenders too much when typing. Profile it and fix the memoization issue.",
+    "should_trigger": false
+  },
+  {
+    "query": "Implement keyboard navigation and ARIA labels for this existing modal component without changing its visual system.",
+    "should_trigger": false
+  }
+]

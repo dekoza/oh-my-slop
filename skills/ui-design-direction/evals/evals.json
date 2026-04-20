@@ -1,0 +1,53 @@
+{
+  "skill_name": "ui-design-direction",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I need a design direction for a fintech SaaS dashboard. Start with the local `--design-system` workflow, then explain the recommended pattern, typography, color direction, UX risks, and what to implement next. Do not give me generic mood-board fluff.",
+      "expected_output": "The response starts from the bundled design-system workflow and turns it into a concrete dashboard recommendation with rationale and risks.",
+      "files": [],
+      "expectations": [
+        "It explicitly starts from the `--design-system` workflow instead of free-associating visually.",
+        "It proposes a concrete pattern, typography direction, and color direction.",
+        "It calls out UX risks such as contrast, trust signals, motion, or layout-shift concerns.",
+        "It ends with a concrete next implementation step."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Recommend a landing-page direction for a healthcare service and keep it strong in light mode. Use the local skill data, mention anti-patterns to avoid, and tell me what parts of the recommendation are accessibility requirements versus style preference.",
+      "expected_output": "The response gives a grounded healthcare recommendation tied to accessibility, light-mode clarity, and explicit anti-patterns.",
+      "files": [],
+      "expectations": [
+        "It explicitly addresses accessibility and light-mode readability.",
+        "It distinguishes high-confidence requirements from optional taste or styling.",
+        "It names concrete anti-patterns to avoid.",
+        "It stays implementation-relevant instead of vague inspiration talk."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Persist a reusable design system for a project called Nova Ops, then explain exactly which files `--persist` creates and how page overrides should be checked before implementation. I care about precise file paths, not hand-wavy descriptions.",
+      "expected_output": "The response explains the persistence workflow with exact project-scoped output paths and correct page-override behavior.",
+      "files": [],
+      "expectations": [
+        "It mentions `--persist` explicitly.",
+        "It gives exact project-scoped file paths for the master file and page overrides.",
+        "It explains that the page file overrides the master file when present.",
+        "It avoids generic or incorrect `design-system/MASTER.md` claims."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Review a proposed dashboard direction skeptically. Verify whether the requested stack is actually supported by the skill before you claim compatibility, and say plainly if support is missing or only a fallback is available.",
+      "expected_output": "The response critiques the design direction, verifies stack support, and avoids bluffing about unsupported tooling.",
+      "files": [],
+      "expectations": [
+        "It critiques the design direction with concrete professionalism or accessibility issues.",
+        "It verifies stack support before claiming it is supported.",
+        "It uses fallback language only when the stack is not known or not supported.",
+        "It proposes concrete corrections instead of only aesthetic opinions."
+      ]
+    }
+  ]
+}
