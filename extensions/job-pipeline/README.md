@@ -92,6 +92,19 @@ Configure pools per role via `/job-pool`. Each role draws one model randomly
 at job start. The draw is stable for the whole job. The jester always draws
 a different model from the planner when the pool has more than one option.
 
+### Default thinking levels by role
+
+These are hard-coded defaults used when spawning sub-agents:
+
+| Role | Thinking |
+|---|---|
+| scout | `low` |
+| worker | `medium` |
+| task-writer | `medium` |
+| planner | `high` |
+| jester | `high` |
+| reviewer | `high` |
+
 Recommended pool structure for a Copilot subscription:
 
 | Role | Suggested tier |

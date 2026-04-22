@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { spawnAgent, spawnCodingAgent, extractJson } from './agents.mjs';
+import { getRoleThinkingLevel } from './thinking.mjs';
 import { resolveExecutionBatches } from './tasks.mjs';
 import { generateProofHtml } from './proof.mjs';
 import { writeJobState, writeProofDeck, getArtifactDir } from './state.mjs';
@@ -65,6 +66,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
     onProgress('scout: running');
     const scoutOutput = await spawnAgent({
       modelId: pool.scout,
+      thinkingLevel: getRoleThinkingLevel('scout'),
       systemPrompt: scoutPrompt({ goal: state.spec.goal, questions: scoutQuestions }),
       userPrompt: `Reconnaissance mission for: ${state.spec.goal}`,
       cwd,
@@ -95,6 +97,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
       onProgress(`jester: critique round ${round}`);
       const jesterOutput = await spawnAgent({
         modelId: pool.jester,
+        thinkingLevel: getRoleThinkingLevel('jester'),
         systemPrompt: jesterPrompt({ stage: 'planning', content: planText }),
         userPrompt: 'Critique this plan.',
         cwd,
@@ -150,6 +153,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
     const scoutSummary = formatScoutSummary(state.scoutResult);
     const taskOutput = await spawnAgent({
       modelId: pool['task-writer'],
+      thinkingLevel: getRoleThinkingLevel('task-writer'),
       systemPrompt: taskWriterPrompt({
         finalPlan: state.finalPlan,
         scoutSummary,
@@ -258,6 +262,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
 
     const reviewOutput = await spawnAgent({
       modelId: pool.reviewer,
+      thinkingLevel: getRoleThinkingLevel('reviewer'),
       systemPrompt: reviewerPrompt({
         workerSummaries,
         plan: state.finalPlan,
@@ -277,6 +282,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
     onProgress('jester: critiquing the review');
     const jesterOutput = await spawnAgent({
       modelId: pool.jester,
+      thinkingLevel: getRoleThinkingLevel('jester'),
       systemPrompt: jesterPrompt({ stage: 'review', content: reviewOutput }),
       userPrompt: 'Critique this review.',
       cwd,
@@ -295,6 +301,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
       onProgress('planner: resolving jester critique of review');
       const resolutionOutput = await spawnAgent({
         modelId: pool.planner,
+        thinkingLevel: getRoleThinkingLevel('planner'),
         systemPrompt: `You are the Planner. The jester has critiqued a code review. Decide:
 1. Ask the worker for fixes (output: {"action":"worker-fix","instructions":"..."})
 2. Update the review process (output: {"action":"process-update","description":"..."})`,
@@ -379,6 +386,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
 async function callPlanner({ modelId, goal, interviewNotes, scoutSummary, cwd, signal }) {
   const output = await spawnAgent({
     modelId,
+    thinkingLevel: getRoleThinkingLevel('planner'),
     systemPrompt: plannerInitialPrompt({ goal, interviewNotes, scoutSummary }),
     userPrompt: `Create the initial implementation plan for: ${goal}`,
     cwd,
@@ -391,6 +399,7 @@ async function callPlanner({ modelId, goal, interviewNotes, scoutSummary, cwd, s
 async function callPlannerRevise({ modelId, previousPlan, jesterCritique, round, cwd, signal }) {
   const output = await spawnAgent({
     modelId,
+    thinkingLevel: getRoleThinkingLevel('planner'),
     systemPrompt: plannerRevisePrompt({ previousPlan, jesterCritique, round }),
     userPrompt: 'Revise the plan based on the jester critique.',
     cwd,
@@ -426,6 +435,7 @@ async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleI
   try {
     rawOutput = await spawnCodingAgent({
       modelId: pool.worker,
+      thinkingLevel: getRoleThinkingLevel('worker'),
       systemPrompt: workerPrompt({ task, scoutSummary, cycleIndex }),
       userPrompt: `Execute task: ${task.title}\n\nSave all proof artifacts to: ${artifactDir}`,
       cwd: worktreePath,

@@ -10,12 +10,13 @@
  *   systemPrompt: string,       Role-specific instructions
  *   userPrompt: string,         Task description / input
  *   toolNames?: string[],       Subset of pi tools to enable (default: read-only)
+ *   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh',
  *   cwd?: string,               Working directory (default: process.cwd())
  *   signal?: AbortSignal,
  * }} options
  * @returns {Promise<string>}    Final assistant message text
  */
-export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames, cwd, signal }) {
+export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames, thinkingLevel, cwd, signal }) {
   // Imported here to avoid loading the SDK at module parse time when running
   // pure logic tests that don't need it.
   const {
@@ -61,6 +62,7 @@ export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames,
 
   const { session } = await createAgentSession({
     model,
+    thinkingLevel,
     authStorage,
     modelRegistry,
     sessionManager: SessionManager.inMemory(),
@@ -101,12 +103,13 @@ export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames,
  *   modelId: string,
  *   systemPrompt: string,
  *   userPrompt: string,
+ *   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh',
  *   cwd: string,
  *   signal?: AbortSignal,
  * }} options
  * @returns {Promise<string>}
  */
-export async function spawnCodingAgent({ modelId, systemPrompt, userPrompt, cwd, signal }) {
+export async function spawnCodingAgent({ modelId, systemPrompt, userPrompt, thinkingLevel, cwd, signal }) {
   const {
     createAgentSession,
     AuthStorage,
@@ -139,6 +142,7 @@ export async function spawnCodingAgent({ modelId, systemPrompt, userPrompt, cwd,
 
   const { session } = await createAgentSession({
     model,
+    thinkingLevel,
     authStorage,
     modelRegistry,
     sessionManager: SessionManager.inMemory(),

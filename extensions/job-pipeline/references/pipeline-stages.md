@@ -54,6 +54,7 @@ Fails loudly with a clear error message if any role has no eligible models.
 
 **Trigger:** Automatic
 **Model:** scout (from pool)
+**Thinking:** `low`
 **Gate:** `scoutQuestion`
 
 The scout receives read-only tools. The planner's question list (from spec)
@@ -85,6 +86,7 @@ If the scout output is not valid JSON, the raw text is stored as `summary`.
 
 **Trigger:** Automatic after scout gate passes
 **Models:** planner (initial + revision), jester (critiques)
+**Thinking:** planner = `high`, jester = `high`
 **Gate:** `planApproval` (after final plan)
 
 ```
@@ -115,6 +117,7 @@ The gate dialog shows the full plan text plus extracted jester highlights
 
 **Trigger:** Automatic after plan gate passes
 **Model:** task-writer (from pool — different from planner by design)
+**Thinking:** `medium`
 **Gate:** none
 
 The task writer receives the final plan and scout summary. It produces a
@@ -155,6 +158,7 @@ touched until the merge step.
 
 **Trigger:** Automatic
 **Model:** worker (from pool)
+**Thinking:** `medium`
 **Gate:** none — failures are re-planning triggers, not human gates
 
 Workers execute in dependency order. Independent tasks run concurrently.
@@ -218,6 +222,7 @@ Proofs are never deleted. Each review cycle writes a new deck.
 
 **Trigger:** Automatic after proof compilation
 **Models:** reviewer, jester, planner
+**Thinking:** reviewer = `high`, jester = `high`, planner = `high`
 **Gate:** none — human gate comes after resolution
 
 ```
@@ -271,6 +276,7 @@ Proof decks are already on disk (not in the worktree) and survive cleanup.
 
 **Trigger:** Automatic after merge
 **Model:** planner (from pool)
+**Thinking:** `high`
 **Gate:** `retroReview`
 
 A retro sub-agent receives a job summary (re-plan count, cycle count,

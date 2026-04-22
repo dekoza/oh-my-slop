@@ -28,6 +28,7 @@ import {
   buildJesterFlagsWritePrompt,
 } from "./lib/swampcastle.mjs";
 import { spawnAgent, extractJson } from "./lib/agents.mjs";
+import { getRoleThinkingLevel } from "./lib/thinking.mjs";
 
 const STATUS_KEY = "job-pipeline";
 
@@ -575,6 +576,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
 
     const retroOutput = await spawnAgent({
       modelId: (finalState.pool as Record<string, string>).planner,
+      thinkingLevel: getRoleThinkingLevel('planner'),
       systemPrompt: retroPrompt({ jobSummary, previousChanges }),
       userPrompt: "Facilitate the retrospective.",
       signal,
