@@ -522,17 +522,6 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
   }
 }
 
-  } else {
-    ctx.ui.notify(`Retro summary: ${retroResult.summary ?? "clean"}`, "info");
-  }
-
-  // Write retro + jester flags to SwampCastle (fire-and-forget).
-  // sendSwampCastleWrites is closed over `pi` from the extension factory.
-  if (finalState.id && sendSwampCastleWrites) {
-    sendSwampCastleWrites(retroResult, finalState);
-  }
-}
-
 // ── Config helpers ────────────────────────────────────────────────────────────
 
 function loadConfig(agentDir: string) {
