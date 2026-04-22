@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getAgentDir, DynamicBorder } from "@mariozechner/pi-coding-agent";
-import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
+import { type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import { normalizeJobPipelineConfig, DEFAULT_JOB_PIPELINE_CONFIG } from "./lib/config.mjs";
@@ -463,7 +463,6 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
   ): Promise<string[] | null> {
     const selected = new Set<string>(currentModels);
 
-    // Loop until the user picks the sentinel "done" item or presses Escape.
     while (true) {
       const doneItem: SelectItem = {
         value: "__done__",
@@ -479,59 +478,74 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       }));
 
       const choice = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-        const container = new Container();
-
-        container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-        container.addChild(
-          new Text(
-            theme.fg("accent", theme.bold(`Pool: ${role}`)) +
-            theme.fg("muted", `  —  ${roleLabel}`),
-            1,
-            0,
-          ),
+        const topBorder    = new DynamicBorder((s: string) => theme.fg("accent", s));
+        const bottomBorder = new DynamicBorder((s: string) => theme.fg("accent", s));
+        const titleText    = new Text(
+          theme.fg("accent", theme.bold(`Pool: ${role}`)) +
+          theme.fg("muted", `  —  ${roleLabel}`),
+          1, 0,
+        );
+        const helpText = new Text(
+          theme.fg("dim", "↑↓ navigate  ⏎ toggle  backspace clear  esc cancel"),
+          1, 0,
         );
 
         const listItems = [doneItem, ...modelItems];
         const selectList = new SelectList(listItems, Math.min(listItems.length, 12), {
           selectedPrefix: (t) => theme.fg("accent", t),
-          selectedText: (t) => theme.fg("accent", t),
-          description: (t) => theme.fg("dim", t),
-          scrollInfo: (t) => theme.fg("dim", t),
-          noMatch: (t) => theme.fg("warning", t),
+          selectedText:   (t) => theme.fg("accent", t),
+          description:    (t) => theme.fg("dim", t),
+          scrollInfo:     (t) => theme.fg("dim", t),
+          noMatch:        (t) => theme.fg("warning", t),
         });
         selectList.onSelect = (item) => done(item.value);
         selectList.onCancel = () => done(null);
-        container.addChild(selectList);
 
-        container.addChild(
-          new Text(
-            theme.fg("dim", "↑↓ navigate  ⏎ toggle  type to filter  esc cancel"),
-            1,
-            0,
-          ),
-        );
-        container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+        // SelectList.handleInput only handles navigation — filtering is
+        // external. We maintain `query` here, call setFilter on each
+        // keystroke, and render the query as a live search line.
+        let query = "";
 
         return {
-          render: (w) => container.render(w),
-          invalidate: () => container.invalidate(),
-          handleInput: (data) => { selectList.handleInput(data); tui.requestRender(); },
-        };
-      }, { overlay: true, overlayOptions: { anchor: "center", width: 72, maxHeight: 20 } });
+          render: (w) => [
+            ...topBorder.render(w),
+            ...titleText.render(w),
+            ` ${theme.fg("dim", "Filter: ")}${theme.fg("accent", query)}█`,
+            ...selectList.render(w),
+            ...helpText.render(w),
+            ...bottomBorder.render(w),
+          ],
+          invalidate: () => {
+            topBorder.invalidate();
+            titleText.invalidate();
+            selectList.invalidate();
+            helpText.invalidate();
+            bottomBorder.invalidate();
+          },
+          handleInput: (data) => {
+            const code = data.charCodeAt(0);
+            const isPrintable = data.length === 1 && code >= 32 && code < 127;
+            const isBackspace = data === "\x7f" || data === "\b";
 
-      if (choice === null) {
-        // Escape: cancel this role, keep original pool.
-        return null;
-      }
-      if (choice === "__done__") {
-        return selected.size > 0 ? Array.from(selected) : currentModels;
-      }
-      // Toggle the chosen model.
-      if (selected.has(choice)) {
-        selected.delete(choice);
-      } else {
-        selected.add(choice);
-      }
+            if (isPrintable) {
+              query += data;
+              selectList.setFilter(query);
+            } else if (isBackspace) {
+              query = query.slice(0, -1);
+              selectList.setFilter(query);
+            } else {
+              selectList.handleInput(data);
+            }
+            tui.requestRender();
+          },
+        };
+      }, { overlay: true, overlayOptions: { anchor: "center", width: 72, maxHeight: 22 } });
+
+      if (choice === null) return null;
+      if (choice === "__done__") return selected.size > 0 ? Array.from(selected) : currentModels;
+
+      if (selected.has(choice)) selected.delete(choice);
+      else selected.add(choice);
     }
   }
 
