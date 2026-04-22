@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getAgentDir, DynamicBorder } from "@mariozechner/pi-coding-agent";
 import { type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 import { normalizeJobPipelineConfig, DEFAULT_JOB_PIPELINE_CONFIG } from "./lib/config.mjs";
 import { drawSessionPool } from "./lib/pool.mjs";
