@@ -286,12 +286,12 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
   // ── /job-pool command ─────────────────────────────────────────────────────
 
   pi.registerCommand("job-pool", {
-    description: "Configure model pools for each pipeline role.",
+    description: "Configure model pools. ←→ cycle roles, ↑↓/type to pick models.",
     handler: async (args, ctx) => {
       await ctx.waitForIdle();
 
       const config = loadConfig(agentDir);
-      const available = ctx.modelRegistry
+      const allModels = ctx.modelRegistry
         .getAvailable()
         .map((m: { provider: string; id: string; name: string }) => ({
           fullId: `${m.provider}/${m.id}`,
@@ -299,38 +299,151 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
           provider: m.provider,
         }));
 
-      if (available.length === 0) {
+      if (allModels.length === 0) {
         ctx.ui.notify("No models available. Log in to a provider first.", "warning");
         return;
       }
 
-      const roles = ["scout", "planner", "jester", "task-writer", "worker", "reviewer"] as const;
-      const roleLabels: Record<string, string> = {
-        scout: "Scout — cheap, read-only recon",
-        planner: "Planner — expensive, drives planning loop",
-        jester: "Jester — adversarial critic (must differ from planner)",
-        "task-writer": "Task Writer — generates worker task list",
-        worker: "Worker — cheap, TDD implementation",
-        reviewer: "Reviewer — expensive, final quality gate",
+      const ALL_ROLES = ["scout", "planner", "jester", "task-writer", "worker", "reviewer"] as const;
+      const ROLE_LABELS: Record<string, string> = {
+        scout:         "cheap — read-only recon",
+        planner:       "expensive — drives planning loop",
+        jester:        "adversarial critic (must differ from planner)",
+        "task-writer": "generates worker task list",
+        worker:        "cheap — TDD implementation",
+        reviewer:      "expensive — final quality gate",
       };
 
-      const updatedPools = structuredClone(config.pools) as Record<string, { models: string[] }>;
-
       const subArg = args.trim().toLowerCase();
-      const targetRoles = roles.filter((r) => !subArg || r === subArg);
+      const targetRoles: string[] = subArg && ALL_ROLES.includes(subArg as typeof ALL_ROLES[number])
+        ? [subArg]
+        : [...ALL_ROLES];
 
-      for (const role of targetRoles) {
-        const currentModels: string[] =
-          (config.pools[role as keyof typeof config.pools]?.models ?? []);
+      // Track selections per role, initialised from current config.
+      const selectedByRole = new Map<string, Set<string>>(
+        targetRoles.map((r) => [
+          r,
+          new Set<string>(config.pools[r as keyof typeof config.pools]?.models ?? []),
+        ]),
+      );
 
-        const chosen = await pickModelsForRole(ctx, role, roleLabels[role], available, currentModels);
-        if (chosen !== null) {
-          updatedPools[role] = { models: chosen };
+      const result = await ctx.ui.custom<Record<string, string[]> | null>(
+        (tui, theme, _kb, done) => {
+          let roleIdx = 0;
+          let query = "";
+
+          const topBorder    = new DynamicBorder((s: string) => theme.fg("accent", s));
+          const bottomBorder = new DynamicBorder((s: string) => theme.fg("accent", s));
+          const helpText = new Text(
+            theme.fg("dim",
+              targetRoles.length > 1
+                ? "↑↓ navigate  ⏎ toggle  type filter  ← → role  esc save"
+                : "↑↓ navigate  ⏎ toggle  type filter  esc save",
+            ),
+            1, 0,
+          );
+
+          function currentRole(): string { return targetRoles[roleIdx]; }
+          function currentSelected(): Set<string> { return selectedByRole.get(currentRole())!; }
+
+          function allDone(): Record<string, string[]> {
+            return Object.fromEntries([...selectedByRole].map(([k, v]) => [k, [...v]]));
+          }
+
+          function buildItems(): SelectItem[] {
+            const sel = currentSelected();
+            return [
+              { value: "__done__", label: "✓ Save and close" },
+              ...allModels.map((m) => ({
+                value: m.fullId,
+                label: (sel.has(m.fullId) ? "✓ " : "  ") + m.name,
+                description: m.fullId,
+              })),
+            ];
+          }
+
+          // SelectList is recreated whenever items change (after toggle or role switch).
+          // We use a `let` so render/handleInput always dereference the current instance.
+          let selectList = makeSelectList(buildItems());
+
+          function makeSelectList(items: SelectItem[]): SelectList {
+            const sl = new SelectList(items, 12, {
+              selectedPrefix: (s) => theme.fg("accent", s),
+              selectedText:   (s) => theme.fg("accent", s),
+              description:    (s) => theme.fg("dim", s),
+              scrollInfo:     (s) => theme.fg("dim", s),
+              noMatch:        (s) => theme.fg("warning", s),
+            });
+            if (query) sl.setFilter(query);
+            sl.onSelect = (item) => {
+              if (item.value === "__done__") { done(allDone()); return; }
+              const sel = currentSelected();
+              if (sel.has(item.value)) sel.delete(item.value); else sel.add(item.value);
+              selectList = makeSelectList(buildItems());
+              tui.requestRender();
+            };
+            sl.onCancel = () => done(allDone());
+            return sl;
+          }
+
+          function roleHeader(): string {
+            const role = currentRole();
+            const count = currentSelected().size;
+            const nav = targetRoles.length > 1 ? `← ${role} →` : role;
+            const countStr = count > 0
+              ? theme.fg("accent", `  ${count} model${count === 1 ? "" : "s"}`)
+              : theme.fg("dim", "  (empty)");
+            return ` ${theme.bold(nav)}${countStr}  ${theme.fg("muted", ROLE_LABELS[role] ?? "")}`;
+          }
+
+          return {
+            render: (w) => [
+              ...topBorder.render(w),
+              roleHeader(),
+              ` ${theme.fg("dim", "Filter: ")}${theme.fg("accent", query)}█`,
+              ...selectList.render(w),
+              ...helpText.render(w),
+              ...bottomBorder.render(w),
+            ],
+            invalidate: () => {
+              topBorder.invalidate();
+              bottomBorder.invalidate();
+              helpText.invalidate();
+              selectList.invalidate();
+            },
+            handleInput: (data) => {
+              if (data === "\x1b[D") {                          // ← prev role
+                roleIdx = (roleIdx - 1 + targetRoles.length) % targetRoles.length;
+                query = "";
+                selectList = makeSelectList(buildItems());
+              } else if (data === "\x1b[C") {                   // → next role
+                roleIdx = (roleIdx + 1) % targetRoles.length;
+                query = "";
+                selectList = makeSelectList(buildItems());
+              } else if (data.length === 1 && data.charCodeAt(0) >= 32 && data.charCodeAt(0) < 127) {
+                query += data;
+                selectList.setFilter(query);
+              } else if (data === "\x7f" || data === "\b") {   // backspace
+                query = query.slice(0, -1);
+                selectList.setFilter(query);
+              } else {
+                selectList.handleInput(data);
+              }
+              tui.requestRender();
+            },
+          };
+        },
+        { overlay: true, overlayOptions: { anchor: "center", width: 72, maxHeight: 22 } },
+      );
+
+      if (result) {
+        const updatedPools = structuredClone(config.pools) as Record<string, { models: string[] }>;
+        for (const [role, models] of Object.entries(result)) {
+          updatedPools[role] = { models };
         }
+        saveConfig(agentDir, { ...config, pools: updatedPools });
+        ctx.ui.notify("Pool configuration saved.", "success");
       }
-
-      saveConfig(agentDir, { ...config, pools: updatedPools });
-      ctx.ui.notify("Pool configuration saved.", "success");
     },
   });
 
@@ -446,108 +559,6 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       ctx.ui.notify(lines.join("\n"), suggestion ? "success" : "info");
     },
   });
-
-  // ── Model picker helper ──────────────────────────────────────────────────
-
-  /**
-   * Show a scrollable, filterable SelectList for one role's model pool.
-   * Supports multi-select via toggle: each selection adds/removes a model.
-   * Returns the final selected model IDs, or null if cancelled.
-   */
-  async function pickModelsForRole(
-    ctx: ExtensionContext,
-    role: string,
-    roleLabel: string,
-    allModels: Array<{ fullId: string; name: string; provider: string }>,
-    currentModels: string[],
-  ): Promise<string[] | null> {
-    const selected = new Set<string>(currentModels);
-
-    while (true) {
-      const doneItem: SelectItem = {
-        value: "__done__",
-        label: selected.size > 0
-          ? `✓ Done  (${selected.size} model${selected.size === 1 ? "" : "s"} selected)`
-          : "✓ Done  (keep current)",
-      };
-
-      const modelItems: SelectItem[] = allModels.map((m) => ({
-        value: m.fullId,
-        label: (selected.has(m.fullId) ? "✓ " : "  ") + m.name,
-        description: m.fullId,
-      }));
-
-      const choice = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-        const topBorder    = new DynamicBorder((s: string) => theme.fg("accent", s));
-        const bottomBorder = new DynamicBorder((s: string) => theme.fg("accent", s));
-        const titleText    = new Text(
-          theme.fg("accent", theme.bold(`Pool: ${role}`)) +
-          theme.fg("muted", `  —  ${roleLabel}`),
-          1, 0,
-        );
-        const helpText = new Text(
-          theme.fg("dim", "↑↓ navigate  ⏎ toggle  backspace clear  esc cancel"),
-          1, 0,
-        );
-
-        const listItems = [doneItem, ...modelItems];
-        const selectList = new SelectList(listItems, Math.min(listItems.length, 12), {
-          selectedPrefix: (t) => theme.fg("accent", t),
-          selectedText:   (t) => theme.fg("accent", t),
-          description:    (t) => theme.fg("dim", t),
-          scrollInfo:     (t) => theme.fg("dim", t),
-          noMatch:        (t) => theme.fg("warning", t),
-        });
-        selectList.onSelect = (item) => done(item.value);
-        selectList.onCancel = () => done(null);
-
-        // SelectList.handleInput only handles navigation — filtering is
-        // external. We maintain `query` here, call setFilter on each
-        // keystroke, and render the query as a live search line.
-        let query = "";
-
-        return {
-          render: (w) => [
-            ...topBorder.render(w),
-            ...titleText.render(w),
-            ` ${theme.fg("dim", "Filter: ")}${theme.fg("accent", query)}█`,
-            ...selectList.render(w),
-            ...helpText.render(w),
-            ...bottomBorder.render(w),
-          ],
-          invalidate: () => {
-            topBorder.invalidate();
-            titleText.invalidate();
-            selectList.invalidate();
-            helpText.invalidate();
-            bottomBorder.invalidate();
-          },
-          handleInput: (data) => {
-            const code = data.charCodeAt(0);
-            const isPrintable = data.length === 1 && code >= 32 && code < 127;
-            const isBackspace = data === "\x7f" || data === "\b";
-
-            if (isPrintable) {
-              query += data;
-              selectList.setFilter(query);
-            } else if (isBackspace) {
-              query = query.slice(0, -1);
-              selectList.setFilter(query);
-            } else {
-              selectList.handleInput(data);
-            }
-            tui.requestRender();
-          },
-        };
-      }, { overlay: true, overlayOptions: { anchor: "center", width: 72, maxHeight: 22 } });
-
-      if (choice === null) return null;
-      if (choice === "__done__") return selected.size > 0 ? Array.from(selected) : currentModels;
-
-      if (selected.has(choice)) selected.delete(choice);
-      else selected.add(choice);
-    }
-  }
 
   // ── Retro runner (local, has access to sendSwampCastleWrites) ────────────────────────
 
