@@ -328,7 +328,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       );
 
       const result = await ctx.ui.custom<Record<string, string[]> | null>(
-        (tui, theme, _kb, done) => {
+        (tui, theme, keybindings, done) => {
           let roleIdx = 0;
           let query = "";
 
@@ -412,11 +412,11 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
               selectList.invalidate();
             },
             handleInput: (data) => {
-              if (data === "\x1b[D") {                          // ← prev role
+              if (keybindings.matches(data, "tui.editor.cursorLeft")) {
                 roleIdx = (roleIdx - 1 + targetRoles.length) % targetRoles.length;
                 query = "";
                 selectList = makeSelectList(buildItems());
-              } else if (data === "\x1b[C") {                   // → next role
+              } else if (keybindings.matches(data, "tui.editor.cursorRight")) {
                 roleIdx = (roleIdx + 1) % targetRoles.length;
                 query = "";
                 selectList = makeSelectList(buildItems());
