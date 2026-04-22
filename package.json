@@ -12,7 +12,8 @@
   "pi": {
     "extensions": [
       "./extensions/adaptive-routing/index.ts",
-      "./extensions/provider-failover/index.ts"
+      "./extensions/provider-failover/index.ts",
+      "./extensions/job-pipeline/index.ts"
     ],
     "skills": [
       "./skills"
