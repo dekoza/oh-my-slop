@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { getAgentDir } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, DynamicBorder } from "@mariozechner/pi-coding-agent";
+import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import { normalizeJobPipelineConfig, DEFAULT_JOB_PIPELINE_CONFIG } from "./lib/config.mjs";
@@ -293,8 +294,9 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       const available = ctx.modelRegistry
         .getAvailable()
         .map((m: { provider: string; id: string; name: string }) => ({
-          id: `${m.provider}/${m.id}`,
-          label: `${m.name} (${m.provider})`,
+          fullId: `${m.provider}/${m.id}`,
+          name: m.name,
+          provider: m.provider,
         }));
 
       if (available.length === 0) {
@@ -304,40 +306,30 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
 
       const roles = ["scout", "planner", "jester", "task-writer", "worker", "reviewer"] as const;
       const roleLabels: Record<string, string> = {
-        scout: "Scout (cheap, read-only recon)",
-        planner: "Planner (expensive, planning loop)",
-        jester: "Jester (adversarial critic, must differ from planner)",
-        "task-writer": "Task Writer (generates task list)",
-        worker: "Worker (cheap, TDD implementation)",
-        reviewer: "Reviewer (expensive, quality gate)",
+        scout: "Scout — cheap, read-only recon",
+        planner: "Planner — expensive, drives planning loop",
+        jester: "Jester — adversarial critic (must differ from planner)",
+        "task-writer": "Task Writer — generates worker task list",
+        worker: "Worker — cheap, TDD implementation",
+        reviewer: "Reviewer — expensive, final quality gate",
       };
 
-      const updatedPools = { ...config.pools };
+      const updatedPools = structuredClone(config.pools) as Record<string, { models: string[] }>;
 
       const subArg = args.trim().toLowerCase();
       const targetRoles = roles.filter((r) => !subArg || r === subArg);
 
       for (const role of targetRoles) {
-        const current = (config.pools[role as keyof typeof config.pools]?.models ?? []).join(", ");
-        const modelItems = available.map((m) => ({ value: m.id, label: m.label }));
+        const currentModels: string[] =
+          (config.pools[role as keyof typeof config.pools]?.models ?? []);
 
-        ctx.ui.notify(
-          `\nConfiguring pool for: ${roleLabels[role]}\nCurrent: ${current || "(empty)"}`,
-          "info",
-        );
-
-        const chosen = await ctx.ui.select(
-          `Select models for ${role} (choose multiple by selecting each in turn, empty to keep current)`,
-          modelItems.map((m) => m.value),
-        );
-
-        if (chosen) {
-          updatedPools[role as keyof typeof updatedPools] = { models: [chosen] };
+        const chosen = await pickModelsForRole(ctx, role, roleLabels[role], available, currentModels);
+        if (chosen !== null) {
+          updatedPools[role] = { models: chosen };
         }
       }
 
-      const updated = { ...config, pools: updatedPools };
-      saveConfig(agentDir, updated);
+      saveConfig(agentDir, { ...config, pools: updatedPools });
       ctx.ui.notify("Pool configuration saved.", "success");
     },
   });
@@ -454,6 +446,94 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       ctx.ui.notify(lines.join("\n"), suggestion ? "success" : "info");
     },
   });
+
+  // ── Model picker helper ──────────────────────────────────────────────────
+
+  /**
+   * Show a scrollable, filterable SelectList for one role's model pool.
+   * Supports multi-select via toggle: each selection adds/removes a model.
+   * Returns the final selected model IDs, or null if cancelled.
+   */
+  async function pickModelsForRole(
+    ctx: ExtensionContext,
+    role: string,
+    roleLabel: string,
+    allModels: Array<{ fullId: string; name: string; provider: string }>,
+    currentModels: string[],
+  ): Promise<string[] | null> {
+    const selected = new Set<string>(currentModels);
+
+    // Loop until the user picks the sentinel "done" item or presses Escape.
+    while (true) {
+      const doneItem: SelectItem = {
+        value: "__done__",
+        label: selected.size > 0
+          ? `✓ Done  (${selected.size} model${selected.size === 1 ? "" : "s"} selected)`
+          : "✓ Done  (keep current)",
+      };
+
+      const modelItems: SelectItem[] = allModels.map((m) => ({
+        value: m.fullId,
+        label: (selected.has(m.fullId) ? "✓ " : "  ") + m.name,
+        description: m.fullId,
+      }));
+
+      const choice = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+        const container = new Container();
+
+        container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+        container.addChild(
+          new Text(
+            theme.fg("accent", theme.bold(`Pool: ${role}`)) +
+            theme.fg("muted", `  —  ${roleLabel}`),
+            1,
+            0,
+          ),
+        );
+
+        const listItems = [doneItem, ...modelItems];
+        const selectList = new SelectList(listItems, Math.min(listItems.length, 12), {
+          selectedPrefix: (t) => theme.fg("accent", t),
+          selectedText: (t) => theme.fg("accent", t),
+          description: (t) => theme.fg("dim", t),
+          scrollInfo: (t) => theme.fg("dim", t),
+          noMatch: (t) => theme.fg("warning", t),
+        });
+        selectList.onSelect = (item) => done(item.value);
+        selectList.onCancel = () => done(null);
+        container.addChild(selectList);
+
+        container.addChild(
+          new Text(
+            theme.fg("dim", "↑↓ navigate  ⏎ toggle  type to filter  esc cancel"),
+            1,
+            0,
+          ),
+        );
+        container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+
+        return {
+          render: (w) => container.render(w),
+          invalidate: () => container.invalidate(),
+          handleInput: (data) => { selectList.handleInput(data); tui.requestRender(); },
+        };
+      }, { overlay: true, overlayOptions: { anchor: "center", width: 72, maxHeight: 20 } });
+
+      if (choice === null) {
+        // Escape: cancel this role, keep original pool.
+        return null;
+      }
+      if (choice === "__done__") {
+        return selected.size > 0 ? Array.from(selected) : currentModels;
+      }
+      // Toggle the chosen model.
+      if (selected.has(choice)) {
+        selected.delete(choice);
+      } else {
+        selected.add(choice);
+      }
+    }
+  }
 
   // ── Retro runner (local, has access to sendSwampCastleWrites) ────────────────────────
 
