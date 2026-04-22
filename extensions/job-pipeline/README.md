@@ -162,6 +162,16 @@ Workers operate exclusively within the worktree. On human approval the
 worktree is merged with `--no-ff` and cleaned up. On abandonment the
 worktree is removed without merging.
 
+## Reference docs
+
+| Document | Contents |
+|---|---|
+| [Architecture](references/architecture.md) | Module map, execution flow, state machine, sub-agent isolation |
+| [Pipeline Stages](references/pipeline-stages.md) | Every stage in detail: inputs, outputs, prompts, failure modes |
+| [Configuration](references/configuration.md) | Full config schema, pool rules, gate progression path |
+| [Commands and Tools](references/commands-and-tools.md) | All slash commands, LLM tools, and status bar states |
+| [Autonomy and Retros](references/autonomy.md) | Retro structure, streak tracking, SwampCastle integration |
+
 ## Install
 
 Add to your pi `settings.json`:

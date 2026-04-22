@@ -4,7 +4,15 @@ After enough hours watching AI confidently produce wrong code, you stop hoping i
 
 This is a collection of those guardrails — framework-specific skills that encode the knowledge AI models claim to have but demonstrably don't. Each skill is a curated reference designed for AI coding agents, distilled from real production mistakes and hard-won lessons.
 
-## What's here
+## Extensions
+
+| Extension | What it does |
+|---|---|
+| **[adaptive-routing](extensions/adaptive-routing/README.md)** | Classifies prompt intent and routes to the best available model. Supports shadow mode, locking, telemetry, and per-intent policy. |
+| **[provider-failover](extensions/provider-failover/README.md)** | Wraps GitHub Copilot models with automatic provider failover on 429/overload errors. Keeps the best working route sticky. |
+| **[job-pipeline](extensions/job-pipeline/README.md)** | Runs a full development pipeline: model-driven interview → scout → planning loop with adversarial jester critique → TDD workers → proof deck → review → retro. Human gates at every decision point. Earns autonomy through clean retrospectives. |
+
+## Skills
 
 | Skill | What it covers |
 |-------|---------------|
