@@ -24,12 +24,25 @@
  * }} WorkerResult
  *
  * @typedef {{
+ *   severity?: string,
+ *   taskId?: string,
+ *   title?: string,
+ *   evidence?: string,
+ *   impact?: string,
+ *   fix?: string,
+ * }} ReviewFinding
+ *
+ * @typedef {{
  *   jobId: string,
  *   goal: string,
  *   timestamp: number,
  *   cycleIndex: number,
  *   workerResults: WorkerResult[],
  *   reviewNotes?: string,
+ *   reviewFindings?: ReviewFinding[],
+ *   reviewMissingTests?: string[],
+ *   reviewOpenQuestions?: string[],
+ *   reviewEvidenceSummary?: string,
  *   jesterCritique?: string,
  *   plannerResolution?: string,
  *   previousDeckPath?: string,
@@ -100,6 +113,41 @@ function renderOptionalSection(title, content) {
     </section>`;
 }
 
+function renderStringListSection(title, items) {
+  if (!Array.isArray(items) || items.length === 0) return '';
+  return `
+    <section class="meta-section">
+      <h2>${escHtml(title)}</h2>
+      <ul class="meta-list">
+        ${items.map((item) => `<li>${escHtml(item)}</li>`).join('\n')}
+      </ul>
+    </section>`;
+}
+
+function renderReviewFindings(findings) {
+  if (!Array.isArray(findings) || findings.length === 0) return '';
+
+  return `
+    <section class="meta-section">
+      <h2>Review Findings</h2>
+      <div class="findings">
+        ${findings
+          .map((finding) => {
+            const severity = finding.severity ? escHtml(String(finding.severity)) : 'unspecified';
+            const taskId = finding.taskId ? ` <span class="finding-task">(${escHtml(String(finding.taskId))})</span>` : '';
+            return `
+              <article class="finding-card severity-${severity.toLowerCase()}">
+                <h3><span class="finding-badge">${severity}</span> ${escHtml(finding.title ?? 'Untitled finding')}${taskId}</h3>
+                ${finding.evidence ? `<p><strong>Evidence:</strong> ${escHtml(finding.evidence)}</p>` : ''}
+                ${finding.impact ? `<p><strong>Impact:</strong> ${escHtml(finding.impact)}</p>` : ''}
+                ${finding.fix ? `<p><strong>Recommended fix:</strong> ${escHtml(finding.fix)}</p>` : ''}
+              </article>`;
+          })
+          .join('\n')}
+      </div>
+    </section>`;
+}
+
 /**
  * Generate a self-contained HTML proof deck string.
  *
@@ -140,6 +188,16 @@ export function generateProofHtml(deck) {
     .no-artifacts { color: #999; font-style: italic; }
     .prose { white-space: pre-wrap; background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 0.75rem; }
     .meta-section { margin-top: 2rem; }
+    .meta-list { margin: 0; padding-left: 1.25rem; }
+    .meta-list li { margin: 0.35rem 0; }
+    .findings { display: grid; gap: 0.75rem; }
+    .finding-card { border: 1px solid #e2e2e2; border-left-width: 4px; border-radius: 6px; padding: 0.85rem 1rem; background: #fcfcfc; }
+    .finding-card h3 { display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
+    .finding-badge { display: inline-block; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.04em; background: #efefef; border-radius: 999px; padding: 0.15rem 0.5rem; }
+    .finding-task { color: #666; font-size: 0.9rem; }
+    .severity-critical { border-left-color: #b42318; }
+    .severity-major { border-left-color: #b54708; }
+    .severity-minor { border-left-color: #1d4ed8; }
   </style>
 </head>
 <body>
@@ -153,6 +211,10 @@ export function generateProofHtml(deck) {
   <h2>Worker Results</h2>
   ${taskSections || '<p>No worker results recorded.</p>'}
   ${renderOptionalSection('Review Notes', deck.reviewNotes)}
+  ${renderReviewFindings(deck.reviewFindings)}
+  ${renderStringListSection('Missing Tests', deck.reviewMissingTests)}
+  ${renderStringListSection('Open Questions', deck.reviewOpenQuestions)}
+  ${renderOptionalSection('Evidence Inspected', deck.reviewEvidenceSummary)}
   ${renderOptionalSection('Jester Critique', deck.jesterCritique)}
   ${renderOptionalSection('Planner Resolution', deck.plannerResolution)}
 </body>

@@ -6,6 +6,7 @@ import { getRoleThinkingLevel } from './thinking.mjs';
 import { resolveExecutionBatches } from './tasks.mjs';
 import { generateProofHtml } from './proof.mjs';
 import { writeJobState, writeProofDeck, getArtifactDir } from './state.mjs';
+import { buildReviewTaskContext } from './review.mjs';
 import { createWorktree, mergeAndCleanWorktree, findRepoRoot, ensureWorktreesIgnored } from './worktree.mjs';
 import {
   scoutPrompt,
@@ -232,20 +233,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
 
   if (!state.proofDeckPath) {
     onProgress('proof: compiling HTML deck');
-    const artifacts = await collectArtifacts(state.workerResults, agentDir, state.id, cycleIndex);
-    const html = generateProofHtml({
-      jobId: state.id,
-      goal: state.spec.goal,
-      timestamp: Date.now(),
-      cycleIndex,
-      workerResults: artifacts,
-      reviewNotes: state.reviewNotes,
-      jesterCritique: state.reviewJesterCritique,
-      plannerResolution: state.plannerResolution,
-      previousDeckPath: state.previousProofDeckPath,
-    });
-
-    const deckPath = writeProofDeck(agentDir, state.id, cycleIndex, html);
+    const deckPath = await refreshProofDeck({ agentDir, state, cycleIndex });
     state.proofDeckPath = deckPath;
     state.step = 'review';
     persist(agentDir, state);
@@ -256,17 +244,16 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
 
   if (!state.reviewVerdict) {
     onProgress('reviewer: reviewing worker output');
-    const workerSummaries = (state.workerResults ?? [])
-      .map((r) => `Task ${r.taskId}: ${r.success ? 'success' : 'failed'} — ${r.summary ?? ''}`)
-      .join('\n');
+    const reviewTaskContext = buildReviewTaskContext(state.taskGraph, state.workerResults);
 
     const reviewOutput = await spawnAgent({
       modelId: pool.reviewer,
       thinkingLevel: getRoleThinkingLevel('reviewer'),
       systemPrompt: reviewerPrompt({
-        workerSummaries,
+        taskContext: reviewTaskContext,
         plan: state.finalPlan,
         cycleIndex,
+        proofDeckPath: state.proofDeckPath,
       }),
       userPrompt: 'Review the implementation.',
       cwd,
@@ -276,6 +263,10 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
     const review = safeExtractJson(reviewOutput, {
       verdict: 'changes-required',
       taskReviews: [],
+      findings: [],
+      missingTests: [],
+      openQuestions: [],
+      evidenceSummary: '',
       overallNotes: reviewOutput,
     });
 
@@ -319,6 +310,10 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
         state.workerResults = undefined;
         state.reviewVerdict = undefined;
         state.reviewNotes = undefined;
+        state.reviewFindings = undefined;
+        state.reviewMissingTests = undefined;
+        state.reviewOpenQuestions = undefined;
+        state.reviewEvidenceSummary = undefined;
         state.reviewJesterCritique = undefined;
         state.plannerResolution = undefined;
         state.cycleIndex = cycleIndex + 1;
@@ -333,8 +328,16 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
 
     state.reviewVerdict = review.verdict;
     state.reviewNotes = review.overallNotes;
+    state.reviewFindings = Array.isArray(review.findings) ? review.findings : [];
+    state.reviewMissingTests = Array.isArray(review.missingTests) ? review.missingTests : [];
+    state.reviewOpenQuestions = Array.isArray(review.openQuestions) ? review.openQuestions : [];
+    state.reviewEvidenceSummary = review.evidenceSummary ?? '';
     state.reviewJesterCritique = jesterReview.summary;
     state.plannerResolution = plannerResolution;
+    if (state.proofDeckPath) {
+      onProgress('proof: refreshing deck with review findings');
+      state.proofDeckPath = await refreshProofDeck({ agentDir, state, cycleIndex });
+    }
     state.step = 'human-review';
     persist(agentDir, state);
   }
@@ -355,6 +358,12 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
         state.workerResults = undefined;
         state.reviewVerdict = undefined;
         state.reviewNotes = undefined;
+        state.reviewFindings = undefined;
+        state.reviewMissingTests = undefined;
+        state.reviewOpenQuestions = undefined;
+        state.reviewEvidenceSummary = undefined;
+        state.reviewJesterCritique = undefined;
+        state.plannerResolution = undefined;
         state.cycleIndex = cycleIndex + 1;
         persist(agentDir, state);
         throw new GateDeniedError('proof-review');
@@ -517,6 +526,27 @@ async function collectArtifacts(workerResults, agentDir, jobId, cycleIndex) {
 
     return { ...result, proofArtifacts: artifacts };
   });
+}
+
+async function refreshProofDeck({ agentDir, state, cycleIndex }) {
+  const artifacts = await collectArtifacts(state.workerResults ?? [], agentDir, state.id, cycleIndex);
+  const html = generateProofHtml({
+    jobId: state.id,
+    goal: state.spec.goal,
+    timestamp: Date.now(),
+    cycleIndex,
+    workerResults: artifacts,
+    reviewNotes: state.reviewNotes,
+    reviewFindings: state.reviewFindings,
+    reviewMissingTests: state.reviewMissingTests,
+    reviewOpenQuestions: state.reviewOpenQuestions,
+    reviewEvidenceSummary: state.reviewEvidenceSummary,
+    jesterCritique: state.reviewJesterCritique,
+    plannerResolution: state.plannerResolution,
+    previousDeckPath: state.previousProofDeckPath,
+  });
+
+  return writeProofDeck(agentDir, state.id, cycleIndex, html);
 }
 
 function safeExtractJson(text, fallback) {

@@ -11,6 +11,10 @@ const BASE_DECK = {
   reviewNotes: undefined,
   jesterCritique: undefined,
   plannerResolution: undefined,
+  reviewFindings: undefined,
+  reviewMissingTests: undefined,
+  reviewOpenQuestions: undefined,
+  reviewEvidenceSummary: undefined,
   previousDeckPath: undefined,
   cycleIndex: 1,
 };
@@ -100,4 +104,32 @@ test('generateProofHtml marks failed tasks clearly', () => {
   const html = generateProofHtml(deck);
   assert.ok(html.includes('task-fail'));
   assert.ok(html.includes('import error'));
+});
+
+test('generateProofHtml renders structured review findings, missing tests, and open questions', () => {
+  const deck = {
+    ...BASE_DECK,
+    reviewNotes: 'Overall risk is moderate until edge cases are covered.',
+    reviewFindings: [
+      {
+        severity: 'major',
+        taskId: 'task-1',
+        title: 'Trapdoor callback branch',
+        evidence: 'The callback handler accepts provider errors without surfacing them to the caller.',
+        impact: 'Failed OAuth callbacks look successful and will mislead operators.',
+        fix: 'Return an explicit error state and add a regression test for provider error callbacks.',
+      },
+    ],
+    reviewMissingTests: ['Provider error callback path is not covered.'],
+    reviewOpenQuestions: ['Should invalid OAuth state tokens revoke the pending login session?'],
+    reviewEvidenceSummary: 'Inspected git diff, touched auth files, and proof-task-1.log.',
+  };
+
+  const html = generateProofHtml(deck);
+
+  assert.ok(html.includes('Review Findings'));
+  assert.ok(html.includes('Trapdoor callback branch'));
+  assert.ok(html.includes('Provider error callback path is not covered.'));
+  assert.ok(html.includes('Should invalid OAuth state tokens revoke the pending login session?'));
+  assert.ok(html.includes('Inspected git diff, touched auth files, and proof-task-1.log.'));
 });

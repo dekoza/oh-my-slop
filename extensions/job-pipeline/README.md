@@ -38,11 +38,12 @@ WORKERS        Tasks executed in dependency order (parallel if no deps).
 PROOF DECK     Single HTML file with embedded logs and screenshots.
    │           Previous deck linked for comparison on re-runs.
    ▼
-REVIEW LOOP    Reviewer reviews worker output.
+REVIEW LOOP    Reviewer inspects the diff, changed files, and proof artifacts.
+   │           Reviewer emits structured findings, missing tests, and open questions.
    │           Jester critiques the review.
    │           Planner resolves: worker fixes OR process update.
    ▼
-HUMAN REVIEW   Gate: you see the proof deck path and approve merge.
+HUMAN REVIEW   Gate: you see the proof deck path plus refreshed review findings and approve merge.
    ▼
 MERGE          Worktree merged into main branch. Proofs preserved.
    ▼

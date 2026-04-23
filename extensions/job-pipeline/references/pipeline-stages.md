@@ -226,7 +226,8 @@ Proofs are never deleted. Each review cycle writes a new deck.
 **Gate:** none — human gate comes after resolution
 
 ```
-reviewer → reviews worker output against plan
+reviewer → inspects diff, changed files, and proof artifacts against the plan
+           outputs verdict + structured findings + missing tests + open questions
 jester   → critiques the review
 planner  → resolves jester's critique
   ├─ "worker-fix"     → new cycle: workerResults/proof/review reset,
@@ -235,8 +236,9 @@ planner  → resolves jester's critique
   └─ "process-update" → logged to job state, continues to proof gate
 ```
 
-The planner's resolution is embedded in the final proof deck so you can
-see what was contested and how it was resolved.
+The proof deck is refreshed after review so it includes the reviewer findings,
+missing tests, open questions, jester critique, and planner resolution in one
+place.
 
 ---
 
@@ -248,6 +250,7 @@ Shows:
 - Review verdict (`approved` / `changes-required`)
 - Overall review notes
 - Absolute path to the proof deck HTML file
+- Structured reviewer findings already embedded in that proof deck
 
 If you deny (request changes): `cycleIndex` increments, `workerResults`,
 `proofDeckPath`, and review fields are cleared. Pipeline loops back to

@@ -214,21 +214,41 @@ This task requires evidence type: **${task.evidenceType}**
 Cycle index (for naming artifacts): ${cycleIndex}`;
 }
 
-export function reviewerPrompt({ workerSummaries, plan, cycleIndex }) {
+export function reviewerPrompt({ taskContext, plan, cycleIndex, proofDeckPath }) {
   return `# Reviewer Role
 
-You are the Reviewer. Evaluate the workers' implementation against the plan.
+You are the Reviewer. Perform a sober, evidence-driven review of the workers' implementation against the plan. You are not the court jester. The jester critiques your review afterward, so your job is to produce the strongest possible first-pass review grounded in actual repository evidence.
 
 ## Plan
 ${plan}
 
-## Worker summaries (cycle ${cycleIndex})
-${workerSummaries}
+## Task and worker context (cycle ${cycleIndex})
+${taskContext}
 
-## Your task
-- Review each task's implementation against its requirements
-- Check for missing edge cases, security issues, test coverage gaps
-- Assess whether the overall implementation satisfies the stated goal
+## Proof deck
+${proofDeckPath || '(not generated)'}
+
+## Required methodology
+1. Establish scope first.
+   - Use \`git diff --name-only\` and \`git diff --stat\` to determine what changed.
+   - Inspect the actual changed files, not just summaries.
+   - Use the task context to verify each task's stated requirement and test requirement.
+2. Interrogate correctness.
+   - Check whether the implementation actually satisfies the task requirements and overall plan.
+   - Look for edge cases, fallback-path bugs, and mismatches between claimed behavior and code.
+3. Probe reliability and safety.
+   - Check for unsafe assumptions, partial-failure hazards, brittle control flow, and poor error handling.
+4. Probe security and performance where relevant.
+   - Call out trust-boundary mistakes, validation gaps, expensive hot paths, or obvious scaling traps.
+5. Verify tests.
+   - Identify missing or weak tests explicitly.
+   - If evidence is insufficient, say so explicitly instead of bluffing.
+
+## Rules
+- Inspect changed code directly before making claims.
+- Use the proof deck and logged artifacts as supporting evidence, not as a substitute for reading the code.
+- If a possible issue depends on files or behavior you did not inspect, put it in \`openQuestions\` rather than \`findings\`.
+- Keep the tone technical and direct.
 
 ## Output format
 \`\`\`json
@@ -241,6 +261,19 @@ ${workerSummaries}
       "notes": "specific feedback"
     }
   ],
+  "findings": [
+    {
+      "severity": "critical" | "major" | "minor",
+      "taskId": "...",
+      "title": "short finding title",
+      "evidence": "what in the code or artifacts supports this finding",
+      "impact": "why this matters in practice",
+      "fix": "recommended fix or mitigation"
+    }
+  ],
+  "missingTests": ["specific missing test or assertion"],
+  "openQuestions": ["what remains unclear because evidence is missing or ambiguous"],
+  "evidenceSummary": "what files, diffs, and artifacts you inspected",
   "overallNotes": "summary assessment"
 }
 \`\`\``;
