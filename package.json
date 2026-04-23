@@ -13,7 +13,8 @@
     "extensions": [
       "./extensions/adaptive-routing/index.ts",
       "./extensions/provider-failover/index.ts",
-      "./extensions/job-pipeline/index.ts"
+      "./extensions/job-pipeline/index.ts",
+      "./extensions/subagent-bundled-agents/index.ts"
     ],
     "skills": [
       "./skills"
