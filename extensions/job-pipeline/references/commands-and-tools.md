@@ -104,7 +104,8 @@ job specification.
 **Effect:** Writes spec to job state, transitions to `pipeline-ready`,
 injects a follow-up message asking the model to call `job_run_pipeline`.
 
-**Returns:** Confirmation text.
+**Returns:** Confirmation text saying the interview was captured and the job is
+*ready* to run the pipeline. It does not claim the pipeline already started.
 
 ---
 

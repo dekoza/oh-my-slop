@@ -26,7 +26,7 @@ export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames,
     SessionManager,
     DefaultResourceLoader,
     createReadOnlyTools,
-    createCodingTools,
+    getAgentDir,
   } = await import('@mariozechner/pi-coding-agent');
 
   const authStorage = AuthStorage.create();
@@ -40,16 +40,14 @@ export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames,
   }
 
   const effectiveCwd = cwd ?? process.cwd();
+  const agentDir = getAgentDir();
 
-  const loader = new DefaultResourceLoader({
+  const { buildSubagentLoaderOptions } = await import('./runtime-helpers.mjs');
+  const loader = new DefaultResourceLoader(buildSubagentLoaderOptions({
     cwd: effectiveCwd,
-    agentsFilesOverride: (current) => ({
-      agentsFiles: [
-        ...current.agentsFiles,
-        { path: '/virtual/ROLE.md', content: systemPrompt },
-      ],
-    }),
-  });
+    agentDir,
+    systemPrompt,
+  }));
   await loader.reload();
 
   let tools;
@@ -117,6 +115,7 @@ export async function spawnCodingAgent({ modelId, systemPrompt, userPrompt, thin
     SessionManager,
     DefaultResourceLoader,
     createCodingTools,
+    getAgentDir,
   } = await import('@mariozechner/pi-coding-agent');
 
   const authStorage = AuthStorage.create();
@@ -129,15 +128,13 @@ export async function spawnCodingAgent({ modelId, systemPrompt, userPrompt, thin
     throw new Error(`Model not found for coding agent: ${modelId}`);
   }
 
-  const loader = new DefaultResourceLoader({
+  const agentDir = getAgentDir();
+  const { buildSubagentLoaderOptions } = await import('./runtime-helpers.mjs');
+  const loader = new DefaultResourceLoader(buildSubagentLoaderOptions({
     cwd,
-    agentsFilesOverride: (current) => ({
-      agentsFiles: [
-        ...current.agentsFiles,
-        { path: '/virtual/ROLE.md', content: systemPrompt },
-      ],
-    }),
-  });
+    agentDir,
+    systemPrompt,
+  }));
   await loader.reload();
 
   const { session } = await createAgentSession({

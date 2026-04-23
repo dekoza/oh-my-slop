@@ -128,6 +128,7 @@ Persisted at `~/.pi/agent/extensions/job-pipeline/job-state.json`.
 {
   "id": "job-2026-04-22-a1b2c3d4",
   "description": "Add OAuth login",
+  "cwd": "/path/to/project",    // Persisted job cwd, used on resume/sub-agents
   "step": "workers",            // Current pipeline step
   "createdAt": 1234567890000,
   "updatedAt": 1234567890000,

@@ -29,6 +29,11 @@ import {
 } from "./lib/swampcastle.mjs";
 import { spawnAgent, extractJson } from "./lib/agents.mjs";
 import { getRoleThinkingLevel } from "./lib/thinking.mjs";
+import {
+  buildInterviewCapturedMessage,
+  createInitialJobState,
+  formatPipelineError,
+} from "./lib/runtime-helpers.mjs";
 
 const STATUS_KEY = "job-pipeline";
 
@@ -125,7 +130,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       );
 
       return {
-        content: [{ type: "text", text: "Interview spec captured successfully. Starting pipeline..." }],
+        content: [{ type: "text", text: buildInterviewCapturedMessage() }],
       };
     },
   });
@@ -210,9 +215,13 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
             content: [{ type: "text", text: `Pipeline paused: gate denied at ${err.gate}. Run /job to resume.` }],
           };
         }
-        const msg = err instanceof Error ? err.message : String(err);
+        const formatted = formatPipelineError(err);
         ctx.ui.setStatus(STATUS_KEY, "error");
-        return { content: [{ type: "text", text: `Pipeline error: ${msg}` }], isError: true };
+        return {
+          content: [{ type: "text", text: formatted.text }],
+          details: formatted.details,
+          isError: true,
+        };
       }
     },
   });
@@ -226,6 +235,13 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       await ctx.waitForIdle();
 
       const existing = readJobState(agentDir) as Record<string, unknown> | null;
+
+      // Backfill cwd for pre-fix states so resume does not depend on ambient process cwd.
+      if (existing && !existing.cwd) {
+        existing.cwd = ctx.cwd;
+        existing.updatedAt = Date.now();
+        writeJobState(agentDir, existing);
+      }
 
       // Offer resume if there's an active job
       if (existing && existing.step && existing.step !== "done") {
@@ -256,17 +272,11 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       // Start new job
       const description = args.trim() || "";
       const jobId = `job-${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}`;
-      const initialState = {
+      const initialState = createInitialJobState({
         id: jobId,
         description,
-        step: "interview",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        replanCount: 0,
-        cycleIndex: 1,
-        jesterFlags: [],
-        tokenCosts: {},
-      };
+        cwd: ctx.cwd,
+      });
       writeJobState(agentDir, initialState);
       pi.setSessionName(`job: ${description || jobId}`);
 
