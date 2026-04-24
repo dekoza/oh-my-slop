@@ -69,13 +69,18 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
     }
 
     onProgress('scout: running');
-    const scoutOutput = await spawnAgent({
+    const scoutOutput = await runMonitoredReadonlyAgent({
       modelId: pool.scout,
       thinkingLevel: getRoleThinkingLevel('scout'),
       systemPrompt: scoutPrompt({ goal: state.spec.goal, questions: scoutQuestions }),
       userPrompt: `Reconnaissance mission for: ${state.spec.goal}`,
       cwd,
       signal,
+      jobId: state.id,
+      cycleIndex,
+      taskId: `scout-cycle-${cycleIndex}`,
+      title: `Scout — reconnaissance (cycle ${cycleIndex})`,
+      onWorkerEvent,
     });
 
     state.scoutResult = safeExtractJson(scoutOutput, { summary: scoutOutput, answers: [], relevantFiles: [] });
@@ -176,7 +181,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
   if (!state.taskGraph) {
     onProgress('task-writer: generating task list');
     const scoutSummary = formatScoutSummary(state.scoutResult);
-    const taskOutput = await spawnAgent({
+    const taskOutput = await runMonitoredReadonlyAgent({
       modelId: pool['task-writer'],
       thinkingLevel: getRoleThinkingLevel('task-writer'),
       systemPrompt: taskWriterPrompt({
@@ -187,6 +192,11 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       userPrompt: 'Write the task list for this plan.',
       cwd,
       signal,
+      jobId: state.id,
+      cycleIndex,
+      taskId: `task-writer-cycle-${cycleIndex}`,
+      title: `Task writer — execution graph (cycle ${cycleIndex})`,
+      onWorkerEvent,
     });
 
     const parsed = safeExtractJson(taskOutput, { tasks: [] });

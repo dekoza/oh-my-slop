@@ -87,9 +87,44 @@ test('worker monitor preserves partial log chunks until they are completed', () 
   assert.deepEqual(getWorkerLogLines(worker), ['hello world', 'next line']);
 });
 
-test('worker monitor can track planner, jester, and reviewer entries alongside workers', () => {
+test('worker monitor can track scout, task-writer, planner, jester, and reviewer entries alongside workers', () => {
   const state = createWorkerMonitorState();
 
+  applyWorkerMonitorEvent(state, {
+    type: 'worker-started',
+    jobId: 'job-3',
+    cycleIndex: 4,
+    taskId: 'scout-cycle-4',
+    title: 'Scout — reconnaissance (cycle 4)',
+  });
+  applyWorkerMonitorEvent(state, {
+    type: 'worker-log',
+    jobId: 'job-3',
+    cycleIndex: 4,
+    taskId: 'scout-cycle-4',
+    text: 'relevant files located\n',
+  });
+  applyWorkerMonitorEvent(state, {
+    type: 'worker-finished',
+    jobId: 'job-3',
+    cycleIndex: 4,
+    taskId: 'scout-cycle-4',
+    status: 'success',
+  });
+  applyWorkerMonitorEvent(state, {
+    type: 'worker-started',
+    jobId: 'job-3',
+    cycleIndex: 4,
+    taskId: 'task-writer-cycle-4',
+    title: 'Task writer — execution graph (cycle 4)',
+  });
+  applyWorkerMonitorEvent(state, {
+    type: 'worker-finished',
+    jobId: 'job-3',
+    cycleIndex: 4,
+    taskId: 'task-writer-cycle-4',
+    status: 'success',
+  });
   applyWorkerMonitorEvent(state, {
     type: 'worker-started',
     jobId: 'job-3',
@@ -126,11 +161,14 @@ test('worker monitor can track planner, jester, and reviewer entries alongside w
     title: 'Reviewer — implementation review',
   });
 
-  assert.equal(state.workers.length, 3);
-  assert.equal(state.workers[0].title, 'Planner — initial plan (attempt 2)');
-  assert.equal(state.workers[1].taskId, 'jester-planning-round-1-attempt-2');
-  assert.equal(state.workers[2].taskId, 'reviewer-cycle-4');
-  assert.deepEqual(getWorkerLogLines(state.workers[0]), ['outline drafted']);
+  assert.equal(state.workers.length, 5);
+  assert.equal(state.workers[0].title, 'Scout — reconnaissance (cycle 4)');
+  assert.equal(state.workers[1].taskId, 'task-writer-cycle-4');
+  assert.equal(state.workers[2].title, 'Planner — initial plan (attempt 2)');
+  assert.equal(state.workers[3].taskId, 'jester-planning-round-1-attempt-2');
+  assert.equal(state.workers[4].taskId, 'reviewer-cycle-4');
+  assert.deepEqual(getWorkerLogLines(state.workers[0]), ['relevant files located']);
+  assert.deepEqual(getWorkerLogLines(state.workers[2]), ['outline drafted']);
 });
 
 test('worker monitor resets automatically when a different job starts', () => {
