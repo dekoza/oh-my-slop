@@ -1,3 +1,10 @@
+export const DEFAULT_READ_ONLY_TOOL_NAMES = Object.freeze(['read', 'grep', 'find', 'ls']);
+export const DEFAULT_CODING_TOOL_NAMES = Object.freeze(['read', 'bash', 'edit', 'write']);
+
+export function resolveAgentToolNames(toolNames = DEFAULT_READ_ONLY_TOOL_NAMES) {
+  return [...toolNames];
+}
+
 /**
  * Spawn a sub-agent session with a specific model, system prompt, and tools.
  *
@@ -25,7 +32,6 @@ export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames,
     ModelRegistry,
     SessionManager,
     DefaultResourceLoader,
-    createReadOnlyTools,
     getAgentDir,
   } = await import('@mariozechner/pi-coding-agent');
 
@@ -50,14 +56,6 @@ export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames,
   }));
   await loader.reload();
 
-  let tools;
-  if (toolNames) {
-    // Let the session discover defaults; setActiveTools is called after creation.
-    tools = undefined;
-  } else {
-    tools = createReadOnlyTools(effectiveCwd);
-  }
-
   const { session } = await createAgentSession({
     model,
     thinkingLevel,
@@ -65,15 +63,9 @@ export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames,
     modelRegistry,
     sessionManager: SessionManager.inMemory(),
     cwd: effectiveCwd,
-    tools,
+    tools: resolveAgentToolNames(toolNames),
     resourceLoader: loader,
   });
-
-  if (toolNames) {
-    session.agent.state.tools = session.agent.state.tools.filter((t) =>
-      toolNames.includes(t.name),
-    );
-  }
 
   let lastAssistantText = '';
   session.subscribe((event) => {
@@ -114,7 +106,6 @@ export async function spawnCodingAgent({ modelId, systemPrompt, userPrompt, thin
     ModelRegistry,
     SessionManager,
     DefaultResourceLoader,
-    createCodingTools,
     getAgentDir,
   } = await import('@mariozechner/pi-coding-agent');
 
@@ -144,7 +135,7 @@ export async function spawnCodingAgent({ modelId, systemPrompt, userPrompt, thin
     modelRegistry,
     sessionManager: SessionManager.inMemory(),
     cwd,
-    tools: createCodingTools(cwd),
+    tools: resolveAgentToolNames(DEFAULT_CODING_TOOL_NAMES),
     resourceLoader: loader,
   });
 
