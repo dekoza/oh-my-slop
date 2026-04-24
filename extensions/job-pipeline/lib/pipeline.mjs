@@ -27,12 +27,13 @@ import {
  *   config: object,
  *   ui: object,       ExtensionContext ui (from captured ctx)
  *   planApprovalGate?: (options: { planText: string, critiqueHighlights: string }) => Promise<boolean>,
+ *   proofReviewGate?: (options: { reviewVerdict: string, reviewNotes: string, proofDeckPath: string }) => Promise<boolean>,
  *   signal?: AbortSignal,
  *   onProgress: (message: string) => void,
  * }} options
  * @returns {Promise<object>}  Final job state
  */
-export async function runPipeline({ jobState, agentDir, config, ui, planApprovalGate, signal, onProgress }) {
+export async function runPipeline({ jobState, agentDir, config, ui, planApprovalGate, proofReviewGate, signal, onProgress }) {
   const state = { ...jobState };
   const pool = state.pool;
   const cwd = state.cwd ?? process.cwd();
@@ -227,7 +228,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
         ...state.spec,
         context: `${state.spec.context ?? ''}\n\nPREVIOUS ATTEMPT FAILURES:\n${formatFailures(failed)}`,
       };
-      return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, signal, onProgress });
+      return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, signal, onProgress });
     }
 
     state.step = 'proof';
@@ -327,7 +328,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
           context: `${state.spec.context ?? ''}\n\nREVIEW REQUESTED FIXES:\n${resolution.instructions}`,
         };
         persist(agentDir, state);
-        return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, signal, onProgress });
+        return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, signal, onProgress });
       }
     }
 
@@ -352,10 +353,16 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
   if (!state.humanApproved) {
     const gateMode = config.gates.proofReview.mode;
     if (gateMode === 'compulsory') {
-      const approved = await ui.confirm(
-        'Proof Review',
-        `Review complete. Verdict: ${state.reviewVerdict}\n\nNotes: ${state.reviewNotes}\n\nProof deck: ${state.proofDeckPath}\n\nMerge into main branch?`,
-      );
+      const approved = proofReviewGate
+        ? await proofReviewGate({
+            reviewVerdict: String(state.reviewVerdict ?? ''),
+            reviewNotes: String(state.reviewNotes ?? ''),
+            proofDeckPath: String(state.proofDeckPath ?? ''),
+          })
+        : await ui.confirm(
+            'Proof Review',
+            `Review complete. Verdict: ${state.reviewVerdict}\n\nNotes: ${state.reviewNotes}\n\nProof deck: ${state.proofDeckPath}\n\nMerge into main branch?`,
+          );
       if (!approved) {
         // User wants changes — treat as new cycle
         state.previousProofDeckPath = state.proofDeckPath;

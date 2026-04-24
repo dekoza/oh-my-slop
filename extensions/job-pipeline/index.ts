@@ -36,6 +36,8 @@ import {
 } from "./lib/runtime-helpers.mjs";
 import {
   buildPlanApprovalDialogSpec,
+  buildProofReviewDialogSpec,
+  buildRetroReviewDialogSpec,
   ScrollableApprovalDialogState,
   wrapPlainText,
 } from "./lib/plan-approval-dialog.mjs";
@@ -48,6 +50,14 @@ type RuntimeState = {
   mode: JobMode;
   capturedCtx?: ExtensionContext;
   jobSpec?: Record<string, unknown>;
+};
+
+type ScrollableGateDialogSpec = {
+  title: string;
+  body: string;
+  question: string;
+  approveLabel: string;
+  denyLabel: string;
 };
 
 export default function jobPipelineExtension(pi: ExtensionAPI) {
@@ -191,7 +201,19 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
           config,
           ui: ctx.ui,
           planApprovalGate: ({ planText, critiqueHighlights }) =>
-            showScrollablePlanApprovalDialog(ctx.ui, planText, critiqueHighlights),
+            showScrollableGateDialog(
+              ctx.ui,
+              buildPlanApprovalDialogSpec({ planText, critiqueHighlights }),
+            ),
+          proofReviewGate: ({ reviewVerdict, reviewNotes, proofDeckPath }) =>
+            showScrollableGateDialog(
+              ctx.ui,
+              buildProofReviewDialogSpec({
+                verdict: reviewVerdict,
+                notes: reviewNotes,
+                proofDeckPath,
+              }),
+            ),
           signal,
           onProgress: (message: string) => {
             steps.push(message);
@@ -606,38 +628,44 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       retroResult = { verdict: "clean", processChanges: [], summary: retroOutput };
     }
 
-    let autonomyState = readAutonomyState(agentDir);
+    const currentAutonomyState = readAutonomyState(agentDir);
     const hasChanges =
       retroResult.verdict === "changes-proposed" &&
       Array.isArray(retroResult.processChanges) &&
       retroResult.processChanges.length > 0;
-
-    autonomyState = hasChanges
-      ? recordRetroWithChanges(autonomyState)
-      : recordCleanRetro(autonomyState);
-    writeAutonomyState(agentDir, autonomyState);
+    const previewCleanRetroStreak = hasChanges
+      ? 0
+      : currentAutonomyState.cleanRetroStreak + 1;
 
     if (gateMode === "compulsory") {
-      const summary = (retroResult.summary as string) ?? retroOutput;
-      const changes = Array.isArray(retroResult.processChanges)
-        ? (retroResult.processChanges as { description: string }[])
-            .map((c) => `- ${c.description}`)
-            .join("\n")
-        : "";
-
-      await ctx.ui.confirm(
-        "Retrospective",
-        `${summary}\n\n${changes ? `Process changes proposed:\n${changes}` : "No process changes proposed."}\n\nStreak: ${autonomyState.cleanRetroStreak} / ${config_.autonomy.cleanRetrosRequired}\n\nAcknowledge?`,
+      const approved = await showScrollableGateDialog(
+        ctx.ui,
+        buildRetroReviewDialogSpec({
+          summary: (retroResult.summary as string) ?? retroOutput,
+          processChanges: Array.isArray(retroResult.processChanges)
+            ? (retroResult.processChanges as { description: string }[]).map((change) => change.description)
+            : [],
+          cleanRetroStreak: previewCleanRetroStreak,
+          cleanRetrosRequired: config_.autonomy.cleanRetrosRequired,
+        }),
       );
-
-      if (shouldSuggestAutonomy(autonomyState, config_.autonomy)) {
-        ctx.ui.notify(
-          `Clean retro streak reached ${autonomyState.cleanRetroStreak}. Consider switching a gate to auto-accept via /job-pool.`,
-          "success",
-        );
+      if (!approved) {
+        throw new GateDeniedError("retro-review");
       }
     } else {
       ctx.ui.notify(`Retro summary: ${retroResult.summary ?? "clean"}`, "info");
+    }
+
+    const updatedAutonomyState = hasChanges
+      ? recordRetroWithChanges(currentAutonomyState)
+      : recordCleanRetro(currentAutonomyState);
+    writeAutonomyState(agentDir, updatedAutonomyState);
+
+    if (shouldSuggestAutonomy(updatedAutonomyState, config_.autonomy)) {
+      ctx.ui.notify(
+        `Clean retro streak reached ${updatedAutonomyState.cleanRetroStreak}. Consider switching a gate to auto-accept via /job-pool.`,
+        "success",
+      );
     }
 
     if (finalState.id) {
@@ -679,13 +707,10 @@ function buildJobSummary(state: Record<string, unknown>): string {
   return lines.join("\n");
 }
 
-async function showScrollablePlanApprovalDialog(
+async function showScrollableGateDialog(
   ui: ExtensionContext["ui"],
-  planText: string,
-  critiqueHighlights: string,
+  spec: ScrollableGateDialogSpec,
 ): Promise<boolean> {
-  const spec = buildPlanApprovalDialogSpec({ planText, critiqueHighlights });
-
   return ui.custom<boolean>(
     (tui, theme, keybindings, done) => {
       const state = new ScrollableApprovalDialogState({
@@ -725,7 +750,7 @@ async function showScrollablePlanApprovalDialog(
             ? spec.denyLabel
             : theme.fg("accent", `[${spec.denyLabel}]`);
           const choiceLine = `${approveChoice} ${theme.fg("dim", "/")} ${denyChoice}`;
-          const helpLine = "↑↓ scroll • PgUp/PgDn page • ←→ choose • Enter confirm • Esc cancel";
+          const helpLine = `↑↓ scroll • PgUp/PgDn page • ←→ choose • Enter confirm • Esc ${spec.denyLabel}`;
 
           const lines = [
             border(`╭${"─".repeat(innerWidth)}╮`),

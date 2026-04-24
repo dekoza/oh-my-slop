@@ -8,23 +8,56 @@ export function buildPlanApprovalDialogSpec({ planText, critiqueHighlights }) {
     'No issues were raised by the jester.',
   );
 
-  return {
+  return buildDialogSpec({
     title: 'Plan Approval',
-    body: [
-      'Review the final plan and jester critique before continuing.',
-      '',
-      'Final Plan',
-      '',
-      normalizedPlan,
-      '',
-      'Jester Critique Highlights',
-      '',
-      normalizedCritique,
-    ].join('\n'),
+    intro: 'Review the final plan and jester critique before continuing.',
+    sections: [
+      ['Final Plan', normalizedPlan],
+      ['Jester Critique Highlights', normalizedCritique],
+    ],
     question: 'Approve this plan and continue to task writing?',
-    approveLabel: 'Yes',
-    denyLabel: 'No',
-  };
+    approveLabel: 'Continue',
+    denyLabel: 'Pause',
+  });
+}
+
+export function buildProofReviewDialogSpec({ verdict, notes, proofDeckPath }) {
+  return buildDialogSpec({
+    title: 'Proof Review',
+    intro: 'Review the reviewer output before deciding whether to merge.',
+    sections: [
+      ['Verdict', normalizeBlock(verdict, '(No review verdict recorded.)')],
+      ['Reviewer Notes', normalizeBlock(notes, '(The reviewer returned no notes.)')],
+      ['Proof Deck', normalizeBlock(proofDeckPath, '(No proof deck path recorded.)')],
+    ],
+    question: 'Merge this reviewed worktree into the main branch?',
+    approveLabel: 'Merge',
+    denyLabel: 'Request changes',
+  });
+}
+
+export function buildRetroReviewDialogSpec({
+  summary,
+  processChanges,
+  cleanRetroStreak,
+  cleanRetrosRequired,
+}) {
+  const normalizedChanges = Array.isArray(processChanges) && processChanges.length > 0
+    ? processChanges.map((change) => `- ${change}`).join('\n')
+    : 'No process changes proposed.';
+
+  return buildDialogSpec({
+    title: 'Retrospective',
+    intro: 'Review the retro summary before finishing the job.',
+    sections: [
+      ['Summary', normalizeBlock(summary, '(The retro returned no summary.)')],
+      ['Process Changes', normalizedChanges],
+      ['Streak', `${cleanRetroStreak} / ${cleanRetrosRequired} clean retros`],
+    ],
+    question: 'Acknowledge this retrospective and finish the job?',
+    approveLabel: 'Acknowledge',
+    denyLabel: 'Pause',
+  });
 }
 
 export class ScrollableApprovalDialogState {
@@ -207,6 +240,25 @@ export function wrapPlainText(text, width) {
   }
 
   return wrappedLines.length > 0 ? wrappedLines : [''];
+}
+
+function buildDialogSpec({ title, intro, sections, question, approveLabel, denyLabel }) {
+  return {
+    title,
+    body: [
+      intro,
+      '',
+      ...sections.flatMap(([heading, content], index) => [
+        heading,
+        '',
+        content,
+        ...(index === sections.length - 1 ? [] : ['', '']),
+      ]),
+    ].join('\n'),
+    question,
+    approveLabel,
+    denyLabel,
+  };
 }
 
 function chunkText(text, width) {
