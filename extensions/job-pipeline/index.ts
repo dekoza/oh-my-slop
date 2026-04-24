@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getAgentDir, DynamicBorder } from "@mariozechner/pi-coding-agent";
-import { type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
+import { type SelectItem, SelectList, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
 import { normalizeJobPipelineConfig, DEFAULT_JOB_PIPELINE_CONFIG } from "./lib/config.mjs";
@@ -34,6 +34,11 @@ import {
   createInitialJobState,
   formatPipelineError,
 } from "./lib/runtime-helpers.mjs";
+import {
+  buildPlanApprovalDialogSpec,
+  ScrollableApprovalDialogState,
+  wrapPlainText,
+} from "./lib/plan-approval-dialog.mjs";
 
 const STATUS_KEY = "job-pipeline";
 
@@ -185,6 +190,8 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
           agentDir,
           config,
           ui: ctx.ui,
+          planApprovalGate: ({ planText, critiqueHighlights }) =>
+            showScrollablePlanApprovalDialog(ctx.ui, planText, critiqueHighlights),
           signal,
           onProgress: (message: string) => {
             steps.push(message);
@@ -670,4 +677,118 @@ function buildJobSummary(state: Record<string, unknown>): string {
     `Tasks: ${(state.taskGraph as { tasks?: unknown[] } | undefined)?.tasks?.length ?? 0}`,
   ];
   return lines.join("\n");
+}
+
+async function showScrollablePlanApprovalDialog(
+  ui: ExtensionContext["ui"],
+  planText: string,
+  critiqueHighlights: string,
+): Promise<boolean> {
+  const spec = buildPlanApprovalDialogSpec({ planText, critiqueHighlights });
+
+  return ui.custom<boolean>(
+    (tui, theme, keybindings, done) => {
+      const state = new ScrollableApprovalDialogState({
+        bodyText: spec.body,
+        question: spec.question,
+      });
+      let bodyWidth = 72;
+
+      const border = (text: string) => theme.fg("border", text);
+      const padLine = (text: string, width: number) => {
+        const truncated = truncateToWidth(text, width, "");
+        return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
+      };
+      const row = (text: string, width: number) => border("│") + padLine(text, width) + border("│");
+      const separator = (width: number) => border(`├${"─".repeat(width)}┤`);
+      const matchesAny = (data: string, ids: string[]) => ids.some((id) => keybindings.matches(data, id));
+
+      return {
+        render: (width: number) => {
+          const innerWidth = Math.max(1, width - 2);
+          bodyWidth = Math.max(1, innerWidth - 1);
+
+          const viewport = state.getViewport(bodyWidth);
+          const visibleTo = Math.min(
+            viewport.totalLineCount,
+            viewport.scrollOffset + viewport.visibleLineCount,
+          );
+          const scrollLabel = viewport.maxScrollOffset > 0
+            ? ` Scroll ${viewport.scrollOffset + 1}-${visibleTo} of ${viewport.totalLineCount}`
+            : ` Full content visible (${viewport.totalLineCount} lines)`;
+          const questionLines = wrapPlainText(spec.question, bodyWidth);
+          const selectedApprove = state.getSelectedChoice() === "approve";
+          const approveChoice = selectedApprove
+            ? theme.fg("accent", `[${spec.approveLabel}]`)
+            : spec.approveLabel;
+          const denyChoice = selectedApprove
+            ? spec.denyLabel
+            : theme.fg("accent", `[${spec.denyLabel}]`);
+          const choiceLine = `${approveChoice} ${theme.fg("dim", "/")} ${denyChoice}`;
+          const helpLine = "↑↓ scroll • PgUp/PgDn page • ←→ choose • Enter confirm • Esc cancel";
+
+          const lines = [
+            border(`╭${"─".repeat(innerWidth)}╮`),
+            row(` ${theme.fg("accent", theme.bold(spec.title))}`, innerWidth),
+            row(` ${theme.fg("dim", scrollLabel)}`, innerWidth),
+            separator(innerWidth),
+            ...viewport.lines.map((line) => row(` ${line}`, innerWidth)),
+          ];
+
+          for (let index = viewport.lines.length; index < viewport.visibleLineCount; index += 1) {
+            lines.push(row("", innerWidth));
+          }
+
+          lines.push(separator(innerWidth));
+          for (const line of questionLines) {
+            lines.push(row(` ${theme.bold(line)}`, innerWidth));
+          }
+          lines.push(row(` ${choiceLine}`, innerWidth));
+          lines.push(row(` ${theme.fg("dim", helpLine)}`, innerWidth));
+          lines.push(border(`╰${"─".repeat(innerWidth)}╯`));
+          return lines;
+        },
+        invalidate: () => state.invalidate(),
+        handleInput: (data: string) => {
+          if (matchesAny(data, ["tui.select.cancel", "app.interrupt"])) {
+            done(false);
+            return;
+          }
+          if (matchesAny(data, ["tui.select.confirm", "tui.input.submit"])) {
+            done(state.confirm());
+            return;
+          }
+
+          let changed = false;
+          if (matchesAny(data, ["tui.select.up", "tui.editor.cursorUp"])) {
+            state.scrollUp(bodyWidth);
+            changed = true;
+          } else if (matchesAny(data, ["tui.select.down", "tui.editor.cursorDown"])) {
+            state.scrollDown(bodyWidth);
+            changed = true;
+          } else if (matchesAny(data, ["tui.select.pageUp", "tui.editor.pageUp"])) {
+            state.pageUp(bodyWidth);
+            changed = true;
+          } else if (matchesAny(data, ["tui.select.pageDown", "tui.editor.pageDown"])) {
+            state.pageDown(bodyWidth);
+            changed = true;
+          } else if (keybindings.matches(data, "tui.editor.cursorLeft")) {
+            state.selectApprove();
+            changed = true;
+          } else if (keybindings.matches(data, "tui.editor.cursorRight")) {
+            state.selectDeny();
+            changed = true;
+          } else if (keybindings.matches(data, "tui.input.tab")) {
+            state.toggleChoice();
+            changed = true;
+          }
+
+          if (changed) {
+            tui.requestRender();
+          }
+        },
+      };
+    },
+    { overlay: true, overlayOptions: { anchor: "center", width: 88, maxHeight: 24 } },
+  );
 }

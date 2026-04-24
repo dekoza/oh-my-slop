@@ -26,12 +26,13 @@ import {
  *   agentDir: string,
  *   config: object,
  *   ui: object,       ExtensionContext ui (from captured ctx)
+ *   planApprovalGate?: (options: { planText: string, critiqueHighlights: string }) => Promise<boolean>,
  *   signal?: AbortSignal,
  *   onProgress: (message: string) => void,
  * }} options
  * @returns {Promise<object>}  Final job state
  */
-export async function runPipeline({ jobState, agentDir, config, ui, signal, onProgress }) {
+export async function runPipeline({ jobState, agentDir, config, ui, planApprovalGate, signal, onProgress }) {
   const state = { ...jobState };
   const pool = state.pool;
   const cwd = state.cwd ?? process.cwd();
@@ -132,8 +133,12 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
     const gateMode = config.gates.planApproval.mode;
     const critiqueHighlights = formatCritiqueHighlights(state.planCritiques ?? []);
     if (gateMode === 'compulsory') {
-      const planDisplay = `${planText}\n\n--- Jester highlights ---\n${critiqueHighlights}`;
-      const approved = await ui.confirm('Plan Approval', planDisplay);
+      const approved = planApprovalGate
+        ? await planApprovalGate({ planText, critiqueHighlights })
+        : await ui.confirm(
+            'Plan Approval',
+            `${planText}\n\n--- Jester highlights ---\n${critiqueHighlights}`,
+          );
       if (!approved) {
         throw new GateDeniedError('plan-approval');
       }
@@ -222,7 +227,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
         ...state.spec,
         context: `${state.spec.context ?? ''}\n\nPREVIOUS ATTEMPT FAILURES:\n${formatFailures(failed)}`,
       };
-      return runPipeline({ jobState: state, agentDir, config, ui, signal, onProgress });
+      return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, signal, onProgress });
     }
 
     state.step = 'proof';
@@ -322,7 +327,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, signal, onPr
           context: `${state.spec.context ?? ''}\n\nREVIEW REQUESTED FIXES:\n${resolution.instructions}`,
         };
         persist(agentDir, state);
-        return runPipeline({ jobState: state, agentDir, config, ui, signal, onProgress });
+        return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, signal, onProgress });
       }
     }
 
