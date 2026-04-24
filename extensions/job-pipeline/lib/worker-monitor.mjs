@@ -76,6 +76,28 @@ export function getWorkerLogLines(worker) {
     : [...worker.logLines];
 }
 
+export function wrapWorkerLogLines(lines, width) {
+  const safeWidth = Math.max(1, Math.floor(width || 1) - 1);
+  const wrappedLines = [];
+
+  for (const line of lines.length > 0 ? lines : ['']) {
+    const normalizedLine = normalizeViewerLine(line);
+    if (normalizedLine.length === 0) {
+      wrappedLines.push('');
+      continue;
+    }
+
+    let cursor = normalizedLine;
+    while (cursor.length > safeWidth) {
+      wrappedLines.push(cursor.slice(0, safeWidth));
+      cursor = cursor.slice(safeWidth);
+    }
+    wrappedLines.push(cursor);
+  }
+
+  return wrappedLines.length > 0 ? wrappedLines : [''];
+}
+
 function ensureWorker(state, event) {
   const key = buildWorkerKey(event.cycleIndex, event.taskId);
   let worker = state.workers.find((candidate) => candidate.key === key);
@@ -121,4 +143,8 @@ function flushPendingLog(worker) {
   }
   worker.logLines.push(worker.pendingLogLine);
   worker.pendingLogLine = '';
+}
+
+function normalizeViewerLine(line) {
+  return String(line ?? '').replace(/\t/g, '    ');
 }

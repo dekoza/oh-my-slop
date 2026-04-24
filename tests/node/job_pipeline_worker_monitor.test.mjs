@@ -6,6 +6,7 @@ import {
   createWorkerMonitorState,
   getSelectedWorker,
   getWorkerLogLines,
+  wrapWorkerLogLines,
 } from '../../extensions/job-pipeline/lib/worker-monitor.mjs';
 
 test('worker monitor records queue, start, log, and finish events', () => {
@@ -201,4 +202,12 @@ test('worker monitor resets automatically when a different job starts', () => {
   assert.equal(state.workers.length, 1);
   assert.equal(state.workers[0].taskId, 'task-9');
   assert.deepEqual(getWorkerLogLines(state.workers[0]), []);
+});
+
+test('wrapWorkerLogLines expands tab characters before slicing viewer rows', () => {
+  const wrappedLines = wrapWorkerLogLines(['        1\tfrom django.urls import path'], 20);
+
+  assert.equal(wrappedLines.join(''), '        1    from django.urls import path');
+  assert.equal(wrappedLines.some((line) => line.includes('\t')), false);
+  assert.equal(wrappedLines.every((line) => line.length <= 19), true);
 });

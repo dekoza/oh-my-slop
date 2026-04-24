@@ -46,6 +46,7 @@ import {
   createWorkerMonitorState,
   getWorkerLogLines,
   resetWorkerMonitorState,
+  wrapWorkerLogLines,
 } from "./lib/worker-monitor.mjs";
 
 const STATUS_KEY = "job-pipeline";
@@ -1206,23 +1207,3 @@ function formatMonitorListEntry(worker: WorkerLogEntry): string {
   return `C${worker.cycleIndex} ${worker.title}`;
 }
 
-function wrapWorkerLogLines(lines: string[], width: number): string[] {
-  const safeWidth = Math.max(1, width - 1);
-  const wrappedLines: string[] = [];
-
-  for (const line of lines.length > 0 ? lines : [""]) {
-    if (line.length === 0) {
-      wrappedLines.push("");
-      continue;
-    }
-
-    let cursor = line;
-    while (cursor.length > safeWidth) {
-      wrappedLines.push(cursor.slice(0, safeWidth));
-      cursor = cursor.slice(safeWidth);
-    }
-    wrappedLines.push(cursor);
-  }
-
-  return wrappedLines.length > 0 ? wrappedLines : [""];
-}
