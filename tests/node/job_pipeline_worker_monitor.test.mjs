@@ -87,6 +87,52 @@ test('worker monitor preserves partial log chunks until they are completed', () 
   assert.deepEqual(getWorkerLogLines(worker), ['hello world', 'next line']);
 });
 
+test('worker monitor can track planner, jester, and reviewer entries alongside workers', () => {
+  const state = createWorkerMonitorState();
+
+  applyWorkerMonitorEvent(state, {
+    type: 'worker-started',
+    jobId: 'job-3',
+    cycleIndex: 4,
+    taskId: 'planner-initial-attempt-2',
+    title: 'Planner — initial plan (attempt 2)',
+  });
+  applyWorkerMonitorEvent(state, {
+    type: 'worker-log',
+    jobId: 'job-3',
+    cycleIndex: 4,
+    taskId: 'planner-initial-attempt-2',
+    text: 'outline drafted\n',
+  });
+  applyWorkerMonitorEvent(state, {
+    type: 'worker-finished',
+    jobId: 'job-3',
+    cycleIndex: 4,
+    taskId: 'planner-initial-attempt-2',
+    status: 'success',
+  });
+  applyWorkerMonitorEvent(state, {
+    type: 'worker-started',
+    jobId: 'job-3',
+    cycleIndex: 4,
+    taskId: 'jester-planning-round-1-attempt-2',
+    title: 'Jester — planning critique round 1',
+  });
+  applyWorkerMonitorEvent(state, {
+    type: 'worker-started',
+    jobId: 'job-3',
+    cycleIndex: 4,
+    taskId: 'reviewer-cycle-4',
+    title: 'Reviewer — implementation review',
+  });
+
+  assert.equal(state.workers.length, 3);
+  assert.equal(state.workers[0].title, 'Planner — initial plan (attempt 2)');
+  assert.equal(state.workers[1].taskId, 'jester-planning-round-1-attempt-2');
+  assert.equal(state.workers[2].taskId, 'reviewer-cycle-4');
+  assert.deepEqual(getWorkerLogLines(state.workers[0]), ['outline drafted']);
+});
+
 test('worker monitor resets automatically when a different job starts', () => {
   const state = createWorkerMonitorState();
 

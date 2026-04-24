@@ -39,6 +39,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
   const pool = state.pool;
   const cwd = state.cwd ?? process.cwd();
   const repoRoot = findRepoRoot(cwd);
+  const cycleIndex = state.cycleIndex ?? 1;
 
   // ── Scout ──────────────────────────────────────────────────────────────────
 
@@ -89,23 +90,34 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
     onProgress('planner: generating initial plan');
     const scoutSummary = formatScoutSummary(state.scoutResult);
 
+    const planningAttempt = (state.replanCount ?? 0) + 1;
     let planText = await callPlanner({
       modelId: pool.planner,
       goal: state.spec.goal,
       interviewNotes: state.spec.context ?? '',
       scoutSummary,
+      jobId: state.id,
+      cycleIndex,
+      taskId: `planner-initial-attempt-${planningAttempt}`,
+      title: `Planner — initial plan (attempt ${planningAttempt})`,
+      onWorkerEvent,
       signal,
     });
 
     for (let round = 1; round <= 2; round++) {
       onProgress(`jester: critique round ${round}`);
-      const jesterOutput = await spawnAgent({
+      const jesterOutput = await runMonitoredReadonlyAgent({
         modelId: pool.jester,
         thinkingLevel: getRoleThinkingLevel('jester'),
         systemPrompt: jesterPrompt({ stage: 'planning', content: planText }),
         userPrompt: 'Critique this plan.',
         cwd,
         signal,
+        jobId: state.id,
+        cycleIndex,
+        taskId: `jester-planning-round-${round}-attempt-${planningAttempt}`,
+        title: `Jester — planning critique round ${round} (attempt ${planningAttempt})`,
+        onWorkerEvent,
       });
 
       const critique = safeExtractJson(jesterOutput, { verdict: 'acceptable', issues: [], summary: jesterOutput });
@@ -127,6 +139,11 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
           round,
           cwd,
           signal,
+          jobId: state.id,
+          cycleIndex,
+          taskId: `planner-revise-round-${round}-attempt-${planningAttempt}`,
+          title: `Planner — revised plan round ${round} (attempt ${planningAttempt})`,
+          onWorkerEvent,
         });
       }
     }
@@ -193,7 +210,6 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
 
   // ── Workers ────────────────────────────────────────────────────────────────
 
-  const cycleIndex = state.cycleIndex ?? 1;
   if (!state.workerResults || state.workerResults.length < (state.taskGraph?.tasks?.length ?? 0)) {
     onProgress('workers: executing tasks');
     const scoutSummary = formatScoutSummary(state.scoutResult);
@@ -258,7 +274,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       worktreePath: state.worktreePath,
     });
 
-    const reviewOutput = await spawnAgent({
+    const reviewOutput = await runMonitoredReadonlyAgent({
       modelId: pool.reviewer,
       thinkingLevel: getRoleThinkingLevel('reviewer'),
       systemPrompt: reviewerPrompt({
@@ -271,6 +287,11 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       userPrompt: 'Review the implementation.',
       cwd: resolveReviewCwd(state.worktreePath, cwd),
       signal,
+      jobId: state.id,
+      cycleIndex,
+      taskId: `reviewer-cycle-${cycleIndex}`,
+      title: `Reviewer — implementation review (cycle ${cycleIndex})`,
+      onWorkerEvent,
     });
 
     const review = safeExtractJson(reviewOutput, {
@@ -284,13 +305,18 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
     });
 
     onProgress('jester: critiquing the review');
-    const jesterOutput = await spawnAgent({
+    const jesterOutput = await runMonitoredReadonlyAgent({
       modelId: pool.jester,
       thinkingLevel: getRoleThinkingLevel('jester'),
       systemPrompt: jesterPrompt({ stage: 'review', content: reviewOutput }),
       userPrompt: 'Critique this review.',
       cwd,
       signal,
+      jobId: state.id,
+      cycleIndex,
+      taskId: `jester-review-cycle-${cycleIndex}`,
+      title: `Jester — review critique (cycle ${cycleIndex})`,
+      onWorkerEvent,
     });
 
     const jesterReview = safeExtractJson(jesterOutput, {
@@ -303,7 +329,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
     let plannerResolution = '';
     if (jesterReview.verdict !== 'acceptable' && jesterReview.issues?.length > 0) {
       onProgress('planner: resolving jester critique of review');
-      const resolutionOutput = await spawnAgent({
+      const resolutionOutput = await runMonitoredReadonlyAgent({
         modelId: pool.planner,
         thinkingLevel: getRoleThinkingLevel('planner'),
         systemPrompt: `You are the Planner. The jester has critiqued a code review. Decide:
@@ -312,6 +338,11 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
         userPrompt: `Review: ${reviewOutput}\n\nJester critique: ${jesterOutput}`,
         cwd,
         signal,
+        jobId: state.id,
+        cycleIndex,
+        taskId: `planner-review-resolution-cycle-${cycleIndex}`,
+        title: `Planner — review resolution (cycle ${cycleIndex})`,
+        onWorkerEvent,
       });
       plannerResolution = resolutionOutput;
       const resolution = safeExtractJson(resolutionOutput, { action: 'worker-fix', instructions: '' });
@@ -411,27 +442,101 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function callPlanner({ modelId, goal, interviewNotes, scoutSummary, cwd, signal }) {
-  const output = await spawnAgent({
+async function runMonitoredReadonlyAgent({
+  modelId,
+  thinkingLevel,
+  systemPrompt,
+  userPrompt,
+  cwd,
+  signal,
+  jobId,
+  cycleIndex,
+  taskId,
+  title,
+  onWorkerEvent,
+}) {
+  const emitLog = (text) => {
+    onWorkerEvent?.({
+      type: 'worker-log',
+      jobId,
+      cycleIndex,
+      taskId,
+      title,
+      text,
+    });
+  };
+
+  onWorkerEvent?.({
+    type: 'worker-started',
+    jobId,
+    cycleIndex,
+    taskId,
+    title,
+  });
+
+  try {
+    const output = await spawnAgent({
+      modelId,
+      thinkingLevel,
+      systemPrompt,
+      userPrompt,
+      cwd,
+      signal,
+      onLogLine: (line) => emitLog(`${line}\n`),
+    });
+    onWorkerEvent?.({
+      type: 'worker-finished',
+      jobId,
+      cycleIndex,
+      taskId,
+      status: 'success',
+    });
+    return output;
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    emitLog(`Agent error: ${errorMessage}\n`);
+    onWorkerEvent?.({
+      type: 'worker-finished',
+      jobId,
+      cycleIndex,
+      taskId,
+      status: 'failed',
+    });
+    throw err;
+  }
+}
+
+async function callPlanner({ modelId, goal, interviewNotes, scoutSummary, cwd, signal, jobId, cycleIndex, taskId, title, onWorkerEvent }) {
+  const output = await runMonitoredReadonlyAgent({
     modelId,
     thinkingLevel: getRoleThinkingLevel('planner'),
     systemPrompt: plannerInitialPrompt({ goal, interviewNotes, scoutSummary }),
     userPrompt: `Create the initial implementation plan for: ${goal}`,
     cwd,
     signal,
+    jobId,
+    cycleIndex,
+    taskId,
+    title,
+    onWorkerEvent,
   });
   const parsed = safeExtractJson(output, { plan: output });
   return parsed.plan ?? output;
 }
 
-async function callPlannerRevise({ modelId, previousPlan, jesterCritique, round, cwd, signal }) {
-  const output = await spawnAgent({
+async function callPlannerRevise({ modelId, previousPlan, jesterCritique, round, cwd, signal, jobId, cycleIndex, taskId, title, onWorkerEvent }) {
+  const output = await runMonitoredReadonlyAgent({
     modelId,
     thinkingLevel: getRoleThinkingLevel('planner'),
     systemPrompt: plannerRevisePrompt({ previousPlan, jesterCritique, round }),
     userPrompt: 'Revise the plan based on the jester critique.',
     cwd,
     signal,
+    jobId,
+    cycleIndex,
+    taskId,
+    title,
+    onWorkerEvent,
   });
   const parsed = safeExtractJson(output, { plan: output });
   return parsed.plan ?? output;
@@ -509,7 +614,8 @@ async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleI
       onLogLine: (line) => emitWorkerLog(`${line}\n`),
     });
   } catch (err) {
-    emitWorkerLog(`Agent error: ${err.message}\n`);
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    emitWorkerLog(`Agent error: ${errorMessage}\n`);
     onWorkerEvent?.({
       type: 'worker-finished',
       jobId,
@@ -520,9 +626,9 @@ async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleI
     return {
       taskId: task.id,
       success: false,
-      failureReport: { attempted: task.title, found: 'agent error', reason: err.message },
+      failureReport: { attempted: task.title, found: 'agent error', reason: errorMessage },
       proofArtifacts: [],
-      summary: `Agent error: ${err.message}`,
+      summary: `Agent error: ${errorMessage}`,
     };
   }
 

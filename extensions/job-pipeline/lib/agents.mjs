@@ -20,10 +20,11 @@ export function resolveAgentToolNames(toolNames = DEFAULT_READ_ONLY_TOOL_NAMES) 
  *   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh',
  *   cwd?: string,               Working directory (default: process.cwd())
  *   signal?: AbortSignal,
+ *   onLogLine?: (line: string) => void,
  * }} options
  * @returns {Promise<string>}    Final assistant message text
  */
-export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames, thinkingLevel, cwd, signal }) {
+export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames, thinkingLevel, cwd, signal, onLogLine }) {
   // Imported here to avoid loading the SDK at module parse time when running
   // pure logic tests that don't need it.
   const {
@@ -68,7 +69,9 @@ export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames,
   });
 
   let lastAssistantText = '';
+  const logTracker = createSessionLogTracker(onLogLine);
   session.subscribe((event) => {
+    handleSessionLogEvent(logTracker, event);
     if (event.type === 'message_end' && event.message.role === 'assistant') {
       const parts = Array.isArray(event.message.content) ? event.message.content : [];
       lastAssistantText = parts
@@ -141,84 +144,17 @@ export async function spawnCodingAgent({ modelId, systemPrompt, userPrompt, thin
   });
 
   let lastAssistantText = '';
-  let assistantTextBuffer = '';
-  const toolOutputByCall = new Map();
-  const toolLineBuffers = new Map();
-  const emitLogLine = (line) => {
-    if (typeof onLogLine === 'function') {
-      onLogLine(line);
-    }
-  };
+  const logTracker = createSessionLogTracker(onLogLine);
 
   session.subscribe((event) => {
-    switch (event.type) {
-      case 'message_update': {
-        if (event.assistantMessageEvent.type === 'text_delta') {
-          assistantTextBuffer = consumeBufferedLines({
-            buffer: assistantTextBuffer,
-            chunk: event.assistantMessageEvent.delta,
-            onLine: emitLogLine,
-          });
-        }
-        return;
-      }
-      case 'tool_execution_start': {
-        assistantTextBuffer = consumeBufferedLines({
-          buffer: assistantTextBuffer,
-          force: true,
-          onLine: emitLogLine,
-        });
-        emitLogLine(`▶ ${formatWorkerToolCall(event.toolName, event.args)}`);
-        return;
-      }
-      case 'tool_execution_update': {
-        const currentText = extractTextFromToolPayload(event.partialResult);
-        const previousText = toolOutputByCall.get(event.toolCallId) ?? '';
-        const delta = currentText.startsWith(previousText) ? currentText.slice(previousText.length) : currentText;
-        toolOutputByCall.set(event.toolCallId, currentText);
-        const currentBuffer = toolLineBuffers.get(event.toolCallId) ?? '';
-        const nextBuffer = consumeBufferedLines({
-          buffer: currentBuffer,
-          chunk: delta,
-          onLine: (line) => emitLogLine(`  ${line}`),
-        });
-        toolLineBuffers.set(event.toolCallId, nextBuffer);
-        return;
-      }
-      case 'tool_execution_end': {
-        const currentText = extractTextFromToolPayload(event.result);
-        const previousText = toolOutputByCall.get(event.toolCallId) ?? '';
-        const delta = currentText.startsWith(previousText) ? currentText.slice(previousText.length) : currentText;
-        toolOutputByCall.set(event.toolCallId, currentText);
-        const currentBuffer = toolLineBuffers.get(event.toolCallId) ?? '';
-        consumeBufferedLines({
-          buffer: currentBuffer,
-          chunk: delta,
-          force: true,
-          onLine: (line) => emitLogLine(`  ${line}`),
-        });
-        toolLineBuffers.delete(event.toolCallId);
-        emitLogLine(`${event.isError ? '✗' : '✓'} ${event.toolName}`);
-        return;
-      }
-      case 'message_end': {
-        if (event.message.role === 'assistant') {
-          assistantTextBuffer = consumeBufferedLines({
-            buffer: assistantTextBuffer,
-            force: true,
-            onLine: emitLogLine,
-          });
-          const parts = Array.isArray(event.message.content) ? event.message.content : [];
-          lastAssistantText = parts
-            .filter((c) => c.type === 'text')
-            .map((c) => c.text)
-            .join('\n')
-            .trim();
-        }
-        return;
-      }
-      default:
-        return;
+    handleSessionLogEvent(logTracker, event);
+    if (event.type === 'message_end' && event.message.role === 'assistant') {
+      const parts = Array.isArray(event.message.content) ? event.message.content : [];
+      lastAssistantText = parts
+        .filter((c) => c.type === 'text')
+        .map((c) => c.text)
+        .join('\n')
+        .trim();
     }
   });
 
@@ -240,6 +176,87 @@ export function extractJson(text) {
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = fenceMatch ? fenceMatch[1].trim() : text.trim();
   return JSON.parse(candidate);
+}
+
+function createSessionLogTracker(onLogLine) {
+  return {
+    assistantTextBuffer: '',
+    toolOutputByCall: new Map(),
+    toolLineBuffers: new Map(),
+    onLogLine,
+  };
+}
+
+function handleSessionLogEvent(tracker, event) {
+  switch (event.type) {
+    case 'message_update': {
+      if (event.assistantMessageEvent.type === 'text_delta') {
+        tracker.assistantTextBuffer = consumeBufferedLines({
+          buffer: tracker.assistantTextBuffer,
+          chunk: event.assistantMessageEvent.delta,
+          onLine: (line) => emitLogLine(tracker, line),
+        });
+      }
+      return;
+    }
+    case 'tool_execution_start': {
+      tracker.assistantTextBuffer = consumeBufferedLines({
+        buffer: tracker.assistantTextBuffer,
+        force: true,
+        onLine: (line) => emitLogLine(tracker, line),
+      });
+      emitLogLine(tracker, `▶ ${formatWorkerToolCall(event.toolName, event.args)}`);
+      return;
+    }
+    case 'tool_execution_update': {
+      const currentText = extractTextFromToolPayload(event.partialResult);
+      const previousText = tracker.toolOutputByCall.get(event.toolCallId) ?? '';
+      const delta = currentText.startsWith(previousText) ? currentText.slice(previousText.length) : currentText;
+      tracker.toolOutputByCall.set(event.toolCallId, currentText);
+      const currentBuffer = tracker.toolLineBuffers.get(event.toolCallId) ?? '';
+      const nextBuffer = consumeBufferedLines({
+        buffer: currentBuffer,
+        chunk: delta,
+        onLine: (line) => emitLogLine(tracker, `  ${line}`),
+      });
+      tracker.toolLineBuffers.set(event.toolCallId, nextBuffer);
+      return;
+    }
+    case 'tool_execution_end': {
+      const currentText = extractTextFromToolPayload(event.result);
+      const previousText = tracker.toolOutputByCall.get(event.toolCallId) ?? '';
+      const delta = currentText.startsWith(previousText) ? currentText.slice(previousText.length) : currentText;
+      tracker.toolOutputByCall.set(event.toolCallId, currentText);
+      const currentBuffer = tracker.toolLineBuffers.get(event.toolCallId) ?? '';
+      consumeBufferedLines({
+        buffer: currentBuffer,
+        chunk: delta,
+        force: true,
+        onLine: (line) => emitLogLine(tracker, `  ${line}`),
+      });
+      tracker.toolLineBuffers.delete(event.toolCallId);
+      emitLogLine(tracker, `${event.isError ? '✗' : '✓'} ${event.toolName}`);
+      return;
+    }
+    case 'message_end': {
+      if (event.message.role === 'assistant') {
+        tracker.assistantTextBuffer = consumeBufferedLines({
+          buffer: tracker.assistantTextBuffer,
+          force: true,
+          onLine: (line) => emitLogLine(tracker, line),
+        });
+      }
+      return;
+    }
+    default:
+      return;
+  }
+}
+
+function emitLogLine(tracker, line) {
+  if (typeof tracker.onLogLine === 'function') {
+    tracker.onLogLine(line);
+  }
 }
 
 function extractTextFromToolPayload(payload) {

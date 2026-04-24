@@ -101,7 +101,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
   function recordWorkerEvent(event: Record<string, unknown>): void {
     applyWorkerMonitorEvent(runtime.workerMonitor, event);
     if (!runtime.workerLogsHintShown && event.type === "worker-started" && runtime.capturedCtx?.hasUI) {
-      runtime.capturedCtx.ui.notify("Workers are running. Use /job-workers to inspect live logs.", "info");
+      runtime.capturedCtx.ui.notify("Job agents are running. Use /job-workers to inspect live logs.", "info");
       runtime.workerLogsHintShown = true;
     }
     runtime.workerViewerRequestRender?.();
@@ -575,15 +575,15 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
   // ── /job-workers command ──────────────────────────────────────────────────
 
   pi.registerCommand("job-workers", {
-    description: "Open a live worker log viewer for the current job.",
+    description: "Open a live agent log viewer for the current job.",
     handler: async (_args, ctx) => {
       if (runtime.workerViewerRequestRender) {
-        ctx.ui.notify("Worker log viewer is already open.", "info");
+        ctx.ui.notify("Agent log viewer is already open.", "info");
         return;
       }
 
       if (runtime.workerMonitor.workers.length === 0 && runtime.mode !== "running") {
-        ctx.ui.notify("No worker logs are available yet.", "info");
+        ctx.ui.notify("No agent logs are available yet.", "info");
         return;
       }
 
@@ -685,13 +685,58 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     const jobSummary = buildJobSummary(finalState);
     const previousChanges = "";
 
-    const retroOutput = await spawnAgent({
-      modelId: (finalState.pool as Record<string, string>).planner,
-      thinkingLevel: getRoleThinkingLevel('planner'),
-      systemPrompt: retroPrompt({ jobSummary, previousChanges }),
-      userPrompt: "Facilitate the retrospective.",
-      signal,
+    const retroTaskId = `planner-retro-cycle-${finalState.cycleIndex ?? 1}`;
+    recordWorkerEvent({
+      type: "worker-started",
+      jobId: finalState.id,
+      cycleIndex: finalState.cycleIndex ?? 1,
+      taskId: retroTaskId,
+      title: `Planner — retrospective (cycle ${finalState.cycleIndex ?? 1})`,
     });
+
+    let retroOutput: string;
+    try {
+      retroOutput = await spawnAgent({
+        modelId: (finalState.pool as Record<string, string>).planner,
+        thinkingLevel: getRoleThinkingLevel('planner'),
+        systemPrompt: retroPrompt({ jobSummary, previousChanges }),
+        userPrompt: "Facilitate the retrospective.",
+        signal,
+        onLogLine: (line) => recordWorkerEvent({
+          type: "worker-log",
+          jobId: finalState.id,
+          cycleIndex: finalState.cycleIndex ?? 1,
+          taskId: retroTaskId,
+          title: `Planner — retrospective (cycle ${finalState.cycleIndex ?? 1})`,
+          text: `${line}\n`,
+        }),
+      });
+      recordWorkerEvent({
+        type: "worker-finished",
+        jobId: finalState.id,
+        cycleIndex: finalState.cycleIndex ?? 1,
+        taskId: retroTaskId,
+        status: "success",
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      recordWorkerEvent({
+        type: "worker-log",
+        jobId: finalState.id,
+        cycleIndex: finalState.cycleIndex ?? 1,
+        taskId: retroTaskId,
+        title: `Planner — retrospective (cycle ${finalState.cycleIndex ?? 1})`,
+        text: `Agent error: ${errorMessage}\n`,
+      });
+      recordWorkerEvent({
+        type: "worker-finished",
+        jobId: finalState.id,
+        cycleIndex: finalState.cycleIndex ?? 1,
+        taskId: retroTaskId,
+        status: "failed",
+      });
+      throw err;
+    }
 
     let retroResult: Record<string, unknown>;
     try {
@@ -1022,7 +1067,7 @@ async function showWorkerLogDialog(
               .slice(workerScrollOffset, workerScrollOffset + WORKER_VIEWER_BODY_ROWS)
               .map((worker) => {
                 const prefix = worker.key === selectedWorkerKey ? theme.fg("accent", "▶ ") : "  ";
-                const title = `C${worker.cycleIndex} ${worker.taskId} — ${worker.title}`;
+                const title = formatMonitorListEntry(worker);
                 const body = worker.key === selectedWorkerKey
                   ? theme.fg("accent", title)
                   : title;
@@ -1038,20 +1083,22 @@ async function showWorkerLogDialog(
             const visibleLogLines = wrappedLogLines.slice(logScrollOffset, logScrollOffset + WORKER_VIEWER_BODY_ROWS);
 
             const titleLine = runtime.mode === "running"
-              ? `${theme.fg("accent", theme.bold("Job Workers"))} ${theme.fg("dim", "live")}`
-              : theme.fg("accent", theme.bold("Job Workers"));
-            const subtitleLine = `${workers.length} worker${workers.length === 1 ? "" : "s"} recorded • focus: ${focus}`;
+              ? `${theme.fg("accent", theme.bold("Job Agents"))} ${theme.fg("dim", "live")}`
+              : theme.fg("accent", theme.bold("Job Agents"));
+            const focusLabel = focus === "workers" ? "agents" : "log";
+            const subtitleLine = `${workers.length} agent${workers.length === 1 ? "" : "s"} recorded • focus: ${focusLabel}`;
             const workerHeader = focus === "workers"
-              ? theme.fg("accent", theme.bold("Workers"))
-              : theme.bold("Workers");
+              ? theme.fg("accent", theme.bold("Agents"))
+              : theme.bold("Agents");
+            const logTitle = selectedWorker ? `Log — ${selectedWorker.title}` : "Log";
             const logHeader = focus === "log"
-              ? theme.fg("accent", theme.bold(selectedWorker ? `Log — ${selectedWorker.taskId}` : "Log"))
-              : theme.bold(selectedWorker ? `Log — ${selectedWorker.taskId}` : "Log");
+              ? theme.fg("accent", theme.bold(logTitle))
+              : theme.bold(logTitle);
             const infoLine = selectedWorker
               ? `${selectedWorker.title} • ${formatStatus(selectedWorker.status)} • ${wrappedLogLines.length} lines`
               : runtime.mode === "running"
-                ? theme.fg("dim", "Waiting for workers to start…")
-                : theme.fg("dim", "No worker logs recorded.");
+                ? theme.fg("dim", "Waiting for agent logs…")
+                : theme.fg("dim", "No agent logs recorded.");
             const helpLine = theme.fg(
               "dim",
               "Tab switch pane • ↑↓ move • PgUp/PgDn page • Home/End jump • Esc close",
@@ -1148,8 +1195,15 @@ function clampScrollOffset(selectedIndex: number, currentOffset: number, visible
 
 function buildEmptyWorkerLog(mode: JobMode): string[] {
   return mode === "running"
-    ? ["Waiting for workers to start…", "Leave this window open; it updates live."]
-    : ["No worker logs recorded."];
+    ? ["Waiting for agent logs…", "Leave this window open; it updates live."]
+    : ["No agent logs recorded."];
+}
+
+function formatMonitorListEntry(worker: WorkerLogEntry): string {
+  if (worker.taskId.startsWith("task-")) {
+    return `C${worker.cycleIndex} ${worker.taskId} — ${worker.title}`;
+  }
+  return `C${worker.cycleIndex} ${worker.title}`;
 }
 
 function wrapWorkerLogLines(lines: string[], width: number): string[] {
