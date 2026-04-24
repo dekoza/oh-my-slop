@@ -1,0 +1,89 @@
+{
+  "skill_name": "langchain",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I already installed `langchain` and `openai`, but `from langchain_openai import ChatOpenAI` still throws `ModuleNotFoundError`. I also saw someone say `langchain-core` has everything now. What am I actually missing here?",
+      "expected_output": "The response identifies the provider-package boundary correctly, says `langchain_openai` comes from the separate `langchain-openai` package, and rejects the idea that `langchain-core` contains third-party integrations.",
+      "files": [],
+      "expectations": [
+        "It says the missing package is `langchain-openai`.",
+        "It does not claim `langchain-core` includes provider integrations.",
+        "It names the import-path versus pip-package boundary explicitly.",
+        "It may mention `init_chat_model` as a current high-level alternative, but it does not invent a different install surface."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I'm building a tool-calling agent for customer support. It just needs a system prompt plus three tools (ticket lookup, refund policy, order status). Should I start with `create_agent` or jump straight to LangGraph `StateGraph`?",
+      "expected_output": "The response chooses `create_agent` for the standard tool loop, explains that LangChain agents are built on LangGraph already, and only escalates to LangGraph if the user later needs explicit workflow state, interrupts, or durability.",
+      "files": [],
+      "expectations": [
+        "It recommends `create_agent` for the initial implementation.",
+        "It explains the normal model -> tool_calls -> ToolMessage -> model loop.",
+        "It does not force raw `StateGraph` for a basic tool-calling agent.",
+        "It names LangGraph as the escalation path when stateful workflow control is actually needed."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I'm reviewing a multitenant LangChain service. The team set `configurable_fields=\"any\"` on `init_chat_model()` and they pass tenant config through request JSON. Is that fine, or am I overthinking it?",
+      "expected_output": "The response treats this as a real security footgun, cites the `configurable_fields=\"any\"` security warning, and recommends enumerating only the safe configurable fields instead of exposing everything.",
+      "files": [],
+      "expectations": [
+        "It calls out the documented Security note for `configurable_fields=\"any\"`.",
+        "It mentions sensitive runtime fields such as `api_key` or `base_url`.",
+        "It recommends explicit field allowlisting instead of exposing everything.",
+        "It does not dismiss the concern as harmless configuration flexibility."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I'm putting together a RAG pipeline over a pile of Markdown docs and product specs. I want section-aware chunking and then I need to test both Chroma and Qdrant. Which LangChain packages should I install, and what splitter should I start with?",
+      "expected_output": "The response separates text splitters from vector-store integrations, recommends `langchain-text-splitters` plus the appropriate provider packages, and starts with a Markdown-aware splitter instead of pretending one generic package does everything.",
+      "files": [],
+      "expectations": [
+        "It names `langchain-text-splitters` explicitly.",
+        "It mentions `MarkdownHeaderTextSplitter` and/or `MarkdownTextSplitter` as a sensible starting point for Markdown docs.",
+        "It names `langchain-chroma` and `langchain-qdrant` explicitly.",
+        "It does not collapse all retrieval dependencies into plain `langchain` or `langchain-core`."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "I need a customer-ops workflow that can pause for human approval, survive a worker crash, and resume from the same state later. We also need to inspect/edit the state between steps. Is this still a LangChain agent thing, or should I move to LangGraph?",
+      "expected_output": "The response routes this to LangGraph, recommends `StateGraph`, mentions compile-before-execution, and treats persistence as a real checkpointer decision rather than a cosmetic detail.",
+      "files": [],
+      "expectations": [
+        "It recommends LangGraph / `StateGraph` for this workflow.",
+        "It mentions that the graph must be compiled before execution.",
+        "It mentions a real checkpointer and does not present `InMemorySaver` as the production answer.",
+        "It connects the need for approvals/state editing to interrupts or human-in-the-loop behavior."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "We already have an app that calls the OpenAI Python SDK directly. I want traces in LangSmith right away, and later I want benchmark evals inside pytest. What's the shortest path without rewriting the app around LangChain first?",
+      "expected_output": "The response uses LangSmith directly, recommends `wrap_openai` plus `@traceable`, names the required tracing environment variables, and points to LangSmith's evaluation / pytest-plugin surfaces instead of forcing a LangChain rewrite.",
+      "files": [],
+      "expectations": [
+        "It mentions `LANGSMITH_TRACING` and `LANGSMITH_API_KEY`.",
+        "It recommends `wrap_openai` for OpenAI SDK tracing.",
+        "It mentions `@traceable` for custom application logic.",
+        "It mentions LangSmith evaluation support and the pytest plugin."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "I'm following a blog post that imports `langchain-classic` and also grabs `AgentState` from `langgraph.prebuilt`. The code kind of works, but it feels stale. Should I keep going or refactor before I build more on top of it?",
+      "expected_output": "The response treats this as legacy code, flags `langchain-classic` as a compatibility surface, notes that `AgentState` moved to `langchain.agents`, and recommends cleaning up ownership before building more features.",
+      "files": [],
+      "expectations": [
+        "It describes `langchain-classic` as legacy / deprecated-oriented rather than a clean default for new work.",
+        "It mentions that `AgentState` moved to `langchain.agents`.",
+        "It treats the blog post as version-sensitive instead of assuming it is current.",
+        "It recommends migration review before extending the codebase further."
+      ]
+    }
+  ]
+}
