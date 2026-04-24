@@ -168,6 +168,33 @@ def test_langchain_skill_evals_cover_boundary_scenarios() -> None:
     assert all(item["expected_output"] and item["expectations"] for item in evals)
 
 
+def test_langchain_trigger_evals_cover_trigger_and_near_miss_cases() -> None:
+    trigger_path = SKILL_ROOT / "evals" / "trigger-evals.json"
+    payload = json.loads(trigger_path.read_text(encoding="utf-8"))
+
+    assert len(payload) >= 16
+
+    should_trigger = [item for item in payload if item["should_trigger"] is True]
+    should_not_trigger = [item for item in payload if item["should_trigger"] is False]
+
+    assert len(should_trigger) >= 8
+    assert len(should_not_trigger) >= 8
+    assert all(item["query"].strip() for item in payload)
+
+    positive_queries = "\n".join(item["query"] for item in should_trigger)
+    negative_queries = "\n".join(item["query"] for item in should_not_trigger)
+
+    assert "LangChain" in positive_queries or "langchain" in positive_queries
+    assert "LangGraph" in positive_queries or "StateGraph" in positive_queries
+    assert "LangSmith" in positive_queries or "traceable" in positive_queries
+    assert "langchain_openai" in positive_queries or "create_agent" in positive_queries
+
+    assert "LangChain.js" in negative_queries or "TypeScript" in negative_queries
+    assert "FastAPI" in negative_queries or "Django" in negative_queries
+    assert "OpenAI SDK" in negative_queries or "openai-python" in negative_queries
+    assert "Qdrant" in negative_queries or "Chroma" in negative_queries
+
+
 def test_readme_lists_langchain_skill() -> None:
     readme_text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 

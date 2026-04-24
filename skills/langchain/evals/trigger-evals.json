@@ -1,0 +1,74 @@
+[
+  {
+    "query": "I installed `langchain` plus `openai`, but `from langchain_openai import ChatOpenAI` still fails with `ModuleNotFoundError`. Can you explain the current package split and the exact pip install I actually need?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm starting a Python customer-support bot with a system prompt and four tools. Should I use `langchain.agents.create_agent()` or drop down to LangGraph `StateGraph` right away? I want the current answer, not a stale blog-post pattern.",
+    "should_trigger": true
+  },
+  {
+    "query": "Review this Python LangChain config: we call `init_chat_model()` with tenant-supplied runtime config and someone set `configurable_fields=\"any\"`. Is that a real security issue or am I being paranoid?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm building a RAG pipeline over Markdown design docs and API specs. Which Python LangChain packages should own chunking vs vector store wiring if I want to compare Chroma and Qdrant without inventing imports?",
+    "should_trigger": true
+  },
+  {
+    "query": "We need a stateful Python workflow that pauses for manager approval, survives worker restarts, and resumes from the same checkpoint. Is this still normal LangChain, or is it a LangGraph problem with real persistence and interrupts?",
+    "should_trigger": true
+  },
+  {
+    "query": "Our app already uses the OpenAI Python SDK directly. I want LangSmith traces now, datasets later, and maybe pytest-based evals once we stabilize. What's the shortest Python path without rewriting everything around LangChain first?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm following a 2024 tutorial that imports `langchain-classic` and grabs `AgentState` from `langgraph.prebuilt`. The code still kind of runs, but it smells outdated. Can you map the current package ownership and tell me what to migrate?",
+    "should_trigger": true
+  },
+  {
+    "query": "I wrote LangChain middleware that injects tools at runtime by mutating `request.tools`, and now my Python agent crashes when the model calls one of those tools. Is that supported, or do I need to register tools differently?",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you review this LangGraph snippet? It builds a `StateGraph`, never calls `.compile()`, and uses `InMemorySaver` in production because the team said persistence is persistence. I need the brutal version of why that's wrong.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm on LangChain.js in a TypeScript monorepo. `@langchain/openai` and LangGraph.js imports are acting weird after a pnpm workspace refactor. Do not give me Python package advice — I need the JS/TS answer.",
+    "should_trigger": false
+  },
+  {
+    "query": "Help me build raw OpenAI SDK function calling in Python. No LangChain, no LangGraph, no LangSmith — just `openai-python`, Pydantic models, and my own request/response loop.",
+    "should_trigger": false
+  },
+  {
+    "query": "My FastAPI service has lifespan and dependency-injection bugs around a background worker. The app happens to call a LangGraph-based service later, but the issue I need fixed is FastAPI startup/shutdown ownership.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need Django guidance for a server-rendered admin workflow with HTMX partials and form validation. We have an LLM project elsewhere in the company, but this task has nothing to do with LangChain.",
+    "should_trigger": false
+  },
+  {
+    "query": "Can you tune Qdrant for production? I need HNSW parameters, payload indexing strategy, shard sizing, and cluster ops advice. This is about Qdrant itself, not the Python LangChain integration layer.",
+    "should_trigger": false
+  },
+  {
+    "query": "Our Chroma container keeps corrupting local volumes during dev. I need Docker/storage debugging and backup strategy, not retrieval-library abstractions or RAG design advice.",
+    "should_trigger": false
+  },
+  {
+    "query": "I'm comparing plain Pydantic, msgspec, and dataclasses for structured AI outputs in a Python service. LangChain came up in a meeting, but the real decision here is framework-agnostic schema modeling.",
+    "should_trigger": false
+  },
+  {
+    "query": "Show me how to instrument a Python service with OpenTelemetry and Grafana Tempo. I want traces and spans, but not LangSmith specifically and not any LangChain integration.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need help choosing chunk sizes and embedding dimensions in the abstract for a retrieval project. There is no LangChain code yet, no LangGraph, and no concrete package question — just general RAG strategy.",
+    "should_trigger": false
+  }
+]
