@@ -214,13 +214,16 @@ This task requires evidence type: **${task.evidenceType}**
 Cycle index (for naming artifacts): ${cycleIndex}`;
 }
 
-export function reviewerPrompt({ taskContext, plan, cycleIndex, proofDeckPath }) {
+export function reviewerPrompt({ taskContext, repoContext, plan, cycleIndex, proofDeckPath }) {
   return `# Reviewer Role
 
 You are the Reviewer. Perform a sober, evidence-driven review of the workers' implementation against the plan. You are not the court jester. The jester critiques your review afterward, so your job is to produce the strongest possible first-pass review grounded in actual repository evidence.
 
 ## Plan
 ${plan}
+
+## Repository scope snapshot
+${repoContext || '(repository snapshot unavailable)'}
 
 ## Task and worker context (cycle ${cycleIndex})
 ${taskContext}
@@ -230,7 +233,8 @@ ${proofDeckPath || '(not generated)'}
 
 ## Required methodology
 1. Establish scope first.
-   - Use \`git diff --name-only\` and \`git diff --stat\` to determine what changed.
+   - Use the repository snapshot as your starting point.
+   - Use read-only tools to inspect the listed changed files directly.
    - Inspect the actual changed files, not just summaries.
    - Use the task context to verify each task's stated requirement and test requirement.
 2. Interrogate correctness.

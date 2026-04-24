@@ -6,7 +6,7 @@ import { getRoleThinkingLevel } from './thinking.mjs';
 import { resolveExecutionBatches } from './tasks.mjs';
 import { generateProofHtml } from './proof.mjs';
 import { writeJobState, writeProofDeck, getArtifactDir } from './state.mjs';
-import { buildReviewTaskContext } from './review.mjs';
+import { buildReviewRepoContext, buildReviewTaskContext, resolveReviewCwd } from './review.mjs';
 import { createWorktree, mergeAndCleanWorktree, findRepoRoot, ensureWorktreesIgnored } from './worktree.mjs';
 import {
   scoutPrompt,
@@ -251,18 +251,23 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
   if (!state.reviewVerdict) {
     onProgress('reviewer: reviewing worker output');
     const reviewTaskContext = buildReviewTaskContext(state.taskGraph, state.workerResults);
+    const reviewRepoContext = buildReviewRepoContext({
+      repoRoot,
+      worktreePath: state.worktreePath,
+    });
 
     const reviewOutput = await spawnAgent({
       modelId: pool.reviewer,
       thinkingLevel: getRoleThinkingLevel('reviewer'),
       systemPrompt: reviewerPrompt({
         taskContext: reviewTaskContext,
+        repoContext: reviewRepoContext,
         plan: state.finalPlan,
         cycleIndex,
         proofDeckPath: state.proofDeckPath,
       }),
       userPrompt: 'Review the implementation.',
-      cwd,
+      cwd: resolveReviewCwd(state.worktreePath, cwd),
       signal,
     });
 

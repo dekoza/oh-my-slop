@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+
 /**
  * Build a reviewer-facing summary that combines task requirements, worker
  * results, and proof artifact hints. The reviewer still has read-only tools,
@@ -38,4 +40,62 @@ export function buildReviewTaskContext(taskGraph, workerResults) {
       return lines.join('\n');
     })
     .join('\n\n');
+}
+
+export function resolveReviewCwd(worktreePath, defaultCwd) {
+  return worktreePath || defaultCwd;
+}
+
+export function buildReviewRepoContext({ repoRoot, worktreePath }) {
+  const reviewCwd = resolveReviewCwd(worktreePath, repoRoot);
+  if (!reviewCwd) {
+    return 'Repository scope snapshot unavailable: no review working directory provided.';
+  }
+
+  try {
+    const repositoryHead = runGit(repoRoot || reviewCwd, ['rev-parse', 'HEAD']);
+    const branchName = runGit(reviewCwd, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    const mergeBase = runGit(reviewCwd, ['merge-base', 'HEAD', repositoryHead]);
+    const committedFiles = runGit(reviewCwd, ['diff', '--name-only', `${mergeBase}..HEAD`]);
+    const committedStat = runGit(reviewCwd, ['diff', '--stat', `${mergeBase}..HEAD`]);
+    const workingStatus = runGit(reviewCwd, ['status', '--short']);
+    const uncommittedStat = runGit(reviewCwd, ['diff', '--stat']);
+    const stagedStat = runGit(reviewCwd, ['diff', '--cached', '--stat']);
+
+    return [
+      `Review working directory: ${reviewCwd}`,
+      `Review branch: ${branchName}`,
+      `Branch point commit: ${mergeBase}`,
+      'Changed files in committed branch history:',
+      formatSection(committedFiles),
+      '',
+      'Committed diff stat:',
+      formatSection(committedStat),
+      '',
+      'Working tree status:',
+      formatSection(workingStatus),
+      '',
+      'Uncommitted tracked-file diff stat:',
+      formatSection(uncommittedStat),
+      '',
+      'Staged diff stat:',
+      formatSection(stagedStat),
+    ].join('\n');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `Repository scope snapshot unavailable: ${message}`;
+  }
+}
+
+function formatSection(text) {
+  const normalized = text.trim();
+  return normalized.length > 0 ? normalized : '(none)';
+}
+
+function runGit(cwd, args) {
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
 }
