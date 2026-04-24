@@ -28,12 +28,13 @@ import {
  *   ui: object,       ExtensionContext ui (from captured ctx)
  *   planApprovalGate?: (options: { planText: string, critiqueHighlights: string }) => Promise<boolean>,
  *   proofReviewGate?: (options: { reviewVerdict: string, reviewNotes: string, proofDeckPath: string }) => Promise<boolean>,
+ *   onWorkerEvent?: (event: object) => void,
  *   signal?: AbortSignal,
  *   onProgress: (message: string) => void,
  * }} options
  * @returns {Promise<object>}  Final job state
  */
-export async function runPipeline({ jobState, agentDir, config, ui, planApprovalGate, proofReviewGate, signal, onProgress }) {
+export async function runPipeline({ jobState, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress }) {
   const state = { ...jobState };
   const pool = state.pool;
   const cwd = state.cwd ?? process.cwd();
@@ -206,6 +207,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       jobId: state.id,
       signal,
       onProgress,
+      onWorkerEvent,
     });
 
     state.workerResults = workerResults;
@@ -228,7 +230,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
         ...state.spec,
         context: `${state.spec.context ?? ''}\n\nPREVIOUS ATTEMPT FAILURES:\n${formatFailures(failed)}`,
       };
-      return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, signal, onProgress });
+      return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress });
     }
 
     state.step = 'proof';
@@ -333,7 +335,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
           context: `${state.spec.context ?? ''}\n\nREVIEW REQUESTED FIXES:\n${resolution.instructions}`,
         };
         persist(agentDir, state);
-        return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, signal, onProgress });
+        return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress });
       }
     }
 
@@ -435,16 +437,36 @@ async function callPlannerRevise({ modelId, previousPlan, jesterCritique, round,
   return parsed.plan ?? output;
 }
 
-async function executeWorkers({ tasks, pool, scoutSummary, worktreePath, cycleIndex, agentDir, jobId, signal, onProgress }) {
+async function executeWorkers({ tasks, pool, scoutSummary, worktreePath, cycleIndex, agentDir, jobId, signal, onProgress, onWorkerEvent }) {
   const batches = resolveExecutionBatches(tasks);
   const allResults = [];
+
+  for (const task of tasks) {
+    onWorkerEvent?.({
+      type: 'worker-queued',
+      jobId,
+      cycleIndex,
+      taskId: task.id,
+      title: task.title,
+    });
+  }
 
   for (const [batchIdx, batch] of batches.entries()) {
     onProgress(`workers: batch ${batchIdx + 1}/${batches.length} (${batch.length} tasks)`);
 
     const batchResults = await Promise.all(
       batch.map((task) =>
-        executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleIndex, agentDir, jobId, signal }),
+        executeOneWorker({
+          task,
+          pool,
+          scoutSummary,
+          worktreePath,
+          cycleIndex,
+          agentDir,
+          jobId,
+          signal,
+          onWorkerEvent,
+        }),
       ),
     );
 
@@ -454,8 +476,26 @@ async function executeWorkers({ tasks, pool, scoutSummary, worktreePath, cycleIn
   return allResults;
 }
 
-async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleIndex, agentDir, jobId, signal }) {
+async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleIndex, agentDir, jobId, signal, onWorkerEvent }) {
   const artifactDir = getArtifactDir(agentDir, jobId, cycleIndex, task.id);
+  const emitWorkerLog = (text) => {
+    onWorkerEvent?.({
+      type: 'worker-log',
+      jobId,
+      cycleIndex,
+      taskId: task.id,
+      title: task.title,
+      text,
+    });
+  };
+
+  onWorkerEvent?.({
+    type: 'worker-started',
+    jobId,
+    cycleIndex,
+    taskId: task.id,
+    title: task.title,
+  });
 
   let rawOutput;
   try {
@@ -466,8 +506,17 @@ async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleI
       userPrompt: `Execute task: ${task.title}\n\nSave all proof artifacts to: ${artifactDir}`,
       cwd: worktreePath,
       signal,
+      onLogLine: (line) => emitWorkerLog(`${line}\n`),
     });
   } catch (err) {
+    emitWorkerLog(`Agent error: ${err.message}\n`);
+    onWorkerEvent?.({
+      type: 'worker-finished',
+      jobId,
+      cycleIndex,
+      taskId: task.id,
+      status: 'failed',
+    });
     return {
       taskId: task.id,
       success: false,
@@ -480,6 +529,14 @@ async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleI
   const result = safeExtractJson(rawOutput, { status: 'failed', taskId: task.id, reason: rawOutput });
 
   if (result.status === 'failed') {
+    emitWorkerLog(`Failure reason: ${result.reason ?? rawOutput}\n`);
+    onWorkerEvent?.({
+      type: 'worker-finished',
+      jobId,
+      cycleIndex,
+      taskId: task.id,
+      status: 'failed',
+    });
     return {
       taskId: task.id,
       success: false,
@@ -492,6 +549,18 @@ async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleI
       summary: result.reason ?? rawOutput,
     };
   }
+
+  emitWorkerLog(`Summary: ${result.summary ?? '(none provided)'}\n`);
+  if (Array.isArray(result.artifactFiles) && result.artifactFiles.length > 0) {
+    emitWorkerLog(`Artifacts: ${result.artifactFiles.join(', ')}\n`);
+  }
+  onWorkerEvent?.({
+    type: 'worker-finished',
+    jobId,
+    cycleIndex,
+    taskId: task.id,
+    status: 'success',
+  });
 
   return {
     taskId: task.id,

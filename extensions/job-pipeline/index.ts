@@ -41,15 +41,39 @@ import {
   ScrollableApprovalDialogState,
   wrapPlainText,
 } from "./lib/plan-approval-dialog.mjs";
+import {
+  applyWorkerMonitorEvent,
+  createWorkerMonitorState,
+  getWorkerLogLines,
+  resetWorkerMonitorState,
+} from "./lib/worker-monitor.mjs";
 
 const STATUS_KEY = "job-pipeline";
 
 type JobMode = "idle" | "interview" | "pipeline-ready" | "running" | "retro";
 
+type WorkerLogEntry = {
+  key: string;
+  cycleIndex: number;
+  taskId: string;
+  title: string;
+  status: "pending" | "queued" | "running" | "success" | "failed";
+  logLines: string[];
+  pendingLogLine: string;
+};
+
+type WorkerMonitorState = {
+  jobId?: string;
+  workers: WorkerLogEntry[];
+};
+
 type RuntimeState = {
   mode: JobMode;
   capturedCtx?: ExtensionContext;
   jobSpec?: Record<string, unknown>;
+  workerMonitor: WorkerMonitorState;
+  workerViewerRequestRender?: () => void;
+  workerLogsHintShown: boolean;
 };
 
 type ScrollableGateDialogSpec = {
@@ -62,12 +86,25 @@ type ScrollableGateDialogSpec = {
 
 export default function jobPipelineExtension(pi: ExtensionAPI) {
   const agentDir = getAgentDir();
-  const runtime: RuntimeState = { mode: "idle" };
+  const runtime: RuntimeState = {
+    mode: "idle",
+    workerMonitor: createWorkerMonitorState(),
+    workerLogsHintShown: false,
+  };
 
   // ── Capture ctx for use in background async pipeline ──────────────────────
 
   function captureCtx(ctx: ExtensionContext): void {
     runtime.capturedCtx = ctx;
+  }
+
+  function recordWorkerEvent(event: Record<string, unknown>): void {
+    applyWorkerMonitorEvent(runtime.workerMonitor, event);
+    if (!runtime.workerLogsHintShown && event.type === "worker-started" && runtime.capturedCtx?.hasUI) {
+      runtime.capturedCtx.ui.notify("Workers are running. Use /job-workers to inspect live logs.", "info");
+      runtime.workerLogsHintShown = true;
+    }
+    runtime.workerViewerRequestRender?.();
   }
 
   pi.on("session_start", (_, ctx) => captureCtx(ctx));
@@ -191,6 +228,10 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       }
 
       runtime.mode = "running";
+      if (runtime.workerMonitor.jobId && runtime.workerMonitor.jobId !== (state.id as string)) {
+        resetWorkerMonitorState(runtime.workerMonitor, state.id as string);
+        runtime.workerLogsHintShown = false;
+      }
       ctx.ui.setStatus(STATUS_KEY, "running");
 
       const steps: string[] = [];
@@ -214,6 +255,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
                 proofDeckPath,
               }),
             ),
+          onWorkerEvent: (event: Record<string, unknown>) => recordWorkerEvent(event),
           signal,
           onProgress: (message: string) => {
             steps.push(message);
@@ -280,6 +322,11 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
         );
         if (resume) {
           const step = existing.step as string;
+          if (runtime.workerMonitor.jobId && runtime.workerMonitor.jobId !== (existing.id as string)) {
+            resetWorkerMonitorState(runtime.workerMonitor, existing.id as string);
+            runtime.workerLogsHintShown = false;
+            runtime.workerViewerRequestRender?.();
+          }
           if (step === "interview") {
             runtime.mode = "interview";
             runtime.jobSpec = existing.spec as Record<string, unknown>;
@@ -309,6 +356,9 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       writeJobState(agentDir, initialState);
       pi.setSessionName(`job: ${description || jobId}`);
 
+      resetWorkerMonitorState(runtime.workerMonitor, jobId);
+      runtime.workerLogsHintShown = false;
+      runtime.workerViewerRequestRender?.();
       runtime.mode = "interview";
       runtime.jobSpec = undefined;
 
@@ -522,6 +572,25 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     },
   });
 
+  // ── /job-workers command ──────────────────────────────────────────────────
+
+  pi.registerCommand("job-workers", {
+    description: "Open a live worker log viewer for the current job.",
+    handler: async (_args, ctx) => {
+      if (runtime.workerViewerRequestRender) {
+        ctx.ui.notify("Worker log viewer is already open.", "info");
+        return;
+      }
+
+      if (runtime.workerMonitor.workers.length === 0 && runtime.mode !== "running") {
+        ctx.ui.notify("No worker logs are available yet.", "info");
+        return;
+      }
+
+      await showWorkerLogDialog(ctx.ui, runtime);
+    },
+  });
+
   // ── /job-abandon command ──────────────────────────────────────────────────
 
   pi.registerCommand("job-abandon", {
@@ -540,6 +609,9 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       if (!confirmed) return;
 
       clearJobState(agentDir);
+      resetWorkerMonitorState(runtime.workerMonitor, undefined);
+      runtime.workerLogsHintShown = false;
+      runtime.workerViewerRequestRender?.();
       runtime.mode = "idle";
       runtime.jobSpec = undefined;
       pi.setSessionName("");
@@ -816,4 +888,287 @@ async function showScrollableGateDialog(
     },
     { overlay: true, overlayOptions: { anchor: "center", width: 88, maxHeight: 24 } },
   );
+}
+
+async function showWorkerLogDialog(
+  ui: ExtensionContext["ui"],
+  runtime: RuntimeState,
+): Promise<void> {
+  const WORKER_VIEWER_BODY_ROWS = 16;
+
+  try {
+    await ui.custom<void>(
+      (tui, theme, keybindings, done) => {
+        let selectedWorkerKey: string | undefined;
+        let workerScrollOffset = 0;
+        let logScrollOffset = 0;
+        let focus: "workers" | "log" = "workers";
+        let lastMeasuredLogWidth = 60;
+
+        runtime.workerViewerRequestRender = () => tui.requestRender();
+
+        const border = (text: string) => theme.fg("border", text);
+        const padLine = (text: string, width: number) => {
+          const truncated = truncateToWidth(text, width, "");
+          return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
+        };
+        const formatStatus = (status: WorkerLogEntry["status"]) => {
+          switch (status) {
+            case "running":
+              return theme.fg("accent", "● running");
+            case "success":
+              return theme.fg("success", "✓ success");
+            case "failed":
+              return theme.fg("error", "✗ failed");
+            case "queued":
+              return theme.fg("warning", "○ queued");
+            default:
+              return theme.fg("dim", "○ pending");
+          }
+        };
+
+        const ensureSelectedWorker = () => {
+          const workers = runtime.workerMonitor.workers;
+          if (workers.length === 0) {
+            selectedWorkerKey = undefined;
+            workerScrollOffset = 0;
+            logScrollOffset = 0;
+            return undefined;
+          }
+
+          if (!selectedWorkerKey || !workers.some((worker) => worker.key === selectedWorkerKey)) {
+            const runningWorker = [...workers].reverse().find((worker) => worker.status === "running");
+            selectedWorkerKey = (runningWorker ?? workers[workers.length - 1])?.key;
+            logScrollOffset = 0;
+          }
+
+          return workers.find((worker) => worker.key === selectedWorkerKey);
+        };
+
+        const changeSelectedWorker = (delta: number) => {
+          const workers = runtime.workerMonitor.workers;
+          if (workers.length === 0) {
+            return false;
+          }
+          const currentIndex = workers.findIndex((worker) => worker.key === selectedWorkerKey);
+          const safeIndex = currentIndex >= 0 ? currentIndex : workers.length - 1;
+          const nextIndex = Math.max(0, Math.min(workers.length - 1, safeIndex + delta));
+          if (nextIndex === safeIndex) {
+            return false;
+          }
+          selectedWorkerKey = workers[nextIndex]?.key;
+          logScrollOffset = 0;
+          workerScrollOffset = clampScrollOffset(nextIndex, workerScrollOffset, WORKER_VIEWER_BODY_ROWS);
+          return true;
+        };
+
+        const jumpSelectedWorker = (target: "first" | "last") => {
+          const workers = runtime.workerMonitor.workers;
+          if (workers.length === 0) {
+            return false;
+          }
+          const nextIndex = target === "first" ? 0 : workers.length - 1;
+          selectedWorkerKey = workers[nextIndex]?.key;
+          logScrollOffset = 0;
+          workerScrollOffset = clampScrollOffset(nextIndex, workerScrollOffset, WORKER_VIEWER_BODY_ROWS);
+          return true;
+        };
+
+        const changeLogScroll = (delta: number) => {
+          const selectedWorker = ensureSelectedWorker();
+          const wrappedLogLines = wrapWorkerLogLines(
+            selectedWorker ? getWorkerLogLines(selectedWorker) : buildEmptyWorkerLog(runtime.mode),
+            lastMeasuredLogWidth,
+          );
+          const maxOffset = Math.max(0, wrappedLogLines.length - WORKER_VIEWER_BODY_ROWS);
+          const nextOffset = Math.max(0, Math.min(maxOffset, logScrollOffset + delta));
+          if (nextOffset === logScrollOffset) {
+            return false;
+          }
+          logScrollOffset = nextOffset;
+          return true;
+        };
+
+        const jumpLogScroll = (target: "top" | "bottom") => {
+          const selectedWorker = ensureSelectedWorker();
+          const wrappedLogLines = wrapWorkerLogLines(
+            selectedWorker ? getWorkerLogLines(selectedWorker) : buildEmptyWorkerLog(runtime.mode),
+            lastMeasuredLogWidth,
+          );
+          const maxOffset = Math.max(0, wrappedLogLines.length - WORKER_VIEWER_BODY_ROWS);
+          const nextOffset = target === "top" ? 0 : maxOffset;
+          if (nextOffset === logScrollOffset) {
+            return false;
+          }
+          logScrollOffset = nextOffset;
+          return true;
+        };
+
+        return {
+          render: (width: number) => {
+            const innerWidth = Math.max(1, width - 2);
+            const listWidth = Math.max(20, Math.min(34, Math.floor(innerWidth * 0.3)));
+            const logWidth = Math.max(20, innerWidth - listWidth - 1);
+            lastMeasuredLogWidth = logWidth;
+
+            const workers = runtime.workerMonitor.workers;
+            const selectedWorker = ensureSelectedWorker();
+            const selectedWorkerIndex = selectedWorker
+              ? Math.max(0, workers.findIndex((worker) => worker.key === selectedWorker.key))
+              : 0;
+            workerScrollOffset = clampScrollOffset(selectedWorkerIndex, workerScrollOffset, WORKER_VIEWER_BODY_ROWS);
+
+            const workerLines = workers
+              .slice(workerScrollOffset, workerScrollOffset + WORKER_VIEWER_BODY_ROWS)
+              .map((worker) => {
+                const prefix = worker.key === selectedWorkerKey ? theme.fg("accent", "▶ ") : "  ";
+                const title = `C${worker.cycleIndex} ${worker.taskId} — ${worker.title}`;
+                const body = worker.key === selectedWorkerKey
+                  ? theme.fg("accent", title)
+                  : title;
+                return `${prefix}${body}`;
+              });
+
+            const rawLogLines = selectedWorker
+              ? getWorkerLogLines(selectedWorker)
+              : buildEmptyWorkerLog(runtime.mode);
+            const wrappedLogLines = wrapWorkerLogLines(rawLogLines, logWidth);
+            const maxLogOffset = Math.max(0, wrappedLogLines.length - WORKER_VIEWER_BODY_ROWS);
+            logScrollOffset = Math.min(logScrollOffset, maxLogOffset);
+            const visibleLogLines = wrappedLogLines.slice(logScrollOffset, logScrollOffset + WORKER_VIEWER_BODY_ROWS);
+
+            const titleLine = runtime.mode === "running"
+              ? `${theme.fg("accent", theme.bold("Job Workers"))} ${theme.fg("dim", "live")}`
+              : theme.fg("accent", theme.bold("Job Workers"));
+            const subtitleLine = `${workers.length} worker${workers.length === 1 ? "" : "s"} recorded • focus: ${focus}`;
+            const workerHeader = focus === "workers"
+              ? theme.fg("accent", theme.bold("Workers"))
+              : theme.bold("Workers");
+            const logHeader = focus === "log"
+              ? theme.fg("accent", theme.bold(selectedWorker ? `Log — ${selectedWorker.taskId}` : "Log"))
+              : theme.bold(selectedWorker ? `Log — ${selectedWorker.taskId}` : "Log");
+            const infoLine = selectedWorker
+              ? `${selectedWorker.title} • ${formatStatus(selectedWorker.status)} • ${wrappedLogLines.length} lines`
+              : runtime.mode === "running"
+                ? theme.fg("dim", "Waiting for workers to start…")
+                : theme.fg("dim", "No worker logs recorded.");
+            const helpLine = theme.fg(
+              "dim",
+              "Tab switch pane • ↑↓ move • PgUp/PgDn page • Home/End jump • Esc close",
+            );
+
+            const lines = [
+              border(`╭${"─".repeat(innerWidth)}╮`),
+              border("│") + padLine(` ${titleLine}`, innerWidth) + border("│"),
+              border("│") + padLine(` ${theme.fg("dim", subtitleLine)}`, innerWidth) + border("│"),
+              border(`├${"─".repeat(innerWidth)}┤`),
+              border("│") + padLine(` ${workerHeader}`, listWidth) + border("│") + padLine(` ${logHeader}`, logWidth) + border("│"),
+              border("│") + padLine(` ${theme.fg("dim", workerScrollOffset > 0 ? `showing ${workerScrollOffset + 1}-${Math.min(workers.length, workerScrollOffset + WORKER_VIEWER_BODY_ROWS)}` : `showing 1-${Math.min(workers.length, WORKER_VIEWER_BODY_ROWS)}`)}`, listWidth) + border("│") + padLine(` ${infoLine}`, logWidth) + border("│"),
+              border(`├${"─".repeat(innerWidth)}┤`),
+            ];
+
+            for (let index = 0; index < WORKER_VIEWER_BODY_ROWS; index += 1) {
+              lines.push(
+                border("│")
+                  + padLine(` ${workerLines[index] ?? ""}`, listWidth)
+                  + border("│")
+                  + padLine(` ${visibleLogLines[index] ?? ""}`, logWidth)
+                  + border("│"),
+              );
+            }
+
+            lines.push(border(`├${"─".repeat(innerWidth)}┤`));
+            lines.push(border("│") + padLine(` ${helpLine}`, innerWidth) + border("│"));
+            lines.push(border(`╰${"─".repeat(innerWidth)}╯`));
+            return lines;
+          },
+          invalidate: () => {},
+          handleInput: (data: string) => {
+            let changed = false;
+
+            if (keybindings.matches(data, "tui.select.cancel") || keybindings.matches(data, "app.interrupt")) {
+              done(undefined);
+              return;
+            }
+            if (keybindings.matches(data, "tui.input.tab")) {
+              focus = focus === "workers" ? "log" : "workers";
+              changed = true;
+            } else if (focus === "workers") {
+              if (keybindings.matches(data, "tui.select.up") || keybindings.matches(data, "tui.editor.cursorUp")) {
+                changed = changeSelectedWorker(-1);
+              } else if (keybindings.matches(data, "tui.select.down") || keybindings.matches(data, "tui.editor.cursorDown")) {
+                changed = changeSelectedWorker(1);
+              } else if (keybindings.matches(data, "tui.select.pageUp") || keybindings.matches(data, "tui.editor.pageUp")) {
+                changed = changeSelectedWorker(-WORKER_VIEWER_BODY_ROWS);
+              } else if (keybindings.matches(data, "tui.select.pageDown") || keybindings.matches(data, "tui.editor.pageDown")) {
+                changed = changeSelectedWorker(WORKER_VIEWER_BODY_ROWS);
+              } else if (keybindings.matches(data, "tui.editor.cursorLineStart")) {
+                changed = jumpSelectedWorker("first");
+              } else if (keybindings.matches(data, "tui.editor.cursorLineEnd")) {
+                changed = jumpSelectedWorker("last");
+              }
+            } else if (focus === "log") {
+              if (keybindings.matches(data, "tui.select.up") || keybindings.matches(data, "tui.editor.cursorUp")) {
+                changed = changeLogScroll(-1);
+              } else if (keybindings.matches(data, "tui.select.down") || keybindings.matches(data, "tui.editor.cursorDown")) {
+                changed = changeLogScroll(1);
+              } else if (keybindings.matches(data, "tui.select.pageUp") || keybindings.matches(data, "tui.editor.pageUp")) {
+                changed = changeLogScroll(-WORKER_VIEWER_BODY_ROWS);
+              } else if (keybindings.matches(data, "tui.select.pageDown") || keybindings.matches(data, "tui.editor.pageDown")) {
+                changed = changeLogScroll(WORKER_VIEWER_BODY_ROWS);
+              } else if (keybindings.matches(data, "tui.editor.cursorLineStart")) {
+                changed = jumpLogScroll("top");
+              } else if (keybindings.matches(data, "tui.editor.cursorLineEnd")) {
+                changed = jumpLogScroll("bottom");
+              }
+            }
+
+            if (changed) {
+              tui.requestRender();
+            }
+          },
+        };
+      },
+      { overlay: true, overlayOptions: { anchor: "center", width: 110, maxHeight: 28 } },
+    );
+  } finally {
+    runtime.workerViewerRequestRender = undefined;
+  }
+}
+
+function clampScrollOffset(selectedIndex: number, currentOffset: number, visibleCount: number): number {
+  if (selectedIndex < currentOffset) {
+    return selectedIndex;
+  }
+  if (selectedIndex >= currentOffset + visibleCount) {
+    return selectedIndex - visibleCount + 1;
+  }
+  return currentOffset;
+}
+
+function buildEmptyWorkerLog(mode: JobMode): string[] {
+  return mode === "running"
+    ? ["Waiting for workers to start…", "Leave this window open; it updates live."]
+    : ["No worker logs recorded."];
+}
+
+function wrapWorkerLogLines(lines: string[], width: number): string[] {
+  const safeWidth = Math.max(1, width - 1);
+  const wrappedLines: string[] = [];
+
+  for (const line of lines.length > 0 ? lines : [""]) {
+    if (line.length === 0) {
+      wrappedLines.push("");
+      continue;
+    }
+
+    let cursor = line;
+    while (cursor.length > safeWidth) {
+      wrappedLines.push(cursor.slice(0, safeWidth));
+      cursor = cursor.slice(safeWidth);
+    }
+    wrappedLines.push(cursor);
+  }
+
+  return wrappedLines.length > 0 ? wrappedLines : [""];
 }
