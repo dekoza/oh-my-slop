@@ -7,6 +7,7 @@ from pathlib import Path
 
 MARKDOWN_LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 BACKTICK_REFERENCE_PATTERN = re.compile(r"`(references/[^`]+\.md)`")
+FENCE_PATTERN = re.compile(r"^(?P<fence>`{3,}|~{3,})")
 
 
 def should_skip_reference(reference: str) -> bool:
@@ -14,6 +15,7 @@ def should_skip_reference(reference: str) -> bool:
     return (
         lowered.startswith("http://")
         or lowered.startswith("https://")
+        or reference.startswith("/")
         or reference.startswith("#")
         or any(token in reference for token in ("*", "?", "[", "]"))
     )
@@ -25,6 +27,8 @@ def iter_references(markdown_file: Path) -> list[tuple[int, str]]:
 
     in_frontmatter = False
     frontmatter_checked = False
+    active_fence: str | None = None
+    active_fence_length = 0
 
     for line_number, line in enumerate(lines, start=1):
         if not frontmatter_checked:
@@ -36,6 +40,23 @@ def iter_references(markdown_file: Path) -> list[tuple[int, str]]:
         if in_frontmatter:
             if line.strip() == "---":
                 in_frontmatter = False
+            continue
+
+        stripped_line = line.lstrip()
+        fence_match = FENCE_PATTERN.match(stripped_line)
+
+        if active_fence is not None:
+            if fence_match:
+                current_fence = fence_match.group("fence")
+                if current_fence[0] == active_fence and len(current_fence) >= active_fence_length:
+                    active_fence = None
+                    active_fence_length = 0
+            continue
+
+        if fence_match:
+            current_fence = fence_match.group("fence")
+            active_fence = current_fence[0]
+            active_fence_length = len(current_fence)
             continue
 
         for match in MARKDOWN_LINK_PATTERN.finditer(line):

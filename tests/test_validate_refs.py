@@ -141,6 +141,41 @@ def test_glob_like_reference_patterns_are_ignored(tmp_path: Path) -> None:
     assert result.returncode == 0
 
 
+def test_fenced_code_block_links_are_ignored(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "foo"
+    refs_dir = skill_dir / "references"
+    refs_dir.mkdir(parents=True)
+    _ = (refs_dir / "real.md").write_text("# Real\n", encoding="utf-8")
+    _ = (skill_dir / "SKILL.md").write_text(
+        "```markdown\n"
+        "See [FORMS.md](FORMS.md) for complete guide\n"
+        "See [reference/finance.md](reference/finance.md) for examples\n"
+        "```\n"
+        "Outside the example, validate `references/real.md`.\n",
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 0
+
+
+def test_root_relative_links_are_ignored(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "foo"
+    refs_dir = skill_dir / "references"
+    refs_dir.mkdir(parents=True)
+    _ = (refs_dir / "real.md").write_text("# Real\n", encoding="utf-8")
+    _ = (skill_dir / "SKILL.md").write_text(
+        "See [Skills overview](/en/docs/agents-and-tools/agent-skills/overview).\n"
+        "Validate `references/real.md` too.\n",
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 0
+
+
 def test_workspace_markdown_is_ignored(tmp_path: Path) -> None:
     skill_dir = tmp_path / "skills" / "foo"
     refs_dir = skill_dir / "references"
