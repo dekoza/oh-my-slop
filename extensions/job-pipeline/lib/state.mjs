@@ -1,15 +1,27 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import {
+  clearActiveJobId,
+  createJobRun,
+  getActiveJobId,
+  getLegacyJobStatePath,
+  loadJobRun,
+  loadJobSnapshot,
+  migrateLegacyStateIfPresent,
+  setActiveJobId,
+  writeJobSnapshot,
+} from './job-store.mjs';
+
 /**
- * Persistent job state, written to a JSON file under the pi agent directory
- * so it survives pi session restarts and can be resumed.
+ * Legacy compatibility path for the pre-migration single-file job state.
+ * New code should prefer the per-job store in job-store.mjs.
  *
  * @param {string} agentDir  From getAgentDir() in the TypeScript entry point.
  * @returns {string}
  */
 export function getJobStatePath(agentDir) {
-  return join(agentDir, 'extensions', 'job-pipeline', 'job-state.json');
+  return getLegacyJobStatePath(agentDir);
 }
 
 /**
@@ -29,41 +41,68 @@ export function getConfigPath(agentDir) {
 }
 
 /**
+ * Read the currently active job snapshot.
+ *
  * @param {string} agentDir
  * @returns {object | null}
  */
 export function readJobState(agentDir) {
-  const path = getJobStatePath(agentDir);
-  try {
-    if (!existsSync(path)) return null;
-    const parsed = JSON.parse(readFileSync(path, 'utf-8'));
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch {
+  migrateLegacyStateIfPresent(agentDir);
+
+  const activeJobId = getActiveJobId(agentDir);
+  if (!activeJobId) {
     return null;
   }
+
+  return loadJobSnapshot(agentDir, activeJobId);
 }
 
 /**
+ * Persist a job snapshot and mark it as the active job.
+ *
  * @param {string} agentDir
  * @param {object} state
  */
 export function writeJobState(agentDir, state) {
-  const path = getJobStatePath(agentDir);
   try {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, `${JSON.stringify(state, null, 2)}\n`, 'utf-8');
+    if (!state || typeof state !== 'object' || Array.isArray(state)) {
+      return;
+    }
+
+    if (typeof state.id !== 'string' || state.id.trim().length === 0) {
+      return;
+    }
+
+    const jobId = state.id;
+    if (!loadJobRun(agentDir, jobId)) {
+      createJobRun(agentDir, state);
+    } else {
+      writeJobSnapshot(agentDir, jobId, state);
+    }
+
+    setActiveJobId(agentDir, jobId, Number(state.updatedAt ?? Date.now()));
   } catch {
     // Non-critical persistence; failure is logged by caller.
   }
 }
 
 /**
+ * Clear the active job pointer. Historical job snapshots are preserved.
+ *
  * @param {string} agentDir
  */
 export function clearJobState(agentDir) {
-  const path = getJobStatePath(agentDir);
+  const legacyPath = getLegacyJobStatePath(agentDir);
+
   try {
-    if (existsSync(path)) writeFileSync(path, 'null\n', 'utf-8');
+    clearActiveJobId(agentDir);
+  } catch {
+    // Best effort.
+  }
+
+  try {
+    mkdirSync(dirname(legacyPath), { recursive: true });
+    writeFileSync(legacyPath, 'null\n', 'utf-8');
   } catch {
     // Best effort.
   }

@@ -148,9 +148,12 @@ Stored at `~/.pi/agent/extensions/job-pipeline/config.json`.
 
 ## Job state
 
-Active job state is persisted to
-`~/.pi/agent/extensions/job-pipeline/job-state.json`.
-If pi exits mid-pipeline, `/job` detects the interrupted state and offers
+The active job pointer is persisted to
+`~/.pi/agent/extensions/job-pipeline/active-job.json`.
+Each job stores its current snapshot at
+`~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/snapshot.json`.
+Legacy `job-state.json` is read once for migration and then cleared.
+If pi exits mid-pipeline, `/job` detects the interrupted snapshot and offers
 to resume from the last completed step.
 
 ## Proof decks

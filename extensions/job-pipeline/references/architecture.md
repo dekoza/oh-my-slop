@@ -15,7 +15,8 @@ index.ts                 Extension entry point
 │
 ├── lib/config.mjs       Config loading with partial-load tolerance
 ├── lib/pool.mjs         Session pool draw (planner ≠ jester constraint)
-├── lib/state.mjs        Disk persistence: job state, autonomy state, proofs
+├── lib/job-store.mjs    Per-job persistence: active pointer, run metadata, snapshot migration
+├── lib/state.mjs        Compatibility wrappers plus autonomy/proof persistence
 ├── lib/tasks.mjs        Task dependency graph → ordered execution batches
 ├── lib/autonomy.mjs     Clean-retro streak tracking
 ├── lib/proof.mjs        Self-contained HTML proof deck generator
@@ -122,7 +123,11 @@ Step: retro (inside index.ts factory)
 
 ## Job state schema
 
-Persisted at `~/.pi/agent/extensions/job-pipeline/job-state.json`.
+The active job pointer lives at
+`~/.pi/agent/extensions/job-pipeline/active-job.json`.
+Each job snapshot lives at
+`~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/snapshot.json`.
+Legacy `job-state.json` is only used as a one-time migration source.
 
 ```jsonc
 {
