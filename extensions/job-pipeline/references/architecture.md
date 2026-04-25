@@ -18,6 +18,7 @@ index.ts                 Extension entry point
 ├── lib/job-store.mjs    Per-job persistence: active pointer, run metadata, snapshot migration
 ├── lib/job-events.mjs   Append-only event journal helpers
 ├── lib/job-snapshot.mjs Snapshot reducer and replay helpers
+├── lib/job-locks.mjs    Per-job lock inspection and stale-lock detection
 ├── lib/state.mjs        Compatibility wrappers plus autonomy/proof persistence
 ├── lib/tasks.mjs        Task dependency graph → ordered execution batches
 ├── lib/autonomy.mjs     Clean-retro streak tracking
