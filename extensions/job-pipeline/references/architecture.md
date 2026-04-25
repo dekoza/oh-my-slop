@@ -17,6 +17,7 @@ index.ts                 Extension entry point
 ├── lib/pool.mjs         Session pool draw (planner ≠ jester constraint)
 ├── lib/job-store.mjs    Per-job persistence: active pointer, run metadata, snapshot migration
 ├── lib/job-events.mjs   Append-only event journal helpers
+├── lib/job-snapshot.mjs Snapshot reducer and replay helpers
 ├── lib/state.mjs        Compatibility wrappers plus autonomy/proof persistence
 ├── lib/tasks.mjs        Task dependency graph → ordered execution batches
 ├── lib/autonomy.mjs     Clean-retro streak tracking
