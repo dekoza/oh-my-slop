@@ -152,6 +152,8 @@ The active job pointer is persisted to
 `~/.pi/agent/extensions/job-pipeline/active-job.json`.
 Each job stores its current snapshot at
 `~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/snapshot.json`.
+While a pipeline run is active, the extension also holds a transient lock at
+`~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/lock.json`.
 Legacy `job-state.json` is read once for migration and then cleared.
 If pi exits mid-pipeline, `/job` detects the interrupted snapshot and offers
 to resume from the last completed step.

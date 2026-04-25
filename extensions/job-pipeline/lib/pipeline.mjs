@@ -14,6 +14,7 @@ import { generateProofHtml } from './proof.mjs';
 import { writeJobState, writeProofDeck, getArtifactDir } from './state.mjs';
 import { buildReviewRepoContext, buildReviewTaskContext, resolveReviewCwd } from './review.mjs';
 import { createWorktree, mergeAndCleanWorktree, findRepoRoot, ensureWorktreesIgnored } from './worktree.mjs';
+import { acquireJobLock, releaseJobLock } from './job-locks.mjs';
 import { formatUiDesignBrief, normalizePlannerUiAssessment, selectVisualDesignMode } from './ui-design.mjs';
 import {
   scoutPrompt,
@@ -39,15 +40,23 @@ import {
  *   onWorkerEvent?: (event: object) => void,
  *   signal?: AbortSignal,
  *   onProgress: (message: string) => void,
+ *   lockHeld?: boolean,
  * }} options
  * @returns {Promise<object>}  Final job state
  */
-export async function runPipeline({ jobState, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress }) {
+export async function runPipeline({ jobState, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress, lockHeld = false }) {
   const state = { ...jobState };
   const pool = state.pool;
   const cwd = state.cwd ?? process.cwd();
   const repoRoot = findRepoRoot(cwd);
   const cycleIndex = state.cycleIndex ?? 1;
+  const shouldManageLock = !lockHeld && typeof state.id === 'string' && state.id.trim().length > 0;
+
+  if (shouldManageLock) {
+    acquireJobLock(agentDir, state.id);
+  }
+
+  try {
 
   // ── Scout ──────────────────────────────────────────────────────────────────
 
@@ -321,7 +330,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
         ...state.spec,
         context: `${state.spec.context ?? ''}\n\nPREVIOUS ATTEMPT FAILURES:\n${formatFailures(failed)}`,
       };
-      return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress });
+      return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress, lockHeld: true });
     }
 
     state.step = 'proof';
@@ -441,7 +450,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
           context: `${state.spec.context ?? ''}\n\nREVIEW REQUESTED FIXES:\n${resolution.instructions}`,
         };
         persist(agentDir, state);
-        return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress });
+        return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress, lockHeld: true });
       }
     }
 
@@ -513,6 +522,11 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
   }
 
   return state;
+  } finally {
+    if (shouldManageLock) {
+      releaseJobLock(agentDir, state.id);
+    }
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -130,6 +130,9 @@ The active job pointer lives at
 `~/.pi/agent/extensions/job-pipeline/active-job.json`.
 Each job snapshot lives at
 `~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/snapshot.json`.
+While a run is executing, the extension uses
+`~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/lock.json`
+to prevent concurrent mutation of the same job.
 Legacy `job-state.json` is only used as a one-time migration source.
 
 ```jsonc
