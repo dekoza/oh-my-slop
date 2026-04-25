@@ -1,8 +1,71 @@
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+import {
+  resolvePiAgentDir,
+  resolveProjectAgentsDir,
+} from '../../subagent-bundled-agents/lib/project-agents.mjs';
+
 export const DEFAULT_READ_ONLY_TOOL_NAMES = Object.freeze(['read', 'grep', 'find', 'ls']);
 export const DEFAULT_CODING_TOOL_NAMES = Object.freeze(['read', 'bash', 'edit', 'write']);
 
+const BUNDLED_AGENTS_DIR = fileURLToPath(new URL('../../../agents', import.meta.url));
+const BUNDLED_UI_DESIGN_SKILL_PATH = fileURLToPath(new URL('../../../skills/ui-design-direction/SKILL.md', import.meta.url));
+
 export function resolveAgentToolNames(toolNames = DEFAULT_READ_ONLY_TOOL_NAMES) {
   return [...toolNames];
+}
+
+export function getBundledUiDesignSkillContextFile() {
+  return {
+    path: BUNDLED_UI_DESIGN_SKILL_PATH,
+    content: readFileSync(BUNDLED_UI_DESIGN_SKILL_PATH, 'utf8'),
+  };
+}
+
+export function resolveNamedAgentDefinition({
+  name,
+  cwd,
+  env = process.env,
+  homeDir = homedir(),
+  agentDir,
+  bundledAgentDirs = [BUNDLED_AGENTS_DIR],
+}) {
+  const normalizedName = String(name ?? '').trim();
+  if (!normalizedName) {
+    return null;
+  }
+
+  const resolvedAgentDir = agentDir ?? resolvePiAgentDir(env, homeDir);
+  const userDir = join(resolvedAgentDir, 'agents');
+  const projectDir = resolveProjectAgentsDir(cwd, {
+    env,
+    homeDir,
+    piAgentDir: resolvedAgentDir,
+  });
+
+  let resolved = null;
+
+  for (const bundledDir of bundledAgentDirs) {
+    const candidate = loadAgentFromDir(bundledDir, 'bundled', normalizedName);
+    if (candidate) {
+      resolved = candidate;
+    }
+  }
+
+  for (const source of [
+    { dir: userDir, type: 'user' },
+    { dir: projectDir, type: 'project' },
+  ]) {
+    const candidate = loadAgentFromDir(source.dir, source.type, normalizedName);
+    if (candidate) {
+      resolved = candidate;
+    }
+  }
+
+  return resolved;
 }
 
 /**
@@ -13,18 +76,29 @@ export function resolveAgentToolNames(toolNames = DEFAULT_READ_ONLY_TOOL_NAMES) 
  * returned text as structured JSON where applicable.
  *
  * @param {{
- *   modelId: string,            "provider/id" string
- *   systemPrompt: string,       Role-specific instructions
- *   userPrompt: string,         Task description / input
- *   toolNames?: string[],       Subset of pi tools to enable (default: read-only)
+ *   modelId: string,
+ *   systemPrompt: string,
+ *   userPrompt: string,
+ *   toolNames?: string[],
  *   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh',
- *   cwd?: string,               Working directory (default: process.cwd())
+ *   cwd?: string,
  *   signal?: AbortSignal,
  *   onLogLine?: (line: string) => void,
+ *   additionalContextFiles?: Array<{ path: string, content: string }>,
  * }} options
- * @returns {Promise<string>}    Final assistant message text
+ * @returns {Promise<string>}
  */
-export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames, thinkingLevel, cwd, signal, onLogLine }) {
+export async function spawnAgent({
+  modelId,
+  systemPrompt,
+  userPrompt,
+  toolNames,
+  thinkingLevel,
+  cwd,
+  signal,
+  onLogLine,
+  additionalContextFiles = [],
+}) {
   // Imported here to avoid loading the SDK at module parse time when running
   // pure logic tests that don't need it.
   const {
@@ -54,6 +128,7 @@ export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames,
     cwd: effectiveCwd,
     agentDir,
     systemPrompt,
+    additionalContextFiles,
   }));
   await loader.reload();
 
@@ -75,8 +150,8 @@ export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames,
     if (event.type === 'message_end' && event.message.role === 'assistant') {
       const parts = Array.isArray(event.message.content) ? event.message.content : [];
       lastAssistantText = parts
-        .filter((c) => c.type === 'text')
-        .map((c) => c.text)
+        .filter((content) => content.type === 'text')
+        .map((content) => content.text)
         .join('\n')
         .trim();
     }
@@ -86,6 +161,62 @@ export async function spawnAgent({ modelId, systemPrompt, userPrompt, toolNames,
   session.dispose();
 
   return lastAssistantText;
+}
+
+/**
+ * Spawn a named markdown agent definition, preserving its configured model,
+ * tool allowlist, and prompt while adding stage-specific instructions.
+ *
+ * @param {{
+ *   agentName: string,
+ *   systemPrompt: string,
+ *   userPrompt: string,
+ *   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh',
+ *   cwd?: string,
+ *   signal?: AbortSignal,
+ *   onLogLine?: (line: string) => void,
+ *   additionalContextFiles?: Array<{ path: string, content: string }>,
+ * }} options
+ * @returns {Promise<string>}
+ */
+export async function spawnNamedAgent({
+  agentName,
+  systemPrompt,
+  userPrompt,
+  thinkingLevel,
+  cwd,
+  signal,
+  onLogLine,
+  additionalContextFiles = [],
+}) {
+  const effectiveCwd = cwd ?? process.cwd();
+  const agentDefinition = resolveNamedAgentDefinition({
+    name: agentName,
+    cwd: effectiveCwd,
+  });
+
+  if (!agentDefinition) {
+    throw new Error(`Named agent not found: ${agentName}`);
+  }
+
+  if (!agentDefinition.model) {
+    throw new Error(`Named agent ${agentName} is missing a configured model.`);
+  }
+
+  return spawnAgent({
+    modelId: agentDefinition.model,
+    systemPrompt,
+    userPrompt,
+    toolNames: agentDefinition.tools,
+    thinkingLevel,
+    cwd: effectiveCwd,
+    signal,
+    onLogLine,
+    additionalContextFiles: [
+      { path: agentDefinition.filePath, content: agentDefinition.systemPrompt },
+      ...additionalContextFiles,
+    ],
+  });
 }
 
 /**
@@ -151,8 +282,8 @@ export async function spawnCodingAgent({ modelId, systemPrompt, userPrompt, thin
     if (event.type === 'message_end' && event.message.role === 'assistant') {
       const parts = Array.isArray(event.message.content) ? event.message.content : [];
       lastAssistantText = parts
-        .filter((c) => c.type === 'text')
-        .map((c) => c.text)
+        .filter((content) => content.type === 'text')
+        .map((content) => content.text)
         .join('\n')
         .trim();
     }
@@ -176,6 +307,67 @@ export function extractJson(text) {
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = fenceMatch ? fenceMatch[1].trim() : text.trim();
   return JSON.parse(candidate);
+}
+
+function loadAgentFromDir(dir, source, agentName) {
+  if (!dir || !existsSync(dir)) {
+    return null;
+  }
+
+  const candidateFiles = readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith('.md'))
+    .map((entry) => join(dir, entry.name))
+    .sort();
+
+  for (const filePath of candidateFiles) {
+    const rawContent = readFileSync(filePath, 'utf8');
+    const { frontmatter, body } = parseMarkdownFrontmatter(rawContent);
+    if (frontmatter?.name !== agentName) {
+      continue;
+    }
+
+    const tools = String(frontmatter.tools ?? '')
+      .split(',')
+      .map((tool) => tool.trim())
+      .filter(Boolean);
+
+    return {
+      name: frontmatter.name,
+      description: frontmatter.description,
+      model: frontmatter.model,
+      tools: tools.length > 0 ? tools : undefined,
+      systemPrompt: body.trim(),
+      source,
+      filePath,
+    };
+  }
+
+  return null;
+}
+
+function parseMarkdownFrontmatter(content) {
+  const source = String(content ?? '');
+  if (!source.startsWith('---\n') && !source.startsWith('---\r\n')) {
+    return { frontmatter: {}, body: source };
+  }
+
+  const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!match) {
+    return { frontmatter: {}, body: source };
+  }
+
+  const frontmatter = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const separatorIndex = line.indexOf(':');
+    if (separatorIndex === -1) {
+      continue;
+    }
+    const key = line.slice(0, separatorIndex).trim();
+    const value = line.slice(separatorIndex + 1).trim();
+    frontmatter[key] = value;
+  }
+
+  return { frontmatter, body: match[2] };
 }
 
 function createSessionLogTracker(onLogLine) {

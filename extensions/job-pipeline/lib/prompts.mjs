@@ -62,9 +62,16 @@ Respond with a single JSON block:
 {
   "plan": "full plan text",
   "risks": ["risk 1", "risk 2"],
-  "openQuestions": ["question 1"]
+  "openQuestions": ["question 1"],
+  "uiAssessment": {
+    "touchesUi": true,
+    "targetSurface": "settings page / dashboard / modal / detail view",
+    "proposedDesign": "optional UI concept from the planner"
+  }
 }
-\`\`\``;
+\`\`\`
+
+Set \`touchesUi\` to false and leave the other fields empty when the work does not affect user-facing product UI.`;
 }
 
 export function jesterPrompt({ stage, content }) {
@@ -106,19 +113,28 @@ ${jesterCritique}
 
 ## Your task
 Revise the plan addressing all critical and major issues raised by the jester.
-Explain briefly how you addressed each one.
+Explain briefly how you addressed each one. Preserve or update the uiAssessment block so later pipeline stages know whether UI design work is required.
 
 ## Output format
 \`\`\`json
 {
   "plan": "revised full plan text",
   "changesFromPrevious": ["change 1", "change 2"],
-  "dismissedIssues": [{ "issue": "...", "reason": "..." }]
+  "dismissedIssues": [{ "issue": "...", "reason": "..." }],
+  "uiAssessment": {
+    "touchesUi": true,
+    "targetSurface": "settings page / dashboard / modal / detail view",
+    "proposedDesign": "optional UI concept from the planner"
+  }
 }
 \`\`\``;
 }
 
-export function taskWriterPrompt({ finalPlan, scoutSummary, evidenceHint }) {
+export function taskWriterPrompt({ finalPlan, scoutSummary, evidenceHint, designBrief }) {
+  const normalizedDesignBrief = designBrief
+    ? JSON.stringify(designBrief, null, 2)
+    : 'No UI design brief was produced for this job.';
+
   return `# Task Writer Role
 
 You are the Task Writer. You translate a finalized implementation plan into
@@ -130,6 +146,9 @@ ${finalPlan}
 ## Scout summary (for context)
 ${scoutSummary}
 
+## UI design brief
+${normalizedDesignBrief}
+
 ## Evidence type the planner wants
 ${evidenceHint}
 
@@ -139,6 +158,8 @@ ${evidenceHint}
 - Declare explicit dependencies between tasks (task B depends on task A if B needs A's output)
 - Tasks with no dependencies between them will run in parallel
 - Be specific: name files, functions, and test targets
+- When the UI design brief applies to a task, set \`uiRelated\` to true and copy the relevant acceptance criteria into \`uiAcceptanceCriteria\`
+- Only mark a task as UI-related when the worker must change user-facing product UI
 
 ## Output format
 \`\`\`json
@@ -150,7 +171,9 @@ ${evidenceHint}
       "description": "full instructions for the worker",
       "dependsOn": [],
       "evidenceType": "screenshots" | "logs" | "both",
-      "testRequirement": "what tests must pass to consider this done"
+      "testRequirement": "what tests must pass to consider this done",
+      "uiRelated": true,
+      "uiAcceptanceCriteria": ["specific UI acceptance criterion"]
     }
   ]
 }
@@ -173,6 +196,9 @@ ${task.testRequirement}
 
 ## Scout summary (codebase context)
 ${scoutSummary}
+
+## UI acceptance criteria
+${Array.isArray(task.uiAcceptanceCriteria) && task.uiAcceptanceCriteria.length > 0 ? task.uiAcceptanceCriteria.map((criterion) => `- ${criterion}`).join('\n') : 'No UI-specific acceptance criteria for this task.'}
 
 ## Rules
 - Follow TDD: write tests FIRST, watch them fail, then implement until they pass
@@ -212,6 +238,85 @@ This task requires evidence type: **${task.evidenceType}**
 \`\`\`
 
 Cycle index (for naming artifacts): ${cycleIndex}`;
+}
+
+export function visualDesignerPrompt({ mode, goal, interviewNotes, scoutSummary, relevantUiFiles, uiDesignProposal, targetSurface, skillFilePath }) {
+  const normalizedProposal = String(uiDesignProposal ?? '').trim() || 'No explicit UI proposal was provided.';
+  const normalizedTargetSurface = String(targetSurface ?? '').trim() || 'No specific target surface was provided.';
+  const normalizedFiles = Array.isArray(relevantUiFiles) && relevantUiFiles.length > 0
+    ? relevantUiFiles.map((file) => `- ${file}`).join('\n')
+    : 'No specific UI files were identified yet.';
+
+  const modeSpecificInstructions = mode === 'critique-proposal'
+    ? [
+        'You are critiquing and refining an explicit UI proposal.',
+        'Keep the proposal intent intact unless it conflicts with usability, accessibility, trust, or local product coherence.',
+      ].join('\n')
+    : mode === 'extend-existing-ui'
+      ? [
+          'You are extending an existing product UI.',
+          'Inspect the current repository UI before proposing changes.',
+          'Repo coherence first, skill guidance second.',
+          'Prefer existing tokens, spacing rhythm, component patterns, and layout structure over trendier alternatives.',
+        ].join('\n')
+      : [
+          'You are proposing UI for a new surface.',
+          'Use the loaded skill for strong design-system guidance, but stay concrete and implementation-oriented.',
+        ].join('\n');
+
+  return `# Visual Designer Stage
+
+You are preparing UI guidance for the job pipeline before implementation.
+The \`visual-designer\` agent definition is loaded as context, and the \`ui-design-direction\` skill is loaded as supporting reference material.
+Use the repository as primary evidence when extending existing UI.
+Do not use --persist or write design-system files during this pipeline stage.
+
+## Mode
+${mode}
+
+## Goal
+${goal}
+
+## Interview notes
+${interviewNotes}
+
+## Scout summary
+${scoutSummary}
+
+## Target surface
+${normalizedTargetSurface}
+
+## Relevant UI files
+${normalizedFiles}
+
+## Proposed UI design to critique (if any)
+${normalizedProposal}
+
+## Loaded skill path
+${skillFilePath ?? '(not provided)'}
+
+## Mode-specific instructions
+${modeSpecificInstructions}
+
+## Output requirements
+- Inspect actual repository files before making claims about existing UI coherence
+- Use the loaded skill's search workflow when it materially strengthens the recommendation or critique
+- Use the loaded skill as reference guidance, not as a replacement for repository evidence
+- If the mode is \`extend-existing-ui\`, keep repo coherence first, skill guidance second
+- Call out accessibility and trust risks explicitly
+- Final output must be a single JSON block and nothing else
+
+## Output format
+\`\`\`json
+{
+  "mode": "critique-proposal" | "extend-existing-ui" | "propose-new-ui",
+  "summary": "short summary of the recommendation",
+  "designOutput": "full UI design proposal or critique",
+  "acceptanceCriteria": ["specific UI acceptance criterion"],
+  "openQuestions": ["unresolved design question"],
+  "coherenceBasis": ["existing pattern, token, component, or file that the proposal follows"]
+}
+\`\`\``;
 }
 
 export function reviewerPrompt({ taskContext, repoContext, plan, cycleIndex, proofDeckPath }) {
@@ -328,6 +433,7 @@ requirements through targeted questioning.
 - Ask targeted questions that uncover requirements, constraints, corner cases, and unknowns
 - Ask one or two focused questions at a time — do not dump a full questionnaire at once
 - Adapt your questions based on the user's answers
+- If the user already has a UI concept, mockup, layout idea, or visual direction in mind, capture it in \`proposedUiDesign\`
 - When you have gathered enough information to plan confidently, end with:
   "Is there anything else you'd like to add, or shall I start making this real?"
 - When the user confirms they are ready, call the \`job_interview_complete\` tool

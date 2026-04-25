@@ -29,7 +29,8 @@ transitions to the pipeline.
     "constraints": ["constraint 1"],
     "outOfScope": ["thing 1"],
     "questionsToScout": ["What auth pattern is used?"],
-    "evidenceHint": "screenshots" | "logs" | "both"
+    "evidenceHint": "screenshots" | "logs" | "both",
+    "proposedUiDesign": "optional user-provided UI concept to critique"
   }
 }
 ```
@@ -101,15 +102,51 @@ is skipped. The final plan is the planner's output after round 2 (or round 1
 if round 2 was skipped).
 
 The gate dialog shows the full plan text plus extracted jester highlights
-(summary of both critique rounds).
+(summary of both critique rounds). If the plan touches user-facing product UI,
+a UI design brief is generated before the gate and shown alongside the plan.
 
 **Output written to job state:**
 ```jsonc
 {
   "finalPlan": "full plan text",
-  "planCritiques": ["jester round 1 output", "jester round 2 output"]
+  "planCritiques": ["jester round 1 output", "jester round 2 output"],
+  "plannerUiAssessment": {
+    "touchesUi": true,
+    "targetSurface": "dashboard card",
+    "proposedDesign": "optional planner proposal"
+  },
+  "uiRequired": true,
+  "uiDetectionReasons": ["..."],
+  "uiDesign": {
+    "mode": "extend-existing-ui",
+    "summary": "brief summary",
+    "designOutput": "full proposal or critique",
+    "acceptanceCriteria": ["..."],
+    "openQuestions": ["..."],
+    "coherenceBasis": ["templates/dashboard.html"]
+  }
 }
 ```
+
+---
+
+## UI design
+
+**Trigger:** Automatic after planning, when UI work is detected
+**Model:** `visual-designer` agent definition (`agents/visual-designer.md` or override)
+**Thinking:** `high`
+**Gate:** none (result is shown in `planApproval`)
+
+Mode selection is automatic:
+1. user supplied `proposedUiDesign` → `critique-proposal`
+2. planner supplied `uiAssessment.proposedDesign` → `critique-proposal`
+3. relevant existing UI files were found → `extend-existing-ui`
+4. otherwise → `propose-new-ui`
+
+The stage loads the `visual-designer` agent definition plus the bundled
+`ui-design-direction` skill as supporting reference context. In
+`extend-existing-ui`, repo coherence outranks generic skill guidance.
+The designer may inspect the repo broadly with read-only tools.
 
 ---
 
@@ -120,8 +157,8 @@ The gate dialog shows the full plan text plus extracted jester highlights
 **Thinking:** `medium`
 **Gate:** none
 
-The task writer receives the final plan and scout summary. It produces a
-task list with explicit dependency declarations.
+The task writer receives the final plan, scout summary, and any UI design
+brief. It produces a task list with explicit dependency declarations.
 
 **Task spec schema:**
 ```jsonc
@@ -131,7 +168,9 @@ task list with explicit dependency declarations.
   "description": "Full worker instructions",
   "dependsOn": [],             // IDs of tasks that must complete first
   "evidenceType": "both",      // screenshots | logs | both
-  "testRequirement": "All auth tests pass"
+  "testRequirement": "All auth tests pass",
+  "uiRelated": true,
+  "uiAcceptanceCriteria": ["Use the existing dashboard spacing rhythm"]
 }
 ```
 

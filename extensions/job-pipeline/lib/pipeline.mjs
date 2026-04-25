@@ -1,13 +1,20 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { spawnAgent, spawnCodingAgent, extractJson } from './agents.mjs';
+import {
+  spawnAgent,
+  spawnNamedAgent,
+  spawnCodingAgent,
+  extractJson,
+  getBundledUiDesignSkillContextFile,
+} from './agents.mjs';
 import { getRoleThinkingLevel } from './thinking.mjs';
 import { resolveExecutionBatches } from './tasks.mjs';
 import { generateProofHtml } from './proof.mjs';
 import { writeJobState, writeProofDeck, getArtifactDir } from './state.mjs';
 import { buildReviewRepoContext, buildReviewTaskContext, resolveReviewCwd } from './review.mjs';
 import { createWorktree, mergeAndCleanWorktree, findRepoRoot, ensureWorktreesIgnored } from './worktree.mjs';
+import { formatUiDesignBrief, normalizePlannerUiAssessment, selectVisualDesignMode } from './ui-design.mjs';
 import {
   scoutPrompt,
   plannerInitialPrompt,
@@ -15,6 +22,7 @@ import {
   jesterPrompt,
   taskWriterPrompt,
   workerPrompt,
+  visualDesignerPrompt,
   reviewerPrompt,
 } from './prompts.mjs';
 
@@ -26,7 +34,7 @@ import {
  *   agentDir: string,
  *   config: object,
  *   ui: object,       ExtensionContext ui (from captured ctx)
- *   planApprovalGate?: (options: { planText: string, critiqueHighlights: string }) => Promise<boolean>,
+ *   planApprovalGate?: (options: { planText: string, critiqueHighlights: string, uiDesignBrief: string }) => Promise<boolean>,
  *   proofReviewGate?: (options: { reviewVerdict: string, reviewNotes: string, proofDeckPath: string }) => Promise<boolean>,
  *   onWorkerEvent?: (event: object) => void,
  *   signal?: AbortSignal,
@@ -96,7 +104,8 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
     const scoutSummary = formatScoutSummary(state.scoutResult);
 
     const planningAttempt = (state.replanCount ?? 0) + 1;
-    let planText = await callPlanner({
+    state.planCritiques = [];
+    let plannerResult = await callPlanner({
       modelId: pool.planner,
       goal: state.spec.goal,
       interviewNotes: state.spec.context ?? '',
@@ -108,6 +117,8 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       onWorkerEvent,
       signal,
     });
+    let planText = plannerResult.plan;
+    let plannerUiAssessment = normalizePlannerUiAssessment(plannerResult.uiAssessment);
 
     for (let round = 1; round <= 2; round++) {
       onProgress(`jester: critique round ${round}`);
@@ -137,7 +148,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
 
       if (round < 2) {
         onProgress(`planner: revising plan (round ${round})`);
-        planText = await callPlannerRevise({
+        plannerResult = await callPlannerRevise({
           modelId: pool.planner,
           previousPlan: planText,
           jesterCritique: jesterOutput,
@@ -150,7 +161,47 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
           title: `Planner — revised plan round ${round} (attempt ${planningAttempt})`,
           onWorkerEvent,
         });
+        planText = plannerResult.plan;
+        plannerUiAssessment = normalizePlannerUiAssessment(plannerResult.uiAssessment);
       }
+    }
+
+    const uiModeSelection = selectVisualDesignMode({
+      spec: state.spec,
+      plannerUiAssessment,
+      scoutResult: state.scoutResult,
+    });
+    const skillContextFile = getBundledUiDesignSkillContextFile();
+    let uiDesignResult;
+    let uiDesignBrief = '';
+
+    if (uiModeSelection.required) {
+      onProgress(`visual-designer: ${uiModeSelection.mode}`);
+      const visualDesignerOutput = await runMonitoredReadonlyAgent({
+        agentName: 'visual-designer',
+        thinkingLevel: 'high',
+        systemPrompt: visualDesignerPrompt({
+          mode: uiModeSelection.mode,
+          goal: state.spec.goal,
+          interviewNotes: state.spec.context ?? '',
+          scoutSummary,
+          relevantUiFiles: uiModeSelection.coherenceFiles,
+          uiDesignProposal: uiModeSelection.proposedDesign,
+          targetSurface: uiModeSelection.targetSurface,
+          skillFilePath: skillContextFile.path,
+        }),
+        userPrompt: `Prepare the ${uiModeSelection.mode} UI design guidance for this plan.`,
+        cwd,
+        signal,
+        jobId: state.id,
+        cycleIndex,
+        taskId: `visual-designer-cycle-${cycleIndex}`,
+        title: `Visual designer — ${uiModeSelection.mode} (cycle ${cycleIndex})`,
+        onWorkerEvent,
+        additionalContextFiles: [skillContextFile],
+      });
+      uiDesignResult = parseRequiredJson(visualDesignerOutput, 'visual-designer');
+      uiDesignBrief = formatUiDesignBrief(uiDesignResult);
     }
 
     // Plan approval gate
@@ -158,10 +209,14 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
     const critiqueHighlights = formatCritiqueHighlights(state.planCritiques ?? []);
     if (gateMode === 'compulsory') {
       const approved = planApprovalGate
-        ? await planApprovalGate({ planText, critiqueHighlights })
+        ? await planApprovalGate({
+            planText,
+            critiqueHighlights,
+            uiDesignBrief,
+          })
         : await ui.confirm(
             'Plan Approval',
-            `${planText}\n\n--- Jester highlights ---\n${critiqueHighlights}`,
+            `${planText}\n\n--- Jester highlights ---\n${critiqueHighlights}${uiDesignBrief ? `\n\n--- UI design brief ---\n${uiDesignBrief}` : ''}`,
           );
       if (!approved) {
         throw new GateDeniedError('plan-approval');
@@ -171,6 +226,10 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
     }
 
     state.finalPlan = planText;
+    state.plannerUiAssessment = plannerUiAssessment;
+    state.uiRequired = uiModeSelection.required;
+    state.uiDetectionReasons = uiModeSelection.reasons;
+    state.uiDesign = uiDesignResult;
     state.step = 'task-writing';
     persist(agentDir, state);
     onProgress('planner: final plan stored');
@@ -188,6 +247,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
         finalPlan: state.finalPlan,
         scoutSummary,
         evidenceHint: state.spec?.evidenceHint ?? 'both',
+        designBrief: state.uiDesign,
       }),
       userPrompt: 'Write the task list for this plan.',
       cwd,
@@ -249,6 +309,11 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       // Reset for re-plan
       state.taskGraph = undefined;
       state.finalPlan = undefined;
+      state.planCritiques = undefined;
+      state.plannerUiAssessment = undefined;
+      state.uiRequired = undefined;
+      state.uiDetectionReasons = undefined;
+      state.uiDesign = undefined;
       state.step = 'planning';
       persist(agentDir, state);
       // Inject failure info into spec context for the re-plan
@@ -454,6 +519,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
 
 async function runMonitoredReadonlyAgent({
   modelId,
+  agentName,
   thinkingLevel,
   systemPrompt,
   userPrompt,
@@ -464,6 +530,7 @@ async function runMonitoredReadonlyAgent({
   taskId,
   title,
   onWorkerEvent,
+  additionalContextFiles,
 }) {
   const emitLog = (text) => {
     onWorkerEvent?.({
@@ -485,14 +552,16 @@ async function runMonitoredReadonlyAgent({
   });
 
   try {
-    const output = await spawnAgent({
-      modelId,
+    const spawn = agentName ? spawnNamedAgent : spawnAgent;
+    const output = await spawn({
+      ...(agentName ? { agentName } : { modelId }),
       thinkingLevel,
       systemPrompt,
       userPrompt,
       cwd,
       signal,
       onLogLine: (line) => emitLog(`${line}\n`),
+      additionalContextFiles,
     });
     onWorkerEvent?.({
       type: 'worker-finished',
@@ -530,8 +599,11 @@ async function callPlanner({ modelId, goal, interviewNotes, scoutSummary, cwd, s
     title,
     onWorkerEvent,
   });
-  const parsed = safeExtractJson(output, { plan: output });
-  return parsed.plan ?? output;
+  const parsed = safeExtractJson(output, { plan: output, uiAssessment: { touchesUi: false } });
+  return {
+    plan: parsed.plan ?? output,
+    uiAssessment: parsed.uiAssessment ?? { touchesUi: false },
+  };
 }
 
 async function callPlannerRevise({ modelId, previousPlan, jesterCritique, round, cwd, signal, jobId, cycleIndex, taskId, title, onWorkerEvent }) {
@@ -548,8 +620,11 @@ async function callPlannerRevise({ modelId, previousPlan, jesterCritique, round,
     title,
     onWorkerEvent,
   });
-  const parsed = safeExtractJson(output, { plan: output });
-  return parsed.plan ?? output;
+  const parsed = safeExtractJson(output, { plan: output, uiAssessment: { touchesUi: false } });
+  return {
+    plan: parsed.plan ?? output,
+    uiAssessment: parsed.uiAssessment ?? { touchesUi: false },
+  };
 }
 
 async function executeWorkers({ tasks, pool, scoutSummary, worktreePath, cycleIndex, agentDir, jobId, signal, onProgress, onWorkerEvent }) {
@@ -758,6 +833,15 @@ function safeExtractJson(text, fallback) {
     return JSON.parse(candidate);
   } catch {
     return fallback;
+  }
+}
+
+function parseRequiredJson(text, label) {
+  try {
+    return extractJson(text);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${label} returned invalid JSON: ${message}`);
   }
 }
 

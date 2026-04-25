@@ -1,19 +1,24 @@
 const DEFAULT_MIN_BODY_LINES = 8;
 const DEFAULT_MAX_BODY_LINES = 12;
 
-export function buildPlanApprovalDialogSpec({ planText, critiqueHighlights }) {
+export function buildPlanApprovalDialogSpec({ planText, critiqueHighlights, uiDesignBrief }) {
   const normalizedPlan = normalizeBlock(planText, '(Planner returned an empty plan.)');
   const normalizedCritique = normalizeBlock(
     critiqueHighlights,
     'No issues were raised by the jester.',
   );
+  const normalizedUiDesignBrief = normalizeBlock(
+    uiDesignBrief,
+    'No UI design work was required for this plan.',
+  );
 
   return buildDialogSpec({
     title: 'Plan Approval',
-    intro: 'Review the final plan and jester critique before continuing.',
+    intro: 'Review the final plan, jester critique, and any UI design brief before continuing.',
     sections: [
       ['Final Plan', normalizedPlan],
       ['Jester Critique Highlights', normalizedCritique],
+      ['UI Design Brief', normalizedUiDesignBrief],
     ],
     question: 'Approve this plan and continue to task writing?',
     approveLabel: 'Continue',

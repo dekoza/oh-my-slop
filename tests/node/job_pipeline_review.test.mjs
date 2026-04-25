@@ -20,6 +20,10 @@ test('buildReviewTaskContext combines task requirements, worker results, and art
         title: 'Add OAuth login',
         description: 'Implement the OAuth callback flow and persist linked identities.',
         testRequirement: 'uv run pytest tests/auth/test_oauth.py -x',
+        uiAcceptanceCriteria: [
+          'Keep the current auth card shell and spacing rhythm.',
+          'Preserve visible keyboard focus states on provider buttons.',
+        ],
       },
       {
         id: 'task-2',
@@ -52,6 +56,7 @@ test('buildReviewTaskContext combines task requirements, worker results, and art
   assert.match(context, /Implement the OAuth callback flow/);
   assert.match(context, /uv run pytest tests\/auth\/test_oauth.py -x/);
   assert.match(context, /Reported artifacts: proof-task-1.log, proof-task-1-1.png/);
+  assert.match(context, /UI acceptance criteria: Keep the current auth card shell and spacing rhythm. \| Preserve visible keyboard focus states on provider buttons./);
   assert.match(context, /Task task-2 — Harden token validation/);
   assert.match(context, /Worker status: failed/);
   assert.match(context, /Failure reason: Malformed tokens still deserialize as valid state/);

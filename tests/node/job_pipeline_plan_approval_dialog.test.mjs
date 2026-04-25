@@ -13,13 +13,16 @@ test('buildPlanApprovalDialogSpec includes clear sections and approval question'
   const spec = buildPlanApprovalDialogSpec({
     planText: '1. Audit the current gate UI.\n2. Add a scrollable dialog.',
     critiqueHighlights: 'Round 1: the approval step is ambiguous.',
+    uiDesignBrief: 'Mode: extend-existing-ui\nSummary: Keep the existing admin shell and reuse current card spacing.',
   });
 
   assert.equal(spec.title, 'Plan Approval');
   assert.match(spec.body, /Final Plan/);
   assert.match(spec.body, /Jester Critique Highlights/);
+  assert.match(spec.body, /UI Design Brief/);
   assert.match(spec.body, /Add a scrollable dialog/);
   assert.match(spec.body, /approval step is ambiguous/);
+  assert.match(spec.body, /reuse current card spacing/);
   assert.equal(spec.question, 'Approve this plan and continue to task writing?');
   assert.equal(spec.approveLabel, 'Continue');
   assert.equal(spec.denyLabel, 'Pause');

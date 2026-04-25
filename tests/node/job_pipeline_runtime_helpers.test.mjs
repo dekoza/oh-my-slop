@@ -55,6 +55,9 @@ test('buildSubagentLoaderOptions forwards agentDir and cwd', () => {
     cwd: '/tmp/project',
     agentDir: '/tmp/agent',
     systemPrompt: 'ROLE',
+    additionalContextFiles: [
+      { path: '/tmp/skill/SKILL.md', content: 'SKILL' },
+    ],
   });
 
   assert.equal(options.cwd, '/tmp/project');
@@ -62,6 +65,7 @@ test('buildSubagentLoaderOptions forwards agentDir and cwd', () => {
   const overrideResult = options.agentsFilesOverride({ agentsFiles: [] });
   assert.deepEqual(overrideResult.agentsFiles, [
     { path: '/virtual/ROLE.md', content: 'ROLE' },
+    { path: '/tmp/skill/SKILL.md', content: 'SKILL' },
   ]);
 });
 

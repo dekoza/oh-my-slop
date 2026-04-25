@@ -157,6 +157,9 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
         [Type.Literal("screenshots"), Type.Literal("logs"), Type.Literal("both")],
         { description: "What type of evidence workers should produce" },
       ),
+      proposedUiDesign: Type.Optional(Type.String({
+        description: "Optional user-provided UI concept, layout idea, or visual direction to critique",
+      })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const spec = params;
@@ -242,10 +245,10 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
           agentDir,
           config,
           ui: ctx.ui,
-          planApprovalGate: ({ planText, critiqueHighlights }) =>
+          planApprovalGate: ({ planText, critiqueHighlights, uiDesignBrief }) =>
             showScrollableGateDialog(
               ctx.ui,
-              buildPlanApprovalDialogSpec({ planText, critiqueHighlights }),
+              buildPlanApprovalDialogSpec({ planText, critiqueHighlights, uiDesignBrief }),
             ),
           proofReviewGate: ({ reviewVerdict, reviewNotes, proofDeckPath }) =>
             showScrollableGateDialog(

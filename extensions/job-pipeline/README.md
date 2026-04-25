@@ -23,7 +23,11 @@ SCOUT          Cheap model reads the codebase, answers planner's questions.
 PLANNING LOOP  Planner writes initial plan.
    │           Jester critiques (round 1). Planner revises.
    │           Jester critiques (round 2). Final plan produced.
-   │           Gate: you review the plan + disagreement highlights.
+   ▼
+UI DESIGN      If the plan touches UI, the visual-designer subagent runs.
+   │           Modes: critique proposal, extend existing UI, or propose new UI.
+   │           Uses repo coherence first when extending existing surfaces.
+   │           Gate: you review the plan + disagreement highlights + UI design brief.
    ▼
 TASK WRITER    Different model from planner writes concrete worker tasks
    │           with explicit dependency graph.
@@ -71,7 +75,7 @@ Each gate can be `compulsory` (blocks for your input) or `auto-accept`
 | Gate | Default | Trigger |
 |---|---|---|
 | `scoutQuestion` | compulsory | Planner's question to scout |
-| `planApproval` | compulsory | Final plan + jester highlights |
+| `planApproval` | compulsory | Final plan + jester highlights + UI design brief when applicable |
 | `proofReview` | compulsory | Proof deck before merge |
 | `retroReview` | compulsory | Retro summary |
 

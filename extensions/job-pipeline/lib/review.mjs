@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
  * results, and proof artifact hints. The reviewer still has read-only tools,
  * but this summary gives it an explicit checklist and starting point.
  *
- * @param {{ tasks?: Array<{ id: string, title?: string, description?: string, testRequirement?: string }> } | null | undefined} taskGraph
+ * @param {{ tasks?: Array<{ id: string, title?: string, description?: string, testRequirement?: string, uiAcceptanceCriteria?: string[] }> } | null | undefined} taskGraph
  * @param {Array<{ taskId: string, success: boolean, summary?: string, artifactFiles?: string[], failureReport?: { attempted?: string, found?: string, reason?: string } }> | null | undefined} workerResults
  * @returns {string}
  */
@@ -26,6 +26,7 @@ export function buildReviewTaskContext(taskGraph, workerResults) {
         `Task ${result.taskId}${task.title ? ` — ${task.title}` : ''}`,
         `Requirement: ${task.description ?? '(not provided)'}`,
         `Test requirement: ${task.testRequirement ?? '(not provided)'}`,
+        `UI acceptance criteria: ${Array.isArray(task.uiAcceptanceCriteria) && task.uiAcceptanceCriteria.length > 0 ? task.uiAcceptanceCriteria.join(' | ') : 'none specified'}`,
         `Worker status: ${result.success ? 'success' : 'failed'}`,
         `Worker summary: ${result.summary || '(none provided)'}`,
         `Reported artifacts: ${Array.isArray(result.artifactFiles) && result.artifactFiles.length > 0 ? result.artifactFiles.join(', ') : 'none reported'}`,

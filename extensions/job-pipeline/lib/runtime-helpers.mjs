@@ -36,7 +36,7 @@ export function formatPipelineError(error) {
   };
 }
 
-export function buildSubagentLoaderOptions({ cwd, agentDir, systemPrompt }) {
+export function buildSubagentLoaderOptions({ cwd, agentDir, systemPrompt, additionalContextFiles = [] }) {
   return {
     cwd,
     agentDir,
@@ -44,6 +44,7 @@ export function buildSubagentLoaderOptions({ cwd, agentDir, systemPrompt }) {
       agentsFiles: [
         ...(current.agentsFiles ?? []),
         { path: '/virtual/ROLE.md', content: systemPrompt },
+        ...additionalContextFiles,
       ],
     }),
   };
