@@ -74,8 +74,9 @@ job_run_pipeline tool (long-running, called by model)
 ## Pipeline state machine
 
 `runPipeline` in `lib/pipeline.mjs` is a single async function that walks
-through pipeline steps. Job state is written to disk after each step so
-the pipeline can be resumed after a crash or pi restart.
+through pipeline steps. Job state is written to disk after each step, key
+transitions are appended to the event journal, and stage/task outputs are
+persisted so the pipeline can be resumed or diagnosed after a crash.
 
 ```
 Step: scout
@@ -133,6 +134,12 @@ Each job snapshot lives at
 While a run is executing, the extension uses
 `~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/lock.json`
 to prevent concurrent mutation of the same job.
+Append-only events live under
+`~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/events/`.
+Persisted stage outputs live under
+`~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/stages/cycle-<n>/`.
+Persisted task results live under
+`~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/tasks/cycle-<n>/`.
 Legacy `job-state.json` is only used as a one-time migration source.
 
 ```jsonc

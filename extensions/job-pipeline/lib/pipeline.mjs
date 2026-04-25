@@ -11,6 +11,8 @@ import {
 import { getRoleThinkingLevel } from './thinking.mjs';
 import { resolveExecutionBatches } from './tasks.mjs';
 import { generateProofHtml } from './proof.mjs';
+import { appendJobEvent } from './job-events.mjs';
+import { writeStageArtifacts, writeTaskArtifacts } from './job-store.mjs';
 import { writeJobState, writeProofDeck, getArtifactDir } from './state.mjs';
 import { buildReviewRepoContext, buildReviewTaskContext, resolveReviewCwd } from './review.mjs';
 import { createWorktree, mergeAndCleanWorktree, findRepoRoot, ensureWorktreesIgnored } from './worktree.mjs';
@@ -41,16 +43,47 @@ import {
  *   signal?: AbortSignal,
  *   onProgress: (message: string) => void,
  *   lockHeld?: boolean,
+ *   runtime?: object,
  * }} options
  * @returns {Promise<object>}  Final job state
  */
-export async function runPipeline({ jobState, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress, lockHeld = false }) {
+export async function runPipeline({ jobState, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress, lockHeld = false, runtime = {} }) {
   const state = { ...jobState };
   const pool = state.pool;
   const cwd = state.cwd ?? process.cwd();
-  const repoRoot = findRepoRoot(cwd);
+  const resolveRepoRoot = runtime.findRepoRoot ?? findRepoRoot;
+  const repoRoot = resolveRepoRoot(cwd);
   const cycleIndex = state.cycleIndex ?? 1;
   const shouldManageLock = !lockHeld && typeof state.id === 'string' && state.id.trim().length > 0;
+  const currentCycleIndex = () => Number(state.cycleIndex ?? cycleIndex ?? 1);
+  const recordEvent = (type, data = {}) => {
+    if (typeof state.id !== 'string' || state.id.trim().length === 0) {
+      return null;
+    }
+    return appendJobEvent(agentDir, state.id, type, {
+      cycleIndex: currentCycleIndex(),
+      ...data,
+    });
+  };
+  const persistStageOutput = (stageName, { responseText, parsedJson, metadata } = {}) => {
+    if (typeof state.id !== 'string' || state.id.trim().length === 0) {
+      return null;
+    }
+    return writeStageArtifacts(agentDir, state.id, currentCycleIndex(), stageName, {
+      responseText,
+      parsedJson,
+      metadata,
+    });
+  };
+  const persistTaskOutput = (taskId, { responseText, result } = {}) => {
+    if (typeof state.id !== 'string' || state.id.trim().length === 0) {
+      return null;
+    }
+    return writeTaskArtifacts(agentDir, state.id, currentCycleIndex(), taskId, {
+      responseText,
+      result,
+    });
+  };
 
   if (shouldManageLock) {
     acquireJobLock(agentDir, state.id);
@@ -79,13 +112,17 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
         `The planner wants to ask the scout:\n\n"${scoutQuestion}"\n\nApprove?`,
       );
       if (!approved) {
+        recordEvent('GATE_DENIED', { gate: 'scout-question', step: 'scout' });
         throw new GateDeniedError('scout-question');
       }
+      recordEvent('GATE_APPROVED', { gate: 'scout-question', step: 'scout' });
     } else {
       ui.notify(`[auto-accept] Scout question: ${scoutQuestion}`, 'info');
+      recordEvent('GATE_APPROVED', { gate: 'scout-question', step: 'scout', mode: 'auto-accept' });
     }
 
     onProgress('scout: running');
+    recordEvent('STAGE_STARTED', { stage: 'scout', step: 'scout' });
     const scoutOutput = await runMonitoredReadonlyAgent({
       modelId: pool.scout,
       thinkingLevel: getRoleThinkingLevel('scout'),
@@ -98,9 +135,20 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       taskId: `scout-cycle-${cycleIndex}`,
       title: `Scout — reconnaissance (cycle ${cycleIndex})`,
       onWorkerEvent,
+      runtime,
     });
 
     state.scoutResult = safeExtractJson(scoutOutput, { summary: scoutOutput, answers: [], relevantFiles: [] });
+    persistStageOutput('scout', {
+      responseText: scoutOutput,
+      parsedJson: state.scoutResult,
+      metadata: { step: 'planning' },
+    });
+    recordEvent('STAGE_COMPLETED', {
+      stage: 'scout',
+      step: 'planning',
+      result: { scoutResult: state.scoutResult },
+    });
     state.step = 'planning';
     persist(agentDir, state);
     onProgress('scout: complete');
@@ -110,6 +158,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
 
   if (!state.finalPlan) {
     onProgress('planner: generating initial plan');
+    recordEvent('STAGE_STARTED', { stage: 'planning', step: 'planning' });
     const scoutSummary = formatScoutSummary(state.scoutResult);
 
     const planningAttempt = (state.replanCount ?? 0) + 1;
@@ -125,6 +174,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       title: `Planner — initial plan (attempt ${planningAttempt})`,
       onWorkerEvent,
       signal,
+      runtime,
     });
     let planText = plannerResult.plan;
     let plannerUiAssessment = normalizePlannerUiAssessment(plannerResult.uiAssessment);
@@ -143,6 +193,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
         taskId: `jester-planning-round-${round}-attempt-${planningAttempt}`,
         title: `Jester — planning critique round ${round} (attempt ${planningAttempt})`,
         onWorkerEvent,
+        runtime,
       });
 
       const critique = safeExtractJson(jesterOutput, { verdict: 'acceptable', issues: [], summary: jesterOutput });
@@ -169,6 +220,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
           taskId: `planner-revise-round-${round}-attempt-${planningAttempt}`,
           title: `Planner — revised plan round ${round} (attempt ${planningAttempt})`,
           onWorkerEvent,
+          runtime,
         });
         planText = plannerResult.plan;
         plannerUiAssessment = normalizePlannerUiAssessment(plannerResult.uiAssessment);
@@ -208,6 +260,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
         title: `Visual designer — ${uiModeSelection.mode} (cycle ${cycleIndex})`,
         onWorkerEvent,
         additionalSkills: [uiDesignSkill],
+        runtime,
       });
       uiDesignResult = parseRequiredJson(visualDesignerOutput, 'visual-designer');
       uiDesignBrief = formatUiDesignBrief(uiDesignResult);
@@ -228,10 +281,13 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
             `${planText}\n\n--- Jester highlights ---\n${critiqueHighlights}${uiDesignBrief ? `\n\n--- UI design brief ---\n${uiDesignBrief}` : ''}`,
           );
       if (!approved) {
+        recordEvent('GATE_DENIED', { gate: 'plan-approval', step: 'planning' });
         throw new GateDeniedError('plan-approval');
       }
+      recordEvent('GATE_APPROVED', { gate: 'plan-approval', step: 'planning' });
     } else {
       ui.notify('[auto-accept] Plan approved.', 'info');
+      recordEvent('GATE_APPROVED', { gate: 'plan-approval', step: 'planning', mode: 'auto-accept' });
     }
 
     state.finalPlan = planText;
@@ -239,6 +295,28 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
     state.uiRequired = uiModeSelection.required;
     state.uiDetectionReasons = uiModeSelection.reasons;
     state.uiDesign = uiDesignResult;
+    persistStageOutput('planning', {
+      responseText: planText,
+      parsedJson: {
+        finalPlan: state.finalPlan,
+        plannerUiAssessment: state.plannerUiAssessment,
+        planCritiques: state.planCritiques ?? [],
+        uiDesign: state.uiDesign,
+      },
+      metadata: {
+        nextStep: 'task-writing',
+      },
+    });
+    recordEvent('STAGE_COMPLETED', {
+      stage: 'planning',
+      step: 'task-writing',
+      result: {
+        finalPlan: state.finalPlan,
+        planCritiques: state.planCritiques ?? [],
+        plannerUiAssessment: state.plannerUiAssessment,
+        uiDesign: state.uiDesign,
+      },
+    });
     state.step = 'task-writing';
     persist(agentDir, state);
     onProgress('planner: final plan stored');
@@ -248,6 +326,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
 
   if (!state.taskGraph) {
     onProgress('task-writer: generating task list');
+    recordEvent('STAGE_STARTED', { stage: 'task-writing', step: 'task-writing' });
     const scoutSummary = formatScoutSummary(state.scoutResult);
     const taskOutput = await runMonitoredReadonlyAgent({
       modelId: pool['task-writer'],
@@ -266,10 +345,21 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       taskId: `task-writer-cycle-${cycleIndex}`,
       title: `Task writer — execution graph (cycle ${cycleIndex})`,
       onWorkerEvent,
+      runtime,
     });
 
     const parsed = safeExtractJson(taskOutput, { tasks: [] });
     state.taskGraph = parsed;
+    persistStageOutput('task-writing', {
+      responseText: taskOutput,
+      parsedJson: parsed,
+      metadata: { nextStep: 'worktree' },
+    });
+    recordEvent('STAGE_COMPLETED', {
+      stage: 'task-writing',
+      step: 'worktree',
+      result: { taskGraph: parsed },
+    });
     state.step = 'worktree';
     persist(agentDir, state);
     onProgress(`task-writer: ${parsed.tasks?.length ?? 0} tasks created`);
@@ -279,9 +369,17 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
 
   if (!state.worktreePath) {
     onProgress('worktree: setting up');
-    ensureWorktreesIgnored(repoRoot);
-    const worktreePath = createWorktree(repoRoot, state.id);
+    recordEvent('STAGE_STARTED', { stage: 'worktree', step: 'worktree' });
+    const ensureIgnored = runtime.ensureWorktreesIgnored ?? ensureWorktreesIgnored;
+    const createWorktreeFn = runtime.createWorktree ?? createWorktree;
+    ensureIgnored(repoRoot);
+    const worktreePath = createWorktreeFn(repoRoot, state.id);
     state.worktreePath = worktreePath;
+    recordEvent('STAGE_COMPLETED', {
+      stage: 'worktree',
+      step: 'workers',
+      result: { worktreePath },
+    });
     state.step = 'workers';
     persist(agentDir, state);
     onProgress(`worktree: ready at ${worktreePath}`);
@@ -291,6 +389,11 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
 
   if (!state.workerResults || state.workerResults.length < (state.taskGraph?.tasks?.length ?? 0)) {
     onProgress('workers: executing tasks');
+    recordEvent('STAGE_STARTED', {
+      stage: 'workers',
+      step: 'workers',
+      result: { taskCount: state.taskGraph?.tasks?.length ?? 0 },
+    });
     const scoutSummary = formatScoutSummary(state.scoutResult);
     const workerResults = await executeWorkers({
       tasks: state.taskGraph.tasks,
@@ -303,6 +406,9 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       signal,
       onProgress,
       onWorkerEvent,
+      runtime,
+      recordEvent,
+      persistTaskOutput,
     });
 
     state.workerResults = workerResults;
@@ -324,15 +430,25 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       state.uiDetectionReasons = undefined;
       state.uiDesign = undefined;
       state.step = 'planning';
+      recordEvent('REPLAN_REQUESTED', {
+        reason: 'Worker failure',
+        step: 'planning',
+        replanCount: state.replanCount,
+      });
       persist(agentDir, state);
       // Inject failure info into spec context for the re-plan
       state.spec = {
         ...state.spec,
         context: `${state.spec.context ?? ''}\n\nPREVIOUS ATTEMPT FAILURES:\n${formatFailures(failed)}`,
       };
-      return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress, lockHeld: true });
+      return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress, lockHeld: true, runtime });
     }
 
+    recordEvent('STAGE_COMPLETED', {
+      stage: 'workers',
+      step: 'proof',
+      result: { workerResults },
+    });
     state.step = 'proof';
     persist(agentDir, state);
   }
@@ -341,8 +457,15 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
 
   if (!state.proofDeckPath) {
     onProgress('proof: compiling HTML deck');
+    recordEvent('STAGE_STARTED', { stage: 'proof', step: 'proof' });
     const deckPath = await refreshProofDeck({ agentDir, state, cycleIndex });
     state.proofDeckPath = deckPath;
+    recordEvent('PROOF_WRITTEN', { proofDeckPath: deckPath });
+    recordEvent('STAGE_COMPLETED', {
+      stage: 'proof',
+      step: 'review',
+      result: { proofDeckPath: deckPath },
+    });
     state.step = 'review';
     persist(agentDir, state);
     onProgress(`proof: deck written to ${deckPath}`);
@@ -352,6 +475,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
 
   if (!state.reviewVerdict) {
     onProgress('reviewer: reviewing worker output');
+    recordEvent('STAGE_STARTED', { stage: 'review', step: 'review' });
     const reviewTaskContext = buildReviewTaskContext(state.taskGraph, state.workerResults);
     const reviewRepoContext = buildReviewRepoContext({
       repoRoot,
@@ -376,6 +500,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       taskId: `reviewer-cycle-${cycleIndex}`,
       title: `Reviewer — implementation review (cycle ${cycleIndex})`,
       onWorkerEvent,
+      runtime,
     });
 
     const review = safeExtractJson(reviewOutput, {
@@ -401,6 +526,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       taskId: `jester-review-cycle-${cycleIndex}`,
       title: `Jester — review critique (cycle ${cycleIndex})`,
       onWorkerEvent,
+      runtime,
     });
 
     const jesterReview = safeExtractJson(jesterOutput, {
@@ -427,6 +553,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
         taskId: `planner-review-resolution-cycle-${cycleIndex}`,
         title: `Planner — review resolution (cycle ${cycleIndex})`,
         onWorkerEvent,
+        runtime,
       });
       plannerResolution = resolutionOutput;
       const resolution = safeExtractJson(resolutionOutput, { action: 'worker-fix', instructions: '' });
@@ -449,8 +576,13 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
           ...state.spec,
           context: `${state.spec.context ?? ''}\n\nREVIEW REQUESTED FIXES:\n${resolution.instructions}`,
         };
+        recordEvent('CYCLE_INCREMENTED', {
+          cycleIndex: state.cycleIndex,
+          reason: 'worker-fix',
+          step: 'workers',
+        });
         persist(agentDir, state);
-        return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress, lockHeld: true });
+        return runPipeline({ jobState: state, agentDir, config, ui, planApprovalGate, proofReviewGate, onWorkerEvent, signal, onProgress, lockHeld: true, runtime });
       }
     }
 
@@ -462,10 +594,34 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
     state.reviewEvidenceSummary = review.evidenceSummary ?? '';
     state.reviewJesterCritique = jesterReview.summary;
     state.plannerResolution = plannerResolution;
+    persistStageOutput('review', {
+      responseText: reviewOutput,
+      parsedJson: review,
+      metadata: {
+        jesterReview,
+        plannerResolution,
+      },
+    });
+    recordEvent('REVIEW_COMPLETED', {
+      reviewVerdict: state.reviewVerdict,
+      reviewNotes: state.reviewNotes,
+      reviewFindings: state.reviewFindings,
+      reviewMissingTests: state.reviewMissingTests,
+      reviewOpenQuestions: state.reviewOpenQuestions,
+      evidenceSummary: state.reviewEvidenceSummary,
+    });
     if (state.proofDeckPath) {
       onProgress('proof: refreshing deck with review findings');
       state.proofDeckPath = await refreshProofDeck({ agentDir, state, cycleIndex });
     }
+    recordEvent('STAGE_COMPLETED', {
+      stage: 'review',
+      step: 'human-review',
+      result: {
+        reviewVerdict: state.reviewVerdict,
+        reviewNotes: state.reviewNotes,
+      },
+    });
     state.step = 'human-review';
     persist(agentDir, state);
   }
@@ -486,6 +642,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
             `Review complete. Verdict: ${state.reviewVerdict}\n\nNotes: ${state.reviewNotes}\n\nProof deck: ${state.proofDeckPath}\n\nMerge into main branch?`,
           );
       if (!approved) {
+        recordEvent('GATE_DENIED', { gate: 'proof-review', step: 'human-review' });
         // User wants changes — treat as new cycle
         state.previousProofDeckPath = state.proofDeckPath;
         state.proofDeckPath = undefined;
@@ -499,11 +656,18 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
         state.reviewJesterCritique = undefined;
         state.plannerResolution = undefined;
         state.cycleIndex = cycleIndex + 1;
+        recordEvent('CYCLE_INCREMENTED', {
+          cycleIndex: state.cycleIndex,
+          reason: 'proof-review-denied',
+          step: 'workers',
+        });
         persist(agentDir, state);
         throw new GateDeniedError('proof-review');
       }
+      recordEvent('GATE_APPROVED', { gate: 'proof-review', step: 'human-review' });
     } else {
       ui.notify('[auto-accept] Proof review passed.', 'info');
+      recordEvent('GATE_APPROVED', { gate: 'proof-review', step: 'human-review', mode: 'auto-accept' });
     }
 
     state.humanApproved = true;
@@ -514,8 +678,19 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
 
   if (!state.merged) {
     onProgress('merge: merging worktree');
-    mergeAndCleanWorktree(repoRoot, state.id, state.worktreePath);
+    recordEvent('STAGE_STARTED', { stage: 'merge', step: 'merge' });
+    const mergeWorktreeFn = runtime.mergeAndCleanWorktree ?? mergeAndCleanWorktree;
+    mergeWorktreeFn(repoRoot, state.id, state.worktreePath);
     state.merged = true;
+    recordEvent('MERGE_COMPLETED', {
+      worktreePath: state.worktreePath,
+      step: 'retro',
+    });
+    recordEvent('STAGE_COMPLETED', {
+      stage: 'merge',
+      step: 'retro',
+      result: { merged: true },
+    });
     state.step = 'retro';
     persist(agentDir, state);
     onProgress('merge: complete');
@@ -546,6 +721,7 @@ async function runMonitoredReadonlyAgent({
   onWorkerEvent,
   additionalContextFiles,
   additionalSkills,
+  runtime,
 }) {
   const emitLog = (text) => {
     onWorkerEvent?.({
@@ -567,18 +743,33 @@ async function runMonitoredReadonlyAgent({
   });
 
   try {
-    const spawn = agentName ? spawnNamedAgent : spawnAgent;
-    const output = await spawn({
-      ...(agentName ? { agentName } : { modelId }),
-      thinkingLevel,
-      systemPrompt,
-      userPrompt,
-      cwd,
-      signal,
-      onLogLine: (line) => emitLog(`${line}\n`),
-      additionalContextFiles,
-      additionalSkills,
-    });
+    const output = typeof runtime?.readonlyAgentSpawn === 'function'
+      ? await runtime.readonlyAgentSpawn({
+          ...(agentName ? { agentName } : { modelId }),
+          thinkingLevel,
+          systemPrompt,
+          userPrompt,
+          cwd,
+          signal,
+          jobId,
+          cycleIndex,
+          taskId,
+          title,
+          onLogLine: (line) => emitLog(`${line}\n`),
+          additionalContextFiles,
+          additionalSkills,
+        })
+      : await (agentName ? spawnNamedAgent : spawnAgent)({
+          ...(agentName ? { agentName } : { modelId }),
+          thinkingLevel,
+          systemPrompt,
+          userPrompt,
+          cwd,
+          signal,
+          onLogLine: (line) => emitLog(`${line}\n`),
+          additionalContextFiles,
+          additionalSkills,
+        });
     onWorkerEvent?.({
       type: 'worker-finished',
       jobId,
@@ -601,7 +792,7 @@ async function runMonitoredReadonlyAgent({
   }
 }
 
-async function callPlanner({ modelId, goal, interviewNotes, scoutSummary, cwd, signal, jobId, cycleIndex, taskId, title, onWorkerEvent }) {
+async function callPlanner({ modelId, goal, interviewNotes, scoutSummary, cwd, signal, jobId, cycleIndex, taskId, title, onWorkerEvent, runtime }) {
   const output = await runMonitoredReadonlyAgent({
     modelId,
     thinkingLevel: getRoleThinkingLevel('planner'),
@@ -614,6 +805,7 @@ async function callPlanner({ modelId, goal, interviewNotes, scoutSummary, cwd, s
     taskId,
     title,
     onWorkerEvent,
+    runtime,
   });
   const parsed = safeExtractJson(output, { plan: output, uiAssessment: { touchesUi: false } });
   return {
@@ -622,7 +814,7 @@ async function callPlanner({ modelId, goal, interviewNotes, scoutSummary, cwd, s
   };
 }
 
-async function callPlannerRevise({ modelId, previousPlan, jesterCritique, round, cwd, signal, jobId, cycleIndex, taskId, title, onWorkerEvent }) {
+async function callPlannerRevise({ modelId, previousPlan, jesterCritique, round, cwd, signal, jobId, cycleIndex, taskId, title, onWorkerEvent, runtime }) {
   const output = await runMonitoredReadonlyAgent({
     modelId,
     thinkingLevel: getRoleThinkingLevel('planner'),
@@ -635,6 +827,7 @@ async function callPlannerRevise({ modelId, previousPlan, jesterCritique, round,
     taskId,
     title,
     onWorkerEvent,
+    runtime,
   });
   const parsed = safeExtractJson(output, { plan: output, uiAssessment: { touchesUi: false } });
   return {
@@ -643,11 +836,16 @@ async function callPlannerRevise({ modelId, previousPlan, jesterCritique, round,
   };
 }
 
-async function executeWorkers({ tasks, pool, scoutSummary, worktreePath, cycleIndex, agentDir, jobId, signal, onProgress, onWorkerEvent }) {
+async function executeWorkers({ tasks, pool, scoutSummary, worktreePath, cycleIndex, agentDir, jobId, signal, onProgress, onWorkerEvent, runtime, recordEvent, persistTaskOutput }) {
   const batches = resolveExecutionBatches(tasks);
   const allResults = [];
 
   for (const task of tasks) {
+    recordEvent?.('TASK_QUEUED', {
+      taskId: task.id,
+      title: task.title,
+      dependsOn: task.dependsOn ?? [],
+    });
     onWorkerEvent?.({
       type: 'worker-queued',
       jobId,
@@ -672,6 +870,9 @@ async function executeWorkers({ tasks, pool, scoutSummary, worktreePath, cycleIn
           jobId,
           signal,
           onWorkerEvent,
+          runtime,
+          recordEvent,
+          persistTaskOutput,
         }),
       ),
     );
@@ -682,7 +883,7 @@ async function executeWorkers({ tasks, pool, scoutSummary, worktreePath, cycleIn
   return allResults;
 }
 
-async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleIndex, agentDir, jobId, signal, onWorkerEvent }) {
+async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleIndex, agentDir, jobId, signal, onWorkerEvent, runtime, recordEvent, persistTaskOutput }) {
   const artifactDir = getArtifactDir(agentDir, jobId, cycleIndex, task.id);
   const emitWorkerLog = (text) => {
     onWorkerEvent?.({
@@ -695,6 +896,10 @@ async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleI
     });
   };
 
+  recordEvent?.('TASK_STARTED', {
+    taskId: task.id,
+    title: task.title,
+  });
   onWorkerEvent?.({
     type: 'worker-started',
     jobId,
@@ -705,38 +910,48 @@ async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleI
 
   let rawOutput;
   try {
-    rawOutput = await spawnCodingAgent({
-      modelId: pool.worker,
-      thinkingLevel: getRoleThinkingLevel('worker'),
-      systemPrompt: workerPrompt({ task, scoutSummary, cycleIndex }),
-      userPrompt: `Execute task: ${task.title}\n\nSave all proof artifacts to: ${artifactDir}`,
-      cwd: worktreePath,
-      signal,
-      onLogLine: (line) => emitWorkerLog(`${line}\n`),
-    });
+    rawOutput = typeof runtime?.codingAgentSpawn === 'function'
+      ? await runtime.codingAgentSpawn({
+          modelId: pool.worker,
+          thinkingLevel: getRoleThinkingLevel('worker'),
+          systemPrompt: workerPrompt({ task, scoutSummary, cycleIndex }),
+          userPrompt: `Execute task: ${task.title}\n\nSave all proof artifacts to: ${artifactDir}`,
+          cwd: worktreePath,
+          signal,
+          jobId,
+          cycleIndex,
+          taskId: task.id,
+          title: task.title,
+          onLogLine: (line) => emitWorkerLog(`${line}\n`),
+        })
+      : await spawnCodingAgent({
+          modelId: pool.worker,
+          thinkingLevel: getRoleThinkingLevel('worker'),
+          systemPrompt: workerPrompt({ task, scoutSummary, cycleIndex }),
+          userPrompt: `Execute task: ${task.title}\n\nSave all proof artifacts to: ${artifactDir}`,
+          cwd: worktreePath,
+          signal,
+          onLogLine: (line) => emitWorkerLog(`${line}\n`),
+        });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     emitWorkerLog(`Agent error: ${errorMessage}\n`);
-    onWorkerEvent?.({
-      type: 'worker-finished',
-      jobId,
-      cycleIndex,
-      taskId: task.id,
-      status: 'failed',
-    });
-    return {
+    const taskResult = {
       taskId: task.id,
       success: false,
       failureReport: { attempted: task.title, found: 'agent error', reason: errorMessage },
       proofArtifacts: [],
       summary: `Agent error: ${errorMessage}`,
     };
-  }
-
-  const result = safeExtractJson(rawOutput, { status: 'failed', taskId: task.id, reason: rawOutput });
-
-  if (result.status === 'failed') {
-    emitWorkerLog(`Failure reason: ${result.reason ?? rawOutput}\n`);
+    persistTaskOutput?.(task.id, {
+      responseText: `Agent error: ${errorMessage}`,
+      result: taskResult,
+    });
+    recordEvent?.('TASK_FAILED', {
+      taskId: task.id,
+      title: task.title,
+      failureReport: taskResult.failureReport,
+    });
     onWorkerEvent?.({
       type: 'worker-finished',
       jobId,
@@ -744,7 +959,14 @@ async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleI
       taskId: task.id,
       status: 'failed',
     });
-    return {
+    return taskResult;
+  }
+
+  const result = safeExtractJson(rawOutput, { status: 'failed', taskId: task.id, reason: rawOutput });
+
+  if (result.status === 'failed') {
+    emitWorkerLog(`Failure reason: ${result.reason ?? rawOutput}\n`);
+    const taskResult = {
       taskId: task.id,
       success: false,
       failureReport: {
@@ -755,12 +977,47 @@ async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleI
       proofArtifacts: [],
       summary: result.reason ?? rawOutput,
     };
+    persistTaskOutput?.(task.id, {
+      responseText: rawOutput,
+      result: taskResult,
+    });
+    recordEvent?.('TASK_FAILED', {
+      taskId: task.id,
+      title: task.title,
+      failureReport: taskResult.failureReport,
+    });
+    onWorkerEvent?.({
+      type: 'worker-finished',
+      jobId,
+      cycleIndex,
+      taskId: task.id,
+      status: 'failed',
+    });
+    return taskResult;
   }
 
   emitWorkerLog(`Summary: ${result.summary ?? '(none provided)'}\n`);
   if (Array.isArray(result.artifactFiles) && result.artifactFiles.length > 0) {
     emitWorkerLog(`Artifacts: ${result.artifactFiles.join(', ')}\n`);
   }
+  const taskResult = {
+    taskId: task.id,
+    success: true,
+    summary: result.summary ?? '',
+    proofArtifacts: [],  // Populated by collectArtifacts() from disk
+    artifactDir,
+    artifactFiles: result.artifactFiles ?? [],
+  };
+  persistTaskOutput?.(task.id, {
+    responseText: rawOutput,
+    result: taskResult,
+  });
+  recordEvent?.('TASK_SUCCEEDED', {
+    taskId: task.id,
+    title: task.title,
+    summary: taskResult.summary,
+    artifactFiles: taskResult.artifactFiles,
+  });
   onWorkerEvent?.({
     type: 'worker-finished',
     jobId,
@@ -769,14 +1026,7 @@ async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleI
     status: 'success',
   });
 
-  return {
-    taskId: task.id,
-    success: true,
-    summary: result.summary ?? '',
-    proofArtifacts: [],  // Populated by collectArtifacts() from disk
-    artifactDir,
-    artifactFiles: result.artifactFiles ?? [],
-  };
+  return taskResult;
 }
 
 async function collectArtifacts(workerResults, agentDir, jobId, cycleIndex) {

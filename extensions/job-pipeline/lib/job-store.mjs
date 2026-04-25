@@ -37,6 +37,22 @@ export function getJobSnapshotPath(agentDir, jobId) {
   return join(getJobDir(agentDir, jobId), 'snapshot.json');
 }
 
+export function getJobStagesRoot(agentDir, jobId) {
+  return join(getJobDir(agentDir, jobId), 'stages');
+}
+
+export function getJobStageDir(agentDir, jobId, cycleIndex, stageName) {
+  return join(getJobStagesRoot(agentDir, jobId), `cycle-${cycleIndex}`, stageName);
+}
+
+export function getJobTasksRoot(agentDir, jobId) {
+  return join(getJobDir(agentDir, jobId), 'tasks');
+}
+
+export function getJobTaskDir(agentDir, jobId, cycleIndex, taskId) {
+  return join(getJobTasksRoot(agentDir, jobId), `cycle-${cycleIndex}`, taskId);
+}
+
 export function createJobRun(agentDir, state) {
   validateJobState(state);
 
@@ -144,6 +160,37 @@ export function migrateLegacyStateIfPresent(agentDir) {
   return { migrated: true, jobId: legacyState.id };
 }
 
+export function writeStageArtifacts(agentDir, jobId, cycleIndex, stageName, { responseText, parsedJson, metadata } = {}) {
+  const stageDir = getJobStageDir(agentDir, jobId, cycleIndex, stageName);
+  mkdirSync(stageDir, { recursive: true });
+
+  if (typeof responseText === 'string') {
+    writeTextFileAtomic(join(stageDir, 'response.txt'), responseText);
+  }
+  if (parsedJson !== undefined) {
+    writeJsonFileAtomic(join(stageDir, 'parsed.json'), parsedJson);
+  }
+  if (metadata !== undefined) {
+    writeJsonFileAtomic(join(stageDir, 'metadata.json'), metadata);
+  }
+
+  return stageDir;
+}
+
+export function writeTaskArtifacts(agentDir, jobId, cycleIndex, taskId, { responseText, result } = {}) {
+  const taskDir = getJobTaskDir(agentDir, jobId, cycleIndex, taskId);
+  mkdirSync(taskDir, { recursive: true });
+
+  if (typeof responseText === 'string') {
+    writeTextFileAtomic(join(taskDir, 'response.txt'), responseText);
+  }
+  if (result !== undefined) {
+    writeJsonFileAtomic(join(taskDir, 'result.json'), result);
+  }
+
+  return taskDir;
+}
+
 function buildRunMetadata(state) {
   return {
     schemaVersion: 1,
@@ -184,5 +231,12 @@ function writeJsonFileAtomic(path, value) {
   const tempPath = `${path}.${randomUUID()}.tmp`;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  renameSync(tempPath, path);
+}
+
+function writeTextFileAtomic(path, value) {
+  const tempPath = `${path}.${randomUUID()}.tmp`;
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(tempPath, value.endsWith('\n') ? value : `${value}\n`, 'utf8');
   renameSync(tempPath, path);
 }

@@ -83,6 +83,13 @@ export function reduceJobEvent(previousSnapshot, event) {
       snapshot.reviewFindings = data.reviewFindings;
       snapshot.reviewMissingTests = data.reviewMissingTests;
       snapshot.reviewOpenQuestions = data.reviewOpenQuestions;
+      snapshot.reviewEvidenceSummary = data.evidenceSummary;
+      break;
+    }
+
+    case 'MERGE_COMPLETED': {
+      snapshot.merged = true;
+      snapshot.step = data.step ?? 'retro';
       break;
     }
 
@@ -131,6 +138,14 @@ function normalizeSnapshot(snapshot) {
 
 function applyStageCompleted(snapshot, data) {
   switch (data.stage) {
+    case 'scout': {
+      if (data.result?.scoutResult !== undefined) {
+        snapshot.scoutResult = data.result.scoutResult;
+      }
+      snapshot.step = data.step ?? snapshot.step;
+      break;
+    }
+
     case 'planning': {
       if (data.result?.finalPlan !== undefined) {
         snapshot.finalPlan = data.result.finalPlan;
@@ -145,6 +160,43 @@ function applyStageCompleted(snapshot, data) {
     case 'task-writing': {
       if (data.result?.taskGraph !== undefined) {
         snapshot.taskGraph = data.result.taskGraph;
+      }
+      snapshot.step = data.step ?? snapshot.step;
+      break;
+    }
+
+    case 'worktree': {
+      if (data.result?.worktreePath !== undefined) {
+        snapshot.worktreePath = data.result.worktreePath;
+      }
+      snapshot.step = data.step ?? snapshot.step;
+      break;
+    }
+
+    case 'workers': {
+      if (data.result?.workerResults !== undefined) {
+        snapshot.workerResults = data.result.workerResults;
+      }
+      snapshot.step = data.step ?? snapshot.step;
+      break;
+    }
+
+    case 'proof': {
+      if (data.result?.proofDeckPath !== undefined) {
+        snapshot.proofDeckPath = data.result.proofDeckPath;
+      }
+      snapshot.step = data.step ?? snapshot.step;
+      break;
+    }
+
+    case 'review': {
+      snapshot.step = data.step ?? snapshot.step;
+      break;
+    }
+
+    case 'merge': {
+      if (data.result?.merged !== undefined) {
+        snapshot.merged = data.result.merged;
       }
       snapshot.step = data.step ?? snapshot.step;
       break;

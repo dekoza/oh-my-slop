@@ -153,10 +153,43 @@ test('rebuildSnapshotFromEvents increments cycle after proof review denial', () 
   assert.equal(snapshot.reviewNotes, undefined);
 });
 
+test('rebuildSnapshotFromEvents applies scout, worktree, and merge stage results', () => {
+  const snapshot = rebuildSnapshotFromEvents([
+    buildEvent('RUN_CREATED', {
+      id: 'job-2026-04-25-replay0006',
+      description: 'Add OAuth login',
+      cwd: '/tmp/project',
+      step: 'interview',
+    }, 100),
+    buildEvent('STAGE_COMPLETED', {
+      stage: 'scout',
+      step: 'planning',
+      result: {
+        scoutResult: { summary: 'Scout summary', answers: [], relevantFiles: ['README.md'] },
+      },
+    }, 200),
+    buildEvent('STAGE_COMPLETED', {
+      stage: 'worktree',
+      step: 'workers',
+      result: {
+        worktreePath: '/tmp/project/.worktrees/job-2026-04-25-replay0006',
+      },
+    }, 300),
+    buildEvent('MERGE_COMPLETED', {
+      step: 'retro',
+    }, 400),
+  ]);
+
+  assert.deepEqual(snapshot.scoutResult, { summary: 'Scout summary', answers: [], relevantFiles: ['README.md'] });
+  assert.equal(snapshot.worktreePath, '/tmp/project/.worktrees/job-2026-04-25-replay0006');
+  assert.equal(snapshot.merged, true);
+  assert.equal(snapshot.step, 'retro');
+});
+
 test('reduceJobEvent updates updatedAt on every applied event', () => {
   const initial = rebuildSnapshotFromEvents([
     buildEvent('RUN_CREATED', {
-      id: 'job-2026-04-25-replay0006',
+      id: 'job-2026-04-25-replay0007',
       description: 'Add OAuth login',
       cwd: '/tmp/project',
       step: 'interview',

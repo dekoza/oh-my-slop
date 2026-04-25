@@ -158,6 +158,13 @@ Legacy `job-state.json` is read once for migration and then cleared.
 If pi exits mid-pipeline, `/job` detects the interrupted snapshot and offers
 to resume from the last completed step.
 
+The pipeline also records append-only execution events at
+`~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/events/`,
+stage outputs under
+`~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/stages/cycle-<n>/`,
+and worker task results under
+`~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/tasks/cycle-<n>/`.
+
 ## Proof decks
 
 HTML proof decks are written to:
