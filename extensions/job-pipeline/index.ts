@@ -17,6 +17,7 @@ import {
   getConfigPath,
 } from "./lib/state.mjs";
 import { recordCleanRetro, recordRetroWithChanges, shouldSuggestAutonomy } from "./lib/autonomy.mjs";
+import { startTrackedJob, captureInterviewSpec, recordPoolDraw } from "./lib/job-lifecycle.mjs";
 import { runPipeline, GateDeniedError } from "./lib/pipeline.mjs";
 import {
   interviewSystemAddition,
@@ -168,12 +169,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
 
       const jobState = readJobState(agentDir) as Record<string, unknown> | null;
       if (jobState) {
-        writeJobState(agentDir, {
-          ...jobState,
-          spec,
-          step: "pipeline-ready",
-          updatedAt: Date.now(),
-        });
+        captureInterviewSpec(agentDir, jobState, spec, { now: Date.now() });
       }
 
       ctx.ui.notify("Interview complete. Spec captured.", "success");
@@ -222,8 +218,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       if (!state.pool) {
         try {
           const pool = drawSessionPool(config, availableModels);
-          state = { ...state, pool };
-          writeJobState(agentDir, state);
+          state = recordPoolDraw(agentDir, state, pool, { now: Date.now() });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           ctx.ui.notify(`Pool draw failed: ${msg}`, "error");
@@ -352,12 +347,11 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       // Start new job
       const description = args.trim() || "";
       const jobId = `job-${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}`;
-      const initialState = createInitialJobState({
+      const initialState = startTrackedJob(agentDir, createInitialJobState({
         id: jobId,
         description,
         cwd: ctx.cwd,
-      });
-      writeJobState(agentDir, initialState);
+      }));
       pi.setSessionName(`job: ${description || jobId}`);
 
       resetWorkerMonitorState(runtime.workerMonitor, jobId);

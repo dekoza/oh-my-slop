@@ -17,6 +17,7 @@ index.ts                 Extension entry point
 ├── lib/pool.mjs         Session pool draw (planner ≠ jester constraint)
 ├── lib/job-store.mjs    Per-job persistence: active pointer, run metadata, snapshot migration
 ├── lib/job-events.mjs   Append-only event journal helpers
+├── lib/job-lifecycle.mjs Job start/interview/pool event helpers
 ├── lib/job-snapshot.mjs Snapshot reducer and replay helpers
 ├── lib/job-locks.mjs    Per-job lock inspection and stale-lock detection
 ├── lib/state.mjs        Compatibility wrappers plus autonomy/proof persistence
@@ -42,6 +43,7 @@ User: /job "goal"
 index.ts: /job command handler
   ├─ Check for interrupted job → offer resume
   ├─ Write initial job state to disk
+  ├─ Append RUN_CREATED event
   ├─ Set runtime.mode = "interview"
   └─ pi.sendUserMessage("Let's plan this") → triggers agent turn
 
@@ -55,6 +57,7 @@ before_agent_start event handler
 job_interview_complete tool (called by model when ready)
   ├─ Captures structured spec
   ├─ Writes spec to job state on disk
+  ├─ Appends INTERVIEW_CAPTURED event
   ├─ Sets runtime.mode = "pipeline-ready"
   └─ pi.sendUserMessage("call job_run_pipeline") → triggers next turn
 
@@ -67,6 +70,7 @@ before_agent_start event handler
        ▼
 job_run_pipeline tool (long-running, called by model)
   ├─ Draws session pool from config + available models
+  ├─ Appends POOL_DRAWN event when the draw happens
   ├─ Calls lib/pipeline.mjs: runPipeline(...)
   └─ Returns result when pipeline completes or gate is denied
 ```
