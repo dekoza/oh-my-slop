@@ -91,6 +91,39 @@ test('selectVisualDesignMode chooses extend-existing-ui when a UI feature fits a
   ]);
 });
 
+test('detectUiRequirement does not treat backend-only work containing "build" as UI work', () => {
+  const result = detectUiRequirement({
+    spec: {
+      goal: 'Build OAuth token rotation support.',
+      context: 'Back-end only work.',
+    },
+    plannerUiAssessment: { touchesUi: false },
+    scoutResult: {
+      relevantFiles: ['apps/auth/service.py'],
+    },
+  });
+
+  assert.equal(result.required, false);
+  assert.deepEqual(result.reasons, []);
+});
+
+test('selectVisualDesignMode can infer extend-existing-ui from scout evidence even when planner and user gave no UI hint', () => {
+  const result = selectVisualDesignMode({
+    spec: {
+      goal: 'Add bulk actions to orders board.',
+      context: 'Feature work only.',
+    },
+    plannerUiAssessment: { touchesUi: false },
+    scoutResult: {
+      relevantFiles: ['templates/orders/dashboard.html', 'static/css/orders.css'],
+    },
+  });
+
+  assert.equal(result.required, true);
+  assert.equal(result.mode, 'extend-existing-ui');
+  assert.deepEqual(result.coherenceFiles, ['templates/orders/dashboard.html', 'static/css/orders.css']);
+});
+
 test('selectVisualDesignMode falls back to propose-new-ui when UI is required but no existing UI surface is evidenced', () => {
   const result = selectVisualDesignMode({
     spec: {

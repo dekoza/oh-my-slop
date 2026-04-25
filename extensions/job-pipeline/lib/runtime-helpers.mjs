@@ -36,7 +36,13 @@ export function formatPipelineError(error) {
   };
 }
 
-export function buildSubagentLoaderOptions({ cwd, agentDir, systemPrompt, additionalContextFiles = [] }) {
+export function buildSubagentLoaderOptions({
+  cwd,
+  agentDir,
+  systemPrompt,
+  additionalContextFiles = [],
+  additionalSkills = [],
+}) {
   return {
     cwd,
     agentDir,
@@ -46,6 +52,13 @@ export function buildSubagentLoaderOptions({ cwd, agentDir, systemPrompt, additi
         { path: '/virtual/ROLE.md', content: systemPrompt },
         ...additionalContextFiles,
       ],
+    }),
+    skillsOverride: (current) => ({
+      skills: [
+        ...(current.skills ?? []),
+        ...additionalSkills,
+      ],
+      diagnostics: current.diagnostics,
     }),
   };
 }

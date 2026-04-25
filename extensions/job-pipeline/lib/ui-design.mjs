@@ -84,7 +84,7 @@ export function detectUiRequirement({ spec, plannerUiAssessment, scoutResult }) 
     reasons.push('Goal/context contains UI-related language.');
   }
 
-  if (coherenceFiles.length > 0 && reasons.length > 0) {
+  if (coherenceFiles.length > 0) {
     reasons.push('Scout found existing UI files relevant to the goal.');
   }
 
@@ -213,7 +213,12 @@ function isUiRelevantFile(filePath) {
 
 function hasUiKeywords(text) {
   const normalized = String(text ?? '').toLowerCase();
-  return UI_KEYWORDS.some((keyword) => normalized.includes(keyword));
+  return UI_KEYWORDS.some((keyword) => buildKeywordPattern(keyword).test(normalized));
+}
+
+function buildKeywordPattern(keyword) {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i');
 }
 
 function normalizeOptionalText(value) {

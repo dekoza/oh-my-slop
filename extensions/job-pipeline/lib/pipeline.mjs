@@ -6,7 +6,7 @@ import {
   spawnNamedAgent,
   spawnCodingAgent,
   extractJson,
-  getBundledUiDesignSkillContextFile,
+  getBundledUiDesignSkillResource,
 } from './agents.mjs';
 import { getRoleThinkingLevel } from './thinking.mjs';
 import { resolveExecutionBatches } from './tasks.mjs';
@@ -171,7 +171,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       plannerUiAssessment,
       scoutResult: state.scoutResult,
     });
-    const skillContextFile = getBundledUiDesignSkillContextFile();
+    const uiDesignSkill = getBundledUiDesignSkillResource();
     let uiDesignResult;
     let uiDesignBrief = '';
 
@@ -188,7 +188,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
           relevantUiFiles: uiModeSelection.coherenceFiles,
           uiDesignProposal: uiModeSelection.proposedDesign,
           targetSurface: uiModeSelection.targetSurface,
-          skillFilePath: skillContextFile.path,
+          skillFilePath: uiDesignSkill.filePath,
         }),
         userPrompt: `Prepare the ${uiModeSelection.mode} UI design guidance for this plan.`,
         cwd,
@@ -198,7 +198,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
         taskId: `visual-designer-cycle-${cycleIndex}`,
         title: `Visual designer — ${uiModeSelection.mode} (cycle ${cycleIndex})`,
         onWorkerEvent,
-        additionalContextFiles: [skillContextFile],
+        additionalSkills: [uiDesignSkill],
       });
       uiDesignResult = parseRequiredJson(visualDesignerOutput, 'visual-designer');
       uiDesignBrief = formatUiDesignBrief(uiDesignResult);
@@ -531,6 +531,7 @@ async function runMonitoredReadonlyAgent({
   title,
   onWorkerEvent,
   additionalContextFiles,
+  additionalSkills,
 }) {
   const emitLog = (text) => {
     onWorkerEvent?.({
@@ -562,6 +563,7 @@ async function runMonitoredReadonlyAgent({
       signal,
       onLogLine: (line) => emitLog(`${line}\n`),
       additionalContextFiles,
+      additionalSkills,
     });
     onWorkerEvent?.({
       type: 'worker-finished',

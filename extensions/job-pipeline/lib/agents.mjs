@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import {
   resolvePiAgentDir,
@@ -18,10 +18,15 @@ export function resolveAgentToolNames(toolNames = DEFAULT_READ_ONLY_TOOL_NAMES) 
   return [...toolNames];
 }
 
-export function getBundledUiDesignSkillContextFile() {
+export function getBundledUiDesignSkillResource() {
+  const rawContent = readFileSync(BUNDLED_UI_DESIGN_SKILL_PATH, 'utf8');
+  const { frontmatter } = parseMarkdownFrontmatter(rawContent);
   return {
-    path: BUNDLED_UI_DESIGN_SKILL_PATH,
-    content: readFileSync(BUNDLED_UI_DESIGN_SKILL_PATH, 'utf8'),
+    name: frontmatter.name || 'ui-design-direction',
+    description: frontmatter.description || 'UI design direction guidance',
+    filePath: BUNDLED_UI_DESIGN_SKILL_PATH,
+    baseDir: dirname(BUNDLED_UI_DESIGN_SKILL_PATH),
+    source: 'custom',
   };
 }
 
@@ -85,6 +90,7 @@ export function resolveNamedAgentDefinition({
  *   signal?: AbortSignal,
  *   onLogLine?: (line: string) => void,
  *   additionalContextFiles?: Array<{ path: string, content: string }>,
+ *   additionalSkills?: Array<object>,
  * }} options
  * @returns {Promise<string>}
  */
@@ -98,6 +104,7 @@ export async function spawnAgent({
   signal,
   onLogLine,
   additionalContextFiles = [],
+  additionalSkills = [],
 }) {
   // Imported here to avoid loading the SDK at module parse time when running
   // pure logic tests that don't need it.
@@ -129,6 +136,7 @@ export async function spawnAgent({
     agentDir,
     systemPrompt,
     additionalContextFiles,
+    additionalSkills,
   }));
   await loader.reload();
 
@@ -176,6 +184,7 @@ export async function spawnAgent({
  *   signal?: AbortSignal,
  *   onLogLine?: (line: string) => void,
  *   additionalContextFiles?: Array<{ path: string, content: string }>,
+ *   additionalSkills?: Array<object>,
  * }} options
  * @returns {Promise<string>}
  */
@@ -188,6 +197,7 @@ export async function spawnNamedAgent({
   signal,
   onLogLine,
   additionalContextFiles = [],
+  additionalSkills = [],
 }) {
   const effectiveCwd = cwd ?? process.cwd();
   const agentDefinition = resolveNamedAgentDefinition({
@@ -216,6 +226,7 @@ export async function spawnNamedAgent({
       { path: agentDefinition.filePath, content: agentDefinition.systemPrompt },
       ...additionalContextFiles,
     ],
+    additionalSkills,
   });
 }
 

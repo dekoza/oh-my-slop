@@ -82,3 +82,26 @@ test('buildSubagentLoaderOptions preserves existing agents files', () => {
     { path: '/virtual/ROLE.md', content: 'ROLE' },
   ]);
 });
+
+test('buildSubagentLoaderOptions can inject explicit skill resources alongside context files', () => {
+  const options = buildSubagentLoaderOptions({
+    cwd: '/tmp/project',
+    agentDir: '/tmp/agent',
+    systemPrompt: 'ROLE',
+    additionalSkills: [
+      {
+        name: 'ui-design-direction',
+        description: 'UI guidance skill',
+        filePath: '/tmp/skill/SKILL.md',
+        baseDir: '/tmp/skill',
+        source: 'custom',
+      },
+    ],
+  });
+
+  const overrideResult = options.skillsOverride({ skills: [], diagnostics: [] });
+  assert.equal(overrideResult.skills.length, 1);
+  assert.equal(overrideResult.skills[0].name, 'ui-design-direction');
+  assert.equal(overrideResult.skills[0].filePath, '/tmp/skill/SKILL.md');
+  assert.equal(overrideResult.skills[0].baseDir, '/tmp/skill');
+});
