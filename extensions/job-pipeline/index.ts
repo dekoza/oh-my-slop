@@ -17,6 +17,7 @@ import {
   getConfigPath,
 } from "./lib/state.mjs";
 import { recordCleanRetro, recordRetroWithChanges, shouldSuggestAutonomy } from "./lib/autonomy.mjs";
+import { executeCleanup, formatCleanupPlan, planCleanup } from "./lib/cleanup.mjs";
 import { runDoctor, formatDoctorReport } from "./lib/doctor.mjs";
 import { startTrackedJob, captureInterviewSpec, recordPoolDraw } from "./lib/job-lifecycle.mjs";
 import { runPipeline, GateDeniedError } from "./lib/pipeline.mjs";
@@ -616,6 +617,45 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     },
   });
 
+  // ── /job-cleanup command ──────────────────────────────────────────────────
+
+  pi.registerCommand("job-cleanup", {
+    description: "Prune old terminal job artifacts and stale worktrees. Supports --dry-run and --keep-days N.",
+    handler: async (args, ctx) => {
+      const cleanupArgs = parseJobCleanupArgs(args);
+      if (cleanupArgs.error) {
+        ctx.ui.notify(cleanupArgs.error, "error");
+        return;
+      }
+
+      const plan = planCleanup({
+        agentDir,
+        keepDays: cleanupArgs.keepDays,
+      });
+      const summary = formatCleanupPlan(plan);
+
+      if (cleanupArgs.dryRun || plan.candidates.length === 0) {
+        ctx.ui.notify(summary, plan.candidates.length === 0 ? "info" : "warning");
+        return;
+      }
+
+      const confirmed = await ctx.ui.confirm(
+        "Job Cleanup",
+        `${summary}\n\nRemove these exact paths?`,
+      );
+      if (!confirmed) {
+        ctx.ui.notify("Job cleanup cancelled.", "info");
+        return;
+      }
+
+      const result = executeCleanup(plan);
+      ctx.ui.notify(
+        `Removed ${result.removedCount} path(s). Reclaimed ${result.reclaimedBytes} bytes.`,
+        result.removedCount > 0 ? "success" : "info",
+      );
+    },
+  });
+
   // ── /job-abandon command ──────────────────────────────────────────────────
 
   pi.registerCommand("job-abandon", {
@@ -837,6 +877,36 @@ function saveConfig(agentDir: string, config: unknown): void {
   const path = getConfigPath(agentDir);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
+}
+
+function parseJobCleanupArgs(rawArgs: string): { dryRun: boolean; keepDays: number; error?: string } {
+  const tokens = rawArgs.trim().length > 0 ? rawArgs.trim().split(/\s+/) : [];
+  let dryRun = false;
+  let keepDays = 7;
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "--dry-run") {
+      dryRun = true;
+      continue;
+    }
+    if (token === "--keep-days") {
+      const value = tokens[index + 1];
+      if (!value) {
+        return { dryRun, keepDays, error: "Missing value for --keep-days." };
+      }
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        return { dryRun, keepDays, error: `Invalid --keep-days value: ${value}` };
+      }
+      keepDays = parsed;
+      index += 1;
+      continue;
+    }
+    return { dryRun, keepDays, error: `Unknown /job-cleanup argument: ${token}` };
+  }
+
+  return { dryRun, keepDays };
 }
 
 function buildJobSummary(state: Record<string, unknown>): string {

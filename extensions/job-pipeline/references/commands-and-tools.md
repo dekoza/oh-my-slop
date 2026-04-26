@@ -77,6 +77,25 @@ The command is read-only. It does not mutate the repository or job state.
 
 ---
 
+### `/job-cleanup [--dry-run] [--keep-days N]`
+
+Inspect and optionally remove old terminal job artifacts.
+
+**Default retention:** 7 days.
+
+**Flags:**
+- `--dry-run` — show candidates only, remove nothing
+- `--keep-days N` — keep jobs newer than `N` days
+
+The command only targets exact paths owned by `job-pipeline`:
+- old terminal job directories under `jobs/<job-id>/`
+- tracked worktree directories recorded in old terminal job snapshots
+
+The command skips the active job and requires confirmation before deletion
+unless `--dry-run` is used.
+
+---
+
 ### `/job-abandon`
 
 Abandon the current job. Confirms before clearing job state. Does **not**

@@ -20,6 +20,7 @@ index.ts                 Extension entry point
 ├── lib/job-lifecycle.mjs Job start/interview/pool event helpers
 ├── lib/job-snapshot.mjs Snapshot reducer and replay helpers
 ├── lib/job-locks.mjs    Per-job lock inspection and stale-lock detection
+├── lib/cleanup.mjs      Retention planning and exact-path cleanup execution
 ├── lib/doctor.mjs       Persisted job integrity checks and report formatting
 ├── lib/state.mjs        Compatibility wrappers plus autonomy/proof persistence
 ├── lib/tasks.mjs        Task dependency graph → ordered execution batches
