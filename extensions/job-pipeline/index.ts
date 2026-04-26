@@ -17,6 +17,7 @@ import {
   getConfigPath,
 } from "./lib/state.mjs";
 import { recordCleanRetro, recordRetroWithChanges, shouldSuggestAutonomy } from "./lib/autonomy.mjs";
+import { runDoctor, formatDoctorReport } from "./lib/doctor.mjs";
 import { startTrackedJob, captureInterviewSpec, recordPoolDraw } from "./lib/job-lifecycle.mjs";
 import { runPipeline, GateDeniedError } from "./lib/pipeline.mjs";
 import {
@@ -586,6 +587,32 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       }
 
       await showWorkerLogDialog(ctx.ui, runtime);
+    },
+  });
+
+  // ── /job-doctor command ───────────────────────────────────────────────────
+
+  pi.registerCommand("job-doctor", {
+    description: "Inspect persisted job state, event logs, locks, proofs, and worktree health.",
+    handler: async (args, ctx) => {
+      const requestedJobId = args.trim() || undefined;
+      const availableModels = ctx.modelRegistry
+        .getAvailable()
+        .map((model: { provider: string; id: string }) => `${model.provider}/${model.id}`);
+
+      const report = runDoctor({
+        agentDir,
+        jobId: requestedJobId,
+        availableModels,
+      });
+
+      const level = report.overallStatus === "CRITICAL"
+        ? "error"
+        : report.overallStatus === "WARNING"
+          ? "warning"
+          : "info";
+
+      ctx.ui.notify(formatDoctorReport(report), level);
     },
   });
 

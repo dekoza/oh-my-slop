@@ -63,6 +63,7 @@ RETRO          Structured summary auto-generated. Issues surface guided
 | `/job [description]` | Start a new job or resume interrupted one |
 | `/job-pool [role]` | Configure model pools interactively |
 | `/job-status` | Show current job state |
+| `/job-doctor [job-id]` | Diagnose snapshot, event log, lock, proof, task, and worktree integrity |
 | `/job-abandon` | Abandon the current job |
 | `/job-autonomy` | Show clean-retro streak and autonomy suggestion |
 

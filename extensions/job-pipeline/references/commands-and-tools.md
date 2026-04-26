@@ -52,6 +52,31 @@ count, pool assignments, and proof deck path (if any).
 
 ---
 
+### `/job-doctor [job-id]`
+
+Run integrity checks against persisted job artifacts.
+
+**With no argument:** Diagnoses the active job resolved from
+`active-job.json`.
+
+**With a job ID:** Diagnoses that specific job under
+`jobs/<job-id>/`.
+
+Checks include:
+- job resolution
+- snapshot presence and replay consistency
+- event log integrity
+- stale/live lock status
+- persisted stage/task artifacts
+- proof deck existence
+- task graph validity
+- model availability
+- worktree/branch mismatch detection
+
+The command is read-only. It does not mutate the repository or job state.
+
+---
+
 ### `/job-abandon`
 
 Abandon the current job. Confirms before clearing job state. Does **not**
