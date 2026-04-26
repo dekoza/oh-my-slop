@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +11,8 @@ import {
   getLegacyJobStatePath,
   loadJobSnapshot,
 } from '../../extensions/job-pipeline/lib/job-store.mjs';
+import { appendJobEvent } from '../../extensions/job-pipeline/lib/job-events.mjs';
+import { captureInterviewSpec, recordPoolDraw, startTrackedJob } from '../../extensions/job-pipeline/lib/job-lifecycle.mjs';
 import {
   clearJobState,
   readJobState,
@@ -70,6 +72,116 @@ test('readJobState migrates legacy job-state.json into the per-job store on firs
   assert.deepEqual(readJobState(agentDir), legacyState);
   assert.equal(getActiveJobId(agentDir), legacyState.id);
   assert.deepEqual(loadJobSnapshot(agentDir, legacyState.id), legacyState);
+});
+
+test('readJobState prefers replayed state when events reach the same or later step', () => {
+  const agentDir = createAgentDir();
+  const started = startTrackedJob(agentDir, buildJobState({ step: 'interview' }));
+  const interviewed = captureInterviewSpec(agentDir, started, {
+    goal: 'Ship OAuth login',
+    context: 'Keep auth UI unchanged.',
+    constraints: [],
+    outOfScope: [],
+    questionsToScout: [],
+    evidenceHint: 'both',
+  }, { now: 200 });
+  recordPoolDraw(agentDir, interviewed, {
+    scout: 'mock/scout',
+    planner: 'mock/planner',
+    jester: 'mock/jester',
+    'task-writer': 'mock/task-writer',
+    worker: 'mock/worker',
+    reviewer: 'mock/reviewer',
+  }, { now: 300 });
+  appendJobEvent(agentDir, started.id, 'STAGE_COMPLETED', {
+    stage: 'planning',
+    step: 'task-writing',
+    result: { finalPlan: 'Replay plan', planCritiques: ['Looks fine.'] },
+  }, { recordedAt: 400 });
+
+  writeJobState(agentDir, {
+    ...started,
+    step: 'task-writing',
+    finalPlan: 'Stale snapshot plan',
+    updatedAt: 450,
+  });
+
+  const resolved = readJobState(agentDir);
+
+  assert.equal(resolved.step, 'task-writing');
+  assert.equal(resolved.finalPlan, 'Replay plan');
+  assert.equal(loadJobSnapshot(agentDir, started.id)?.finalPlan, 'Replay plan');
+  assert.equal(loadJobSnapshot(agentDir, started.id)?.step, 'task-writing');
+});
+
+test('readJobState falls back to the stored snapshot when replayed events are behind it', () => {
+  const agentDir = createAgentDir();
+  const started = startTrackedJob(agentDir, buildJobState({ step: 'interview' }));
+  const interviewed = captureInterviewSpec(agentDir, started, {
+    goal: 'Ship OAuth login',
+    context: 'Keep auth UI unchanged.',
+    constraints: [],
+    outOfScope: [],
+    questionsToScout: [],
+    evidenceHint: 'both',
+  }, { now: 200 });
+  recordPoolDraw(agentDir, interviewed, {
+    scout: 'mock/scout',
+    planner: 'mock/planner',
+    jester: 'mock/jester',
+    'task-writer': 'mock/task-writer',
+    worker: 'mock/worker',
+    reviewer: 'mock/reviewer',
+  }, { now: 300 });
+
+  const advancedSnapshot = {
+    ...interviewed,
+    pool: {
+      scout: 'mock/scout',
+      planner: 'mock/planner',
+      jester: 'mock/jester',
+      'task-writer': 'mock/task-writer',
+      worker: 'mock/worker',
+      reviewer: 'mock/reviewer',
+    },
+    step: 'workers',
+    finalPlan: 'Stored snapshot plan',
+    updatedAt: 500,
+  };
+  writeJobState(agentDir, advancedSnapshot);
+
+  const resolved = readJobState(agentDir);
+
+  assert.deepEqual(resolved, advancedSnapshot);
+});
+
+test('readJobState rebuilds a missing snapshot from events and persists it', () => {
+  const agentDir = createAgentDir();
+  const started = startTrackedJob(agentDir, buildJobState({ step: 'interview' }));
+  const interviewed = captureInterviewSpec(agentDir, started, {
+    goal: 'Ship OAuth login',
+    context: 'Keep auth UI unchanged.',
+    constraints: [],
+    outOfScope: [],
+    questionsToScout: [],
+    evidenceHint: 'both',
+  }, { now: 200 });
+  recordPoolDraw(agentDir, interviewed, {
+    scout: 'mock/scout',
+    planner: 'mock/planner',
+    jester: 'mock/jester',
+    'task-writer': 'mock/task-writer',
+    worker: 'mock/worker',
+    reviewer: 'mock/reviewer',
+  }, { now: 300 });
+
+  rmSync(getJobSnapshotPath(agentDir, started.id));
+
+  const resolved = readJobState(agentDir);
+
+  assert.equal(resolved.step, 'pipeline-ready');
+  assert.deepEqual(resolved.spec.goal, 'Ship OAuth login');
+  assert.ok(existsSync(getJobSnapshotPath(agentDir, started.id)));
 });
 
 test('clearJobState removes the active pointer but preserves historical job snapshots', () => {

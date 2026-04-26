@@ -156,8 +156,9 @@ Each job stores its current snapshot at
 While a pipeline run is active, the extension also holds a transient lock at
 `~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/lock.json`.
 Legacy `job-state.json` is read once for migration and then cleared.
-If pi exits mid-pipeline, `/job` detects the interrupted snapshot and offers
-to resume from the last completed step.
+If pi exits mid-pipeline, `/job` resolves the active state by replaying
+recorded events when they are at least as complete as the stored snapshot,
+and falls back to the stored snapshot for older pre-event-log jobs.
 
 The pipeline also records append-only execution events at
 `~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/events/`,

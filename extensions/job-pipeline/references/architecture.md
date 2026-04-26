@@ -81,7 +81,9 @@ job_run_pipeline tool (long-running, called by model)
 `runPipeline` in `lib/pipeline.mjs` is a single async function that walks
 through pipeline steps. Job state is written to disk after each step, key
 transitions are appended to the event journal, and stage/task outputs are
-persisted so the pipeline can be resumed or diagnosed after a crash.
+persisted so the pipeline can be resumed or diagnosed after a crash. Resume
+prefers replaying the event log when it is at least as complete as the stored
+snapshot, and falls back to the stored snapshot for older partial-history jobs.
 
 ```
 Step: scout

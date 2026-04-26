@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { readJobEvents } from './job-events.mjs';
+import { rebuildSnapshotFromEvents } from './job-snapshot.mjs';
 import {
   clearActiveJobId,
   createJobRun,
@@ -54,7 +56,28 @@ export function readJobState(agentDir) {
     return null;
   }
 
-  return loadJobSnapshot(agentDir, activeJobId);
+  const storedSnapshot = loadJobSnapshot(agentDir, activeJobId);
+  const events = readJobEvents(agentDir, activeJobId);
+  if (events.length === 0) {
+    return storedSnapshot;
+  }
+
+  const replayedSnapshot = rebuildSnapshotFromEvents(events);
+  if (!replayedSnapshot || typeof replayedSnapshot.id !== 'string' || replayedSnapshot.id.trim().length === 0) {
+    return storedSnapshot;
+  }
+
+  if (!storedSnapshot) {
+    writeJobSnapshot(agentDir, activeJobId, replayedSnapshot);
+    return replayedSnapshot;
+  }
+
+  if (shouldPreferReplayedSnapshot(storedSnapshot, replayedSnapshot)) {
+    writeJobSnapshot(agentDir, activeJobId, replayedSnapshot);
+    return replayedSnapshot;
+  }
+
+  return storedSnapshot;
 }
 
 /**
@@ -182,4 +205,43 @@ export function getArtifactDir(agentDir, jobId, cycleIndex, taskId) {
     `cycle-${cycleIndex}`,
     taskId,
   );
+}
+
+const STEP_ORDER = [
+  'interview',
+  'pipeline-ready',
+  'scout',
+  'planning',
+  'task-writing',
+  'worktree',
+  'workers',
+  'proof',
+  'review',
+  'human-review',
+  'merge',
+  'retro',
+  'done',
+];
+
+function shouldPreferReplayedSnapshot(storedSnapshot, replayedSnapshot) {
+  const storedRank = getStepRank(storedSnapshot.step);
+  const replayedRank = getStepRank(replayedSnapshot.step);
+
+  if (replayedRank > storedRank) {
+    return true;
+  }
+
+  if (replayedRank === storedRank) {
+    return true;
+  }
+
+  return false;
+}
+
+function getStepRank(step) {
+  if (typeof step !== 'string') {
+    return -1;
+  }
+  const index = STEP_ORDER.indexOf(step);
+  return index === -1 ? -1 : index;
 }
