@@ -7,6 +7,7 @@ import { getActiveJobId, getJobStageDir, getJobTaskDir, loadJobRun, loadJobSnaps
 import { inspectJobLock } from './job-locks.mjs';
 import { rebuildSnapshotFromEvents } from './job-snapshot.mjs';
 import { validateTaskGraph } from './tasks.mjs';
+import { getJobBranchName, gitBranchExists } from './worktree.mjs';
 
 const STATUS_ORDER = {
   PASS: 0,
@@ -100,6 +101,7 @@ export function runDoctor({
   checks.push(checkTaskGraph(snapshot));
   checks.push(checkModelAvailability(snapshot, availableModels));
   checks.push(checkWorktreeStatus(snapshot, resolvedJobId));
+  checks.push(checkBranchStatus(snapshot, resolvedJobId));
 
   return buildReport({ jobId: resolvedJobId, checks });
 }
@@ -230,7 +232,7 @@ function checkWorktreeStatus(snapshot, jobId) {
   }
 
   const repoRoot = tryFindRepoRoot(snapshot.cwd);
-  const branchName = `job/${jobId}`;
+  const branchName = getJobBranchName(jobId);
   const branchExists = repoRoot ? gitBranchExists(repoRoot, branchName) : false;
 
   if (branchExists) {
@@ -238,6 +240,28 @@ function checkWorktreeStatus(snapshot, jobId) {
   }
 
   return createCheck('worktree-status', 'Worktree Status', 'WARN', `Worktree path is missing at ${snapshot.worktreePath}.`);
+}
+
+function checkBranchStatus(snapshot, jobId) {
+  const repoRoot = tryFindRepoRoot(snapshot.cwd);
+  if (!repoRoot) {
+    return createCheck('branch-status', 'Branch Status', 'PASS', 'No repository root could be resolved for branch inspection.');
+  }
+
+  const branchName = getJobBranchName(jobId);
+  if (!gitBranchExists(repoRoot, branchName)) {
+    return createCheck('branch-status', 'Branch Status', 'PASS', `No lingering ${branchName} branch was found.`);
+  }
+
+  if (snapshot.merged === true) {
+    return createCheck('branch-status', 'Branch Status', 'WARN', `Merged job branch ${branchName} still exists and can be pruned.`);
+  }
+
+  if (typeof snapshot.worktreePath === 'string' && snapshot.worktreePath.length > 0 && existsSync(snapshot.worktreePath)) {
+    return createCheck('branch-status', 'Branch Status', 'PASS', `Branch ${branchName} exists and still has a recorded worktree checkout.`);
+  }
+
+  return createCheck('branch-status', 'Branch Status', 'WARN', `Branch ${branchName} exists without a matching worktree checkout.`);
 }
 
 function buildComparableSnapshot(snapshot) {
@@ -328,14 +352,3 @@ function tryFindRepoRoot(cwd) {
   }
 }
 
-function gitBranchExists(repoRoot, branchName) {
-  try {
-    execFileSync('git', ['show-ref', '--verify', `refs/heads/${branchName}`], {
-      cwd: repoRoot,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}

@@ -71,7 +71,8 @@ Checks include:
 - proof deck existence
 - task graph validity
 - model availability
-- worktree/branch mismatch detection
+- worktree mismatch detection
+- lingering `job/<id>` branch detection
 
 The command is read-only. It does not mutate the repository or job state.
 
@@ -87,9 +88,10 @@ Inspect and optionally remove old terminal job artifacts.
 - `--dry-run` — show candidates only, remove nothing
 - `--keep-days N` — keep jobs newer than `N` days
 
-The command only targets exact paths owned by `job-pipeline`:
+The command only targets exact job-owned artifacts:
 - old terminal job directories under `jobs/<job-id>/`
 - tracked worktree directories recorded in old terminal job snapshots
+- lingering `job/<job-id>` branches in the job's recorded repository
 
 The command skips the active job and requires confirmation before deletion
 unless `--dry-run` is used.

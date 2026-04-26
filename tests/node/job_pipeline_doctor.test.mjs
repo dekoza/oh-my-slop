@@ -270,10 +270,28 @@ test('runDoctor reports WARNING for an orphaned worktree path with a surviving b
   assert.equal(report.checks.find((check) => check.key === 'worktree-status')?.status, 'WARN');
 });
 
-test('runDoctor reports CRITICAL when configured models are unavailable or the task graph is invalid', () => {
+test('runDoctor reports WARNING when a merged job branch still exists after merge', () => {
   const agentDir = createAgentDir();
   const repoRoot = createRepoRoot();
   const jobId = 'job-2026-04-25-doctor0006';
+  buildHealthyJob(agentDir, repoRoot, jobId);
+  runGit(repoRoot, ['branch', `job/${jobId}`]);
+
+  const report = runDoctor({
+    agentDir,
+    jobId,
+    availableModels: Object.values(buildPool()),
+    now: 1_000,
+    processAlive: () => false,
+  });
+
+  assert.equal(report.checks.find((check) => check.key === 'branch-status')?.status, 'WARN');
+});
+
+test('runDoctor reports CRITICAL when configured models are unavailable or the task graph is invalid', () => {
+  const agentDir = createAgentDir();
+  const repoRoot = createRepoRoot();
+  const jobId = 'job-2026-04-25-doctor0007';
   buildHealthyJob(agentDir, repoRoot, jobId);
   const snapshot = loadSnapshotForMutation(agentDir, jobId);
   snapshot.pool.worker = 'missing/worker';

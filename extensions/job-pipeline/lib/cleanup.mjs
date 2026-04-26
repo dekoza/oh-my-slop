@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, rmSync, statSync } from 'node:fs';
 
 import { getActiveJobId, getJobDir, listJobs, loadJobSnapshot } from './job-store.mjs';
+import { deleteJobBranch, getJobBranchName, gitBranchExists } from './worktree.mjs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TERMINAL_STEPS = new Set(['retro', 'done']);
@@ -53,6 +54,16 @@ export function planCleanup({ agentDir, now = Date.now(), keepDays = 7 } = {}) {
         bytes: estimatePathBytes(snapshot.worktreePath),
       });
     }
+
+    if (typeof snapshot.cwd === 'string' && snapshot.cwd.length > 0 && gitBranchExists(snapshot.cwd, getJobBranchName(job.id))) {
+      candidates.push({
+        kind: 'branch',
+        jobId: job.id,
+        branchName: getJobBranchName(job.id),
+        cwd: snapshot.cwd,
+        bytes: 0,
+      });
+    }
   }
 
   return {
@@ -69,7 +80,17 @@ export function executeCleanup(plan) {
   const removed = [];
   let reclaimedBytes = 0;
 
-  for (const candidate of plan?.candidates ?? []) {
+  const orderedCandidates = [...(plan?.candidates ?? [])].sort(compareCleanupCandidates);
+
+  for (const candidate of orderedCandidates) {
+    if (candidate.kind === 'branch') {
+      if (removeBranch(candidate)) {
+        reclaimedBytes += Number(candidate.bytes ?? 0);
+        removed.push(candidate);
+      }
+      continue;
+    }
+
     if (!existsSync(candidate.path)) {
       continue;
     }
@@ -102,7 +123,10 @@ export function formatCleanupPlan(plan) {
   ];
 
   for (const candidate of plan.candidates) {
-    lines.push(`- [${candidate.kind}] ${candidate.jobId}: ${candidate.path}`);
+    const target = candidate.kind === 'branch'
+      ? candidate.branchName
+      : candidate.path;
+    lines.push(`- [${candidate.kind}] ${candidate.jobId}: ${target}`);
   }
 
   return lines.join('\n');
@@ -145,9 +169,38 @@ function removeWorktree(candidate) {
   rmSync(candidate.path, { recursive: true, force: true });
 }
 
+function removeBranch(candidate) {
+  if (typeof candidate.cwd !== 'string' || candidate.cwd.length === 0) {
+    return false;
+  }
+  if (!gitBranchExists(candidate.cwd, candidate.branchName)) {
+    return false;
+  }
+
+  deleteJobBranch(candidate.cwd, candidate.jobId, { force: true });
+  return true;
+}
+
 function resolveRepoRoot(candidate) {
   if (typeof candidate.cwd === 'string' && candidate.cwd.length > 0) {
     return candidate.cwd;
   }
   return null;
+}
+
+function compareCleanupCandidates(left, right) {
+  return cleanupPriority(left.kind) - cleanupPriority(right.kind);
+}
+
+function cleanupPriority(kind) {
+  switch (kind) {
+    case 'worktree':
+      return 0;
+    case 'branch':
+      return 1;
+    case 'job-dir':
+      return 2;
+    default:
+      return 3;
+  }
 }

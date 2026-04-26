@@ -2,6 +2,29 @@ import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+export function getJobBranchName(jobId) {
+  return `job/${jobId}`;
+}
+
+export function gitBranchExists(repoRoot, branchName) {
+  try {
+    execSync(`git show-ref --verify refs/heads/${branchName}`, {
+      cwd: repoRoot,
+      stdio: 'pipe',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function deleteJobBranch(repoRoot, jobId, { force = true } = {}) {
+  execSync(`git branch ${force ? '-D' : '-d'} ${getJobBranchName(jobId)}`, {
+    cwd: repoRoot,
+    stdio: 'pipe',
+  });
+}
+
 /**
  * Create a git worktree at `.worktrees/<jobId>/` relative to the repository
  * root. The worktree is checked out on a new branch named `job/<jobId>`.
@@ -20,7 +43,7 @@ export function createWorktree(repoRoot, jobId) {
     throw new Error(`Worktree already exists at ${worktreePath}. Resume the existing job or clean it up first.`);
   }
 
-  const branchName = `job/${jobId}`;
+  const branchName = getJobBranchName(jobId);
   execSync(`git worktree add -b ${branchName} ${worktreePath}`, {
     cwd: repoRoot,
     stdio: 'pipe',
@@ -40,7 +63,7 @@ export function createWorktree(repoRoot, jobId) {
  * @param {string} worktreePath
  */
 export function mergeAndCleanWorktree(repoRoot, jobId, worktreePath) {
-  const branchName = `job/${jobId}`;
+  const branchName = getJobBranchName(jobId);
 
   // Commit any uncommitted changes in the worktree before merging.
   try {
@@ -78,7 +101,7 @@ export function mergeAndCleanWorktree(repoRoot, jobId, worktreePath) {
  * @param {string} worktreePath
  */
 export function abandonWorktree(repoRoot, jobId, worktreePath) {
-  const branchName = `job/${jobId}`;
+  const branchName = getJobBranchName(jobId);
 
   try {
     execSync(`git worktree remove --force ${worktreePath}`, {

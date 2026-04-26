@@ -64,7 +64,7 @@ RETRO          Structured summary auto-generated. Issues surface guided
 | `/job-pool [role]` | Configure model pools interactively |
 | `/job-status` | Show current job state |
 | `/job-doctor [job-id]` | Diagnose snapshot, event log, lock, proof, task, and worktree integrity |
-| `/job-cleanup [--dry-run] [--keep-days N]` | Prune old terminal job artifacts and stale worktrees |
+| `/job-cleanup [--dry-run] [--keep-days N]` | Prune old terminal job artifacts, stale worktrees, and lingering `job/<id>` branches |
 | `/job-abandon` | Abandon the current job |
 | `/job-autonomy` | Show clean-retro streak and autonomy suggestion |
 

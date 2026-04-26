@@ -7,6 +7,7 @@ import { join } from 'node:path';
 
 import { planCleanup, executeCleanup } from '../../extensions/job-pipeline/lib/cleanup.mjs';
 import { createJobRun, getActiveJobPath, getJobDir, setActiveJobId } from '../../extensions/job-pipeline/lib/job-store.mjs';
+import { getJobBranchName } from '../../extensions/job-pipeline/lib/worktree.mjs';
 
 function createAgentDir() {
   return mkdtempSync(join(tmpdir(), 'job-pipeline-cleanup-agent-'));
@@ -23,7 +24,7 @@ function createRepoRoot() {
   return repoRoot;
 }
 
-function createJob(agentDir, { id, repoRoot, updatedAt, merged = true, step = 'retro', worktree = false }) {
+function createJob(agentDir, { id, repoRoot, updatedAt, merged = true, step = 'retro', worktree = false, branch = false }) {
   const state = {
     id,
     description: `Job ${id}`,
@@ -49,6 +50,10 @@ function createJob(agentDir, { id, repoRoot, updatedAt, merged = true, step = 'r
     const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8'));
     snapshot.worktreePath = worktreePath;
     writeFileSync(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8');
+  }
+
+  if (branch) {
+    runGit(repoRoot, ['branch', getJobBranchName(id)]);
   }
 
   return state;
@@ -94,6 +99,18 @@ test('planCleanup includes orphaned worktree paths for old terminal jobs', () =>
   assert.ok(plan.candidates.some((candidate) => candidate.jobId === 'job-worktree' && candidate.kind === 'worktree'));
 });
 
+test('planCleanup includes stale job branches for old terminal jobs', () => {
+  const agentDir = createAgentDir();
+  const repoRoot = createRepoRoot();
+  const now = 20 * DAY_MS;
+
+  createJob(agentDir, { id: 'job-branch', repoRoot, updatedAt: 1 * DAY_MS, merged: true, branch: true });
+
+  const plan = planCleanup({ agentDir, now, keepDays: 7 });
+
+  assert.ok(plan.candidates.some((candidate) => candidate.jobId === 'job-branch' && candidate.kind === 'branch'));
+});
+
 test('planCleanup does not schedule unrelated directories for deletion', () => {
   const agentDir = createAgentDir();
   const repoRoot = createRepoRoot();
@@ -114,21 +131,35 @@ test('executeCleanup removes planned extension-owned artifacts and returns recla
   const repoRoot = createRepoRoot();
   const now = 20 * DAY_MS;
 
-  createJob(agentDir, { id: 'job-clean', repoRoot, updatedAt: 1 * DAY_MS, merged: true, worktree: true });
-  const keepState = createJob(agentDir, { id: 'job-keep', repoRoot, updatedAt: 19 * DAY_MS, merged: true, worktree: true });
+  createJob(agentDir, { id: 'job-clean', repoRoot, updatedAt: 1 * DAY_MS, merged: true, worktree: true, branch: true });
+  const keepState = createJob(agentDir, { id: 'job-keep', repoRoot, updatedAt: 19 * DAY_MS, merged: true, worktree: true, branch: true });
 
   const plan = planCleanup({ agentDir, now, keepDays: 7 });
   const result = executeCleanup(plan);
 
-  assert.ok(result.removedCount >= 2);
+  assert.ok(result.removedCount >= 3);
   assert.ok(result.reclaimedBytes > 0);
   assert.equal(existsSync(getJobDir(agentDir, 'job-clean')), false);
   assert.equal(existsSync(join(repoRoot, '.worktrees', 'job-clean')), false);
+  assert.equal(hasBranch(repoRoot, getJobBranchName('job-clean')), false);
   assert.equal(existsSync(getJobDir(agentDir, keepState.id)), true);
   assert.equal(existsSync(join(repoRoot, '.worktrees', keepState.id)), true);
+  assert.equal(hasBranch(repoRoot, getJobBranchName(keepState.id)), true);
 });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+function hasBranch(cwd, branchName) {
+  try {
+    execFileSync('git', ['show-ref', '--verify', `refs/heads/${branchName}`], {
+      cwd,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function runGit(cwd, args) {
   return execFileSync('git', args, {
