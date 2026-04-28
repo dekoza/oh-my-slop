@@ -1,7 +1,7 @@
 # Repository AGENTS.md
 
 This file is the repo-specific guide for agents working in `oh-my-slop`.
-It supplements the global `/home/minder/.pi/agent/AGENTS.md` rules.
+It supplements the global `~/.pi/agent/AGENTS.md` rules.
 If the two conflict, the global file wins.
 
 ## What this repository is
