@@ -177,12 +177,6 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       ctx.ui.notify("Interview complete. Spec captured.", "success");
       ctx.ui.setStatus(STATUS_KEY, "pipeline ready");
 
-      // Trigger the orchestrator turn
-      pi.sendUserMessage(
-        "Interview complete. Please call job_run_pipeline to start execution.",
-        { deliverAs: "followUp" },
-      );
-
       return {
         content: [{ type: "text", text: buildInterviewCapturedMessage() }],
       };
