@@ -20,6 +20,9 @@
       "./skills"
     ]
   },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.mjs"
+  },
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",
     "@mariozechner/pi-coding-agent": "*"
