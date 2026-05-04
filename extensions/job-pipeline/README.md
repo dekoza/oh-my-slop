@@ -123,6 +123,10 @@ can recover an in-flight interview after a crash or restart. If the last
 persisted transcript entry is a user reply, the planner question is simply
 recomputed on resume.
 
+The legacy `job_interview_complete` tool remains only as a compatibility shim
+for callers that already have a finished structured spec. Normal `/job`
+interviews do not use it.
+
 ### Default thinking levels by role
 
 These are hard-coded defaults used when spawning sub-agents:

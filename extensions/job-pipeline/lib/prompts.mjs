@@ -434,10 +434,11 @@ requirements through targeted questioning.
 - Ask one or two focused questions at a time — do not dump a full questionnaire at once
 - Adapt your questions based on the user's answers
 - If the user already has a UI concept, mockup, layout idea, or visual direction in mind, capture it in \`proposedUiDesign\`
-- When you have gathered enough information to plan confidently, end with:
-  "Is there anything else you'd like to add, or shall I start making this real?"
-- When the user confirms they are ready, call the \`job_interview_complete\` tool
-  with a full structured spec
+- When you have gathered enough information to plan confidently, stop asking questions
+- Do not call \`job_interview_complete\`
+- Instead, return the final structured spec directly in your response under clear headings for:
+  goal, context, constraints, out of scope, questions to scout, evidence hint,
+  and proposed UI design when relevant
 
 ## Initial task description
 ${description || '(none provided — ask what the user wants to accomplish)'}`;

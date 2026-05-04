@@ -162,11 +162,12 @@ when debugging stuck pipelines.
 
 ### `job_interview_complete`
 
-Compatibility tool for flows that already have a complete structured interview
-spec and want to store it directly.
+Compatibility-only tool for flows that already have a complete structured
+interview spec and want to store it directly.
 
 The normal `/job` interview flow is now extension-managed by a hidden planner
-sub-agent, so this tool is no longer the primary interview path.
+sub-agent, so this tool is not the normal interview path and is no longer
+advertised in the default orchestrator prompt.
 
 That extension-managed path supports text and image replies and persists
 interview transcript updates via job snapshots plus event-log entries.

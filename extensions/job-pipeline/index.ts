@@ -338,17 +338,13 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     }
   });
 
-  // ── job_interview_complete tool ────────────────────────────────────────────
+  // ── Compatibility-only legacy interview capture tool ──────────────────────
 
   pi.registerTool({
     name: "job_interview_complete",
-    label: "Complete Job Interview",
+    label: "Capture Legacy Interview Spec",
     description:
-      "Call this when the brain-dump interview is complete and the user has confirmed they are ready to proceed. Captures the structured job specification.",
-    promptSnippet: "Complete a job interview and capture the spec",
-    promptGuidelines: [
-      "Use job_interview_complete when you have finished gathering requirements and the user is ready to start the pipeline.",
-    ],
+      "Compatibility-only tool for callers that already have a complete structured job spec. Normal /job interviews are extension-managed and should not use this tool.",
     parameters: Type.Object({
       goal: Type.String({ description: "Full, specific goal description" }),
       context: Type.String({ description: "Key context gathered during the interview" }),
