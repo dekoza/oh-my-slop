@@ -228,50 +228,80 @@ test('buildPersistedWorkerMonitorState reconstructs stage and task logs from sto
     step: 'review',
     createdAt: 1,
     updatedAt: 2,
-    cycleIndex: 1,
+    cycleIndex: 2,
     replanCount: 0,
+    proofDeckPath: '/tmp/project/proofs/proof-cycle-2.html',
     taskGraph: {
       tasks: [
         { id: 'task-1', title: 'Implement callback validation' },
+        { id: 'task-2', title: 'Re-run review fixes' },
       ],
     },
   };
 
   createJobRun(agentDir, jobState);
   writeStageArtifacts(agentDir, jobState.id, 1, 'scout', {
+    responseText: 'Scout cycle 1',
+  });
+  writeStageArtifacts(agentDir, jobState.id, 2, 'scout', {
     responseText: 'Scout summary line 1\nScout summary line 2',
   });
   writeTaskArtifacts(agentDir, jobState.id, 1, 'task-1', {
-    responseText: 'Worker raw output',
+    responseText: 'Worker raw output cycle 1',
     result: {
       taskId: 'task-1',
       success: true,
+      summary: 'Implemented callback validation in cycle 1',
+      artifactFiles: ['proof-task-1-cycle-1.log'],
+    },
+  });
+  writeTaskArtifacts(agentDir, jobState.id, 2, 'task-2', {
+    responseText: 'Worker raw output',
+    result: {
+      taskId: 'task-2',
+      success: true,
       summary: 'Implemented callback validation',
-      artifactFiles: ['proof-task-1.log'],
+      artifactFiles: ['proof-task-2.log'],
     },
   });
   appendJobEvent(agentDir, jobState.id, 'TASK_QUEUED', {
+    cycleIndex: 1,
     taskId: 'task-1',
     title: 'Implement callback validation',
   });
   appendJobEvent(agentDir, jobState.id, 'TASK_SUCCEEDED', {
+    cycleIndex: 1,
     taskId: 'task-1',
     title: 'Implement callback validation',
   });
+  appendJobEvent(agentDir, jobState.id, 'TASK_QUEUED', {
+    cycleIndex: 2,
+    taskId: 'task-2',
+    title: 'Re-run review fixes',
+  });
+  appendJobEvent(agentDir, jobState.id, 'TASK_SUCCEEDED', {
+    cycleIndex: 2,
+    taskId: 'task-2',
+    title: 'Re-run review fixes',
+  });
 
-  const state = buildPersistedWorkerMonitorState({ agentDir, jobState });
+  const state = buildPersistedWorkerMonitorState({ agentDir, jobState, cycleFilter: 2 });
 
   assert.equal(state.jobId, jobState.id);
-  assert.equal(state.workers.length, 2);
+  assert.deepEqual(state.availableCycles, [1, 2]);
+  assert.equal(state.selectedCycle, 2);
+  assert.equal(state.workers.length, 3);
   assert.equal(state.workers[0].title, 'Scout — reconnaissance');
   assert.equal(state.workers[0].status, 'success');
   assert.deepEqual(getWorkerLogLines(state.workers[0]), ['Scout summary line 1', 'Scout summary line 2']);
-  assert.equal(state.workers[1].title, 'Implement callback validation');
+  assert.equal(state.workers[1].title, 'Re-run review fixes');
   assert.equal(state.workers[1].status, 'success');
   assert.deepEqual(getWorkerLogLines(state.workers[1]), [
     'Summary: Implemented callback validation',
-    'Artifacts: proof-task-1.log',
+    'Artifacts: proof-task-2.log',
     '',
     'Worker raw output',
   ]);
+  assert.equal(state.workers[2].title, 'Proof deck — cycle 2');
+  assert.equal(state.workers[2].browserPath, '/tmp/project/proofs/proof-cycle-2.html');
 });

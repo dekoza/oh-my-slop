@@ -116,7 +116,7 @@ export function wrapWorkerLogLines(lines, width) {
   return wrappedLines.length > 0 ? wrappedLines : [''];
 }
 
-export function buildPersistedWorkerMonitorState({ agentDir, jobState }) {
+export function buildPersistedWorkerMonitorState({ agentDir, jobState, cycleFilter = 'all' }) {
   if (!agentDir || !jobState?.id) {
     return createWorkerMonitorState();
   }
@@ -129,8 +129,16 @@ export function buildPersistedWorkerMonitorState({ agentDir, jobState }) {
 
   const stageEntries = loadPersistedStageEntries(agentDir, jobState.id);
   const taskEntries = loadPersistedTaskEntries(agentDir, jobState.id, taskMetadataByKey);
+  const proofEntries = loadProofDeckEntries(jobState);
+  const allWorkers = [...stageEntries, ...taskEntries, ...proofEntries].sort(comparePersistedEntries);
+  const availableCycles = [...new Set(allWorkers.map((worker) => worker.cycleIndex))].sort((left, right) => left - right);
+  const selectedCycle = normalizeSelectedCycle(cycleFilter, availableCycles);
 
-  state.workers = [...stageEntries, ...taskEntries].sort(comparePersistedEntries);
+  state.availableCycles = availableCycles;
+  state.selectedCycle = selectedCycle;
+  state.workers = selectedCycle === 'all'
+    ? allWorkers
+    : allWorkers.filter((worker) => worker.cycleIndex === selectedCycle);
   return state;
 }
 
@@ -221,6 +229,8 @@ function loadPersistedStageEntries(agentDir, jobId) {
         status: 'success',
         logLines: toLogLines(responseText),
         pendingLogLine: '',
+        sourcePath: join(cycleDir, stageEntry.name, 'response.txt'),
+        sourceType: 'text',
       });
     }
   }
@@ -278,11 +288,33 @@ function loadPersistedTaskEntries(agentDir, jobId, taskMetadataByKey) {
         status: derivePersistedTaskStatus(result, metadata.status),
         logLines,
         pendingLogLine: '',
+        sourcePath: join(cycleDir, taskId, 'response.txt'),
+        sourceType: 'text',
       });
     }
   }
 
   return entries;
+}
+
+function loadProofDeckEntries(jobState) {
+  if (typeof jobState?.proofDeckPath !== 'string' || jobState.proofDeckPath.trim().length === 0) {
+    return [];
+  }
+
+  const cycleIndex = Number(jobState?.cycleIndex ?? 1);
+  return [{
+    key: buildWorkerKey(cycleIndex, `proof-deck-cycle-${cycleIndex}`),
+    cycleIndex,
+    taskId: `proof-deck-cycle-${cycleIndex}`,
+    title: `Proof deck — cycle ${cycleIndex}`,
+    status: 'success',
+    logLines: [jobState.proofDeckPath],
+    pendingLogLine: '',
+    sourcePath: jobState.proofDeckPath,
+    sourceType: 'html',
+    browserPath: jobState.proofDeckPath,
+  }];
 }
 
 function buildTaskMetadataByKey(events, jobState) {
@@ -364,6 +396,12 @@ function getStageRank(taskId) {
   if (typeof taskId !== 'string') {
     return STAGE_ORDER.length + 1;
   }
+  if (taskId.startsWith('proof-deck-cycle-')) {
+    return STAGE_ORDER.length + 2;
+  }
+  if (taskId.startsWith('task-')) {
+    return STAGE_ORDER.length + 1;
+  }
 
   const stageName = taskId.replace(/-cycle-\d+$/, '');
   const index = STAGE_ORDER.indexOf(stageName);
@@ -394,4 +432,16 @@ function readOptionalJson(path) {
 function toLogLines(text) {
   const normalized = String(text ?? '');
   return normalized.length > 0 ? normalized.split('\n') : [];
+}
+
+function normalizeSelectedCycle(cycleFilter, availableCycles) {
+  if (cycleFilter === 'all' || availableCycles.length === 0) {
+    return 'all';
+  }
+
+  const parsed = Number(cycleFilter);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return availableCycles.at(-1) ?? 'all';
+  }
+  return availableCycles.includes(parsed) ? parsed : (availableCycles.at(-1) ?? 'all');
 }

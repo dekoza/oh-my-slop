@@ -162,3 +162,16 @@ test('listJobs returns known jobs sorted by createdAt descending', () => {
 
   assert.deepEqual(jobs.map((job) => job.id), ['job-2', 'job-3', 'job-1']);
 });
+
+test('listJobs can be filtered to a single repository scope', () => {
+  const agentDir = createAgentDir();
+
+  createJobRun(agentDir, buildJobState({ id: 'job-repo-a-1', repoRoot: '/repo/a', cwd: '/repo/a/app', createdAt: 100 }));
+  createJobRun(agentDir, buildJobState({ id: 'job-repo-b-1', repoRoot: '/repo/b', cwd: '/repo/b/app', createdAt: 300 }));
+  createJobRun(agentDir, buildJobState({ id: 'job-repo-a-2', repoRoot: '/repo/a', cwd: '/repo/a/app', createdAt: 200 }));
+
+  const jobs = listJobs(agentDir, { repoRoot: '/repo/a' });
+
+  assert.deepEqual(jobs.map((job) => job.id), ['job-repo-a-2', 'job-repo-a-1']);
+  assert.deepEqual(jobs.map((job) => job.repoRoot), ['/repo/a', '/repo/a']);
+});

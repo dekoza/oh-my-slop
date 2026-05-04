@@ -166,12 +166,13 @@ export function clearActiveJobId(agentDir, { repoRoot } = {}) {
   writeJsonFileAtomic(getActiveJobsPath(agentDir), {});
 }
 
-export function listJobs(agentDir) {
+export function listJobs(agentDir, { repoRoot } = {}) {
   const jobsRoot = getJobsRoot(agentDir);
   if (!existsSync(jobsRoot)) {
     return [];
   }
 
+  const normalizedRepoRoot = normalizeRepoRoot(repoRoot);
   const jobs = readdirSync(jobsRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => {
@@ -185,9 +186,11 @@ export function listJobs(agentDir) {
         createdAt,
         updatedAt,
         step: snapshot?.step ?? null,
+        repoRoot: snapshot?.repoRoot ?? run?.repoRoot ?? snapshot?.cwd ?? run?.cwd ?? '',
         jobDir: getJobDir(agentDir, entry.name),
       };
-    });
+    })
+    .filter((job) => !normalizedRepoRoot || job.repoRoot === normalizedRepoRoot);
 
   return jobs.sort((left, right) => right.createdAt - left.createdAt);
 }
