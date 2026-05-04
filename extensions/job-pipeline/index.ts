@@ -38,6 +38,7 @@ import {
   collectInterviewTranscriptImages,
   parseInterviewPlannerResponse,
 } from "./lib/interview-loop.mjs";
+import { appendInterviewMessageAndPersist } from "./lib/interview-runtime.mjs";
 import {
   buildInterviewMessagePayload,
   buildInterviewMessageRenderModel,
@@ -178,12 +179,15 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     const normalizedReply = String(userReply ?? "").trim();
     let persistedTranscriptState = jobState;
     if (normalizedReply.length > 0 || userImages.length > 0) {
-      transcript = appendInterviewTranscriptEntry(transcript, "user", normalizedReply, userImages);
-      persistedTranscriptState = recordInterviewTranscript(agentDir, jobState, transcript, { now: Date.now() }) as Record<string, unknown>;
-      postInterviewMessage("user", normalizedReply, userImages, {
-        jobId: String(jobState.id ?? ""),
-        transcriptIndex: transcript.length - 1,
+      const persistedReply = appendInterviewMessageAndPersist(agentDir, jobState, {
+        role: "user",
+        content: normalizedReply,
+        images: userImages,
+        now: Date.now(),
       });
+      transcript = persistedReply.transcript as Array<Record<string, unknown>>;
+      persistedTranscriptState = persistedReply.jobState as Record<string, unknown>;
+      pi.sendMessage(persistedReply.messagePayload);
     } else {
       persistedTranscriptState = recordInterviewTranscript(agentDir, jobState, transcript, { now: Date.now() }) as Record<string, unknown>;
     }
