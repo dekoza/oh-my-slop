@@ -1,4 +1,6 @@
-import { loadJobSnapshot } from './job-store.mjs';
+import { readJobEvents } from './job-events.mjs';
+import { rebuildSnapshotFromEvents } from './job-snapshot.mjs';
+import { loadJobSnapshot, writeJobSnapshot } from './job-store.mjs';
 
 const MAX_INLINE_IMAGE_COUNT = 3;
 
@@ -53,7 +55,7 @@ function resolveInlineImages(agentDir, details, imageCount) {
     return [];
   }
 
-  const snapshot = loadJobSnapshot(agentDir, details.jobId);
+  const snapshot = loadRenderableSnapshot(agentDir, details.jobId);
   const transcript = Array.isArray(snapshot?.interviewTranscript)
     ? snapshot.interviewTranscript
     : [];
@@ -63,6 +65,26 @@ function resolveInlineImages(agentDir, details, imageCount) {
   }
 
   return normalizeRenderableImages(entry.images).slice(0, Math.min(imageCount || MAX_INLINE_IMAGE_COUNT, MAX_INLINE_IMAGE_COUNT));
+}
+
+function loadRenderableSnapshot(agentDir, jobId) {
+  const storedSnapshot = loadJobSnapshot(agentDir, jobId);
+  if (storedSnapshot) {
+    return storedSnapshot;
+  }
+
+  const events = readJobEvents(agentDir, jobId);
+  if (events.length === 0) {
+    return null;
+  }
+
+  const rebuiltSnapshot = rebuildSnapshotFromEvents(events);
+  if (!rebuiltSnapshot || typeof rebuiltSnapshot !== 'object' || rebuiltSnapshot.id !== jobId) {
+    return null;
+  }
+
+  writeJobSnapshot(agentDir, jobId, rebuiltSnapshot);
+  return rebuiltSnapshot;
 }
 
 function normalizeRenderableImages(images) {

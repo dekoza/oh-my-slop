@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createJobRun } from '../../extensions/job-pipeline/lib/job-store.mjs';
+import { startTrackedJob } from '../../extensions/job-pipeline/lib/job-lifecycle.mjs';
+import { createJobRun, getJobSnapshotPath } from '../../extensions/job-pipeline/lib/job-store.mjs';
+import { appendInterviewMessageAndPersist } from '../../extensions/job-pipeline/lib/interview-runtime.mjs';
 import {
   buildInterviewMessagePayload,
   buildInterviewMessageRenderModel,
@@ -71,6 +73,37 @@ test('buildInterviewMessageRenderModel resolves inline thumbnails from the persi
   assert.deepEqual(model.inlineImages, [
     { mediaType: 'image/png', data: 'aaa' },
     { mediaType: 'image/jpeg', data: 'bbb' },
+  ]);
+  assert.equal(model.remainingImageCount, 0);
+});
+
+test('buildInterviewMessageRenderModel rebuilds a missing snapshot from the event log when possible', () => {
+  const agentDir = mkdtempSync(join(tmpdir(), 'job-pipeline-interview-render-'));
+  const state = startTrackedJob(agentDir, {
+    id: 'job-2026-05-04-render0003',
+    description: 'demo',
+    cwd: '/tmp/project',
+    step: 'interview',
+    cycleIndex: 1,
+    replanCount: 0,
+    jesterFlags: [],
+    tokenCosts: {},
+  }, { now: 1 });
+  const persistedTurn = appendInterviewMessageAndPersist(agentDir, state, {
+    role: 'user',
+    content: 'Current screen looks wrong.',
+    images: [
+      { type: 'image', source: { type: 'base64', mediaType: 'image/png', data: 'recover' } },
+    ],
+    now: 2,
+  });
+
+  unlinkSync(getJobSnapshotPath(agentDir, state.id));
+
+  const model = buildInterviewMessageRenderModel(agentDir, persistedTurn.messagePayload);
+
+  assert.deepEqual(model.inlineImages, [
+    { mediaType: 'image/png', data: 'recover' },
   ]);
   assert.equal(model.remainingImageCount, 0);
 });
