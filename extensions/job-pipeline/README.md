@@ -64,7 +64,7 @@ RETRO          Structured summary auto-generated. Issues surface guided
 | `/job [description]` | Start a new job or resume interrupted one |
 | `/job-pool [role]` | Configure model pools interactively |
 | `/job-status` | Show current job state |
-| `/job-workers` | Open the agent inspector; uses live logs when available and falls back to persisted job artifacts |
+| `/job-workers [job-id] [--cycle N\|all]` | Open the full-screen agent inspector with job and cycle selection; uses live logs when available and falls back to persisted job artifacts |
 | `/job-doctor [job-id]` | Diagnose snapshot, event log, lock, proof, task, and worktree integrity |
 | `/job-cleanup [--dry-run] [--keep-days N]` | Prune old terminal job artifacts, stale worktrees, and lingering `job/<id>` branches |
 | `/job-abandon` | Abandon the current job |
@@ -79,6 +79,11 @@ Each gate can be `compulsory` (blocks for your input) or `auto-accept`
 Compulsory gates open in a large scrollable review overlay so long plans,
 critiques, and proof notes are readable without collapsing them into a tiny
 window.
+
+The agent inspector (`/job-workers`) now opens as a full-screen TUI instead of
+a small popup. It lets you browse historical jobs for the current repository,
+filter by cycle, inspect persisted outputs, load the selected output into the
+editor, and open proof-deck HTML paths in the browser.
 
 | Gate | Default | Trigger |
 |---|---|---|

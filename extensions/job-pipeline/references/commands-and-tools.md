@@ -53,16 +53,31 @@ count, pool assignments, and proof deck path (if any).
 
 ---
 
-### `/job-workers`
+### `/job-workers [job-id] [--cycle N|all]`
 
-Open the agent inspector for the current job.
+Open the full-screen agent inspector for the current repository.
 
-**Live mode:** If the current runtime still has in-memory agent logs, the
-viewer shows the live stream.
+**With no arguments:** Opens the current repository's active job if there is
+one; otherwise falls back to the newest historical job in that repository.
 
-**Persisted fallback:** If live logs are unavailable, the command rebuilds a
-usable inspector view from persisted stage/task artifacts for the current job.
-That means completed jobs are still inspectable after the live popup is gone.
+**With `job-id`:** Opens that historical job directly, but only if it belongs
+to the current repository scope.
+
+**With `--cycle N`:** Filters the inspector to that cycle.
+**With `--cycle all`:** Shows entries from every cycle.
+
+**Live mode:** If the selected job is the currently running in-memory job, the
+viewer uses the live stream.
+
+**Persisted fallback:** Otherwise the command rebuilds a usable inspector view
+from persisted stage/task artifacts and proof-deck paths.
+
+**Interaction:**
+- `Tab` cycles focus between jobs, entries, and log panes
+- `[` / `]` change cycle filter
+- `e` loads the selected output into the editor
+- `b` opens the selected HTML/proof path in the browser
+- `Esc` closes the inspector
 
 ---
 

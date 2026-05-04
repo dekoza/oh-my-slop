@@ -26,6 +26,7 @@ index.ts                 Extension entry point
 ├── lib/tasks.mjs        Task dependency graph → ordered execution batches
 ├── lib/autonomy.mjs     Clean-retro streak tracking
 ├── lib/proof.mjs        Self-contained HTML proof deck generator
+├── lib/worker-inspector.mjs Argument parsing and browser-open helpers for the inspector
 │
 ├── lib/pipeline.mjs     Pipeline state machine (the core orchestrator)
 │   └── calls agents.mjs, tasks.mjs, worktree.mjs, proof.mjs, state.mjs
