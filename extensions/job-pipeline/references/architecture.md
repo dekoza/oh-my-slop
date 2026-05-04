@@ -18,6 +18,8 @@ index.ts                 Extension entry point
 ├── lib/job-store.mjs    Per-job persistence: active pointer, run metadata, snapshot migration
 ├── lib/job-events.mjs   Append-only event journal helpers
 ├── lib/job-lifecycle.mjs Job start/interview/pool event helpers
+├── lib/interview-model.mjs Pool preparation for planner-backed interviews
+├── lib/interview-loop.mjs Interview transcript helpers and planner-response parsing
 ├── lib/job-snapshot.mjs Snapshot reducer and replay helpers
 ├── lib/job-locks.mjs    Per-job lock inspection and stale-lock detection
 ├── lib/cleanup.mjs      Retention planning plus stale branch/worktree cleanup
@@ -49,20 +51,20 @@ index.ts: /job command handler
   ├─ Write initial job state to disk
   ├─ Append RUN_CREATED event
   ├─ Append POOL_DRAWN event
-  ├─ Switch main session to the drawn planner model
   ├─ Set runtime.mode = "interview"
-  └─ pi.sendUserMessage("Let's plan this") → triggers agent turn
+  └─ Spawn hidden planner interview step
 
-       │  (main session conversation)
+       │  (extension-managed interview loop)
        ▼
-before_agent_start event handler
-  └─ Injects interview system prompt from lib/prompts.mjs
+input event handler
+  ├─ Intercepts user replies while runtime.mode === "interview"
+  ├─ Appends transcript to job state
+  ├─ Spawns hidden planner sub-agent on the drawn planner model
+  └─ Displays either the next planner question or the captured spec summary
 
-       │  (planner model asks questions, user answers)
+       │  (when planner returns a complete spec)
        ▼
-job_interview_complete tool (called by model when ready)
-  ├─ Captures structured spec
-  ├─ Restores the user's previous main-session model
+start-confirmation flow
   ├─ Shows explicit start confirmation dialog
   ├─ Writes spec to job state on disk
   ├─ Appends INTERVIEW_CAPTURED event

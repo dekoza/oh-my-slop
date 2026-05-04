@@ -14,9 +14,9 @@ handle planning and review.
 POOL DRAW      Random draw from configured pools. Stable for the whole job.
    │           Ensures planner ≠ jester.
    ▼
-INTERVIEW      Main session switches to the drawn planner model.
-   │           Spec is captured, previous model is restored,
-   │           then an explicit start confirmation dialog appears.
+INTERVIEW      Hidden planner sub-agent conducts the brain-dump interview.
+   │           Your visible main-session model is left alone.
+   │           Spec is captured, then an explicit start confirmation dialog appears.
    │           If you decline, the interview stays saved and the pipeline does not start.
    ▼
 SCOUT          Cheap model reads the codebase, answers planner's questions.
@@ -112,9 +112,9 @@ when the job starts. The draw is stable for the whole job. The jester always
 draws a different model from the planner when the pool has more than one
 option.
 
-The interview switches the main session to the drawn planner model so the
-brain-dump is planner-backed from the start. After the interview is captured,
-pi restores your previous main-session model before the pipeline continues.
+The interview uses the drawn planner model through a separate hidden planner
+sub-agent, so the brain-dump is planner-backed from the start without
+changing the visible main-session model selection.
 
 ### Default thinking levels by role
 

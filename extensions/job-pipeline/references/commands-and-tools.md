@@ -162,8 +162,11 @@ when debugging stuck pipelines.
 
 ### `job_interview_complete`
 
-Called by the planner at the end of the interview to capture the structured
-job specification.
+Compatibility tool for flows that already have a complete structured interview
+spec and want to store it directly.
+
+The normal `/job` interview flow is now extension-managed by a hidden planner
+sub-agent, so this tool is no longer the primary interview path.
 
 **Parameters:**
 

@@ -10,19 +10,22 @@ in job state before running. Completed stages are skipped.
 
 **Trigger:** `/job [description]`
 **Model:** planner (drawn from pool at job start)
-**Gate:** explicit start confirmation after `job_interview_complete`
+**Gate:** explicit start confirmation after the planner completes the spec
 
-The interview happens in the main pi session, but before the first interview
-turn the extension draws the job pool and switches the session to the drawn
-planner model. It injects an interview system prompt via `before_agent_start`
-that instructs the planner model to ask targeted questions and conclude with
-`job_interview_complete`.
+The extension draws the job pool before the interview begins. It then runs a
+hidden planner sub-agent to conduct the interview while leaving the visible
+main-session model untouched.
 
-The planner drives the conversation adaptively. When `job_interview_complete`
-is called, the extension captures the structured spec, restores the user's
-previous session model, and opens an explicit start confirmation dialog. If
-the user approves, the job moves to `pipeline-ready`. If not, the job moves to
-`awaiting-run-confirmation` and can be resumed later with `/job`.
+Each user reply is intercepted by the extension's interview mode instead of
+going through the normal main-agent loop. The hidden planner sub-agent reads
+the accumulated interview transcript and returns either:
+- the next question to ask
+- or a complete structured spec
+
+When the planner completes the spec, the extension captures it and opens an
+explicit start confirmation dialog. If the user approves, the job moves to
+`pipeline-ready`. If not, the job moves to `awaiting-run-confirmation` and
+can be resumed later with `/job`.
 
 **Output written to job state:**
 ```jsonc

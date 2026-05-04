@@ -23,7 +23,6 @@ import { runDoctor, formatDoctorReport } from "./lib/doctor.mjs";
 import { startTrackedJob, captureInterviewSpec, recordPoolDraw } from "./lib/job-lifecycle.mjs";
 import { runPipeline, GateDeniedError } from "./lib/pipeline.mjs";
 import {
-  interviewSystemAddition,
   pipelineOrchestratorAddition,
   retroPrompt,
 } from "./lib/prompts.mjs";
@@ -33,6 +32,11 @@ import {
 } from "./lib/swampcastle.mjs";
 import { listJobs, loadJobSnapshot } from "./lib/job-store.mjs";
 import { prepareInterviewState } from "./lib/interview-model.mjs";
+import {
+  appendInterviewTranscriptEntry,
+  buildInterviewTranscriptText,
+  parseInterviewPlannerResponse,
+} from "./lib/interview-loop.mjs";
 import {
   buildBrowserOpenCommand,
   normalizeCycleFilter,
@@ -88,7 +92,7 @@ type RuntimeState = {
   mode: JobMode;
   capturedCtx?: ExtensionContext;
   jobSpec?: Record<string, unknown>;
-  preJobModelId?: string;
+  interviewBusy?: boolean;
   workerMonitor: WorkerMonitorState;
   workerViewerRequestRender?: () => void;
   workerLogsHintShown: boolean;
@@ -130,69 +134,113 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     clearJobState(agentDir, repoRoot ? { repoRoot } : undefined);
   }
 
-  function getCurrentModelId(ctx: ExtensionContext): string | undefined {
-    if (!ctx.model) {
-      return undefined;
-    }
-    return `${ctx.model.provider}/${ctx.model.id}`;
+  function postInterviewMessage(role: "assistant" | "user", content: string): void {
+    const customType = role === "assistant"
+      ? "job-pipeline-interview"
+      : "job-pipeline-interview-user";
+    pi.sendMessage({
+      customType,
+      content,
+      display: true,
+      details: { role },
+    });
   }
 
-  function findModelById(ctx: ExtensionContext, fullModelId: string) {
-    const [provider, ...rest] = String(fullModelId).split("/");
-    const id = rest.join("/");
-    if (!provider || !id) {
-      return undefined;
-    }
-    return ctx.modelRegistry.find(provider, id);
-  }
-
-  async function switchSessionModel(ctx: ExtensionContext, fullModelId: string, reason: string): Promise<boolean> {
-    const currentModelId = getCurrentModelId(ctx);
-    if (currentModelId === fullModelId) {
-      return true;
-    }
-
-    const targetModel = findModelById(ctx, fullModelId);
-    if (!targetModel) {
-      ctx.ui.notify(`Job pipeline could not find ${reason} model ${fullModelId}.`, "error");
-      return false;
-    }
-
-    const switched = await pi.setModel(targetModel);
-    if (!switched) {
-      ctx.ui.notify(`Job pipeline could not switch to ${reason} model ${fullModelId}.`, "error");
-      return false;
-    }
-
-    return true;
-  }
-
-  async function switchInterviewToPlannerModel(
+  async function startPlannerInterviewStep(
     ctx: ExtensionContext,
     jobState: Record<string, unknown>,
-  ): Promise<boolean> {
-    const plannerModelId = (jobState.pool as Record<string, string> | undefined)?.planner;
-    if (typeof plannerModelId !== "string" || plannerModelId.trim().length === 0) {
-      ctx.ui.notify("Job pipeline interview has no planner model configured.", "error");
-      return false;
-    }
-
-    const currentModelId = getCurrentModelId(ctx);
-    if (!runtime.preJobModelId && currentModelId && currentModelId !== plannerModelId) {
-      runtime.preJobModelId = currentModelId;
-    }
-
-    return switchSessionModel(ctx, plannerModelId, "planner interview");
-  }
-
-  async function restorePreJobModelIfNeeded(ctx: ExtensionContext): Promise<void> {
-    if (!runtime.preJobModelId) {
+    userReply?: string,
+  ): Promise<void> {
+    if (runtime.interviewBusy) {
+      ctx.ui.notify("The interview planner is still thinking. Wait for the next question.", "info");
       return;
     }
 
-    const restoreModelId = runtime.preJobModelId;
-    runtime.preJobModelId = undefined;
-    await switchSessionModel(ctx, restoreModelId, "pre-job");
+    const plannerModelId = (jobState.pool as Record<string, string> | undefined)?.planner;
+    if (typeof plannerModelId !== "string" || plannerModelId.trim().length === 0) {
+      ctx.ui.notify("Job pipeline interview has no planner model configured.", "error");
+      return;
+    }
+
+    let transcript = Array.isArray(jobState.interviewTranscript)
+      ? [...(jobState.interviewTranscript as Array<Record<string, unknown>>)]
+      : [];
+
+    if (typeof userReply === "string" && userReply.trim().length > 0) {
+      const normalizedReply = userReply.trim();
+      transcript = appendInterviewTranscriptEntry(transcript, "user", normalizedReply);
+      postInterviewMessage("user", normalizedReply);
+    }
+
+    const persistedTranscriptState = {
+      ...jobState,
+      interviewTranscript: transcript,
+      updatedAt: Date.now(),
+    };
+    writeScopedJobState(persistedTranscriptState, ctx.cwd);
+
+    runtime.interviewBusy = true;
+    ctx.ui.setStatus(STATUS_KEY, "interview");
+    try {
+      const interviewResponseText = await spawnAgent({
+        modelId: plannerModelId,
+        thinkingLevel: getRoleThinkingLevel("planner"),
+        systemPrompt: buildPlannerInterviewSystemPrompt(jobState.description as string, transcript),
+        userPrompt: buildPlannerInterviewUserPrompt(jobState.description as string, transcript),
+        toolNames: [],
+        cwd: ctx.cwd,
+      });
+      const interviewResponse = parseInterviewPlannerResponse(interviewResponseText) as Record<string, unknown>;
+
+      const assistantMessage = String(interviewResponse.message ?? "").trim();
+      const nextTranscript = assistantMessage
+        ? appendInterviewTranscriptEntry(transcript, "assistant", assistantMessage)
+        : transcript;
+
+      if (assistantMessage) {
+        postInterviewMessage("assistant", assistantMessage);
+      }
+
+      if (interviewResponse.status === "ask") {
+        writeScopedJobState({
+          ...persistedTranscriptState,
+          interviewTranscript: nextTranscript,
+          updatedAt: Date.now(),
+        }, ctx.cwd);
+        return;
+      }
+
+      const spec = interviewResponse.spec as Record<string, unknown>;
+      runtime.jobSpec = spec;
+      const approvedToRun = await ctx.ui.confirm(
+        "Start Job Pipeline",
+        buildInterviewStartConfirmationText(spec),
+      );
+      const nextMode: JobMode = approvedToRun ? "pipeline-ready" : "awaiting-run-confirmation";
+      runtime.mode = nextMode;
+
+      const latestState = readScopedJobState(ctx.cwd) ?? persistedTranscriptState;
+      captureInterviewSpec(agentDir, {
+        ...latestState,
+        interviewTranscript: nextTranscript,
+      }, spec, {
+        now: Date.now(),
+        step: nextMode,
+      });
+
+      ctx.ui.notify("Interview complete. Spec captured.", "success");
+      ctx.ui.setStatus(STATUS_KEY, approvedToRun ? "pipeline ready" : "awaiting confirmation");
+      postInterviewMessage("assistant", buildInterviewCapturedMessage({ approvedToRun }));
+
+      if (approvedToRun) {
+        pi.sendUserMessage("The interview is complete and approved. Start the pipeline now.", { deliverAs: "followUp" });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      ctx.ui.notify(`Interview planner failed: ${message}`, "error");
+    } finally {
+      runtime.interviewBusy = false;
+    }
   }
 
   // ── Capture ctx for use in background async pipeline ──────────────────────
@@ -214,18 +262,50 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", (_, ctx) => captureCtx(ctx));
   pi.on("agent_end", (_, ctx) => captureCtx(ctx));
 
-  // ── Interview system prompt injection ─────────────────────────────────────
+  pi.registerMessageRenderer("job-pipeline-interview", (message, _options, theme) => {
+    return new Text(
+      `${theme.fg("accent", theme.bold("Planner interview"))}\n${message.content}`,
+      0,
+      0,
+    );
+  });
 
-  pi.on("before_agent_start", async (event, ctx) => {
-    if (runtime.mode === "interview") {
-      const jobState = readScopedJobState(ctx.cwd);
-      const description = (jobState?.description as string) ?? "";
-      return {
-        systemPrompt:
-          event.systemPrompt + "\n\n" + interviewSystemAddition({ description }),
-      };
+  pi.registerMessageRenderer("job-pipeline-interview-user", (message, _options, theme) => {
+    return new Text(
+      `${theme.fg("muted", theme.bold("You"))}\n${message.content}`,
+      0,
+      0,
+    );
+  });
+
+  pi.on("input", async (event, ctx) => {
+    if (runtime.mode !== "interview") {
+      return { action: "continue" };
+    }
+    if (event.source === "extension") {
+      return { action: "continue" };
     }
 
+    const jobState = readScopedJobState(ctx.cwd);
+    if (!jobState) {
+      ctx.ui.notify("Interview state is missing for this repository. Start again with /job.", "error");
+      runtime.mode = "idle";
+      return { action: "handled" };
+    }
+
+    const text = String(event.text ?? "").trim();
+    if (!text) {
+      ctx.ui.notify("Interview answer was empty.", "warning");
+      return { action: "handled" };
+    }
+
+    await startPlannerInterviewStep(ctx, jobState, text);
+    return { action: "handled" };
+  });
+
+  // ── Orchestrator system prompt injection ──────────────────────────────────
+
+  pi.on("before_agent_start", async (event, ctx) => {
     if (runtime.mode === "pipeline-ready" && runtime.jobSpec) {
       return {
         systemPrompt:
@@ -281,7 +361,6 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
         });
       }
 
-      await restorePreJobModelIfNeeded(ctx);
       ctx.ui.notify("Interview complete. Spec captured.", "success");
       ctx.ui.setStatus(STATUS_KEY, approvedToRun ? "pipeline ready" : "awaiting confirmation");
 
@@ -458,15 +537,20 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
               return;
             }
 
-            const switched = await switchInterviewToPlannerModel(ctx, interviewState);
-            if (!switched) {
-              return;
-            }
-
             runtime.mode = "interview";
             runtime.jobSpec = interviewState.spec as Record<string, unknown>;
-            pi.sendUserMessage("We were in the middle of a planning interview. Please continue where we left off.");
             ctx.ui.setStatus(STATUS_KEY, "interview");
+            ctx.ui.notify("Interview resumed. Continue answering the planner's questions.", "info");
+
+            const transcript = Array.isArray(interviewState.interviewTranscript)
+              ? (interviewState.interviewTranscript as Array<Record<string, unknown>>)
+              : [];
+            const lastRole = transcript.length > 0
+              ? String(transcript[transcript.length - 1]?.role ?? "")
+              : "";
+            if (transcript.length === 0 || lastRole === "user") {
+              await startPlannerInterviewStep(ctx, interviewState);
+            }
             return;
           }
           if (step === "awaiting-run-confirmation") {
@@ -502,7 +586,6 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
           return;
         }
         // Abandon existing job for this repository only.
-        await restorePreJobModelIfNeeded(ctx);
         clearScopedJobState(ctx.cwd);
       }
 
@@ -531,11 +614,6 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       if (persistedState.pool) {
         persistedState = recordPoolDraw(agentDir, persistedState, persistedState.pool, { now: Date.now() }) as Record<string, unknown>;
       }
-      const switched = await switchInterviewToPlannerModel(ctx, persistedState);
-      if (!switched) {
-        clearScopedJobState(ctx.cwd);
-        return;
-      }
 
       pi.setSessionName(`job: ${description || jobId}`);
 
@@ -547,12 +625,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
 
       ctx.ui.setStatus(STATUS_KEY, "interview");
       ctx.ui.notify(`Job ${jobId} started. Interview beginning with planner model ${(persistedState.pool as Record<string, string>).planner}.`, "info");
-
-      const openingMessage = description
-        ? `We're planning: "${description}". Let's drill down into the details.`
-        : "What's on your mind?";
-
-      pi.sendUserMessage(openingMessage);
+      await startPlannerInterviewStep(ctx, persistedState);
     },
   });
 
@@ -877,7 +950,6 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       );
       if (!confirmed) return;
 
-      await restorePreJobModelIfNeeded(ctx);
       clearScopedJobState(ctx.cwd);
       resetWorkerMonitorState(runtime.workerMonitor, undefined);
       runtime.workerLogsHintShown = false;
@@ -1145,6 +1217,64 @@ function buildInterviewStartConfirmationText(spec: Record<string, unknown> | und
     outOfScope,
     "",
     "Start the pipeline now?",
+  ].join("\n");
+}
+
+function buildPlannerInterviewSystemPrompt(description: string | undefined, transcript: unknown): string {
+  return [
+    "# Planner Interview",
+    "",
+    "You are the planner conducting a structured requirements interview for a software job.",
+    "Ask focused questions that reduce ambiguity. Do not implement anything.",
+    "When you have enough information, stop asking questions and return a complete structured spec.",
+    "",
+    "## Output format",
+    "Return exactly one JSON block and nothing else.",
+    "",
+    "For another question:",
+    '```json',
+    '{',
+    '  "status": "ask",',
+    '  "message": "Your next question to the user"',
+    '}',
+    '```',
+    "",
+    "When the interview is complete:",
+    '```json',
+    '{',
+    '  "status": "complete",',
+    '  "message": "Short summary for the user",',
+    '  "spec": {',
+    '    "goal": "Full, specific goal description",',
+    '    "context": "Key context gathered during the interview",',
+    '    "constraints": ["Known constraints and requirements"],',
+    '    "outOfScope": ["What is explicitly out of scope"],',
+    '    "questionsToScout": ["Specific question for the scout"],',
+    '    "evidenceHint": "screenshots"',
+    '  }',
+    '}',
+    '```',
+    "",
+    "Allowed evidenceHint values: screenshots, logs, both.",
+    "If the user already has a UI concept, capture it in spec.proposedUiDesign.",
+    "Do not ask for confirmation to start the pipeline. The extension handles that separately.",
+    "",
+    "## Initial task description",
+    description?.trim() || "(none provided)",
+    "",
+    "## Transcript so far",
+    buildInterviewTranscriptText(transcript),
+  ].join("\n");
+}
+
+function buildPlannerInterviewUserPrompt(description: string | undefined, transcript: unknown): string {
+  return [
+    "Continue the planning interview.",
+    "",
+    `Initial task description: ${description?.trim() || "(none provided)"}`,
+    "",
+    "Transcript so far:",
+    buildInterviewTranscriptText(transcript),
   ].join("\n");
 }
 
