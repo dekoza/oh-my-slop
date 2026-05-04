@@ -11,8 +11,9 @@ handle planning and review.
 /job "description"
    │
    ▼
-INTERVIEW      Model-driven brain-dump. Planner asks targeted questions.
-   │           Ends with "Shall I start?" → you confirm → spec captured.
+INTERVIEW      Model-driven brain-dump in the main pi session.
+   │           Spec is captured, then an explicit start confirmation dialog appears.
+   │           If you decline, the interview stays saved and the pipeline does not start.
    ▼
 POOL DRAW      Random draw from configured pools. Stable for the whole job.
    │           Ensures planner ≠ jester.
@@ -96,8 +97,12 @@ Check your streak: `/job-autonomy`
 ## Model pools
 
 Configure pools per role via `/job-pool`. Each role draws one model randomly
-at job start. The draw is stable for the whole job. The jester always draws
-a different model from the planner when the pool has more than one option.
+when the pipeline starts. The draw is stable for the whole job. The jester
+always draws a different model from the planner when the pool has more than
+one option.
+
+The interview itself still runs in the current main pi session model. The
+configured pools apply to the pipeline sub-agents after you approve start.
 
 ### Default thinking levels by role
 
@@ -150,8 +155,11 @@ Stored at `~/.pi/agent/extensions/job-pipeline/config.json`.
 
 ## Job state
 
-The active job pointer is persisted to
+The most recently touched active job pointer is persisted to
 `~/.pi/agent/extensions/job-pipeline/active-job.json`.
+Repo-scoped active pointers are persisted to
+`~/.pi/agent/extensions/job-pipeline/active-jobs.json`, so `/job` resumes the
+active job for the current repository instead of a different codebase.
 Each job stores its current snapshot at
 `~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/snapshot.json`.
 While a pipeline run is active, the extension also holds a transient lock at

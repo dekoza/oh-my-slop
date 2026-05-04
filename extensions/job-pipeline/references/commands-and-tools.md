@@ -13,9 +13,10 @@ The model is asked "What's on your mind?" and the interview starts from there.
 The description is stored as the job's initial goal. The interview starts
 with that context already present in the planner's system prompt.
 
-**With an interrupted job on disk:**
+**With an interrupted job for the current repository:**
 A resume dialog is shown. Accepting resumes from the last completed pipeline
-step. Denying clears the interrupted job and starts fresh.
+step for the current repository only. Denying clears that repository's active
+job pointer and starts fresh.
 
 ---
 
@@ -56,8 +57,8 @@ count, pool assignments, and proof deck path (if any).
 
 Run integrity checks against persisted job artifacts.
 
-**With no argument:** Diagnoses the active job resolved from
-`active-job.json`.
+**With no argument:** Diagnoses the active job resolved for the current
+repository.
 
 **With a job ID:** Diagnoses that specific job under
 `jobs/<job-id>/`.
@@ -147,20 +148,23 @@ job specification.
 | `questionsToScout` | string[] | Specific questions for the scout |
 | `evidenceHint` | `"screenshots"` \| `"logs"` \| `"both"` | Evidence type workers should produce |
 
-**Effect:** Writes spec to job state, transitions to `pipeline-ready`,
-injects a follow-up message asking the model to call `job_run_pipeline`.
+**Effect:** Writes spec to job state, opens an explicit start confirmation
+dialog, and transitions to either:
+- `pipeline-ready` if the user approves start
+- `awaiting-run-confirmation` if the user defers start
 
-**Returns:** Confirmation text saying the interview was captured and the job is
-*ready* to run the pipeline. It does not claim the pipeline already started.
+**Returns:** Confirmation text saying the interview was captured. The text says
+whether the pipeline is ready or still waiting for confirmation.
 
 ---
 
 ### `job_run_pipeline`
 
-Long-running tool that executes the full pipeline. Called by the model
-immediately after `job_interview_complete`.
+Long-running tool that executes the full pipeline. Called after the interview
+has been captured **and** the user has approved pipeline start.
 
 **Parameters:** None. Reads all necessary state from disk.
+If the interview is still waiting for confirmation, the tool refuses to run.
 
 **Effect:**
 1. Draws session pool if not already drawn
@@ -192,6 +196,7 @@ The extension sets a footer status via `ctx.ui.setStatus("job-pipeline", ...)`:
 | Status | Meaning |
 |---|---|
 | `interview` | Interview in progress |
+| `awaiting confirmation` | Interview captured, waiting for explicit start approval |
 | `pipeline ready` | Interview complete, waiting for `job_run_pipeline` |
 | `resuming` | Resuming from interrupted state |
 | `running` | Pipeline executing (shows current step name) |

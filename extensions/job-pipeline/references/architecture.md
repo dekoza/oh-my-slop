@@ -58,10 +58,12 @@ before_agent_start event handler
        ▼
 job_interview_complete tool (called by model when ready)
   ├─ Captures structured spec
+  ├─ Shows explicit start confirmation dialog
   ├─ Writes spec to job state on disk
   ├─ Appends INTERVIEW_CAPTURED event
-  ├─ Sets runtime.mode = "pipeline-ready"
-  └─ pi.sendUserMessage("call job_run_pipeline") → triggers next turn
+  └─ Sets runtime.mode to either:
+       • "pipeline-ready" when approved
+       • "awaiting-run-confirmation" when deferred
 
        │
        ▼
@@ -135,8 +137,10 @@ Step: retro (inside index.ts factory)
 
 ## Job state schema
 
-The active job pointer lives at
+The most recently touched active job pointer lives at
 `~/.pi/agent/extensions/job-pipeline/active-job.json`.
+Repo-scoped active pointers live at
+`~/.pi/agent/extensions/job-pipeline/active-jobs.json`.
 Each job snapshot lives at
 `~/.pi/agent/extensions/job-pipeline/jobs/<job-id>/snapshot.json`.
 While a run is executing, the extension uses
@@ -155,7 +159,8 @@ Legacy `job-state.json` is only used as a one-time migration source.
   "id": "job-2026-04-22-a1b2c3d4",
   "description": "Add OAuth login",
   "cwd": "/path/to/project",    // Persisted job cwd, used on resume/sub-agents
-  "step": "workers",            // Current pipeline step
+  "repoRoot": "/path/to/project", // Repo scope used for active-job resolution
+  "step": "workers",            // Current pipeline step (or awaiting-run-confirmation)
   "createdAt": 1234567890000,
   "updatedAt": 1234567890000,
   "cycleIndex": 1,              // Increments on each review→worker-fix cycle
@@ -208,8 +213,10 @@ Each sub-agent is a separate `createAgentSession` call with:
 - Appropriate tool set (read-only for scout/planner/jester/reviewer; coding tools for workers)
 
 Sub-agents communicate only through their return value: the final assistant
-message, which must be a JSON block. If JSON extraction fails, the raw text
-is used as a fallback.
+message. Critical orchestration stages (planner, jester, task-writer,
+reviewer, planner resolution) must return valid JSON or the stage fails
+explicitly. Scout output still tolerates plain-text fallback for summary-only
+reconnaissance.
 
 ## Concurrency
 

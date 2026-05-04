@@ -9,16 +9,18 @@ in job state before running. Completed stages are skipped.
 ## Interview
 
 **Trigger:** `/job [description]`
-**Model:** planner (from pool, drawn at interview start)
-**Gate:** none — controlled by the model's `job_interview_complete` tool call
+**Model:** the current main pi session model
+**Gate:** explicit start confirmation after `job_interview_complete`
 
 The interview happens in the main pi session. The extension injects an
-interview system prompt via `before_agent_start` that instructs the planner
-to ask targeted questions and conclude with `job_interview_complete`.
+interview system prompt via `before_agent_start` that instructs the model to
+ask targeted questions and conclude with `job_interview_complete`.
 
-The model drives the conversation adaptively. The extension listens for the
-`job_interview_complete` tool call, captures the structured spec, and
-transitions to the pipeline.
+The model drives the conversation adaptively. When `job_interview_complete`
+is called, the extension captures the structured spec and opens an explicit
+start confirmation dialog. If the user approves, the job moves to
+`pipeline-ready`. If not, the job moves to `awaiting-run-confirmation` and
+can be resumed later with `/job`.
 
 **Output written to job state:**
 ```jsonc
@@ -80,6 +82,8 @@ the first question and its rationale.
 ```
 
 If the scout output is not valid JSON, the raw text is stored as `summary`.
+Unlike the scout stage, critical orchestration stages fail explicitly on
+invalid JSON rather than silently continuing with malformed output.
 
 ---
 
@@ -153,7 +157,7 @@ The designer may inspect the repo broadly with read-only tools.
 ## Task writing
 
 **Trigger:** Automatic after plan gate passes
-**Model:** task-writer (from pool — different from planner by design)
+**Model:** task-writer (from its own configured pool)
 **Thinking:** `medium`
 **Gate:** none
 
