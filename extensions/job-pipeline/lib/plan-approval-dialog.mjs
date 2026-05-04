@@ -1,5 +1,5 @@
-const DEFAULT_MIN_BODY_LINES = 8;
-const DEFAULT_MAX_BODY_LINES = 12;
+const DEFAULT_MIN_BODY_LINES = 16;
+const DEFAULT_MAX_BODY_LINES = 22;
 
 export function buildPlanApprovalDialogSpec({ planText, critiqueHighlights, uiDesignBrief }) {
   const normalizedPlan = normalizeBlock(planText, '(Planner returned an empty plan.)');

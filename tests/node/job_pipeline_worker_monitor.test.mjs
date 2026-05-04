@@ -1,8 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
+import { appendJobEvent } from '../../extensions/job-pipeline/lib/job-events.mjs';
+import { createJobRun, writeStageArtifacts, writeTaskArtifacts } from '../../extensions/job-pipeline/lib/job-store.mjs';
 import {
   applyWorkerMonitorEvent,
+  buildPersistedWorkerMonitorState,
   createWorkerMonitorState,
   getSelectedWorker,
   getWorkerLogLines,
@@ -210,4 +216,62 @@ test('wrapWorkerLogLines expands tab characters before slicing viewer rows', () 
   assert.equal(wrappedLines.join(''), '        1    from django.urls import path');
   assert.equal(wrappedLines.some((line) => line.includes('\t')), false);
   assert.equal(wrappedLines.every((line) => line.length <= 19), true);
+});
+
+test('buildPersistedWorkerMonitorState reconstructs stage and task logs from stored job artifacts', () => {
+  const agentDir = mkdtempSync(join(tmpdir(), 'job-pipeline-worker-monitor-'));
+  const jobState = {
+    id: 'job-2026-05-04-monitor0001',
+    description: 'Persisted monitor reconstruction',
+    cwd: '/tmp/project',
+    repoRoot: '/tmp/project',
+    step: 'review',
+    createdAt: 1,
+    updatedAt: 2,
+    cycleIndex: 1,
+    replanCount: 0,
+    taskGraph: {
+      tasks: [
+        { id: 'task-1', title: 'Implement callback validation' },
+      ],
+    },
+  };
+
+  createJobRun(agentDir, jobState);
+  writeStageArtifacts(agentDir, jobState.id, 1, 'scout', {
+    responseText: 'Scout summary line 1\nScout summary line 2',
+  });
+  writeTaskArtifacts(agentDir, jobState.id, 1, 'task-1', {
+    responseText: 'Worker raw output',
+    result: {
+      taskId: 'task-1',
+      success: true,
+      summary: 'Implemented callback validation',
+      artifactFiles: ['proof-task-1.log'],
+    },
+  });
+  appendJobEvent(agentDir, jobState.id, 'TASK_QUEUED', {
+    taskId: 'task-1',
+    title: 'Implement callback validation',
+  });
+  appendJobEvent(agentDir, jobState.id, 'TASK_SUCCEEDED', {
+    taskId: 'task-1',
+    title: 'Implement callback validation',
+  });
+
+  const state = buildPersistedWorkerMonitorState({ agentDir, jobState });
+
+  assert.equal(state.jobId, jobState.id);
+  assert.equal(state.workers.length, 2);
+  assert.equal(state.workers[0].title, 'Scout — reconnaissance');
+  assert.equal(state.workers[0].status, 'success');
+  assert.deepEqual(getWorkerLogLines(state.workers[0]), ['Scout summary line 1', 'Scout summary line 2']);
+  assert.equal(state.workers[1].title, 'Implement callback validation');
+  assert.equal(state.workers[1].status, 'success');
+  assert.deepEqual(getWorkerLogLines(state.workers[1]), [
+    'Summary: Implemented callback validation',
+    'Artifacts: proof-task-1.log',
+    '',
+    'Worker raw output',
+  ]);
 });

@@ -53,6 +53,19 @@ count, pool assignments, and proof deck path (if any).
 
 ---
 
+### `/job-workers`
+
+Open the agent inspector for the current job.
+
+**Live mode:** If the current runtime still has in-memory agent logs, the
+viewer shows the live stream.
+
+**Persisted fallback:** If live logs are unavailable, the command rebuilds a
+usable inspector view from persisted stage/task artifacts for the current job.
+That means completed jobs are still inspectable after the live popup is gone.
+
+---
+
 ### `/job-doctor [job-id]`
 
 Run integrity checks against persisted job artifacts.
@@ -186,6 +199,9 @@ The job state is preserved. Use `/job` to resume from the gate.
 
 None registered. All interaction is via slash commands and dialog prompts
 during pipeline execution.
+
+Compulsory gates use a large scrollable overlay sized relative to the current
+terminal instead of a fixed tiny popup.
 
 ---
 

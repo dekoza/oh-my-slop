@@ -89,6 +89,17 @@ test('ScrollableApprovalDialogState exposes overflow content through scrolling',
   assert.deepEqual(state.getVisibleBodyLines(40), ['Line 9', 'Line 10', 'Line 11', 'Line 12']);
 });
 
+test('ScrollableApprovalDialogState uses a larger default viewport for long reports', () => {
+  const bodyText = Array.from({ length: 40 }, (_, index) => `Line ${index + 1}`).join('\n');
+  const state = new ScrollableApprovalDialogState({
+    bodyText,
+    question: 'Approve?',
+  });
+
+  assert.equal(state.getVisibleBodyLineCount(60) >= 16, true);
+  assert.equal(state.getVisibleBodyLineCount(60) <= 22, true);
+});
+
 test('ScrollableApprovalDialogState toggles between approve and deny', () => {
   const state = new ScrollableApprovalDialogState({
     bodyText: 'Short body',

@@ -46,6 +46,7 @@ import {
 } from "./lib/plan-approval-dialog.mjs";
 import {
   applyWorkerMonitorEvent,
+  buildPersistedWorkerMonitorState,
   createWorkerMonitorState,
   getWorkerLogLines,
   resetWorkerMonitorState,
@@ -638,8 +639,22 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
         return;
       }
 
+      if (runtime.workerMonitor.workers.length === 0) {
+        const jobState = readScopedJobState(ctx.cwd);
+        if (jobState) {
+          const persistedState = buildPersistedWorkerMonitorState({
+            agentDir,
+            jobState,
+          });
+          if (persistedState.workers.length > 0) {
+            runtime.workerMonitor.jobId = persistedState.jobId;
+            runtime.workerMonitor.workers = persistedState.workers;
+          }
+        }
+      }
+
       if (runtime.workerMonitor.workers.length === 0 && runtime.mode !== "running") {
-        ctx.ui.notify("No agent logs are available yet.", "info");
+        ctx.ui.notify("No agent logs or persisted job artifacts are available yet.", "info");
         return;
       }
 
@@ -1107,7 +1122,16 @@ async function showScrollableGateDialog(
         },
       };
     },
-    { overlay: true, overlayOptions: { anchor: "center", width: 88, maxHeight: 24 } },
+    {
+      overlay: true,
+      overlayOptions: {
+        anchor: "center",
+        width: "84%",
+        minWidth: 96,
+        maxHeight: "85%",
+        margin: 1,
+      },
+    },
   );
 }
 
@@ -1115,7 +1139,7 @@ async function showWorkerLogDialog(
   ui: ExtensionContext["ui"],
   runtime: RuntimeState,
 ): Promise<void> {
-  const WORKER_VIEWER_BODY_ROWS = 16;
+  const WORKER_VIEWER_BODY_ROWS = 22;
 
   try {
     await ui.custom<void>(
@@ -1352,7 +1376,16 @@ async function showWorkerLogDialog(
           },
         };
       },
-      { overlay: true, overlayOptions: { anchor: "center", width: 110, maxHeight: 28 } },
+      {
+        overlay: true,
+        overlayOptions: {
+          anchor: "center",
+          width: "92%",
+          minWidth: 120,
+          maxHeight: "88%",
+          margin: 1,
+        },
+      },
     );
   } finally {
     runtime.workerViewerRequestRender = undefined;
