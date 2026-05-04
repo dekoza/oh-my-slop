@@ -9,18 +9,20 @@ in job state before running. Completed stages are skipped.
 ## Interview
 
 **Trigger:** `/job [description]`
-**Model:** the current main pi session model
+**Model:** planner (drawn from pool at job start)
 **Gate:** explicit start confirmation after `job_interview_complete`
 
-The interview happens in the main pi session. The extension injects an
-interview system prompt via `before_agent_start` that instructs the model to
-ask targeted questions and conclude with `job_interview_complete`.
+The interview happens in the main pi session, but before the first interview
+turn the extension draws the job pool and switches the session to the drawn
+planner model. It injects an interview system prompt via `before_agent_start`
+that instructs the planner model to ask targeted questions and conclude with
+`job_interview_complete`.
 
-The model drives the conversation adaptively. When `job_interview_complete`
-is called, the extension captures the structured spec and opens an explicit
-start confirmation dialog. If the user approves, the job moves to
-`pipeline-ready`. If not, the job moves to `awaiting-run-confirmation` and
-can be resumed later with `/job`.
+The planner drives the conversation adaptively. When `job_interview_complete`
+is called, the extension captures the structured spec, restores the user's
+previous session model, and opens an explicit start confirmation dialog. If
+the user approves, the job moves to `pipeline-ready`. If not, the job moves to
+`awaiting-run-confirmation` and can be resumed later with `/job`.
 
 **Output written to job state:**
 ```jsonc
@@ -41,13 +43,14 @@ can be resumed later with `/job`.
 
 ## Pool draw
 
-**Trigger:** Automatic when `job_run_pipeline` is called
+**Trigger:** Automatic when `/job` starts a new job (and backfilled by `job_run_pipeline` for legacy jobs that somehow lack a pool)
 **Model:** none
 **Gate:** none
 
 Draws one model per role from each pool's eligible set (pool ∩ available).
 The planner/jester constraint is applied. The draw is written to job state
-and reused for the entire job including all re-plan and re-review cycles.
+before the interview begins and reused for the entire job including all
+re-plan and re-review cycles.
 
 Fails loudly with a clear error message if any role has no eligible models.
 

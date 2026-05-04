@@ -4,7 +4,8 @@ Config is stored at `~/.pi/agent/extensions/job-pipeline/config.json`.
 Edit directly or use `/job-pool` for interactive pool configuration.
 
 If the file does not exist, the extension starts with empty pools (no models
-assigned). `/job` will fail at the pool draw step until pools are configured.
+assigned). `/job` will fail before the interview starts because the job pool
+cannot be drawn until pools are configured.
 
 ## Full schema
 
@@ -12,8 +13,8 @@ assigned). `/job` will fail at the pool draw step until pools are configured.
 {
   // ── Model pools ───────────────────────────────────────────────────────────
   // One pool per role. Each pool is a list of model IDs in "provider/id"
-  // format. At job start one model is drawn randomly from each pool.
-  // The draw is stable for the entire job.
+  // format. At job start one model is drawn randomly from each pool before
+  // the interview begins. The draw is stable for the entire job.
   "pools": {
     "scout":       { "models": ["github-copilot/gpt-5-mini"] },
     "planner":     { "models": ["github-copilot/claude-sonnet-4-5", "github-copilot/gpt-5"] },

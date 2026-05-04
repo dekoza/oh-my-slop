@@ -32,6 +32,7 @@ import {
   buildJesterFlagsWritePrompt,
 } from "./lib/swampcastle.mjs";
 import { listJobs, loadJobSnapshot } from "./lib/job-store.mjs";
+import { prepareInterviewState } from "./lib/interview-model.mjs";
 import {
   buildBrowserOpenCommand,
   normalizeCycleFilter,
@@ -87,6 +88,7 @@ type RuntimeState = {
   mode: JobMode;
   capturedCtx?: ExtensionContext;
   jobSpec?: Record<string, unknown>;
+  preJobModelId?: string;
   workerMonitor: WorkerMonitorState;
   workerViewerRequestRender?: () => void;
   workerLogsHintShown: boolean;
@@ -126,6 +128,71 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
   function clearScopedJobState(cwd?: string): void {
     const repoRoot = getRepoRoot(cwd);
     clearJobState(agentDir, repoRoot ? { repoRoot } : undefined);
+  }
+
+  function getCurrentModelId(ctx: ExtensionContext): string | undefined {
+    if (!ctx.model) {
+      return undefined;
+    }
+    return `${ctx.model.provider}/${ctx.model.id}`;
+  }
+
+  function findModelById(ctx: ExtensionContext, fullModelId: string) {
+    const [provider, ...rest] = String(fullModelId).split("/");
+    const id = rest.join("/");
+    if (!provider || !id) {
+      return undefined;
+    }
+    return ctx.modelRegistry.find(provider, id);
+  }
+
+  async function switchSessionModel(ctx: ExtensionContext, fullModelId: string, reason: string): Promise<boolean> {
+    const currentModelId = getCurrentModelId(ctx);
+    if (currentModelId === fullModelId) {
+      return true;
+    }
+
+    const targetModel = findModelById(ctx, fullModelId);
+    if (!targetModel) {
+      ctx.ui.notify(`Job pipeline could not find ${reason} model ${fullModelId}.`, "error");
+      return false;
+    }
+
+    const switched = await pi.setModel(targetModel);
+    if (!switched) {
+      ctx.ui.notify(`Job pipeline could not switch to ${reason} model ${fullModelId}.`, "error");
+      return false;
+    }
+
+    return true;
+  }
+
+  async function switchInterviewToPlannerModel(
+    ctx: ExtensionContext,
+    jobState: Record<string, unknown>,
+  ): Promise<boolean> {
+    const plannerModelId = (jobState.pool as Record<string, string> | undefined)?.planner;
+    if (typeof plannerModelId !== "string" || plannerModelId.trim().length === 0) {
+      ctx.ui.notify("Job pipeline interview has no planner model configured.", "error");
+      return false;
+    }
+
+    const currentModelId = getCurrentModelId(ctx);
+    if (!runtime.preJobModelId && currentModelId && currentModelId !== plannerModelId) {
+      runtime.preJobModelId = currentModelId;
+    }
+
+    return switchSessionModel(ctx, plannerModelId, "planner interview");
+  }
+
+  async function restorePreJobModelIfNeeded(ctx: ExtensionContext): Promise<void> {
+    if (!runtime.preJobModelId) {
+      return;
+    }
+
+    const restoreModelId = runtime.preJobModelId;
+    runtime.preJobModelId = undefined;
+    await switchSessionModel(ctx, restoreModelId, "pre-job");
   }
 
   // ── Capture ctx for use in background async pipeline ──────────────────────
@@ -214,6 +281,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
         });
       }
 
+      await restorePreJobModelIfNeeded(ctx);
       ctx.ui.notify("Interview complete. Spec captured.", "success");
       ctx.ui.setStatus(STATUS_KEY, approvedToRun ? "pipeline ready" : "awaiting confirmation");
 
@@ -348,6 +416,10 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       await ctx.waitForIdle();
 
       const currentRepoRoot = getRepoRoot(ctx.cwd);
+      const config = loadConfig(agentDir);
+      const availableModels = ctx.modelRegistry
+        .getAvailable()
+        .map((model: { provider: string; id: string }) => `${model.provider}/${model.id}`);
       const existing = readScopedJobState(ctx.cwd);
 
       if (existing && !existing.repoRoot && typeof existing.cwd === "string") {
@@ -370,8 +442,29 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
             runtime.workerViewerRequestRender?.();
           }
           if (step === "interview") {
+            let interviewState = existing;
+            try {
+              const prepared = prepareInterviewState({
+                jobState: interviewState,
+                config,
+                availableModels,
+              });
+              if (!interviewState.pool) {
+                interviewState = recordPoolDraw(agentDir, interviewState, prepared.jobState.pool, { now: Date.now() }) as Record<string, unknown>;
+              }
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              ctx.ui.notify(`Interview preparation failed: ${message}`, "error");
+              return;
+            }
+
+            const switched = await switchInterviewToPlannerModel(ctx, interviewState);
+            if (!switched) {
+              return;
+            }
+
             runtime.mode = "interview";
-            runtime.jobSpec = existing.spec as Record<string, unknown>;
+            runtime.jobSpec = interviewState.spec as Record<string, unknown>;
             pi.sendUserMessage("We were in the middle of a planning interview. Please continue where we left off.");
             ctx.ui.setStatus(STATUS_KEY, "interview");
             return;
@@ -409,18 +502,41 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
           return;
         }
         // Abandon existing job for this repository only.
+        await restorePreJobModelIfNeeded(ctx);
         clearScopedJobState(ctx.cwd);
       }
 
       // Start new job
       const description = args.trim() || "";
       const jobId = `job-${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}`;
-      const initialState = startTrackedJob(agentDir, createInitialJobState({
+      let initialState = createInitialJobState({
         id: jobId,
         description,
         cwd: ctx.cwd,
         repoRoot: currentRepoRoot,
-      }));
+      });
+      try {
+        initialState = prepareInterviewState({
+          jobState: initialState,
+          config,
+          availableModels,
+        }).jobState;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.ui.notify(`Interview preparation failed: ${message}`, "error");
+        return;
+      }
+
+      let persistedState = startTrackedJob(agentDir, initialState);
+      if (persistedState.pool) {
+        persistedState = recordPoolDraw(agentDir, persistedState, persistedState.pool, { now: Date.now() }) as Record<string, unknown>;
+      }
+      const switched = await switchInterviewToPlannerModel(ctx, persistedState);
+      if (!switched) {
+        clearScopedJobState(ctx.cwd);
+        return;
+      }
+
       pi.setSessionName(`job: ${description || jobId}`);
 
       resetWorkerMonitorState(runtime.workerMonitor, jobId);
@@ -430,7 +546,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       runtime.jobSpec = undefined;
 
       ctx.ui.setStatus(STATUS_KEY, "interview");
-      ctx.ui.notify(`Job ${jobId} started. Interview beginning...`, "info");
+      ctx.ui.notify(`Job ${jobId} started. Interview beginning with planner model ${(persistedState.pool as Record<string, string>).planner}.`, "info");
 
       const openingMessage = description
         ? `We're planning: "${description}". Let's drill down into the details.`
@@ -761,6 +877,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       );
       if (!confirmed) return;
 
+      await restorePreJobModelIfNeeded(ctx);
       clearScopedJobState(ctx.cwd);
       resetWorkerMonitorState(runtime.workerMonitor, undefined);
       runtime.workerLogsHintShown = false;

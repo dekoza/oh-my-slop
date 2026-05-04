@@ -45,8 +45,11 @@ User: /job "goal"
        ▼
 index.ts: /job command handler
   ├─ Check for interrupted job → offer resume
+  ├─ Draw session pool from config + available models
   ├─ Write initial job state to disk
   ├─ Append RUN_CREATED event
+  ├─ Append POOL_DRAWN event
+  ├─ Switch main session to the drawn planner model
   ├─ Set runtime.mode = "interview"
   └─ pi.sendUserMessage("Let's plan this") → triggers agent turn
 
@@ -59,6 +62,7 @@ before_agent_start event handler
        ▼
 job_interview_complete tool (called by model when ready)
   ├─ Captures structured spec
+  ├─ Restores the user's previous main-session model
   ├─ Shows explicit start confirmation dialog
   ├─ Writes spec to job state on disk
   ├─ Appends INTERVIEW_CAPTURED event
@@ -74,8 +78,8 @@ before_agent_start event handler
        │
        ▼
 job_run_pipeline tool (long-running, called by model)
-  ├─ Draws session pool from config + available models
-  ├─ Appends POOL_DRAWN event when the draw happens
+  ├─ Uses the existing session pool (or backfills it for legacy jobs missing one)
+  ├─ Appends POOL_DRAWN event when a legacy backfill draw happens
   ├─ Calls lib/pipeline.mjs: runPipeline(...)
   └─ Returns result when pipeline completes or gate is denied
 ```

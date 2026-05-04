@@ -11,12 +11,13 @@ handle planning and review.
 /job "description"
    │
    ▼
-INTERVIEW      Model-driven brain-dump in the main pi session.
-   │           Spec is captured, then an explicit start confirmation dialog appears.
-   │           If you decline, the interview stays saved and the pipeline does not start.
-   ▼
 POOL DRAW      Random draw from configured pools. Stable for the whole job.
    │           Ensures planner ≠ jester.
+   ▼
+INTERVIEW      Main session switches to the drawn planner model.
+   │           Spec is captured, previous model is restored,
+   │           then an explicit start confirmation dialog appears.
+   │           If you decline, the interview stays saved and the pipeline does not start.
    ▼
 SCOUT          Cheap model reads the codebase, answers planner's questions.
    │           Gate: you approve the question before scout runs.
@@ -107,12 +108,13 @@ Check your streak: `/job-autonomy`
 ## Model pools
 
 Configure pools per role via `/job-pool`. Each role draws one model randomly
-when the pipeline starts. The draw is stable for the whole job. The jester
-always draws a different model from the planner when the pool has more than
-one option.
+when the job starts. The draw is stable for the whole job. The jester always
+draws a different model from the planner when the pool has more than one
+option.
 
-The interview itself still runs in the current main pi session model. The
-configured pools apply to the pipeline sub-agents after you approve start.
+The interview switches the main session to the drawn planner model so the
+brain-dump is planner-backed from the start. After the interview is captured,
+pi restores your previous main-session model before the pipeline continues.
 
 ### Default thinking levels by role
 
