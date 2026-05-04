@@ -168,6 +168,9 @@ spec and want to store it directly.
 The normal `/job` interview flow is now extension-managed by a hidden planner
 sub-agent, so this tool is no longer the primary interview path.
 
+That extension-managed path supports text and image replies and persists
+interview transcript updates via job snapshots plus event-log entries.
+
 **Parameters:**
 
 | Parameter | Type | Description |

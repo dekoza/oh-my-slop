@@ -37,6 +37,11 @@ export function reduceJobEvent(previousSnapshot, event) {
       break;
     }
 
+    case 'INTERVIEW_TRANSCRIPT_UPDATED': {
+      snapshot.interviewTranscript = data.interviewTranscript;
+      break;
+    }
+
     case 'GATE_DENIED': {
       snapshot.pausedGate = data.gate;
       snapshot.step = data.step ?? snapshot.step;

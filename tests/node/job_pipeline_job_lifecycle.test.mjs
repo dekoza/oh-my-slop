@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { readJobEvents } from '../../extensions/job-pipeline/lib/job-events.mjs';
 import {
   captureInterviewSpec,
+  recordInterviewTranscript,
   recordPoolDraw,
   startTrackedJob,
 } from '../../extensions/job-pipeline/lib/job-lifecycle.mjs';
@@ -135,4 +136,27 @@ test('recordPoolDraw stores the pool in the snapshot and appends POOL_DRAWN', ()
   const events = readJobEvents(agentDir, state.id);
   assert.equal(events.at(-1)?.type, 'POOL_DRAWN');
   assert.deepEqual(events.at(-1)?.data.pool, pool);
+});
+
+test('recordInterviewTranscript stores transcript snapshots and appends an INTERVIEW_TRANSCRIPT_UPDATED event', () => {
+  const agentDir = createAgentDir();
+  const state = startTrackedJob(agentDir, buildJobState());
+  const transcript = [
+    { role: 'assistant', content: 'What part of auth should change?' },
+    {
+      role: 'user',
+      content: 'Only the backend callback validation.',
+      images: [
+        { type: 'image', source: { type: 'base64', mediaType: 'image/png', data: 'abc' } },
+      ],
+    },
+  ];
+
+  const updated = recordInterviewTranscript(agentDir, state, transcript, { now: 1_761_000_000_800 });
+
+  assert.deepEqual(loadJobSnapshot(agentDir, state.id)?.interviewTranscript, transcript);
+  assert.equal(updated.updatedAt, 1_761_000_000_800);
+  const events = readJobEvents(agentDir, state.id);
+  assert.equal(events.at(-1)?.type, 'INTERVIEW_TRANSCRIPT_UPDATED');
+  assert.deepEqual(events.at(-1)?.data.interviewTranscript, transcript);
 });

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   appendInterviewTranscriptEntry,
   buildInterviewTranscriptText,
+  collectInterviewTranscriptImages,
   parseInterviewPlannerResponse,
 } from '../../extensions/job-pipeline/lib/interview-loop.mjs';
 
@@ -31,6 +32,55 @@ test('buildInterviewTranscriptText formats transcript entries for the planner in
       'Planner: What part of auth do you want to change?',
       'User: Only the backend callback validation.',
     ].join('\n\n'),
+  );
+});
+
+test('buildInterviewTranscriptText marks image attachments and supports image-only replies', () => {
+  const transcript = [
+    {
+      role: 'user',
+      content: '',
+      images: [
+        { type: 'image', source: { type: 'base64', mediaType: 'image/png', data: 'abc' } },
+      ],
+    },
+  ];
+
+  assert.equal(
+    buildInterviewTranscriptText(transcript),
+    'User: [1 image attached]',
+  );
+});
+
+
+test('collectInterviewTranscriptImages flattens images across transcript turns', () => {
+  const transcript = [
+    {
+      role: 'user',
+      content: 'Here is the first screenshot.',
+      images: [
+        { type: 'image', source: { type: 'base64', mediaType: 'image/png', data: 'one' } },
+      ],
+    },
+    {
+      role: 'assistant',
+      content: 'What about the error page?',
+    },
+    {
+      role: 'user',
+      content: 'And here is the second screenshot.',
+      images: [
+        { type: 'image', source: { type: 'base64', mediaType: 'image/png', data: 'two' } },
+      ],
+    },
+  ];
+
+  assert.deepEqual(
+    collectInterviewTranscriptImages(transcript),
+    [
+      { type: 'image', source: { type: 'base64', mediaType: 'image/png', data: 'one' } },
+      { type: 'image', source: { type: 'base64', mediaType: 'image/png', data: 'two' } },
+    ],
   );
 });
 

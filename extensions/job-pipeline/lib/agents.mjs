@@ -89,6 +89,7 @@ export function resolveNamedAgentDefinition({
  *   cwd?: string,
  *   signal?: AbortSignal,
  *   onLogLine?: (line: string) => void,
+ *   promptImages?: Array<object>,
  *   additionalContextFiles?: Array<{ path: string, content: string }>,
  *   additionalSkills?: Array<object>,
  * }} options
@@ -103,6 +104,7 @@ export async function spawnAgent({
   cwd,
   signal,
   onLogLine,
+  promptImages = [],
   additionalContextFiles = [],
   additionalSkills = [],
 }) {
@@ -165,7 +167,10 @@ export async function spawnAgent({
     }
   });
 
-  await session.prompt(userPrompt, { signal });
+  await session.prompt(userPrompt, {
+    signal,
+    ...(Array.isArray(promptImages) && promptImages.length > 0 ? { images: promptImages } : {}),
+  });
   session.dispose();
 
   return lastAssistantText;

@@ -211,6 +211,73 @@ test('readJobState rebuilds a missing snapshot from events and persists it', () 
   assert.ok(existsSync(getJobSnapshotPath(agentDir, started.id)));
 });
 
+test('readJobState replays persisted interview transcript updates at the interview step', () => {
+  const agentDir = createAgentDir();
+  const started = startTrackedJob(agentDir, buildJobState({
+    id: 'job-2026-04-25-state0006',
+    step: 'interview',
+  }));
+  appendJobEvent(agentDir, started.id, 'INTERVIEW_TRANSCRIPT_UPDATED', {
+    interviewTranscript: [
+      { role: 'assistant', content: 'Show me the bug.' },
+      {
+        role: 'user',
+        content: '',
+        images: [
+          { type: 'image', source: { type: 'base64', mediaType: 'image/png', data: 'abc' } },
+        ],
+      },
+    ],
+  }, { recordedAt: 200 });
+
+  const resolved = readJobState(agentDir);
+
+  assert.equal(resolved.step, 'interview');
+  assert.equal(Array.isArray(resolved.interviewTranscript), true);
+  assert.equal(resolved.interviewTranscript[1].images[0].source.data, 'abc');
+});
+
+test('readJobState keeps a richer stored interview snapshot when replay is missing same-step transcript updates', () => {
+  const agentDir = createAgentDir();
+  const started = startTrackedJob(agentDir, buildJobState({
+    id: 'job-2026-04-25-state0007',
+    step: 'interview',
+    updatedAt: 100,
+  }));
+  recordPoolDraw(agentDir, started, {
+    scout: 'mock/scout',
+    planner: 'mock/planner',
+    jester: 'mock/jester',
+    'task-writer': 'mock/task-writer',
+    worker: 'mock/worker',
+    reviewer: 'mock/reviewer',
+  }, { now: 150 });
+
+  const richerSnapshot = {
+    ...started,
+    pool: {
+      scout: 'mock/scout',
+      planner: 'mock/planner',
+      jester: 'mock/jester',
+      'task-writer': 'mock/task-writer',
+      worker: 'mock/worker',
+      reviewer: 'mock/reviewer',
+    },
+    interviewTranscript: [
+      { role: 'assistant', content: 'What part is broken?' },
+      { role: 'user', content: 'The callback rejects valid state.' },
+    ],
+    updatedAt: 250,
+  };
+  writeJobState(agentDir, richerSnapshot);
+
+  const resolved = readJobState(agentDir);
+
+  assert.equal(resolved.step, 'interview');
+  assert.deepEqual(resolved.interviewTranscript, richerSnapshot.interviewTranscript);
+  assert.equal(loadJobSnapshot(agentDir, started.id)?.updatedAt, 250);
+});
+
 test('clearJobState removes the active pointer but preserves historical job snapshots', () => {
   const agentDir = createAgentDir();
   const state = buildJobState();

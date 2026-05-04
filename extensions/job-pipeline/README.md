@@ -16,6 +16,7 @@ POOL DRAW      Random draw from configured pools. Stable for the whole job.
    ▼
 INTERVIEW      Hidden planner sub-agent conducts the brain-dump interview.
    │           Your visible main-session model is left alone.
+   │           Image replies are supported and folded into the persisted transcript.
    │           Spec is captured, then an explicit start confirmation dialog appears.
    │           If you decline, the interview stays saved and the pipeline does not start.
    ▼
@@ -115,6 +116,12 @@ option.
 The interview uses the drawn planner model through a separate hidden planner
 sub-agent, so the brain-dump is planner-backed from the start without
 changing the visible main-session model selection.
+
+Interview replies can include text, images, or both. The extension persists
+the evolving interview transcript to job state and the event log so `/job`
+can recover an in-flight interview after a crash or restart. If the last
+persisted transcript entry is a user reply, the planner question is simply
+recomputed on resume.
 
 ### Default thinking levels by role
 

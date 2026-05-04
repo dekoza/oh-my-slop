@@ -58,7 +58,8 @@ index.ts: /job command handler
        ▼
 input event handler
   ├─ Intercepts user replies while runtime.mode === "interview"
-  ├─ Appends transcript to job state
+  ├─ Accepts text replies, image replies, or both
+  ├─ Appends transcript to job state and INTERVIEW_TRANSCRIPT_UPDATED events
   ├─ Spawns hidden planner sub-agent on the drawn planner model
   └─ Displays either the next planner question or the captured spec summary
 
@@ -93,7 +94,8 @@ through pipeline steps. Job state is written to disk after each step, key
 transitions are appended to the event journal, and stage/task outputs are
 persisted so the pipeline can be resumed or diagnosed after a crash. Resume
 prefers replaying the event log when it is at least as complete as the stored
-snapshot, and falls back to the stored snapshot for older partial-history jobs.
+snapshot, but keeps a richer stored interview snapshot when same-step replay
+would otherwise discard transcript state that was written just before a crash.
 
 ```
 Step: scout

@@ -20,7 +20,7 @@ import {
 import { recordCleanRetro, recordRetroWithChanges, shouldSuggestAutonomy } from "./lib/autonomy.mjs";
 import { executeCleanup, formatCleanupPlan, planCleanup } from "./lib/cleanup.mjs";
 import { runDoctor, formatDoctorReport } from "./lib/doctor.mjs";
-import { startTrackedJob, captureInterviewSpec, recordPoolDraw } from "./lib/job-lifecycle.mjs";
+import { startTrackedJob, captureInterviewSpec, recordInterviewTranscript, recordPoolDraw } from "./lib/job-lifecycle.mjs";
 import { runPipeline, GateDeniedError } from "./lib/pipeline.mjs";
 import {
   pipelineOrchestratorAddition,
@@ -35,6 +35,7 @@ import { prepareInterviewState } from "./lib/interview-model.mjs";
 import {
   appendInterviewTranscriptEntry,
   buildInterviewTranscriptText,
+  collectInterviewTranscriptImages,
   parseInterviewPlannerResponse,
 } from "./lib/interview-loop.mjs";
 import {
@@ -134,15 +135,25 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     clearJobState(agentDir, repoRoot ? { repoRoot } : undefined);
   }
 
-  function postInterviewMessage(role: "assistant" | "user", content: string): void {
+  function postInterviewMessage(
+    role: "assistant" | "user",
+    content: string,
+    images: Array<Record<string, unknown>> = [],
+  ): void {
     const customType = role === "assistant"
       ? "job-pipeline-interview"
       : "job-pipeline-interview-user";
+    const normalizedContent = content.trim().length > 0
+      ? content
+      : "";
     pi.sendMessage({
       customType,
-      content,
+      content: normalizedContent,
       display: true,
-      details: { role },
+      details: {
+        role,
+        imageCount: images.length,
+      },
     });
   }
 
@@ -150,6 +161,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     ctx: ExtensionContext,
     jobState: Record<string, unknown>,
     userReply?: string,
+    userImages: Array<Record<string, unknown>> = [],
   ): Promise<void> {
     if (runtime.interviewBusy) {
       ctx.ui.notify("The interview planner is still thinking. Wait for the next question.", "info");
@@ -166,18 +178,13 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       ? [...(jobState.interviewTranscript as Array<Record<string, unknown>>)]
       : [];
 
-    if (typeof userReply === "string" && userReply.trim().length > 0) {
-      const normalizedReply = userReply.trim();
-      transcript = appendInterviewTranscriptEntry(transcript, "user", normalizedReply);
-      postInterviewMessage("user", normalizedReply);
+    const normalizedReply = String(userReply ?? "").trim();
+    if (normalizedReply.length > 0 || userImages.length > 0) {
+      transcript = appendInterviewTranscriptEntry(transcript, "user", normalizedReply, userImages);
+      postInterviewMessage("user", normalizedReply, userImages);
     }
 
-    const persistedTranscriptState = {
-      ...jobState,
-      interviewTranscript: transcript,
-      updatedAt: Date.now(),
-    };
-    writeScopedJobState(persistedTranscriptState, ctx.cwd);
+    const persistedTranscriptState = recordInterviewTranscript(agentDir, jobState, transcript, { now: Date.now() }) as Record<string, unknown>;
 
     runtime.interviewBusy = true;
     ctx.ui.setStatus(STATUS_KEY, "interview");
@@ -187,6 +194,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
         thinkingLevel: getRoleThinkingLevel("planner"),
         systemPrompt: buildPlannerInterviewSystemPrompt(jobState.description as string, transcript),
         userPrompt: buildPlannerInterviewUserPrompt(jobState.description as string, transcript),
+        promptImages: collectInterviewTranscriptImages(transcript) as Array<Record<string, unknown>>,
         toolNames: [],
         cwd: ctx.cwd,
       });
@@ -202,11 +210,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       }
 
       if (interviewResponse.status === "ask") {
-        writeScopedJobState({
-          ...persistedTranscriptState,
-          interviewTranscript: nextTranscript,
-          updatedAt: Date.now(),
-        }, ctx.cwd);
+        recordInterviewTranscript(agentDir, persistedTranscriptState, nextTranscript, { now: Date.now() });
         return;
       }
 
@@ -219,11 +223,8 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       const nextMode: JobMode = approvedToRun ? "pipeline-ready" : "awaiting-run-confirmation";
       runtime.mode = nextMode;
 
-      const latestState = readScopedJobState(ctx.cwd) ?? persistedTranscriptState;
-      captureInterviewSpec(agentDir, {
-        ...latestState,
-        interviewTranscript: nextTranscript,
-      }, spec, {
+      const transcriptState = recordInterviewTranscript(agentDir, persistedTranscriptState, nextTranscript, { now: Date.now() }) as Record<string, unknown>;
+      captureInterviewSpec(agentDir, transcriptState, spec, {
         now: Date.now(),
         step: nextMode,
       });
@@ -263,16 +264,34 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
   pi.on("agent_end", (_, ctx) => captureCtx(ctx));
 
   pi.registerMessageRenderer("job-pipeline-interview", (message, _options, theme) => {
+    const imageCount = Number((message.details as { imageCount?: unknown } | undefined)?.imageCount ?? 0);
+    const body = String(message.content ?? "").trim().length > 0
+      ? String(message.content)
+      : imageCount > 0
+        ? `[${imageCount} image${imageCount === 1 ? "" : "s"} attached]`
+        : "";
+    const attachmentLine = imageCount > 0 && String(message.content ?? "").trim().length > 0
+      ? `\n${theme.fg("dim", `[${imageCount} image${imageCount === 1 ? "" : "s"} attached]`)}`
+      : "";
     return new Text(
-      `${theme.fg("accent", theme.bold("Planner interview"))}\n${message.content}`,
+      `${theme.fg("accent", theme.bold("Planner interview"))}\n${body}${attachmentLine}`,
       0,
       0,
     );
   });
 
   pi.registerMessageRenderer("job-pipeline-interview-user", (message, _options, theme) => {
+    const imageCount = Number((message.details as { imageCount?: unknown } | undefined)?.imageCount ?? 0);
+    const body = String(message.content ?? "").trim().length > 0
+      ? String(message.content)
+      : imageCount > 0
+        ? `[${imageCount} image${imageCount === 1 ? "" : "s"} attached]`
+        : "";
+    const attachmentLine = imageCount > 0 && String(message.content ?? "").trim().length > 0
+      ? `\n${theme.fg("dim", `[${imageCount} image${imageCount === 1 ? "" : "s"} attached]`)}`
+      : "";
     return new Text(
-      `${theme.fg("muted", theme.bold("You"))}\n${message.content}`,
+      `${theme.fg("muted", theme.bold("You"))}\n${body}${attachmentLine}`,
       0,
       0,
     );
@@ -294,12 +313,15 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     }
 
     const text = String(event.text ?? "").trim();
-    if (!text) {
+    const images = Array.isArray(event.images)
+      ? (event.images as Array<Record<string, unknown>>)
+      : [];
+    if (!text && images.length === 0) {
       ctx.ui.notify("Interview answer was empty.", "warning");
       return { action: "handled" };
     }
 
-    await startPlannerInterviewStep(ctx, jobState, text);
+    await startPlannerInterviewStep(ctx, jobState, text, images);
     return { action: "handled" };
   });
 

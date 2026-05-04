@@ -251,6 +251,13 @@ function shouldPreferReplayedSnapshot(storedSnapshot, replayedSnapshot) {
   }
 
   if (replayedRank === storedRank) {
+    const storedHasInterviewTranscript = Array.isArray(storedSnapshot.interviewTranscript)
+      && storedSnapshot.interviewTranscript.length > 0;
+    const replayedHasInterviewTranscript = Array.isArray(replayedSnapshot.interviewTranscript)
+      && replayedSnapshot.interviewTranscript.length > 0;
+    if (storedHasInterviewTranscript && !replayedHasInterviewTranscript) {
+      return false;
+    }
     return true;
   }
 

@@ -59,6 +59,23 @@ export function recordPoolDraw(agentDir, jobState, pool, { now = Date.now() } = 
   return nextState;
 }
 
+export function recordInterviewTranscript(agentDir, jobState, interviewTranscript, { now = Date.now() } = {}) {
+  ensureJobState(jobState);
+
+  const nextState = {
+    ...jobState,
+    interviewTranscript,
+    updatedAt: Number(now),
+  };
+
+  writeJobState(agentDir, nextState);
+  appendJobEvent(agentDir, nextState.id, 'INTERVIEW_TRANSCRIPT_UPDATED', {
+    interviewTranscript,
+  }, { recordedAt: nextState.updatedAt });
+
+  return nextState;
+}
+
 function ensureJobState(jobState) {
   if (!jobState || typeof jobState !== 'object' || Array.isArray(jobState)) {
     throw new Error('jobState must be an object.');

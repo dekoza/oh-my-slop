@@ -60,6 +60,35 @@ test('rebuildSnapshotFromEvents applies interview capture and pool draw events',
   assert.equal(snapshot.updatedAt, 300);
 });
 
+test('rebuildSnapshotFromEvents restores interview transcript updates, including image attachments', () => {
+  const transcript = [
+    { role: 'assistant', content: 'Show me the broken screen.' },
+    {
+      role: 'user',
+      content: '',
+      images: [
+        { type: 'image', source: { type: 'base64', mediaType: 'image/png', data: 'abc' } },
+      ],
+    },
+  ];
+
+  const snapshot = rebuildSnapshotFromEvents([
+    buildEvent('RUN_CREATED', {
+      id: 'job-2026-04-25-replay0002b',
+      description: 'Debug screenshot flow',
+      cwd: '/tmp/project',
+      step: 'interview',
+    }, 100),
+    buildEvent('INTERVIEW_TRANSCRIPT_UPDATED', {
+      interviewTranscript: transcript,
+    }, 200),
+  ]);
+
+  assert.deepEqual(snapshot.interviewTranscript, transcript);
+  assert.equal(snapshot.step, 'interview');
+  assert.equal(snapshot.updatedAt, 200);
+});
+
 test('rebuildSnapshotFromEvents tracks gate denial without marking the job complete', () => {
   const snapshot = rebuildSnapshotFromEvents([
     buildEvent('RUN_CREATED', {
