@@ -28,10 +28,16 @@ test('createInitialJobState persists cwd and required defaults', () => {
   assert.deepEqual(state.tokenCosts, {});
 });
 
-test('buildInterviewCapturedMessage says ready, not starting', () => {
-  const message = buildInterviewCapturedMessage();
+test('buildInterviewCapturedMessage says ready, not starting when approval is granted', () => {
+  const message = buildInterviewCapturedMessage({ approvedToRun: true });
   assert.match(message, /ready to run pipeline/i);
   assert.doesNotMatch(message, /starting pipeline/i);
+});
+
+test('buildInterviewCapturedMessage says it is waiting when approval is denied or deferred', () => {
+  const message = buildInterviewCapturedMessage({ approvedToRun: false });
+  assert.match(message, /waiting.*confirmation/i);
+  assert.doesNotMatch(message, /ready to run pipeline/i);
 });
 
 test('formatPipelineError includes message and stack headline for Error objects', () => {

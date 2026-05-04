@@ -13,6 +13,7 @@ export function startTrackedJob(agentDir, state, { now = Date.now() } = {}) {
     id: nextState.id,
     description: nextState.description ?? '',
     cwd: nextState.cwd ?? '',
+    repoRoot: nextState.repoRoot ?? nextState.cwd ?? '',
     step: nextState.step ?? 'interview',
     createdAt: nextState.createdAt,
     cycleIndex: Number(nextState.cycleIndex ?? 1),
@@ -22,13 +23,13 @@ export function startTrackedJob(agentDir, state, { now = Date.now() } = {}) {
   return nextState;
 }
 
-export function captureInterviewSpec(agentDir, jobState, spec, { now = Date.now() } = {}) {
+export function captureInterviewSpec(agentDir, jobState, spec, { now = Date.now(), step = 'pipeline-ready' } = {}) {
   ensureJobState(jobState);
 
   const nextState = {
     ...jobState,
     spec,
-    step: 'pipeline-ready',
+    step,
     updatedAt: Number(now),
   };
 

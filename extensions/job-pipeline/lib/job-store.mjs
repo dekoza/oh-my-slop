@@ -21,6 +21,10 @@ export function getActiveJobPath(agentDir) {
   return join(getJobPipelineRoot(agentDir), 'active-job.json');
 }
 
+export function getActiveJobsPath(agentDir) {
+  return join(getJobPipelineRoot(agentDir), 'active-jobs.json');
+}
+
 export function getJobsRoot(agentDir) {
   return join(getJobPipelineRoot(agentDir), 'jobs');
 }
@@ -87,29 +91,79 @@ export function writeJobSnapshot(agentDir, jobId, snapshot) {
   return snapshotPath;
 }
 
-export function setActiveJobId(agentDir, jobId, now = Date.now()) {
+export function setActiveJobId(agentDir, jobId, now = Date.now(), { repoRoot } = {}) {
   if (typeof jobId !== 'string' || jobId.trim().length === 0) {
     throw new Error('Active job id must be a non-empty string.');
   }
 
+  const normalizedJobId = jobId.trim();
+  const normalizedRepoRoot = normalizeRepoRoot(repoRoot);
+
+  if (normalizedRepoRoot) {
+    const pointers = readActiveJobPointers(agentDir);
+    pointers[normalizedRepoRoot] = { jobId: normalizedJobId, updatedAt: now };
+    writeJsonFileAtomic(getActiveJobsPath(agentDir), pointers);
+  }
+
   const path = getActiveJobPath(agentDir);
   mkdirSync(dirname(path), { recursive: true });
-  writeJsonFileAtomic(path, { jobId: jobId.trim(), updatedAt: now });
+  writeJsonFileAtomic(path, {
+    jobId: normalizedJobId,
+    repoRoot: normalizedRepoRoot,
+    updatedAt: now,
+  });
   return path;
 }
 
-export function getActiveJobId(agentDir) {
-  const pointer = readJsonObject(getActiveJobPath(agentDir));
-  if (!pointer || typeof pointer.jobId !== 'string' || pointer.jobId.trim().length === 0) {
+export function getActiveJobId(agentDir, { repoRoot } = {}) {
+  const normalizedRepoRoot = normalizeRepoRoot(repoRoot);
+  if (normalizedRepoRoot) {
+    const pointers = readActiveJobPointers(agentDir);
+    const scopedPointer = pointers[normalizedRepoRoot];
+    if (scopedPointer && typeof scopedPointer.jobId === 'string' && scopedPointer.jobId.trim().length > 0) {
+      return scopedPointer.jobId;
+    }
+
+    const legacyPointer = readJsonObject(getActiveJobPath(agentDir));
+    if (legacyPointer?.repoRoot === normalizedRepoRoot && typeof legacyPointer.jobId === 'string' && legacyPointer.jobId.trim().length > 0) {
+      return legacyPointer.jobId;
+    }
+
     return null;
   }
-  return pointer.jobId;
+
+  const legacyPointer = readJsonObject(getActiveJobPath(agentDir));
+  if (legacyPointer && typeof legacyPointer.jobId === 'string' && legacyPointer.jobId.trim().length > 0) {
+    return legacyPointer.jobId;
+  }
+
+  const pointers = Object.values(readActiveJobPointers(agentDir))
+    .filter((pointer) => pointer && typeof pointer.jobId === 'string' && pointer.jobId.trim().length > 0)
+    .sort((left, right) => Number(right.updatedAt ?? 0) - Number(left.updatedAt ?? 0));
+
+  return pointers[0]?.jobId ?? null;
 }
 
-export function clearActiveJobId(agentDir) {
+export function clearActiveJobId(agentDir, { repoRoot } = {}) {
+  const normalizedRepoRoot = normalizeRepoRoot(repoRoot);
+  if (normalizedRepoRoot) {
+    const pointers = readActiveJobPointers(agentDir);
+    if (pointers[normalizedRepoRoot]) {
+      delete pointers[normalizedRepoRoot];
+      writeJsonFileAtomic(getActiveJobsPath(agentDir), pointers);
+    }
+
+    const legacyPointer = readJsonObject(getActiveJobPath(agentDir));
+    if (legacyPointer?.repoRoot === normalizedRepoRoot) {
+      writeJsonFileAtomic(getActiveJobPath(agentDir), null);
+    }
+    return;
+  }
+
   const path = getActiveJobPath(agentDir);
   mkdirSync(dirname(path), { recursive: true });
   writeJsonFileAtomic(path, null);
+  writeJsonFileAtomic(getActiveJobsPath(agentDir), {});
 }
 
 export function listJobs(agentDir) {
@@ -154,7 +208,9 @@ export function migrateLegacyStateIfPresent(agentDir) {
     createJobRun(agentDir, legacyState);
   }
 
-  setActiveJobId(agentDir, legacyState.id, Number(legacyState.updatedAt ?? Date.now()));
+  setActiveJobId(agentDir, legacyState.id, Number(legacyState.updatedAt ?? Date.now()), {
+    repoRoot: legacyState.repoRoot ?? legacyState.cwd,
+  });
   writeJsonFileAtomic(legacyPath, null);
 
   return { migrated: true, jobId: legacyState.id };
@@ -197,6 +253,7 @@ function buildRunMetadata(state) {
     id: state.id,
     description: state.description ?? '',
     cwd: state.cwd ?? '',
+    repoRoot: state.repoRoot ?? state.cwd ?? '',
     createdAt: state.createdAt ?? Date.now(),
   };
 }
@@ -225,6 +282,28 @@ function readJsonObject(path) {
   } catch {
     return null;
   }
+}
+
+function readActiveJobPointers(agentDir) {
+  const pointers = readJsonObject(getActiveJobsPath(agentDir));
+  if (!pointers) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(pointers)
+      .filter(([repoRoot, pointer]) => normalizeRepoRoot(repoRoot) && pointer && typeof pointer === 'object')
+      .map(([repoRoot, pointer]) => [normalizeRepoRoot(repoRoot), pointer]),
+  );
+}
+
+function normalizeRepoRoot(repoRoot) {
+  if (typeof repoRoot !== 'string') {
+    return null;
+  }
+
+  const normalized = repoRoot.trim();
+  return normalized.length > 0 ? normalized : null;
 }
 
 function writeJsonFileAtomic(path, value) {

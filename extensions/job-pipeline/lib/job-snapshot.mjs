@@ -17,6 +17,7 @@ export function reduceJobEvent(previousSnapshot, event) {
       snapshot.id = data.id;
       snapshot.description = data.description ?? '';
       snapshot.cwd = data.cwd ?? '';
+      snapshot.repoRoot = data.repoRoot ?? data.cwd ?? '';
       snapshot.step = data.step ?? 'interview';
       snapshot.createdAt = Number(data.createdAt ?? recordedAt ?? Date.now());
       snapshot.cycleIndex = Number(data.cycleIndex ?? 1);

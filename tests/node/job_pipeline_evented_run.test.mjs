@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { readJobEvents } from '../../extensions/job-pipeline/lib/job-events.mjs';
-import { runPipeline } from '../../extensions/job-pipeline/lib/pipeline.mjs';
+import { GateDeniedError, runPipeline } from '../../extensions/job-pipeline/lib/pipeline.mjs';
 
 function createRepoRoot() {
   const repoRoot = mkdtempSync(join(tmpdir(), 'job-pipeline-evented-run-'));
@@ -133,7 +133,7 @@ test('runPipeline records worker task lifecycle events and persists task results
     cwd: repoRoot,
     spec: {
       goal: 'Add OAuth login',
-      context: 'Keep the existing auth page structure.',
+      context: 'Keep the existing auth backend flow unchanged.',
       evidenceHint: 'both',
     },
     pool: buildPool(),
@@ -197,6 +197,152 @@ test('runPipeline records worker task lifecycle events and persists task results
 
   assert.equal(existsSync(taskResultPath), true);
   assert.match(readFileSync(taskResultPath, 'utf8'), /Implemented OAuth callback/);
+});
+
+test('runPipeline stops at the plan approval gate when the human pauses the job', async () => {
+  const repoRoot = createRepoRoot();
+  const agentDir = mkdtempSync(join(tmpdir(), 'job-pipeline-agent-'));
+  const state = {
+    id: 'job-2026-04-25-events0003',
+    description: 'Add OAuth login',
+    cwd: repoRoot,
+    spec: {
+      goal: 'Add OAuth login',
+      context: 'Keep the existing auth backend flow unchanged.',
+      questionsToScout: ['Which backend files are relevant?'],
+      evidenceHint: 'both',
+    },
+    pool: buildPool(),
+    cycleIndex: 1,
+    replanCount: 0,
+    step: 'planning',
+  };
+
+  await assert.rejects(
+    () => runPipeline({
+      jobState: state,
+      agentDir,
+      config: {
+        ...buildConfig(),
+        gates: {
+          ...buildConfig().gates,
+          planApproval: { mode: 'compulsory' },
+        },
+      },
+      ui: buildUi(),
+      planApprovalGate: async () => false,
+      onProgress: () => {},
+      runtime: {
+        readonlyAgentSpawn: async ({ taskId }) => {
+          switch (taskId) {
+            case 'scout-cycle-1':
+              return JSON.stringify({ summary: 'Scout summary', answers: [], relevantFiles: ['README.md'] });
+            case 'planner-initial-attempt-1':
+              return JSON.stringify({ plan: 'Plan text', uiAssessment: { touchesUi: false } });
+            case 'jester-planning-round-1-attempt-1':
+              return JSON.stringify({ verdict: 'acceptable', issues: [], summary: 'Looks fine.' });
+            default:
+              throw new Error(`Unexpected readonly agent task: ${taskId}`);
+          }
+        },
+      },
+    }),
+    (error) => error instanceof GateDeniedError && error.gate === 'plan-approval',
+  );
+
+  const events = readJobEvents(agentDir, state.id);
+  assert.equal(events.some((event) => event.type === 'GATE_DENIED' && event.data.gate === 'plan-approval'), true);
+  assert.equal(events.some((event) => event.type === 'STAGE_STARTED' && event.data.stage === 'task-writing'), false);
+});
+
+test('runPipeline rejects invalid task-writer JSON instead of silently continuing', async () => {
+  const repoRoot = createRepoRoot();
+  const agentDir = mkdtempSync(join(tmpdir(), 'job-pipeline-agent-'));
+  const state = {
+    id: 'job-2026-04-25-events0004',
+    description: 'Add OAuth login',
+    cwd: repoRoot,
+    spec: {
+      goal: 'Add OAuth login',
+      context: 'Keep the existing auth backend flow unchanged.',
+      questionsToScout: ['Which backend files are relevant?'],
+      evidenceHint: 'both',
+    },
+    pool: buildPool(),
+    cycleIndex: 1,
+    replanCount: 0,
+    step: 'planning',
+  };
+
+  await assert.rejects(
+    () => runPipeline({
+      jobState: state,
+      agentDir,
+      config: buildConfig(),
+      ui: buildUi(),
+      onProgress: () => {},
+      runtime: {
+        readonlyAgentSpawn: async ({ taskId }) => {
+          switch (taskId) {
+            case 'scout-cycle-1':
+              return JSON.stringify({ summary: 'Scout summary', answers: [], relevantFiles: ['README.md'] });
+            case 'planner-initial-attempt-1':
+              return JSON.stringify({ plan: 'Plan text', uiAssessment: { touchesUi: false } });
+            case 'jester-planning-round-1-attempt-1':
+              return JSON.stringify({ verdict: 'acceptable', issues: [], summary: 'Looks fine.' });
+            case 'task-writer-cycle-1':
+              return 'not json at all';
+            default:
+              throw new Error(`Unexpected readonly agent task: ${taskId}`);
+          }
+        },
+      },
+    }),
+    /task-writer returned invalid JSON/i,
+  );
+});
+
+test('runPipeline rejects invalid reviewer JSON instead of silently continuing', async () => {
+  const repoRoot = createRepoRoot();
+  const agentDir = mkdtempSync(join(tmpdir(), 'job-pipeline-agent-'));
+  const state = {
+    id: 'job-2026-04-25-events0005',
+    description: 'Add OAuth login',
+    cwd: repoRoot,
+    spec: {
+      goal: 'Add OAuth login',
+      context: 'Keep the existing auth backend flow unchanged.',
+      evidenceHint: 'both',
+    },
+    pool: buildPool(),
+    cycleIndex: 1,
+    replanCount: 0,
+    scoutResult: { summary: 'Scout summary', answers: [], relevantFiles: ['README.md'] },
+    finalPlan: 'Plan text',
+    taskGraph: { tasks: [] },
+    step: 'workers',
+  };
+
+  await assert.rejects(
+    () => runPipeline({
+      jobState: state,
+      agentDir,
+      config: buildConfig(),
+      ui: buildUi(),
+      onProgress: () => {},
+      runtime: {
+        readonlyAgentSpawn: async ({ taskId }) => {
+          switch (taskId) {
+            case 'reviewer-cycle-1':
+              return 'not json at all';
+            default:
+              throw new Error(`Unexpected readonly agent task: ${taskId}`);
+          }
+        },
+      },
+    }),
+    /reviewer returned invalid JSON/i,
+  );
 });
 
 function runGit(cwd, args) {

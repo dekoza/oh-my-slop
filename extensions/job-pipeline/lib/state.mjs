@@ -14,6 +14,7 @@ import {
   setActiveJobId,
   writeJobSnapshot,
 } from './job-store.mjs';
+import { resolveJobScopePath } from './job-scope.mjs';
 
 /**
  * Legacy compatibility path for the pre-migration single-file job state.
@@ -48,10 +49,14 @@ export function getConfigPath(agentDir) {
  * @param {string} agentDir
  * @returns {object | null}
  */
-export function readJobState(agentDir) {
+export function readJobState(agentDir, { cwd, repoRoot } = {}) {
   migrateLegacyStateIfPresent(agentDir);
 
-  const activeJobId = getActiveJobId(agentDir);
+  const resolvedRepoRoot = resolveStateRepoRoot({ cwd, repoRoot });
+  const activeJobId = getActiveJobId(
+    agentDir,
+    resolvedRepoRoot ? { repoRoot: resolvedRepoRoot } : undefined,
+  );
   if (!activeJobId) {
     return null;
   }
@@ -86,7 +91,7 @@ export function readJobState(agentDir) {
  * @param {string} agentDir
  * @param {object} state
  */
-export function writeJobState(agentDir, state) {
+export function writeJobState(agentDir, state, { cwd, repoRoot } = {}) {
   try {
     if (!state || typeof state !== 'object' || Array.isArray(state)) {
       return;
@@ -96,14 +101,24 @@ export function writeJobState(agentDir, state) {
       return;
     }
 
-    const jobId = state.id;
+    const resolvedRepoRoot = resolveStateRepoRoot({
+      cwd: cwd ?? state.cwd,
+      repoRoot: repoRoot ?? state.repoRoot,
+    });
+    const nextState = resolvedRepoRoot
+      ? { ...state, repoRoot: resolvedRepoRoot }
+      : { ...state };
+
+    const jobId = nextState.id;
     if (!loadJobRun(agentDir, jobId)) {
-      createJobRun(agentDir, state);
+      createJobRun(agentDir, nextState);
     } else {
-      writeJobSnapshot(agentDir, jobId, state);
+      writeJobSnapshot(agentDir, jobId, nextState);
     }
 
-    setActiveJobId(agentDir, jobId, Number(state.updatedAt ?? Date.now()));
+    setActiveJobId(agentDir, jobId, Number(nextState.updatedAt ?? Date.now()), {
+      repoRoot: resolvedRepoRoot,
+    });
   } catch {
     // Non-critical persistence; failure is logged by caller.
   }
@@ -114,20 +129,23 @@ export function writeJobState(agentDir, state) {
  *
  * @param {string} agentDir
  */
-export function clearJobState(agentDir) {
+export function clearJobState(agentDir, { cwd, repoRoot } = {}) {
   const legacyPath = getLegacyJobStatePath(agentDir);
+  const resolvedRepoRoot = resolveStateRepoRoot({ cwd, repoRoot });
 
   try {
-    clearActiveJobId(agentDir);
+    clearActiveJobId(agentDir, resolvedRepoRoot ? { repoRoot: resolvedRepoRoot } : undefined);
   } catch {
     // Best effort.
   }
 
-  try {
-    mkdirSync(dirname(legacyPath), { recursive: true });
-    writeFileSync(legacyPath, 'null\n', 'utf-8');
-  } catch {
-    // Best effort.
+  if (!resolvedRepoRoot) {
+    try {
+      mkdirSync(dirname(legacyPath), { recursive: true });
+      writeFileSync(legacyPath, 'null\n', 'utf-8');
+    } catch {
+      // Best effort.
+    }
   }
 }
 
@@ -209,6 +227,7 @@ export function getArtifactDir(agentDir, jobId, cycleIndex, taskId) {
 
 const STEP_ORDER = [
   'interview',
+  'awaiting-run-confirmation',
   'pipeline-ready',
   'scout',
   'planning',
@@ -244,4 +263,12 @@ function getStepRank(step) {
   }
   const index = STEP_ORDER.indexOf(step);
   return index === -1 ? -1 : index;
+}
+
+function resolveStateRepoRoot({ cwd, repoRoot }) {
+  if (typeof repoRoot === 'string' && repoRoot.trim().length > 0) {
+    return repoRoot.trim();
+  }
+
+  return resolveJobScopePath(cwd);
 }

@@ -51,10 +51,11 @@ import {
   resetWorkerMonitorState,
   wrapWorkerLogLines,
 } from "./lib/worker-monitor.mjs";
+import { resolveJobScopePath } from "./lib/job-scope.mjs";
 
 const STATUS_KEY = "job-pipeline";
 
-type JobMode = "idle" | "interview" | "pipeline-ready" | "running" | "retro";
+type JobMode = "idle" | "interview" | "awaiting-run-confirmation" | "pipeline-ready" | "running" | "retro";
 
 type WorkerLogEntry = {
   key: string;
@@ -96,6 +97,26 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     workerLogsHintShown: false,
   };
 
+  function getRepoRoot(cwd?: string): string | undefined {
+    const repoRoot = resolveJobScopePath(cwd);
+    return typeof repoRoot === "string" && repoRoot.trim().length > 0 ? repoRoot : undefined;
+  }
+
+  function readScopedJobState(cwd?: string): Record<string, unknown> | null {
+    const repoRoot = getRepoRoot(cwd);
+    return readJobState(agentDir, repoRoot ? { repoRoot } : cwd ? { cwd } : undefined) as Record<string, unknown> | null;
+  }
+
+  function writeScopedJobState(state: Record<string, unknown>, cwd?: string): void {
+    const repoRoot = getRepoRoot(cwd ?? (state.cwd as string | undefined));
+    writeJobState(agentDir, state, repoRoot ? { repoRoot } : undefined);
+  }
+
+  function clearScopedJobState(cwd?: string): void {
+    const repoRoot = getRepoRoot(cwd);
+    clearJobState(agentDir, repoRoot ? { repoRoot } : undefined);
+  }
+
   // ── Capture ctx for use in background async pipeline ──────────────────────
 
   function captureCtx(ctx: ExtensionContext): void {
@@ -117,9 +138,9 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
 
   // ── Interview system prompt injection ─────────────────────────────────────
 
-  pi.on("before_agent_start", async (event, _ctx) => {
+  pi.on("before_agent_start", async (event, ctx) => {
     if (runtime.mode === "interview") {
-      const jobState = readJobState(agentDir) as Record<string, unknown> | null;
+      const jobState = readScopedJobState(ctx.cwd);
       const description = (jobState?.description as string) ?? "";
       return {
         systemPrompt:
@@ -166,19 +187,27 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const spec = params;
-      runtime.jobSpec = spec;
-      runtime.mode = "pipeline-ready";
+      const approvedToRun = await ctx.ui.confirm(
+        "Start Job Pipeline",
+        buildInterviewStartConfirmationText(spec),
+      );
 
-      const jobState = readJobState(agentDir) as Record<string, unknown> | null;
+      runtime.jobSpec = spec;
+      runtime.mode = approvedToRun ? "pipeline-ready" : "awaiting-run-confirmation";
+
+      const jobState = readScopedJobState(ctx.cwd);
       if (jobState) {
-        captureInterviewSpec(agentDir, jobState, spec, { now: Date.now() });
+        captureInterviewSpec(agentDir, jobState, spec, {
+          now: Date.now(),
+          step: approvedToRun ? "pipeline-ready" : "awaiting-run-confirmation",
+        });
       }
 
       ctx.ui.notify("Interview complete. Spec captured.", "success");
-      ctx.ui.setStatus(STATUS_KEY, "pipeline ready");
+      ctx.ui.setStatus(STATUS_KEY, approvedToRun ? "pipeline ready" : "awaiting confirmation");
 
       return {
-        content: [{ type: "text", text: buildInterviewCapturedMessage() }],
+        content: [{ type: "text", text: buildInterviewCapturedMessage({ approvedToRun }) }],
       };
     },
   });
@@ -196,10 +225,17 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     ],
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, signal, onUpdate, ctx) {
-      const jobState = readJobState(agentDir) as Record<string, unknown> | null;
+      const jobState = readScopedJobState(ctx.cwd);
       if (!jobState) {
         return {
-          content: [{ type: "text", text: "No active job state found. Start a job with /job first." }],
+          content: [{ type: "text", text: "No active job state found for this repository. Start a job with /job first." }],
+          isError: true,
+        };
+      }
+
+      if (jobState.step === "awaiting-run-confirmation") {
+        return {
+          content: [{ type: "text", text: "The interview spec is captured, but the pipeline does not have start approval yet. Run /job to confirm when ready." }],
           isError: true,
         };
       }
@@ -300,20 +336,20 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       await ctx.waitForIdle();
 
-      const existing = readJobState(agentDir) as Record<string, unknown> | null;
+      const currentRepoRoot = getRepoRoot(ctx.cwd);
+      const existing = readScopedJobState(ctx.cwd);
 
-      // Backfill cwd for pre-fix states so resume does not depend on ambient process cwd.
-      if (existing && !existing.cwd) {
-        existing.cwd = ctx.cwd;
+      if (existing && !existing.repoRoot && typeof existing.cwd === "string") {
+        existing.repoRoot = getRepoRoot(existing.cwd);
         existing.updatedAt = Date.now();
-        writeJobState(agentDir, existing);
+        writeScopedJobState(existing, existing.cwd as string);
       }
 
-      // Offer resume if there's an active job
+      // Offer resume if there's an active job for this repository.
       if (existing && existing.step && existing.step !== "done") {
         const resume = await ctx.ui.confirm(
           "Resume Job",
-          `Found interrupted job: "${existing.description}"\nStep: ${existing.step}\n\nResume it?`,
+          `Found interrupted job in this repository: "${existing.description}"\nStep: ${existing.step}\nRepo: ${existing.repoRoot ?? existing.cwd ?? "unknown"}\n\nResume it?`,
         );
         if (resume) {
           const step = existing.step as string;
@@ -329,6 +365,31 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
             ctx.ui.setStatus(STATUS_KEY, "interview");
             return;
           }
+          if (step === "awaiting-run-confirmation") {
+            const approvedToRun = await ctx.ui.confirm(
+              "Start Job Pipeline",
+              buildInterviewStartConfirmationText(existing.spec as Record<string, unknown>),
+            );
+            if (!approvedToRun) {
+              runtime.mode = "awaiting-run-confirmation";
+              runtime.jobSpec = existing.spec as Record<string, unknown>;
+              ctx.ui.setStatus(STATUS_KEY, "awaiting confirmation");
+              ctx.ui.notify("The interview is captured. The pipeline will stay paused until you confirm start.", "info");
+              return;
+            }
+
+            const approvedState = {
+              ...existing,
+              step: "pipeline-ready",
+              updatedAt: Date.now(),
+            };
+            writeScopedJobState(approvedState, ctx.cwd);
+            runtime.mode = "pipeline-ready";
+            runtime.jobSpec = approvedState.spec as Record<string, unknown>;
+            pi.sendUserMessage("The interview is complete and approved. Start the pipeline now.", { deliverAs: "followUp" });
+            ctx.ui.setStatus(STATUS_KEY, "resuming");
+            return;
+          }
           // Pipeline steps
           runtime.mode = "pipeline-ready";
           runtime.jobSpec = existing.spec as Record<string, unknown>;
@@ -336,8 +397,8 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
           ctx.ui.setStatus(STATUS_KEY, "resuming");
           return;
         }
-        // Abandon existing job
-        clearJobState(agentDir);
+        // Abandon existing job for this repository only.
+        clearScopedJobState(ctx.cwd);
       }
 
       // Start new job
@@ -347,6 +408,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
         id: jobId,
         description,
         cwd: ctx.cwd,
+        repoRoot: currentRepoRoot,
       }));
       pi.setSessionName(`job: ${description || jobId}`);
 
@@ -536,9 +598,9 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
   pi.registerCommand("job-status", {
     description: "Show current job state and pipeline step.",
     handler: async (args, ctx) => {
-      const state = readJobState(agentDir) as Record<string, unknown> | null;
+      const state = readScopedJobState(ctx.cwd);
       if (!state) {
-        ctx.ui.notify("No active job. Start one with /job.", "info");
+        ctx.ui.notify("No active job for this repository. Start one with /job.", "info");
         return;
       }
 
@@ -598,6 +660,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       const report = runDoctor({
         agentDir,
         jobId: requestedJobId,
+        repoRoot: getRepoRoot(ctx.cwd),
         availableModels,
       });
 
@@ -655,9 +718,9 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
   pi.registerCommand("job-abandon", {
     description: "Abandon the current job and clear job state.",
     handler: async (args, ctx) => {
-      const state = readJobState(agentDir) as Record<string, unknown> | null;
+      const state = readScopedJobState(ctx.cwd);
       if (!state) {
-        ctx.ui.notify("No active job.", "info");
+        ctx.ui.notify("No active job for this repository.", "info");
         return;
       }
 
@@ -667,7 +730,7 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       );
       if (!confirmed) return;
 
-      clearJobState(agentDir);
+      clearScopedJobState(ctx.cwd);
       resetWorkerMonitorState(runtime.workerMonitor, undefined);
       runtime.workerLogsHintShown = false;
       runtime.workerViewerRequestRender?.();
@@ -911,6 +974,30 @@ function buildJobSummary(state: Record<string, unknown>): string {
     `Tasks: ${(state.taskGraph as { tasks?: unknown[] } | undefined)?.tasks?.length ?? 0}`,
   ];
   return lines.join("\n");
+}
+
+function buildInterviewStartConfirmationText(spec: Record<string, unknown> | undefined): string {
+  const constraints = Array.isArray(spec?.constraints) && spec.constraints.length > 0
+    ? (spec.constraints as string[]).map((constraint) => `- ${constraint}`).join("\n")
+    : "- None recorded.";
+  const outOfScope = Array.isArray(spec?.outOfScope) && spec.outOfScope.length > 0
+    ? (spec.outOfScope as string[]).map((item) => `- ${item}`).join("\n")
+    : "- None recorded.";
+
+  return [
+    `Goal: ${String(spec?.goal ?? "(not provided)")}`,
+    "",
+    "Context:",
+    String(spec?.context ?? "(not provided)"),
+    "",
+    "Constraints:",
+    constraints,
+    "",
+    "Out of scope:",
+    outOfScope,
+    "",
+    "Start the pipeline now?",
+  ].join("\n");
 }
 
 async function showScrollableGateDialog(

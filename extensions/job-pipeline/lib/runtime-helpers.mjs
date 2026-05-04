@@ -1,8 +1,9 @@
-export function createInitialJobState({ id, description, cwd, now = Date.now() }) {
+export function createInitialJobState({ id, description, cwd, repoRoot, now = Date.now() }) {
   return {
     id,
     description,
     cwd,
+    ...(repoRoot ? { repoRoot } : {}),
     step: 'interview',
     createdAt: now,
     updatedAt: now,
@@ -13,8 +14,12 @@ export function createInitialJobState({ id, description, cwd, now = Date.now() }
   };
 }
 
-export function buildInterviewCapturedMessage() {
-  return 'Interview spec captured successfully. Ready to run pipeline.';
+export function buildInterviewCapturedMessage({ approvedToRun = true } = {}) {
+  if (approvedToRun) {
+    return 'Interview spec captured successfully. Ready to run pipeline.';
+  }
+
+  return 'Interview spec captured successfully. Waiting for your confirmation before running the pipeline.';
 }
 
 export function formatPipelineError(error) {

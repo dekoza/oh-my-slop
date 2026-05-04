@@ -18,6 +18,7 @@ const STATUS_ORDER = {
 export function runDoctor({
   agentDir,
   jobId,
+  repoRoot,
   availableModels = [],
   now = Date.now(),
   processAlive,
@@ -25,7 +26,7 @@ export function runDoctor({
   const checks = [];
   const resolvedJobId = typeof jobId === 'string' && jobId.trim().length > 0
     ? jobId.trim()
-    : getActiveJobId(agentDir);
+    : getActiveJobId(agentDir, repoRoot ? { repoRoot } : undefined);
 
   if (!resolvedJobId) {
     checks.push(createCheck('job-resolution', 'Job Resolution', 'FAIL', 'No active job could be resolved.'));

@@ -17,16 +17,21 @@ function createAgentDir() {
 }
 
 function buildJobState(overrides = {}) {
-  return {
+  const state = {
     id: 'job-2026-04-25-life0001',
     description: 'Add OAuth login',
     cwd: '/tmp/project',
+    repoRoot: '/tmp/project',
     step: 'interview',
     createdAt: 1_761_000_000_000,
     updatedAt: 1_761_000_000_000,
     cycleIndex: 1,
     replanCount: 0,
     ...overrides,
+  };
+  return {
+    ...state,
+    repoRoot: state.repoRoot ?? state.cwd,
   };
 }
 
@@ -71,6 +76,30 @@ test('captureInterviewSpec updates the snapshot and appends INTERVIEW_CAPTURED',
   assert.equal(events.at(-1)?.type, 'INTERVIEW_CAPTURED');
   assert.deepEqual(events.at(-1)?.data.spec, spec);
   assert.equal(events.at(-1)?.data.step, 'pipeline-ready');
+});
+
+test('captureInterviewSpec can pause after capture while waiting for a start confirmation', () => {
+  const agentDir = createAgentDir();
+  const state = startTrackedJob(agentDir, buildJobState());
+  const spec = {
+    goal: 'Ship OAuth login',
+    context: 'Keep the auth UI unchanged.',
+    constraints: ['Preserve existing routes'],
+    outOfScope: ['Social login redesign'],
+    questionsToScout: ['Which auth files matter?'],
+    evidenceHint: 'both',
+  };
+
+  const updated = captureInterviewSpec(agentDir, state, spec, {
+    now: 1_761_000_000_600,
+    step: 'awaiting-run-confirmation',
+  });
+
+  assert.deepEqual(loadJobSnapshot(agentDir, state.id), updated);
+  assert.equal(updated.step, 'awaiting-run-confirmation');
+  const events = readJobEvents(agentDir, state.id);
+  assert.equal(events.at(-1)?.type, 'INTERVIEW_CAPTURED');
+  assert.equal(events.at(-1)?.data.step, 'awaiting-run-confirmation');
 });
 
 test('recordPoolDraw stores the pool in the snapshot and appends POOL_DRAWN', () => {

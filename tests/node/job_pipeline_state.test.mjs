@@ -24,16 +24,21 @@ function createAgentDir() {
 }
 
 function buildJobState(overrides = {}) {
-  return {
+  const state = {
     id: 'job-2026-04-25-state0001',
     description: 'Ship a safer OAuth callback flow',
     cwd: '/tmp/project',
+    repoRoot: '/tmp/project',
     step: 'planning',
     createdAt: 1_761_000_000_000,
     updatedAt: 1_761_000_000_001,
     cycleIndex: 1,
     replanCount: 0,
     ...overrides,
+  };
+  return {
+    ...state,
+    repoRoot: state.repoRoot ?? state.cwd,
   };
 }
 
@@ -55,6 +60,28 @@ test('readJobState returns the active job snapshot from the per-job store', () =
   writeJobState(agentDir, state);
 
   assert.deepEqual(readJobState(agentDir), state);
+});
+
+test('readJobState resolves the active job for the requested repo scope', () => {
+  const agentDir = createAgentDir();
+  const repoAState = buildJobState({
+    id: 'job-2026-04-25-state0002',
+    cwd: '/repo/a/app',
+    repoRoot: '/repo/a',
+    description: 'Repo A job',
+  });
+  const repoBState = buildJobState({
+    id: 'job-2026-04-25-state0003',
+    cwd: '/repo/b/app',
+    repoRoot: '/repo/b',
+    description: 'Repo B job',
+  });
+
+  writeJobState(agentDir, repoAState);
+  writeJobState(agentDir, repoBState);
+
+  assert.deepEqual(readJobState(agentDir, { repoRoot: '/repo/a' }), repoAState);
+  assert.deepEqual(readJobState(agentDir, { repoRoot: '/repo/b' }), repoBState);
 });
 
 test('readJobState migrates legacy job-state.json into the per-job store on first access', () => {
@@ -194,4 +221,31 @@ test('clearJobState removes the active pointer but preserves historical job snap
   assert.equal(getActiveJobId(agentDir), null);
   assert.equal(readJobState(agentDir), null);
   assert.deepEqual(loadJobSnapshot(agentDir, state.id), state);
+});
+
+test('clearJobState only clears the active pointer for the requested repo scope', () => {
+  const agentDir = createAgentDir();
+  const repoAState = buildJobState({
+    id: 'job-2026-04-25-state0004',
+    cwd: '/repo/a/app',
+    repoRoot: '/repo/a',
+    description: 'Repo A job',
+  });
+  const repoBState = buildJobState({
+    id: 'job-2026-04-25-state0005',
+    cwd: '/repo/b/app',
+    repoRoot: '/repo/b',
+    description: 'Repo B job',
+  });
+
+  writeJobState(agentDir, repoAState);
+  writeJobState(agentDir, repoBState);
+  clearJobState(agentDir, { repoRoot: '/repo/a' });
+
+  assert.equal(getActiveJobId(agentDir, { repoRoot: '/repo/a' }), null);
+  assert.equal(getActiveJobId(agentDir, { repoRoot: '/repo/b' }), repoBState.id);
+  assert.equal(readJobState(agentDir, { repoRoot: '/repo/a' }), null);
+  assert.deepEqual(readJobState(agentDir, { repoRoot: '/repo/b' }), repoBState);
+  assert.deepEqual(loadJobSnapshot(agentDir, repoAState.id), repoAState);
+  assert.deepEqual(loadJobSnapshot(agentDir, repoBState.id), repoBState);
 });

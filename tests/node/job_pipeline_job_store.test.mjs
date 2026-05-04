@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  clearActiveJobId,
   createJobRun,
   getActiveJobId,
   getActiveJobPath,
@@ -27,16 +28,21 @@ function createAgentDir() {
 }
 
 function buildJobState(overrides = {}) {
-  return {
+  const state = {
     id: 'job-2026-04-25-abcd1234',
     description: 'Add OAuth login',
     cwd: '/tmp/project',
+    repoRoot: '/tmp/project',
     step: 'interview',
     createdAt: 1_761_000_000_000,
     updatedAt: 1_761_000_000_000,
     cycleIndex: 1,
     replanCount: 0,
     ...overrides,
+  };
+  return {
+    ...state,
+    repoRoot: state.repoRoot ?? state.cwd,
   };
 }
 
@@ -70,6 +76,28 @@ test('setActiveJobId writes an active job pointer and getActiveJobId reads it ba
 
   assert.ok(existsSync(getActiveJobPath(agentDir)));
   assert.equal(getActiveJobId(agentDir), 'job-2026-04-25-aaaa1111');
+});
+
+test('setActiveJobId stores repo-scoped active pointers independently', () => {
+  const agentDir = createAgentDir();
+
+  setActiveJobId(agentDir, 'job-repo-a', 100, { repoRoot: '/repo/a' });
+  setActiveJobId(agentDir, 'job-repo-b', 200, { repoRoot: '/repo/b' });
+
+  assert.equal(getActiveJobId(agentDir, { repoRoot: '/repo/a' }), 'job-repo-a');
+  assert.equal(getActiveJobId(agentDir, { repoRoot: '/repo/b' }), 'job-repo-b');
+  assert.equal(getActiveJobId(agentDir), 'job-repo-b');
+});
+
+test('clearActiveJobId removes only the requested repo-scoped pointer', () => {
+  const agentDir = createAgentDir();
+
+  setActiveJobId(agentDir, 'job-repo-a', 100, { repoRoot: '/repo/a' });
+  setActiveJobId(agentDir, 'job-repo-b', 200, { repoRoot: '/repo/b' });
+  clearActiveJobId(agentDir, { repoRoot: '/repo/a' });
+
+  assert.equal(getActiveJobId(agentDir, { repoRoot: '/repo/a' }), null);
+  assert.equal(getActiveJobId(agentDir, { repoRoot: '/repo/b' }), 'job-repo-b');
 });
 
 test('loadJobSnapshot returns null when the snapshot file is missing', () => {

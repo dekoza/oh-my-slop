@@ -196,7 +196,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
         runtime,
       });
 
-      const critique = safeExtractJson(jesterOutput, { verdict: 'acceptable', issues: [], summary: jesterOutput });
+      const critique = parseRequiredJson(jesterOutput, 'jester planning critique');
 
       if (critique.verdict === 'acceptable' && round === 1) {
         onProgress('jester: no issues in round 1, skipping round 2');
@@ -348,7 +348,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       runtime,
     });
 
-    const parsed = safeExtractJson(taskOutput, { tasks: [] });
+    const parsed = parseRequiredJson(taskOutput, 'task-writer');
     state.taskGraph = parsed;
     persistStageOutput('task-writing', {
       responseText: taskOutput,
@@ -503,15 +503,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       runtime,
     });
 
-    const review = safeExtractJson(reviewOutput, {
-      verdict: 'changes-required',
-      taskReviews: [],
-      findings: [],
-      missingTests: [],
-      openQuestions: [],
-      evidenceSummary: '',
-      overallNotes: reviewOutput,
-    });
+    const review = parseRequiredJson(reviewOutput, 'reviewer');
 
     onProgress('jester: critiquing the review');
     const jesterOutput = await runMonitoredReadonlyAgent({
@@ -529,11 +521,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
       runtime,
     });
 
-    const jesterReview = safeExtractJson(jesterOutput, {
-      verdict: 'acceptable',
-      issues: [],
-      summary: jesterOutput,
-    });
+    const jesterReview = parseRequiredJson(jesterOutput, 'jester review critique');
 
     // Planner resolves jester critique of review
     let plannerResolution = '';
@@ -556,7 +544,7 @@ export async function runPipeline({ jobState, agentDir, config, ui, planApproval
         runtime,
       });
       plannerResolution = resolutionOutput;
-      const resolution = safeExtractJson(resolutionOutput, { action: 'worker-fix', instructions: '' });
+      const resolution = parseRequiredJson(resolutionOutput, 'planner review resolution');
 
       if (resolution.action === 'worker-fix') {
         // Reset for a new cycle
@@ -807,7 +795,7 @@ async function callPlanner({ modelId, goal, interviewNotes, scoutSummary, cwd, s
     onWorkerEvent,
     runtime,
   });
-  const parsed = safeExtractJson(output, { plan: output, uiAssessment: { touchesUi: false } });
+  const parsed = parseRequiredJson(output, 'planner');
   return {
     plan: parsed.plan ?? output,
     uiAssessment: parsed.uiAssessment ?? { touchesUi: false },
@@ -829,7 +817,7 @@ async function callPlannerRevise({ modelId, previousPlan, jesterCritique, round,
     onWorkerEvent,
     runtime,
   });
-  const parsed = safeExtractJson(output, { plan: output, uiAssessment: { touchesUi: false } });
+  const parsed = parseRequiredJson(output, 'planner revision');
   return {
     plan: parsed.plan ?? output,
     uiAssessment: parsed.uiAssessment ?? { touchesUi: false },
@@ -962,7 +950,41 @@ async function executeOneWorker({ task, pool, scoutSummary, worktreePath, cycleI
     return taskResult;
   }
 
-  const result = safeExtractJson(rawOutput, { status: 'failed', taskId: task.id, reason: rawOutput });
+  let result;
+  try {
+    result = parseRequiredJson(rawOutput, `worker ${task.id}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    emitWorkerLog(`Failure reason: ${message}\n`);
+    const taskResult = {
+      taskId: task.id,
+      success: false,
+      failureReport: {
+        attempted: task.title,
+        found: 'invalid worker JSON output',
+        reason: message,
+      },
+      proofArtifacts: [],
+      summary: message,
+    };
+    persistTaskOutput?.(task.id, {
+      responseText: rawOutput,
+      result: taskResult,
+    });
+    recordEvent?.('TASK_FAILED', {
+      taskId: task.id,
+      title: task.title,
+      failureReport: taskResult.failureReport,
+    });
+    onWorkerEvent?.({
+      type: 'worker-finished',
+      jobId,
+      cycleIndex,
+      taskId: task.id,
+      status: 'failed',
+    });
+    return taskResult;
+  }
 
   if (result.status === 'failed') {
     emitWorkerLog(`Failure reason: ${result.reason ?? rawOutput}\n`);
