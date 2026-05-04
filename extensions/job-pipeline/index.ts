@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getAgentDir, DynamicBorder } from "@mariozechner/pi-coding-agent";
-import { type SelectItem, SelectList, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { Container, Image, type SelectItem, SelectList, Spacer, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
 import { normalizeJobPipelineConfig, DEFAULT_JOB_PIPELINE_CONFIG } from "./lib/config.mjs";
@@ -38,6 +38,10 @@ import {
   collectInterviewTranscriptImages,
   parseInterviewPlannerResponse,
 } from "./lib/interview-loop.mjs";
+import {
+  buildInterviewMessagePayload,
+  buildInterviewMessageRenderModel,
+} from "./lib/interview-render.mjs";
 import {
   buildBrowserOpenCommand,
   normalizeCycleFilter,
@@ -139,22 +143,15 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
     role: "assistant" | "user",
     content: string,
     images: Array<Record<string, unknown>> = [],
+    options: { jobId?: string; transcriptIndex?: number } = {},
   ): void {
-    const customType = role === "assistant"
-      ? "job-pipeline-interview"
-      : "job-pipeline-interview-user";
-    const normalizedContent = content.trim().length > 0
-      ? content
-      : "";
-    pi.sendMessage({
-      customType,
-      content: normalizedContent,
-      display: true,
-      details: {
-        role,
-        imageCount: images.length,
-      },
-    });
+    pi.sendMessage(buildInterviewMessagePayload({
+      role,
+      content,
+      imageCount: images.length,
+      jobId: options.jobId,
+      transcriptIndex: options.transcriptIndex,
+    }));
   }
 
   async function startPlannerInterviewStep(
@@ -179,12 +176,17 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
       : [];
 
     const normalizedReply = String(userReply ?? "").trim();
+    let persistedTranscriptState = jobState;
     if (normalizedReply.length > 0 || userImages.length > 0) {
       transcript = appendInterviewTranscriptEntry(transcript, "user", normalizedReply, userImages);
-      postInterviewMessage("user", normalizedReply, userImages);
+      persistedTranscriptState = recordInterviewTranscript(agentDir, jobState, transcript, { now: Date.now() }) as Record<string, unknown>;
+      postInterviewMessage("user", normalizedReply, userImages, {
+        jobId: String(jobState.id ?? ""),
+        transcriptIndex: transcript.length - 1,
+      });
+    } else {
+      persistedTranscriptState = recordInterviewTranscript(agentDir, jobState, transcript, { now: Date.now() }) as Record<string, unknown>;
     }
-
-    const persistedTranscriptState = recordInterviewTranscript(agentDir, jobState, transcript, { now: Date.now() }) as Record<string, unknown>;
 
     runtime.interviewBusy = true;
     ctx.ui.setStatus(STATUS_KEY, "interview");
@@ -205,12 +207,14 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
         ? appendInterviewTranscriptEntry(transcript, "assistant", assistantMessage)
         : transcript;
 
-      if (assistantMessage) {
-        postInterviewMessage("assistant", assistantMessage);
-      }
-
       if (interviewResponse.status === "ask") {
-        recordInterviewTranscript(agentDir, persistedTranscriptState, nextTranscript, { now: Date.now() });
+        const askState = recordInterviewTranscript(agentDir, persistedTranscriptState, nextTranscript, { now: Date.now() }) as Record<string, unknown>;
+        if (assistantMessage) {
+          postInterviewMessage("assistant", assistantMessage, [], {
+            jobId: String(askState.id ?? jobState.id ?? ""),
+            transcriptIndex: nextTranscript.length - 1,
+          });
+        }
         return;
       }
 
@@ -228,6 +232,13 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
         now: Date.now(),
         step: nextMode,
       });
+
+      if (assistantMessage) {
+        postInterviewMessage("assistant", assistantMessage, [], {
+          jobId: String(transcriptState.id ?? jobState.id ?? ""),
+          transcriptIndex: nextTranscript.length - 1,
+        });
+      }
 
       ctx.ui.notify("Interview complete. Spec captured.", "success");
       ctx.ui.setStatus(STATUS_KEY, approvedToRun ? "pipeline ready" : "awaiting confirmation");
@@ -263,39 +274,52 @@ export default function jobPipelineExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", (_, ctx) => captureCtx(ctx));
   pi.on("agent_end", (_, ctx) => captureCtx(ctx));
 
-  pi.registerMessageRenderer("job-pipeline-interview", (message, _options, theme) => {
-    const imageCount = Number((message.details as { imageCount?: unknown } | undefined)?.imageCount ?? 0);
-    const body = String(message.content ?? "").trim().length > 0
-      ? String(message.content)
-      : imageCount > 0
-        ? `[${imageCount} image${imageCount === 1 ? "" : "s"} attached]`
-        : "";
-    const attachmentLine = imageCount > 0 && String(message.content ?? "").trim().length > 0
-      ? `\n${theme.fg("dim", `[${imageCount} image${imageCount === 1 ? "" : "s"} attached]`)}`
-      : "";
-    return new Text(
-      `${theme.fg("accent", theme.bold("Planner interview"))}\n${body}${attachmentLine}`,
-      0,
-      0,
-    );
-  });
+  function buildInterviewMessageComponent(
+    message: { content?: unknown; details?: unknown },
+    title: string,
+    titleColor: "accent" | "muted",
+    theme: { fg: (color: string, text: string) => string; bold: (text: string) => string },
+  ) {
+    const model = buildInterviewMessageRenderModel(agentDir, message);
+    const container = new Container();
+    const headerLines = [
+      theme.fg(titleColor, theme.bold(title)),
+      model.body,
+      ...(model.attachmentLabel ? [theme.fg("dim", model.attachmentLabel)] : []),
+    ].filter((line) => line.length > 0);
 
-  pi.registerMessageRenderer("job-pipeline-interview-user", (message, _options, theme) => {
-    const imageCount = Number((message.details as { imageCount?: unknown } | undefined)?.imageCount ?? 0);
-    const body = String(message.content ?? "").trim().length > 0
-      ? String(message.content)
-      : imageCount > 0
-        ? `[${imageCount} image${imageCount === 1 ? "" : "s"} attached]`
-        : "";
-    const attachmentLine = imageCount > 0 && String(message.content ?? "").trim().length > 0
-      ? `\n${theme.fg("dim", `[${imageCount} image${imageCount === 1 ? "" : "s"} attached]`)}`
-      : "";
-    return new Text(
-      `${theme.fg("muted", theme.bold("You"))}\n${body}${attachmentLine}`,
-      0,
-      0,
-    );
-  });
+    container.addChild(new Text(headerLines.join("\n"), 0, 0));
+
+    for (const inlineImage of model.inlineImages) {
+      container.addChild(new Spacer(1));
+      container.addChild(new Image(inlineImage.data, inlineImage.mediaType, theme, {
+        maxWidthCells: 48,
+        maxHeightCells: 12,
+      }));
+    }
+
+    if (model.remainingImageCount > 0) {
+      container.addChild(new Spacer(1));
+      container.addChild(new Text(
+        theme.fg(
+          "dim",
+          `+${model.remainingImageCount} more image${model.remainingImageCount === 1 ? "" : "s"} not shown`,
+        ),
+        0,
+        0,
+      ));
+    }
+
+    return container;
+  }
+
+  pi.registerMessageRenderer("job-pipeline-interview", (message, _options, theme) => (
+    buildInterviewMessageComponent(message, "Planner interview", "accent", theme)
+  ));
+
+  pi.registerMessageRenderer("job-pipeline-interview-user", (message, _options, theme) => (
+    buildInterviewMessageComponent(message, "You", "muted", theme)
+  ));
 
   pi.on("input", async (event, ctx) => {
     if (runtime.mode !== "interview") {

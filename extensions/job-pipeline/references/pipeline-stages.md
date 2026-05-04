@@ -31,7 +31,8 @@ can be resumed later with `/job`.
 Every transcript update is persisted to the job snapshot and event log. That
 means an interrupted interview can be resumed safely after a crash. If the
 last persisted transcript entry is a user reply, the next planner question is
-recomputed on resume.
+recomputed on resume. Persisted image replies can be rendered back into the
+interactive transcript as inline thumbnails.
 
 **Output written to job state:**
 ```jsonc

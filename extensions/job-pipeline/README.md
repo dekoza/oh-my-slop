@@ -121,7 +121,8 @@ Interview replies can include text, images, or both. The extension persists
 the evolving interview transcript to job state and the event log so `/job`
 can recover an in-flight interview after a crash or restart. If the last
 persisted transcript entry is a user reply, the planner question is simply
-recomputed on resume.
+recomputed on resume. In the interactive transcript, persisted image replies
+render as inline thumbnails instead of opaque attachment counts.
 
 The legacy `job_interview_complete` tool remains only as a compatibility shim
 for callers that already have a finished structured spec. Normal `/job`
