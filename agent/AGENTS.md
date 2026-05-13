@@ -248,6 +248,33 @@ Git history is a **source of truth** for how the project evolved. Treat it accor
    - If you need to remove specific files (e.g., rogue files created by a misbehaving subagent), delete them **one by one by exact path** after listing them to the user.
    - Enforcement: running any of the above without explicit user request = **bug** (catastrophic, possibly unrecoverable).
 
+## Documentation lifecycle and living specifications (very important)
+
+- Documentation is part of the implementation contract. Any change that affects behavior, interfaces, architecture, configuration, deployment, or operations is incomplete until the relevant documentation is updated.
+- Treat documentation with the same discipline as TDD: write or update the high-level specification first, derive acceptance criteria and tests from it, implement, then reconcile reference and maintenance documentation with the shipped behavior.
+- For every non-trivial feature or behavior change, create or update the **canonical feature specification before implementation**. The spec is the normative description of intended behavior.
+- Specifications must describe goals, non-goals, assumptions, constraints, main flows, edge cases, acceptance criteria, and operational impact.
+- When intended behavior changes during implementation, update the spec immediately. Do not knowingly leave spec/code drift for later.
+- Tests are executable checks derived from the specification. Write or update tests from acceptance criteria before implementation.
+- Significant design or architecture changes require an ADR or equivalent decision record capturing context, options considered, decision, tradeoffs, consequences, and status.
+- Reference documentation must cover exact interfaces: APIs, settings, schemas, CLI flags, contracts, and integration points. Generate it from code where practical.
+- Operationally significant changes require maintenance documentation before merge or release: deployment, migration, rollback, observability, failure modes, troubleshooting, and recovery.
+- Avoid duplicate truth. Each document type must have one clear job:
+  - **spec** = intent and acceptance criteria,
+  - **ADR** = rationale and tradeoffs,
+  - **tests** = verification,
+  - **reference** = exact interface and behavior facts,
+  - **runbook/maintenance docs** = operations and recovery.
+- Keep documentation in the repository and review it with the code. Behavior-changing work without documentation updates is incomplete.
+- Use explicit status markers for authoritative documents: **Draft**, **Active**, **Superseded**, **Deprecated**. Link superseding documents clearly.
+- If documentation conflicts with code, tests, or other docs, do not guess. Surface the discrepancy and resolve it explicitly.
+- Stale documentation is a bug. If a document cannot be updated immediately, mark it visibly as superseded, deprecated, or inaccurate rather than leaving it to mislead future agents or humans.
+- Do not create documentation theater. Prefer updating the nearest canonical spec over creating one-off docs for trivial changes.
+- README files are entry points, not dumping grounds. Keep them focused on orientation and links to canonical docs.
+- **Enforcement:**
+  - Behavior-changing work without aligned specification, reference, and maintenance documentation updates = **bug** (must fix before task is complete).
+  - Leaving a known authoritative document stale or contradictory without marking it clearly = **bug** (must fix or flag explicitly).
+
 ## 9) Common pitfalls (learned from production projects)
 
 These patterns have caused real bugs across multiple projects. Internalize them.
