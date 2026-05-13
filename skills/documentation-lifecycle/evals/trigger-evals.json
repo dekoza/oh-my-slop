@@ -1,0 +1,66 @@
+[
+  {
+    "query": "Help me draft a feature spec for a new warehouse handoff workflow before we start implementation.",
+    "should_trigger": true
+  },
+  {
+    "query": "We changed our deploy and rollback steps for queue workers. What runbook sections need updates?",
+    "should_trigger": true
+  },
+  {
+    "query": "Write an ADR for moving from polling to webhooks and capture the tradeoffs.",
+    "should_trigger": true
+  },
+  {
+    "query": "Our docs are stale: the code and README disagree about MFA defaults. How do we reconcile the documentation drift?",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to decide whether this recurring billing guide should be a tutorial, how-to, reference, or explanation.",
+    "should_trigger": true
+  },
+  {
+    "query": "Which docs must change if I add a new CLI flag, env var, and API field for delivery mode?",
+    "should_trigger": true
+  },
+  {
+    "query": "Interview me so we can turn this vague checkout idea into acceptance criteria and a real specification.",
+    "should_trigger": true
+  },
+  {
+    "query": "Please audit our engineering documentation and user-facing documentation after the latest release.",
+    "should_trigger": true
+  },
+  {
+    "query": "My Django queryset is duplicating rows after I added an annotation. Fix the ORM query.",
+    "should_trigger": false
+  },
+  {
+    "query": "Which HTTP status code should I return for a stale If-Match update?",
+    "should_trigger": false
+  },
+  {
+    "query": "Docker compose keeps appending ports from the override file. Why is that happening?",
+    "should_trigger": false
+  },
+  {
+    "query": "Design a logo for a mental health mobile app.",
+    "should_trigger": false
+  },
+  {
+    "query": "Build a FullCalendar month view with drag-and-drop events.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need a Tabler card layout for a billing dashboard.",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I configure django-allauth email verification and MFA?",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain why LangGraph checkpoints are not restoring state in my agent.",
+    "should_trigger": false
+  }
+]
