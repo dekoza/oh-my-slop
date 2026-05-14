@@ -6,7 +6,7 @@ This repo is a collection of those guardrails — curated skills, pi extensions,
 
 ## How to use
 
-This repo is `pi`-first now. Install it as a package and let pi discover the bundled skills and extensions without making you hand-wire paths like some kind of YAML penitent.
+This repo is `pi`-first now. Install it as a package to get the bundled skills without auto-enabling the extensions.
 
 ```bash
 pi install git:github.com/dekoza/oh-my-slop
@@ -14,11 +14,21 @@ pi install git:github.com/dekoza/oh-my-slop
 pi install .
 ```
 
-After installation, pi can discover:
+After installation, pi auto-discovers:
 
 - skills from `./skills`
-- extensions: `adaptive-routing`, `provider-failover`, `job-pipeline`, `subagent-bundled-agents`
-- bundled agent definitions from `./agents`, seeded by `subagent-bundled-agents` into pi's project or shared agent storage without overwriting user overrides
+
+Extensions are shipped in this repo but remain opt-in. Add an explicit path in your pi `settings.json` if you want one active:
+
+```json
+{
+  "extensions": [
+    "/path/to/oh-my-slop/extensions/job-pipeline/index.ts"
+  ]
+}
+```
+
+For git installs, pi keeps the checkout under `~/.pi/agent/git/...` globally or `.pi/git/...` project-locally, so point the path at that installed checkout. The bundled agent definitions in `./agents` are only seeded if you opt into `subagent-bundled-agents`.
 
 If you only want the markdown skills for OpenCode or some other agent stack, you can still steal `./skills` and wire them up manually. That path still exists. It is just no longer the main story.
 
@@ -51,15 +61,17 @@ Case in point: the agent messed up twice while creating this repo (deleting an u
 
 ## Extensions
 
+These ship in the repo, but the root `pi install` keeps them inactive until you opt in by path.
+
 <details>
-<summary><strong>Extensions (4)</strong></summary>
+<summary><strong>Extensions (4, opt-in)</strong></summary>
 
 | Extension | What it does |
 |---|---|
 | **[adaptive-routing](extensions/adaptive-routing/README.md)** | Classifies prompt intent and routes to the best available model. Supports shadow mode, locking, telemetry, and per-intent policy. |
 | **[provider-failover](extensions/provider-failover/README.md)** | Wraps GitHub Copilot models with automatic provider failover on 429/overload errors. Keeps the best working route sticky. |
 | **[job-pipeline](extensions/job-pipeline/README.md)** | Runs a full development pipeline: model-driven interview → scout → planning loop with adversarial jester critique → TDD workers → proof deck → review → retro. Human gates at every decision point. Earns autonomy through clean retrospectives. |
-| **[subagent-bundled-agents](extensions/subagent-bundled-agents/)** | Seeds bundled markdown subagents from `./agents` into pi's project or shared agent storage without clobbering user overrides. |
+| **[subagent-bundled-agents](extensions/subagent-bundled-agents/)** | Seeds bundled markdown subagents from `./agents` into pi's project or shared agent storage without clobbering user overrides once you opt into the extension. |
 
 </details>
 

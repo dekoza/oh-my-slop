@@ -247,4 +247,4 @@ Add to your pi `settings.json`:
 }
 ```
 
-Or install the `oh-my-slop` package which includes it automatically.
+The root `oh-my-slop` package no longer auto-enables this extension after `pi install`; it stays opt-in. If you installed the repo through `pi install git:github.com/dekoza/oh-my-slop`, point that path at the installed checkout under `~/.pi/agent/git/github.com/dekoza/oh-my-slop/` (global) or `.pi/git/github.com/dekoza/oh-my-slop/` (project-local).

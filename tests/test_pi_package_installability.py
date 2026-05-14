@@ -12,16 +12,17 @@ EXTENSION_IMPORT_PATTERN = re.compile(
 )
 
 
-def load_package_manifest() -> dict:
-    return json.loads(PACKAGE_JSON_PATH.read_text(encoding="utf-8"))
+def load_package_manifest(path: Path = PACKAGE_JSON_PATH) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def iter_package_extension_entrypoints() -> list[Path]:
-    manifest = load_package_manifest()
+def iter_manifest_extension_entrypoints(manifest_path: Path) -> list[Path]:
+    manifest = load_package_manifest(manifest_path)
+    package_root = manifest_path.parent
     entrypoints: list[Path] = []
 
-    for entry in manifest["pi"]["extensions"]:
-        resolved_entry = REPO_ROOT / entry.removeprefix("./")
+    for entry in manifest.get("pi", {}).get("extensions", []):
+        resolved_entry = package_root / entry.removeprefix("./")
 
         if resolved_entry.is_file():
             entrypoints.append(resolved_entry)
@@ -36,7 +37,8 @@ def iter_package_extension_entrypoints() -> list[Path]:
                     nested_resolved = resolved_entry / nested_entry.removeprefix("./")
                     if not nested_resolved.exists():
                         raise AssertionError(
-                            f"Package manifest entry {entry!r} declares a missing nested extension {nested_entry!r}"
+                            f"Package manifest entry {entry!r} in {manifest_path.relative_to(REPO_ROOT)} "
+                            f"declares a missing nested extension {nested_entry!r}"
                         )
                     entrypoints.append(nested_resolved)
                 if nested_entries:
@@ -48,12 +50,22 @@ def iter_package_extension_entrypoints() -> list[Path]:
                     entrypoints.append(candidate)
                     break
             else:
-                raise AssertionError(f"Package manifest entry {entry!r} does not expose an extension entrypoint")
+                raise AssertionError(
+                    f"Package manifest entry {entry!r} in {manifest_path.relative_to(REPO_ROOT)} "
+                    "does not expose an extension entrypoint"
+                )
             continue
 
-        raise AssertionError(f"Package manifest entry {entry!r} does not resolve to a file or directory")
+        raise AssertionError(
+            f"Package manifest entry {entry!r} in {manifest_path.relative_to(REPO_ROOT)} "
+            "does not resolve to a file or directory"
+        )
 
     return entrypoints
+
+
+def iter_nested_extension_manifest_paths() -> list[Path]:
+    return sorted(REPO_ROOT.glob("extensions/*/package.json"))
 
 
 def resolve_relative_import(source_file: Path, import_path: str) -> Path | None:
@@ -103,15 +115,24 @@ def walk_local_import_graph(entrypoint: Path) -> set[Path]:
     return discovered
 
 
-def test_root_package_manifest_exposes_skills_and_nested_extensions() -> None:
+def test_root_package_manifest_exposes_skills_but_not_extensions() -> None:
     manifest = load_package_manifest()
 
     assert manifest["keywords"]
     assert "pi-package" in manifest["keywords"]
     assert manifest["pi"]["skills"] == ["./skills"]
+    assert manifest["pi"].get("extensions", []) == []
+
+
+def test_nested_extension_packages_expose_all_extension_entrypoints() -> None:
+    manifest_paths = iter_nested_extension_manifest_paths()
+
+    assert manifest_paths
 
     declared_entrypoints = {
-        path.relative_to(REPO_ROOT) for path in iter_package_extension_entrypoints()
+        path.relative_to(REPO_ROOT)
+        for manifest_path in manifest_paths
+        for path in iter_manifest_extension_entrypoints(manifest_path)
     }
     actual_entrypoints = {
         path.relative_to(REPO_ROOT) for path in REPO_ROOT.glob("extensions/*/index.ts")
@@ -121,7 +142,11 @@ def test_root_package_manifest_exposes_skills_and_nested_extensions() -> None:
 
 
 def test_extension_entrypoints_only_use_resolvable_relative_imports() -> None:
-    entrypoints = iter_package_extension_entrypoints()
+    entrypoints = [
+        entrypoint
+        for manifest_path in iter_nested_extension_manifest_paths()
+        for entrypoint in iter_manifest_extension_entrypoints(manifest_path)
+    ]
 
     assert entrypoints
 

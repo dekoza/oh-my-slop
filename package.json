@@ -1,7 +1,7 @@
 {
   "name": "oh-my-slop",
   "version": "0.1.0",
-  "description": "Pi package with opinionated skills and extensions for coding agents.",
+  "description": "Pi package with opinionated skills and opt-in extensions for coding agents.",
   "private": true,
   "type": "module",
   "keywords": [
@@ -10,12 +10,6 @@
     "extensions"
   ],
   "pi": {
-    "extensions": [
-      "./extensions/adaptive-routing/index.ts",
-      "./extensions/provider-failover/index.ts",
-      "./extensions/job-pipeline/index.ts",
-      "./extensions/subagent-bundled-agents/index.ts"
-    ],
     "skills": [
       "./skills"
     ]
