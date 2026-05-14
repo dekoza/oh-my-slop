@@ -16,6 +16,8 @@ This skill exists to stop two failure modes:
 
 ## Quick Start
 
+**Hard rule: every document this skill calls for must be written to disk.** Use the `write` tool for new files and the `edit` tool for updates. Outputting document content in the chat instead of writing a file is a failure.
+
 1. Classify the task:
    - vague or disputed change request
    - planned feature or behavior change
@@ -37,6 +39,8 @@ This skill exists to stop two failure modes:
 5. If code, tests, and docs disagree, stop and surface the discrepancy instead of picking the text you like best.
 
 ## Critical Rules
+
+0. **Documents are files, not chat messages.** When this skill determines that a document must be created or updated, you MUST write it to disk with the `write` tool (or `edit` for updates). Never dump the full document content into the chat as a substitute for writing the file. Describing what you *would* write is not writing it. If you identify that a feature spec, ADR, runbook, reference doc, or any other document is needed, the task is not complete until the file exists on disk at the correct path.
 
 1. **One canonical answer per question.** One document owns intent, another owns rationale, another owns exact interface facts, and another owns operations.
 2. **Spec before implementation for non-trivial behavior changes.** If the task changes user-visible or operator-visible behavior, draft or update the canonical feature spec first.
@@ -66,14 +70,14 @@ This skill exists to stop two failure modes:
 
 1. **Clarify** — classify the task and determine whether the missing piece is intent, rationale, exact facts, operations, or user guidance.
 2. **Interview** — if the request is underspecified, run the lightweight interview flow from `references/specification-interview.md`.
-3. **Update engineering docs first** when behavior or implementation contracts change:
+3. **Write engineering docs first** when behavior or implementation contracts change. Use the `write` tool to create or the `edit` tool to update the actual file on disk:
    - feature spec for intent
    - ADR for rationale
    - reference docs for exact interfaces
    - runbook for operational reality
-4. **Update user-facing docs second** when the change affects discoverability, onboarding, or public workflows.
+4. **Write user-facing docs second** when the change affects discoverability, onboarding, or public workflows. Same rule: file on disk, not in chat.
 5. **Audit for drift** — check status markers, supersession links, acceptance criteria, and whether README or other overview docs now point at stale targets.
-6. **Finish only after reconciliation** — documentation work is incomplete if the code changed but the authoritative docs did not.
+6. **Finish only after reconciliation and file verification** — documentation work is incomplete if the code changed but the authoritative docs did not. Verify the files exist on disk before declaring the task done.
 
 ## Interview and Synthesis Guidance
 

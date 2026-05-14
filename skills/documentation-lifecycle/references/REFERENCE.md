@@ -20,6 +20,10 @@ Use this index when the task touches more than one documentation type or when yo
 | Write maintenance and recovery docs | `references/runbook.md` | Deployment, migration, rollback, observability, troubleshooting, recovery |
 | Produce public-facing docs | `references/user-facing-docs.md` | Diátaxis routing for tutorial, how-to, reference, explanation |
 
+## Execution Rule
+
+**Writing the document to disk is non-negotiable.** When the decision matrix below tells you to start with a reference file, you must then create or update the corresponding document file on disk using the `write` or `edit` tool. Summarizing the document in chat, suggesting a file path, or describing what the document *should* contain does not count. The file must exist before the task is complete.
+
 ## Fast Decision Rules
 
 - **The task changes what the feature should do** -> start with `references/feature-spec.md`
