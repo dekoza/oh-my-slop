@@ -3,7 +3,7 @@
 name: llm-council
 
 
-description: "Run any question, idea, or decision through a council of 5 AI advisors who independently analyze it, peer-review each other anonymously, and synthesize a final verdict. Based on Karpathy's LLM Council methodology. MANDATORY TRIGGERS: 'council this', 'run the council', 'war room this', 'pressure-test this', 'stress-test this', 'debate this'. STRONG TRIGGERS (use when combined with a real decision or tradeoff): 'should I X or Y', 'which option', 'what would you do', 'is this the right move', 'validate this', 'get multiple perspectives', 'I can't decide', 'I'm torn between'. Do NOT trigger on simple yes/no questions, factual lookups, or casual 'should I' without a meaningful tradeoff (e.g. 'should I use markdown' is not a council question). DO trigger when the user presents a genuine decision with stakes, multiple options, and context that suggests they want it pressure-tested from multiple angles."
+description: "Use when the user asks for multiple independent perspectives on a decision with real stakes, especially with phrases like 'council this', 'run the council', 'war room this', 'should I X or Y', 'which option', 'what would you do', 'I can't decide', or 'I'm torn between'. Triggers on genuine uncertainty where being wrong is expensive — tradeoff decisions, positioning choices, architecture picks, hiring calls, launch timing. Do NOT trigger for simple creation tasks, factual lookups, single-answer questions, or when the user wants focused adversarial critique (that's court-jester)."
 
 ---
 
@@ -57,6 +57,32 @@ The council shines when there's genuine uncertainty and the cost of a bad call i
 ---
 
 
+## Trigger Ownership
+
+This skill and `court-jester` cover adjacent territory. Here's how to tell them apart:
+
+**Use council when:**
+- You want multiple independent perspectives on a decision
+- You're torn between options and want to see them from different angles
+- The question has real stakes and genuine uncertainty
+- You want a synthesized recommendation after adversarial review
+
+**Use court-jester when:**
+- You want focused adversarial critique of a specific plan or proposal
+- You want a single-mode stress test (red team, pre-mortem, evidence audit, etc.)
+- You need depth in one critique lane, not breadth across perspectives
+- The user says "stress-test this", "red team this", "pre-mortem this", or "devil's advocate"
+
+**When both could fire:**
+- Multi-perspective decision → council
+- Focused attack on a known plan → court-jester
+- If the user says "council this" → always council (they're asking for breadth)
+- If the user says "stress-test this" → always court-jester (they're asking for depth)
+
+
+---
+
+
 ## the five advisors
 
 
@@ -65,7 +91,7 @@ Each advisor thinks from a different angle. They're not job titles or personas. 
 
 ### 1. The Contrarian
 
-Actively looks for what's wrong, what's missing, what will fail. Assumes the idea has a fatal flaw and tries to find it. If everything looks solid, digs deeper. The Contrarian is not a pessimist. They're the friend who saves you from a bad deal by asking the questions you're avoiding.
+Actively looks for what's wrong, what's missing, what will fail. Assumes the idea has a fatal flaw and tries to find it. If everything looks solid, digs deeper. The Contrarian is not a pessimist. They're the friend who saves you from a bad deal by asking the questions you're avoiding. For plan/proposal/architecture/strategy pressure-tests, the Contrarian may load one relevant mode from `skills/court-jester` (evidence audit, red team, pre-mortem, socratic questioning, or dialectic synthesis) instead of reasoning from scratch. Only one mode per council session.
 
 
 ### 2. The First Principles Thinker
@@ -94,6 +120,44 @@ Only cares about one thing: can this actually be done, and what's the fastest pa
 ---
 
 
+## Court-Jester Handoff
+
+`llm-council` is an orchestration skill. `court-jester` is an adversarial reasoning engine. The council borrows from court-jester for depth without merging the two skills.
+
+### When the handoff fires
+
+The **Contrarian** (and only the Contrarian) may invoke a court-jester mode when the framed question is a plan, proposal, architecture, or strategy pressure-test. The other advisors reason from their own perspective without loading external modes.
+
+### How to invoke
+
+1. The Contrarian identifies the question type (plan, proposal, architecture, strategy, evidence claim, security design, etc.)
+2. The Contrarian loads exactly one relevant mode from `skills/court-jester`:
+
+| Question Type | Court-Jester Mode |
+|---------------|-------------------|
+| Hidden assumptions, vague goals | `references/socratic-questioning.md` |
+| Trade-off decision, approach choice | `references/dialectic-synthesis.md` |
+| Rollout risk, migration, strategy | `references/pre-mortem-analysis.md` |
+| Security, abuse, gaming, sabotage | `references/red-team-adversarial.md` |
+| Claims based on data, benchmarks | `references/evidence-audit.md` |
+
+3. The Contrarian applies the loaded mode to produce a deeper, more structured critique
+4. The Contrarian produces their response in the standard 150-300 word format
+
+### Peer-review handoff
+
+If the peer-review step identifies a specific risk category that all advisors missed, a reviewer may load one court-jester mode to produce a supplementary analysis. This is optional and only when a material blind spot is identified.
+
+### Constraints
+
+- **One mode only.** Never load more than one court-jester mode per council session.
+- **No reference copying.** Never copy court-jester references into council. Always load from `skills/court-jester/`.
+- **Don't homogenize.** The other four advisors must NOT use court-jester modes. If all five advisors think like the Contrarian, the council loses its core value: genuinely different lenses.
+
+
+---
+
+
 ## how a council session works
 
 
@@ -103,10 +167,10 @@ Only cares about one thing: can this actually be done, and what's the fastest pa
 When the user says "council this" (or any trigger phrase), do two things before framing:
 
 
-**A. Scan the workspace for context.** The user's question is often just the tip of the iceberg. Their Claude setup likely contains files that would dramatically improve the council's output. Before framing, quickly scan for and read any relevant context files:
+**A. Scan the workspace for context.** The user's question is often just the tip of the iceberg. Their project likely contains files that would dramatically improve the council's output. Before framing, quickly scan for and read any relevant context files:
 
 
-- `CLAUDE.md` or `claude.md` in the project root or workspace (business context, preferences, constraints)
+- `AGENTS.md` in the project root (business context, preferences, constraints)
 
 - Any `memory/` folder (audience profiles, voice docs, business details, past decisions)
 
@@ -117,7 +181,7 @@ When the user says "council this" (or any trigger phrase), do two things before 
 - Any other context files that seem relevant to the specific question (e.g., if they're asking about pricing, look for revenue data, past launch results, audience research)
 
 
-Use `Glob` and quick `Read` calls to find these. Don't spend more than 30 seconds on this. You're looking for the 2-3 files that would give advisors the context they need to give specific, grounded advice instead of generic takes.
+Use `read` and `bash` (e.g., `find` or `ls`) to locate these. Don't spend more than 30 seconds on this. You're looking for the 2-3 files that would give advisors the context they need to give specific, grounded advice instead of generic takes.
 
 
 **B. Frame the question.** Take the user's raw question AND the enriched context and reframe it as a clear, neutral prompt that all five advisors will receive. The framed question should include:
@@ -405,7 +469,7 @@ Keep it scannable. Use bullet points. Include the before/after examples where re
 ### step 6: save the transcript (optional)
 
 
-Only save a transcript if the user asks for it or if the question is significant enough to reference later. If saving, write to `council-transcript-[timestamp].md` in the project's `active/` directory.
+Only save a transcript if the user asks for it or if the question is significant enough to reference later. If saving, write to `council-transcript-[timestamp].md` in the project root.
 
 
 ---
@@ -464,4 +528,6 @@ Only save a transcript if the user asks for it or if the question is significant
 
 - **Don't council trivial questions.** If the user asks something with one right answer, just answer it. The council is for genuine uncertainty where multiple perspectives add value.
 
-- **The visual report matters.** Most users will scan the report, not read the full transcript. Make the HTML output clean and scannable.
+- **The visual report matters.** Most users will scan the report, not read the full transcript. Keep the markdown output scannable with clear headings and bullet points.
+
+- **Composition, not fusion.** The council borrows from `court-jester` for depth but keeps the skills separate. See "Court-Jester Handoff" above.

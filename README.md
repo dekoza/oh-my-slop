@@ -78,11 +78,12 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 ## Skills
 
 <details>
-<summary><strong>Skills (19)</strong></summary>
+<summary><strong>Skills (20)</strong></summary>
 
 | Skill | What it covers |
 |-------|---------------|
 | **[Caveman](skills/caveman/SKILL.md)** | Ultra-compressed communication mode for when you want fewer tokens, less hedging, and the same technical substance. Speaks like a competent cave dweller on purpose. |
+| **[LLM Council](skills/council/SKILL.md)** | Multi-advisor decision protocol: 5 independent perspectives, anonymized peer review, chairman synthesis. For high-stakes uncertainty where being wrong is expensive. |
 | **[Court Jester](skills/court-jester/SKILL.md)** | Structured adversarial reasoning for stress-testing plans, proposals, architecture, and strategy. Devil's-advocate reviews, pre-mortems, red teams, assumption checks. |
 | **[Django](skills/django/SKILL.md)** | Django 6.0 framework patterns — models, views, URLs, templates, forms, admin, auth, testing, architecture. The gotchas section alone justifies this skill's existence. |
 | **[Django-Allauth](skills/django-allauth/SKILL.md)** | Django-allauth integration reference — account flows, SocialApp/provider setup, OAuth/OIDC/SAML boundaries, MFA, usersessions, headless auth, IdP mode, troubleshooting, and version-sensitive pitfalls. |
