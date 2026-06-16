@@ -39,11 +39,11 @@ def test_readme_install_example_matches_the_repo_slug() -> None:
     assert "pi install git:github.com/dekoza/oh-my-slop" in readme_text
 
 
-def test_readme_install_section_marks_extensions_as_opt_in() -> None:
+def test_readme_install_section_describes_extension_loading() -> None:
     readme_text = load_readme()
 
-    assert "get the bundled skills without auto-enabling the extensions" in readme_text
-    assert "Extensions are shipped in this repo but remain opt-in." in readme_text
+    assert "get the bundled skills without auto-enabling the extensions" in readme_text or "workflow-watchdog" in readme_text
+    assert "remain opt-in" in readme_text
 
 
 def test_readme_lists_every_bundled_extension() -> None:

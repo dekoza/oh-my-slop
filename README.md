@@ -18,7 +18,7 @@ After installation, pi auto-discovers:
 
 - skills from `./skills`
 
-Extensions are shipped in this repo but remain opt-in. Add an explicit path in your pi `settings.json` if you want one active:
+The `workflow-watchdog` extension loads automatically on install (it only monitors — no code execution). The other extensions are shipped but remain opt-in. Add an explicit path in your pi `settings.json` if you want one active:
 
 ```json
 {

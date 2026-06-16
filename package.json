@@ -12,6 +12,9 @@
   "pi": {
     "skills": [
       "./skills"
+    ],
+    "extensions": [
+      "./extensions/workflow-watchdog"
     ]
   },
   "scripts": {

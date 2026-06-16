@@ -115,13 +115,13 @@ def walk_local_import_graph(entrypoint: Path) -> set[Path]:
     return discovered
 
 
-def test_root_package_manifest_exposes_skills_but_not_extensions() -> None:
+def test_root_package_manifest_exposes_skills_and_workflow_watchdog_extension() -> None:
     manifest = load_package_manifest()
 
     assert manifest["keywords"]
     assert "pi-package" in manifest["keywords"]
     assert manifest["pi"]["skills"] == ["./skills"]
-    assert manifest["pi"].get("extensions", []) == []
+    assert manifest["pi"]["extensions"] == ["./extensions/workflow-watchdog"]
 
 
 def test_nested_extension_packages_expose_all_extension_entrypoints() -> None:
