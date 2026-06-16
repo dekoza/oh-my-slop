@@ -421,9 +421,8 @@ export default function workflowWatchdog(pi: ExtensionAPI) {
 						return;
 					}
 					const provider = modelRef.slice(0, slashIdx);
-					const model = modelRef.slice(slashIdx + 1);
 
-					const found = ctx.modelRegistry.find(provider, model);
+					const found = ctx.modelRegistry.find(provider, modelRef);
 					if (!found) {
 						ctx.ui.notify(`Model "${modelRef}" not found.`, "error");
 						return;
@@ -431,8 +430,8 @@ export default function workflowWatchdog(pi: ExtensionAPI) {
 
 					config.supervisor.enabled = true;
 					config.supervisor.provider = provider;
-					config.supervisor.model = model;
-					ctx.ui.notify(`Watchdog supervisor set to ${provider}/${model}.`, "info");
+					config.supervisor.model = modelRef;
+					ctx.ui.notify(`Watchdog supervisor set to ${provider}/${modelRef}.`, "info");
 					updateStatus(ctx);
 					return;
 				}
