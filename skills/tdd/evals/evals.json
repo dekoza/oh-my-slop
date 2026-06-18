@@ -1,0 +1,41 @@
+{
+  "skill_name": "tdd",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Build a feature that lets users export their order history as CSV. Start with tests.",
+      "expected_output": "The response follows the TDD red-green-refactor loop. It writes one failing test first (tracer bullet), then minimal implementation, then iterates. It does NOT write all tests upfront.",
+      "files": [],
+      "expectations": [
+        "It writes a test BEFORE implementation (RED before GREEN).",
+        "It uses vertical slices (one test → one implementation → repeat), not horizontal slicing.",
+        "It tests through the public interface, not implementation details.",
+        "It does NOT write all tests upfront before any implementation."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Write all the tests for the checkout flow first, then implement everything.",
+      "expected_output": "The response rejects horizontal slicing and proposes vertical slices instead — one test at a time, each followed by minimal implementation.",
+      "files": [],
+      "expectations": [
+        "It identifies the horizontal-slicing anti-pattern.",
+        "It explains why horizontal slicing produces bad tests (imagined behaviour, shape testing, insensitivity).",
+        "It proposes vertical slices via tracer bullets instead.",
+        "It does NOT comply with writing all tests first."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I need to test a view that calls Stripe. Should I mock the Stripe client?",
+      "expected_output": "The response recommends mocking at the system boundary (Stripe is external) but uses dependency injection and httpx.MockTransport rather than unittest.mock.patch on internals.",
+      "files": [],
+      "expectations": [
+        "It recognises Stripe as a system boundary (external service) — mocking is justified.",
+        "It recommends dependency injection (pass the client in, don't create it internally).",
+        "It prefers httpx.MockTransport or SDK-style mocking over blanket unittest.mock.patch.",
+        "It does NOT recommend mocking internal collaborators or Django's own behaviour."
+      ]
+    }
+  ]
+}

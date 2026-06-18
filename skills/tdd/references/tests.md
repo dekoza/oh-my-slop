@@ -1,0 +1,87 @@
+# Good and Bad Tests
+
+## Good Tests
+
+**Integration-style**: Test through real interfaces, not mocks of internal parts.
+
+```python
+# GOOD: Tests observable behaviour through the public API
+def test_user_can_checkout_with_valid_cart():
+    cart = Cart.create()
+    cart.add(Product.objects.get(pk=1), quantity=2)
+    result = checkout(cart, PaymentMethod(card="4242..."))
+    assert result.status == "confirmed"
+```
+
+Characteristics:
+
+- Tests behaviour users/callers care about.
+- Uses public API only.
+- Survives internal refactors.
+- Describes WHAT, not HOW.
+- One logical assertion per test.
+
+## Bad Tests
+
+**Implementation-detail tests**: Coupled to internal structure.
+
+```python
+# BAD: Tests implementation details via mocking internal collaborators
+@patch("myapp.services.PaymentService.process")
+def test_checkout_calls_payment_service(mock_process):
+    checkout(cart, payment)
+    mock_process.assert_called_with(cart.total)
+```
+
+Red flags:
+
+- Mocking internal collaborators.
+- Testing private methods.
+- Asserting on call counts/order.
+- Test breaks when refactoring without behaviour change.
+- Test name describes HOW not WHAT.
+- Verifying through external means instead of interface.
+
+```python
+# BAD: Bypasses interface to verify
+def test_create_user_saves_to_database():
+    create_user({"name": "Alice"})
+    row = connection.cursor().execute("SELECT * FROM users WHERE name = 'Alice'")
+    assert row is not None
+
+# GOOD: Verifies through interface
+def test_create_user_makes_user_retrievable():
+    user = create_user({"name": "Alice"})
+    retrieved = get_user(user.id)
+    assert retrieved.name == "Alice"
+```
+
+## Django-specific patterns
+
+```python
+# GOOD: Django TestCase with real DB, APIClient for views
+class TestCheckoutView(TestCase):
+    def test_checkout_redirects_to_success(self):
+        self.client.force_login(self.user)
+        response = self.client.post("/checkout/", {"card": "4242..."})
+        self.assertRedirects(response, "/orders/confirmed/")
+
+# GOOD: pytest-django with transactional tests for async signals
+@pytest.mark.django_db(transaction=True)
+def test_order_placed_sends_confirmation_email():
+    place_order(user, cart)
+    assert mail.outbox[0].to == [user.email]
+
+# GOOD: httpx.MockTransport for HTTP client tests
+def test_webhook_client_retries_on_500():
+    transport = httpx.MockTransport(lambda req: httpx.Response(500))
+    client = WebhookClient(httpx.Client(transport=transport))
+    result = client.send(payload)
+    assert result.attempts == 3
+```
+
+## Test naming
+
+- Name tests after the **behaviour**, not the implementation: `test_user_can_checkout_with_valid_cart` not `test_checkout_method_returns_true`.
+- Use the project's domain vocabulary from AGENTS.md and any domain glossary.
+- Prefix with `test_` (pytest convention) or `test_` method name (Django TestCase).
