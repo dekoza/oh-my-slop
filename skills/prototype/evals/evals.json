@@ -1,0 +1,41 @@
+{
+  "skill_name": "prototype",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I'm not sure if this state machine handles the edge case where an order is cancelled after payment but before shipping.",
+      "expected_output": "The response selects the logic prototype branch and proposes a terminal app that lets the user drive the order state machine through the cancel-after-payment edge case.",
+      "files": [],
+      "expectations": [
+        "It selects the logic branch (state/business logic question).",
+        "It proposes isolating the state machine in a pure module.",
+        "It describes a TUI that surfaces state and allows driving transitions.",
+        "It marks the prototype as throwaway and one-command-to-run."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "What should the dashboard look like? I want to see a few options.",
+      "expected_output": "The response selects the UI prototype branch and proposes 3 radically different layout variants on a single route.",
+      "files": [],
+      "expectations": [
+        "It selects the UI branch (visual design question).",
+        "It proposes 3 variants (not 1, not 10).",
+        "It uses the ?variant= URL param pattern.",
+        "It prefers sub-shape A (existing page) over sub-shape B (new page)."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Build a prototype of the new checkout flow.",
+      "expected_output": "The response applies the universal prototype rules: throwaway, one command, no persistence, skip polish, surface state, clearly marked as prototype.",
+      "files": [],
+      "expectations": [
+        "It marks the prototype as throwaway and clearly names it as such.",
+        "It makes it runnable in one command.",
+        "It avoids persistence (state in memory).",
+        "It skips polish (no tests, no error handling beyond runnable)."
+      ]
+    }
+  ]
+}

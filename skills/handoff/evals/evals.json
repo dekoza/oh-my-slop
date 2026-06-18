@@ -1,0 +1,29 @@
+{
+  "skill_name": "handoff",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Summarize what we've done so far so I can continue in a new session.",
+      "expected_output": "The response produces a handoff document with goal, what's done, what's next, current state, and suggested skills. It references artifacts by path/URL rather than duplicating them.",
+      "files": [],
+      "expectations": [
+        "It produces a structured handoff document (goal, done, next, state, skills).",
+        "It references artifacts by path or URL, not by duplicating their content.",
+        "It includes git branch and HEAD commit in current state.",
+        "It saves to a temp directory, not the workspace."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I need to step away. Create a handoff for my next session — we'll be finishing the payment integration.",
+      "expected_output": "The response tailors the handoff toward the payment integration, emphasising what's done and what's next for that specific work.",
+      "files": [],
+      "expectations": [
+        "It tailors the handoff toward the stated next focus (payment integration).",
+        "It includes a 'suggested skills' section with relevant skills.",
+        "It redacts any sensitive information (API keys, tokens).",
+        "It keeps the document concise (under 500 words)."
+      ]
+    }
+  ]
+}

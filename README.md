@@ -79,7 +79,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 ## Skills
 
 <details>
-<summary><strong>Skills (22)</strong></summary>
+<summary><strong>Skills (24)</strong></summary>
 
 | Skill | What it covers |
 |-------|---------------|
@@ -91,6 +91,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 | **[Django-Allauth](skills/django-allauth/SKILL.md)** | Django-allauth integration reference — account flows, SocialApp/provider setup, OAuth/OIDC/SAML boundaries, MFA, usersessions, headless auth, IdP mode, troubleshooting, and version-sensitive pitfalls. |
 | **[Diagnosing Bugs](skills/diagnosing-bugs/SKILL.md)** | Structured diagnosis loop for hard bugs and performance regressions — build feedback loop, reproduce, minimise, hypothesise, instrument, fix, regression test. 10 feedback-loop construction strategies. |
 | **[Documentation Lifecycle](skills/documentation-lifecycle/SKILL.md)** | Spec-first documentation workflow — feature specs, specification interviews, ADRs, exact reference docs, runbooks, Diátaxis user docs, and documentation drift triage. |
+| **[Handoff](skills/handoff/SKILL.md)** | Compact the current conversation into a handoff document for another agent to pick up. References artifacts by path/URL, redacts sensitive info, saves to temp directory. |
 | **[Docker](skills/docker/SKILL.md)** | Dockerfiles, compose files, build context, daemon behavior, bind mounts, DNS resolution, `.dockerignore`, secret handling, image publishing, and cross-environment debugging. |
 | **[DRF](skills/drf/SKILL.md)** | Django REST Framework — serializers, views, viewsets, routers, authentication, permissions, throttling, filtering, pagination, content negotiation, versioning, and testing. |
 | **[FullCalendar](skills/full-calendar/SKILL.md)** | FullCalendar JS library — initialization, views, event sources, callbacks, drag-and-drop, render hooks, toolbar config, localization, and CSS customization. |
@@ -100,6 +101,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 | **[LangChain](skills/langchain/SKILL.md)** | Python LangChain ecosystem reference — package boundaries across `langchain`, `langchain-core`, provider integrations, LangGraph, LangSmith, LCEL/runnables, `init_chat_model`, `create_agent`, retrieval wiring, tracing, evals, and migration off `langchain-classic`. |
 | **[Litestar](skills/litestar/SKILL.md)** | Litestar framework — route handlers, controllers, dependency injection, DTOs, middleware, lifecycle hooks, exception handling, templating, testing, websockets, and guards. |
 | **[PrestaShop](skills/prestashop/SKILL.md)** | PrestaShop 9 modules: module structure, hooks, front/admin controllers, modern configuration pages, services, persistence, external API integrations, cron/commands, packaging, compatibility, or release debugging. Prevents inventing framework classes, guessing hook contracts, or shipping fake Symfony/PrestaShop internals. |
+| **[Prototype](skills/prototype/SKILL.md)** | Throwaway prototyping discipline — logic branch (terminal app for state machines) or UI branch (radically different variants on one route). Six universal rules: throwaway, one command, no persistence, skip polish, surface state, delete when done. |
 | **[Python Async](skills/python-async/SKILL.md)** | Python async and concurrency — AnyIO, asyncio, Trio, task groups, cancel scopes, async testing, thread offloading, async streams, event-loop ownership, and uvloop. |
 | **[Skill Creator](skills/skill-creator/SKILL.md)** | Meta-skill for creating, modifying, and benchmarking other skills — evals, variance analysis, and description optimization for triggering accuracy. |
 | **[Tabler](skills/tabler/SKILL.md)** | Tabler UI component reference — CSS classes, variants, layout patterns, modals, plugins. Everything an agent needs to stop guessing class names. |
