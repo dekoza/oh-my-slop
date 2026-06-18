@@ -18,7 +18,7 @@ After the TDD cycle, look for:
 
 ## Django-specific patterns
 
-- **Fat models, thin views** → Move business logic from views into model methods or services.
+- **Models own invariants, services own workflows.** Move single-model validation and state transitions into model methods. Multi-model orchestration, external API calls, and side-effect coordination (email, webhooks) belong in service functions or classes — not on the model. A model with 800 lines and 15 methods touching 3 other models is a god model, not a "fat" one.
 - **QuerySet composition** → Extract reusable QuerySet filters into model managers or custom managers.
 - **Form validation** → Move shared validation into model `clean()` methods (inherited by ModelForm).
 - **Template tags** → Extract repeated template logic into custom template tags or includes.
