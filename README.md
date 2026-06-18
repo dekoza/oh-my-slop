@@ -79,7 +79,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 ## Skills
 
 <details>
-<summary><strong>Skills (25)</strong></summary>
+<summary><strong>Skills (26)</strong></summary>
 
 | Skill | What it covers |
 |-------|---------------|
@@ -97,6 +97,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 | **[FullCalendar](skills/full-calendar/SKILL.md)** | FullCalendar JS library — initialization, views, event sources, callbacks, drag-and-drop, render hooks, toolbar config, localization, and CSS customization. |
 | **[HTMX](skills/htmx/SKILL.md)** | Attributes, requests, swapping strategies, events, extensions, and the patterns that make hypermedia-driven UIs actually work. |
 | **[HTTP Status Codes](skills/http-status-codes/SKILL.md)** | API response code semantics and edge cases: 400 vs 422, 401 vs 403, 404 vs 410, 409 vs 412 vs 428, 429 vs 503, 201 vs 202 vs 204, and redirect behavior like 303 vs 307 vs 308. |
+| **[Improve Codebase Architecture](skills/improve-codebase-architecture/SKILL.md)** | Scan a codebase for deepening opportunities, present them as a visual HTML report with before/after diagrams, then grill through whichever candidate you pick. Uses codebase-design vocabulary. | | API response code semantics and edge cases: 400 vs 422, 401 vs 403, 404 vs 410, 409 vs 412 vs 428, 429 vs 503, 201 vs 202 vs 204, and redirect behavior like 303 vs 307 vs 308. |
 | **[Hyperscript](skills/hyperscript/SKILL.md)** | `_hyperscript` front-end scripting — event handlers, queue semantics, DOM commands, async transparency, `behavior`, `worker`, `socket`, JS interop boundaries, and HTMX companion patterns. |
 | **[LangChain](skills/langchain/SKILL.md)** | Python LangChain ecosystem reference — package boundaries across `langchain`, `langchain-core`, provider integrations, LangGraph, LangSmith, LCEL/runnables, `init_chat_model`, `create_agent`, retrieval wiring, tracing, evals, and migration off `langchain-classic`. |
 | **[Litestar](skills/litestar/SKILL.md)** | Litestar framework — route handlers, controllers, dependency injection, DTOs, middleware, lifecycle hooks, exception handling, templating, testing, websockets, and guards. |

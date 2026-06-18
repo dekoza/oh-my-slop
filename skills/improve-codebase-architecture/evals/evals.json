@@ -1,0 +1,29 @@
+{
+  "skill_name": "improve-codebase-architecture",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "My codebase feels like a ball of mud. Can you scan it for refactoring opportunities?",
+      "expected_output": "The response follows the 3-phase process: explore the codebase for friction points, present candidates as an HTML report in the temp directory, then ask the user which candidate to explore.",
+      "files": [],
+      "expectations": [
+        "It explores the codebase for shallow modules, leakage, and untested areas.",
+        "It applies the deletion test to evaluate candidates.",
+        "It proposes writing an HTML report to the temp directory (not the repo).",
+        "It uses codebase-design vocabulary (module, interface, depth, seam, adapter, leverage, locality)."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I have 5 thin wrapper functions that each do one small thing before calling the next. Should I consolidate them?",
+      "expected_output": "The response evaluates the cluster using the deletion test and depth vocabulary, then proposes a deepening opportunity with before/after reasoning.",
+      "files": [],
+      "expectations": [
+        "It applies the deletion test: would deleting the wrappers concentrate complexity?",
+        "It uses depth vocabulary (shallow vs deep, leverage, locality).",
+        "It gives a concrete recommendation (consolidate, don't consolidate, or consolidate with conditions).",
+        "It does NOT use rejected framings like 'component', 'service', or 'boundary' as primary terms."
+      ]
+    }
+  ]
+}
