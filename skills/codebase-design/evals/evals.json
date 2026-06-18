@@ -1,0 +1,41 @@
+{
+  "skill_name": "codebase-design",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I have a cluster of 5 thin wrapper functions that each do one small thing before calling the next. Should I consolidate them?",
+      "expected_output": "The response uses the codebase-design vocabulary to diagnose the situation. It should mention depth, seam, or the deletion test, and evaluate whether consolidation produces a deep module or just a larger shallow one.",
+      "files": [],
+      "expectations": [
+        "It uses at least two glossary terms from the skill (module, interface, depth, seam, adapter, leverage, locality).",
+        "It applies the deletion test or a related principle to evaluate the cluster.",
+        "It does not use rejected framings like 'component', 'service', or 'boundary' as primary terms.",
+        "It gives a concrete recommendation (consolidate, don't consolidate, or consolidate with conditions)."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "This module's interface has 12 methods, most with 4+ parameters. Is it deep or shallow?",
+      "expected_output": "The response diagnoses the module as shallow and explains why using the depth vocabulary. It should suggest how to deepen the interface.",
+      "files": [],
+      "expectations": [
+        "It correctly identifies the module as shallow (large interface relative to implementation).",
+        "It explains depth in terms of leverage (behaviour per unit of interface), not line-count ratio.",
+        "It suggests concrete deepening steps (reduce methods, simplify params, hide complexity).",
+        "It references the 'interface is the test surface' principle or a related seam principle."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I'm designing a payment processor. Should I inject the payment gateway or create it inside the function?",
+      "expected_output": "The response recommends dependency injection, explaining it in terms of seams, adapters, and testability.",
+      "files": [],
+      "expectations": [
+        "It recommends accepting the payment gateway as a parameter (dependency injection).",
+        "It explains the reasoning in terms of seams and adapters, not just 'it's more testable'.",
+        "It mentions that the seam allows swapping adapters (production vs test).",
+        "It applies the 'one adapter = hypothetical seam, two = real' principle."
+      ]
+    }
+  ]
+}

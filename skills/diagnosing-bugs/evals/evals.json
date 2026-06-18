@@ -1,0 +1,41 @@
+{
+  "skill_name": "diagnosing-bugs",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "The app crashes when I click submit on the checkout form. How do I debug this?",
+      "expected_output": "The response follows the diagnosis discipline — building a feedback loop first, not jumping to code fixes. It should propose a concrete reproduction strategy (test, curl, or browser script) and explain why the loop matters.",
+      "files": [],
+      "expectations": [
+        "It does NOT jump straight to fixing code or guessing the root cause.",
+        "It proposes building a feedback loop (failing test, curl script, or browser automation).",
+        "It explains the philosophy: tight loop before hypothesis.",
+        "It names a specific command or script that could go red on the bug."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "My API returns 500 intermittently, maybe 1 in 50 requests. Help me debug.",
+      "expected_output": "The response recognises this as a non-deterministic bug and proposes strategies to raise the reproduction rate (looping, stress, parallelisation, timing injection).",
+      "files": [],
+      "expectations": [
+        "It identifies the bug as non-deterministic / flaky.",
+        "It proposes raising the reproduction rate (loop 100×, parallelise, add stress).",
+        "It does NOT accept 'it's intermittent, hard to debug' as a stopping point.",
+        "It proposes a concrete feedback loop that can catch the intermittent failure."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "The test suite fails but I have 200 tests. How do I find the culprit?",
+      "expected_output": "The response proposes a bisection strategy or differential loop to narrow down the failing test.",
+      "files": [],
+      "expectations": [
+        "It proposes a bisection strategy (git bisect, binary search on test subsets).",
+        "It does NOT suggest 'run all tests and look at the output'.",
+        "It explains how to automate the bisection (script that runs test subset, checks result).",
+        "It keeps the feedback loop tight and agent-runnable."
+      ]
+    }
+  ]
+}
