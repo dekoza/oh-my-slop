@@ -90,6 +90,14 @@ GREEN: Minimal code to pass → passes
 
 Once all behaviours are covered, look for refactor candidates. See [Refactoring](references/refactoring.md).
 
+**Harvest shortcuts.** When you took a shortcut to get a test green — skipped validation, stubbed a dependency, hardcoded a value — tag it before refactoring:
+
+```python
+# SHORTCUT: <what's skipped>. Upgrade: <what to do when this matters>.
+```
+
+These markers are harvestable. Run `grep -rnE '(#|//) ?SHORTCUT:' .` across the repo to find accumulated shortcuts before they compound. A shortcut without an `Upgrade:` path is a ticking bomb — either add the path or fix it now.
+
 ## Test execution environment
 
 Follow the project's AGENTS.md §2 and §11:

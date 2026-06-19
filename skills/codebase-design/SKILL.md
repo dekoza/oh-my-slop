@@ -8,6 +8,28 @@ license: MIT (adapted from mattpocock/skills)
 
 Design **deep modules**: a lot of behaviour behind a small interface, placed at a clean seam, testable through that interface. Use this language and these principles wherever code is being designed or restructured. The aim is leverage for callers, locality for maintainers, and testability for everyone.
 
+## Before You Build — The Ladder
+
+Before writing any code, climb this ladder. Stop at the first rung that holds:
+
+1. **Does this need to exist?** If not, delete the requirement, not the code. YAGNI is not a suggestion — it's a discipline.
+2. **Does stdlib or the platform already do this?** Use it. Don't wrap what's free. See [Platform Native](references/platform-native.md) for a checklist.
+3. **Does an already-installed dependency do this?** Use it. No new `pip install` or `npm add` for what you already ship.
+4. **Can it be one line?** One line. No abstraction, no helper, no utility module, no base class.
+5. **Only then:** build the minimum that works. Smallest interface, deepest implementation.
+
+**Safety floor — never simplify away:** trust-boundary validation, error handling, security, accessibility, data integrity. The ladder optimizes for less code, not less safety. If a rung would strip a safety guard, stop.
+
+When a shortcut is deliberate, tag it so it's harvestable later:
+
+```python
+# SHORTCUT: <what's skipped>. Upgrade: <what to do when this matters>.
+```
+
+Use `grep -rnE '(#|//) ?SHORTCUT:' .` across the repo to find accumulated shortcuts before they compound. See [TDD](../tdd/SKILL.md) for the shortcut-lifecycle workflow.
+
+**Ship and question:** build the minimal version, then challenge the requirement. Does the caller actually need this shape? Could the seam move? If the requirement survives scrutiny, the minimal version was the right call. If it doesn't, you saved yourself the over-build. For adversarial requirement review, pair with [Court Jester](../court-jester/SKILL.md).
+
 ## Glossary
 
 Use these terms exactly — don't substitute "component," "service," "API," or "boundary." Consistent language is the whole point.
@@ -114,6 +136,7 @@ Good interfaces make testing natural:
 
 - **Deepening a cluster given its dependencies** — see [Deepening](references/deepening.md): dependency categories, seam discipline, and replace-don't-layer testing.
 - **Exploring alternative interfaces** — see [Design It Twice](references/design-it-twice.md): spin up parallel sub-agents to design the interface several radically different ways, then compare on depth, locality, and seam placement.
+- **Platform-native reference** — see [Platform Native](references/platform-native.md): what stdlib, frameworks, and browsers provide before you reach for a dependency.
 
 ## Reference Index
 
