@@ -25,11 +25,14 @@ Scan the codebase for over-engineering. Read-only — no files are modified.
 
 ## How to run
 
+The script is bundled alongside this SKILL.md in the skill's `scripts/` directory. The agent should resolve the path to this SKILL.md file and run:
+
 ```bash
-uv run python scripts/ponytail_audit.py [path] [--min-score N]
+uv run python <path-to-this-skill>/scripts/ponytail_audit.py <target-path> [--min-score N]
 ```
 
-- `path` — root directory to scan (default: `.`)
+- `<path-to-this-skill>` — directory containing this SKILL.md (e.g. `~/.pi/agent/git/github.com/dekoza/oh-my-slop/skills/ponytail-audit`)
+- `<target-path>` — root directory to scan (default: `.`)
 - `--min-score` — minimum severity threshold (default: 1, include everything)
 
 ## Output format

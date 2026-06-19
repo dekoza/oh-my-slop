@@ -35,8 +35,10 @@ Apply the **deletion test** to anything you suspect is shallow: would deleting i
 Run the ponytail audit to find bloat that the deletion test misses — code-level over-engineering that isn't about module boundaries:
 
 ```bash
-uv run python scripts/ponytail_audit.py . --min-score 5
+uv run python <path-to-ponytail-audit-skill>/scripts/ponytail_audit.py . --min-score 5
 ```
+
+Where `<path-to-ponytail-audit-skill>` is the directory containing the `ponytail-audit` SKILL.md (e.g. `~/.pi/agent/git/github.com/dekoza/oh-my-slop/skills/ponytail-audit`).
 
 Incorporate the audit findings into your candidate list, tagged as `simplify` (vs. the `deepen` candidates from the deletion test). A module can appear on both axes — too shallow in interface, too bloated in implementation. The audit catches:
 

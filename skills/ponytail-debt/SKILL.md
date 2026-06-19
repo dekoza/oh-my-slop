@@ -33,11 +33,14 @@ Every `SHORTCUT:` marker in source files. Reports:
 
 ## How to run
 
+The script is bundled alongside this SKILL.md in the skill's `scripts/` directory. The agent should resolve the path to this SKILL.md file and run:
+
 ```bash
-uv run python scripts/ponytail_debt.py [path] [--output-debt-file]
+uv run python <path-to-this-skill>/scripts/ponytail_debt.py <target-path> [--output-debt-file]
 ```
 
-- `path` — root directory to scan (default: `.`)
+- `<path-to-this-skill>` — directory containing this SKILL.md (e.g. `~/.pi/agent/git/github.com/dekoza/oh-my-slop/skills/ponytail-debt`)
+- `<target-path>` — root directory to scan (default: `.`)
 - `--output-debt-file` — write `SHORTCUT-DEBT.md` for persistent tracking
 
 ## Output format
