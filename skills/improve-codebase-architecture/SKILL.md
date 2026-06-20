@@ -7,6 +7,16 @@ license: MIT (adapted from mattpocock/skills)
 
 # Improve Codebase Architecture
 
+## When this skill loads, start the review now
+
+This skill is manual-only (`disable-model-invocation: true`); it is never auto-triggered. So if you are reading this, the user has **already issued the entire request** by invoking `/skill:improve-codebase-architecture`. The invocation itself is the task — they want an architecture review of the codebase in the current working directory.
+
+Do not ask "what would you like me to do?" or wait for further instructions before acting. That extra round-trip is exactly the friction this section exists to kill. Begin **Phase 1: Explore** immediately, proceed through **Phase 2: Present candidates as an HTML report**, and only pause at the point Phase 2 explicitly tells you to ask "Which of these would you like to explore?"
+
+The single legitimate reason to pause before starting: there is no recognizable codebase in the current working directory. Only then ask the user for the path to review.
+
+---
+
 Surface architectural friction and propose **deepening opportunities** — refactors that turn shallow modules into deep ones — and **simplification opportunities** — refactors that cut bloat, dead code, and over-engineering. The aim is testability and AI-navigability.
 
 This command is _informed_ by the project's domain model and built on a shared design vocabulary:
