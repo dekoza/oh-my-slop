@@ -13,6 +13,19 @@ description: >
 
 Scan the codebase for over-engineering. Read-only — no files are modified.
 
+## Scope and stopping rule
+
+The audit is a **bounded, one-shot deliverable**, not the opening move of a general code review. The script's ranked output (findings + `net:` summary) **is** the result. Your job is to present it and stop — not to re-audit by hand, and not to expand into a broader architecture tour ("let me look at key modules, URL patterns, the overall architecture…"). That broader tour is a different activity; if the user wants it, that's what `improve-codebase-architecture` is for. Don't silently switch skills mid-audit.
+
+The reason this matters: once a model has a list of findings in hand, the temptation is to "go deeper" to build confidence before presenting. But the script already did the scan — re-exploring duplicates that work, burns tokens, and drifts past the point where the user wanted to be asked. The findings are cheap for the user to triage; they don't need you to pre-validate the whole codebase first.
+
+**Targeted verification is allowed; expansive exploration is not.** The line between them:
+
+- ✅ Allowed: reading the specific `file:line` of a single borderline finding to confirm it's not a false positive before you present it. The AST heuristics do produce false positives, and presenting one obvious miss undermines trust in the rest. Keep this surgical — one file, one finding.
+- ❌ Not allowed: reading URL configs, module graphs, "key modules," or "the overall architecture" to contextualize the findings. That's scope creep, not verification.
+
+**Hard stop:** after presenting the grouped findings and the one-sentence-per-finding explanation, ask the user which findings to act on — and stop. Do not run further tools, do not start fixing, do not re-explore. Wait for the user's answer. Re-running the script only happens at step 5, *after* the user has chosen and fixes have been applied.
+
 ## What it finds
 
 | Tag | Meaning |
@@ -52,10 +65,11 @@ net: -<N> lines, -<M> deps possible.
 ## Workflow
 
 1. Run the script against the project root.
-2. Present findings grouped by tag, biggest cuts first.
-3. For each finding, explain the issue in one sentence and suggest the fix.
-4. Ask the user which findings to act on.
-5. After fixes, re-run to verify reduction.
+2. Optionally verify a handful of borderline findings by reading their specific `file:line` (see the Scope section — targeted only, never a tour). Drop any confirmed false positives before presenting.
+3. Present findings grouped by tag, biggest cuts first, including the `net:` summary line.
+4. For each finding, explain the issue in one sentence and suggest the fix.
+5. **Stop.** Ask the user which findings to act on. Do not call any more tools until they answer — no fixing, no re-exploring, no "let me keep digging."
+6. Only after the user picks findings and fixes are applied: re-run the script to verify the reduction.
 
 ## Pair with
 
