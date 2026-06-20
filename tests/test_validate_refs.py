@@ -3,8 +3,11 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from scripts.validate_refs import validate_repo
 
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "validate_refs.py"
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_PATH = REPO_ROOT / "scripts" / "validate_refs.py"
 
 
 def run_validator(repo_root: Path) -> subprocess.CompletedProcess[str]:
@@ -15,6 +18,14 @@ def run_validator(repo_root: Path) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+def test_real_repo_has_no_broken_references() -> None:
+    """Regression guard: the shipped skills tree must not contain broken
+    markdown/backtick references. Catches wrong-relative-path refs (e.g. a
+    cross-skill link written repo-root-relative instead of source-relative)
+    before they land."""
+    assert validate_repo(REPO_ROOT) == []
 
 
 def test_valid_repo_passes(tmp_path: Path) -> None:

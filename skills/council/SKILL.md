@@ -135,11 +135,11 @@ The **Contrarian** (and only the Contrarian) may invoke a court-jester mode when
 
 | Question Type | Court-Jester Mode |
 |---------------|-------------------|
-| Hidden assumptions, vague goals | `references/socratic-questioning.md` |
-| Trade-off decision, approach choice | `references/dialectic-synthesis.md` |
-| Rollout risk, migration, strategy | `references/pre-mortem-analysis.md` |
-| Security, abuse, gaming, sabotage | `references/red-team-adversarial.md` |
-| Claims based on data, benchmarks | `references/evidence-audit.md` |
+| Hidden assumptions, vague goals | [socratic-questioning](../court-jester/references/socratic-questioning.md) |
+| Trade-off decision, approach choice | [dialectic-synthesis](../court-jester/references/dialectic-synthesis.md) |
+| Rollout risk, migration, strategy | [pre-mortem-analysis](../court-jester/references/pre-mortem-analysis.md) |
+| Security, abuse, gaming, sabotage | [red-team-adversarial](../court-jester/references/red-team-adversarial.md) |
+| Claims based on data, benchmarks | [evidence-audit](../court-jester/references/evidence-audit.md) |
 
 3. The Contrarian applies the loaded mode to produce a deeper, more structured critique
 4. The Contrarian produces their response in the standard 150-300 word format
