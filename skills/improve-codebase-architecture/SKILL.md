@@ -42,24 +42,17 @@ Apply the **deletion test** to anything you suspect is shallow: would deleting i
 
 #### Ponytail Audit Pass
 
-Run the ponytail audit to find bloat that the deletion test misses — code-level over-engineering that isn't about module boundaries:
+Run a **ponytail-audit** pass over the codebase to find bloat that the deletion test misses — code-level over-engineering that isn't about module boundaries. The audit is model-driven: invoke the `ponytail-audit` skill (it auto-triggers) and let it read the tree and produce its ranked findings.
 
-```bash
-uv run python <path-to-ponytail-audit-skill>/scripts/ponytail_audit.py . --min-score 5
-```
+Incorporate the audit findings into your candidate list, tagged as `simplify` (vs. the `deepen` candidates from the deletion test). A module can appear on both axes — too shallow in interface, too bloated in implementation. The audit hunts:
 
-Where `<path-to-ponytail-audit-skill>` is the directory containing the `ponytail-audit` SKILL.md (e.g. `~/.pi/agent/git/github.com/dekoza/oh-my-slop/skills/ponytail-audit`).
-
-Incorporate the audit findings into your candidate list, tagged as `simplify` (vs. the `deepen` candidates from the deletion test). A module can appear on both axes — too shallow in interface, too bloated in implementation. The audit catches:
-
-- **Dead code** — defined but never referenced
+- **Dead code** — defined but never referenced across the whole repo
 - **Reinvented stdlib** — custom implementations of built-in functionality
-- **Speculative abstractions** — ABCs/Protocols with ≤1 implementation
+- **Speculative abstractions** — ABCs/Protocols with a single implementation
 - **Pass-through wrappers** — functions that only delegate
 - **Dead feature flags** — hardcoded toggles that should be removed
-- **Unnecessary type aliases** — primitive renames
 
-See [`ponytail-audit`](../ponytail-audit/SKILL.md) for the full detection catalog.
+See [`ponytail-audit`](../ponytail-audit/SKILL.md) for the full detection catalog and its read-only, one-shot boundaries.
 
 ### 2. Present candidates as an HTML report
 
