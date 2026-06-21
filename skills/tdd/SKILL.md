@@ -1,10 +1,33 @@
 ---
 name: tdd
-description: Test-driven development with red-green-refactor. Use when the user wants to build features or fix bugs test-first, mentions "red-green-refactor", or wants to write integration tests.
+description: >
+  Test-driven development with red-green-refactor. Use when building features, fixing bugs,
+  writing any new implementation code, adding tests to existing code, or modifying behaviour.
+  This is the mandatory default for all implementation tasks — TDD is the ONLY allowed test
+  strategy. Triggers on phrases like "build X", "implement Y", "add Z", "fix this bug",
+  "write tests for", "refactor this", "add integration tests", or any task that involves
+  writing or changing code. Also triggers when the user mentions "red-green-refactor",
+  "test-first", "TDD", or "write tests". You MUST load this skill before writing any
+  implementation code. This is a discipline skill — following its workflow is non-negotiable.
 license: MIT (adapted from mattpocock/skills)
 ---
 
 # Test-Driven Development
+
+## STOP — Read This Before Writing Any Code
+
+This skill is **mandatory** for all implementation tasks. If you are about to write, modify, or fix code — stop here and follow this workflow. TDD is not optional. Writing implementation before tests is a bug.
+
+**Red flags — you are rationalizing if you think:**
+
+| Excuse | Reality |
+|--------|---------|
+| "I'll add tests after I get the implementation working" | That's testing after, not TDD. You'll never go back. Write the test first. |
+| "This is a simple change, I don't need TDD" | Simple changes break things. The test takes 30 seconds. Write it first. |
+| "I'll write all tests now as a specification" | That's horizontal slicing. You'll test imagined behaviour. Use vertical slices instead. |
+| "I need to understand the code first before writing tests" | Writing tests IS how you understand the code. Start with one tracer bullet. |
+| "Being pragmatic, not dogmatic" | Following TDD IS pragmatic. Skipped tests cause bugs that cost hours. |
+| "The test will be too hard to write without the implementation" | That's the point — the test drives the design. If it's hard to test, the design needs work. |
 
 ## Philosophy
 
