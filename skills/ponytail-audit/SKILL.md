@@ -42,6 +42,17 @@ single-implementation interfaces; factories with one product; wrappers that
 only delegate; files exporting one thing; dead flags and config; hand-rolled
 stdlib.
 
+**Accidental coupling** — unrelated concerns sharing one file because they share
+a category name, not a domain concept. Example: three middlewares in
+`middleware.py` that have no behavioral relationship. This is not deepening —
+it's a file organization mistake. Flag as `shrink:` with recommendation to split
+into focused modules.
+
+**Lagging indicators** — before flagging a module as both "too shallow" (deepen)
+and "too bloated" (simplify), check `git log --oneline -10` for recent refactors.
+If the module is being consolidated in recent commits, the "simplify" signal is
+residual from a pre-consolidation state. Skip it.
+
 Before flagging anything `delete` or `yagni`, confirm the cross-file usage
 yourself — grep the repo and read the callers. A Django view referenced by
 string in `urls.py` is not dead; a `Protocol` implemented in another module

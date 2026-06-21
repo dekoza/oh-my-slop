@@ -54,6 +54,18 @@ Incorporate the audit findings into your candidate list, tagged as `simplify` (v
 
 See [`ponytail-audit`](../ponytail-audit/SKILL.md) for the full detection catalog and its read-only, one-shot boundaries.
 
+#### Temporal Awareness
+
+Before flagging candidates, check `git log --oneline -20` for refactors in the last 48–72 hours. A candidate that looks contradictory may be a **lagging indicator** — a problem already being resolved by a commit you're about to repeat.
+
+Patterns to recognize:
+- **Deepening sequence:** multiple commits consolidating the same domain (e.g., `OrderService` → `OrderManagementService` → `OrderDomain`). A "simplify by splitting" signal is residual from a pre-consolidation state. Don't re-flag it.
+- **Two-step refinement:** first commit extracts commonality, second commit parameterizes it (e.g., four QR views → two pairs with shared helper → two parameterized views with `<fmt>` kwarg). Not contradictory — incomplete deepening.
+- **Genuine contradiction:** unrelated concerns in one file (e.g., three middlewares sharing `middleware.py` with no behavioral relationship). This is **accidental coupling**, not deepening. Flag for splitting.
+- **Simplification enabling deepening:** deleting redundant checks before consolidating remaining logic. Compatible, not contradictory.
+
+If a candidate is already being resolved by recent commits, mark it `temporal: resolving` and skip it. If resolved, mark it `temporal: resolved` and skip it. Only flag `temporal: fresh` candidates.
+
 ### 2. Present candidates as an HTML report
 
 Write a self-contained HTML file to the OS temp directory so nothing lands in the repo. Resolve the temp dir from `$TMPDIR`, falling back to `/tmp` (or `%TEMP%` on Windows), and write to `<tmpdir>/architecture-review-<timestamp>.html` so each run gets a fresh file. Open it for the user — `xdg-open <path>` on Linux, `open <path>` on macOS, `start <path>` on Windows — and tell them the absolute path.
@@ -69,6 +81,7 @@ For each candidate, render a card with:
 - **Benefits** — explained in terms of locality and leverage, and how tests would improve.
 - **Before / After diagram** — side-by-side, custom-drawn, illustrating the change.
 - **Recommendation strength** — one of `Strong`, `Worth exploring`, `Speculative`, rendered as a badge.
+- **Temporal status** — one of `fresh`, `resolving`, `resolved`. If `resolving`, note which commit is addressing it. If `resolved`, explain why the signal is lagging.
 
 Group candidates by axis: **Deepen** candidates first, then **Simplify** candidates. A module appearing on both axes gets two cards.
 
@@ -87,6 +100,17 @@ Do NOT propose interfaces yet. After the file is written, ask the user: "Which o
 Once the user picks a candidate, conduct a specification interview to walk the design tree with them — constraints, dependencies, the shape of the changed module, what sits behind the seam, what tests survive.
 
 Use the [`court-jester`](../court-jester/SKILL.md) skill for adversarial review of the proposed change, or conduct a collaborative specification interview.
+
+**Deepening and simplification coexistence.** When a candidate is both a deepening target (consolidate fragmented logic) and a simplification target (split for testability), they are not contradictory — they operate on different axes. Depth is an interface property; internal splitting is an implementation property.
+
+Apply the invariant: **the public interface must remain small and stable while internal structure evolves freely.** If tests call private methods, or callers bypass the interface, the deepening has failed and the Contrarian's critique applies.
+
+Stopping criteria (from council consensus):
+- Public methods: ≤ 8. If the deepened module exposes more, extract a sub-service.
+- Internal regions: ≤ 4 (e.g., CRUD, Dashboard, Receiver, Misc). If a region exceeds ~120 lines, it's a candidate for its own private class — but keep it internal, same file.
+- Total class: ~600 lines is the extraction trigger. Beyond that, even well-organized regions become hard to scan.
+
+The temporal sequence is: **consolidate first** (establish the boundary), **then split internally** (organize within it). Never do both simultaneously — consolidation creates the coherent boundary that makes internal splitting meaningful.
 
 **Shortcut generation.** When a simplification is accepted but deferred (not done now), generate a `# SHORTCUT:` marker at the relevant code site:
 

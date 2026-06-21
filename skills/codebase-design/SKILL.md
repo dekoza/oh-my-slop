@@ -40,6 +40,8 @@ Use these terms exactly — don't substitute "component," "service," "API," or "
 
 **Implementation** — what's inside a module, its body of code. Distinct from **Adapter**: a thing can be a small adapter with a large implementation (a Postgres repo) or a large adapter with a small implementation (an in-memory fake). Reach for "adapter" when the seam is the topic; "implementation" otherwise.
 
+**Internal seam** — a seam private to a module's implementation, used by its own tests but never exposed through the external interface. A deep module can have internal seams (e.g., private helper classes, regional splits) without losing depth. Internal seams are invisible to callers; if they become visible, the module has lost its depth.
+
 **Depth** — leverage at the interface: the amount of behaviour a caller (or test) can exercise per unit of interface they have to learn. A module is **deep** when a large amount of behaviour sits behind a small interface, **shallow** when the interface is nearly as complex as the implementation.
 
 **Seam** _(Michael Feathers)_ — a place where you can alter behaviour without editing in that place; the *location* at which a module's interface lives. Where to put the seam is its own design decision, distinct from what goes behind it. _Avoid_: boundary (overloaded with DDD's bounded context).
@@ -83,6 +85,9 @@ When designing an interface, ask:
 ## Principles
 
 - **Depth is a property of the interface, not the implementation.** A deep module can be internally composed of small, mockable, swappable parts — they just aren't part of the interface. A module can have **internal seams** (private to its implementation, used by its own tests) as well as the **external seam** at its interface.
+- **Deepening and internal splitting are orthogonal axes.** Deepening shrinks the external interface (fewer modules, fewer imports). Internal splitting organizes the implementation (regions, private helpers, labeled sections). They serve different beneficiaries: deepening is a gift to the caller; internal splitting is a gift to the maintainer. They coexist when the interface stays small and stable. They conflict when internal structure leaks into the public API.
+- **The temporal sequence: gather first, then split.** Consolidate fragmented logic into one module before decomposing internally. Splitting across files without consolidation is fragmentation wearing a disguise. Splitting within a consolidated domain is genuine decomposition.
+- **Internal splitting is legitimate when it serves human readability.** It becomes an escape hatch when it's a cover for indecision ("we'll split internally for testability" while the class grows to 800 lines with no test at the interface level). The burden of proof: tests must exercise the public interface, not private methods.
 - **The deletion test.** Imagine deleting the module. If complexity vanishes, it was a pass-through. If complexity reappears across N callers, it was earning its keep.
 - **The interface is the test surface.** Callers and tests cross the same seam. If you want to test *past* the interface, the module is probably the wrong shape.
 - **One adapter means a hypothetical seam. Two adapters means a real one.** Don't introduce a seam unless something actually varies across it.
