@@ -1,0 +1,69 @@
+{
+  "skill": "production-readiness",
+  "evals": [
+    {
+      "id": "prod-01-timeout-required",
+      "description": "Agent requires explicit timeouts on outbound calls",
+      "prompt": "I need to add a call to the Stripe API in our payment service. Write the code to charge a customer.",
+      "expected": [
+        "Agent sets an explicit timeout on the HTTP call (not library default)",
+        "Agent does NOT use bare `requests.post()` or `httpx.post()` without a timeout parameter",
+        "Agent considers what happens on timeout (retry? fallback? error response?)"
+      ]
+    },
+    {
+      "id": "prod-02-retry-safety",
+      "description": "Agent checks retry safety before adding retry logic",
+      "prompt": "The `send_welcome_email` call sometimes fails. I want to add retries. The function calls `email_service.send(to, subject, body)` which sends an actual email.",
+      "expected": [
+        "Agent identifies that sending an email is NOT idempotent — retrying will send duplicate emails",
+        "Agent proposes a solution that prevents duplicates (idempotency key, check-before-send, or queue-based retry)",
+        "Agent does NOT blindly wrap the call in a retry loop"
+      ]
+    },
+    {
+      "id": "prod-03-circuit-breaker",
+      "description": "Agent applies circuit breaker pattern for a failing dependency",
+      "prompt": "Our recommendation service is down and it's causing all our product page requests to hang. The recommendation call has a 30-second timeout. How do we protect ourselves?",
+      "expected": [
+        "Agent proposes a circuit breaker (or equivalent pattern) to fail fast when the dependency is down",
+        "Agent reduces the timeout or makes the call non-blocking",
+        "Agent proposes a fallback (cached recommendations, empty recommendations, degraded page)",
+        "Agent does NOT just increase the timeout or add more retries"
+      ]
+    },
+    {
+      "id": "prod-04-overload-behavior",
+      "description": "Agent designs explicit overload behavior",
+      "prompt": "Our API is getting overloaded during traffic spikes. Some requests are timing out. We have a mix of critical requests (payments, auth) and non-critical ones (analytics, recommendations). How should we handle this?",
+      "expected": [
+        "Agent proposes load shedding or prioritization — dropping non-critical traffic to protect critical paths",
+        "Agent mentions bounded queues or backpressure",
+        "Agent does NOT just propose scaling up the infrastructure",
+        "Agent considers returning 503 with Retry-After for shed requests"
+      ]
+    },
+    {
+      "id": "prod-05-deployment-safety",
+      "description": "Agent makes a database migration safe and reversible",
+      "prompt": "I need to add a `status` column to the `orders` table. It should default to 'pending'. Write the migration.",
+      "expected": [
+        "Agent writes a backward-compatible migration (adds column with default, doesn't remove old columns)",
+        "Agent considers that old code running during deploy must still work with the new schema",
+        "Agent includes a down migration or rollback path",
+        "Agent does NOT write a migration that breaks the running old version"
+      ]
+    },
+    {
+      "id": "prod-06-observability-boundary",
+      "description": "Agent adds observability to a service boundary",
+      "prompt": "Add a new endpoint `/api/v1/reports` that generates a PDF report. It calls the database and an external rendering service.",
+      "expected": [
+        "Agent includes structured logging with correlation ID at the boundary",
+        "Agent tracks latency and error rate for the external rendering service",
+        "Agent validates the response from the rendering service before using it",
+        "Agent does NOT just log 'report generated' at INFO level with no context"
+      ]
+    }
+  ]
+}

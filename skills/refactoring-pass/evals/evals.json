@@ -1,0 +1,71 @@
+{
+  "skill": "refactoring-pass",
+  "evals": [
+    {
+      "id": "refactor-01-preserve-behavior",
+      "description": "Agent preserves observable behavior during refactoring",
+      "prompt": "Refactor the `calculate_total` method in `orders/service.py`. It's 120 lines long and mixes tax calculation, discount application, and shipping logic. Extract each concern into its own method.",
+      "expected": [
+        "Agent extracts methods without changing the logic or return values",
+        "Agent runs tests after each extraction step",
+        "Agent does NOT add new validation, change calculation order, or 'fix' anything while refactoring",
+        "Agent keeps the refactoring in a separate commit from any behavior changes"
+      ]
+    },
+    {
+      "id": "refactor-02-preparatory-before-feature",
+      "description": "Agent refactors before adding a feature when structure blocks the change",
+      "prompt": "I need to add a fraud check to the `process_order` method. The method is 200 lines of mixed validation, calculation, and persistence. Where should I add it?",
+      "expected": [
+        "Agent identifies the structural friction (mixed concerns in one method)",
+        "Agent proposes extracting phases (validate, check, calculate, persist) BEFORE adding the fraud check",
+        "Agent does NOT just insert the fraud check somewhere in the 200-line method",
+        "Agent separates the structural refactor from the feature addition"
+      ]
+    },
+    {
+      "id": "refactor-03-smell-detection",
+      "description": "Agent correctly identifies code smells and chooses appropriate moves",
+      "prompt": "Review this code and tell me what smells you see:\n\n```python\nclass ReportGenerator:\n    def generate(self, data, format_type, include_header, include_footer, page_size, orientation, font, color_scheme):\n        if format_type == 'pdf':\n            # 50 lines of PDF generation\n        elif format_type == 'csv':\n            # 30 lines of CSV generation\n        elif format_type == 'html':\n            # 40 lines of HTML generation\n```",
+      "expected": [
+        "Agent identifies long parameter list (8 parameters)",
+        "Agent identifies repeated conditionals (if/elif chain on format_type)",
+        "Agent identifies long method (120+ lines)",
+        "Agent proposes specific moves: replace conditional with polymorphism, introduce parameter object, extract method"
+      ]
+    },
+    {
+      "id": "refactor-04-stop-condition",
+      "description": "Agent stops refactoring when the blocking smell is gone",
+      "prompt": "I extracted the tax calculation from `process_order` into its own method. The method is now cleaner. Should I also extract the email notification logic, the audit logging, and the cache invalidation while I'm at here?",
+      "expected": [
+        "Agent says NO — the blocking smell (mixed concerns in process_order) is already gone",
+        "Agent explains that further cleanup would be speculative",
+        "Agent does NOT propose a broad refactor of the entire module",
+        "Agent suggests stopping and committing the working change"
+      ]
+    },
+    {
+      "id": "refactor-05-safety-net",
+      "description": "Agent establishes a safety net before refactoring untested code",
+      "prompt": "I want to refactor the `UserAuthenticator` class. It has no tests and the behavior is unclear. It handles password hashing, session management, and 2FA all in one class.",
+      "expected": [
+        "Agent writes characterization tests BEFORE refactoring",
+        "Agent captures current behavior (even if ugly) in tests",
+        "Agent does NOT start extracting methods without a safety net",
+        "Agent marks suspicious behavior for clarification instead of silently 'fixing' it"
+      ]
+    },
+    {
+      "id": "refactor-06-reject-rewrite",
+      "description": "Agent rejects rewrite and chooses incremental refactoring",
+      "prompt": "This `PaymentProcessor` class is terrible — 1500 lines, globals everywhere, no tests. I need to add support for a new payment provider. Should I just rewrite the whole thing?",
+      "expected": [
+        "Agent does NOT propose a full rewrite",
+        "Agent proposes the smallest change that makes the new provider possible",
+        "Agent suggests breaking one dependency at a time",
+        "Agent mentions that rewrite is only justified if explicitly requested or clearly safer"
+      ]
+    }
+  ]
+}

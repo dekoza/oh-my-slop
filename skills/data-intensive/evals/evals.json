@@ -1,0 +1,71 @@
+{
+  "skill": "data-intensive",
+  "evals": [
+    {
+      "id": "ddia-01-write-semantics",
+      "description": "Agent defines explicit write semantics for a new data path",
+      "prompt": "I need to add a new endpoint that saves a user's draft document. It writes to PostgreSQL. Write the handler.",
+      "expected": [
+        "Agent defines when the write is considered durable (e.g., transaction commit)",
+        "Agent defines behavior on timeout (unknown success — may or may not have persisted)",
+        "Agent considers idempotency (can the write be safely retried?)",
+        "Agent does NOT just write to the database and return 200 OK without considering failure modes"
+      ]
+    },
+    {
+      "id": "ddia-02-idempotency",
+      "description": "Agent makes a retry-safe idempotent operation",
+      "prompt": "Our payment webhook handler sometimes receives duplicate events from the payment provider. The handler charges the user's card and creates an order. How do we handle duplicates?",
+      "expected": [
+        "Agent identifies that charging a card is NOT idempotent — duplicates will double-charge",
+        "Agent proposes a deduplication key (e.g., payment provider's event ID) to skip duplicates",
+        "Agent does NOT just wrap the handler in a retry loop",
+        "Agent stores processed event IDs to detect duplicates"
+      ]
+    },
+    {
+      "id": "ddia-03-derived-data",
+      "description": "Agent treats derived data explicitly with propagation and repair paths",
+      "prompt": "I want to add a search index (Elasticsearch) for our products. The source of truth is PostgreSQL. How should I keep them in sync?",
+      "expected": [
+        "Agent treats the search index as derived data, not a source of truth",
+        "Agent defines a propagation mechanism (CDC, application-level events, or periodic sync)",
+        "Agent defines a rebuild path (how to rebuild the index from PostgreSQL if it gets out of sync)",
+        "Agent acknowledges that the index may lag behind the primary database"
+      ]
+    },
+    {
+      "id": "ddia-04-schema-evolution",
+      "description": "Agent plans schema evolution with backward/forward compatibility",
+      "prompt": "I need to change the `User` event schema. Currently it has `name` (string). I want to split it into `first_name` and `last_name`. There are 5 services consuming this event. How should I do this?",
+      "expected": [
+        "Agent does NOT just rename the field (breaking change)",
+        "Agent proposes adding new fields while keeping the old one during migration",
+        "Agent plans for old consumers (still reading `name`) and new consumers (reading `first_name`/`last_name`) to coexist",
+        "Agent mentions a schema registry or versioning strategy"
+      ]
+    },
+    {
+      "id": "ddia-05-exactly-once-myth",
+      "description": "Agent rejects exactly-once wishful thinking",
+      "prompt": "I need to process payment events exactly once. No duplicates, no lost events. How do I guarantee this?",
+      "expected": [
+        "Agent explains that true exactly-once is extremely expensive / impractical in distributed systems",
+        "Agent proposes at-least-once delivery with idempotent consumers as the practical approach",
+        "Agent does NOT claim that any single technology provides exactly-once guarantees without tradeoffs",
+        "Agent designs for duplicate detection and idempotent processing"
+      ]
+    },
+    {
+      "id": "ddia-06-consistency-model",
+      "description": "Agent chooses the right consistency model for the use case",
+      "prompt": "After a user updates their profile picture, they sometimes see the old picture when they refresh. The profile service uses async replication to read replicas. What's the right fix?",
+      "expected": [
+        "Agent identifies this as a read-your-writes consistency problem",
+        "Agent proposes routing the user's reads to the leader (or same replica) for a window after their write",
+        "Agent does NOT propose switching all reads to the leader (too expensive)",
+        "Agent does NOT propose strong/global consistency (overkill for this case)"
+      ]
+    }
+  ]
+}

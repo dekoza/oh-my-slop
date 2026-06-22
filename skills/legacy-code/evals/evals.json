@@ -1,0 +1,71 @@
+{
+  "skill": "legacy-code",
+  "evals": [
+    {
+      "id": "legacy-01-characterize-before-change",
+      "description": "Agent writes characterization tests before modifying untested legacy code",
+      "prompt": "I need to add validation to the `process_payment` method in `payments/service.py`. This is legacy code with no tests. The method is 150 lines long and calls several external services. Write the code to add the validation.",
+      "expected": [
+        "Agent states the requested behavior change and identifies current behavior that must be preserved",
+        "Agent writes at least one characterization test BEFORE modifying the production code",
+        "Agent identifies the change point and assesses existing test coverage",
+        "Agent does NOT start by rewriting the method or cleaning up the whole module"
+      ]
+    },
+    {
+      "id": "legacy-02-seam-selection",
+      "description": "Agent chooses the smallest useful seam for dependency breaking",
+      "prompt": "The `EmailNotifier` class in `notifications/notifier.py` directly calls `smtplib.SMTP` in its `send` method. There are no tests. I need to add a retry mechanism. How should I approach this?",
+      "expected": [
+        "Agent identifies the hard dependency (direct `smtplib.SMTP` call) as the blocking barrier",
+        "Agent proposes the smallest seam — wrapping the SMTP call behind an injectable interface or parameterizing the method",
+        "Agent does NOT propose rewriting the entire class or introducing a large new architecture",
+        "Agent explains whether the seam is for sensing, separation, or both"
+      ]
+    },
+    {
+      "id": "legacy-03-sprout-method",
+      "description": "Agent uses sprout method when adding behavior to fragile code",
+      "prompt": "I need to add a new discount calculation to the `OrderProcessor.process` method. This method is 300 lines of fragile legacy code with no tests. The new discount logic is complex (about 40 lines). What's the safest way to add it?",
+      "expected": [
+        "Agent proposes extracting the new discount logic into a separate method (sprout method)",
+        "Agent keeps the existing 300-line method mostly untouched",
+        "Agent routes to the new method from a small insertion point",
+        "Agent writes tests for the new discount method in isolation"
+      ]
+    },
+    {
+      "id": "legacy-04-keep-changes-separate",
+      "description": "Agent separates behavior changes from structural refactorings",
+      "prompt": "I need to change the return type of `UserRepository.find()` from a dict to a User object. The method has no tests and is used in 15 places. Show me your plan.",
+      "expected": [
+        "Characterization tests are written first to capture current dict-returning behavior",
+        "The behavior change (return type) and any structural refactoring are described as separate steps",
+        "Agent does NOT mix renaming, formatting, and behavior changes into one commit",
+        "Agent identifies the behavior delta explicitly"
+      ]
+    },
+    {
+      "id": "legacy-05-reject-rewrite",
+      "description": "Agent rejects rewrite as first move and chooses incremental approach",
+      "prompt": "This `ReportingEngine` class is a mess — 2000 lines, no tests, globals everywhere. I want to add a new report type. Should I just rewrite it?",
+      "expected": [
+        "Agent does NOT propose a full rewrite as the first step",
+        "Agent proposes the smallest change that makes the new report type possible safely",
+        "Agent identifies specific blocking dependencies and proposes breaking them incrementally",
+        "Agent mentions that rewrite is only justified if explicitly requested or clearly safer"
+      ]
+    },
+    {
+      "id": "legacy-06-dependency-breaking-technique",
+      "description": "Agent selects the correct dependency-breaking technique for the barrier",
+      "prompt": "The `PricingService.calculate` method calls `datetime.now()` directly to determine seasonal pricing. I can't write deterministic tests because of this. What's the right fix?",
+      "expected": [
+        "Agent identifies `datetime.now()` as a hidden input dependency",
+        "Agent proposes injecting a clock/time provider (Parameterize Method or Parameterize Constructor)",
+        "Agent does NOT propose subclass-and-override as the first option",
+        "Agent's chosen technique matches the actual barrier (hidden input, not construction problem)"
+      ]
+    }
+  ]
+}
