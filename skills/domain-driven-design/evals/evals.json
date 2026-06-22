@@ -1,0 +1,82 @@
+{
+  "skill": "domain-driven-design",
+  "evals": [
+    {
+      "id": "ddd-01-subdomain-classification",
+      "description": "Agent classifies subdomains and invests modeling effort appropriately",
+      "prompt": "I'm building an e-commerce platform. We have: product catalog, order management, payment processing, user authentication, email notifications, and a recommendation engine. How should I approach modeling each?",
+      "expected": [
+        "Agent classifies each subdomain (Core/Supporting/Generic)",
+        "Agent recommends highest modeling effort for Core Domain (e.g., order management, recommendations)",
+        "Agent recommends simpler approaches for Generic (auth, email)",
+        "Agent does NOT recommend full DDD tactical patterns for every subdomain"
+      ]
+    },
+    {
+      "id": "ddd-02-bounded-context-boundary",
+      "description": "Agent identifies bounded context boundaries and doesn't share domain classes",
+      "prompt": "I have an `Order` class that's used in the billing context and the fulfillment context. Both contexts need different fields and different behavior on the Order. Should I share the Order class?",
+      "expected": [
+        "Agent says NO — different contexts need different models",
+        "Agent explains that 'Order' in billing and 'Order' in fulfillment are different concepts",
+        "Agent recommends separate Order classes per context with translation at the boundary",
+        "Agent does NOT recommend a shared Order class with all fields from both contexts"
+      ]
+    },
+    {
+      "id": "ddd-03-aggregate-boundary",
+      "description": "Agent designs small, focused Aggregates",
+      "prompt": "I'm modeling an e-commerce order. An Order has OrderLines, a ShippingAddress, PaymentInfo, and a list of StatusChanges. Should all of this be one Aggregate?",
+      "expected": [
+        "Agent questions whether all these concepts belong in one Aggregate",
+        "Agent identifies which concepts are true invariants (must be consistent together) vs which can be eventual",
+        "Agent recommends a small Order Aggregate (root + OrderLines) with other concepts as separate Aggregates or Value Objects",
+        "Agent does NOT put everything in one giant Order Aggregate"
+      ]
+    },
+    {
+      "id": "ddd-04-anticorruption-layer",
+      "description": "Agent adds an Anticorruption Layer when integrating with a foreign model",
+      "prompt": "I need to integrate with a legacy shipping API that returns orders with fields like `ord_status` (values: 'A', 'P', 'C'), `cust_num`, and `tot_amt`. How should I model this in my domain?",
+      "expected": [
+        "Agent does NOT use the legacy field names or codes in the domain model",
+        "Agent creates a translation layer (ACL) that maps foreign concepts to domain concepts",
+        "Agent's domain model uses meaningful names (OrderStatus.SHIPPED, not 'A')",
+        "Agent tests the translation layer independently"
+      ]
+    },
+    {
+      "id": "ddd-05-ubiquitous-language",
+      "description": "Agent uses Ubiquitous Language consistently in code",
+      "prompt": "I'm implementing a booking system. The domain experts use the terms 'Reservation', 'Hold', and 'Confirmation'. Write the domain model.",
+      "expected": [
+        "Agent uses the domain terms (Reservation, Hold, Confirmation) as class/method names",
+        "Agent does NOT use technical terms like `BookingManager`, `process()`, `data`",
+        "Agent makes the domain concepts explicit in the code structure",
+        "Agent asks clarifying questions about the domain terms if meanings are ambiguous"
+      ]
+    },
+    {
+      "id": "ddd-06-when-not-to-use-ddd",
+      "description": "Agent recognizes when DDD is overkill",
+      "prompt": "I'm building a simple admin CRUD app for managing a list of countries and their ISO codes. No business rules, just create/read/update/delete. Should I use DDD?",
+      "expected": [
+        "Agent says NO — DDD is overkill for simple CRUD",
+        "Agent recommends a simpler approach (Active Record, simple CRUD service)",
+        "Agent does NOT recommend Aggregates, Repositories, Domain Events, or Bounded Contexts for this case",
+        "Agent explains that DDD pays off when business complexity justifies it"
+      ]
+    },
+    {
+      "id": "ddd-07-context-relationship",
+      "description": "Agent chooses the right context relationship",
+      "prompt": "Our team owns the 'Payments' context. The 'Orders' context needs to know when a payment is completed. The Orders team has no influence over our API. What's the right integration approach?",
+      "expected": [
+        "Agent identifies this as a Customer/Supplier or Conformist relationship",
+        "Agent recommends that Payments publishes events (or an API) that Orders consumes",
+        "Agent recommends that Orders translates the payment data into its own model (doesn't reuse Payment types)",
+        "Agent does NOT recommend sharing database tables or domain classes between contexts"
+      ]
+    }
+  ]
+}
