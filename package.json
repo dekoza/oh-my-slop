@@ -13,6 +13,9 @@
     "skills": [
       "./skills"
     ],
+    "prompts": [
+      "./prompts"
+    ],
     "extensions": [
       "./extensions/workflow-watchdog"
     ]

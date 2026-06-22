@@ -121,6 +121,7 @@ def test_root_package_manifest_exposes_skills_and_workflow_watchdog_extension() 
     assert manifest["keywords"]
     assert "pi-package" in manifest["keywords"]
     assert manifest["pi"]["skills"] == ["./skills"]
+    assert manifest["pi"]["prompts"] == ["./prompts"]
     assert manifest["pi"]["extensions"] == ["./extensions/workflow-watchdog"]
 
 
