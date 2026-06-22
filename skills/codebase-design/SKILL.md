@@ -137,11 +137,37 @@ Good interfaces make testing natural:
 - **"Interface" as the Python type hint or a class's public methods**: too narrow — interface here includes every fact a caller must know.
 - **"Boundary"**: overloaded with DDD's bounded context. Say **seam** or **interface**.
 
+## Trigger Rules
+
+Use these to decide *when* to redesign, not just how:
+
+- **Awkward change.** When a feature feels awkward, one change spreads across files, or reviewers must reconstruct hidden dependencies, look for missing information hiding, shallow modules, temporal coupling, or complexity pushed to callers.
+- **New abstraction under scrutiny.** When adding a module, layer, service, helper, wrapper, facade, option, callback, or argument, prove that it hides more complexity than it adds.
+- **API exposure check.** When touching an API, check whether ordinary callers must know sequencing, representation, storage, transport, caching, protocol, file format, internal workflow, or too many setup steps.
+- **Special case pressure.** When adding a special case, flag, exception path, conditional, or exposed container, first ask whether the owning module can eliminate the invalid state, isolate the unusual behavior, or provide a stronger operation.
+- **Split/extract audit.** When splitting, extracting, or introducing variables, check whether the new boundary or name captures meaning or only adds jumps, pass-through state, and visible intermediate steps.
+- **Temporal coupling.** When code is organized as `prepare/process/finalize`, staged objects, or other execution-order phases, verify that temporal structure is the real concept; otherwise reorganize around stable responsibilities.
+- **Naming quality.** When naming is vague, mechanism-focused, inconsistent, or surprising, reconsider the abstraction boundary instead of accepting a near miss.
+- **Comment smell.** When comments get long, duplicate code, justify a confusing interface, or explain usage by exposing internals, redesign the abstraction or move the missing contract to the interface.
+- **Performance pressure.** When optimizing performance, measure first and hide the optimization; do not sacrifice module depth or information hiding without evidence that the tradeoff matters.
+
+## Comment Discipline
+
+Comments reduce complexity when they document what the code *cannot* say about itself:
+
+- **Document:** interface contracts, invariants, hidden design decisions, rationale, tricky implementation facts callers should not need to know.
+- **Do not narrate:** code flow, obvious control flow, or restatements of the line above.
+- **Do not compensate for:** bad names, poor decomposition, or confusing structure. Fix the code instead.
+- **When a comment explains *why* the interface is shaped this way** (not *what* it does), keep it. That's design information the code can't carry.
+- **When a comment grows long** to explain how to use an interface, the interface is too complex. Redesign it.
+
 ## Going deeper
 
 - **Deepening a cluster given its dependencies** — see [Deepening](references/deepening.md): dependency categories, seam discipline, and replace-don't-layer testing.
 - **Exploring alternative interfaces** — see [Design It Twice](references/design-it-twice.md): spin up parallel sub-agents to design the interface several radically different ways, then compare on depth, locality, and seam placement.
 - **Platform-native reference** — see [Platform Native](references/platform-native.md): what stdlib, frameworks, and browsers provide before you reach for a dependency.
+- **Complexity and comment discipline** — see [Complexity](references/complexity.md): cognitive load as primary metric, pull complexity downward, when to comment vs redesign.
+- **Dependency direction and boundary testing** — see [Clean Architecture](references/clean-architecture.md): the dependency rule, what goes where, dependency inversion at seams, boundary testing.
 
 ## Reference Index
 

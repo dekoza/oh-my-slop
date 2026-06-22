@@ -42,6 +42,11 @@ single-implementation interfaces; factories with one product; wrappers that
 only delegate; files exporting one thing; dead flags and config; hand-rolled
 stdlib.
 
+For a broader set of smells to detect (long methods, duplicated code, feature envy,
+shotgun surgery, primitive obsession, etc.), see [Smell Catalog](references/smell-catalog.md).
+The existing tags (`delete`, `stdlib`, `native`, `yagni`, `shrink`) still apply — the
+catalog adds *what to look for*, not new output format.
+
 **Accidental coupling** — unrelated concerns sharing one file because they share
 a category name, not a domain concept. Example: three middlewares in
 `middleware.py` that have no behavioral relationship. This is not deepening —
