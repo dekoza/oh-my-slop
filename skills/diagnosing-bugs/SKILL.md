@@ -1,12 +1,84 @@
 ---
 name: diagnosing-bugs
-description: Diagnosis loop for hard bugs and performance regressions. Use when the user says "diagnose", "debug this", or reports something broken, throwing, failing, or slow.
+description: Diagnosis loop for hard bugs, performance regressions, and multi-failure scenarios. Use when the user says "diagnose", "debug this", reports something broken/throwing/failing/slow, or needs to fix multiple failing tests simultaneously.
 license: MIT (adapted from mattpocock/skills)
 ---
 
 # Diagnosing Bugs
 
 A discipline for hard bugs. Skip phases only when explicitly justified.
+
+## Multi-Failure Triage (when 5+ failures exist)
+
+When multiple failures exist — broken test suites, migration fallout, dependency upgrades — **do not fix them one-by-one with full-suite runs between each fix.** That wastes feedback-loop time on tests you already know pass.
+
+**Full suite is a gate, not a feedback loop.**
+
+### Step 1 — Read all tracebacks before touching code
+
+Run the failing set once and capture output. Read every traceback. Group failures by **root cause**, not by file:
+
+| Grouping signal | Likely root cause |
+|----------------|-------------------|
+| Same exception type across files | Shared import, fixture, or model change |
+| Same module in traceback | Broken signal handler, service, or utility |
+| `AttributeError` / `ImportError` cluster | Renamed/moved function or missing migration |
+| `AssertionError` with same expected value | Changed behavior or hardcoded expectation |
+
+**Expect 38 failures → ~8-12 actual problems.** One fix cascades through its cluster.
+
+### Step 2 — Quarantine flakes
+
+Before writing a single fix, raise the reproduction rate:
+
+```
+pytest tests/failing_set/ --count=3 -q
+```
+
+Tests that fail inconsistently are **flakes, not bugs**. Quarantine them (`xfail`, skip, or fix separately). They inflate the failure count and distract from real problems. A 50%-flake test masquerades as a real failure half the time.
+
+### Step 3 — Split test tiers
+
+If the project has tiered test environments (unit on host, integration in Docker), **split the failures by tier**:
+
+- **Unit tests** → run on host, feedback in seconds. Fix these first — fastest ROI.
+- **Integration tests** → run in Docker, feedback in tens of seconds. Keep the container warm.
+- **E2E tests** → run in Docker with browser, slowest. Fix last.
+
+This alone can cut average feedback from 65s to 3s for half the failures.
+
+### Step 4 — Fix clusters, largest first
+
+Inside a warm test environment (e.g., `docker compose run tests bash` → stay in shell):
+
+```
+# Tight loop inside warm container
+pytest tests/payments/ tests/campaigns/ -x --tb=short    # cluster run
+pytest --lf -k "refund"                                  # last-failed, keyword filter
+```
+
+Fix the largest cluster first. One shared root cause resolving 6 failures is worth 6× a scattered fix. **Never run more tests than the minimum needed to prove the fix.**
+
+### Step 5 — Full suite after each cluster, not each fix
+
+- Fix a cluster → run targeted tests for that cluster → commit.
+- After each cluster resolves → run **full suite once** as a gate → commit.
+- This gives you ~4-6 full runs total, not 38.
+
+### What NOT to do
+
+| Anti-pattern | Why it fails |
+|-------------|-------------|
+| Fix one failure, run full suite, repeat | Wastes 50-60s per iteration on known-passing tests |
+| "Knock out scattered ones for momentum" | Scattered failures are hardest to cluster — you'll dig 19 rabbit holes when a shared fixture is the real culprit |
+| Skip full-suite checks until the very end | Silent regressions accumulate. If cluster A's fix breaks cluster B's passing tests, you won't know until hours of work later |
+| Assume 38 failures = 38 fixes | Clusters collapse the count. Diagnose first, count later |
+
+### When to fall through to single-bug workflow
+
+Once triage reduces failures to ≤5, switch to the standard single-bug workflow (Phase 1-5 below). The multi-failure approach is for the initial blast radius; the single-bug loop is for precision work.
+
+---
 
 ## Phase 1 — Build a feedback loop
 

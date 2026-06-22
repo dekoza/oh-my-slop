@@ -26,8 +26,21 @@ Once you have _a_ loop, make it a _good_ loop:
 - **Faster** — cache setup, skip unrelated init, narrow test scope.
 - **Sharper** — assert on the specific symptom, not "didn't crash".
 - **More deterministic** — pin time, seed RNG, isolate filesystem, freeze network.
+- **Smaller** — run only the failing subset, not the full suite. `pytest --lf`, `-k "keyword"`, or explicit file paths. Full suite is a gate, not a feedback loop.
 
 A 30-second flaky loop is barely better than no loop; a 2-second deterministic one is tight.
+
+### Multi-failure feedback loops
+
+When 5+ failures exist, the feedback loop strategy changes:
+
+1. **Run all failures once** and capture output — don't run incrementally.
+2. **Cluster by root cause** — same exception type, same traceback module, same fixture.
+3. **Run cluster subsets** between fixes — `pytest tests/payments/ tests/campaigns/ -x`.
+4. **Keep the environment warm** — stay in a Docker shell, don't restart containers per invocation.
+5. **Full suite after each cluster** — not after each fix, not only at the end.
+
+See [Multi-Failure Triage](../SKILL.md#multi-failure-triage-when-5-failures-exist) for the full workflow.
 
 ## Non-deterministic bugs
 
