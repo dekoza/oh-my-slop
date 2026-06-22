@@ -8,6 +8,7 @@ README_PATH = REPO_ROOT / "README.md"
 JOB_PIPELINE_README_PATH = REPO_ROOT / "extensions" / "job-pipeline" / "README.md"
 SKILLS_DIR = REPO_ROOT / "skills"
 EXTENSIONS_DIR = REPO_ROOT / "extensions"
+PROMPTS_DIR = REPO_ROOT / "prompts"
 
 
 def load_readme() -> str:
@@ -60,6 +61,16 @@ def test_readme_links_every_bundled_skill() -> None:
         if not skill_dir.is_dir() or not (skill_dir / "SKILL.md").exists():
             continue
         assert f"skills/{skill_dir.name}/SKILL.md" in readme_text
+
+
+def test_readme_lists_every_bundled_prompt_template() -> None:
+    readme_text = load_readme()
+
+    for template_file in sorted(PROMPTS_DIR.iterdir()):
+        if not template_file.is_file() or template_file.suffix != ".md":
+            continue
+        command = f"/{template_file.stem}"
+        assert command in readme_text, f"README missing prompt template {command}"
 
 
 def test_job_pipeline_readme_says_root_package_install_stays_opt_in() -> None:

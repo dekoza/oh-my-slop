@@ -119,6 +119,26 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 
 </details>
 
+## Prompt Templates
+
+Prompt templates are slash commands — type `/name` in the editor to expand them into full prompts. Unlike skills, they're explicitly invoked by the user, so no "when this skill loads" boilerplate is needed.
+
+<details>
+<summary><strong>Prompt templates (8)</strong></summary>
+
+| Command | What it does |
+|---|---|
+| **`/jester <plan>`** | Stress-test a plan with adversarial reasoning — auto-selects the strongest critique mode (socratic, dialectic, pre-mortem, red team, evidence audit). |
+| **`/council <decision>`** | 5 independent advisors + anonymized peer review + chairman synthesis. For high-stakes decisions where being wrong is expensive. |
+| **`/audit [path]`** | Ranked bloat/over-engineering findings — dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead flags. |
+| **`/debt [path] [--output-debt-file]`** | Harvest `SHORTCUT:` markers left during development. Flags missing upgrade paths. |
+| **`/handoff`** | Compact the conversation into a handoff document for another agent. References artifacts, redacts secrets, saves to temp. |
+| **`/arch [path]`** | Architecture health check with visual HTML report — deepening and simplification candidates, before/after diagrams, grilling loop. |
+| **`/ui-review <product> <keywords>`** | Data-driven UI/UX critique — design system search, color/typography direction, accessibility, anti-patterns. |
+| **`/proto <question> [logic\|ui]`** | Throwaway prototype — terminal app for state machines or radically different UI variants on one route. |
+
+</details>
+
 ## The AGENTS.md and Anti-Sycophancy
 
 There are two AGENTS files here, and confusing them is how documentation starts lying.
