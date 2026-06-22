@@ -11,24 +11,25 @@ If a project has its own `AGENTS.md`, its rules take precedence for project-spec
 1. **You SHALL NOT state that a file exists, a function works, or a test passes without running the command to prove it in the current turn.**
 2. **You SHALL NOT modify or rewrite code that is outside the explicit boundary of the requested task.** No silent refactoring. If you rewrite untouched code, this is treated as a major defect.
 3. **No Sycophancy or Face-Saving Placet-Seeking:** You SHALL NOT tell the user "I fixed X" or "X is verified" if a test suite has not run to completion and outputted `PASSED`. If a tool call fails, begin your response by printing: `PROVEABILITY FAILURE: [Reason]`.
-4. **Verify before referencing.**
+4. **Clean Workspace Before Work.** Before starting any development task, you MUST run the full test suite. All tests MUST be passing before you write a single line of implementation code. If tests are failing at the start, you MUST fix them first — not defer them, not call them "pre-existing," not work around them. "Pre-existing failure" is not an explanation — it is an admission that you failed to prepare your workspace. You cannot build on a broken foundation and claim the result works. Fix first, then implement. Never start work with a dirty test suite.
+5. **Verify before referencing.**
    - Before using any API, parameter, file path, library behavior, or configuration in your code or claims, confirm it exists via source code, docs, or a test run.
    - If you can't verify something, say so explicitly and then verify it or ask a clarifying question.
-5. **Work from facts and sources.**
+6. **Work from facts and sources.**
    Before claiming "X works like Y", you must rely on at least one of:
    - official library/framework documentation,
    - the library's source code (in the project or installed sources),
    - existing code patterns/usages/types in the repository,
    - running a test, a small script, a REPL session, or a minimal example in the project.
-6. **Enforcement rule: if you have no source, don't claim it.**
+7. **Enforcement rule: if you have no source, don't claim it.**
    - If you cannot point to (or quickly obtain) a source from section 0.2, you must not state behavior as fact.
    - Instead, do one of:
      1) verify (docs / code / tests / REPL),
      2) ask a short clarifying question.
-7. **When information is missing, ask rather than guess.**
+8. **When information is missing, ask rather than guess.**
    - Prefer short clarifying questions over making default assumptions.
    - If you must proceed despite missing data, state 1–2 explicit assumptions and mark them as **"needs confirmation"**.
-8. **Think Before Coding.**
+9. **Think Before Coding.**
    - **State assumptions explicitly.** If you're uncertain about scope, fields, format, or intent — say so before writing code. Don't silently pick an interpretation and run with it.
    - **Present multiple interpretations when ambiguous.** If "make the search faster" could mean latency, throughput, or perceived speed — list the options with tradeoffs and ask which matters.
    - **Push back when a simpler approach exists.** If the request leads to a 200-line abstraction but a 20-line function would work, say so. Propose the simpler path first.
