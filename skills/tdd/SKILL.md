@@ -83,6 +83,23 @@ Ask: "What should the public interface look like? Which behaviours are most impo
 
 **You can't test everything.** Confirm with the user exactly which behaviours matter most. Focus testing effort on critical paths and complex logic, not every possible edge case.
 
+**Transform the request into verifiable goals.** Don't just "do the task" — define success criteria:
+
+| Instead of... | Transform to... |
+|--------------|-----------------|
+| "Add validation" | "Write tests for invalid inputs, then make them pass" |
+| "Fix the bug" | "Write a test that reproduces it, then make it pass" |
+| "Refactor X" | "Ensure tests pass before and after" |
+
+For multi-step tasks, state a brief verification plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+See [Goal-Driven Examples](references/goal-driven-examples.md) for concrete ❌/✅ code comparisons showing vague vs. verifiable approaches.
+
 ### 2. Tracer Bullet
 
 Write ONE test that confirms ONE thing about the system:
@@ -137,3 +154,4 @@ Follow the project's AGENTS.md §2 and §11:
 | [Tests](references/tests.md) | Good vs bad test examples, integration-style testing |
 | [Mocking](references/mocking.md) | When to mock, designing for mockability |
 | [Refactoring](references/refactoring.md) | Refactor candidates after TDD cycle |
+| [Goal-Driven Examples](references/goal-driven-examples.md) | Transforming vague requests into verifiable goals; ❌/✅ code comparisons |

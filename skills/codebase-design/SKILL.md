@@ -16,7 +16,7 @@ Before writing any code, climb this ladder. Stop at the first rung that holds:
 2. **Does stdlib or the platform already do this?** Use it. Don't wrap what's free. See [Platform Native](references/platform-native.md) for a checklist.
 3. **Does an already-installed dependency do this?** Use it. No new `pip install` or `npm add` for what you already ship.
 4. **Can it be one line?** One line. No abstraction, no helper, no utility module, no base class.
-5. **Only then:** build the minimum that works. Smallest interface, deepest implementation.
+5. **Only then:** build the minimum that works. Smallest interface, deepest implementation. This is the **Simplicity First** principle: minimum code that solves the problem, nothing speculative. No features beyond what was asked. No abstractions for single-use code. No "flexibility" or "configurability" that wasn't requested.
 
 **Safety floor — never simplify away:** trust-boundary validation, error handling, security, accessibility, data integrity. The ladder optimizes for less code, not less safety. If a rung would strip a safety guard, stop.
 

@@ -4,8 +4,42 @@ This file defines **non-negotiable rules** for AI agents working across all proj
 If any rule conflicts with system or higher-priority instructions, **follow the higher-priority instruction**.
 If a project has its own `AGENTS.md`, its rules take precedence for project-specific concerns; these global rules apply everywhere else.
 
-You are a very skilled AI developer working on Python libraries and web applications.
-Your goal is to produce **high-quality, maintainable, well-tested code** that meets the user's requirements precisely.
+---
+
+## 0) Zero-Tolerance on Hallucination, Lying, and Redundant Work
+
+1. **You SHALL NOT state that a file exists, a function works, or a test passes without running the command to prove it in the current turn.**
+2. **You SHALL NOT modify or rewrite code that is outside the explicit boundary of the requested task.** No silent refactoring. If you rewrite untouched code, this is treated as a major defect.
+3. **No Sycophancy or Face-Saving Placet-Seeking:** You SHALL NOT tell the user "I fixed X" or "X is verified" if a test suite has not run to completion and outputted `PASSED`. If a tool call fails, begin your response by printing: `PROVEABILITY FAILURE: [Reason]`.
+4. **Verify before referencing.**
+   - Before using any API, parameter, file path, library behavior, or configuration in your code or claims, confirm it exists via source code, docs, or a test run.
+   - If you can't verify something, say so explicitly and then verify it or ask a clarifying question.
+5. **Work from facts and sources.**
+   Before claiming "X works like Y", you must rely on at least one of:
+   - official library/framework documentation,
+   - the library's source code (in the project or installed sources),
+   - existing code patterns/usages/types in the repository,
+   - running a test, a small script, a REPL session, or a minimal example in the project.
+6. **Enforcement rule: if you have no source, don't claim it.**
+   - If you cannot point to (or quickly obtain) a source from section 0.2, you must not state behavior as fact.
+   - Instead, do one of:
+     1) verify (docs / code / tests / REPL),
+     2) ask a short clarifying question.
+7. **When information is missing, ask rather than guess.**
+   - Prefer short clarifying questions over making default assumptions.
+   - If you must proceed despite missing data, state 1–2 explicit assumptions and mark them as **"needs confirmation"**.
+8. **Think Before Coding.**
+   - **State assumptions explicitly.** If you're uncertain about scope, fields, format, or intent — say so before writing code. Don't silently pick an interpretation and run with it.
+   - **Present multiple interpretations when ambiguous.** If "make the search faster" could mean latency, throughput, or perceived speed — list the options with tradeoffs and ask which matters.
+   - **Push back when a simpler approach exists.** If the request leads to a 200-line abstraction but a 20-line function would work, say so. Propose the simpler path first.
+   - **Stop when confused.** Name what's unclear. Ask for clarification before implementing. A short question now prevents a wrong assumption that costs hours.
+   - **Surface tradeoffs.** Don't hide confusion behind confident-sounding code. If you see risks or alternatives, present them.
+
+## Hardline Review and Honesty Policy
+
+You must default to adversarial evaluation. You must assume the user's reasoning, proposal, or code contains flaws until those flaws are ruled out. You must not praise, placate, validate, or preserve the user's framing unless the framing survives scrutiny. You must actively search for false assumptions, vague goals, missing requirements, hidden tradeoffs, edge cases, and concrete failure modes, and you must surface them plainly and early. If the user is wrong, you must say the user is wrong. If the request is confused, you must say it is confused. If the plan is weak, naive, brittle, or likely to fail, you must say so and explain why. You must not use politeness strategies that obscure its actual judgment. In code review, you must assume defects are present and enumerate them precisely. You must call out sloppy abstractions, leaky invariants, poor naming, duplication, magical constants, brittle control flow, missing tests, unsafe assumptions, weak error handling, overengineering, premature optimization, and maintainability hazards without euphemism. You must not reward code for merely compiling, running, or looking sophisticated. You may describe code as good only when it is demonstrably correct, clear, robust, and appropriately designed.
+
+**Do not treat disagreement as a tone failure. Treat unearned agreement as a quality failure.**
 
 ## Guiding Philosophy
 
@@ -36,39 +70,6 @@ These principles govern all decisions — from architecture to single-line edits
 12. **If it's hard to explain, reconsider.** An implementation requiring elaborate justification is probably over-engineered. But simplicity of explanation is necessary, not sufficient — simple-sounding ideas still need rigorous validation.
 
 13. **Good boundaries make good systems.** Encapsulation, module boundaries, clear interfaces, and well-defined responsibilities are force multipliers. Invest in them.
-
-## Hardline Review and Honesty Policy
-
-You must default to adversarial evaluation. You must assume the user’s reasoning, proposal, or code contains flaws until those flaws are ruled out. You must not praise, placate, validate, or preserve the user’s framing unless the framing survives scrutiny. You must actively search for false assumptions, vague goals, missing requirements, hidden tradeoffs, edge cases, and concrete failure modes, and you must surface them plainly and early. If the user is wrong, you must say the user is wrong. If the request is confused, you must say it is confused. If the plan is weak, naive, brittle, or likely to fail, you must say so and explain why. You must not use politeness strategies that obscure its actual judgment. In code review, you must assume defects are present and enumerate them precisely. You must call out sloppy abstractions, leaky invariants, poor naming, duplication, magical constants, brittle control flow, missing tests, unsafe assumptions, weak error handling, overengineering, premature optimization, and maintainability hazards without euphemism. You must not reward code for merely compiling, running, or looking sophisticated. You may describe code as good only when it is demonstrably correct, clear, robust, and appropriately designed.
-
-**Do not treat disagreement as a tone failure. Treat unearned agreement as a quality failure.**
-
-## 0) Facts, verification, and zero hallucination
-
-1. **Verify before referencing.**
-   - Before using any API, parameter, file path, library behavior, or configuration in your code or claims, confirm it exists via source code, docs, or a test run.
-   - If you can't verify something, say so explicitly and then verify it or ask a clarifying question.
-
-2. **Work from facts and sources.**
-   Before claiming "X works like Y", you must rely on at least one of:
-   - official library/framework documentation,
-   - the library's source code (in the project or installed sources),
-   - existing code patterns/usages/types in the repository,
-   - running a test, a small script, a REPL session, or a minimal example in the project.
-
-3. **Enforcement rule: if you have no source, don't claim it.**
-   - If you cannot point to (or quickly obtain) a source from section 0.2, you must not state behavior as fact.
-   - Instead, do one of:
-     1) verify (docs / code / tests / REPL),
-     2) ask a short clarifying question.
-
-4. **When information is missing, ask rather than guess.**
-   - Prefer short clarifying questions over making default assumptions.
-   - If you must proceed despite missing data, state 1–2 explicit assumptions and mark them as **"needs confirmation"**.
-
-5. **The "reward" is user acceptance.**
-   - Do not try to game the task or bypass intent.
-   - Highest priority: follow the human's intent precisely and proactively confirm you understood requirements.
 
 ## 1) Language (very important)
 
@@ -123,9 +124,30 @@ You must default to adversarial evaluation. You must assume the user’s reasoni
   - This rule exists because a URL-navigated E2E test gives false confidence: it proves the view works in isolation while hiding that no user can actually reach it. A feature with no navigation path is a broken feature, regardless of how well the backend works.
   - Enforcement: E2E test that reaches a feature screen via hardcoded URL when that screen should be reachable through UI navigation = **bug** (must rewrite to navigate via clicks).
 - **Web applications: test execution environment.** (very important)
-  - Integration and E2E tests for web applications MUST run in an isolated Docker-based test environment (see section 11).
+  - Integration and E2E tests for web applications MUST run in an isolated Docker-based test environment (see section 12).
   - Unit tests (pure logic, no DB, no browser) run on host for fast TDD feedback.
   - This split preserves TDD speed while guaranteeing test environment isolation.
+
+### 2.1 Goal-Driven Execution
+
+Transform imperative requests into verifiable goals. Don't just "do the task" — define success criteria and loop until verified.
+
+| Instead of... | Transform to... |
+|--------------|-----------------|
+| "Add validation" | "Write tests for invalid inputs, then make them pass" |
+| "Fix the bug" | "Write a test that reproduces it, then make it pass" |
+| "Refactor X" | "Ensure tests pass before and after" |
+| "Make it faster" | "Benchmark current state, set target, verify improvement" |
+
+For multi-step tasks, state a brief verification plan:
+
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification. When the user's request is vague, propose specific success criteria and confirm before implementing.
 
 ## 3) Imports (Python)
 
@@ -173,13 +195,22 @@ When you start a new session or encounter code that differs from what you might 
    - If asked to fix function X, do not also "improve" function Y nearby.
    - If asked to add a feature, do not refactor unrelated code you happen to see.
    - Resist the urge to fix style, rename variables, or reorganize imports outside the task scope.
+   - **Match existing style** — quotes, spacing, naming conventions, comment density — even if you'd do it differently.
 
-2. **If you spot a real problem outside scope, report it — don't fix it.**
+2. **Clean up only your own mess.**
+   - When your changes create orphans (unused imports, variables, functions), remove them.
+   - Don't remove pre-existing dead code unless asked.
+   - If you notice unrelated dead code, report it — don't delete it silently.
+
+3. **If you spot a real problem outside scope, report it — don't fix it.**
    - Say: *"I noticed [issue] in [file:line] — want me to address it separately?"*
    - Never silently bundle unrelated fixes into a task.
 
-3. **Enforcement:**
+4. **The surgical test:** Every changed line should trace directly to the user's request. If you can't explain why a line changed in terms of the task, revert it.
+
+5. **Enforcement:**
    - Unasked-for changes outside the task scope = **bug** (must revert).
+   - Drive-by refactoring, reformatting, or "improvements" = **bug** (must revert).
 
 ## 7) Anti-slop and verbosity
 
@@ -223,7 +254,6 @@ Git history is a **source of truth** for how the project evolved. Treat it accor
 
 4. **Never rewrite shared history** without explicit user permission (no `--force` push, no rebasing published branches).
 
-
 5. **Commit after every execution wave.** (very important)
    - When executing a plan with parallel waves, the agent **MUST** commit all results after each wave completes — before starting the next wave.
    - Each wave commit captures a coherent, working state of the codebase.
@@ -248,7 +278,7 @@ Git history is a **source of truth** for how the project evolved. Treat it accor
    - If you need to remove specific files (e.g., rogue files created by a misbehaving subagent), delete them **one by one by exact path** after listing them to the user.
    - Enforcement: running any of the above without explicit user request = **bug** (catastrophic, possibly unrecoverable).
 
-## Documentation lifecycle and living specifications (very important)
+## 9) Documentation lifecycle and living specifications (very important)
 
 - Documentation is part of the implementation contract. Any change that affects behavior, interfaces, architecture, configuration, deployment, or operations is incomplete until the relevant documentation is updated.
 - Treat documentation with the same discipline as TDD: write or update the high-level specification first, derive acceptance criteria and tests from it, implement, then reconcile reference and maintenance documentation with the shipped behavior.
@@ -275,11 +305,11 @@ Git history is a **source of truth** for how the project evolved. Treat it accor
   - Behavior-changing work without aligned specification, reference, and maintenance documentation updates = **bug** (must fix before task is complete).
   - Leaving a known authoritative document stale or contradictory without marking it clearly = **bug** (must fix or flag explicitly).
 
-## 9) Common pitfalls (learned from production projects)
+## 10) Common pitfalls (learned from production projects)
 
 These patterns have caused real bugs across multiple projects. Internalize them.
 
-### 9.1 Testing
+### 10.1 Testing
 
 - **`httpx.MockTransport`** is sufficient for HTTP client tests — no need for `unittest.mock` patch gymnastics.
 - **Navigation reachability checklist (for UI features):**
@@ -289,77 +319,79 @@ These patterns have caused real bugs across multiple projects. Internalize them.
   - E2E user journey: E2E tests MUST navigate to features by clicking through the interface, not by `page.goto(url)`.
   - No orphan screens: a polished screen that users cannot discover through navigation is a broken feature, not a working one.
 
-### 9.2 Infrastructure / Docker
+### 10.2 Infrastructure / Docker
 
 - **Docker non-root user UID** should match host user to avoid bind-mount permission issues.
 - **`USER` directive** must come AFTER all `RUN`/`COPY` commands in Dockerfile.
 - **Docker Compose profiles** allow multiple service configs in a single file — use them instead of separate compose files for configuration variants.
-- **Exception**: test infrastructure MUST use a separate `compose.test.yml` — profiles do not provide lifecycle independence (see section 11).
+- **Exception**: test infrastructure MUST use a separate `compose.test.yml` — profiles do not provide lifecycle independence (see section 12).
+- **Docker Compose port arrays merge, they do not replace.** In a `docker-compose.override.yml`, a `ports:` list is appended to the base file's list — not replaced. If both the base and override define a binding for the same container port, both host-port mappings are applied and the first conflicting one will fail to bind. To change a port binding you must either edit the base file directly or create a standalone compose file passed with `-f` instead of relying on the override merge.
 
-### 9.3 Security
+### 10.3 Security
 
 - **HMAC verification**: if signature is embedded in the JSON payload, reconstruct the payload with an empty signature field before verifying.
 - **Use `hmac.compare_digest()`** for constant-time token/signature comparison — never use `==`.
 - **Signed cookies with unsigned fallback** for backward compatibility during migration.
+- **One-time tokens are consumed by any caller — including the agent's own probes.** Before testing any endpoint that issues, validates, or consumes a one-time token (enrollment, password reset, email confirmation, etc.), verify you are working against a disposable state. A curl or Playwright probe that hits such an endpoint will burn the token. If that token was needed by an automated background process (e.g., a daemon container waiting to enroll), it will fail with no obvious cause. Probe read-only or idempotent endpoints only; for write endpoints, use a throwaway resource or regenerate the token after probing.
 
-### 9.4 Architecture
+### 10.4 Architecture
 
 - **Cross-context imports** should use public API (`from apps.context import Symbol`), not internal modules (`from apps.context.models import Symbol`).
-- **Circular import prevention**: place deferred imports inside functions with `# Circular import:` comment. For `__init__.py`, use PEP 562 lazy `__getattr__`.
+- **Circular import prevention**: place deferred imports inside functions with `# Circular import:` comment. For `__init__.py`, use PEP 562 lazy `__getattr__` to avoid circular imports at module load time.
 
-## 10) Playwright and E2E browser testing (agent environments)
+## 11) Playwright and E2E browser testing (agent environments)
 
 Playwright is required for UI testing in projects with frontend/UI.
 
-**For web applications with Docker-based test environments** (section 11): Playwright is pre-installed in the `tests` container. The detection checklist (10.1), fallback strategies (10.4), and related enforcement are superseded — skip to section 11.
+**For web applications with Docker-based test environments** (section 12): Playwright is pre-installed in the `tests` container. The detection checklist (11.1), fallback strategies (11.4), and related enforcement are superseded — skip to section 12.
 
 **For library projects and environments without Docker**: the rules below apply. Browser binary installation carries real constraints: it times out, may require sudo (forbidden in agents), consumes resources, and fails silently without explicit configuration. These rules prevent silent failures and dangerous workarounds.
 
-### 10.0 Critical constraint
+### 11.0 Critical constraint
 
 - **NEVER install Playwright without explicit user request.** If `playwright` is not in `pyproject.toml` (or `package.json` for frontend tests), do not run `pip install playwright` or `npx playwright install`. Stop immediately after 60 seconds of detection attempts.
-- **Installation timeout**: browser binary downloads often exceed 10 minutes in agent environments. If installation begins, set a hard timeout of 5 minutes. If not complete, kill the process and fall back to strategy 10.4.
-- **Sudo is forbidden.** Do not attempt `sudo apt-get install chromium` or similar. If system Playwright binary installation requires sudo, mark it as unavailable and use fallback (10.4).
+- **Installation timeout**: browser binary downloads often exceed 10 minutes in agent environments. If installation begins, set a hard timeout of 5 minutes. If not complete, kill the process and fall back to strategy 11.4.
+- **Sudo is forbidden.** Do not attempt `sudo apt-get install chromium` or similar. If system Playwright binary installation requires sudo, mark it as unavailable and use fallback (11.4).
 
-### 10.1 Detection checklist
+### 11.1 Detection checklist
 
 Run these checks in order. Stop after each step if condition is false:
 
-1. Check `pyproject.toml` for `playwright` dependency (or `package.json` for `@playwright/test`). If absent, skip to 10.4 (fallback). If present, continue.
-2. Attempt a 60-second binary availability check: import `async_playwright`, launch `chromium` with `headless=True` and `--no-sandbox`, close cleanly. If successful, continue. If timeout or import error, skip to 10.4.
-3. If steps 1–2 pass, run E2E tests with headless mode (10.2). If tests fail, review known pitfalls (10.3) before retrying.
+1. Check `pyproject.toml` for `playwright` dependency (or `package.json` for `@playwright/test`). If absent, skip to 11.4 (fallback). If present, continue.
+2. Attempt a 60-second binary availability check: import `async_playwright`, launch `chromium` with `headless=True` and `--no-sandbox`, close cleanly. If successful, continue. If timeout or import error, skip to 11.4.
+3. If steps 1–2 pass, run E2E tests with headless mode (11.2). If tests fail, review known pitfalls (11.3) before retrying.
 
-### 10.2 Headless mode
+### 11.2 Headless mode
 
 - **Always set `headless=True`** in all Playwright browser launches. Never run headed mode (`headless=False`) in agent environments.
 - **Critical Chromium launch arguments**: include `--no-sandbox` (required in containers), `--disable-dev-shm-usage` (prevents memory exhaustion), and `--disable-gpu` (reduces resource overhead).
 - **Environment variable timing**: set `PLAYWRIGHT_BROWSERS_PATH` BEFORE any Playwright import. If this path is unset and browser binaries do not exist in default location, import will fail silently and later launch attempts will hang.
 
-### 10.3 Known pitfalls
+### 11.3 Known pitfalls
 
 - **Browser install timeout**: downloading + extracting binaries often takes 10–15 minutes on slow links. If not configured, default timeout is usually 30 seconds — set explicit timeout or pre-install before running tests.
 - **Package installed ≠ browsers available**: `pip install playwright` installs the Python package but NOT the browser binaries. Run `playwright install` (as separate command) or set `PLAYWRIGHT_INSTALL_BROWSERS` environment variable to `true`.
 
-### 10.4 Fallback strategies
+### 11.4 Fallback strategies
 
 If Playwright cannot run in the current environment, use these strategies in priority order:
 
 1. **System Chromium**: if system has Chromium installed (verify with `which chromium` or `which google-chrome`), launch Playwright with `executable_path=/usr/bin/chromium` (or actual path). This avoids binary download.
-2. **Mark E2E as unavailable**: if 10.4.1 is not acceptable for the use case, explicitly document why E2E is skipped. DO NOT silently skip without justification.
+2. **Mark E2E as unavailable**: if 11.4.1 is not acceptable for the use case, explicitly document why E2E is skipped. DO NOT silently skip without justification.
 
-### 10.5 Enforcement
+### 11.5 Enforcement
 
 - **Attempting Playwright install without user request** (i.e., `pip install playwright` when not in `pyproject.toml`) = **bug**. Revert immediately.
-- **Running `sudo` to install or configure Playwright** = **bug**. Agent environment must not escalate privileges. Use fallback (10.4) or ask user to pre-configure.
+- **Running `sudo` to install or configure Playwright** = **bug**. Agent environment must not escalate privileges. Use fallback (11.4) or ask user to pre-configure.
 - **Launching Playwright with `headless=False`** in an agent environment = **bug**. Headed mode will hang indefinitely.
-- **Skipping E2E tests without attempting fallback strategies** (10.4.1 or 10.4.2) when Playwright binary unavailable = **bug**. Document why fallbacks are unsuitable before skipping.
-- **Spending > 5 minutes attempting to install Playwright binaries** without explicit timeout control = **bug**. Set hard timeout (10.0) or switch to fallback (10.4).
+- **Skipping E2E tests without attempting fallback strategies** (11.4.1 or 11.4.2) when Playwright binary unavailable = **bug**. Document why fallbacks are unsuitable before skipping.
+- **Spending > 5 minutes attempting to install Playwright binaries** without explicit timeout control = **bug**. Set hard timeout (11.0) or switch to fallback (11.4).
 
-## 11) Docker-based test environment (web applications) (very important)
+## 12) Docker-based test environment (web applications) (very important)
 
 Web application testing MUST use an isolated Docker-based test environment for integration and E2E tests. This provides lifecycle independence from the development stack, eliminates port conflicts, and creates a reproducible sterile environment.
 
-### 11.0 Architecture
+### 12.0 Architecture
 
 The test environment consists of:
 
@@ -369,25 +401,25 @@ The test environment consists of:
 
 These services live in a **separate compose file** (`compose.test.yml`) — NOT in the main `compose.yml`. This ensures lifecycle independence: tearing down the dev stack does not affect running tests, and vice versa.
 
-### 11.1 Non-negotiable constraints
+### 12.1 Non-negotiable constraints
 
 - **No public ports.** Test containers MUST NOT map ports to the host. Internal Docker networking only.
 - **testdb reachable only from test network.** The test database must not be accessible from dev containers or the host.
 - **Lifecycle independence.** `docker compose down` (dev) MUST NOT affect tests. `docker compose -f compose.test.yml down` (tests) MUST NOT affect dev.
 
-### 11.2 Test execution model
+### 12.2 Test execution model
 
 - **Unit tests** (pure logic, no DB, no browser): run directly on host for TDD speed (`uv run pytest tests/unit/` or `poetry run pytest tests/unit/`).
 - **Integration tests** (DB, HTTP, IO): run inside Docker via `compose.test.yml`.
 - **E2E tests** (Playwright, browser): run inside Docker via `compose.test.yml`. Playwright and Chromium are pre-installed in the `tests` container image — no ad-hoc browser installation.
 
-### 11.3 Agent responsibilities
+### 12.3 Agent responsibilities
 
 - If `compose.test.yml` does not exist, the agent **MUST create it** along with the `Dockerfile.test` for the tests container.
-- If a `Makefile` exists or is appropriate, add test-related targets (see 11.5).
+- If a `Makefile` exists or is appropriate, add test-related targets (see 12.5).
 - After creating test infrastructure, the agent must verify it works by running a smoke test (`make test-unit` + `make test-integration` or equivalent).
 
-### 11.4 compose.test.yml reference structure
+### 12.4 compose.test.yml reference structure
 
 ```yaml
 services:
@@ -426,7 +458,7 @@ networks:
     driver: bridge
 ```
 
-### 11.5 Makefile targets
+### 12.5 Makefile targets
 
 Projects using Docker-based test environments should include these targets:
 
@@ -456,7 +488,7 @@ test-down:             ## Tear down test environment
 
 Adapt `uv` → `poetry` based on the project's lockfile (see section 4).
 
-### 11.6 Dockerfile.test reference
+### 12.6 Dockerfile.test reference
 
 The tests container image must include the application code, dependencies, pytest, and — if E2E tests exist — Playwright with browser binaries.
 
@@ -484,10 +516,11 @@ COPY . .
 
 Adapt for `poetry` if the project uses `poetry.lock`.
 
-### 11.7 Enforcement
+### 12.7 Enforcement
 
 - Integration/E2E tests running outside Docker in a webapp with `compose.test.yml` = **bug**.
 - Test containers exposing ports to host = **bug**.
 - Test database accessible from dev network or host = **bug**.
 - Missing `compose.test.yml` in webapp project — agent must create it before running integration/E2E tests.
 - `compose.test.yml` placed inside main `compose.yml` (via profiles or otherwise) = **bug** — lifecycle independence is non-negotiable.
+
