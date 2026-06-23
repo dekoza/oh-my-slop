@@ -340,6 +340,12 @@ These patterns have caused real bugs across multiple projects. Internalize them.
 - **Cross-context imports** should use public API (`from apps.context import Symbol`), not internal modules (`from apps.context.models import Symbol`).
 - **Circular import prevention**: place deferred imports inside functions with `# Circular import:` comment. For `__init__.py`, use PEP 562 lazy `__getattr__` to avoid circular imports at module load time.
 
+### 10.5 Python code quality
+
+- **Use `ruff check --fix` before manual lint cleanup.** Do not manually remove unused imports, fix formatting, or sort imports. Run `ruff check --fix && ruff format` after every code change. Only fix what ruff cannot auto-fix.
+- **Do not run `isort`, `black`, `flake8`, or `autoflake` separately.** Ruff subsumes all of them. Running individual tools wastes time and can produce conflicting results.
+- **If the project does not have ruff configured**, check `pyproject.toml` for a `[tool.ruff]` section. If absent, check for `.flake8`, `setup.cfg`, or `pyproject.toml` `[tool.black]`/`[tool.isort]` sections. Default to ruff with `--select ALL` if no linter is configured.
+
 ## 11) Playwright and E2E browser testing (agent environments)
 
 Playwright is required for UI testing in projects with frontend/UI.

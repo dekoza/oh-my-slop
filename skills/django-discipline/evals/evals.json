@@ -1,0 +1,33 @@
+{
+  "skill_name": "django-discipline",
+  "evals": [
+    {
+      "id": 1,
+      "name": "migration-auto-generate",
+      "prompt": "I added a new field `phone_number = models.CharField(max_length=20, blank=True)` to my Django Customer model in `apps/customers/models.py`. Write the migration file for this change. The project uses Django 6.0 and has `manage.py` in the root.",
+      "expected_output": "Agent runs `python manage.py makemigrations` to auto-generate the migration instead of writing it by hand",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "ruff-before-manual-cleanup",
+      "prompt": "I just added a new view to my Django project. The file has unused imports, wrong import order, and some formatting issues. Fix the lint issues in `apps/orders/views.py`.",
+      "expected_output": "Agent runs `ruff check --fix && ruff format` before any manual lint fixes",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "select-related-n-plus-one",
+      "prompt": "Write a Django view that lists all orders with the customer's email address. The Order model has a ForeignKey to Customer, and Customer has an `email` field. Put it in `apps/orders/views.py`.",
+      "expected_output": "Agent uses `.select_related('customer')` in the queryset to prevent N+1 queries",
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "manual-migration-only-for-runpython",
+      "prompt": "I need to write a Django migration that backfills a new `full_name` field by concatenating `first_name` and `last_name` for all existing User records. The project has `manage.py` in the root.",
+      "expected_output": "Agent runs `makemigrations` first to generate the skeleton, then adds RunPython to the generated file — does not write the entire migration by hand",
+      "files": []
+    }
+  ]
+}

@@ -84,12 +84,13 @@ def validate_repo(repo_root: Path) -> list[str]:
                 if should_skip_reference(reference):
                     continue
 
-                resolved_path = (markdown_file.parent / reference).resolve()
-                if not resolved_path.exists() and reference.startswith("references/"):
+                file_path = reference.split("#")[0] or reference
+                resolved_path = (markdown_file.parent / file_path).resolve()
+                if not resolved_path.exists() and file_path.startswith("references/"):
                     skill_root = markdown_file.parent
                     if skill_root.name == "references":
                         skill_root = skill_root.parent
-                    resolved_path = (skill_root / reference).resolve()
+                    resolved_path = (skill_root / file_path).resolve()
 
                 if not resolved_path.exists():
                     source_path = markdown_file.relative_to(repo_root).as_posix()
