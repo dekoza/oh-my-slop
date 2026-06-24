@@ -10,13 +10,67 @@ A discipline for hard bugs. Skip phases only when explicitly justified.
 
 ## Multi-Failure Triage (when 5+ failures exist)
 
-When multiple failures exist — broken test suites, migration fallout, dependency upgrades — **do not fix them one-by-one with full-suite runs between each fix.** That wastes feedback-loop time on tests you already know pass.
+When multiple failures exist — broken test suites, migration fallout, dependency upgrades, non-TDD development sessions — **do not fix them one-by-one with full-suite runs between each fix.** That wastes feedback-loop time on tests you already know pass.
 
 **Full suite is a gate, not a feedback loop.**
 
-### Step 1 — Read all tracebacks before touching code
+This procedure is tier-agnostic: it works for unit, integration, E2E, or any mix. Use the reference commands as templates — adapt to your project's tooling.
 
-Run the failing set once and capture output. Read every traceback. Group failures by **root cause**, not by file:
+---
+
+### Step 0 — CALIBRATE (run once, before triage)
+
+**Goal:** Ensure your failure map is trustworthy. Don't triage on corrupted data.
+
+**0a. Verify parallel stability (if using pytest-xdist).**
+
+```
+# Serial baseline
+pytest tests/<tier>/ -n 1 --tb=line -q > /tmp/serial_failures.log
+
+# Parallel run
+pytest tests/<tier>/ -n auto --dist loadgroup --tb=line -q > /tmp/parallel_failures.log
+```
+
+Compare failure sets. If they differ → **xdist contamination detected.** Tests that fail under parallelism but pass serially are likely sharing state. Add `xdist_group` markers to force them onto the same worker, then re-calibrate. **Do not proceed to triage until serial and parallel failure sets match.**
+
+**0b. Quarantine flakes.**
+
+```
+pytest tests/<tier>/ --count=3 -q
+```
+
+Tests that fail inconsistently are **flakes, not bugs**. Quarantine them (`xfail`, skip, or fix separately). They inflate the failure count and corrupt your cascade map. A 50%-flake test masquerades as a real failure half the time.
+
+**0c. Split by tier (if multiple tiers are failing).**
+
+If failures span unit, integration, and E2E — **fix the fastest tier first.**
+
+- **Unit tests** → run on host, feedback in seconds. Fix these first — fastest ROI.
+- **Integration tests** → run in Docker, feedback in tens of seconds. Keep the container warm.
+- **E2E tests** → run in Docker with browser, slowest. Fix last.
+
+Fixing unit tests often collapses the E2E failure count dramatically. Don't touch E2E until faster tiers are green.
+
+---
+
+### Step 1 — MAP (one full run, serialized)
+
+**Goal:** Build a reliable failure map. One expensive run, done right.
+
+Run the full failing tier with serialized output:
+
+```
+# With xdist (recommended)
+pytest tests/<tier>/ -n auto --dist loadgroup --json-report -q > /tmp/failures_round_0.log
+
+# Without xdist
+pytest tests/<tier>/ --json-report -q > /tmp/failures_round_0.log
+```
+
+**Save the output as `failures_round_0.json`.** You'll diff against this file in later rounds.
+
+Read every traceback. Group failures by **root cause**, not by file:
 
 | Grouping signal | Likely root cause |
 |----------------|-------------------|
@@ -27,52 +81,139 @@ Run the failing set once and capture output. Read every traceback. Group failure
 
 **Expect 38 failures → ~8-12 actual problems.** One fix cascades through its cluster.
 
-### Step 2 — Quarantine flakes
+---
 
-Before writing a single fix, raise the reproduction rate:
+### Step 2 — HYPOTHESIZE (categorize + rank)
+
+**Goal:** Identify which fixes will cascade the furthest. This is hypothesis formation — you're guessing at root causes. The procedure's job is to make each guess cheap to test.
+
+**2a. Group failures.**
+
+Primary grouping: **module** (file/directory). Secondary grouping: **error signature** (same exception type + same root traceback frame).
+
+**2b. Rank groups by failure count descending.**
+
+The group with the most failures has the highest coupling — fixing its root cause resolves the most downstream tests.
+
+**2c. Pick the "offender candidate" per group.**
+
+Within each ranked group, identify the test whose setup/fixture/code path appears in the most other failures' tracebacks. Heuristics, in order:
+
+1. **Shared fixture:** Which fixture is referenced across the most failing tests?
+2. **Shared error frame:** Which traceback frame (file:line) appears most often?
+3. **Shared module import:** Which module is imported by the most failing tests and could be the source?
+4. **Frequency fallback:** If unclear, pick the test with the most common error signature.
+
+**2d. Produce an ordered list.**
 
 ```
-pytest tests/failing_set/ --count=3 -q
+Wave N offenders: [offender_1 (module A, 12 failures), offender_2 (module B, 8 failures), ...]
 ```
 
-Tests that fail inconsistently are **flakes, not bugs**. Quarantine them (`xfail`, skip, or fix separately). They inflate the failure count and distract from real problems. A 50%-flake test masquerades as a real failure half the time.
+---
 
-### Step 3 — Split test tiers
+### Step 3 — FIX WAVE
 
-If the project has tiered test environments (unit on host, integration in Docker), **split the failures by tier**:
+**Goal:** Fix all offender candidates in one batch.
 
-- **Unit tests** → run on host, feedback in seconds. Fix these first — fastest ROI.
-- **Integration tests** → run in Docker, feedback in tens of seconds. Keep the container warm.
-- **E2E tests** → run in Docker with browser, slowest. Fix last.
+Fix each offender. For each fix:
 
-This alone can cut average feedback from 65s to 3s for half the failures.
+- Write a regression test (TDD catch-up). This is mandatory — the fix is incomplete without it.
+- One commit per offender (or one commit per module if offenders are related).
+- **Do not fix scattered non-offenders.** Resist the urge to "knock out easy ones" — they're hardest to cluster and you'll dig rabbit holes.
 
-### Step 4 — Fix clusters, largest first
+**After all offenders are fixed:** commit the wave.
 
-Inside a warm test environment (e.g., `docker compose run tests bash` → stay in shell):
+---
+
+### Step 4 — VERIFY WAVE (targeted run)
+
+**Goal:** Confirm each fix in isolation before checking cascades.
+
+Run **only** the fixed offenders' tests:
 
 ```
-# Tight loop inside warm container
-pytest tests/payments/ tests/campaigns/ -x --tb=short    # cluster run
-pytest --lf -k "refund"                                  # last-failed, keyword filter
+# With xdist
+pytest tests/<tier>/ -k "test_a or test_b or test_c" -n auto --dist loadgroup -x
+
+# Without xdist
+pytest tests/<tier>/ -k "test_a or test_b or test_c" -x
 ```
 
-Fix the largest cluster first. One shared root cause resolving 6 failures is worth 6× a scattered fix. **Never run more tests than the minimum needed to prove the fix.**
+**Critical:** always use `--dist loadgroup` with xdist. Without it, grouped tests land on different workers and shared-state tests explode.
 
-### Step 5 — Full suite after each cluster, not each fix
+- If any offender fails → fix immediately, re-verify. Do not proceed to step 5.
+- If all offenders pass → proceed to step 5.
 
-- Fix a cluster → run targeted tests for that cluster → commit.
-- After each cluster resolves → run **full suite once** as a gate → commit.
-- This gives you ~4-6 full runs total, not 38.
+---
 
-### What NOT to do
+### Step 5 — CASCADE CHECK (diff-based)
+
+**Goal:** See what turned green from the wave, detect regressions, and plan the next wave.
+
+Run all previously-failing tests:
+
+```
+# --lf uses .pytest_cache to replay last-failed tests
+pytest tests/<tier>/ --lf -n auto --dist loadgroup --json-report -q > /tmp/failures_round_N.log
+```
+
+**Save as `failures_round_N.json`.** Diff against the previous round:
+
+| Status | Action |
+|--------|--------|
+| **Newly green** | Log cascade count per fix. This is architectural data — high cascade = high coupling. |
+| **Still red** | Keep for next wave. |
+| **Newly red** | **REGRESSION.** Fix immediately. Do not proceed to step 6 until regressions are resolved. |
+
+**If regressions found:** fix → re-run step 4 for the affected module → re-run step 5 until clean.
+
+**Operational note:** `.pytest_cache` must persist across Docker runs for `--lf` to work. Mount it as a volume:
+
+```yaml
+volumes:
+  - ./.pytest_cache:/app/.pytest_cache
+```
+
+---
+
+### Step 6 — CONVERGENCE CHECK
+
+**Goal:** Decide whether to continue batching or switch to precision work.
+
+Count remaining failures:
+
+- **≤ 5 remaining:** Switch to the standard single-bug workflow (Phase 1-5 below). Batch overhead isn't worth it for isolated bugs. Use `pytest -x` and fix one at a time.
+- **> 5 remaining:** Go back to **Step 2** with the remaining failures. Repeat the wave cycle.
+
+---
+
+### Step 7 — FULL REGRESSION GATE
+
+**Goal:** Confirm nothing broke outside the failing tier.
+
+Run the **entire** test suite (all tiers):
+
+```
+pytest tests/ -n auto --dist loadgroup
+```
+
+- **All green:** Done. Commit.
+- **Any red:** These are new issues, not part of the original triage. Diagnose each as a separate bug using the single-bug workflow.
+
+---
+
+### Anti-patterns
 
 | Anti-pattern | Why it fails |
 |-------------|-------------|
-| Fix one failure, run full suite, repeat | Wastes 50-60s per iteration on known-passing tests |
-| "Knock out scattered ones for momentum" | Scattered failures are hardest to cluster — you'll dig 19 rabbit holes when a shared fixture is the real culprit |
-| Skip full-suite checks until the very end | Silent regressions accumulate. If cluster A's fix breaks cluster B's passing tests, you won't know until hours of work later |
-| Assume 38 failures = 38 fixes | Clusters collapse the count. Diagnose first, count later |
+| Fix one failure, run full suite, repeat | Wastes time per iteration on known-passing tests |
+| "Knock out scattered ones for momentum" | Scattered failures are hardest to cluster — you'll dig rabbit holes when a shared fixture is the real culprit |
+| Skip full-suite checks until the very end | Silent regressions accumulate. If cluster A's fix breaks cluster B's passing tests, you won't know until hours later |
+| Assume N failures = N fixes | Clusters collapse the count. Diagnose first, count later |
+| Start triage without calibrating xdist | Parallelism-induced failures look like real bugs. You'll chase ghosts. |
+| Forget `--dist loadgroup` with xdist | Grouped tests land on different workers → nondeterministic failures → debugging the wrong problem |
+| Not persisting `.pytest_cache` in Docker | `--lf` resets every run → every "targeted" run becomes a full collection → time savings vanish |
 
 ### When to fall through to single-bug workflow
 
