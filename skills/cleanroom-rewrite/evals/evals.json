@@ -1,0 +1,26 @@
+{
+  "skill_name": "cleanroom-rewrite",
+  "evals": [
+    {
+      "id": 1,
+      "name": "spec-driven-rewrite-simple",
+      "prompt": "I want to do a cleanroom rewrite of the Python project at /home/minder/projekty/oh-my-slop/ (just the scripts/ directory — a markdown reference validator and related tooling). Write the Phase 1 behavioral specification to SPEC.md. My threat model is code quality and maintainability — I want a cleaner, better-tested rewrite.",
+      "expected_output": "A behavioral specification with no code snippets, confidence tags ([VERIFIED]/[INFERRED]/[UNKNOWN]), and all required sections (Overview, External Interfaces, Functional Behavior, Data Structures, Business Rules, Edge Cases, Non-Functional, Philosophy of Implementation, Gap Inventory).",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "impl-from-spec",
+      "prompt": "Here is a specification document (path: /home/minder/projekty/oh-my-slop/SPEC.md). Implement a working Python script based strictly on this spec. You have NOT seen the original codebase. Record all assumptions and gap resolutions in ASSUMPTIONS.md.",
+      "expected_output": "Working code that satisfies the spec, plus an ASSUMPTIONS.md log for all gap resolutions and assumptions.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "verification-protocol",
+      "prompt": "I have the original scripts/ at /home/minder/projekty/oh-my-slop/scripts/ and a rewrite at /home/minder/projekty/rewrite-app/scripts/. Produce a verification plan with characterization tests and a divergence report.",
+      "expected_output": "Three-phase verification: spec conformance tests, characterization comparison with PASS/SPEC_ERROR/IMPL_DEVIATION/UNKNOWN_ZONE classification, and property-based invariants.",
+      "files": []
+    }
+  ]
+}
