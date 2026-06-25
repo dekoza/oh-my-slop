@@ -26,6 +26,18 @@ This procedure is tier-agnostic: it works for unit, integration, E2E, or any mix
 
 **Enforcement:** using `tail` to inspect test output after a run = bug. Use `| tee` every time.
 
+### Timeout guidelines
+
+When running test commands (especially in CI or Docker), always set an explicit timeout that matches the tier's expected runtime. Underruns cause false failures from the runner killing the suite mid-execution.
+
+| Tier | Minimum timeout | Notes |
+|------|----------------|-------|
+| Unit | 600s (10 min) | Fast per-test but large suites with `-n auto` can exhaust default limits |
+| Integration | 1800s (30 min) | Docker startup + DB setup + HTTP round-trips add up; keep containers warm between runs |
+| E2E | 3600s (1 hour) | Browser launch, page loads, and Playwright overhead are slow; never let these get killed mid-flight |
+
+**Enforcement:** a test run killed by a timeout is a wasted run — the failure signal is the runner, not the tests. Set timeouts generously.
+
 ---
 
 ### Step 0 — CALIBRATE (run once, before triage)
