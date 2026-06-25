@@ -18,13 +18,13 @@ This procedure is tier-agnostic: it works for unit, integration, E2E, or any mix
 
 ### Output capture rule
 
-**Always capture test output with `| tee [filename]`, never with `tail` or bare `>`.**
+**`| tee [filename]` is the ONLY allowed method for capturing test output.** `tail`, `head`, bare `>`, and `>>` are **FORBIDDEN**.
 
-- `| tee /tmp/failures.log` writes the output to a file **and** streams it to stdout. You get the full picture immediately and can re-read the file later without re-running the command.
-- `tail -f` or `tail` after the fact **destroys information**: if the run is still going, you only see what's already flushed; if it's done, you missed the earlier output and must re-run the entire suite just to capture what you lost. A full test run is expensive — never waste a second run just to see output you could have caught the first time.
-- Bare `> /tmp/file` redirects output to a file but you see nothing on screen. If the run hangs or takes long, you have no idea if it's progressing or stuck.
+- `| tee /tmp/failures.log` writes output to a file **and** streams it to stdout simultaneously. You see everything in real time and can re-read the file later without re-running the command.
+- **Why `tail` and `head` are forbidden:** they destroy insight. `tail` shows only the end — if the run is still going, you see only what's already flushed; if it's done, you missed everything before the last screenful and cannot recover it. `head` shows only the beginning — you miss the failures that come later. Both hide the full picture the user needs to decide whether to **kill a bad run immediately** instead of waiting for it to finish just to confirm what they already suspect. Insight is time-sensitive — once the run ends, that context is gone and cannot be reconstructed.
+- **Why bare `>` and `>>` are forbidden:** they redirect output to a file but you see nothing on screen. If the run hangs or takes unexpectedly long, you have no idea if it's progressing or stuck.
 
-**Enforcement:** using `tail` to inspect test output after a run = bug. Use `| tee` every time.
+**Enforcement:** using `tail`, `head`, or bare `>`/`>>` on test output = **bug**. No exceptions. Use `| tee` every time.
 
 ### Timeout guidelines
 
@@ -236,7 +236,7 @@ pytest tests/ -n auto --dist loadgroup
 | Start triage without calibrating xdist | Parallelism-induced failures look like real bugs. You'll chase ghosts. |
 | Forget `--dist loadgroup` with xdist | Grouped tests land on different workers → nondeterministic failures → debugging the wrong problem |
 | Not persisting `.pytest_cache` in Docker | `--lf` resets every run → every "targeted" run becomes a full collection → time savings vanish |
-| Using `tail` to inspect test output after a run | Destroys earlier output → forces a full re-run just to capture what you lost. Use `| tee` at the start instead. |
+| Using `tail`, `head`, or bare `>`/`>>` on test output | Destroys insight → user cannot kill a bad run early, must wait for it to end just to confirm what they suspected. `| tee` is the ONLY allowed method. |
 
 ### When to fall through to single-bug workflow
 
