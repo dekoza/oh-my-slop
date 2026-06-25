@@ -16,6 +16,16 @@ When multiple failures exist — broken test suites, migration fallout, dependen
 
 This procedure is tier-agnostic: it works for unit, integration, E2E, or any mix. Use the reference commands as templates — adapt to your project's tooling.
 
+### Output capture rule
+
+**Always capture test output with `| tee [filename]`, never with `tail` or bare `>`.**
+
+- `| tee /tmp/failures.log` writes the output to a file **and** streams it to stdout. You get the full picture immediately and can re-read the file later without re-running the command.
+- `tail -f` or `tail` after the fact **destroys information**: if the run is still going, you only see what's already flushed; if it's done, you missed the earlier output and must re-run the entire suite just to capture what you lost. A full test run is expensive — never waste a second run just to see output you could have caught the first time.
+- Bare `> /tmp/file` redirects output to a file but you see nothing on screen. If the run hangs or takes long, you have no idea if it's progressing or stuck.
+
+**Enforcement:** using `tail` to inspect test output after a run = bug. Use `| tee` every time.
+
 ---
 
 ### Step 0 — CALIBRATE (run once, before triage)
@@ -26,10 +36,10 @@ This procedure is tier-agnostic: it works for unit, integration, E2E, or any mix
 
 ```
 # Serial baseline
-pytest tests/<tier>/ -n 1 --tb=line -q > /tmp/serial_failures.log
+pytest tests/<tier>/ -n 1 --tb=line -q | tee /tmp/serial_failures.log
 
 # Parallel run
-pytest tests/<tier>/ -n auto --dist loadgroup --tb=line -q > /tmp/parallel_failures.log
+pytest tests/<tier>/ -n auto --dist loadgroup --tb=line -q | tee /tmp/parallel_failures.log
 ```
 
 Compare failure sets. If they differ → **xdist contamination detected.** Tests that fail under parallelism but pass serially are likely sharing state. Add `xdist_group` markers to force them onto the same worker, then re-calibrate. **Do not proceed to triage until serial and parallel failure sets match.**
@@ -62,10 +72,10 @@ Run the full failing tier with serialized output:
 
 ```
 # With xdist (recommended)
-pytest tests/<tier>/ -n auto --dist loadgroup --json-report -q > /tmp/failures_round_0.log
+pytest tests/<tier>/ -n auto --dist loadgroup --json-report -q | tee /tmp/failures_round_0.log
 
 # Without xdist
-pytest tests/<tier>/ --json-report -q > /tmp/failures_round_0.log
+pytest tests/<tier>/ --json-report -q | tee /tmp/failures_round_0.log
 ```
 
 **Save the output as `failures_round_0.json`.** You'll diff against this file in later rounds.
@@ -155,7 +165,7 @@ Run all previously-failing tests:
 
 ```
 # --lf uses .pytest_cache to replay last-failed tests
-pytest tests/<tier>/ --lf -n auto --dist loadgroup --json-report -q > /tmp/failures_round_N.log
+pytest tests/<tier>/ --lf -n auto --dist loadgroup --json-report -q | tee /tmp/failures_round_N.log
 ```
 
 **Save as `failures_round_N.json`.** Diff against the previous round:
@@ -214,6 +224,7 @@ pytest tests/ -n auto --dist loadgroup
 | Start triage without calibrating xdist | Parallelism-induced failures look like real bugs. You'll chase ghosts. |
 | Forget `--dist loadgroup` with xdist | Grouped tests land on different workers → nondeterministic failures → debugging the wrong problem |
 | Not persisting `.pytest_cache` in Docker | `--lf` resets every run → every "targeted" run becomes a full collection → time savings vanish |
+| Using `tail` to inspect test output after a run | Destroys earlier output → forces a full re-run just to capture what you lost. Use `| tee` at the start instead. |
 
 ### When to fall through to single-bug workflow
 
