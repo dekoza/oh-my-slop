@@ -26,6 +26,8 @@ This procedure is tier-agnostic: it works for unit, integration, E2E, or any mix
 
 **Enforcement:** using `tail`, `head`, or bare `>`/`>>` on test output = **bug**. No exceptions. Use `| tee` every time.
 
+**After running with `| tee`:** read the log file you just created with `read /tmp/failures_round_0.log` or `grep` directly against the file (`grep -E "^(ERROR|FAILED)" /tmp/failures_round_0.log`). **Never re-run the same pytest command just to inspect output** — the file already has everything you need. Re-running wastes time on a full suite that already completed.
+
 ### Timeout guidelines
 
 When running test commands (especially in CI or Docker), always set an explicit timeout that matches the tier's expected runtime. Underruns cause false failures from the runner killing the suite mid-execution.
