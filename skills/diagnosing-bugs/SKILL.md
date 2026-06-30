@@ -63,7 +63,14 @@ The outer timeout must always be **longer** than the inner timeout, otherwise th
 
 **Goal:** Ensure your failure map is trustworthy. Don't triage on corrupted data.
 
-**0a. Verify parallel stability (if using pytest-xdist).**
+**Skip 0a and 0b if all of the following are true:**
+- You just ran the full suite and the failure set matches what you expect.
+- No recent changes to fixtures, models, or shared code.
+- The failures span multiple unrelated modules (unlikely to be xdist contamination).
+
+Skipping is safe because xdist contamination and flakes both produce **inconsistent** failure sets — if your set is stable across runs, the calibration step adds no value.
+
+**0a. Verify parallel stability (if you suspect xdist issues).**
 
 ```
 # Serial baseline
@@ -119,8 +126,41 @@ Read every traceback. Group failures by **root cause**, not by file:
 | Same module in traceback | Broken signal handler, service, or utility |
 | `AttributeError` / `ImportError` cluster | Renamed/moved function or missing migration |
 | `AssertionError` with same expected value | Changed behavior or hardcoded expectation |
+| Client sees wrong UI but server logs show success | Client-side state not updated, or HTMX/server-swap overwrote injected content |
+| Async message ordering (client sends X, server processes Y first) | Race condition in queue/sync logic |
+| Test passes serially but fails parallel, or vice versa | Timing dependency masked by execution order |
 
 **Expect 38 failures → ~8-12 actual problems.** One fix cascades through its cluster.
+
+### Quick relevance check (before deep triage)
+
+Before triaging all failures, determine which are **caused by your changes**
+vs **pre-existing**. This prevents wasting effort on unrelated bugs.
+
+**Method: `git stash` + targeted re-run.**
+
+```
+# Run only the failures most likely related to your changes
+# (same module, same consumer, same template family)
+git stash
+pytest tests/<related_tier>/ -k "test_a or test_b" -n 1 --timeout 300 -q | tee /tmp/before.log
+git stash pop
+pytest tests/<related_tier>/ -k "test_a or test_b" -n 1 --timeout 300 -q | tee /tmp/after.log
+diff /tmp/before.log /tmp/after.log
+```
+
+- **Same fail before and after** → pre-existing. Skip for this wave.
+- **Passed before, fails after** → regression. High priority.
+- **Failed before, passes now** → your fix already worked (maybe from an
+  earlier commit in this session).
+
+Do this for the **smallest plausible set** of failures — don't run the full
+suite just to check relevance. A 3-test targeted run takes 2 minutes; a full
+E2E run takes 5+.
+
+**Why this matters:** In a session with 24 failures, 20 may be pre-existing.
+Spending 20 minutes investigating pre-existing bugs instead of fixing the 4
+you actually caused is a 5:1 waste ratio.
 
 ---
 
@@ -164,6 +204,56 @@ Fix each offender. For each fix:
 - **Do not fix scattered non-offenders.** Resist the urge to "knock out easy ones" — they're hardest to cluster and you'll dig rabbit holes.
 
 **After all offenders are fixed:** commit the wave.
+
+**Pattern fixes span multiple files.** If the root cause is a shared pattern
+(e.g., the same callback in N templates, the same import in M modules), fix
+all instances in one commit. One commit per *pattern*, not per file. The
+pattern is the offender; the files are just locations.
+
+**Commit strategy for cross-layer fixes.** When a single logical fix touches
+files across multiple layers (backend → message bus → JavaScript → templates),
+use **one commit** for the entire fix, not one commit per file.
+
+Reason: splitting across commits creates intermediate states where half the
+fix is deployed. The backend sends a message that no template handles. The
+template has a handler that no backend produces. These intermediate states
+are broken and confusing in git history.
+
+Commit message format:
+```
+fix(scope): describe the logical fix
+
+Files changed:
+- apps/x/consumer.py (add handler)
+- static/js/y.js (fix callback ordering)
+- templates/z.html (add toast, skip HTMX for temp)
+- tests/e2e/test_*.py (fix expectation)
+
+Root cause: one sentence explaining why the fix works.
+```
+
+**Exception:** If the fix touches entirely unrelated modules
+(e.g., fixing a payment bug AND a warehouse bug in the same session),
+use separate commits.
+
+**Feature parity audit.** When you fix a bug or add a feature in one
+module/template/consumer, check if similar ones have the same fix.
+
+```
+# Find all files that implement the same handler/callback pattern
+grep -rl "<handler_name>" templates/ static/ apps/
+# Find all files that handle the same message type
+grep -rl "<message_type>" apps/ static/
+```
+
+For each match:
+- Does it have the same handler/callback/method?
+- Does it handle the same message types?
+- Does it have the same error handling?
+
+If a similar file is **missing** a handler that exists in the fixed file,
+it's likely a feature gap — not a bug yet, but it will become one when
+someone uses that code path. Fix it in the same commit.
 
 ---
 
@@ -256,6 +346,7 @@ pytest tests/ -n auto --dist loadgroup --timeout 600
 | Forget `--dist loadgroup` with xdist | Grouped tests land on different workers → nondeterministic failures → debugging the wrong problem |
 | Not persisting `.pytest_cache` in Docker | `--lf` resets every run → every "targeted" run becomes a full collection → time savings vanish |
 | Using `tail`, `head`, or bare `>`/`>>` on test output | Destroys insight → user cannot kill a bad run early, must wait for it to end just to confirm what they suspected. `| tee` is the ONLY allowed method. |
+| Assuming server logs tell the whole story | Client-side bugs (JS errors, DOM mutations, WebSocket frame ordering) are invisible in server logs. If the server says "success" but the UI is wrong, the bug is between the server response and the rendered DOM. |
 
 ### When to fall through to single-bug workflow
 
@@ -275,6 +366,22 @@ Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give
 2. **Curl / HTTP script** against a running dev server.
 3. **CLI invocation** with a fixture input, diffing stdout against a known-good snapshot.
 4. **Headless browser script** (Playwright / Puppeteer) — drives the UI, asserts on DOM/console/network.
+4.5. **WebSocket frame capture.** If the bug involves real-time communication
+    (WebSockets, SSE, channel layers), capture the actual frames:
+    - Playwright: `page.on("websocket", ws => ws.on("framesent", ...))`
+    - Chrome DevTools: Network tab → WS → copy as HAR
+    This is how you prove the server sent one message type but the client
+    received (or ignored) a different one. Without this, you're guessing
+    at message ordering.
+4.6. **Browser console capture.** Add temporary `console.log` to JavaScript,
+    capture via Playwright: `page.on("console", msg => logs.append(msg.text))`.
+    This is the JS equivalent of server logging — and just as necessary when
+    the bug lives in the browser.
+4.7. **DOM state inspection.** Use `page.evaluate(() => document.querySelector(...).innerHTML)`
+    or `page.query_selector()` to check what's actually in the DOM at the
+    failure point. If an element "should" be visible but isn't, this tells you
+    whether it was never rendered, was removed by another script, or is hidden
+    via CSS.
 5. **Replay a captured trace.** Save a real network request / payload / event log to disk; replay it through the code path in isolation.
 6. **Throwaway harness.** Spin up a minimal subset of the system (one service, mocked deps) that exercises the bug code path with a single function call.
 7. **Property / fuzz loop.** If the bug is "sometimes wrong output", run 1000 random inputs and look for the failure mode.
@@ -313,6 +420,47 @@ Phase 1 is done when the loop is **tight** and **red-capable**: you can name **o
 
 If you catch yourself reading code to build a theory before this command exists, **stop — jumping straight to a hypothesis is the exact failure this skill prevents.** No red-capable command, no Phase 2.
 
+### Client-side async flow bugs (HTMX + WebSockets + JS callbacks)
+
+When the server says "success" but the UI is wrong, the bug is almost
+always in one of these patterns:
+
+**Pattern A: Callback fires before modal/render completes.**
+- Symptom: Element should be visible but isn't. Server logs show success.
+- Cause: A callback (HTMX `afterSwap`, JS event handler, WebSocket
+  `onmessage`) triggers a DOM mutation that overwrites content just
+  injected by another callback.
+- Fix: Check callback ordering. Does X fire before Y completes? Add a
+  guard: "only call the success handler after confirming the modal is
+  still visible."
+
+**Pattern B: Missing handler for a message type the server sends.**
+- Symptom: Server sends a confirmation message but nothing happens in UI.
+  No error. Silent failure.
+- Cause: The client's message dispatcher has no handler for this type.
+  Check: `handlers[data.type]` returns undefined.
+- Fix: Add the missing handler. Often the same handler exists in a
+  similar page — copy it.
+
+**Pattern C: HTMX swap overwrites injected content.**
+- Symptom: Modal appears, then disappears. Toast appears, then vanishes.
+- Cause: An HTMX `afterSwap` or callback triggers `htmx.ajax(...)` which
+  replaces the target element's innerHTML, erasing your injected content.
+- Fix: Skip the HTMX swap when you've just injected modal/content. Use
+  a guard flag like `if (!data.is_temporary_creation)` or similar.
+
+**Pattern D: WebSocket message arrives but client is offline.**
+- Symptom: Server sends a success message but UI doesn't update until next
+  user action. Or: offline queue replays old state.
+- Cause: Client was offline when the message arrived; it's now online but
+  the message was consumed by the queue, not the UI handler.
+- Fix: Check an `offline` flag in the response. Handle queued messages
+  differently from real-time messages.
+
+When debugging a UI bug with server-side success, **check these four
+patterns in order**. They account for ~80% of "server says OK but UI is
+wrong" bugs in HTMX + WebSocket apps.
+
 ## Phase 2 — Reproduce + minimise
 
 Run the loop. Watch it go red — the bug appears.
@@ -322,6 +470,11 @@ Confirm:
 - [ ] The loop produces the failure mode the **user** described — not a different failure that happens to be nearby. Wrong bug = wrong fix.
 - [ ] The failure is reproducible across multiple runs (or, for non-deterministic bugs, reproducible at a high enough rate to debug against).
 - [ ] You have captured the exact symptom (error message, wrong output, slow timing) so later phases can verify the fix actually addresses it.
+- [ ] **Test environment is what you think it is.** If the bug involves
+  settings, feature flags, or runtime mode, verify them at the point of
+  failure. Lazy-loaded settings can cache values before fixtures override
+  them. A test that "should" run in one mode but actually runs in another
+  will produce wrong navigation items, wrong URLs, and confusing failures.
 
 ### Minimise
 
@@ -354,10 +507,21 @@ Phase 3 is done when you have **one confirmed hypothesis** — an experiment tha
 
 If the hypothesis is about internal state (data flow, timing, caching), add instrumentation to make the invisible visible.
 
-- **Logs** — targeted, not blanket. Log the specific variable or transition you're testing.
+- **Server logs** — targeted, not blanket. Log the specific variable or
+  transition you're testing.
 - **Asserts** — insert temporary assertions at the suspected boundary.
-- **Profilers** — if the bug is performance-related, use the right tool (cProfile, py-spy, Django debug toolbar).
+- **Profilers** — if the bug is performance-related, use the right tool
+  (cProfile, py-spy, Django debug toolbar).
 - **Traces** — if the bug crosses service boundaries, use distributed tracing.
+- **WebSocket frame capture** — for real-time communication bugs, capture
+  actual frames sent/received. Playwright: `page.on("websocket")`. Without
+  this you can't distinguish "server didn't send" from "client didn't
+  receive" from "client received but ignored".
+- **Browser console capture** — add `console.log` to JS, capture via
+  `page.on("console", ...)`. The JS equivalent of server logging.
+- **DOM state snapshots** — `page.evaluate(() => el.innerHTML)` at the
+  failure point. Tells you whether an element was never rendered, was
+  removed by another script, or is CSS-hidden.
 
 Keep instrumentation temporary. Remove it after the hypothesis is confirmed.
 
@@ -385,6 +549,29 @@ Phase 5 is done when:
 - The full test suite passes.
 - Temporary instrumentation is removed.
 - The root cause is documented.
+
+### Before applying the fix, verify the test expectation is correct
+
+A failing test doesn't always mean the code is wrong. Sometimes the test
+has incorrect expectations. Check:
+
+1. **Does another test assert the same thing differently?**
+   - If `test_page_X` expects a toast in container A and `test_page_Y`
+     expects it in container B, one of them has the wrong selector.
+     Check which matches the template's actual structure.
+
+2. **Does the element the test checks exist and have the right purpose?**
+   - If the test asserts content on an element that is actually an HTMX
+     target (not a toast container), the test has the wrong selector.
+
+3. **Did the test pass in a commit before the bug was introduced?**
+   - `git log --oneline -p -- tests/e2e/test_xxx.py` — if the test was
+     added in the same commit as the feature, its expectations were
+     written alongside untested code. Trust the implementation pattern
+     from related tests over the new test's assertions.
+
+If the test expectation is wrong, **fix the test, not the code**. A test
+with wrong expectations is a bug in the test, not in the application.
 
 ## Reference
 
