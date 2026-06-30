@@ -30,15 +30,32 @@ This procedure is tier-agnostic: it works for unit, integration, E2E, or any mix
 
 ### Timeout guidelines
 
-When running test commands (especially in CI or Docker), always set an explicit timeout that matches the tier's expected runtime. Underruns cause false failures from the runner killing the suite mid-execution.
+There are **two** independent timeout layers. Both must be set correctly, or the shorter one kills the run and the longer one is wasted.
 
-| Tier | Minimum timeout | Notes |
-|------|----------------|-------|
+1. **Outer runner timeout** — the budget your harness (pi, CI job, `docker compose run --rm`, `timeout` command) gives the `pytest` process. If this expires, the OS/SIGKILLs pytest and you lose all output.
+2. **Inner pytest timeout** — the `--timeout` flag (from `pytest-timeout`) that pytest itself enforces **per test**. If this expires, pytest kills that single test with a `TimeoutError` and moves on.
+
+The outer timeout must always be **longer** than the inner timeout, otherwise the runner kills pytest before pytest ever gets a chance to enforce per-test budgets. For E2E tests this distinction matters most: a Playwright test can legitimately take 60–180s, so a 120s inner timeout is already too tight, and a 60s default (common when the flag is omitted) guarantees false failures.
+
+#### Outer runner timeout (the harness budget)
+
+| Tier | Minimum outer timeout | Notes |
+|------|----------------------|-------|
 | Unit | 600s (10 min) | Fast per-test but large suites with `-n auto` can exhaust default limits |
 | Integration | 1800s (30 min) | Docker startup + DB setup + HTTP round-trips add up; keep containers warm between runs |
 | E2E | 3600s (1 hour) | Browser launch, page loads, and Playwright overhead are slow; never let these get killed mid-flight |
 
-**Enforcement:** a test run killed by a timeout is a wasted run — the failure signal is the runner, not the tests. Set timeouts generously.
+#### Inner pytest timeout (`--timeout` flag)
+
+| Tier | Minimum `--timeout` value | Notes |
+|------|--------------------------|-------|
+| Unit | 60s | Individual unit tests should be fast; 60s catches hangs without masking real slowness |
+| Integration | 300s (5 min) | DB queries, HTTP round-trips, and container I/O add latency |
+| E2E | 600s (10 min) | Playwright page loads, network waits, and multi-step flows are slow; 60–120s defaults cause false kills |
+
+**Rule:** always pass `--timeout` explicitly on the pytest command line. Never rely on the `pytest-timeout` default (usually 60s or unset) — it is almost always too short for anything beyond unit tests.
+
+**Enforcement:** a test run killed by a timeout is a wasted run — the failure signal is the runner, not the tests. Set both timeouts generously, and always ensure `outer > inner`.
 
 ---
 
@@ -50,10 +67,10 @@ When running test commands (especially in CI or Docker), always set an explicit 
 
 ```
 # Serial baseline
-pytest tests/<tier>/ -n 1 --tb=line -q | tee /tmp/serial_failures.log
+pytest tests/<tier>/ -n 1 --timeout 600 --tb=line -q | tee /tmp/serial_failures.log
 
 # Parallel run
-pytest tests/<tier>/ -n auto --dist loadgroup --tb=line -q | tee /tmp/parallel_failures.log
+pytest tests/<tier>/ -n auto --dist loadgroup --timeout 600 --tb=line -q | tee /tmp/parallel_failures.log
 ```
 
 Compare failure sets. If they differ → **xdist contamination detected.** Tests that fail under parallelism but pass serially are likely sharing state. Add `xdist_group` markers to force them onto the same worker, then re-calibrate. **Do not proceed to triage until serial and parallel failure sets match.**
@@ -61,7 +78,7 @@ Compare failure sets. If they differ → **xdist contamination detected.** Tests
 **0b. Quarantine flakes.**
 
 ```
-pytest tests/<tier>/ --count=3 -q
+pytest tests/<tier>/ --timeout 600 --count=3 -q
 ```
 
 Tests that fail inconsistently are **flakes, not bugs**. Quarantine them (`xfail`, skip, or fix separately). They inflate the failure count and corrupt your cascade map. A 50%-flake test masquerades as a real failure half the time.
@@ -86,10 +103,10 @@ Run the full failing tier with serialized output:
 
 ```
 # With xdist (recommended)
-pytest tests/<tier>/ -n auto --dist loadgroup --json-report -q | tee /tmp/failures_round_0.log
+pytest tests/<tier>/ -n auto --dist loadgroup --timeout 600 --json-report -q | tee /tmp/failures_round_0.log
 
 # Without xdist
-pytest tests/<tier>/ --json-report -q | tee /tmp/failures_round_0.log
+pytest tests/<tier>/ --timeout 600 --json-report -q | tee /tmp/failures_round_0.log
 ```
 
 **Save the output as `failures_round_0.json`.** You'll diff against this file in later rounds.
@@ -158,10 +175,10 @@ Run **only** the fixed offenders' tests:
 
 ```
 # With xdist
-pytest tests/<tier>/ -k "test_a or test_b or test_c" -n auto --dist loadgroup -x
+pytest tests/<tier>/ -k "test_a or test_b or test_c" -n auto --dist loadgroup --timeout 600 -x
 
 # Without xdist
-pytest tests/<tier>/ -k "test_a or test_b or test_c" -x
+pytest tests/<tier>/ -k "test_a or test_b or test_c" --timeout 600 -x
 ```
 
 **Critical:** always use `--dist loadgroup` with xdist. Without it, grouped tests land on different workers and shared-state tests explode.
@@ -178,8 +195,8 @@ pytest tests/<tier>/ -k "test_a or test_b or test_c" -x
 Run all previously-failing tests:
 
 ```
-# --lf uses .pytest_cache to replay last-failed tests
-pytest tests/<tier>/ --lf -n auto --dist loadgroup --json-report -q | tee /tmp/failures_round_N.log
+# --lf uses .pytest_cache to replay last-failing tests
+pytest tests/<tier>/ --lf -n auto --dist loadgroup --timeout 600 --json-report -q | tee /tmp/failures_round_N.log
 ```
 
 **Save as `failures_round_N.json`.** Diff against the previous round:
@@ -219,7 +236,7 @@ Count remaining failures:
 Run the **entire** test suite (all tiers):
 
 ```
-pytest tests/ -n auto --dist loadgroup
+pytest tests/ -n auto --dist loadgroup --timeout 600
 ```
 
 - **All green:** Done. Commit.
