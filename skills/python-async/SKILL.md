@@ -1,6 +1,14 @@
 ---
 name: python-async
-description: "Use when tasks involve Python async or concurrency design, debugging, or code review: AnyIO, `asyncio`, Trio, task groups, cancel scopes, `CancelledError`, async testing, thread offloading, async streams, event-loop ownership, or `uvloop`. Use this whenever the user is building, fixing, or reviewing async-enabled Python libraries or apps, even if they only mention `async def`, `create_task`, `pytest-asyncio`, `asyncio.gather`, or `uvloop`. Prefer this skill for portable async logic; pair it with a framework skill when lifecycle rules belong to a specific web or app framework."
+description: >
+  Python async or concurrency design, debugging, or code review: AnyIO, `asyncio`, Trio,
+  task groups, cancel scopes, `CancelledError`, async testing, thread offloading, async
+  streams, event-loop ownership, or `uvloop`. Triggers on: "async", "asyncio", "Trio",
+  "AnyIO", "task group", "cancel scope", "CancelledError", "async testing", "thread
+  offloading", "async streams", "event-loop", "uvloop", `async def`, `create_task`,
+  `pytest-asyncio`, `asyncio.gather`, or when building/fixing/reviewing async-enabled
+  Python libraries or apps. Prefer this skill for portable async logic; pair it with a
+  framework skill when lifecycle rules belong to a specific web or app framework.
 scope: python-async
 target_versions: "Python 3.11-3.14, AnyIO 4.x, Trio 0.32+, uvloop 0.18+ on supported CPython/POSIX runtimes"
 last_verified: 2026-03-25

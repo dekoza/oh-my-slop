@@ -1,6 +1,12 @@
 ---
 name: http-status-codes
-description: "Use when choosing, reviewing, correcting, or explaining HTTP response codes for APIs, OpenAPI specs, controllers, middleware, SDK/client retry logic, or error handling. Make sure to use this skill whenever a task touches status-code semantics, especially 400 vs 422, 401 vs 403, 404 vs 410, 405 vs 501, 409 vs 412 vs 428, 429 vs 503, 201 vs 202 vs 204, or redirect behavior like 303 vs 307 vs 308."
+description: >
+  Choosing, reviewing, correcting, or explaining HTTP response codes for APIs, OpenAPI
+  specs, controllers, middleware, SDK/client retry logic, or error handling. Triggers on:
+  "HTTP status", "response code", "400 vs 422", "401 vs 403", "404 vs 410", "405 vs 501",
+  "409 vs 412", "429 vs 503", "201 vs 202 vs 204", "303 vs 307 vs 308", "status code
+  semantics", "which status code", "OpenAPI status", or when choosing/reviewing HTTP
+  response codes.
 ---
 # HTTP Status Codes Reference
 

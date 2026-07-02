@@ -4,10 +4,10 @@ description: >
   Test-driven development with red-green-refactor. Use when building features, fixing bugs,
   writing any new implementation code, adding tests to existing code, or modifying behaviour.
   This is the mandatory default for all implementation tasks — TDD is the ONLY allowed test
-  strategy. Triggers on phrases like "build X", "implement Y", "add Z", "fix this bug",
-  "write tests for", "refactor this", "add integration tests", or any task that involves
-  writing or changing code. Also triggers when the user mentions "red-green-refactor",
-  "test-first", "TDD", or "write tests". You MUST load this skill before writing any
+  strategy. Triggers on: "build X", "implement Y", "add Z", "fix this bug", "write tests
+  for", "refactor this", "add integration tests", "writing code", "changing code",
+  "red-green-refactor", "test-first", "TDD", "write tests", or any task that involves
+  writing or changing implementation code. You MUST load this skill before writing any
   implementation code. This is a discipline skill — following its workflow is non-negotiable.
 license: MIT (adapted from mattpocock/skills)
 ---

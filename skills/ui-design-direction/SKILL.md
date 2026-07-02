@@ -1,16 +1,16 @@
 ---
 name: ui-design-direction
-description: >-
-  Use when the user wants UI/UX direction, design review,
-  or interface critique for dashboards, landing pages, e-commerce pages, b2b
-  admin tools, billing flows, SaaS/web/mobile apps, mental health products, or
-  real-time logistics control panels; needs recommendations on
-  professionalism, trust signals, conversion friction, readability,
-  accessibility, hierarchy, data-display, color, typography, iconography,
-  layout, CTA, or chart patterns; or wants a hostile design lead review or
-  stack-aware guidance for healthcare, fintech, security, admin, Tailwind,
-  React, SwiftUI, React Native, Flutter, or shadcn contexts. Not for
-  illustration/image prompt generation or pure implementation/debugging work.
+description: >
+  UI/UX direction, design review, or interface critique for dashboards, landing pages,
+  e-commerce pages, b2b admin tools, billing flows, SaaS/web/mobile apps, mental health
+  products, or real-time logistics control panels. Triggers on: "UI direction", "design
+  review", "interface critique", "dashboard design", "landing page", "e-commerce",
+  "billing flow", "SaaS UI", "mobile app UI", "trust signals", "conversion friction",
+  "accessibility", "hierarchy", "data-display", "color", "typography", "iconography",
+  "layout", "CTA", "chart patterns", "hostile design review", "stack-aware guidance",
+  "healthcare UI", "fintech UI", "security UI", "admin UI", "Tailwind", "React UI",
+  "SwiftUI", "React Native", "Flutter", "shadcn", or when the user wants UI/UX direction
+  or design critique. Not for illustration/image prompt generation or pure implementation/debugging work.
 ---
 
 # UI Design Direction

@@ -1,6 +1,12 @@
 ---
 name: documentation-lifecycle
-description: Use when creating, revising, auditing, or reconciling software documentation for planned or implemented changes, especially feature specs, specification interviews, ADRs, API/config reference docs, runbooks, maintenance docs, or user-facing tutorial/how-to/reference/explanation content. Use it when documentation drift, missing acceptance criteria, or uncertainty about which docs must change is part of the task.
+description: >
+  Creating, revising, auditing, or reconciling software documentation for planned or
+  implemented changes. Triggers on: "documentation", "spec", "ADR", "runbook", "maintenance
+  docs", "API reference", "tutorial", "how-to", "explanation", "documentation drift",
+  "missing acceptance criteria", "which docs must change", "spec interview", or when
+  documentation is part of the task. Covers: feature specs, ADRs, API/config reference,
+  runbooks, maintenance docs, tutorial/how-to/reference/explanation content.
 ---
 
 # Documentation Lifecycle

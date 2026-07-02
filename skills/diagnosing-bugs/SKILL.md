@@ -1,6 +1,11 @@
 ---
 name: diagnosing-bugs
-description: Diagnosis loop for hard bugs, performance regressions, and multi-failure scenarios. Use when the user says "diagnose", "debug this", reports something broken/throwing/failing/slow, or needs to fix multiple failing tests simultaneously.
+description: >
+  Diagnosis loop for hard bugs, performance regressions, and multi-failure scenarios.
+  Triggers on: "diagnose", "debug this", "something broken", "throwing", "failing",
+  "slow", "performance regression", "fix multiple failing tests", or when the user
+  reports a bug with no obvious cause. Systematic diagnosis: reproduce → isolate →
+  hypothesize → test → fix.
 license: MIT (adapted from mattpocock/skills)
 ---
 

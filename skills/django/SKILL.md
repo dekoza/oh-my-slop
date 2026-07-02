@@ -1,6 +1,14 @@
 ---
 name: django
-description: "Use when tasks involve Django models, views, URLs, templates, forms, admin, auth, middleware, signals, settings, testing, or project architecture. Covers Django 6.0 framework patterns, gotchas, and internals."
+description: >
+  Django 6.0 framework reference. Use when looking up Django patterns, ORM queries,
+  view classes, template tags, form validation, admin customization, auth flows,
+  middleware setup, signal handlers, or project structure. Covers Django 6.0 internals,
+  gotchas, and best practices. Triggers on: "Django", "manage.py", "models.py",
+  "views.py", "templates", "forms.py", "admin.py", "signals", "middleware", "ORM",
+  "select_related", "prefetch_related", "migration", "makemigrations", or when
+  working with Django-specific code. This is the REFERENCE skill — for workflow
+  enforcement (migrations, imports, linting), use django-discipline instead.
 scope: django
 target_versions: "Django 6.0, Python 3.12+"
 last_verified: 2026-03-19

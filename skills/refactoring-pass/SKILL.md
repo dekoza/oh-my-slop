@@ -1,12 +1,13 @@
 ---
 name: refactoring-pass
 description: >
-  Use when changing existing code structure without intending to change observable behavior.
-  Based on Refactoring (Martin Fowler). Covers behavior-preserving transformations, code smell
+  Changing existing code structure without intending to change observable behavior. Based
+  on Refactoring (Martin Fowler). Covers: behavior-preserving transformations, code smell
   detection, named refactoring moves (extract, inline, move, rename, decompose), preparatory
-  and follow-up refactoring around feature work, and stop conditions. Use when the user says
-  "refactor", "restructure", "clean up", "extract", "inline", "rename", "move code",
-  "reduce duplication", "simplify", or when reviewing code for structural improvement.
+  and follow-up refactoring around feature work, and stop conditions. Triggers on: "refactor",
+  "restructure", "clean up", "extract", "inline", "rename", "move code", "reduce duplication",
+  "simplify", "code smell", "behavior-preserving", or when reviewing code for structural
+  improvement without changing observable behavior.
 ---
 
 # Refactoring Pass

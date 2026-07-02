@@ -1,6 +1,15 @@
 ---
 name: drf
-description: "Use when tasks involve Django REST Framework (DRF) work: building, securing, or fixing REST APIs powered by `rest_framework`. Covers serializers, fields, relations, validators, views (`APIView`, `@api_view`, generics, viewsets), routers, `@action`, authentication, permissions, throttling, filtering, pagination, parsers, renderers, content negotiation, versioning, testing (`APIClient`/`APIRequestFactory`), and `REST_FRAMEWORK` settings. Use this whenever the user is working with DRF APIs, not just when they explicitly say 'DRF'. Do not use for pure Django ORM, views, templates, forms, or admin work outside the REST framework surface."
+description: >
+  Django REST Framework (DRF) work: building, securing, or fixing REST APIs powered by
+  `rest_framework`. Covers: serializers, fields, relations, validators, views (`APIView`,
+  `@api_view`, generics, viewsets), routers, `@action`, authentication, permissions,
+  throttling, filtering, pagination, parsers, renderers, content negotiation, versioning,
+  testing (`APIClient`/`APIRequestFactory`), and `REST_FRAMEWORK` settings. Triggers on:
+  "DRF", "Django REST Framework", "serializer", "APIView", "@api_view", "viewset",
+  "router", "permission", "throttle", "filter", "pagination", "content negotiation",
+  "API versioning", or when working with DRF APIs. Do not use for pure Django ORM, views,
+  templates, forms, or admin work outside the REST framework surface.
 ---
 
 # Django REST Framework Reference

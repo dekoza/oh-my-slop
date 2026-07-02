@@ -1,6 +1,14 @@
 ---
 name: django-discipline
-description: "Use when working in any Django project. Enforces mandatory Django-specific workflows for migrations, ORM queries, imports, linting, and model changes. Overrides default Python patterns with Django conventions. This is a discipline skill — following its checklist is non-negotiable."
+description: >
+  Mandatory Django workflow enforcement. Use when working in any Django project.
+  Enforces: migrations (always run makemigrations first), ORM queries (select_related,
+  prefetch_related, distinct()), imports (PEP 562 lazy __getattr__, # Circular import:
+  comments), linting (ruff check --fix), and model changes. Overrides default Python
+  patterns with Django conventions. Triggers on: "Django project", "manage.py exists",
+  "pyproject.toml contains django", "requirements.txt contains django", or when any
+  code is created/modified in a Django project. This is the DISCIPLINE skill — for
+  framework reference (patterns, gotchas, internals), use django instead.
 scope: django
 target_versions: "Django 6.0, Python 3.12+"
 last_verified: 2026-06-23

@@ -1,6 +1,13 @@
 ---
 name: skill-creator
-description: Use when creating new skills, editing existing skills, measuring skill performance, or verifying skills work before deployment. Covers skill authoring (SKILL.md structure, CSO, description optimization), testing (baseline runs, functional evals, pressure scenarios for discipline skills), benchmarking (quantitative eval with variance analysis), and packaging. Use whenever the user wants to create a skill from scratch, improve an existing skill, test or evaluate a skill, or optimize a skill's description for better triggering accuracy.
+description: >
+  Creating new skills, editing existing skills, measuring skill performance, or verifying
+  skills work before deployment. Covers: skill authoring (SKILL.md structure, CSO,
+  description optimization), testing (baseline runs, functional evals, pressure scenarios
+  for discipline skills), benchmarking (quantitative eval with variance analysis), and
+  packaging. Triggers on: "create skill", "edit skill", "improve skill", "skill performance",
+  "skill eval", "skill benchmark", "optimize skill description", "triggering accuracy",
+  or when the user wants to create/improve/test/evaluate a skill.
 ---
 
 # Skill Creator

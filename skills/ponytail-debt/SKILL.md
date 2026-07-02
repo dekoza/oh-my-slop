@@ -1,11 +1,11 @@
 ---
 name: ponytail-debt
 description: >
-  Harvest and track SHORTCUT markers left in the codebase during development.
-  Finds tagged shortcuts, reports them grouped by file, flags those missing upgrade paths.
-  Use when the user says "show shortcuts", "ponytail-debt", "what shortcuts did I leave",
-  "shortcut debt", "harvest shortcuts", "show technical debt", or wants to review
-  deliberate tradeoffs before they compound.
+  Harvest and track SHORTCUT markers left in the codebase during development. Finds
+  tagged shortcuts, reports them grouped by file, flags those missing upgrade paths.
+  Triggers on: "show shortcuts", "ponytail-debt", "what shortcuts did I leave",
+  "shortcut debt", "harvest shortcuts", "show technical debt", "review deliberate
+  tradeoffs", or when the user wants to find and track SHORTCUT markers in the codebase.
 ---
 
 # Ponytail Debt

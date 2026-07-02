@@ -1,6 +1,10 @@
 ---
 name: htmx
-description: "Use when tasks involve hx-* attributes, HTMX AJAX requests, swap strategies, server-sent events, WebSockets, or hypermedia-driven UIs."
+description: >
+  hx-* attributes, HTMX AJAX requests, swap strategies, server-sent events, WebSockets,
+  hypermedia-driven UIs. Triggers on: "HTMX", "hx-*", "hx-get", "hx-post", "hx-swap",
+  "hx-trigger", "hx-target", "server-sent events", "SSE", "WebSockets", "hypermedia",
+  "partial reload", "HTMX swap", or when working with HTMX-driven UIs.
 scope: htmx
 target_versions: "HTMX 2.x"
 last_verified: 2026-03-19

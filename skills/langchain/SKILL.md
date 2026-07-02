@@ -1,6 +1,13 @@
 ---
 name: langchain
-description: Use when tasks involve the Python LangChain ecosystem including `langchain`, `langchain-core`, provider packages like `langchain-openai`, `langgraph`, `langsmith`, LCEL/runnables, `init_chat_model`, `create_agent`, RAG/retrieval wiring, structured output, tracing, evals, or migration off `langchain-classic`. Use this whenever a task mentions LangChain, LangGraph, LangSmith, tool-calling agents, vector-store integrations, or imports/packages from this ecosystem. Do not use for LangChain.js / JS/TS.
+description: >
+  Python LangChain ecosystem: `langchain`, `langchain-core`, provider packages like
+  `langchain-openai`, `langgraph`, `langsmith`, LCEL/runnables, `init_chat_model`,
+  `create_agent`, RAG/retrieval wiring, structured output, tracing, evals, or migration
+  off `langchain-classic`. Triggers on: "LangChain", "LangGraph", "LangSmith", "LCEL",
+  "runnable", "init_chat_model", "create_agent", "RAG", "retrieval", "structured output",
+  "tool-calling agent", "vector-store", `langchain-`, `langgraph-`, `langsmith-`, or when
+  working with Python LangChain imports/packages. Do not use for LangChain.js / JS/TS.
 scope: langchain-python
 last_verified: 2026-04-24
 source_basis: official docs + source code + README

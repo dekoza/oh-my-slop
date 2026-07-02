@@ -1,13 +1,15 @@
 ---
 name: domain-driven-design
 description: >
-  Use when business complexity, model language, lifecycle rules, or cross-team/system boundaries
+  Business complexity, model language, lifecycle rules, or cross-team/system boundaries
   shape the design more than generic technical organization. Synthesized from Domain-Driven
-  Design (Evans), DDD Distilled (Vernon), and Implementing DDD (Vernon). Covers strategic
-  design (Bounded Contexts, Context Mapping, Subdomains), tactical patterns (Entities, Value
-  Objects, Aggregates, Domain Events, Repositories, Factories), Ubiquitous Language discipline,
-  integration patterns (Anticorruption Layer, Open Host Service), and when DDD is overkill.
-  Use when the user says "DDD", "domain model", "bounded context", "aggregate", "ubiquitous language",
+  Design (Evans), DDD Distilled (Vernon), and Implementing DDD (Vernon). Covers: strategic
+  design (Bounded Contexts, Context Mapping, Subdomains), tactical patterns (Entities,
+  Value Objects, Aggregates, Domain Events, Repositories, Factories), Ubiquitous Language
+  discipline, integration patterns (Anticorruption Layer, Open Host Service), and when
+  DDD is overkill. Triggers on: "DDD", "domain model", "bounded context", "aggregate",
+  "ubiquitous language", "context mapping", "anticorruption layer", "domain event",
+  "subdomain", or when modeling complex business domains.
   "domain event", "context mapping", "anticorruption layer", or when modeling complex business domains.
 ---
 

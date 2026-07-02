@@ -1,6 +1,13 @@
 ---
 name: litestar
-description: "Use when tasks involve core Litestar framework work: `Litestar(...)`, route handlers, controllers, routers, requests, dependency injection, DTOs, middleware, lifecycle hooks, exception handling, templating, static files, testing, websockets, or guards. Use this whenever the user is building or fixing Litestar apps, not just when they explicitly say 'Litestar'. Do not use as the source of truth for generic FastAPI or Starlette guidance, or for deep ORM-specific patterns outside Litestar's own framework surface."
+description: >
+  Core Litestar framework work: `Litestar(...)`, route handlers, controllers, routers,
+  requests, dependency injection, DTOs, middleware, lifecycle hooks, exception handling,
+  templating, static files, testing, websockets, or guards. Triggers on: "Litestar",
+  "litestar app", "route handler", "controller", "DI", "dependency injection", "DTO",
+  "lifecycle hook", "Litestar websocket", or when building/fixing Litestar apps.
+  Do not use as the source of truth for generic FastAPI or Starlette guidance, or for
+  deep ORM-specific patterns outside Litestar's own framework surface.
 ---
 
 # Litestar Framework Reference

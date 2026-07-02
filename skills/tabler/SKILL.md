@@ -1,6 +1,11 @@
 ---
 name: tabler
-description: "Use when tasks involve Tabler UI components, CSS classes, variants, or layout patterns. Comprehensive reference for Tabler HTML/CSS framework."
+description: >
+  Tabler UI components, CSS classes, variants, or layout patterns. Comprehensive reference
+  for Tabler HTML/CSS framework. Triggers on: "Tabler", "Tabler UI", "Tabler component",
+  "Tabler CSS", "Tabler variant", "Tabler layout", "Tabler grid", "Tabler card", "Tabler
+  button", "Tabler icon", or when building UI with Tabler components, choosing CSS classes,
+  or implementing responsive layouts.
 scope: tabler
 target_versions: "Tabler 1.x"
 last_verified: 2026-03-19

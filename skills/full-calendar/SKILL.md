@@ -1,16 +1,15 @@
 ---
 name: full-calendar
-description: >-
-  Use when tasks involve FullCalendar — the JavaScript event calendar library.
-  Covers initialization (CDN script tags, ES6 imports), calendar options, views
-  (dayGrid, timeGrid, list, multiMonth), event sources (arrays, JSON feeds,
-  functions), event model and parsing, callbacks (dateClick, eventClick, select,
-  eventDrop, eventResize, datesSet), drag-and-drop, render hooks, content
-  injection, toolbar configuration, localization, and CSS customization. Use this
-  whenever the user is building, configuring, or debugging a FullCalendar
-  instance, even if they just say "calendar" or "event calendar". Especially
-  relevant for HTMX-driven apps where FullCalendar fetches events from a
-  server-rendered JSON endpoint.
+description: >
+  FullCalendar — the JavaScript event calendar library. Covers: initialization (CDN
+  script tags, ES6 imports), calendar options, views (dayGrid, timeGrid, list,
+  multiMonth), event sources (arrays, JSON feeds, functions), event model and parsing,
+  callbacks (dateClick, eventClick, select, eventDrop, eventResize, datesSet), drag-and-drop,
+  render hooks, content injection, toolbar configuration, localization, and CSS customization.
+  Triggers on: "FullCalendar", "calendar", "event calendar", "dayGrid", "timeGrid",
+  "event source", "dateClick", "eventDrop", "drag-and-drop", or when building/configuring/debugging
+  a FullCalendar instance. Especially relevant for HTMX-driven apps where FullCalendar fetches
+  events from a server-rendered JSON endpoint.
 ---
 
 # FullCalendar Skill

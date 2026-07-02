@@ -1,13 +1,14 @@
 ---
 name: production-readiness
 description: >
-  Use for services, APIs, jobs, queues, deployment paths, and critical flows that must
-  survive production failures, overload, latency, bad data, and operational mistakes.
-  Based on Release It! (Michael T. Nygard). Covers timeouts, retries, circuit breakers,
-  bulkheads, backpressure, load shedding, observability, deployment safety, and failure
-  mode design. Use when the user says "production", "reliability", "resilience",
-  "timeout", "retry", "circuit breaker", "deployment", "health check", "observability",
-  "failure mode", "overload", or when building any service that will run in production.
+  Services, APIs, jobs, queues, deployment paths, and critical flows that must survive
+  production failures, overload, latency, bad data, and operational mistakes. Based on
+  Release It! (Michael T. Nygard). Covers: timeouts, retries, circuit breakers, bulkheads,
+  backpressure, load shedding, observability, deployment safety, failure mode design.
+  Triggers on: "production", "reliability", "resilience", "timeout", "retry", "circuit
+  breaker", "deployment", "health check", "observability", "failure mode", "overload",
+  "backpressure", "bulkhead", "load shedding", or when building any service that will
+  run in production.
 ---
 
 # Production Readiness

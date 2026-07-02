@@ -1,13 +1,14 @@
 ---
 name: legacy-code
 description: >
-  Use when changing code that is expensive to change safely because behavior is unclear,
-  tests are weak or missing, dependencies are hidden, or runtime/framework setup blocks
-  local feedback. Based on Working Effectively with Legacy Code (Michael Feathers).
-  Covers characterization tests, seams, dependency breaking, sprout/wrap techniques,
-  and incremental risk reduction. Use when the user says "legacy code", "untested code",
-  "change existing code safely", "refactor legacy", "add tests to legacy code",
-  "break dependencies", or when touching code with no tests or unclear behavior.
+  Changing code that is expensive to change safely because behavior is unclear, tests
+  are weak or missing, dependencies are hidden, or runtime/framework setup blocks local
+  feedback. Based on Working Effectively with Legacy Code (Michael Feathers). Covers:
+  characterization tests, seams, dependency breaking, sprout/wrap techniques, incremental
+  risk reduction. Triggers on: "legacy code", "untested code", "change existing code
+  safely", "refactor legacy", "add tests to legacy code", "break dependencies", "no tests",
+  "unclear behavior", "expensive to change", or when touching code with no tests or
+  unclear behavior.
 ---
 
 # Working Effectively with Legacy Code

@@ -1,6 +1,11 @@
 ---
 name: webapp-testing
-description: Use when testing, debugging, reproducing, or demonstrating a local web application with Playwright, especially when the user needs browser logs, screenshots, or a recorded video of the UI flow.
+description: >
+  Testing, debugging, reproducing, or demonstrating a local web application with Playwright.
+  Triggers on: "Playwright", "browser testing", "E2E test", "UI test", "browser logs",
+  "screenshots", "recorded video", "UI flow", "webapp testing", "debugging webapp",
+  "reproducing bug", "demonstrating UI", or when the user needs browser-based evidence
+  of web application behavior.
 license: Complete terms in LICENSE.txt
 ---
 

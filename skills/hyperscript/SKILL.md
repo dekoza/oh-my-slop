@@ -1,6 +1,12 @@
 ---
 name: hyperscript
-description: "Use when tasks involve _hyperscript front-end scripting: `_=` attributes, `script=` / `data-script`, `text/hyperscript` script tags, event handlers like `on click`, DOM commands like `toggle`/`put`/`take`, `send`/`trigger`, `behavior`, `worker`, `socket`, or HTMX companion scripting. Use this whenever the user is building, debugging, or reviewing hyperscript code, even if they only show inline `_=` snippets instead of naming the language."
+description: >
+  _hyperscript front-end scripting: `_=` attributes, `script=` / `data-script`,
+  `text/hyperscript` script tags, event handlers like `on click`, DOM commands like
+  `toggle`/`put`/`take`, `send`/`trigger`, `behavior`, `worker`, `socket`, or HTMX
+  companion scripting. Triggers on: "hyperscript", "_=" , "script=", "data-script",
+  "on click", "toggle", "HTMX companion", "inline hyperscript", or when the user
+  shows inline `_=` snippets without naming the language.
 scope: hyperscript
 target_versions: "_hyperscript 0.9.x (verified against 0.9.14 public docs)"
 last_verified: 2026-04-06

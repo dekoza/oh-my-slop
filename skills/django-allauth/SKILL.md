@@ -1,6 +1,14 @@
 ---
 name: django-allauth
-description: "Use when tasks involve django-allauth setup, signup/login/logout, email verification, password reset, account adapters, social login, OAuth/OIDC/SAML provider configuration, MFA, user sessions, headless/API authentication, or django-allauth identity-provider mode. Use this whenever the user is building, debugging, or reviewing django-allauth integration, even if they only mention allauth settings, SocialApp, provider callbacks, or adapter hooks."
+description: >
+  django-allauth setup, signup/login/logout, email verification, password reset, account
+  adapters, social login, OAuth/OIDC/SAML provider configuration, MFA, user sessions,
+  headless/API authentication, or django-allauth identity-provider mode. Triggers on:
+  "django-allauth", "allauth", "signup", "login", "logout", "email verification",
+  "password reset", "account adapter", "social login", "OAuth", "OIDC", "SAML",
+  "MFA", "user sessions", "headless authentication", "API authentication", "identity
+  provider", "allauth settings", "SocialApp", "provider callbacks", "adapter hooks",
+  or when building/debugging/reviewing django-allauth integration.
 scope: django-allauth
 target_versions: "django-allauth latest docs/source snapshot verified on 2026-04-07"
 last_verified: 2026-04-07

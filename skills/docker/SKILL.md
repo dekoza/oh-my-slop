@@ -1,6 +1,19 @@
 ---
 name: docker
-description: "Use this skill for Docker-specific work: containerizing an app, writing or fixing a `Dockerfile` or `compose.yaml`, troubleshooting `docker build` or `docker compose`, and resolving problems at the Docker boundary between client, daemon, build context, image, container runtime, network, storage, or registry. Use it when the user is confused about local vs remote daemons, contexts, Docker Desktop VM behavior, bind mounts, DNS or hostname resolution inside containers, build context bloat, `.dockerignore`, secret handling during builds, image publishing, or daemon connectivity and security. Reach for this skill when the task is to explain why Docker behaves differently across machines or environments, or to produce concrete Docker config and commands. Do not use it for Kubernetes, Helm, or non-Docker container runtimes unless the question is explicitly about Docker compatibility or migration."
+description: >
+  Docker-specific work: containerizing an app, writing or fixing a `Dockerfile` or
+  `compose.yaml`, troubleshooting `docker build` or `docker compose`, and resolving
+  problems at the Docker boundary between client, daemon, build context, image, container
+  runtime, network, storage, or registry. Triggers on: "Docker", "docker build",
+  "docker compose", "Dockerfile", "compose.yaml", "container", "image", "daemon",
+  "build context", "bind mount", "DNS resolution", "container runtime", "network",
+  "storage", "registry", ".dockerignore", "secret handling", "image publishing",
+  "daemon connectivity", "Docker Desktop VM", or when the user is confused about local
+  vs remote daemons, contexts, Docker Desktop VM behavior, or why Docker behaves differently
+  across machines/environments. Reach for this skill when the task is to explain why Docker
+  behaves differently across machines or environments, or to produce concrete Docker config
+  and commands. Do not use it for Kubernetes, Helm, or non-Docker container runtimes unless
+  the question is explicitly about Docker compatibility or migration.
 ---
 
 # Docker Reference

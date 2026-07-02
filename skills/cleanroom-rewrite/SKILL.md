@@ -1,6 +1,13 @@
 ---
 name: cleanroom-rewrite
-description: "Use when the user wants to rewrite a codebase from scratch without copying its implementation — cleanroom rewrite, clean room reimplementation, spec-driven rewrite, behavior-preserving rewrite, rewriting without looking at original code, or reimplementing for legal reasons. Also triggers when the user wants to produce a behavioral specification for independent reimplementation, or describes a two-agent process where one agent specs behavior and another implements."
+description: >
+  Cleanroom rewrite: reimplement a codebase from scratch based on behavioral spec, without
+  copying implementation. Use when: rewriting without looking at original code, legal
+  reimplementations, spec-driven rewrites, behavior-preserving rewrites, or two-agent
+  processes (one specs, one implements). Triggers on: "cleanroom rewrite", "clean room
+  reimplementation", "spec-driven rewrite", "behavior-preserving rewrite", "rewrite from
+  scratch without copying", "legal reimplement", "behavioral specification", or when the
+  user describes a two-agent rewrite process.
 ---
 
 # Cleanroom Rewrite

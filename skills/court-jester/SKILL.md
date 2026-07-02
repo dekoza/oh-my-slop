@@ -1,6 +1,13 @@
 ---
 name: court-jester
-description: "Use when stress-testing plans, proposals, architecture, strategy, or other high-impact decisions with structured adversarial reasoning. Make sure to use this skill whenever the user asks for a plan, recommendation, devil's-advocate review, pre-mortem, red team, assumption check, or evidence challenge, especially before committing to an approach."
+description: >
+  Structured adversarial reasoning for stress-testing plans, proposals, architecture,
+  strategy, and high-impact decisions. Use when: "stress-test this", "red team this",
+  "pre-mortem this", "devil's advocate", "assumption check", "evidence challenge",
+  "challenge my plan", "find flaws in this proposal". Auto-selects critique mode
+  (socratic questioning, dialectic synthesis, pre-mortem analysis, red-team adversarial,
+  evidence audit) based on question type. Delivers one-pass critique with 3-5 strongest
+  challenges. For multiple independent perspectives, use llm-council instead.
 license: Complete terms in LICENSE.txt
 ---
 

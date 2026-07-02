@@ -1,14 +1,14 @@
 ---
 name: data-intensive
 description: >
-  Use for systems where correctness depends on data ownership, consistency, durability,
-  replication, partitioning, schema evolution, event flow, replay, or derived-data
-  maintenance. Based on Designing Data-Intensive Applications (Martin Kleppmann).
-  Covers consistency models, replication, partitioning, transactions, schema evolution,
-  event sourcing, stream processing, and distributed system failure modes. Use when the
-  user says "data-intensive", "distributed data", "consistency", "replication",
-  "partitioning", "schema evolution", "event sourcing", "stream processing",
-  "idempotency", "exactly-once", or when designing systems with multiple data stores.
+  Systems where correctness depends on data ownership, consistency, durability, replication,
+  partitioning, schema evolution, event flow, replay, or derived-data maintenance. Based
+  on Designing Data-Intensive Applications (Martin Kleppmann). Covers: consistency models,
+  replication, partitioning, transactions, schema evolution, event sourcing, stream
+  processing, distributed system failure modes. Triggers on: "data-intensive", "distributed
+  data", "consistency", "replication", "partitioning", "schema evolution", "event sourcing",
+  "stream processing", "idempotency", "exactly-once", "multiple data stores", "data
+  ownership", or when designing systems with multiple data stores.
 ---
 
 # Designing Data-Intensive Systems
