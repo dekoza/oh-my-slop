@@ -215,3 +215,59 @@ locator.press_sequentially("text", delay=80)
 - `examples/static_html_automation.py` — automate a local `file://` HTML target
 - `examples/console_logging.py` — capture console logs during automation
 - `examples/video_recording.py` — record and name a browser-video artifact with an orange-dot pointer overlay, click ripple effect, and human-paced smooth pointer movement
+
+## Debugging Content Security Policy (CSP) Violations
+
+### Common CSP Error Patterns
+
+| Error Message | Cause | Fix |
+|---------------|-------|-----|
+| `Applying inline style violates... 'style-src'` | Element has `style="..."` attribute | Add `'unsafe-inline'` to `style-src` (replace entire directive) |
+| `Executing inline script violates... 'script-src'` | `<script>...</script>` without hash/nonce | Add `'unsafe-inline'` to `script-src` (replace entire directive) |
+| `Loading the image 'https://...' violates... 'img-src'` | External image domain not allowed | Add domain to `img-src` |
+| `Loading the stylesheet 'https://...' violates... 'style-src'` | External CSS not allowed | Add CDN domain to `style-src` |
+| `'unsafe-inline' is ignored if either a hash or nonce value is present` | Hash/nonce present alongside `'unsafe-inline'` | **Replace** entire directive, don't append |
+
+### Capturing CSP Violations in Playwright
+
+```python
+console_messages = []
+page.on("console", lambda msg: console_messages.append(f"[{msg.type}] {msg.text}"))
+
+# Filter for CSP violations after test
+csp_errors = [m for m in console_messages if "Content Security Policy" in m]
+```
+
+### Standard Test CSP Relaxations (django-csp)
+
+```python
+# In test settings (settings_test.py):
+if CONTENT_SECURITY_POLICY:
+    # Inline styles (Leaflet, Chart.js, etc.)
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["style-src"] = (
+        "'self'", "'unsafe-inline'", "cdn.jsdelivr.net", "fonts.googleapis.com"
+    )
+    # Inline scripts (config injection, analytics)
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["script-src"] = (
+        "'self'", "'unsafe-inline'", "'unsafe-eval'", 
+        "https://unpkg.com", "https://cdn.jsdelivr.net"
+    )
+    # Map tiles, external images
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["img-src"] = (
+        "'self'", "data:", "https://*.tile.openstreetmap.org"
+    )
+```
+
+**Key rule**: When adding `'unsafe-inline'`, **replace the entire directive tuple**. Appending it alongside hashes makes CSP ignore `'unsafe-inline'` entirely.
+
+### CSP-Friendly Development Checklist
+
+- [ ] No inline `style="..."` in templates unless `'unsafe-inline'` in `style-src`
+- [ ] No inline `<script>...</script>` unless `'unsafe-inline'` in `script-src`
+- [ ] External CDNs added to appropriate `*_src` directives
+- [ ] Test settings relax CSP; production keeps strict hashes
+- [ ] Use SRI hashes for external resources (Leaflet, Tabler, etc.)
+
+---
+
+## Examples

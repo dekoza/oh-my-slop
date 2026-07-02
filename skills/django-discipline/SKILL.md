@@ -116,3 +116,23 @@ If using WhiteNoise: `WhiteNoiseMiddleware` must be **second** in `MIDDLEWARE`, 
 ## Enforcement
 
 Every item in the checklist traces to a real production bug. If you skip a step, you are introducing risk that has already bitten this project. Follow the checklist.
+
+### pytest Settings Module Verification
+
+**Before running pytest**, verify `pyproject.toml` points to test settings:
+
+```toml
+# pyproject.toml
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings_test"  # NOT config.settings
+```
+
+If it points to `config.settings`, E2E tests will hit production CSP, CSRF middleware, and database — causing auth failures, origin-check errors, and data pollution. Test settings must:
+
+- Disable/remove CSRF middleware (`CsrfViewMiddleware`)
+- Add `http://127.0.0.1` to `CSRF_TRUSTED_ORIGINS` and `ALLOWED_HOSTS`
+- Relax CSP directives for test environment
+- Use SQLite in-memory or temp file
+- Set `DEBUG = True` (allows CSRF middleware to bypass origin check)
+
+Run `pytest --collect-only` to verify the correct settings module loads before committing to a full test run.

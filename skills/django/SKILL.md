@@ -62,6 +62,8 @@ Use this skill for Django 6.0 framework implementation and integration. Django i
 - **Model field rename safety**: when renaming model fields, grep all usages across views, services, serializers, forms, templates, test fixtures, factories, and admin.
 - **WhiteNoise ordering**: `WhiteNoiseMiddleware` must be second in `MIDDLEWARE`, directly after `SecurityMiddleware`.
 - **JSON in TextField**: values stored in `TextField` are strings; call `json.loads()` before dictionary-style access.
+- **Template tags don't work in static files**: `{{ var|safe }}` and `{% url ... %}` are NOT processed in external `.js` / `.css` files — they're served as static assets. Solutions: inline `<script>` config block, data attributes on DOM elements, or a JSON endpoint view.
+- **JSON serialization in templates**: Django renders Python lists as `[\'item\']` (single quotes). Use `json.dumps()` in the view context for valid JS/JSON.
 
 ## Django Testing Guardrails
 

@@ -140,3 +140,17 @@ test:                  ## Run full test suite
 - Use `Sequence` in factory_boy for uniqueness tests (not `django_get_or_create`)
 - Check model constraints before writing test fixtures
 - Use `update_or_create()` to avoid unique constraint violations
+
+## E2E Debugging Checklist (Playwright)
+
+When E2E tests fail mysteriously, check in order:
+
+1. **Duplicate IDs** — Playwright strict mode fails on `locator("#id")` resolving to 2+ elements. Search rendered HTML for `id="..."`.
+2. **CSP violations** — Capture console: `page.on("console", lambda m: msgs.append(...))`; filter for "Content Security Policy". Inline styles/scripts blocked if `'unsafe-inline'` missing or hashes present.
+3. **Silent JS failure** — Empty console = script blocked (CSP) or syntax error before execution. Dump `page.content()` and verify `<script>` tags present.
+4. **Template vars in static JS** — `{{ var|safe }}` in `.js` files renders as literal `{{ var|safe }}`. Use inline `<script>` config or data attributes.
+5. **JSON serialization** — Python lists render as `[\'item\']` (single quotes) in Django templates. Use `json.dumps()` in view context.
+6. **CSRF origin check** — `Origin checking failed - null does not match`. Ensure test settings remove CSRF middleware AND add `127.0.0.1` to `CSRF_TRUSTED_ORIGINS`.
+7. **Pytest settings module** — `pyproject.toml` `DJANGO_SETTINGS_MODULE` must be `config.settings_test`, not `config.settings`.
+
+Save rendered HTML on failure: `page.content()` to file for offline inspection.
