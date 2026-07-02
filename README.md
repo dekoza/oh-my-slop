@@ -83,6 +83,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 
 | Skill | What it covers |
 |-------|---------------|
+| **[Cleanroom Rewrite](skills/cleanroom-rewrite/SKILL.md)** | Reimplement a codebase from scratch based on behavioral spec, without copying implementation. Legal reimplementations, spec-driven rewrites, two-agent processes. |
 | **[Caveman](skills/caveman/SKILL.md)** | Ultra-compressed communication mode for when you want fewer tokens, less hedging, and the same technical substance. Speaks like a competent cave dweller on purpose. |
 | **[Data-Intensive](skills/data-intensive/SKILL.md)** | Distributed data systems — consistency models, replication, partitioning, schema evolution, event sourcing, stream processing. Based on Designing Data-Intensive Applications (Kleppmann). |
 | **[Legacy Code](skills/legacy-code/SKILL.md)** | Safe changes to untested/unclear code — characterization tests, seams, dependency breaking, sprout/wrap techniques. Based on Working Effectively with Legacy Code (Feathers). |
@@ -95,13 +96,17 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 | **[Django-Discipline](skills/django-discipline/SKILL.md)** | Mandatory Django workflow discipline — auto-generate migrations, ruff before manual cleanup, N+1 prevention, public API imports. Enforces tool-first patterns agents otherwise skip. |
 | **[Django-Allauth](skills/django-allauth/SKILL.md)** | Django-allauth integration reference — account flows, SocialApp/provider setup, OAuth/OIDC/SAML boundaries, MFA, usersessions, headless auth, IdP mode, troubleshooting, and version-sensitive pitfalls. |
 | **[Diagnosing Bugs](skills/diagnosing-bugs/SKILL.md)** | Structured diagnosis loop for hard bugs and performance regressions — build feedback loop, reproduce, minimise, hypothesise, instrument, fix, regression test. 10 feedback-loop construction strategies. |
+| **[English Only](skills/english-only/SKILL.md)** | Enforce English-only identifiers, comments, docstrings, and messages in all code. No exceptions — applies regardless of user language. Triggers on non-English signals. |
 | **[Domain-Driven Design](skills/domain-driven-design/SKILL.md)** | Strategic design (Bounded Contexts, Context Mapping, Subdomains), tactical patterns (Entities, Value Objects, Aggregates, Domain Events), Ubiquitous Language discipline, integration patterns (ACL, OHS). Synthesized from Evans + Vernon. |
 | **[Documentation Lifecycle](skills/documentation-lifecycle/SKILL.md)** | Spec-first documentation workflow — feature specs, specification interviews, ADRs, exact reference docs, runbooks, Diátaxis user docs, and documentation drift triage. |
 | **[Handoff](skills/handoff/SKILL.md)** | Compact the current conversation into a handoff document for another agent to pick up. References artifacts by path/URL, redacts sensitive info, saves to temp directory. |
 | **[Docker](skills/docker/SKILL.md)** | Dockerfiles, compose files, build context, daemon behavior, bind mounts, DNS resolution, `.dockerignore`, secret handling, image publishing, and cross-environment debugging. |
+| **[Docker Discipline](skills/docker-discipline/SKILL.md)** | Mandatory Docker workflow — non-root UID matching host, USER after RUN, port merge behavior, separate compose.test.yml for lifecycle independence, healthchecks. Enforces patterns agents otherwise skip. |
 | **[DRF](skills/drf/SKILL.md)** | Django REST Framework — serializers, views, viewsets, routers, authentication, permissions, throttling, filtering, pagination, content negotiation, versioning, and testing. |
 | **[FullCalendar](skills/full-calendar/SKILL.md)** | FullCalendar JS library — initialization, views, event sources, callbacks, drag-and-drop, render hooks, toolbar config, localization, and CSS customization. |
+| **[Git Discipline](skills/git-discipline/SKILL.md)** | Git workflow — commit after every wave, conventional commits, untracked files sacred, FORBIDDEN commands (git clean, reset --hard, rm -rf on user files), no force push without permission. |
 | **[HTMX](skills/htmx/SKILL.md)** | Attributes, requests, swapping strategies, events, extensions, and the patterns that make hypermedia-driven UIs actually work. |
+| **[Testing Workflow](skills/testing-workflow/SKILL.md)** | TDD mandatory (red-green-refactor), use `tee` not `head`/`tail`/`>`, Playwright rules (headless, navigation via UI not URLs), Docker test environment (compose.test.yml, no public ports). |
 | **[HTTP Status Codes](skills/http-status-codes/SKILL.md)** | API response code semantics and edge cases: 400 vs 422, 401 vs 403, 404 vs 410, 409 vs 412 vs 428, 429 vs 503, 201 vs 202 vs 204, and redirect behavior like 303 vs 307 vs 308. |
 | **[Improve Codebase Architecture](skills/improve-codebase-architecture/SKILL.md)** | Dual-axis architecture scan: finds deepening opportunities (shallow modules) AND simplification opportunities (dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead flags). Visual HTML report, grilling loop, shortcut generation for deferred simplifications. Uses codebase-design vocabulary, integrates ponytail-audit. |
 | **[Hyperscript](skills/hyperscript/SKILL.md)** | `_hyperscript` front-end scripting — event handlers, queue semantics, DOM commands, async transparency, `behavior`, `worker`, `socket`, JS interop boundaries, and HTMX companion patterns. |
@@ -117,6 +122,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 | **[TDD](skills/tdd/SKILL.md)** | Test-driven development with red-green-refactor. Vertical-slice discipline (one test → one implementation), anti-horizontal-slicing, integration-style tests through public interfaces. Django-specific patterns: httpx.MockTransport, mail.outbox, override_settings. |
 | **[UI Design Direction](skills/ui-design-direction/SKILL.md)** | UI/UX direction and hostile design-lead critique for dashboards, landing pages, admin tools, mobile apps, typography, chart choices, trust signals, hierarchy, and conversion friction. |
 | **[Webapp Testing](skills/webapp-testing/SKILL.md)** | Playwright workflow for local webapp testing — server lifecycle, rendered-DOM reconnaissance, browser logs, screenshots, and recorded video artifacts for repros and walkthroughs. |
+| **[Websearch](skills/websearch/SKILL.md)** | Search the web via locally installed SearXNG instance. Configurable endpoint via `/skill:websearch url`. |
 
 </details>
 

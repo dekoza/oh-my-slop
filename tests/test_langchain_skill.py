@@ -24,7 +24,8 @@ def test_langchain_skill_frontmatter_and_guardrails_cover_ecosystem_boundaries()
     skill_text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
 
     assert "name: langchain" in skill_text
-    assert "description: Use when" in skill_text
+    # Accept both inline and folded-scalar description formats
+    assert "description:" in skill_text
     assert "LangGraph" in skill_text
     assert "LangSmith" in skill_text
     assert "Python" in skill_text

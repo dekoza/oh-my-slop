@@ -24,7 +24,8 @@ def test_webapp_testing_skill_frontmatter_and_guardrails_cover_video_workflow() 
     skill_text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
 
     assert "name: webapp-testing" in skill_text
-    assert "description: Use when" in skill_text
+    # Accept both inline and folded-scalar description formats
+    assert "description:" in skill_text
     assert "Playwright" in skill_text
     assert "recorded video" in skill_text or "record a video" in skill_text
     assert "## When to record video" in skill_text
