@@ -79,7 +79,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 ## Skills
 
 <details>
-<summary><strong>Skills (33)</strong></summary>
+<summary><strong>Skills (45)</strong></summary>
 
 | Skill | What it covers |
 |-------|---------------|
@@ -123,6 +123,11 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 | **[UI Design Direction](skills/ui-design-direction/SKILL.md)** | UI/UX direction and hostile design-lead critique for dashboards, landing pages, admin tools, mobile apps, typography, chart choices, trust signals, hierarchy, and conversion friction. |
 | **[Webapp Testing](skills/webapp-testing/SKILL.md)** | Playwright workflow for local webapp testing — server lifecycle, rendered-DOM reconnaissance, browser logs, screenshots, and recorded video artifacts for repros and walkthroughs. |
 | **[Websearch](skills/websearch/SKILL.md)** | Search the web via locally installed SearXNG instance. Configurable endpoint via `/skill:websearch url`. |
+| **[QA](skills/qa/SKILL.md)** | Interactive QA session — user reports bugs conversationally, agent clarifies, explores the codebase for domain language, and files durable user-focused tracker issues (single or dependency-ordered breakdowns). |
+| **[Two-Axis Review](skills/two-axis-review/SKILL.md)** | Review changes since a fixed point along two independent axes via parallel sub-agents: Standards (repo conventions + Fowler smell baseline) and Spec (does the diff match the originating issue/PRD). |
+| **[To Spec](skills/to-spec/SKILL.md)** | Turn the current conversation into a spec/PRD — problem statement, user stories, implementation and testing decisions — published to the issue tracker or `docs/specs/`. No interview, pure synthesis. |
+| **[To Tickets](skills/to-tickets/SKILL.md)** | Break a plan, spec, or conversation into tracer-bullet tickets — vertical slices with explicit blocking edges — published to the tracker or a local `tickets.md`. Expand–contract sequencing for wide refactors. |
+| **[Wayfinder](skills/wayfinder/SKILL.md)** | Plan work too big for one session as a shared map of investigation tickets on the issue tracker — destination, frontier, fog of war — resolved one ticket per session until the way is clear. |
 
 </details>
 
