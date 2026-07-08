@@ -134,3 +134,18 @@ COPY . .
 Profiles allow multiple service configs in a single file — use them instead of separate compose files for configuration variants.
 
 **Exception**: test infrastructure MUST use a separate `compose.test.yml`.
+
+## References
+
+- [Gotchas & Practical Guidance](references/gotchas.md) — Common pitfalls: bind mounts overriding build artifacts, `uv run` implicit sync, volume mount ordering, non-root UID mismatch, healthcheck timing, network namespace confusion, build cache invalidation, environment variable precedence.
+
+## Task Routing
+
+- Dockerfile structure, non-root user, USER directive -> This SKILL.md (main content)
+- Build cache optimization, COPY ordering -> `references/gotchas.md` (Build Cache Invalidation section)
+- Volume mount issues, bind mount overrides -> `references/gotchas.md` (Bind Mounts Override Build Artifacts section)
+- `uv run` behavior, implicit sync -> `references/gotchas.md` (uv run Does Implicit Sync section)
+- Healthcheck configuration, depends_on -> `references/gotchas.md` (Healthcheck Timing section)
+- Network configuration, service communication -> `references/gotchas.md` (Network Namespace Confusion section)
+- Environment variables, env_file vs environment -> `references/gotchas.md` (Environment Variable Precedence section)
+- Volume mount ordering, named vs bind mounts -> `references/gotchas.md` (Volume Mount Ordering section)
