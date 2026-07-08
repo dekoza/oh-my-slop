@@ -79,7 +79,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 ## Skills
 
 <details>
-<summary><strong>Skills (45)</strong></summary>
+<summary><strong>Skills (55)</strong></summary>
 
 | Skill | What it covers |
 |-------|---------------|
@@ -128,6 +128,16 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 | **[To Spec](skills/to-spec/SKILL.md)** | Turn the current conversation into a spec/PRD — problem statement, user stories, implementation and testing decisions — published to the issue tracker or `docs/specs/`. No interview, pure synthesis. |
 | **[To Tickets](skills/to-tickets/SKILL.md)** | Break a plan, spec, or conversation into tracer-bullet tickets — vertical slices with explicit blocking edges — published to the tracker or a local `tickets.md`. Expand–contract sequencing for wide refactors. |
 | **[Wayfinder](skills/wayfinder/SKILL.md)** | Plan work too big for one session as a shared map of investigation tickets on the issue tracker — destination, frontier, fog of war — resolved one ticket per session until the way is clear. |
+| **[Grilling](skills/grilling/SKILL.md)** | The interview primitive — one question at a time until shared understanding, facts looked up vs decisions asked, no enacting until the user confirms. Reused by grill-me, grill-with-docs, triage, wayfinder. |
+| **[Grill Me](skills/grill-me/SKILL.md)** | User-invoked wrapper: run a grilling session on the current plan or design. |
+| **[Grill With Docs](skills/grill-with-docs/SKILL.md)** | Grilling session that also maintains docs as decisions land — CONTEXT.md glossary entries and ADRs via domain-modeling. |
+| **[Domain Modeling](skills/domain-modeling/SKILL.md)** | Active domain-model discipline — challenge terms against the glossary, sharpen fuzzy language, stress-test with scenarios, update CONTEXT.md inline, offer ADRs sparingly (hard-to-reverse + surprising + real trade-off). |
+| **[Triage](skills/triage/SKILL.md)** | Issue/PR triage state machine — categorise, verify the claim, grill into shape, write durable agent briefs, maintain an .out-of-scope/ knowledge base of rejected requests. |
+| **[Implement](skills/implement/SKILL.md)** | Work a spec or tickets to completion — TDD at pre-agreed seams, regular typechecks, full suite at the end, two-axis review before committing. |
+| **[Resolving Merge Conflicts](skills/resolving-merge-conflicts/SKILL.md)** | Conflict-resolution loop — trace each side's intent from primary sources, preserve both intents, never invent behaviour, never abort, verify with the project's checks. |
+| **[Research](skills/research/SKILL.md)** | Delegate reading legwork to a background agent — primary sources only, every claim cited, findings landed as a Markdown note in the repo. |
+| **[Writing Great Skills](skills/writing-great-skills/SKILL.md)** | Prose-level craft reference for skill authoring — leading words, no-ops, negation, context vs cognitive load, premature completion, progressive disclosure. Complements skill-creator's eval workflow. |
+| **[Git Guardrails (Claude Code)](skills/git-guardrails-claude-code/SKILL.md)** | Set up PreToolUse hooks that block dangerous git commands (push, reset --hard, clean, branch -D) — git-discipline enforced by machinery, not prompts. |
 
 </details>
 
