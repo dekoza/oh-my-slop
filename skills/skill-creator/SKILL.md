@@ -191,6 +191,8 @@ Output: feat(auth): implement JWT-based authentication
 
 Try to explain to the model why things are important in lieu of heavy-handed musty MUSTs. Use theory of mind and try to make the skill general and not super-narrow to specific examples. Start by writing a draft and then look at it with fresh eyes and improve it.
 
+For prose-level craft — leading words, no-ops, negation, context vs cognitive load, progressive-disclosure vocabulary — see the `writing-great-skills` skill; it complements this workflow.
+
 ### Skill Quality Guidance
 
 **Token efficiency:** Keep SKILL.md body lean. Move heavy reference content (100+ lines) to separate files in `references/`. Techniques: reference `--help` instead of documenting all flags, use cross-references to other skills instead of repeating content, compress examples.

@@ -1,7 +1,12 @@
 ---
 name: prototype
-description: Build a throwaway prototype to flesh out a design — either a runnable terminal app for state/business-logic questions, or several radically different UI variations toggleable from one route.
-disable-model-invocation: true
+description: >
+  Build a throwaway prototype to answer a design question — a runnable terminal app
+  when the question is "does this state model or logic feel right?", or several
+  radically different UI variations on one route when it's "what should this look
+  like?". Triggers on: "prototype this", "sanity-check this state machine", "mock up
+  a few versions of this screen", "explore what this UI could look like", or when
+  another skill needs a cheap concrete artifact to react to.
 license: MIT (adapted from mattpocock/skills)
 ---
 

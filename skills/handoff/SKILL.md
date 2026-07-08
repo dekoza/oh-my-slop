@@ -1,6 +1,7 @@
 ---
 name: handoff
 description: Compact the current conversation into a handoff document for another agent to pick up. Use when switching sessions, resuming work later, or delegating to a fresh agent.
+argument-hint: "What will the next session be used for?"
 disable-model-invocation: true
 license: MIT (adapted from mattpocock/skills)
 ---
