@@ -36,6 +36,18 @@
         "It prefers httpx.MockTransport or SDK-style mocking over blanket unittest.mock.patch.",
         "It does NOT recommend mocking internal collaborators or Django's own behaviour."
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "Review this test: def test_discount(): assert apply_discount(price, rate) == price * (1 - rate). Is it good?",
+      "expected_output": "The response identifies the test as tautological — the assertion recomputes the expected value with the same formula as the implementation — and recommends asserting against an independent known-good value instead.",
+      "files": [],
+      "expectations": [
+        "It identifies the tautological-test anti-pattern (assertion mirrors the implementation's formula).",
+        "It explains the test passes by construction and cannot catch a wrong formula.",
+        "It recommends an expected value from an independent source of truth (known-good literal or worked example).",
+        "It does NOT approve the test as-is."
+      ]
     }
   ]
 }

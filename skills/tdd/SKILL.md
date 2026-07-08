@@ -37,6 +37,8 @@ This skill is **mandatory** for all implementation tasks. If you are about to wr
 
 **Bad tests** are coupled to implementation. They mock internal collaborators, test private methods, or verify through external means (like querying a database directly instead of using the interface). The warning sign: your test breaks when you refactor, but behaviour hasn't changed. If you rename an internal function and tests fail, those tests were testing implementation, not behaviour.
 
+**Tautological tests** are a subtler failure: the assertion recomputes the expected value the same way the code does (`assert add(a, b) == a + b`, a hand-derived snapshot, a constant compared to itself), so the test passes by construction and can never disagree with the code. Expected values must come from an independent source of truth — a known-good literal, a worked example, the spec.
+
 See [Tests](references/tests.md) for examples and [Mocking](references/mocking.md) for mocking guidelines.
 
 ## Anti-Pattern: Horizontal Slices
