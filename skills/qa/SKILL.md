@@ -12,7 +12,7 @@ license: MIT (adapted from mattpocock/skills)
 
 # QA Session
 
-Run an interactive QA session. The user describes problems they're encountering. You clarify, explore the codebase for context, and file GitHub issues that are durable, user-focused, and use the project's domain language.
+Run an interactive QA session. The user describes problems they're encountering. You clarify, explore the codebase for context, and file issues on the project's tracker (GitHub via `gh`, Gitea via `tea`) that are durable, user-focused, and use the project's domain language.
 
 ## For each issue the user raises
 
@@ -51,9 +51,9 @@ Keep as a single issue when:
 - It's one behavior that's wrong in one place
 - The symptoms are all caused by the same root behavior
 
-### 4. File the GitHub issue(s)
+### 4. File the issue(s)
 
-Create issues with `gh issue create`. Do NOT ask the user to review first — just file and share URLs.
+Create issues with the tracker's CLI — `gh issue create` on GitHub, `tea issues create` on Gitea. Do NOT ask the user to review first — just file and share URLs.
 
 Issues must be **durable** — they should still make sense after major refactors. Write from the user's perspective.
 

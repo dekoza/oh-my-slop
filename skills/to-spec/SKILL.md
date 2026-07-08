@@ -12,7 +12,7 @@ disable-model-invocation: true
 
 This skill takes the current conversation context and codebase understanding and produces a spec (you may know this document as a PRD). Do NOT interview the user — just synthesize what you already know.
 
-Publish to the project's issue tracker if it has one (on GitHub, via the `gh` CLI); otherwise save the spec as a markdown file under `docs/specs/`.
+Publish to the project's issue tracker if it has one (GitHub via the `gh` CLI, Gitea via `tea`); otherwise save the spec as a markdown file under `docs/specs/`.
 
 ## Process
 

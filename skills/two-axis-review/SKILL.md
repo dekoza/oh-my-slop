@@ -18,7 +18,7 @@ Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
 
-Specs are fetched from the project's issue tracker when the commits reference one — on GitHub, use the `gh` CLI.
+Specs are fetched from the project's issue tracker when the commits reference one — GitHub via the `gh` CLI, Gitea via `tea`.
 
 ## Process
 
@@ -34,7 +34,7 @@ Before going further, confirm the fixed point resolves (`git rev-parse <fixed-po
 
 Look for the originating spec, in this order:
 
-1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) — fetch via the tracker's CLI (`gh issue view <n> --comments` on GitHub).
+1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) — fetch via the tracker's CLI (`gh issue view <n> --comments` on GitHub, `tea issues <n> --comments` on Gitea).
 2. A path the user passed as an argument.
 3. A PRD/spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or feature.
 4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
