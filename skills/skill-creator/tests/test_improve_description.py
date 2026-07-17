@@ -23,6 +23,37 @@ class ExtractDescriptionTests(unittest.TestCase):
         )
 
 
+class DescriptionStandardTests(unittest.TestCase):
+    def test_accepts_local_model_invoked_description_standard(self) -> None:
+        improve_description.validate_description(
+            "Use when reviewing Litestar handlers or debugging dependency injection."
+        )
+
+    def test_rejects_workflow_summary_lead(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Use when"):
+            improve_description.validate_description(
+                "Use this skill for reviewing Litestar handlers."
+            )
+
+    def test_rejects_description_over_seventy_five_words(self) -> None:
+        description = "Use when " + "trigger " * 75
+
+        with self.assertRaisesRegex(ValueError, "75 words"):
+            improve_description.validate_description(description)
+
+    def test_rejects_description_over_platform_character_limit(self) -> None:
+        description = "Use when " + ("x" * 1020)
+
+        with self.assertRaisesRegex(ValueError, "1024 characters"):
+            improve_description.validate_description(description)
+
+    def test_rejects_second_person_description(self) -> None:
+        with self.assertRaisesRegex(ValueError, "third person"):
+            improve_description.validate_description(
+                "Use when you need to review Litestar handlers."
+            )
+
+
 class CallOpencodeTests(unittest.TestCase):
     @mock.patch("scripts.improve_description.subprocess.run")
     def test_call_opencode_uses_attached_file_and_model(

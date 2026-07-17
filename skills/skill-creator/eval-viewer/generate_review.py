@@ -110,11 +110,11 @@ def build_run(root: Path, run_dir: Path) -> dict | None:
     prompt = ""
     eval_id = None
 
-    # Try eval_metadata.json
-    for candidate in [
-        run_dir / "eval_metadata.json",
-        run_dir.parent / "eval_metadata.json",
-    ]:
+    # Find the nearest eval_metadata.json up to the workspace root. Benchmark
+    # layouts nest runs under eval/configuration/run directories.
+    metadata_directory = run_dir
+    while root == metadata_directory or root in metadata_directory.parents:
+        candidate = metadata_directory / "eval_metadata.json"
         if candidate.exists():
             try:
                 metadata = json.loads(candidate.read_text())
@@ -124,6 +124,9 @@ def build_run(root: Path, run_dir: Path) -> dict | None:
                 pass
             if prompt:
                 break
+        if metadata_directory == root:
+            break
+        metadata_directory = metadata_directory.parent
 
     # Fall back to transcript.md
     if not prompt:

@@ -2,8 +2,8 @@
 """Run the eval + improve loop until all pass or max iterations reached.
 
 Combines run_eval.py and improve_description.py in a loop, tracking history
-and returning the best description found. Supports train/test split to prevent
-overfitting.
+and returning the best description found. Supports a training/validation split
+to detect overfitting during iteration.
 """
 
 import argparse
@@ -24,7 +24,7 @@ from scripts.utils import parse_skill_md
 def split_eval_set(
     eval_set: list[dict], holdout: float, seed: int = 42
 ) -> tuple[list[dict], list[dict]]:
-    """Split eval set into train and test sets, stratified by should_trigger."""
+    """Split eval set into training and validation sets by trigger class."""
     random.seed(seed)
 
     # Separate by should_trigger
@@ -202,7 +202,7 @@ def run_loop(
 
             print_eval_stats("Train", train_results["results"], eval_elapsed)
             if test_summary:
-                print_eval_stats("Test ", test_results["results"], 0)
+                print_eval_stats("Validation", test_results["results"], 0)
 
         all_train_passed = train_summary["failed"] == 0
         all_test_passed = test_summary is None or test_summary["failed"] == 0
@@ -212,7 +212,7 @@ def run_loop(
             if verbose:
                 if test_summary:
                     print(
-                        f"\nAll train and test queries passed on iteration {iteration}!",
+                        f"\nAll training and validation queries passed on iteration {iteration}!",
                         file=sys.stderr,
                     )
                 else:
@@ -224,7 +224,7 @@ def run_loop(
 
         if all_train_passed and test_summary and verbose:
             print(
-                "\nTrain queries all passed, but held-out test queries still have failures. Continuing.",
+                "\nTraining queries all passed, but validation queries still have failures. Continuing.",
                 file=sys.stderr,
             )
 
@@ -239,7 +239,8 @@ def run_loop(
             print(f"\nImproving description...", file=sys.stderr)
 
         t0 = time.time()
-        # Strip test scores from history so improvement model can't see them
+        # Keep prior validation scores out of history; the current validation score
+        # still guides iteration and candidate selection.
         blinded_history = [
             {k: v for k, v in h.items() if not k.startswith("test_")} for h in history
         ]
@@ -263,7 +264,7 @@ def run_loop(
 
         current_description = new_description
 
-    # Find the best iteration by TEST score (or train if no test set)
+    # Find the best iteration by validation score (or training if no split).
     if test_set:
         best = max(history, key=lambda h: h["test_passed"] or 0)
         best_score = f"{best['test_passed']}/{best['test_total']}"

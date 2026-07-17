@@ -120,12 +120,33 @@ def run_single_query(
                 last_timeout = exc
                 continue
 
-            return detect_skill_trigger(result.stdout.splitlines(), skill_name)
+            if result.returncode != 0:
+                error_message = result.stderr.strip() or result.stdout.strip()
+                raise RuntimeError(
+                    f"opencode run exited {result.returncode}: {error_message}"
+                )
+
+            event_lines = result.stdout.splitlines()
+            completed = False
+            for event_line in event_lines:
+                try:
+                    event = json.loads(event_line)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("type") == "step_finish":
+                    completed = True
+                    break
+            if not completed:
+                raise RuntimeError("opencode run produced no valid completion event")
+
+            return detect_skill_trigger(event_lines, skill_name)
 
         if last_timeout is not None:
-            return False
+            raise RuntimeError(
+                f"opencode run timed out after {max_attempts_per_run} attempts"
+            ) from last_timeout
 
-        return False
+        raise RuntimeError("opencode run produced no result")
 
 
 def run_eval(
@@ -161,6 +182,7 @@ def run_eval(
 
         query_triggers: dict[str, list[bool]] = {}
         query_items: dict[str, dict] = {}
+        failures: list[str] = []
         for future in as_completed(future_to_info):
             item, _ = future_to_info[future]
             query = item["query"]
@@ -169,9 +191,12 @@ def run_eval(
                 query_triggers[query] = []
             try:
                 query_triggers[query].append(future.result())
-            except Exception as e:
-                print(f"Warning: query failed: {e}", file=sys.stderr)
-                query_triggers[query].append(False)
+            except Exception as exc:
+                failures.append(f"{query!r}: {exc}")
+
+    if failures:
+        failure_summary = "\n".join(failures)
+        raise RuntimeError(f"Trigger evaluation did not complete:\n{failure_summary}")
 
     for query, triggers in query_triggers.items():
         item = query_items[query]

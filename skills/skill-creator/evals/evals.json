@@ -3,43 +3,67 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Turn this repeated workflow into a reusable skill: when I get a vendor invoice CSV, normalize vendor names, flag likely duplicates, and write a short review summary for accounting. Draft the skill, add realistic evals, compare it against a no-skill baseline, and show me the review workflow artifacts.",
-      "expected_output": "The response drives the full skill-creation loop rather than stopping at a draft. It creates realistic eval prompts, runs with-skill and baseline comparisons, produces benchmark artifacts, and launches the standard review workflow.",
-      "files": [],
+      "prompt": "Turn the attached vendor-invoice workflow into a reusable skill. It must normalize vendor names, flag duplicate invoices, and write a short review summary for accounting. Compare it against a no-skill baseline on the attached CSV and show me the benchmark and review artifacts.",
+      "expected_output": "A new skill plus matched baseline and candidate runs that process the supplied invoice fixture, produce evidence-backed grades and benchmark files, and expose the standard review artifact.",
+      "files": [
+        "evals/files/vendor-invoices.csv"
+      ],
       "expectations": [
-        "It captures the workflow clearly before or while drafting the skill instead of jumping straight to a vague SKILL.md.",
-        "It creates realistic eval prompts in `evals/evals.json`, not toy one-liners.",
-        "It runs with-skill and baseline executions in the same evaluation wave rather than postponing baseline runs.",
-        "It produces the standard benchmark artifacts such as `eval_metadata.json`, `grading.json`, and `benchmark.json` rather than ad hoc notes.",
-        "It uses `eval-viewer/generate_review.py` instead of inventing custom review HTML.",
-        "It tells the user what to review in the outputs and benchmark rather than declaring the skill finished unilaterally."
+        "A generated SKILL.md exists and contains YAML name and description fields.",
+        "The generated evals/evals.json exists and contains at least two prompts of ten or more words each.",
+        "The evaluation workspace contains without_skill/run-1 and with_skill/run-1 directories for every eval identifier.",
+        "The with-skill invoice output contains one normalized vendor value shared by both ACME rows and includes a duplicate flag for the repeated INV-100 invoice.",
+        "The with-skill accounting summary reports exactly one duplicate invoice group and includes INV-100 as evidence.",
+        "Each completed run directory contains timing.json and grading.json, and each grading expectation contains text, passed, and evidence fields.",
+        "The iteration directory contains benchmark.json and benchmark.md generated from the graded runs.",
+        "The response includes either the standard review viewer URL or the generated static review path."
       ]
     },
     {
       "id": 2,
-      "prompt": "I already have a draft skill called `incident-summarizer`. Improve it without changing its name, create eval prompts, compare the new draft against the old one, and show me the benchmark and review flow before deciding whether it is better.",
-      "expected_output": "The response treats this as an iterative skill-improvement task. It preserves the existing skill name, snapshots the old version as baseline, compares old vs new across the same evals, and uses the standard benchmark and review loop.",
-      "files": [],
+      "prompt": "Improve the attached `incident-summarizer` skill without changing its name. Create eval prompts, compare the revision against an immutable snapshot of the supplied draft, and show me the benchmark and review flow before deciding whether it improved.",
+      "expected_output": "An unchanged skill name, an immutable snapshot of the supplied draft, matched baseline and candidate runs, evidence-backed benchmark files, and a standard review artifact presented before any improvement conclusion.",
+      "files": [
+        "evals/files/incident-summarizer/SKILL.md"
+      ],
       "expectations": [
-        "It preserves the original skill name instead of renaming the updated skill.",
-        "It snapshots the old skill and uses that snapshot as the comparison baseline.",
-        "It creates or updates realistic eval prompts before claiming improvement.",
-        "It compares new-skill and old-skill runs on the same eval set rather than only reviewing the new version in isolation.",
-        "It analyzes benchmark patterns beyond a single headline pass rate.",
-        "It uses the review workflow before concluding that the revised skill is better."
+        "The skill-snapshot directory exists and contains the exact supplied pre-edit incident-summarizer SKILL.md.",
+        "The revised SKILL.md preserves the name incident-summarizer.",
+        "The generated evals/evals.json exists and contains at least two prompts of ten or more words each.",
+        "The evaluation workspace contains without_skill and with_skill runs using matching prompt text and input-file lists, with baseline_source identifying the skill snapshot.",
+        "The benchmark includes separate without_skill and with_skill configurations with per-eval expectations.",
+        "The response includes either the standard review viewer URL or the generated static review path before any conclusion about improvement."
       ]
     },
     {
       "id": 3,
-      "prompt": "This skill triggers unreliably. Generate the trigger eval set, let me review it, then optimize the description so it triggers for the right requests and stays quiet for near-misses.",
-      "expected_output": "The response follows the description-optimization workflow rather than making one-off wording tweaks. It creates a realistic trigger eval set, routes it through the review UI, runs the optimization loop with the current model, and applies the best description with before/after reporting.",
-      "files": [],
+      "prompt": "The attached `log-triage` skill triggers unreliably. Build the trigger eval set and generate the standard review UI for me, then stop so I can review the cases before optimization runs.",
+      "expected_output": "A balanced trigger eval set tied to the supplied skill, the standard eval-review artifact, and an explicit pause before measured optimization.",
+      "files": [
+        "evals/files/log-triage/SKILL.md"
+      ],
       "expectations": [
-        "It creates around 20 realistic should-trigger and should-not-trigger queries instead of a tiny or obviously irrelevant eval set.",
-        "It uses the `assets/eval_review.html` review flow so the user can inspect and edit the trigger eval set.",
-        "It runs the `run_loop.py` optimization workflow with the current session model rather than manually guessing a better description.",
-        "It relies on held-out evaluation rather than train-only improvement claims.",
-        "It reports the before/after description and the measured scores, not just the final wording."
+        "The trigger eval set exists and contains between 16 and 24 queries with at least eight should_trigger true and eight should_trigger false cases.",
+        "The trigger eval set contains at least two should_trigger false queries with the word log or logging.",
+        "The generated eval-review HTML exists and contains the supplied log-triage description plus at least one positive and one vocabulary-sharing negative query from the generated eval set.",
+        "The response includes the generated eval-review HTML path.",
+        "The response records that optimization is paused pending user review."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "The attached trigger eval set for `log-triage` has been reviewed. Run measured description optimization with an explicit available model, select by validation score, apply the winning description to the attached skill, and report the before/after evidence.",
+      "expected_output": "A measured optimization run using the supplied reviewed eval set, an applied validation winner or an evidence-backed decision to retain the original, and complete before/after reporting.",
+      "files": [
+        "evals/files/log-triage/SKILL.md",
+        "evals/files/log-triage/reviewed-trigger-evals.json"
+      ],
+      "expectations": [
+        "The optimization command record contains scripts.run_loop and an explicit non-empty --model value.",
+        "The optimization output contains separate training and validation scores for the original description and every candidate description.",
+        "The final report includes the original description, selected description, training score, and validation score.",
+        "The final log-triage SKILL.md description matches best_description when a candidate wins, or preserves the original description when no candidate improves validation score.",
+        "The response includes the captured optimization log path."
       ]
     }
   ]

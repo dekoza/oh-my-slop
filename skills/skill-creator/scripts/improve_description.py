@@ -22,6 +22,20 @@ def extract_description(text: str) -> str:
     return match.group(1).strip().strip('"') if match else text.strip().strip('"')
 
 
+def validate_description(description: str) -> None:
+    """Validate the library's model-invoked description limits."""
+    if not description.startswith(("Use when", "Use whenever")):
+        raise ValueError('Description must start with "Use when" or "Use whenever"')
+    if len(description) > 1024:
+        raise ValueError("Description must not exceed 1024 characters")
+    if len(description.split()) > 75:
+        raise ValueError("Description must not exceed 75 words")
+    if len(re.findall(r"[.!?](?:\s|$)", description)) > 3:
+        raise ValueError("Description must not exceed three sentences")
+    if re.search(r"\b(?:you|your|yours)\b", description, re.IGNORECASE):
+        raise ValueError("Description must use third person")
+
+
 def _extract_text_from_json_events(stdout: str) -> str:
     """Concatenate text event payloads from `opencode run --format json`."""
     text_parts: list[str] = []
@@ -125,7 +139,7 @@ def improve_description(
         test_score = (
             f"{test_results['summary']['passed']}/{test_results['summary']['total']}"
         )
-        scores_summary = f"Train: {train_score}, Test: {test_score}"
+        scores_summary = f"Train: {train_score}, Validation: {test_score}"
     else:
         scores_summary = f"Train: {train_score}"
 
@@ -166,7 +180,9 @@ Current scores ({scores_summary}):
                 if h.get("test_passed") is not None
                 else None
             )
-            score_str = f"train={train_s}" + (f", test={test_s}" if test_s else "")
+            score_str = f"train={train_s}" + (
+                f", validation={test_s}" if test_s else ""
+            )
             prompt += f"<attempt {score_str}>\n"
             prompt += f'Description: "{h["description"]}"\n'
             if "results" in h:
@@ -190,11 +206,11 @@ Based on the failures, write a new and improved description that is more likely 
 1. Avoid overfitting
 2. The list might get loooong and it's injected into ALL queries and there might be a lot of skills, so we don't want to blow too much space on any given description.
 
-Concretely, your description should not be more than about 100-200 words, even if that comes at the cost of accuracy. There is a hard limit of 1024 characters — descriptions over that will be truncated, so stay comfortably under it.
+Concretely, write no more than three sentences and about 75 words. Start with "Use when" or "Use whenever", write in third person, and include only triggering conditions: user intent, situations, and observed symptoms. Do not summarize the skill's internal workflow or list its features. A 1024-character platform limit also applies, so stay comfortably under it.
 
 Here are some tips that we've found to work well in writing these descriptions:
-- The skill should be phrased in the imperative -- "Use this skill for" rather than "this skill does"
-- The skill description should focus on the user's intent, what they are trying to achieve, vs. the implementation details of how the skill works.
+- Front-load the conditions that distinguish this skill from adjacent skills.
+- Focus on the user's intent and situation rather than implementation details.
 - The description competes with other skills for OpenCode's attention — make it distinctive and immediately recognizable.
 - If you're getting lots of failures after repeated attempts, change things up. Try different sentence structures or wordings.
 
@@ -237,6 +253,7 @@ Please respond with only the new description text in <new_description> tags, not
         transcript["rewrite_char_count"] = len(shortened)
         description = shortened
 
+    validate_description(description)
     transcript["final_description"] = description
 
     if log_dir:

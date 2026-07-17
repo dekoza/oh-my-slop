@@ -164,7 +164,7 @@ def generate_html(data: dict, auto_refresh: bool = False, skill_name: str = "") 
         + title_prefix
         + """Skill Description Optimization</h1>
     <div class="explainer">
-        <strong>Optimizing your skill's description.</strong> This page updates automatically as OpenCode tests different versions of your skill's description. Each row is an iteration — a new description attempt. The columns show test queries: green checkmarks mean the skill triggered correctly (or correctly didn't trigger), red crosses mean it got it wrong. The "Train" score shows performance on queries used to improve the description; the "Test" score shows performance on held-out queries the optimizer hasn't seen. When it's done, OpenCode will apply the best-performing description to your skill.
+        <strong>Optimizing your skill's description.</strong> This page updates automatically as OpenCode tests different versions of your skill's description. Each row is an iteration — a new description attempt. The columns show eval queries: green checkmarks mean the skill triggered correctly (or correctly did not trigger), and red crosses mean it got the case wrong. The "Train" score covers queries used to propose changes; the "Validation" score covers the split used to compare iterations. The selected description is reported for you to review and apply.
     </div>
 """
     ]
@@ -176,8 +176,8 @@ def generate_html(data: dict, auto_refresh: bool = False, skill_name: str = "") 
     <div class="summary">
         <p><strong>Original:</strong> {html.escape(data.get("original_description", "N/A"))}</p>
         <p class="best"><strong>Best:</strong> {html.escape(data.get("best_description", "N/A"))}</p>
-        <p><strong>Best Score:</strong> {data.get("best_score", "N/A")} {"(test)" if best_test_score else "(train)"}</p>
-        <p><strong>Iterations:</strong> {data.get("iterations_run", 0)} | <strong>Train:</strong> {data.get("train_size", "?")} | <strong>Test:</strong> {data.get("test_size", "?")}</p>
+        <p><strong>Best Score:</strong> {data.get("best_score", "N/A")} {"(validation)" if best_test_score else "(train)"}</p>
+        <p><strong>Iterations:</strong> {data.get("iterations_run", 0)} | <strong>Train:</strong> {data.get("train_size", "?")} | <strong>Validation:</strong> {data.get("test_size", "?")}</p>
     </div>
 """)
 
@@ -188,7 +188,7 @@ def generate_html(data: dict, auto_refresh: bool = False, skill_name: str = "") 
         <span class="legend-item"><span class="legend-swatch swatch-positive"></span> Should trigger</span>
         <span class="legend-item"><span class="legend-swatch swatch-negative"></span> Should NOT trigger</span>
         <span class="legend-item"><span class="legend-swatch swatch-train"></span> Train</span>
-        <span class="legend-item"><span class="legend-swatch swatch-test"></span> Test</span>
+        <span class="legend-item"><span class="legend-swatch swatch-test"></span> Validation</span>
     </div>
 """)
 
@@ -200,7 +200,7 @@ def generate_html(data: dict, auto_refresh: bool = False, skill_name: str = "") 
             <tr>
                 <th>Iter</th>
                 <th>Train</th>
-                <th>Test</th>
+                <th>Validation</th>
                 <th class="query-col">Description</th>
 """)
 

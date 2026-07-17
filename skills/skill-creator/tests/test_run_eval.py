@@ -53,6 +53,8 @@ class RunSingleQueryRetryTests(unittest.TestCase):
         mock_subprocess_run.side_effect = [
             subprocess.TimeoutExpired(cmd=["opencode"], timeout=30),
             mock.Mock(
+                returncode=0,
+                stderr="",
                 stdout=json.dumps(
                     {
                         "type": "tool_use",
@@ -62,6 +64,8 @@ class RunSingleQueryRetryTests(unittest.TestCase):
                         },
                     }
                 )
+                + "\n"
+                + json.dumps({"type": "step_finish"})
                 + "\n"
             ),
         ]
@@ -80,7 +84,7 @@ class RunSingleQueryRetryTests(unittest.TestCase):
         self.assertEqual(mock_subprocess_run.call_count, 2)
 
     @mock.patch("scripts.run_eval.subprocess.run")
-    def test_returns_false_after_exhausting_timeout_retries(
+    def test_raises_after_exhausting_timeout_retries(
         self, mock_subprocess_run: mock.Mock
     ) -> None:
         mock_subprocess_run.side_effect = [
@@ -88,18 +92,58 @@ class RunSingleQueryRetryTests(unittest.TestCase):
             subprocess.TimeoutExpired(cmd=["opencode"], timeout=30),
         ]
 
-        result = run_eval.run_single_query(
-            query="review this litestar API design",
-            skill_name="litestar",
-            skill_description="Use when reviewing Litestar work.",
-            timeout=30,
-            project_root="/tmp/project",
-            model="github-copilot/gpt-5.4",
-            max_attempts_per_run=2,
+        with self.assertRaisesRegex(RuntimeError, "timed out"):
+            run_eval.run_single_query(
+                query="review this litestar API design",
+                skill_name="litestar",
+                skill_description="Use when reviewing Litestar work.",
+                timeout=30,
+                project_root="/tmp/project",
+                model="github-copilot/gpt-5.4",
+                max_attempts_per_run=2,
+            )
+
+        self.assertEqual(mock_subprocess_run.call_count, 2)
+
+    @mock.patch("scripts.run_eval.subprocess.run")
+    def test_raises_when_successful_process_has_no_completion_event(
+        self, mock_subprocess_run: mock.Mock
+    ) -> None:
+        mock_subprocess_run.return_value = mock.Mock(
+            returncode=0,
+            stdout="not-json\n",
+            stderr="",
         )
 
-        self.assertFalse(result)
-        self.assertEqual(mock_subprocess_run.call_count, 2)
+        with self.assertRaisesRegex(RuntimeError, "completion event"):
+            run_eval.run_single_query(
+                query="review this litestar API design",
+                skill_name="litestar",
+                skill_description="Use when reviewing Litestar work.",
+                timeout=30,
+                project_root="/tmp/project",
+                model="provider/model",
+            )
+
+    @mock.patch("scripts.run_eval.subprocess.run")
+    def test_raises_when_backend_rejects_query(
+        self, mock_subprocess_run: mock.Mock
+    ) -> None:
+        mock_subprocess_run.return_value = mock.Mock(
+            returncode=1,
+            stdout="",
+            stderr="400 model_not_supported",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "model_not_supported"):
+            run_eval.run_single_query(
+                query="review this litestar API design",
+                skill_name="litestar",
+                skill_description="Use when reviewing Litestar work.",
+                timeout=30,
+                project_root="/tmp/project",
+                model="unsupported/model",
+            )
 
 
 class ClassifyEventTests(unittest.TestCase):

@@ -1,0 +1,66 @@
+[
+  {
+    "query": "The Django worker log in /tmp/worker.log has three tracebacks after deploy; find the first actionable error and cite the lines that prove it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Triage nginx.log and app.log from last night's outage, rank the likely root errors, and separate causes from follow-on noise.",
+    "should_trigger": true
+  },
+  {
+    "query": "This CI log is 20,000 lines and the visible failure is probably secondary; identify the earliest causal error before changing code.",
+    "should_trigger": true
+  },
+  {
+    "query": "Compare these two Kubernetes pod logs and tell me which shared exception started the restart loop.",
+    "should_trigger": true
+  },
+  {
+    "query": "I pasted a pytest failure log below. Locate the first application error and quote the exact evidence before suggesting a fix.",
+    "should_trigger": true
+  },
+  {
+    "query": "The service emits ERROR, WARNING, and retry messages; distinguish the causal event from downstream retries.",
+    "should_trigger": true
+  },
+  {
+    "query": "Review /var/log/myapp/current after the 09:14 deployment and produce an evidence-backed incident triage note.",
+    "should_trigger": true
+  },
+  {
+    "query": "Find why this background job failed from its worker logs; do not debug the source code yet.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add structured JSON logging to the payment service and include request IDs.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a Python logging configuration with rotating file handlers.",
+    "should_trigger": false
+  },
+  {
+    "query": "Our log retention policy needs to satisfy a 30-day compliance requirement.",
+    "should_trigger": false
+  },
+  {
+    "query": "Build a Grafana dashboard showing error-rate logs by region.",
+    "should_trigger": false
+  },
+  {
+    "query": "Refactor this exception handler so it logs less sensitive customer information.",
+    "should_trigger": false
+  },
+  {
+    "query": "The login page throws a TypeError; reproduce and fix the bug with a regression test.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarize this incident report for executives; the root cause has already been confirmed.",
+    "should_trigger": false
+  },
+  {
+    "query": "Configure Fluent Bit to ship container logs to OpenSearch.",
+    "should_trigger": false
+  }
+]

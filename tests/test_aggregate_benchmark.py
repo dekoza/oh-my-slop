@@ -79,8 +79,8 @@ class TestRunsPerConfigurationDerivedFromDirs:
         benchmark = generate_benchmark(tmp_path)
         assert benchmark["metadata"]["runs_per_configuration"] == 3
 
-    def test_mixed_run_counts_uses_max(self, tmp_path: Path) -> None:
-        """When eval-1 has 2 runs and eval-2 has 1, report max (2)."""
+    def test_mixed_run_counts_excludes_unmatched_run(self, tmp_path: Path) -> None:
+        """An unmatched run cannot contribute to a comparative benchmark."""
         _build_iteration_dir(tmp_path, num_evals=2, num_runs=1)
         extra_run = tmp_path / "eval-1" / "with_skill" / "run-2"
         extra_run.mkdir(parents=True)
@@ -90,7 +90,7 @@ class TestRunsPerConfigurationDerivedFromDirs:
         (extra_run / "timing.json").write_text(json.dumps(timing))
 
         benchmark = generate_benchmark(tmp_path)
-        assert benchmark["metadata"]["runs_per_configuration"] >= 2
+        assert benchmark["metadata"]["runs_per_configuration"] == 1
 
 
 class TestModelFieldsAcceptCliArgs:
@@ -167,3 +167,111 @@ class TestLoadRunResultsHandlesWorkspaceLayout:
         run = results["with_skill"][0]
         assert run["time_seconds"] == 42.5
         assert run["tokens"] == 50000
+
+    def test_preserves_missing_timing_and_tokens_as_unavailable(
+        self, tmp_path: Path
+    ) -> None:
+        run_dir = tmp_path / "eval-1" / "with_skill" / "run-1"
+        run_dir.mkdir(parents=True)
+        grading = _make_grading(passed=1, failed=0, total=1)
+        grading["execution_metrics"] = {"output_chars": 1234}
+        (run_dir / "grading.json").write_text(json.dumps(grading))
+
+        run = load_run_results(tmp_path)["with_skill"][0]
+
+        assert run["time_seconds"] is None
+        assert run["tokens"] is None
+
+    def test_reads_eval_name_from_metadata(self, tmp_path: Path) -> None:
+        _build_iteration_dir(tmp_path, num_evals=1, num_runs=1)
+        (tmp_path / "eval-1" / "eval_metadata.json").write_text(
+            json.dumps({"eval_id": 1, "eval_name": "invoice-review"})
+        )
+
+        run = load_run_results(tmp_path)["with_skill"][0]
+
+        assert run["eval_name"] == "invoice-review"
+
+    def test_rejects_grading_expectation_without_evidence(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "eval-1" / "with_skill" / "run-1"
+        run_dir.mkdir(parents=True)
+        grading = _make_grading(passed=1, failed=0, total=1)
+        del grading["expectations"][0]["evidence"]
+        (run_dir / "grading.json").write_text(json.dumps(grading))
+
+        with pytest.raises(ValueError, match="evidence"):
+            load_run_results(tmp_path)
+
+    def test_rejects_empty_grading_evidence(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "eval-1" / "with_skill" / "run-1"
+        run_dir.mkdir(parents=True)
+        grading = _make_grading(passed=1, failed=0, total=1)
+        grading["expectations"][0]["evidence"] = ""
+        (run_dir / "grading.json").write_text(json.dumps(grading))
+
+        with pytest.raises(ValueError, match="non-empty evidence"):
+            load_run_results(tmp_path)
+
+    def test_rejects_missing_grading_summary_fields(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "eval-1" / "with_skill" / "run-1"
+        run_dir.mkdir(parents=True)
+        grading = _make_grading(passed=1, failed=0, total=1)
+        del grading["summary"]["pass_rate"]
+        (run_dir / "grading.json").write_text(json.dumps(grading))
+
+        with pytest.raises(ValueError, match="pass_rate"):
+            load_run_results(tmp_path)
+
+
+class TestGenerateBenchmarkComparisonIntegrity:
+    def test_single_configuration_has_no_delta(self, tmp_path: Path) -> None:
+        _build_iteration_dir(
+            tmp_path,
+            num_evals=1,
+            num_runs=1,
+            configs=("with_skill",),
+        )
+
+        benchmark = generate_benchmark(tmp_path)
+
+        assert benchmark["run_summary"]["delta"] == {}
+
+    def test_excludes_eval_missing_from_one_configuration(self, tmp_path: Path) -> None:
+        _build_iteration_dir(tmp_path, num_evals=1, num_runs=1)
+        unmatched_run = tmp_path / "eval-2" / "with_skill" / "run-1"
+        unmatched_run.mkdir(parents=True)
+        (unmatched_run / "grading.json").write_text(
+            json.dumps(_make_grading(passed=1, failed=0, total=1))
+        )
+
+        benchmark = generate_benchmark(tmp_path)
+
+        assert {run["eval_id"] for run in benchmark["runs"]} == {1}
+
+    def test_excludes_run_number_missing_from_one_configuration(
+        self, tmp_path: Path
+    ) -> None:
+        _build_iteration_dir(tmp_path, num_evals=1, num_runs=1)
+        unmatched_run = tmp_path / "eval-1" / "with_skill" / "run-2"
+        unmatched_run.mkdir(parents=True)
+        (unmatched_run / "grading.json").write_text(
+            json.dumps(_make_grading(passed=1, failed=0, total=1))
+        )
+
+        benchmark = generate_benchmark(tmp_path)
+
+        assert {run["run_number"] for run in benchmark["runs"]} == {1}
+
+    def test_rejects_assertion_mismatch_between_configurations(
+        self, tmp_path: Path
+    ) -> None:
+        _build_iteration_dir(tmp_path, num_evals=1, num_runs=1)
+        grading_path = (
+            tmp_path / "eval-1" / "without_skill" / "run-1" / "grading.json"
+        )
+        grading = json.loads(grading_path.read_text())
+        grading["expectations"][0]["text"] = "Different expectation"
+        grading_path.write_text(json.dumps(grading))
+
+        with pytest.raises(ValueError, match="assertion mismatch"):
+            generate_benchmark(tmp_path)

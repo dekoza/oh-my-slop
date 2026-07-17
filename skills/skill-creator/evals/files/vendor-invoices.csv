@@ -1,0 +1,4 @@
+vendor,invoice_number,amount
+"Acme, Inc.",INV-100,1250.00
+ACME INC,INV-100,1250.00
+Globex LLC,INV-101,800.00
