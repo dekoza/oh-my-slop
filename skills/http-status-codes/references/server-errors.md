@@ -81,6 +81,14 @@ Client guidance: usually retry with backoff when the operation is safe or protec
 - `501` means the method or capability is not implemented by the server.
 - `405` means the server knows the method, but this resource does not allow it.
 
+## Failures After The Status Line Is Sent
+
+The status code is committed the moment the headers go out. If an SSE, chunked, or other streaming response fails mid-flight, the client still saw `200 OK` — you cannot retroactively change it to a `5xx`.
+
+- Design the failure signal into the stream itself: a terminal error event for SSE, an error frame or trailer for other streaming formats, or an abrupt close the client treats as incomplete.
+- Client guidance: treat an interrupted stream as a failed request regardless of the `200`, and retry or resume based on the protocol's own markers (e.g. SSE `Last-Event-ID`), not the status code.
+- Only failures detected *before* the first byte of the response can use a real `5xx`; validate as much as possible before streaming begins.
+
 ## Less Common But Legitimate 5xx Codes
 
 | Code | When it fits | Real-world example |

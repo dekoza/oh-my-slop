@@ -27,6 +27,25 @@ Critical verified rule from the source:
 
 If an answer treats `StateGraph` like a directly executable object, it is wrong.
 
+Minimal verified shape (langgraph 1.x — runs fully offline, no model needed):
+
+```python
+from langgraph.graph import StateGraph, MessagesState, START, END
+
+def respond(state: MessagesState):
+    return {"messages": [{"role": "assistant", "content": "hello"}]}
+
+builder = StateGraph(MessagesState)
+builder.add_node("respond", respond)
+builder.add_edge(START, "respond")
+builder.add_edge("respond", END)
+
+graph = builder.compile()  # the builder has no invoke() at all
+result = graph.invoke({"messages": [{"role": "user", "content": "hi"}]})
+```
+
+Anti-pattern: `builder.invoke(...)` — the builder object has no execution methods; only the compiled graph does.
+
 ## State and message helpers
 
 Verified LangGraph message helpers include:

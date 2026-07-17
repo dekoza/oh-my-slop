@@ -1,25 +1,14 @@
 ---
 name: http-status-codes
 description: >
-  Choosing, reviewing, correcting, or explaining HTTP response codes for APIs, OpenAPI
-  specs, controllers, middleware, SDK/client retry logic, or error handling. Triggers on:
-  "HTTP status", "response code", "400 vs 422", "401 vs 403", "404 vs 410", "405 vs 501",
-  "409 vs 412", "429 vs 503", "201 vs 202 vs 204", "303 vs 307 vs 308", "status code
-  semantics", "which status code", "OpenAPI status", or when choosing/reviewing HTTP
-  response codes.
+  Use when choosing, reviewing, or explaining HTTP response codes — in an API,
+  OpenAPI spec, controller, middleware, or client retry logic. Triggers on: "which
+  status code", "400 vs 422", "401 vs 403", "429 vs 503", "409 vs 412", "201 vs 202
+  vs 204", "303 vs 307 vs 308", or when a handler's status code looks wrong.
 ---
 # HTTP Status Codes Reference
 
-Use this skill for standards-based HTTP status code selection in API and client design. It exists to stop the lazy pattern where every client mistake becomes `400` and every temporary outage becomes `500`.
-
-Read only the smallest reference file needed for the task.
-
-## Quick Start
-1. If the task is "which code should this be?", start with `references/decision-rules.md`.
-2. If the task is about success responses, async jobs, caching, or redirects, read `references/success-redirects.md`.
-3. If the task is about auth, permissions, validation, conflicts, media types, rate limits, or legal denials, read `references/client-errors.md`.
-4. If the task is about outages, gateways, retries, or server capability limits, read `references/server-errors.md`.
-5. Use `references/rare-and-nonstandard.md` only when the task explicitly mentions obscure, deprecated, WebDAV, or vendor-specific codes.
+Use this skill for standards-based HTTP status code selection in API and client design. It exists to stop the lazy pattern where every client mistake becomes `400` and every temporary outage becomes `500`. Read only the smallest reference file needed for the task.
 
 ## Critical Rules
 1. **Prefer the most specific standard code** - `400` is a fallback, not the default for every client-side failure.
@@ -37,9 +26,9 @@ Read only the smallest reference file needed for the task.
 | File | Domain | Use when you need |
 |------|--------|-------------------|
 | `decision-rules.md` | High-value choices | Fast answers for confused pairs/triples and a selection rubric |
-| `success-redirects.md` | 2xx + 3xx | Creation, async processing, no-content responses, cache-aware responses, redirects |
+| `success-redirects.md` | 2xx + 3xx | Creation, async processing, no-content responses, cache-aware responses, redirects, HEAD |
 | `client-errors.md` | 4xx | Auth, permissions, validation, conflicts, media type, throttling, operational client errors |
-| `server-errors.md` | 5xx | Internal failures, upstream failures, temporary outages, retry behavior |
+| `server-errors.md` | 5xx | Internal failures, upstream failures, temporary outages, retry behavior, mid-stream failures |
 | `rare-and-nonstandard.md` | Appendix | Rare standards, WebDAV-heavy codes, deprecated or unused codes, vendor/private warnings |
 | `REFERENCE.md` | Index | Cross-file routing for mixed or unclear tasks |
 
@@ -51,16 +40,6 @@ Read only the smallest reference file needed for the task.
 - **Interpreting obscure codes from logs or third-party docs** -> `references/rare-and-nonstandard.md`
 - **Unsure where to start** -> `references/REFERENCE.md`
 
-## Content Ownership
-This skill owns standards-based HTTP status code semantics for API and client design:
-- choosing the right registered status code
-- identifying required or strongly recommended companion headers
-- explaining what the client should do next
-- calling out common confusion points
-
-This skill does not own:
-- framework-specific exception wiring or middleware setup
-- project-specific compatibility decisions
-- vendor/private status codes as primary API design guidance
-
-Use this skill to decide what the response should mean. Pair it with the relevant stack skill to implement that meaning in code.
+## When Not To Use This Skill
+- **Framework-specific exception wiring** - This skill decides what the response should mean; pair it with the relevant stack skill to implement that meaning in middleware or handlers.
+- **Project-specific compatibility decisions** - Whether an existing API may break its historical contract is a project call, not an HTTP-semantics call (Rule 9 only requires naming the deviation).

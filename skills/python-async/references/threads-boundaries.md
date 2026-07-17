@@ -32,6 +32,22 @@ Do not promise thread cancellation. Python does not have it.
 
 If long-running worker-thread code needs cancellation, require explicit polling with `from_thread.check_cancelled()`. `abandon_on_cancel=True` only stops waiting on the result; it does not stop the underlying thread.
 
+```python
+data = await anyio.to_thread.run_sync(read_big_file, path)
+```
+
+```python
+# Anti-pattern: "cancellable" blocking work — cancellation abandons the
+# *wait*; the thread keeps running the job to completion regardless
+await anyio.to_thread.run_sync(long_blocking_job, abandon_on_cancel=True)
+
+# Cancellation-aware version: the job itself polls for host-task cancellation
+def long_blocking_job() -> None:
+    for chunk in chunks:
+        anyio.from_thread.check_cancelled()
+        process(chunk)
+```
+
 ## Crossing Back Into The Event Loop
 
 Use:
@@ -43,6 +59,12 @@ Callable split:
 
 - `from_thread.run()` is for async callables
 - `from_thread.run_sync()` is for sync loop-thread callbacks
+
+```python
+def blocking_worker() -> str:                        # runs via to_thread.run_sync()
+    anyio.from_thread.run_sync(progress_event.set)   # sync callback -> run_sync
+    return anyio.from_thread.run(fetch_message)      # async callable -> run
+```
 
 Examples of `from_thread.run_sync()` use:
 
@@ -81,6 +103,20 @@ Bad uses:
 ## Context Propagation
 
 AnyIO copies contextvars into worker threads and back into tasks spawned from worker threads. Those copies do not magically merge back into the original caller's context.
+
+```python
+request_id = contextvars.ContextVar("request_id", default="-")
+
+def blocking_work() -> str:
+    seen = request_id.get()       # copy of the caller's context: visible
+    request_id.set("thread-set")  # mutates only the thread's copy
+    return seen
+
+async def handler() -> None:
+    request_id.set("req-42")
+    assert await anyio.to_thread.run_sync(blocking_work) == "req-42"
+    assert request_id.get() == "req-42"  # the thread's set() never merged back
+```
 
 ## Raw asyncio Notes
 

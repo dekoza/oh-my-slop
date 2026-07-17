@@ -70,6 +70,13 @@ Real-world examples:
 
 Do not send a JSON body with `204`.
 
+### HEAD Requests
+
+A `HEAD` request returns exactly the status code and headers the equivalent `GET` would return, with no body — do not invent a separate status scheme for it.
+
+- `HEAD /reports/rep_1` returns `200` with `Content-Length` and caching headers if `GET` would return `200`, and `404` if `GET` would.
+- Do not return `204` just because a `HEAD` response has no body; the empty body is inherent to `HEAD`, not a `204` signal.
+
 ### 206 Partial Content
 
 Use `206 Partial Content` for range requests and resumable downloads.

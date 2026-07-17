@@ -18,6 +18,7 @@ Use this file only when the task explicitly mentions obscure codes, WebDAV-heavy
 | `414 URI Too Long` | The URI itself is too long | A huge filter blob is crammed into the query string | Usually a sign the request design should move to a body |
 | `416 Range Not Satisfiable` | The requested byte range is invalid | A client asks past the end of a file | Only matters when range requests are in play |
 | `417 Expectation Failed` | The server cannot satisfy the `Expect` header | `Expect: 100-continue` is not supported | Transport edge case |
+| `207 Multi-Status` | WebDAV batch operations whose sub-operations can succeed or fail independently | A `PROPPATCH` or batch copy returns a `multistatus` XML body with one status per resource | WebDAV-specific; for plain JSON APIs a `200` with per-item results in the body is clearer than borrowing `207` |
 | `423 Locked` / `424 Failed Dependency` | WebDAV-specific resource locking and dependent failures | Editing a locked document collection | Rare outside WebDAV-like systems |
 | `426 Upgrade Required` | The client must switch protocols before retrying | A service refuses plain HTTP for an endpoint that requires a different protocol | Specialized protocol-management scenario |
 | `507 Insufficient Storage` / `508 Loop Detected` | WebDAV-heavy storage and graph traversal failures | Storage system cannot persist representation or hits a loop | Rare in mainstream API design |

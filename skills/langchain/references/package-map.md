@@ -42,6 +42,11 @@ Use this file when the problem is really about **which package owns the feature*
 - The SDK README says it helps teams debug, evaluate, and monitor language models and intelligent agents.
 - It is compatible with any LLM application, not only LangChain.
 
+### `langchain-community`
+- `langchain-community` holds community-maintained integrations that never graduated to a dedicated provider package.
+- Old tutorials import heavily from `langchain_community`; in the current generation its re-exports are reached via `langchain-classic`, and a dedicated provider package (e.g. `langchain-openai`) always beats the community variant when both exist.
+- Treat a fresh `langchain_community` import as a migration smell: check for a dedicated package first.
+
 ### `langchain-classic`
 - `langchain-classic` is explicitly described as legacy chains, `langchain-community` re-exports, indexing API, deprecated functionality, and more.
 - Its own README says that in most cases you should be using the main `langchain` package.

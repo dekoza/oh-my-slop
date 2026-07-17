@@ -25,6 +25,25 @@ The docstring spells out the standard tool calling loop:
 
 If the task is just "model + tools until done," stay here. Do not jump into raw LangGraph without a reason.
 
+Minimal verified shape (langchain 1.x; requires the provider package, here `langchain-openai`):
+
+```python
+from langchain.agents import create_agent
+
+def get_weather(city: str) -> str:
+    """Get the current weather for a city."""
+    return f"Sunny in {city}"
+
+agent = create_agent(
+    "openai:gpt-4o",
+    tools=[get_weather],
+    system_prompt="You are a terse weather assistant.",
+)
+result = agent.invoke({"messages": [{"role": "user", "content": "Weather in Kraków?"}]})
+```
+
+Plain callables with docstrings are valid tools; the return value is a compiled LangGraph state graph, so it is invoked with a `messages` state dict, not a bare string.
+
 ## When `create_agent` is the right answer
 
 Choose `create_agent` first when the user needs:

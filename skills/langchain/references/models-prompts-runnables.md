@@ -91,6 +91,21 @@ Useful exported building blocks include:
 - `RunnableWithMessageHistory`
 - `chain`
 
+## Sync and async are one API
+
+Every `Runnable` (models, chains, agents) carries both surfaces: `invoke`/`stream`/`batch` and their `a`-prefixed async twins `ainvoke`/`astream`/`abatch`.
+
+```python
+result = model.invoke("Hello")            # sync
+result = await model.ainvoke("Hello")     # async — same Runnable, same semantics
+
+async for chunk in model.astream("Hello"):
+    print(chunk.text, end="")
+```
+
+- Inside an async framework (Litestar, FastAPI, LangGraph async nodes), call the `a`-methods directly. Wrapping sync `invoke` in `run_in_executor` when `ainvoke` exists is an anti-pattern — it burns a thread to fake what the client already does natively.
+- For event-loop, cancellation, and task-group correctness around these calls, load the `python-async` skill; this file only owns the LangChain surface.
+
 ## Boundary rules
 
 - Use `Runnable`/LCEL when the problem is mostly composition and transformation.

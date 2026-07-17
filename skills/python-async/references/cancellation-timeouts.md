@@ -34,6 +34,19 @@ AnyIO docs explicitly warn that this difference can break code originally writte
 - Use `current_effective_deadline()` when nested timeouts matter.
 - Prefer caller-owned timeout policy in reusable library code.
 
+```python
+with anyio.move_on_after(5) as scope:
+    result = await fetch()
+if scope.cancelled_caught:
+    result = FALLBACK          # timed out quietly; caller decides what now
+
+try:
+    with anyio.fail_after(5):
+        result = await fetch()
+except TimeoutError:
+    ...                        # timeout is an error the caller must handle
+```
+
 Important AnyIO caveat:
 
 - Do not directly cancel a `fail_after()` scope; the docs warn this can currently lead to a spurious `TimeoutError` if exiting the scope is delayed long enough.
@@ -45,6 +58,41 @@ Important AnyIO caveat:
 - Always re-raise the cancellation exception after cleanup.
 
 If the code catches cancellation and keeps going, assume it is wrong until proven otherwise.
+
+```python
+from anyio import get_cancelled_exc_class, move_on_after
+
+async def run_connection(conn) -> None:
+    try:
+        await conn.serve()
+    except get_cancelled_exc_class():
+        with move_on_after(2, shield=True):  # bounded, shielded async cleanup
+            await conn.aclose()
+        raise                                 # always re-raise cancellation
+```
+
+```python
+# Anti-pattern: swallowed cancellation — under asyncio the task keeps
+# running as if nothing happened; under AnyIO/Trio it busy-loops
+try:
+    await work()
+except asyncio.CancelledError:
+    pass
+```
+
+## Async Generator And Async Context Manager Cleanup
+
+- An async generator abandoned mid-iteration is finalized later by the event loop's finalizer hook, at an arbitrary point and outside any enclosing cancel scope. Wrap iteration in `contextlib.aclosing()` so `aclose()` runs deterministically where the code can still control it.
+- Do not `yield` inside a task group or cancel scope from an async generator; the scope would have to survive across foreign iterations (already listed under Known Footguns). Prefer an async context manager (`@asynccontextmanager` or `__aenter__`/`__aexit__`) when cleanup must own a scope.
+
+```python
+from contextlib import aclosing
+
+async with aclosing(stream_events()) as events:
+    async for event in events:
+        if done(event):
+            break  # generator cleanup runs here, not at loop-finalizer time
+```
 
 ## Shielding Rules
 

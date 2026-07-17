@@ -18,6 +18,21 @@ This file covers task lifetime, startup coordination, and multi-task failure han
 - For Trio-native code, the matching concept is the nursery.
 - For raw `asyncio`, prefer `asyncio.TaskGroup` over ad-hoc `create_task()` sets unless you explicitly need detached work.
 
+```python
+import anyio
+
+async def worker(name: str) -> None:
+    await anyio.sleep(0.01)
+
+async def main() -> None:
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(worker, "a")
+        tg.start_soon(worker, "b")
+    # exiting the block waits for both; a child failure cancels the sibling
+
+anyio.run(main)
+```
+
 ## Why Task Groups Win
 
 - The parent owns task lifetime.
@@ -37,6 +52,20 @@ Key AnyIO rule:
 - If the child never calls `task_status.started()`, AnyIO raises `RuntimeError`.
 
 Use `start_soon()` only when the parent does not need a readiness signal.
+
+```python
+from anyio.abc import TaskStatus
+
+async def serve(*, task_status: TaskStatus[int] = anyio.TASK_STATUS_IGNORED) -> None:
+    port = 8080  # bind sockets here, then signal readiness
+    task_status.started(port)
+    await anyio.sleep_forever()
+
+async def main() -> None:
+    async with anyio.create_task_group() as tg:
+        port = await tg.start(serve)  # blocks until task_status.started(port)
+        ...
+```
 
 ## Asyncio Differences That Matter
 
@@ -66,11 +95,31 @@ Do not paper over these differences in review comments.
 - Request handlers that launch work and hope process shutdown cleans it up
 - Tests that pass only because spawned tasks never get awaited or cancelled
 
+```python
+# Anti-pattern: detached task with no owner — may be garbage-collected
+# mid-run, and its exceptions vanish silently
+asyncio.create_task(sync_to_remote(order))
+
+# Owned version: lifetime and failures belong to the enclosing group
+async with anyio.create_task_group() as tg:
+    tg.start_soon(sync_to_remote, order)
+```
+
 ## Exception Groups
 
 AnyIO and raw `asyncio.TaskGroup` both surface grouped failures through `ExceptionGroup` or `BaseExceptionGroup`. Do not flatten this into a fake single-error model.
 
 For Python 3.11+, prefer `except*` when handling grouped task failures.
+
+```python
+try:
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(flaky_worker)
+        tg.start_soon(other_worker)
+except* ValueError as eg:
+    for exc in eg.exceptions:
+        log_failure(exc)  # handle each matching member; others re-propagate
+```
 
 ## Review Questions
 

@@ -1,14 +1,11 @@
 ---
 name: prestashop
 description: >
-  PrestaShop 9 modules: module structure, hooks, front/admin controllers, modern
-  configuration pages, services, persistence, external API integrations, cron/commands,
-  packaging, compatibility, or release debugging. Triggers on: "PrestaShop", "PrestaShop
-  module", "PrestaShop hook", "PrestaShop controller", "PrestaShop configuration page",
-  "PrestaShop persistence", "PrestaShop API", "PrestaShop cron", "PrestaShop packaging",
-  or when working with PrestaShop 9 module development. This skill exists to stop agents
-  from inventing framework classes, guessing hook contracts, or shipping fake
-  Symfony/PrestaShop internals.
+  Use when building, reviewing, or debugging a PrestaShop 9 module — its structure,
+  hooks, controllers, configuration page, services, persistence, cron, or packaging.
+  Triggers on: "PrestaShop", a module main class or `getContent()`, hook registration
+  (`registerHook`, `hookDisplay*`/`hookAction*`), `config/services.yml` inside a module,
+  a module ZIP that will not install, or a Back Office configuration page that 404s.
 scope: prestashop
 target_versions: "PrestaShop 9.x, PHP 8.2+"
 last_verified: 2026-03-19
@@ -16,28 +13,11 @@ source_basis: official docs
 ---
 # PrestaShop 9 Module Development Reference
 
-Use this skill for **PrestaShop 9 modules**. In PrestaShop terminology, these are **modules**, not "plugins". If the task says plugin, translate it mentally to module and implement it as a module.
-
-This skill is written to prevent the most common AI failures in PrestaShop work:
-- inventing framework classes or folder layouts
-- mixing legacy and modern patterns randomly
-- guessing hook names or payloads
-- putting business logic in the main module class
-- shipping broken Composer/autoload setup
-- exposing unsafe cron endpoints
-- assuming removed core dependencies still exist in PrestaShop 9
-
-Read only the reference files relevant to the task.
-
-## Quick Start
-1. Identify the task type.
-2. Open the matching reference files from the routing table below.
-3. Build with **documented PrestaShop 9 conventions only**.
-4. Validate install/uninstall, configuration flow, routing, hooks, and packaging before declaring success.
+Use this skill for **PrestaShop 9 modules**. In PrestaShop terminology, these are **modules**, not "plugins". If the task says plugin, translate it mentally to module and implement it as a module. Read only the reference files relevant to the task.
 
 ## Critical Rules
 1. **Use real PrestaShop structure** — main module file in the module root, legacy controllers in `controllers/`, modern Symfony controllers in `src/Controller`, config in `config/`, assets/templates in `views/`.
-2. **Do not invent host framework classes** — never ship your own `PrestaShopBundle`, `Symfony\Component\...`, or other classes inside host namespaces to patch missing knowledge.
+2. **Build only from documented PrestaShop 9 conventions** — when a class, hook contract, service, or extension point is not in these references or the official docs, stop and say so instead of inventing it. Never ship your own `PrestaShopBundle`, `Symfony\Component\...`, or other classes inside host namespaces to patch missing knowledge.
 3. **Keep the main module class thin** — constructor, metadata, install/uninstall, hook registration, and configuration entrypoint only. Put API clients, repositories, sync services, and form handlers into `src/` or `classes/`.
 4. **Prefer modern BO configuration** — for a real configuration page in PrestaShop 9, use a Symfony form/controller/route. `getContent()` should normally redirect to the module’s modern config route, not render a giant PHP string.
 5. **Respect controller boundaries** — front-office module controllers live in `controllers/front/` and must be named `<ModuleClassName><FileName>ModuleFrontController`. Modern admin controllers go in `src/Controller` and require routing + services/autoload.
@@ -79,3 +59,9 @@ Read only the reference files relevant to the task.
 - **Handle translations, templates, assets, or UI text** → `references/translations-templates-assets.md`
 - **Debug release failures or prepare a distributable ZIP** → `references/testing-release-checklist.md`
 - **Target PrestaShop 9 specifically or review upgrade risks** → `references/prestashop-9-gotchas.md`
+
+## When Not To Use This Skill
+- **Framework-generic Symfony questions** — PrestaShop 9 embeds Symfony, but form/DI/routing questions outside a module's extension points belong to the Symfony docs.
+- **Generic PHP or Composer tooling** — language-level or dependency questions that are not about module autoload/packaging rules.
+- **Shop operation, theming, and core upgrades** — store configuration, theme development, and PrestaShop core work are not module development.
+- **Containerized dev environments** — load the docker skills for the environment PrestaShop runs in.
