@@ -105,7 +105,7 @@ This baseline data informs your draft — you'll write the skill to address thes
 Based on the user interview, fill in these components:
 
 - **name**: Skill identifier
-- **description**: The primary triggering mechanism. Must start with "Use when..." and describe ONLY triggering conditions — specific situations, symptoms, and contexts. Write in third person. Models often undertrigger, so make descriptions a little pushy.
+- **description**: The primary triggering mechanism. Must start with "Use when..." and describe ONLY triggering conditions — specific situations, symptoms, and contexts. Write in third person. Models often undertrigger, so make descriptions a little pushy — but keep it sharp: ≤ 3 sentences / ~75 words, and any "Triggers on:" list ≤ 8 items a user would actually type. Encyclopedic keyword dumps *under*trigger. For user-invoked skills (`disable-model-invocation: true`) the description is instead one plain human-facing line — no trigger language. Full library standard, including the invocation-mode rule: `references/skill-quality-standard.md`.
 
   **Critical trap:** Never summarize the skill's workflow in the description. Testing revealed that when a description says "code review between tasks", agents follow the description instead of reading the full skill body. A description saying "Use when executing implementation plans with independent tasks" (no workflow summary) caused agents to correctly read and follow the full SKILL.md flowchart.
 
@@ -570,7 +570,9 @@ Use TodoWrite to create a todo for each item. Complete all before deploying.
 **GREEN Phase (Draft + Test):**
 - [ ] Skill name: letters, numbers, hyphens only
 - [ ] YAML frontmatter: `name` and `description` (max 1024 chars total)
-- [ ] Description: starts with "Use when...", specific triggers, no workflow summary, third person
+- [ ] Description: starts with "Use when...", specific triggers, no workflow summary, third person; ≤ 3 sentences, "Triggers on:" list ≤ 8 typed-by-a-user items (user-invoked skills: one plain human-facing line instead)
+- [ ] Invocation mode deliberate: ritual → `disable-model-invocation: true`, unless another skill invokes it as a primitive (see `references/skill-quality-standard.md`)
+- [ ] Body passes the skill-quality-standard checklist (`references/skill-quality-standard.md` §3)
 - [ ] Keywords throughout for search (errors, symptoms, tools, synonyms)
 - [ ] Clear overview with core principle
 - [ ] Draft addresses specific baseline failures

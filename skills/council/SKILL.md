@@ -1,18 +1,7 @@
 ---
-
 name: llm-council
-
-
-description: >
-  Multiple independent perspectives on a decision with real stakes. Use when: "council
-  this", "run the council", "war room this", "should I X or Y", "which option", "what
-  would you do", "I can't decide", "I'm torn between". Triggers on genuine uncertainty
-  where being wrong is expensive: tradeoff decisions, positioning choices, architecture
-  picks, hiring calls, launch timing. Spawns 5 sub-agents (Contrarian, First Principles,
-  Expansionist, Outsider, Executor), runs peer review, synthesizes verdict. Do NOT trigger
-  for simple creation tasks, factual lookups, single-answer questions, or when the user
-  wants focused adversarial critique (that's court-jester).
-
+description: Convene five independent perspectives (Contrarian, First Principles, Expansionist, Outsider, Executor) on a high-stakes decision, peer-review them, and synthesize a verdict.
+disable-model-invocation: true
 ---
 
 
