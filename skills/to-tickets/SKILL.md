@@ -3,8 +3,7 @@ name: to-tickets
 description: >
   Break a plan, spec, or the current conversation into a set of tracer-bullet tickets —
   vertical slices, each declaring its blocking edges — published to the project tracker
-  or one local file per ticket. Triggers on: "to-tickets", "break this into tickets", "split
-  this into issues", "create the tickets for this plan", "turn the spec into tasks".
+  or one local file per ticket.
 license: MIT (adapted from mattpocock/skills)
 disable-model-invocation: true
 ---
@@ -109,4 +108,4 @@ The end-to-end behaviour this ticket makes work, from the user's perspective —
 
 In either form, avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
 
-Work the frontier one ticket at a time in fresh sessions, clearing context between tickets.
+Work the frontier one ticket at a time with the `implement` skill in fresh sessions, clearing context between tickets.

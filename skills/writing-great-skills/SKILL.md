@@ -1,8 +1,11 @@
 ---
 name: writing-great-skills
-description: Reference for writing and editing skills well — the vocabulary and principles that make a skill predictable.
+description: >
+  Use when authoring or editing a skill — writing or reviewing a SKILL.md, crafting
+  its description, choosing its invocation mode, or diagnosing why a skill misfires,
+  undertriggers, or bloats. Triggers on: "write a skill", "edit this skill",
+  "skill description", "skill triggering", "trim this skill".
 license: MIT (adapted from mattpocock/skills)
-disable-model-invocation: true
 ---
 
 A skill exists to wrangle determinism out of a stochastic system. **Predictability** — the agent taking the same _process_ every run, not producing the same output — is the root virtue; every lever below serves it.

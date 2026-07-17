@@ -1,13 +1,10 @@
 ---
 name: two-axis-review
 description: >
-  Review the changes since a fixed point (commit, branch, tag, or merge-base) along two
-  independent axes — Standards (does the code follow the repo's documented coding
-  standards and a Fowler code-smell baseline?) and Spec (does the code match what the
-  originating issue/PRD asked for?) — run as parallel sub-agents and reported side by
-  side. Triggers on: "review since X", "review this branch", "review the PR against the
-  spec", "does this match the ticket", "standards check", "two-axis review", or when the
-  user wants a diff reviewed against both conventions and requirements.
+  Use when the user wants the changes since a fixed point reviewed against the repo's
+  coding standards, against the originating spec, or both. Triggers on: "review since
+  X", "review this branch", "review the PR against the spec", "does this match the
+  ticket", "standards check", "two-axis review".
 license: MIT (adapted from mattpocock/skills)
 ---
 
@@ -17,8 +14,6 @@ Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 - **Spec** — does the code faithfully implement the originating issue / PRD / spec?
 
 Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
-
-Specs are fetched from the project's issue tracker when the commits reference one — GitHub via the `gh` CLI, Gitea via `tea`.
 
 ## Process
 

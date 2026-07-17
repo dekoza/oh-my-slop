@@ -1,12 +1,11 @@
 ---
 name: domain-modeling
 description: >
-  Actively build and sharpen a project's domain model during design conversations —
-  challenge terms against the glossary, sharpen fuzzy language, stress-test with
-  scenarios, update CONTEXT.md inline, offer ADRs sparingly. Triggers on: "pin down
-  the terminology", "ubiquitous language", "record this decision", "add it to the
-  glossary", "domain model", or when another skill needs to maintain the domain model
-  while decisions land.
+  Use when the project's domain model is being changed — terms pinned down, design
+  decisions landing, vocabulary conflicting — or when another skill needs to maintain
+  the domain model while decisions land. Triggers on: "pin down the terminology",
+  "ubiquitous language", "record this decision", "add it to the glossary",
+  "domain model".
 license: MIT (adapted from mattpocock/skills)
 ---
 
