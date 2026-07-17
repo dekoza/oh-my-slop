@@ -1,11 +1,11 @@
 ---
 name: git-guardrails-claude-code
 description: >
-  Set up Claude Code hooks that block dangerous git commands (push, reset --hard,
-  clean, branch -D, checkout/restore .) before they execute. Triggers on: "block
-  dangerous git commands", "git safety hooks", "prevent destructive git operations",
-  "stop the agent force-pushing", or when the user wants the git-discipline rules
-  enforced by hooks rather than by prompt.
+  Use when the user wants dangerous git commands (push, reset --hard, clean, branch -D,
+  checkout/restore .) blocked by a Claude Code hook before they run — the git-discipline
+  rules enforced mechanically rather than by prompt. Triggers on: "block dangerous git
+  commands", "git safety hooks", "prevent destructive git operations", "stop the agent
+  force-pushing".
 license: MIT (adapted from mattpocock/skills)
 ---
 

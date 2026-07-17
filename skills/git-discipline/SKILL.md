@@ -1,14 +1,37 @@
 ---
 name: git-discipline
 description: >
-  Git workflow, commit conventions, and repository safety rules. Triggers on: "git", "commit",
-  "push", "branch", "merge", "rebase", "force push", "git history", "untracked files",
-  "destructive git", "conventional commits", "git log", "git blame", or when making any git operation.
-  Use when: committing, pushing, branching, merging, rebasing, or managing git history.
+  Use when running any git operation — committing, pushing, branching, merging, rebasing —
+  or when a command could touch uncommitted or untracked work. Enforces conventional-commit
+  messages, a commit per execution wave, and hard guards on destructive commands. Triggers
+  on: git clean, git reset --hard, force push, rebasing a published branch, rm on user files,
+  deleting untracked files.
 license: MIT
 ---
 
 # Git Discipline
+
+Git is mostly reversible — except when it isn't. The guards against **irreversible loss of the user's work** come first; commit conventions follow.
+
+## Protect Uncommitted and Untracked Work
+
+**Untracked files are the user's property.** They may be hours of work with no other copy — a legitimate workflow, e.g. cleaning files before the first commit to keep secrets out of history. Treat them as sacred.
+
+Before ANY operation that could affect them:
+1. Run `git status` and understand what is untracked and why.
+2. Never assume untracked files are garbage, generated artifacts, or safe to delete.
+
+**These commands require the user to explicitly request them** — running any without that request is a catastrophic, possibly unrecoverable bug:
+
+- `git clean` (any flags) — destroys untracked files irreversibly
+- `git checkout -- .` or `git restore .` — discards all uncommitted changes
+- `git reset --hard` — destroys uncommitted work
+- `rm -rf` / `rm -r` on directories containing user files
+- Any glob-pattern command (`rm *.md`, `git checkout -- *.py`) that could hit user files
+
+**Never rewrite shared history** without explicit permission — no `--force` push, no rebasing published branches.
+
+**Rogue files from a subagent:** list them to the user first, then delete them **individually by exact path** — never with a blanket command.
 
 ## Commit Behavior
 
@@ -37,39 +60,3 @@ The description should explain **what changed**, not **what you did**:
 ## Git History as Context Source
 
 Before making changes to unfamiliar code, check `git log` and `git blame` to understand how it evolved. Previous commit messages explain past decisions — use them before asking the user to re-explain.
-
-## Untracked Files Are Sacred
-
-The user may be working with files that haven't been committed yet. This is a legitimate workflow — for example, cleaning files before first commit to avoid leaking sensitive data in git history.
-
-**Untracked files are the user's property.** They may represent hours of work with no other copy.
-
-### Before Any Destructive Operation
-
-Before ANY operation that could affect untracked files:
-1. Run `git status` and understand what is untracked and why
-2. Never assume untracked files are garbage, generated artifacts, or safe to delete
-
-### Rogue Files from Subagents
-
-If a subagent created rogue files that need removal:
-- Delete them **individually by exact path** — never with blanket commands
-- List them to the user first, then delete one by one
-
-## FORBIDDEN Commands (Require Explicit User Permission)
-
-The following commands are **FORBIDDEN** without the user explicitly requesting them:
-
-- `git clean` (any flags) — destroys untracked files irreversibly
-- `git checkout -- .` or `git restore .` — discards all uncommitted changes
-- `git reset --hard` — destroys uncommitted work
-- `rm -rf` / `rm -r` on directories containing user files
-- Any command with glob patterns (`rm *.md`, `git checkout -- *.py`) that could hit user files
-
-**Running any of the above without explicit user request = bug** (catastrophic, possibly unrecoverable).
-
-## Never Rewrite Shared History
-
-Never rewrite shared history without explicit user permission:
-- No `--force` push
-- No rebasing published branches
