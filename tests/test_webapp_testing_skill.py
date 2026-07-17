@@ -28,19 +28,19 @@ def test_webapp_testing_skill_frontmatter_and_guardrails_cover_video_workflow() 
     assert "description:" in skill_text
     assert "Playwright" in skill_text
     assert "recorded video" in skill_text or "record a video" in skill_text
-    assert "## When to record video" in skill_text
+    assert "## Appendix: video recording" in skill_text
     assert "record_video_dir" in skill_text
     assert "record_video_size" in skill_text
     assert "video.save_as" in skill_text
     assert "context.close()" in skill_text
     assert "headless=True" in skill_text
-    assert "one fresh browser context" in skill_text
-    assert "Video supplements" in skill_text
+    assert "one fresh context per recorded flow" in skill_text
+    assert "supplements logs, assertions" in skill_text
     assert "orange dot" in skill_text.lower()
     assert "ripple effect" in skill_text.lower()
     assert "pace of a human" in skill_text.lower()
     assert "smooth" in skill_text.lower()
-    assert "jump" in skill_text.lower()
+    assert "no teleporting" in skill_text.lower()
     assert "Xvfb" not in skill_text
     assert "headless=False" not in skill_text
 

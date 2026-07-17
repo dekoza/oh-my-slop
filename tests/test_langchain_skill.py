@@ -31,12 +31,17 @@ def test_langchain_skill_frontmatter_and_guardrails_cover_ecosystem_boundaries()
     assert "Python" in skill_text
     assert "`langchain-core`" in skill_text
     assert "`langchain-classic`" in skill_text
-    assert "`langchain-text-splitters`" in skill_text
     assert "`init_chat_model`" in skill_text
     assert "`create_agent`" in skill_text
     assert "`StateGraph`" in skill_text
     assert "`InMemorySaver`" in skill_text
     assert "LangChain.js" in skill_text or "JS/TS" in skill_text
+
+    # The text-splitters package boundary moved into the retrieval reference
+    retrieval_text = (SKILL_ROOT / "references" / "retrieval-integrations.md").read_text(
+        encoding="utf-8"
+    )
+    assert "`langchain-text-splitters`" in retrieval_text
 
 
 def test_langchain_reference_index_covers_all_major_domains() -> None:
