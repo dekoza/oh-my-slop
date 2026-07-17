@@ -1,19 +1,24 @@
 ---
 name: docker-discipline
 description: >
-  Docker and Docker Compose best practices for production and testing. Triggers on: "Docker",
-  "docker-compose", "compose.yml", "Dockerfile", "container", "image", "build", "deploy",
-  "non-root user", "UID", "bind mount", "port mapping", "network", "volume", "healthcheck",
-  "compose.test.yml", "test environment", or when writing Dockerfiles, compose files, or deployment configs.
-  Use when: creating Dockerfiles, compose files, deployment configs, or making Docker decisions.
+  Use whenever creating or modifying Dockerfiles, compose files, or deployment
+  configs — any change to how a project builds or runs in containers. This is
+  the discipline skill — for Docker behavior lookups and troubleshooting, use
+  docker instead.
 license: MIT
 ---
 
 # Docker Discipline
 
-## Non-Root User (Critical)
+Rules for authoring Docker configs. Every rule traces to a real production issue.
+For how Docker itself behaves (networking, storage, BuildKit, registries,
+diagnosis), load the `docker` skill — it owns reference and troubleshooting.
 
-**Docker non-root user UID must match host user** to avoid bind-mount permission issues.
+## Dockerfile Rules
+
+### Non-Root User, UID-Matched (Critical)
+
+**Match the container user's UID to the host user** to avoid bind-mount permission issues.
 
 ```dockerfile
 # ✅ Correct: Match host UID
@@ -26,7 +31,30 @@ USER app
 USER 1001  # Won't match host, causes permission errors
 ```
 
-**`USER` directive must come AFTER all `RUN`/`COPY` commands** in Dockerfile.
+**Place the `USER` directive AFTER all `RUN`/`COPY` commands** in the Dockerfile.
+
+### Multi-Stage Builds
+
+Keep build dependencies out of the runtime image: build in one stage, copy the
+artifacts into a slim runtime stage that runs as the non-root user above.
+
+### Secrets Never in ARG or ENV
+
+`ARG` and `ENV` values persist in image history and layer metadata. Pass
+build-time secrets with BuildKit mounts instead:
+
+```dockerfile
+RUN --mount=type=secret,id=pypi_token uv sync --frozen
+```
+
+Build with `docker build --secret id=pypi_token,src=...`; use `--ssh` with
+`RUN --mount=type=ssh` for private git dependencies.
+
+### .dockerignore Before the First Build
+
+Create `.dockerignore` before building anything. Oversized or accidental build
+contexts slow builds, break layer caches, and leak secrets (`.env`, `.git`,
+local artifacts) into images.
 
 ## Docker Compose Rules
 
@@ -51,6 +79,13 @@ services:
 **To change a port binding**, either:
 1. Edit the base file directly
 2. Create a standalone compose file passed with `-f` instead of relying on override merge
+
+### Readiness Is Explicit
+
+`depends_on` short syntax only orders startup — it says nothing about the
+dependency being *ready*. When readiness matters, give the dependency a
+healthcheck and depend with `condition: service_healthy` (see the test compose
+below for the full pattern).
 
 ### Test Infrastructure: Separate Compose File
 
@@ -99,41 +134,11 @@ networks:
 - `docker compose down` (dev) **MUST NOT** affect tests
 - `docker compose -f compose.test.yml down` (tests) **MUST NOT** affect dev
 
-## Dockerfile Best Practices
+### Profiles for Variants, Files for Lifecycles
 
-### System Dependencies for Playwright/Chromium
-
-```dockerfile
-FROM python:3.12-slim
-
-WORKDIR /app
-
-# System deps for Playwright/Chromium
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 \
-    libcups2 libdrm2 libxkbcommon0 libatspi2.0-0 libxcomposite1 \
-    libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 \
-    libcairo2 libasound2 libwayland-client0 \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY pyproject.toml uv.lock ./
-RUN pip install uv && uv sync --frozen
-
-# Install Playwright browsers
-RUN uv run playwright install chromium
-
-COPY . .
-```
-
-### WhiteNoise Ordering (Django)
-
-`WhiteNoiseMiddleware` must be second in `MIDDLEWARE`, directly after `SecurityMiddleware`.
-
-## Docker Compose Profiles
-
-Profiles allow multiple service configs in a single file — use them instead of separate compose files for configuration variants.
-
-**Exception**: test infrastructure MUST use a separate `compose.test.yml`.
+Use profiles for configuration variants within one stack. **Exception**: test
+infrastructure MUST use a separate `compose.test.yml` (above) — profiles do not
+give it an independent lifecycle.
 
 ## References
 
@@ -141,7 +146,7 @@ Profiles allow multiple service configs in a single file — use them instead of
 
 ## Task Routing
 
-- Dockerfile structure, non-root user, USER directive -> This SKILL.md (main content)
+- Dockerfile structure, non-root user, secrets, multi-stage -> This SKILL.md (main content)
 - Build cache optimization, COPY ordering -> `references/gotchas.md` (Build Cache Invalidation section)
 - Volume mount issues, bind mount overrides -> `references/gotchas.md` (Bind Mounts Override Build Artifacts section)
 - `uv run` behavior, implicit sync -> `references/gotchas.md` (uv run Does Implicit Sync section)
@@ -149,3 +154,4 @@ Profiles allow multiple service configs in a single file — use them instead of
 - Network configuration, service communication -> `references/gotchas.md` (Network Namespace Confusion section)
 - Environment variables, env_file vs environment -> `references/gotchas.md` (Environment Variable Precedence section)
 - Volume mount ordering, named vs bind mounts -> `references/gotchas.md` (Volume Mount Ordering section)
+- How Docker behaves, troubleshooting, boundary questions -> load the `docker` skill

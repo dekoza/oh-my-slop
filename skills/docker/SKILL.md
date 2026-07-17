@@ -1,12 +1,23 @@
 ---
 name: docker
 description: >
-  Docker work: containerizing apps, writing/fixing `Dockerfile` or `compose.yaml`, troubleshooting `docker build` / `docker compose`, and resolving boundary issues between client, daemon, build context, image, container runtime, network, storage, or registry. Triggers on: "Docker", "docker build", "docker compose", "Dockerfile", "compose.yaml", "container", "image", "daemon", "build context", "bind mount", "DNS resolution", "network", "storage", "registry", ".dockerignore", "secret handling", "image publishing", "daemon connectivity", "Docker Desktop VM", local vs remote daemons, or cross-machine behavior differences. Produces concrete Docker configs and commands. Excludes Kubernetes, Helm, non-Docker runtimes (unless about Docker compatibility/migration).
+  Use when working out how Docker behaves or why it is failing — `docker build` /
+  `docker compose` errors, daemon connectivity, networking, storage, or registry
+  auth — or when reviewing or fixing a Dockerfile or compose.yaml, including one
+  only described in prose. Triggers on: "docker build", "docker compose",
+  "Cannot connect to the Docker daemon", "bind mount", "container DNS",
+  "registry auth", "BuildKit", "review this Dockerfile". Excludes Kubernetes and
+  Helm; authoring rules live in docker-discipline.
 ---
 
 # Docker Reference
 
 Use this skill for core Docker implementation, configuration, and troubleshooting. It covers product boundaries, daemon and context configuration, Dockerfile authoring, BuildKit and Buildx, Compose CLI and file semantics, networking, storage, registries, security, and troubleshooting. Read only the reference files needed for the task.
+
+When the task *writes or changes* a Dockerfile, compose file, or deployment
+config, also apply the `docker-discipline` skill — it owns the authoring rules
+(non-root user, multi-stage, secrets, `.dockerignore`, compose readiness and
+test-stack lifecycle).
 
 ## Quick Start
 
@@ -28,16 +39,12 @@ Use this skill for core Docker implementation, configuration, and troubleshootin
 
 1. **Boundary first** - Decide whether the issue is client, daemon, build, runtime, registry, or Compose before suggesting commands.
 2. **Context and host checks first** - For daemon connectivity, inspect `docker context`, `DOCKER_CONTEXT`, and `DOCKER_HOST` before deeper debugging.
-3. **`.dockerignore` is mandatory hygiene** - Large or accidental build contexts cause slow builds, broken caches, and secret leaks.
-4. **Secrets do not belong in `ARG` or `ENV`** - Use BuildKit `--secret` or `--ssh` with `RUN --mount=type=secret|ssh`.
-5. **Prefer multi-stage images** - Keep build dependencies out of the runtime image and run as a non-root user when feasible.
-6. **Mount types are not interchangeable** - Bind mounts couple you to the daemon host, volumes are Docker-managed persistence, tmpfs is ephemeral Linux memory storage.
-7. **Socket or TCP daemon access is privileged** - Treat Docker daemon access as root-equivalent. Prefer SSH contexts or TLS, never casual unauthenticated TCP.
-8. **Compose readiness is explicit** - `depends_on` short syntax only starts dependencies first; use healthchecks plus `condition: service_healthy` when readiness matters.
-9. **Tags are mutable; digests are immutable** - Use tags for convenience, digests for reproducibility and controlled rollouts.
-10. **Troubleshooting is symptom-driven** - Start with the smallest failing boundary: daemon reachability, config conflicts, build context, network and DNS, mounts, registry auth, or security.
-11. **Do not block on a missing sample file when the task is hypothetical** - If the user describes a broken Dockerfile, Compose file, or command but did not attach the file, answer from the described facts, state the assumptions, and provide a corrected example.
-12. **Do not go file hunting for hypothetical review tasks** - At most, check the current task directory once for an obvious local file. If it is not there, stop searching. Do not widen the search to `$HOME`, parent directories, `/tmp`, or broad filesystem globs.
+3. **Mount types are not interchangeable** - Bind mounts couple you to the daemon host, volumes are Docker-managed persistence, tmpfs is ephemeral Linux memory storage.
+4. **Socket or TCP daemon access is privileged** - Treat Docker daemon access as root-equivalent. Prefer SSH contexts or TLS, never casual unauthenticated TCP.
+5. **Tags are mutable; digests are immutable** - Use tags for convenience, digests for reproducibility and controlled rollouts.
+6. **Troubleshooting is symptom-driven** - Start with the smallest failing boundary: daemon reachability, config conflicts, build context, network and DNS, mounts, registry auth, or security.
+7. **Hypothetical tasks run from the described facts** - When the user describes a broken Dockerfile, Compose file, or command without attaching the file, treat the prose as the source of truth: say you are working from the described scenario, state the assumptions, and still produce the corrected file or command. Ask for the file only if its exact contents would materially change the answer.
+8. **One narrow file check, then stop** - For such hypothetical tasks, check the current task directory at most once for an obvious local file. If it is not there, stop searching — never widen to `$HOME`, parent directories, `/tmp`, or broad filesystem globs.
 
 ## Reference Map
 
@@ -80,26 +87,15 @@ Use this answer shape unless the user explicitly asks for a different format:
 
 Additional expectations:
 
-- If the task is a review or rewrite and no real file was provided, say that you are working from the described scenario, then still provide the corrected example.
-- For hypothetical review tasks, do at most one narrow file check in the current task directory. If nothing is there, stop searching immediately and continue from the prompt itself.
-- Never broaden a hypothetical file search into `$HOME`, parent directories, or other external paths just because the first local check found nothing.
 - For Dockerfile or Compose authoring tasks, prefer showing a concrete file body rather than only describing what should exist.
 - For troubleshooting tasks, keep the checklist ordered from boundary checks to deeper daemon or runtime checks.
 - Say explicitly when behavior changes between local and remote daemons.
-
-## Hypothetical Review Mode
-
-Use this mode when the user says things like "review this Dockerfile" or "fix this compose file" but only describes the problem in prose.
-
-1. Treat the prose description as the source of truth.
-2. Optionally do one narrow local file check in the current task directory if a real file may exist there.
-3. If no file is present, do not ask for the file unless the exact contents materially change the answer.
-4. Explicitly say you are working from the described scenario.
-5. Produce the corrected Dockerfile, Compose file, or command anyway.
-6. Include the verification step and the highest-risk footgun as usual.
 
 ## Content Ownership
 
 This skill owns core Docker usage and troubleshooting: boundaries, daemon configuration, contexts, Dockerfiles, BuildKit and Buildx, Compose, networking, storage, registries, security, and operational diagnosis.
 
-Kubernetes, Helm, Desktop UI walkthroughs, and cloud-vendor-specific registry IAM flows are outside the core scope. Use dedicated docs or skills for those.
+Authoring discipline for this stack's Dockerfiles and compose files (non-root
+users, secrets handling, test-stack lifecycle) is owned by `docker-discipline`.
+Kubernetes, Helm, Desktop UI walkthroughs, and cloud-vendor-specific registry
+IAM flows are outside the core scope. Use dedicated docs or skills for those.
