@@ -7,15 +7,17 @@ disable-model-invocation: true
 
 # LLM Council
 
+Run a high-stakes decision through five independent advisors, have them peer-review each other anonymously, then synthesize a verdict. Adapted from Andrej Karpathy's LLM Council — here, sub-agents with different thinking lenses stand in for different models.
 
-You ask one AI a question, you get one answer. That answer might be great. It might be mid. You have no way to tell because you only saw one perspective.
+## Run the council
 
+1. **Frame** — scan the workspace for context (`AGENTS.md`, `memory/`, referenced files, past transcripts), then restate the question as one neutral prompt. One clarifying question if it's too vague, then proceed.
+2. **Convene** — spawn all five advisors (Contrarian, First Principles, Expansionist, Outsider, Executor) in parallel; each answers independently, 150–300 words, no hedging.
+3. **Peer-review** — anonymize the responses as A–E, spawn five reviewers: strongest response, biggest blind spot, what everyone missed.
+4. **Synthesize** — the chairman produces the verdict: agreements, clashes, blind spots, one recommendation, one first step.
+5. **Present** — post the verdict in chat as markdown; no HTML, no files unless the user asks.
 
-The council fixes this. It runs your question through 5 independent advisors, each thinking from a fundamentally different angle. Then they review each other's work. Then a chairman synthesizes everything into a final recommendation that tells you where the advisors agree, where they clash, and what you should actually do.
-
-
-This is adapted from Andrej Karpathy's LLM Council. He dispatches queries to multiple models, has them peer-review each other anonymously, then a chairman produces the final answer. We do the same thing inside Claude using sub-agents with different thinking lenses instead of different models.
-
+Each step is detailed below.
 
 ---
 
@@ -49,32 +51,6 @@ Bad council questions:
 
 
 The council shines when there's genuine uncertainty and the cost of a bad call is high. If you already know the answer and just want validation, the council will likely tell you things you don't want to hear. That's the point.
-
-
----
-
-
-## Trigger Ownership
-
-This skill and `court-jester` cover adjacent territory. Here's how to tell them apart:
-
-**Use council when:**
-- You want multiple independent perspectives on a decision
-- You're torn between options and want to see them from different angles
-- The question has real stakes and genuine uncertainty
-- You want a synthesized recommendation after adversarial review
-
-**Use court-jester when:**
-- You want focused adversarial critique of a specific plan or proposal
-- You want a single-mode stress test (red team, pre-mortem, evidence audit, etc.)
-- You need depth in one critique lane, not breadth across perspectives
-- The user says "stress-test this", "red team this", "pre-mortem this", or "devil's advocate"
-
-**When both could fire:**
-- Multi-perspective decision → council
-- Focused attack on a known plan → court-jester
-- If the user says "council this" → always council (they're asking for breadth)
-- If the user says "stress-test this" → always court-jester (they're asking for depth)
 
 
 ---
@@ -525,6 +501,6 @@ Only save a transcript if the user asks for it or if the question is significant
 
 - **Don't council trivial questions.** If the user asks something with one right answer, just answer it. The council is for genuine uncertainty where multiple perspectives add value.
 
-- **The visual report matters.** Most users will scan the report, not read the full transcript. Keep the markdown output scannable with clear headings and bullet points.
+- **Keep the verdict scannable.** Most users skim rather than read every advisor response. Use clear headings and bullet points in the final markdown so the verdict reads at a glance.
 
 - **Composition, not fusion.** The council borrows from `court-jester` for depth but keeps the skills separate. See "Court-Jester Handoff" above.

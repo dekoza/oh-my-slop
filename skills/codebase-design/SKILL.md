@@ -1,12 +1,12 @@
 ---
 name: codebase-design
 description: >
-  Shared vocabulary for designing deep modules: interfaces, seams, deepening opportunities,
-  testability, AI-navigability. Use when designing or improving a module's interface,
-  finding deepening opportunities, deciding where seams go, or when another skill needs
-  the deep-module vocabulary. Triggers on: "deep module", "module interface", "seam",
-  "deepening", "testable module", "AI-navigable", "module design", or when reviewing
-  module boundaries and interfaces.
+  Use when designing or restructuring a module and reaching for the shared deep-module
+  vocabulary — interface, seam, depth, adapter, leverage, locality — to decide where a
+  boundary goes, whether an abstraction earns its keep, or how to make a module testable
+  through its interface. Also when another skill needs these terms. Triggers on: "deep
+  module", "where should this seam go", "is this abstraction worth it", "make this
+  testable", "module interface", "reduce coupling".
 license: MIT (adapted from mattpocock/skills)
 ---
 
@@ -87,6 +87,8 @@ When designing an interface, ask:
 - Can I reduce the number of methods?
 - Can I simplify the parameters?
 - Can I hide more complexity inside?
+
+**When shallow is correct.** Depth is the default to reach for, not a law. A small, focused utility with little behind it is legitimately shallow — deepening it just to raise the depth ratio adds interface with nothing to hide. Deepen where complexity is escaping to callers; leave genuinely thin helpers thin.
 
 ## Principles
 

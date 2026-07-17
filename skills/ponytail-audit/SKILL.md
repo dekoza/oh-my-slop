@@ -1,13 +1,11 @@
 ---
 name: ponytail-audit
 description: >
-  Whole-repo audit for over-engineering and bloat. Reads the codebase and produces a
-  ranked list of what to delete, simplify, or replace with stdlib/native equivalents:
-  dead code, reinvented stdlib, speculative abstractions with one implementation,
-  pass-through wrappers, dead flags. Triggers on: "audit this codebase", "find bloat",
-  "over-engineering check", "ponytail-audit", "what can I cut", "trim this down",
-  "YAGNI check", "reduce code surface", "reduce dependency surface", or when the user
-  wants to identify bloat and over-engineering. One-shot report, applies nothing.
+  Use when the user wants the codebase swept for over-engineering and bloat and a ranked
+  list of what to cut — dead code, reinvented stdlib, single-implementation abstractions,
+  pass-through wrappers, dead flags. Read-only, one-shot report; applies nothing. Triggers
+  on: "audit this codebase", "find bloat", "what can I cut", "trim this down", "YAGNI
+  check", "over-engineering check", "reduce code surface".
 license: MIT (adapted from DietrichGebert/ponytail)
 ---
 

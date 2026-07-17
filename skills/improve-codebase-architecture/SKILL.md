@@ -1,6 +1,6 @@
 ---
 name: improve-codebase-architecture
-description: Scan a codebase for deepening and simplification opportunities — shallow modules, dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead flags. Present findings as a visual HTML report with dual-axis candidates (deepen vs. simplify), then grill through whichever one you pick. Use when the user says "improve architecture", "architecture review", "find deepening opportunities", "what should I refactor", "codebase health check", or wants to improve testability and reduce bloat.
+description: Scan the codebase for deepening and simplification opportunities, present them as a visual dual-axis HTML report (deepen vs. simplify), then grill through the candidate you pick.
 disable-model-invocation: true
 license: MIT (adapted from mattpocock/skills)
 ---
@@ -14,6 +14,8 @@ This skill is manual-only (`disable-model-invocation: true`); it is never auto-t
 Do not ask "what would you like me to do?" or wait for further instructions before acting. That extra round-trip is exactly the friction this section exists to kill. Begin **Phase 1: Explore** immediately, proceed through **Phase 2: Present candidates as an HTML report**, and only pause at the point Phase 2 explicitly tells you to ask "Which of these would you like to explore?"
 
 The single legitimate reason to pause before starting: there is no recognizable codebase in the current working directory. Only then ask the user for the path to review.
+
+If the exploration finishes and nothing real surfaces — the architecture is already deep, nothing is bloated — say so plainly and stop. A short "no strong candidates: here's why the current shape holds up" is the honest result; don't manufacture weak candidates to fill the report.
 
 ---
 
@@ -68,7 +70,7 @@ If a candidate is already being resolved by recent commits, mark it `temporal: r
 
 ### 2. Present candidates as an HTML report
 
-Write a self-contained HTML file to the OS temp directory so nothing lands in the repo. Resolve the temp dir from `$TMPDIR`, falling back to `/tmp` (or `%TEMP%` on Windows), and write to `<tmpdir>/architecture-review-<timestamp>.html` so each run gets a fresh file. Open it for the user — `xdg-open <path>` on Linux, `open <path>` on macOS, `start <path>` on Windows — and tell them the absolute path.
+Write a self-contained HTML file to the OS temp directory so nothing lands in the repo. Resolve the temp dir from `$TMPDIR`, falling back to `/tmp` (or `%TEMP%` on Windows), and write to `<tmpdir>/architecture-review-<timestamp>.html` so each run gets a fresh file. Open it for the user — `xdg-open <path>` on Linux, `open <path>` on macOS, `start <path>` on Windows — and tell them the absolute path. If the open command fails (headless shell, no desktop), print the absolute path and tell the user to open it manually; the report is still written.
 
 The report uses **Tailwind via CDN** for layout and styling, and **Mermaid via CDN** for diagrams where a graph/flow/sequence reliably communicates the structure. Mix Mermaid with hand-crafted CSS/SVG visuals — use Mermaid when relationships are graph-shaped (call graphs, dependencies, sequences), and hand-built divs/SVG when you want something more editorial (mass diagrams, cross-sections, collapse animations). Each candidate gets a **before/after visualisation**. Be visual.
 
@@ -99,7 +101,12 @@ Do NOT propose interfaces yet. After the file is written, ask the user: "Which o
 
 Once the user picks a candidate, conduct a specification interview to walk the design tree with them — constraints, dependencies, the shape of the changed module, what sits behind the seam, what tests survive.
 
-Use the [`court-jester`](../court-jester/SKILL.md) skill for adversarial review of the proposed change, or conduct a collaborative specification interview.
+Route by what the candidate needs:
+
+- **Contested trade-off or rollout/coupling risk** — where the change could go wrong, or reasonable people would disagree on it — run [`court-jester`](../court-jester/SKILL.md) for adversarial review before committing to the shape.
+- **Open-ended "what shape should this take"** — where the design space is wide and nothing's obviously risky — run a collaborative specification interview (`grilling`) to walk the options with the user.
+
+Default to the interview; escalate to court-jester when the candidate carries real risk.
 
 **Deepening and simplification coexistence.** When a candidate is both a deepening target (consolidate fragmented logic) and a simplification target (split for testability), they are not contradictory — they operate on different axes. Depth is an interface property; internal splitting is an implementation property.
 
