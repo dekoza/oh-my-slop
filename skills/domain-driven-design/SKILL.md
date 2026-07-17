@@ -10,7 +10,6 @@ description: >
   DDD is overkill. Triggers on: "DDD", "domain model", "bounded context", "aggregate",
   "ubiquitous language", "context mapping", "anticorruption layer", "domain event",
   "subdomain", or when modeling complex business domains.
-  "domain event", "context mapping", "anticorruption layer", or when modeling complex business domains.
 ---
 
 # Domain-Driven Design
@@ -27,7 +26,7 @@ Do not let persistence, UI, frameworks, integration formats, or DDD vocabulary r
 
 ## When DDD Is Warranted
 
-DDD pays off when **three or more** of these are true:
+**Any one** of these justifiers is sufficient to warrant strengthening the model:
 - Business rules are complex (not just CRUD)
 - Domain experts use specific terminology that differs from technical terms
 - Multiple teams or systems share data but have different conceptual models
@@ -35,7 +34,7 @@ DDD pays off when **three or more** of these are true:
 - Invariants and lifecycle rules are non-trivial
 - Integration with external/legacy systems requires translation
 
-**When DDD is overkill:** Simple CRUD, generic subsystems, mainly technical problems, or projects where the domain is stable and well-understood. Use the lightest approach that works.
+**When DDD is overkill:** Simple CRUD, generic subsystems, or mainly technical problems. Use the lightest approach that works.
 
 ## Strategic Design
 
@@ -127,6 +126,10 @@ Coordinate **use cases**:
 
 **Application Services must NOT become the real domain model.** If they accumulate branching business rules, move the decisions into the domain objects.
 
+### Refactoring Toward Deeper Insight
+
+Refactor toward deeper domain insight, not only mechanical cleanliness. When a constraint, policy, process, or calculation carries domain meaning, make it an explicit named model concept instead of leaving it implicit in conditionals or helper code. If new behavior is hard to explain, test, or extend, a deeper model or missing implicit concept is usually waiting — find it rather than adding procedural branches.
+
 ## Ubiquitous Language Discipline
 
 - One concept gets **one term** inside a context.
@@ -176,6 +179,8 @@ Requirements:
 - **Foreign model leakage:** When legacy/vendor/API/persistence shapes appear in domain code — add an Anticorruption Layer.
 - **Large Aggregate:** When one transaction wants multiple Aggregates — list the invariants that require it. Otherwise coordinate by identity and events.
 - **Anemic domain:** When Application Services or controllers accumulate branching business rules — move decisions into domain objects.
+- **Primitive-carried rules:** When a primitive, flag, status code, boolean, or enum carries domain rules — promote it to a richer concept or Value Object.
+- **Awkward conditionals:** When new requirements force awkward conditional logic — search for a deeper model or missing implicit concept instead of adding procedural branches.
 - **Generic Repository:** When a Repository becomes table-shaped or starts enforcing business rules — reshape around Aggregate access.
 - **Noisy events:** When an event reads like a command, exposes framework artifacts, or describes a minor property change — rename, narrow, or remove it.
 - **Representation pressure:** When client rendering or query speed pressures the model shape — use projections, DTOs, or adapters instead of exposing Aggregate internals.

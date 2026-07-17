@@ -50,6 +50,14 @@ Code must assume production mess instead of merely tolerating it by accident. Pr
 - Treat **external input and external responses as untrusted**: validate syntax, shape, business plausibility, status, content type, and semantics.
 - Prevent malformed data from poisoning caches, queues, or downstream systems.
 
+### Security and Hostile Traffic
+- Production readiness includes security: secrets, permissions, administrative access, dependency trust, and input handling.
+- Treat hostile traffic, abusive users, and malformed requests as production load cases — not edge cases.
+
+### Interconnects and Routing
+- Design interconnects to avoid concentrated demand, hidden single points of failure, uncontrolled fan-out, and fragile chattiness.
+- Keep DNS, service discovery, routing, and load balancing health-aware and current.
+
 ### Observability
 - Build observability into **boundaries and failure points**: structured context, correlation identifiers, latency, throughput, error counts, saturation, queue depth, retry counts, breaker state, dependency health, version, configuration.
 - Avoid secrets in logs. Avoid retry-storm log spam.
@@ -67,12 +75,12 @@ Code must assume production mess instead of merely tolerating it by accident. Pr
 ## Trigger Rules
 
 - **Adding an outbound call:** Define timeout, retry eligibility, retry bounds, fallback/degraded mode, validation, and caller-survival behavior.
-- **Adding a queue/buffer/pool/cache/job:** Define capacity, full behavior, cleanup, miss/stampede/staleness behavior, pacing, pagination/streaming, and saturation monitoring.
+- **Adding a queue/buffer/pool/cache/log stream/job/collection-returning API:** Define capacity, full behavior, cleanup, miss/stampede/staleness behavior, dead-letter/poison-message handling, pacing, pagination/streaming, and saturation monitoring.
 - **Touching deployment/config/startup/migrations:** Make it idempotent or restartable. Give it durable state, auditability, verification, and rollback.
 - **Adding health checks/routing/handshakes:** Ensure traffic reaches only ready components. Health signals must reflect real ability to serve.
 - **Designing API/integration contracts:** Make failure modes explicit. Distinguish retryable from non-retryable. Prefer coarse-grained resilient interactions. Document timeout, retry, version, compatibility.
 - **Reviewing an incident:** Identify the failure chain, missing defenses, detection gaps, demand, saturation, latency distribution, queue age, dependency behavior, traffic concentration.
-- **Adding admin controls/chaos testing:** Require authorization, auditability, safe defaults, clear stop mechanisms, bounded blast radius, recovery paths.
+- **Adding admin controls/hostile-traffic handling/production testing (launch checks, capacity tests, game days, chaos/disaster simulations):** Require authorization, auditability, safe defaults, clear stop mechanisms, bounded blast radius, recovery paths.
 
 ## Stability Patterns
 
@@ -85,6 +93,9 @@ Code must assume production mess instead of merely tolerating it by accident. Pr
 | **Load shedding** | System is overloaded — drop low-priority work to protect core functions |
 | **Governor** | Expensive behavior needs rate-limiting to protect shared resources |
 | **Handshaking** | Components must signal readiness before receiving traffic |
+| **Steady state** | Routine cleanup and bounded growth (logs, caches, temp data) without human intervention |
+| **Let it crash** | Clean restart beats limping — only with supervision and isolation |
+| **Decoupling middleware** | Queues/messaging decouple callers from providers — only with depth/lag monitoring |
 
 ## Final Checklist
 
@@ -97,6 +108,7 @@ Before shipping to production:
 - [ ] Diagnostics cover logs, metrics, health, correlation, dependencies, saturation, queue depth, retries, breaker state?
 - [ ] Startup, deployment, migration, automation restartable, observable, authorized, auditable?
 - [ ] API contracts document failure modes, timeouts, retry expectations?
+- [ ] Interconnects, APIs, caches, scheduled work, security, and chaos tests have explicit production failure behavior?
 
 ## Reference
 

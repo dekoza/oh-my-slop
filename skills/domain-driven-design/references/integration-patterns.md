@@ -20,6 +20,7 @@ External System ──[foreign model]──▶ ACL (translator) ──[local mod
 - Your domain objects never reference foreign types.
 - The ACL is owned by the downstream (receiving) context.
 - Test the translation layer independently.
+- **A pass-through client is not an ACL.** Before calling something an Anticorruption Layer, verify that real translation exists. If it just forwards the foreign model under a new name, it's conformance wearing an ACL label.
 
 ```python
 # Foreign model (from external payment gateway)

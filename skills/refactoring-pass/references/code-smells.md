@@ -7,7 +7,8 @@ From Refactoring (Martin Fowler). Use to identify which structural problem you'r
 | Smell | Symptom | Move |
 |---|---|---|
 | **Long method** | Method does too much; needs comments to explain sections | Extract method |
-| **Long parameter list** | More than 3-4 parameters; parameters travel together | Introduce parameter object, preserve whole object |
+| **Long parameter list** | Parameter list grows beyond local reasoning (often around 3-4) — a signal, not a rule; parameters travel together | Introduce parameter object, preserve whole object |
+| **Confusing argument order** | Callers must memorize positional argument order to call correctly | Introduce parameter object, replace parameter with explicit methods, keyword arguments |
 | **Duplicated code** | Same code in two or more places | Extract method, pull up method, form template method |
 | **Primitive obsession** | Primitives (string, int) where a value object would carry meaning | Replace data value with object, replace type code with class |
 | **Temporary field** | Field only set in certain circumstances, leaving object incomplete | Extract class, move field |
@@ -24,6 +25,7 @@ From Refactoring (Martin Fowler). Use to identify which structural problem you'r
 | **Data clumps** | Same group of parameters passed everywhere | Extract class, introduce parameter object |
 | **Refused bequest** | Subclass doesn't use most of what it inherits | Replace inheritance with delegation, extract superclass |
 | **Middle man** | Class only delegates to another | Remove middle man, inline method |
+| **Global data / hidden dependencies** | Reliance on globals, singletons, or ambient context; dependencies invisible in signatures | Make dependencies explicit — refactor toward injection, parameters, or clear ownership |
 
 ## Conditional and Control Flow Smells
 
@@ -33,6 +35,9 @@ From Refactoring (Martin Fowler). Use to identify which structural problem you'r
 | **Complex conditional** | Hard-to-read conditional expression | Decompose conditional, extract method for condition |
 | **Nested conditionals** | Deeply nested if/else | Replace nested conditional with guard clauses |
 | **Switch statements** | Switch on type code that varies behavior | Replace type code with subclasses/state/strategy |
+| **Duplicate conditional fragments** | Identical code appears in all branches of a conditional | Consolidate duplicate conditional fragments — move the shared code out of the conditional |
+| **Repeated null checks** | Same null/None check with the same fallback behavior everywhere | Introduce null object |
+| **Mapping conditionals** | if/else or switch that only maps inputs to outputs | Replace with a lookup/decision table when the mapping logic is stable |
 
 ## Data and State Smells
 
@@ -42,6 +47,8 @@ From Refactoring (Martin Fowler). Use to identify which structural problem you'r
 | **Public fields** | Fields exposed directly, no encapsulation | Encapsulate field |
 | **Duplicated state-transition logic** | Same state machine logic repeated | Consolidate in one place, replace with state pattern |
 | **Boolean flags controlling behavior** | Boolean parameters that switch behavior | Replace parameter with explicit methods, extract method |
+| **Parameter reassignment** | A parameter is reassigned inside the method, obscuring what the input was | Remove assignments to parameters — use a local variable |
+| **Unnecessary setters** | Setter exists for a field that should not change after construction | Remove setting method |
 
 ## Abstraction Smells
 

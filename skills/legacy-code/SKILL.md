@@ -49,9 +49,10 @@ If current behavior is uncertain, **characterize it** — write tests that captu
 
 ### Seams
 A seam is a place where you can alter behavior without editing in that place. Use the **smallest seam** that unlocks the change:
-- Constructor injection, parameter injection, extracted method, wrapper around static call, factory indirection
+- Constructor injection, parameter injection, extracted method, wrapper around static call, adapter around a framework object, factory indirection, module boundary
 - Subclass seam only when language constraints leave no better option
-- Link/preprocessing seams only when ordinary object seams are impractical
+- Link, import, or preprocessing seams only when ordinary object seams are impractical
+- Prefer seams that remain useful after the current task over one-off test hooks
 - Decide whether each seam is for **sensing** (observing behavior), **separation** (substituting a dependency), or both
 
 ### Dependency Breaking

@@ -37,6 +37,16 @@ For scripts, one-time jobs, and admin tools:
 | **Authorized** | Requires appropriate permissions |
 | **Observable** | Progress and results are visible |
 
+## Production Testing
+
+Production tests, launch checks, capacity tests, game days, and chaos/disaster simulations are all legitimate — and all dangerous. Run them only with:
+
+- A hypothesis (what you expect to happen)
+- Limited blast radius
+- Observability on the affected path
+- A clear stop condition and recovery path
+- Findings fed back into design, operations, and tests
+
 ## Configuration Validation
 
 Validate configuration at startup, not at first use:

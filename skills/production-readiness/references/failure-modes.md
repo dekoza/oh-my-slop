@@ -84,3 +84,14 @@ When a downstream system is slow, propagate the pressure upstream:
 - **Blocking calls:** Let the caller wait (with timeout) rather than buffering.
 - **Rate limiting:** Slow down producers to match consumer capacity.
 - **Load shedding:** As a last resort when backpressure can't propagate fast enough.
+
+## Cache Failure Semantics
+
+- **A cache is not a source of truth.** Unless explicitly designed as one, the system must stay correct with the cache empty, cold, or gone.
+- **Dogpile mitigation:** When a hot key expires, coalesce concurrent rebuilds (single-flight / request coalescing) or stagger expiry — don't let every caller rebuild simultaneously.
+- **Cache unavailable:** Define the behavior explicitly — fall through to the backend (with a limit so the backend isn't crushed), serve degraded, or fail fast. Never assume the cache is always up.
+
+## Queue and Scheduled Job Semantics
+
+- **Dead letters / poison messages:** Define handling explicitly. A message that fails repeatedly must leave the main queue (dead-letter queue, quarantine) — not block or crash consumers forever.
+- **Jitter scheduled work:** Don't set periodic jobs on the same clock boundary (every :00). Spread start times so demand doesn't concentrate at the same instant across jobs and instances.

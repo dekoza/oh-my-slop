@@ -64,7 +64,7 @@ A health check should reflect the service's **real ability to serve traffic**:
 async def health_check():
     checks = {
         "database": await check_database(),
-        "cache": await check_cache(),
+        "session_cache": await check_cache(),  # hard dependency: sessions live here
         "disk_space": check_disk_space(),
     }
     all_healthy = all(c["healthy"] for c in checks.values())
@@ -74,7 +74,7 @@ async def health_check():
 
 **Rules:**
 - Check all dependencies the service needs to function.
-- Don't check optional dependencies (analytics, non-critical caches).
+- Don't check optional dependencies (analytics, caches that are pure optimizations). The cache above is checked only because it's a hard dependency — the service can't serve without its session store.
 - Return 503 if any required dependency is down.
 - Include per-dependency status in the response body.
 

@@ -40,6 +40,7 @@ Before refactoring, make sure you can detect regressions:
 - **Existing tests:** Run them. They must pass before you start.
 - **No tests:** Write characterization tests around the area you're changing. Capture current behavior, even if it's ugly.
 - **Unclear behavior:** Characterize first. Don't refactor code you don't understand.
+- **Never delete a failing test to complete a refactoring.** A failing test is a signal, not an obstacle.
 
 ### 3. Refactor in Small Steps
 Each step should be:
@@ -85,6 +86,7 @@ Prefer the simplest named move that helps:
 - **Separate behavior changes from structural changes.** Never mix a feature change with a refactoring in the same commit.
 - **Refactor the blocking smell, not every smell in sight.** Focus on what makes the current task hard.
 - **Use abstraction only when current evidence justifies it.** Remove pass-through layers, vague utilities, and just-in-case interfaces.
+- **Separate business policy from delivery mechanics** — not just from UI, but from formatting, transport, persistence, I/O, and frameworks.
 - **Preserve error semantics** unless intentionally changing behavior. Refactor error handling to reveal the main path.
 - **Keep patches reviewable.** Group related refactorings. Avoid giant patches that rename, move, redesign, and change logic together.
 
@@ -94,10 +96,10 @@ Prefer the simplest named move that helps:
 - **Fixing a bug in unclear code:** Characterize the current failure. Refactor only enough to make the fix visible before changing behavior.
 - **Weak tests:** Make the smallest possible structural move. Improve testability before broader cleanup.
 - **Third repetition:** When the same edit appears for a third time, remove duplication through clearer ownership instead of copying again.
-- **Mixed responsibilities:** When a function mixes phases or hidden side effects, split them before adding more logic.
+- **Mixed responsibilities:** When a function mixes phases, abstraction levels, or hidden side effects, split them before adding more logic. Keep variable scope tight and each function at one consistent abstraction level.
 - **Shotgun surgery:** When one change forces edits across many files, centralize the knowledge or introduce a clearer boundary.
 - **Repeated conditionals:** Decompose intent first. Introduce polymorphism or strategy only when the variation is real.
-- **UI/domain mixing:** Move rules toward domain objects. Keep presentation in adapters.
+- **UI/domain mixing:** Move rules toward domain objects. Keep presentation in adapters, and verify any required presentation synchronization.
 - **Rewrite temptation:** Choose the next small behavior-preserving transformation that recovers control.
 
 ## Stop Conditions
@@ -114,7 +116,7 @@ Stop refactoring when:
 
 - [ ] Observable behavior preserved?
 - [ ] Structural change, behavior change, and test updates separated?
-- [ ] Safety net in place (tests pass before and after)?
+- [ ] Safety net in place (tests pass before and after)? Any verification gap — behavior not protected by tests during the pass — recorded?
 - [ ] At least one real source of friction removed?
 - [ ] Names, responsibilities, control flow, data ownership, interfaces clearer?
 - [ ] Patch still reviewable and runnable?

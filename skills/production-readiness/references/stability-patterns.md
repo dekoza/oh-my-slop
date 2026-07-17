@@ -128,6 +128,30 @@ async def handle_request(request):
 
 **When to use:** Startup checks, health checks, any operation with hard prerequisites.
 
+## Steady State
+
+**Problem:** Routine operation accumulates state — log files, cache entries, temp data, ever-growing tables — until a disk fills or a human must intervene.
+
+**Solution:** For every mechanism that accumulates data, build the purge mechanism alongside it: log rotation, bounded cache eviction, periodic cleanup of temp files and expired rows. The system must run indefinitely without manual rescue.
+
+**When to use:** Anything that writes logs, caches data, or stores temporary/derived data. Unbounded growth is a slow-motion outage.
+
+## Let It Crash
+
+**Problem:** After certain failures a component is in a corrupt or unknown state — limping on makes things worse.
+
+**Solution:** Let the component crash and be restarted cleanly by a supervisor. A clean restart from a known-good state beats limping in an unknown one.
+
+**When to use:** Only with supervision (something restarts the crashed unit automatically) and isolation (the crash is contained to a small unit — process, actor, worker — not the whole service). Without both, this is just crashing.
+
+## Decoupling Middleware
+
+**Problem:** Synchronous calls couple the caller's fate to the provider's: the caller waits, holds resources, and fails when the provider fails.
+
+**Solution:** Put queues or messaging between components so callers hand off work and continue. Failures stop propagating directly; each side runs at its own pace.
+
+**When to use:** Only with monitoring of queue depth and consumer lag — the middleware is itself a dependency that can fill or fall behind. Unmonitored decoupling turns visible failures into silent backlogs.
+
 ## Pattern Selection
 
 | Situation | Pattern |
@@ -138,3 +162,6 @@ async def handle_request(request):
 | System overloaded, need to prioritize | **Load shedding** |
 | Expensive operation threatening normal traffic | **Governor** |
 | Required resource unavailable | **Fail fast** |
+| Unbounded accumulation (logs, caches, temp data) | **Steady state** |
+| Component in unknown state after failure | **Let it crash** (with supervision + isolation) |
+| Direct coupling propagates failures | **Decoupling middleware** (monitor depth/lag) |

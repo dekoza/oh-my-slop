@@ -55,6 +55,7 @@ Use the technique that matches the barrier:
 |---|---|
 | **Adapt Parameter** | Method needs only a narrow view of a hard-to-create parameter |
 | **Break Out Method Object** | Large method with local state that blocks extraction |
+| **Definition Completion** | Missing definitions block tests, in languages that allow completing them in test code |
 | **Encapsulate Global References** | Globals or singletons prevent substitution |
 | **Expose Static Method** | Useful logic trapped behind instance setup |
 | **Extract and Override Factory Method** | Construction of hard dependency must vary under test |
@@ -62,10 +63,14 @@ Use the technique that matches the barrier:
 | **Introduce Instance Delegator** | Static behavior needs an instance seam |
 | **Parameterize Constructor** | Hidden collaborators should become explicit constructor inputs |
 | **Parameterize Method** | Hidden collaborators should become explicit method parameters |
+| **Primitivize Parameter** | Real type is too costly to bring into the harness and primitive data is enough (unlike Adapt Parameter, passes raw data instead of a narrow view) |
+| **Pull Up Feature / Push Down Dependency** | Behavior or a dependency should move to a more testable level in a class hierarchy |
 | **Replace Global Reference with Getter** | Direct global access needs a seam |
 | **Subclass and Override Method** | Safer composition seams not available (last resort) |
 | **Supersede Instance Variable** | Test needs to replace a hard dependency held in a field |
 | **Link / Preprocessing Seams** | Language/build constraints make ordinary object seams impractical (last resort) |
+| **Template Redefinition** | Templated/generic code lets the test bind a substitute type at the link/instantiation seam (last resort) |
+| **Text Redefinition** | Preprocessing or text substitution can redefine a symbol for the test build only (last resort) |
 
 ## Selection Heuristic
 

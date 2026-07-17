@@ -10,8 +10,9 @@ Use **reduced complexity** as the primary success metric. Prefer the design that
 - **Change amplification** — how many places must change for one logical modification
 - **Hidden dependencies** — relationships callers must know but can't see from the interface
 - **Temporal coupling** — ordering constraints that aren't inherent in the problem
+- **Unknown unknowns** — the most dangerous symptom: it isn't obvious which code must change or which facts matter, so the reader can't even tell what they don't know
 
-When two designs are functionally equivalent, choose the one that reduces these four quantities.
+When two designs are functionally equivalent, choose the one that reduces these five quantities.
 
 ## Pull Complexity Downward
 
@@ -28,6 +29,10 @@ A first working patch is not done if it worsens future changeability. For non-tr
 1. Compare at least two plausible alternatives.
 2. Evaluate each on cognitive load, change amplification, and hidden dependencies.
 3. Choose the one that makes the *next* change easiest, not just the current one.
+
+### Strategic vs Tactical Programming
+
+**Tactical programming** optimizes for the current change landing fast: patch where the symptom is, accept whatever complexity that adds. Each patch is locally reasonable; globally, complexity compounds until every change is expensive. **Strategic programming** treats good design as the deliverable and working code as the byproduct: spend a little extra now on the interface or seam that makes future changes cheap. When you catch yourself patching around a structure instead of fixing it, name it — that's tactical debt, and it should be a conscious loan, not a habit.
 
 ## Information Hiding
 

@@ -84,6 +84,17 @@ No integration. Contexts are independent.
 - **Governance:** None needed.
 - **When to use:** When there's genuinely no dependency. Don't force integration where none exists.
 
+#### Big Ball of Mud (Containment)
+A neighboring system has no coherent model — tangled, inconsistent, unbounded.
+- **Governance:** Draw a boundary around it on the context map and translate at that boundary (typically via an Anticorruption Layer). Don't try to model inside it.
+- **Rule:** Treat a Big Ball of Mud as a context to contain and translate around, not as a model to spread. Its language never leaks into your contexts.
+
+#### Incremental Legacy Replacement
+A legacy system is phased out by moving its responsibilities into the new model one at a time.
+- **Governance:** Protect the new model behind translation layers; each migrated responsibility crosses the boundary through an explicit translation.
+- **Risk:** The intermediate state (two systems running side by side) must be managed deliberately, or the migration stalls halfway.
+- **When to use:** Replacing a legacy system where a big-bang rewrite is riskier than incremental migration.
+
 ## Choosing Context Boundaries
 
 Ask these questions:

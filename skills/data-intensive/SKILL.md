@@ -27,9 +27,21 @@ If you are reading this, the user is designing or changing a system where data c
 
 ## Decision Rules
 
+### Load and Performance
+- Describe load with concrete request rates, data volume, access patterns, and latency/throughput percentiles — including bottlenecks, contention, and tail behavior — **before** changing architecture.
+- Don't claim scalability from node count.
+
+### Data Model and Query Model
+- Choose data models, query models, and ownership boundaries from relationships, access patterns, consistency needs, update locality, evolution pressure, and whether data is primary or derived.
+- Relational vs document vs graph vs key-value is a fit decision — don't force a document model onto many-to-many data.
+
+### Storage Engines and Indexing
+- Match storage engines, indexes, and analytical layouts to write patterns, read patterns, range scans, recovery needs, write amplification, and OLTP-vs-analytics separation.
+- Memory residency is a performance strategy, not a durability model.
+
 ### Write Semantics
 Define explicitly for every write path:
-- When is a write **accepted** vs **persisted** vs **visible** vs **durable**?
+- When is a write **accepted** vs **persisted** vs **applied** vs **visible** vs **durable**? (Applied = the effect actually executed.)
 - What happens on timeout? (Unknown success — the write may or may not have applied.)
 - Is the write idempotent? Can it be safely retried?
 - What conflicts can happen, and how are they detected/resolved?
@@ -70,7 +82,8 @@ Choose replication topology based on:
 ### Transactions and Isolation
 - Match transaction isolation to the invariants you need to protect.
 - Make atomicity scope, commit behavior, recovery, and side-effect repair semantics explicit.
-- Use serializable isolation, locks, compare-and-set, versioning, or reconciliation where anomalies would break invariants.
+- Name the anomalies at each level: **lost update**, **write skew**, and **phantom** survive weaker isolation — read committed and snapshot isolation each prevent some but not all.
+- Where an anomaly would break an invariant, use serializable isolation (serial execution, two-phase locking, or SSI), locks, compare-and-set, versioning, or reconciliation.
 
 ### Coordination
 - Use linearizability, total order broadcast, atomic commit, or consensus **only** where the coordination problem truly requires agreement.
@@ -95,7 +108,7 @@ Choose replication topology based on:
 - **Routing reads to replicas:** Identify read-your-writes, monotonic-read, consistent-prefix, staleness, catch-up, failover, and conflict expectations.
 - **Partitioning data:** Test for locality, skew, hot keys, routing, rebalancing cost, secondary-index behavior, and cross-partition coordination.
 - **Choosing transaction isolation:** Map each anomaly to the invariant it can break. Add compensating design where needed.
-- **Using timestamps/leases/locks/consensus:** Define clock assumptions, quorum/session semantics, stale-authority behavior, and fencing.
+- **Using timestamps/leases/locks/consensus:** Define clock assumptions, quorum/session semantics, stale-authority behavior, and fencing. Use monotonic clocks for measuring elapsed time; do not use wall clocks for ordering unless clock assumptions are explicit.
 - **Reviewing data-intensive code:** Look for hidden source-of-truth ownership, missing idempotency, accidental exactly-once assumptions, unscoped ordering, schema drift, unrebuildable projections, unclear multi-writes, and unobservable lag or failure.
 
 ## Final Checklist

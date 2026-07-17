@@ -10,6 +10,7 @@ From DDD (Evans), DDD Distilled (Vernon), and Implementing DDD (Vernon). Use whe
 | An immutable descriptive concept | **Value Object** | Validated at construction, compared by value |
 | A consistency boundary for invariants | **Aggregate** | Small, root-protected, identity-referenced |
 | To capture a meaningful business fact | **Domain Event** | Past-tense, significant, not every field change |
+| A named, combinable business rule (predicate) | **Specification** | Combinable with and/or/not; domain language, not query language |
 | To hide complex creation logic | **Factory** | Prevents partially formed objects |
 | To access Aggregate Roots | **Repository** | Domain-oriented, not table-oriented |
 | A domain operation that spans multiple objects | **Domain Service** | Domain-meaningful, not technical |
@@ -113,6 +114,34 @@ class OrderSubmitted:
     total: Money
     submitted_at: datetime
 ```
+
+## Specifications
+
+**When:** A business rule answers whether something satisfies a criterion — eligibility, matching, validation — and deserves a name instead of living as an anonymous boolean expression duplicated across services.
+
+**Rules:**
+- **Named rule.** Encapsulate the predicate as an explicit domain object with an intention-revealing name.
+- **Combinable.** Combine with and/or/not — but only while each component's meaning stays readable.
+- **Three uses:** validation (does this object satisfy the rule?), selection (which objects match?), and building to order (create an object that satisfies the rule).
+- **Domain language, not query language.** A Specification that is just a persistence query builder isn't one. Keep querying mechanics separate unless the project deliberately provides translation.
+
+```python
+class OverdueInvoiceSpecification:
+    def __init__(self, as_of: date):
+        self._as_of = as_of
+
+    def is_satisfied_by(self, invoice: Invoice) -> bool:
+        return not invoice.is_paid and invoice.due_date < self._as_of
+
+# Validation: check a single candidate
+if overdue_spec.is_satisfied_by(invoice):
+    dunning.notify(invoice)
+
+# Selection: express query criteria as a domain rule
+invoices = invoice_repo.matching(overdue_spec)
+```
+
+**Prefer named Specifications over boolean flags or repeated conditionals** when the condition carries domain meaning: `EligibleForRefund`, `RouteSpecification`, `OverbookingPolicy`.
 
 ## Repositories
 

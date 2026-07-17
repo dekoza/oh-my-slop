@@ -45,6 +45,8 @@ Quorum: W + R > N
 
 **When to use:** High-availability systems (Dynamo-style: Cassandra, Riak, DynamoDB).
 
+**Caution:** Sloppy quorums and hinted handoff improve write availability but weaken quorum guarantees — W + R > N no longer ensures a read overlaps the latest write.
+
 ## Replication Lag Problems
 
 | Problem | Symptom | Mitigation |
@@ -82,6 +84,10 @@ Data is placed on a ring. Each node owns a range of the ring.
 |---|---|---|
 | **Document-partitioned (local) index** | Writes are fast (index on same shard) | Reads must query all shards |
 | **Term-partitioned (global) index** | Reads are fast (one shard has all matches) | Writes must update multiple shards |
+
+## Reconfiguration
+
+Failover, rebalancing, and resharding need the same scrutiny as steady-state behavior — most guarantee violations happen during membership changes, not normal operation.
 
 ## Choosing a Strategy
 

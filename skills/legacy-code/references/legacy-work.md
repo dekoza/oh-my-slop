@@ -19,7 +19,12 @@ Before changing anything, capture what the code does today:
 3. **Mark suspicious behavior.** If the code does something ugly but consumers might rely on it, add a comment: `# CHARACTERIZATION: this behavior is suspicious — verify with team before changing`.
 4. **Repeat** until you have enough tests to confidently detect regressions in the area you're changing.
 
-Characterization tests are not permanent documentation. They're safety nets. Once the area has proper tests, characterization tests can be replaced.
+**Choosing test points.** Two kinds of places make good homes for these tests:
+
+- **Interception point:** a place where a test can detect the effects of a planned change. When several planned changes can be protected by one test, prefer a broader interception point that covers them all.
+- **Pinch point:** a narrow point through which many effects pass — a few tests there cover a lot of behavior.
+
+Characterization tests are safety nets, not permanent documentation. Once the area has proper tests, they can be replaced — but never simply delete a passing characterization test. Replace it only with equal-or-better coverage, and keep tests of old behavior unless the behavior change is intentional.
 
 ## Phase 3: Find or Create a Seam
 
@@ -61,7 +66,7 @@ Now make the actual requested change:
 Once the behavior change is protected by tests:
 
 1. Remove temporary seams that are no longer needed.
-2. Clean up characterization tests — replace with proper tests if the area now has good coverage.
+2. Clean up characterization tests — replace with proper tests if the area now has good coverage. Never simply delete a passing characterization test: replace it only with equal-or-better coverage, and keep old-behavior tests unless the behavior change is intentional.
 3. Improve naming, extract methods, simplify conditionals — but only within the touched area.
 4. **Do not** expand the refactor beyond what the requested change justifies.
 
@@ -87,6 +92,12 @@ Run the final checklist:
 3. Isolate side effects behind collaborators.
 4. Add tests around extracted parts.
 5. Avoid editing many branches at once.
+
+### Static and Global Dependencies
+1. Create a wrapper or façade around the static/global access.
+2. Move callers to the wrapper.
+3. Inject the wrapper where possible.
+4. Reduce direct calls incrementally — no big-bang replacement.
 
 ### Database-Heavy Code
 1. Separate query/mapping from business policy.

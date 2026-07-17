@@ -7,9 +7,10 @@ From Designing Data-Intensive Applications (Martin Kleppmann). Use when designin
 ### Events vs Commands
 - **Command:** A request to do something (`CreateOrder`). May be rejected.
 - **Event:** A fact that something happened (`OrderCreated`). Immutable, append-only.
+- Events need **stable identifiers** (for deduplication), **correlation metadata** (to trace causality across consumers), and **versioned payloads** (so consumers can evolve).
 
 ### Event Log
-An append-only log of events is the source of truth. State is derived by replaying events.
+An append-only log of events is the source of truth. State is derived by replaying events. The log is a durable history, not merely a transport pipe — retain it for replay and rebuild, not just delivery.
 
 ```
 Event Log: [OrderCreated, PaymentReceived, OrderShipped, OrderDelivered]

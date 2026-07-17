@@ -166,6 +166,7 @@ Comments reduce complexity when they document what the code *cannot* say about i
 - **Do not compensate for:** bad names, poor decomposition, or confusing structure. Fix the code instead.
 - **When a comment explains *why* the interface is shaped this way** (not *what* it does), keep it. That's design information the code can't carry.
 - **When a comment grows long** to explain how to use an interface, the interface is too complex. Redesign it.
+- **Write the interface comment first.** Sketch the public contract before implementing; if the comment is hard to write or keeps getting complicated, the abstraction is wrong — revise it before writing the code that would cement it.
 
 ## Going deeper
 

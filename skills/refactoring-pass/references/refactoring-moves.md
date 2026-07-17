@@ -181,3 +181,15 @@ def get_pay_amount(self):
 1. Remove the delegating methods.
 2. Have callers call the delegate directly.
 3. Run tests.
+
+## Substitute Algorithm
+
+**When:** An algorithm is convoluted and a clearer one exists.
+
+Replace the whole algorithm with a clearer one that produces the same behavior. Verify equivalence with tests before and after — this is a bigger step than most moves, so make sure the safety net covers the algorithm's observable outputs.
+
+## Split Temporary Variable
+
+**When:** A temporary variable is assigned more than once and each assignment means something different.
+
+Give each meaning its own variable, named for its purpose. One variable, one meaning — reusing a temp for unrelated values hides intent and invites bugs.
