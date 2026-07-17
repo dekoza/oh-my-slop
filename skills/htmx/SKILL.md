@@ -1,10 +1,11 @@
 ---
 name: htmx
 description: >
-  hx-* attributes, HTMX AJAX requests, swap strategies, server-sent events, WebSockets,
-  hypermedia-driven UIs. Triggers on: "HTMX", "hx-*", "hx-get", "hx-post", "hx-swap",
-  "hx-trigger", "hx-target", "server-sent events", "SSE", "WebSockets", "hypermedia",
-  "partial reload", "HTMX swap", or when working with HTMX-driven UIs.
+  Use when adding, reviewing, or debugging HTMX behavior — hx-* attributes, swap
+  strategies, partial page updates, or the SSE/WebSocket extensions. Triggers on:
+  "HTMX", "hx-get"/"hx-post"/"hx-swap"/"hx-target", "partial reload", "nothing
+  happens when I click" (silent swap failure), "SSE", "WebSockets", or when
+  templates being edited contain hx-* attributes.
 scope: htmx
 target_versions: "HTMX 2.x"
 last_verified: 2026-03-19
@@ -31,46 +32,37 @@ Use this skill for HTMX implementation and integration. Read only the reference 
 4. **Form values auto-included** - Non-GET requests automatically include the closest enclosing form's values
 5. **Progressive enhancement** - Build HTML that degrades gracefully without JS. Use `hx-boost` for enhancing traditional link/form navigation; see `references/gotchas.md` for hx-boost scope and pitfalls
 6. **Escape user content** - Escape all user-supplied content server-side to prevent XSS
-7. **CSS lifecycle classes** - HTMX adds/removes CSS classes during requests — use for transitions and indicators
+7. **CSS lifecycle classes** - HTMX toggles `htmx-request`, `htmx-swapping`, `htmx-settling`, and `htmx-added` during requests — hook transitions and indicators on these
 8. **data-prefix supported** - All `hx-*` attributes can also be written as `data-hx-*` for HTML validation compliance
 
 ## Development Constraints
 
-Choosing HTMX implies the backend-partials paradigm: the server renders HTML fragments from templates/includes/partials, and frontend JavaScript stays minimal.
+Choosing HTMX implies the backend-partials paradigm: the server renders HTML fragments from templates/includes/partials, and frontend JavaScript stays minimal. Prefer backend-rendered components; use includes/partials/macros to avoid duplication and reduce inline HTML.
 
-- Prefer backend-rendered components and partials.
-- Default structure: templates plus includes/partials/macros.
-- Use partials/includes/macros to avoid duplication and reduce inline HTML.
-- Frontend tool preference order:
-  1) plain HTML + CSS
-  2) if needed → **HTMX**
-  3) for localized DOM/event behavior beyond HTMX → **Hyperscript**
-  4) last resort → **vanilla JavaScript** (only when its use can be justified)
-- JavaScript requires explicit justification. Legitimate cases: WebSocket client logic, Local Storage, PWA service workers, third-party library integration where no HTMX-compatible alternative exists.
+## When NOT to Use HTMX
+
+- Pure client-side UI state (menus, tabs with loaded content, accordions) — keep it client-side; a server round-trip adds nothing.
+- Rapid-feedback interactions — real-time collaborative editing, drag with instant visual feedback, per-keystroke validation.
+- DOM regions managed by React/Vue or another SPA framework — HTMX swaps get overwritten on the next render; never overlap the two.
+
+Details and alternatives: `references/gotchas.md`.
 
 ## Common Pitfalls
 
-- Detect the `HX-Request` header in server views to choose partial responses versus full-page responses.
-- Use template variables for dynamic markers (for example `{{ result_marker }}`) instead of hardcoded strings so templates and tests stay in sync.
+- **Silent target failures** - A mistyped `hx-target` drops the response with only an `htmx:targetError` event and no visible feedback. Run `htmx.logAll()` when "nothing happens".
+- **Errors don't render** - In HTMX 2.x, 4xx/5xx responses are not swapped, so the user sees no failure. Handle `htmx:responseError` globally or use the `response-targets` extension; allow 422 validation responses to swap via `htmx:beforeSwap`.
+- **Inheritance surprises** - Children inherit a parent's `hx-target` and most other attributes. Scope with explicit attributes on the child or block with `hx-disinherit`.
+- **Global `hx-boost`** - Boosting `<body>` breaks external links, downloads, and file uploads. Boost specific containers and set an explicit `hx-target`.
+- **Fragment/full-page mixups** - Branch on the `HX-Request` header server-side to serve fragments vs full pages, and set `Vary: HX-Request` so caches don't serve one as the other.
+- **Hardcoded test markers** - Use template variables for dynamic markers (e.g. `{{ result_marker }}`) instead of hardcoded strings so templates and tests stay in sync.
 
 ## Reference Map
 
-- All `hx-*` attributes, values, and modifiers: `references/attributes.md`
-- Triggers, headers, parameters, CSRF, caching, CORS: `references/requests.md`
-- Swap methods, targets, OOB swaps, morphing, view transitions: `references/swapping.md`
-- Events, JS API, configuration, extensions, debugging: `references/events-api.md`
-- Common UI patterns and examples: `references/patterns.md`
-- Official extensions (WS, SSE, Idiomorph, response-targets, head-support, preload): `references/extensions.md`
-- Gotchas, pitfalls, and practical guidance: `references/gotchas.md`
-- Cross-file index and routing: `references/REFERENCE.md`
-
-## Task Routing
-
-- Adding HTMX behavior to elements -> `references/attributes.md`
-- Configuring how/when requests fire -> `references/requests.md`
-- Controlling where/how responses render -> `references/swapping.md`
-- Handling events, JS interop, or config -> `references/events-api.md`
+- Adding HTMX behavior to elements (all `hx-*` attributes, values, modifiers) -> `references/attributes.md`
+- Configuring how/when requests fire (triggers, headers, parameters, CSRF, caching, CORS) -> `references/requests.md`
+- Controlling where/how responses render (swap methods, targets, OOB swaps, morphing, view transitions) -> `references/swapping.md`
+- Handling events, JS interop, configuration, debugging -> `references/events-api.md`
 - Building common UI patterns (search, infinite scroll, modals, etc.) -> `references/patterns.md`
-- Using WebSockets, SSE, morphing, preloading, response targeting, or head merging -> `references/extensions.md`
-- Avoiding common pitfalls, accessibility, error handling, architecture decisions -> `references/gotchas.md`
-- Cross-cutting concerns or architecture -> `references/REFERENCE.md` then domain-specific files
+- Using WebSockets, SSE, Idiomorph, preloading, response targeting, or head merging -> `references/extensions.md`
+- Pitfall depth, accessibility, error handling, architecture decisions -> `references/gotchas.md`
+- Cross-cutting concerns or unsure where to start -> `references/REFERENCE.md` then domain-specific files

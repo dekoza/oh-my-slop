@@ -72,3 +72,11 @@ Cross-file index for fast lookup. Find the topic, then open the linked reference
 | `beep!` (debug printing) | [advanced-and-interop.md](advanced-and-interop.md) |
 | Extension hooks (`_hyperscript.addCommand(...)`) | [advanced-and-interop.md](advanced-and-interop.md) |
 | Security considerations | [advanced-and-interop.md](advanced-and-interop.md) |
+
+## Debugging
+
+| Topic | File |
+|---|---|
+| Silent no-ops (unprocessed DOM, attribute typos, queue-dropped events) | [debugging.md](debugging.md) |
+| Parse errors (math parenthesization, missing `end`, JS syntax reflexes) | [debugging.md](debugging.md) |
+| Inspection tools (`log`, `beep!`, hdb debugger, event-listener panel) | [debugging.md](debugging.md) |

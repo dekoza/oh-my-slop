@@ -1,15 +1,12 @@
 ---
 name: full-calendar
 description: >
-  FullCalendar — the JavaScript event calendar library. Covers: initialization (CDN
-  script tags, ES6 imports), calendar options, views (dayGrid, timeGrid, list,
-  multiMonth), event sources (arrays, JSON feeds, functions), event model and parsing,
-  callbacks (dateClick, eventClick, select, eventDrop, eventResize, datesSet), drag-and-drop,
-  render hooks, content injection, toolbar configuration, localization, and CSS customization.
-  Triggers on: "FullCalendar", "calendar", "event calendar", "dayGrid", "timeGrid",
-  "event source", "dateClick", "eventDrop", "drag-and-drop", or when building/configuring/debugging
-  a FullCalendar instance. Especially relevant for HTMX-driven apps where FullCalendar fetches
-  events from a server-rendered JSON endpoint.
+  Use when building, configuring, or debugging a FullCalendar instance — views,
+  event sources, callbacks, drag-and-drop, or render hooks. Triggers on:
+  "FullCalendar", "event calendar", "dayGrid"/"timeGrid", "events show on the
+  wrong day" (exclusive end dates), "calendar not rendering", "dateClick or
+  drag-drop not working" (missing interaction plugin), a JSON event feed, or
+  wiring a calendar into an HTMX-driven app.
 ---
 
 # FullCalendar Skill
@@ -23,17 +20,6 @@ Comprehensive reference for FullCalendar v6 — a full-sized, drag-and-drop even
 3. Use the vanilla JS API — FullCalendar's `Calendar` class, not framework wrappers — unless the project explicitly uses React/Vue/Angular connectors.
 4. For HTMX-driven apps, prefer the JSON feed event source and server-rendered content patterns described in `htmx-patterns.md`.
 
-## Core Concepts
-
-FullCalendar has a small set of concepts that recur everywhere:
-
-- **Calendar instance**: created with `new FullCalendar.Calendar(el, options)` (global bundle) or `new Calendar(el, { plugins: [...], ...options })` (ES6). Call `.render()` to mount.
-- **Plugins**: each view type and feature is a separate package. The standard CDN bundle (`fullcalendar/index.global.min.js`) includes core, interaction, daygrid, timegrid, list, and multimonth.
-- **Event sources**: where events come from — an array, a JSON feed URL, or a function. FullCalendar auto-fetches when the visible date range changes.
-- **Callbacks (handlers)**: functions you pass as options that fire on user interaction or lifecycle events (e.g., `eventClick`, `dateClick`, `datesSet`).
-- **Render hooks**: four-hook pattern (`*ClassNames`, `*Content`, `*DidMount`, `*WillUnmount`) for customizing the DOM of events, day cells, headers, etc.
-- **Content injection**: render hooks that accept `*Content` can return plain text, `{ html: '...' }`, `{ domNodes: [...] }`, or a function returning any of these.
-
 ## Critical Rules
 
 1. **`end` dates are exclusive.** An event ending `2024-09-03` spans through `2024-09-02` and stops before `2024-09-03`. This matches iCalendar RFC 5545 and Google Calendar API semantics. Agents and backend code producing event JSON must respect this — off-by-one end dates are the most common FullCalendar bug.
@@ -44,6 +30,18 @@ FullCalendar has a small set of concepts that recur everywhere:
 6. **Content injection varies by environment.** In vanilla JS, `eventContent` returns text, `{ html }`, or `{ domNodes }`. React/Vue/Angular connectors have their own content injection patterns — do not mix them.
 7. **`allDay` inference.** If `allDay` is not explicitly set, FullCalendar infers it from `start`/`end` formats. ISO strings without time parts (e.g., `2024-09-01`) are treated as all-day; strings with time parts are not.
 8. **Toolbar values are space/comma separated.** Space = gap between groups. Comma = adjacent buttons. Example: `'prev,next today'` puts prev/next together, then a gap, then today.
+9. **Timezone shifts come from `timeZone` mismatches.** FullCalendar defaults to the browser's local timezone. ISO date strings with UTC offsets are converted into the calendar's zone; strings without offsets are taken as-is. Named timezones (anything beyond `local`/`UTC`) require a timezone plugin — without one they silently degrade to UTC — and JSON feeds receive the active zone via `timeZoneParam` so the backend can respond consistently.
+
+## Core Concepts
+
+FullCalendar has a small set of concepts that recur everywhere:
+
+- **Calendar instance**: created with `new FullCalendar.Calendar(el, options)` (global bundle) or `new Calendar(el, { plugins: [...], ...options })` (ES6). Call `.render()` to mount.
+- **Plugins**: each view type and feature is a separate package. The standard CDN bundle (`fullcalendar/index.global.min.js`) includes core, interaction, daygrid, timegrid, list, and multimonth.
+- **Event sources**: where events come from — an array, a JSON feed URL, or a function. FullCalendar auto-fetches when the visible date range changes.
+- **Callbacks (handlers)**: functions you pass as options that fire on user interaction or lifecycle events (e.g., `eventClick`, `dateClick`, `datesSet`).
+- **Render hooks**: four-hook pattern (`*ClassNames`, `*Content`, `*DidMount`, `*WillUnmount`) for customizing the DOM of events, day cells, headers, etc.
+- **Content injection**: render hooks that accept `*Content` can return plain text, `{ html: '...' }`, `{ domNodes: [...] }`, or a function returning any of these.
 
 ## HTMX Integration Context
 

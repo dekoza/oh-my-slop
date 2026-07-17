@@ -1,16 +1,13 @@
 ---
 name: ui-design-direction
 description: >
-  UI/UX direction, design review, or interface critique for dashboards, landing pages,
-  e-commerce pages, b2b admin tools, billing flows, SaaS/web/mobile apps, mental health
-  products, or real-time logistics control panels. Triggers on: "UI direction", "design
-  review", "interface critique", "dashboard design", "landing page", "e-commerce",
-  "billing flow", "SaaS UI", "mobile app UI", "trust signals", "conversion friction",
-  "accessibility", "hierarchy", "data-display", "color", "typography", "iconography",
-  "layout", "CTA", "chart patterns", "hostile design review", "stack-aware guidance",
-  "healthcare UI", "fintech UI", "security UI", "admin UI", "Tailwind", "React UI",
-  "SwiftUI", "React Native", "Flutter", "shadcn", or when the user wants UI/UX direction
-  or design critique. Not for illustration/image prompt generation or pure implementation/debugging work.
+  Use when the user wants UI/UX direction, a design system, or an interface
+  critique rather than implementation help. Triggers on: "design direction",
+  "how should this page/app look", requests for a landing page or dashboard
+  design, color palette or typography choices, "review this UI", concerns about
+  professionalism/trust/accessibility of an interface, or when a new UI is
+  started with no established visual direction. Not for debugging broken
+  CSS/JS or for generating illustration/image prompts.
 ---
 
 # UI Design Direction
@@ -25,11 +22,22 @@ The bundle contains:
 - 25 chart patterns
 - 13 stack-specific references
 
+## Delivery gate
+
+Every recommendation or review this skill produces must satisfy all of these before delivery:
+
+- [ ] the answer starts from the design-system workflow or explains why not
+- [ ] the recommendation includes concrete color and typography direction
+- [ ] accessibility concerns are explicit, not implied
+- [ ] anti-patterns are called out plainly
+- [ ] stack guidance is verified or clearly labeled as fallback
+- [ ] persisted output paths, if mentioned, are exact
+
 ## Execution notes
 
 1. Resolve the installed skill directory first.
 2. Run the bundled search tool from `<skill-dir>/scripts/search.py`.
-3. If the script cannot run in the current environment, say so and continue with manual design reasoning instead of bluffing.
+3. If the script cannot run in the current environment, or a search returns zero or empty results, say so and continue with manual design reasoning instead of bluffing.
 4. Do not install Python, use `sudo`, or modify the user's machine just to run this skill.
 
 ## When to prefer this skill
@@ -52,7 +60,7 @@ Extract these facts from the prompt or repository:
 - industry or domain
 - user constraints: accessibility, light mode, dense data, trust, conversion, motion limits
 - delivery goal: direction, critique, implementation guidance, or page override
-- visible stack, if any
+- visible stack, if any — check the repo for evidence (`package.json` dependencies, `tailwind.config.*`, framework config files) before declaring the stack unknown
 
 If the stack is not explicit and not visible in the repo, do not pretend to know it.
 
@@ -112,6 +120,8 @@ This creates:
 - `design-system/<project-slug>/pages/<page>.md`
 
 When working on a page override, check the page file first. If it exists, it overrides the master file.
+
+If `MASTER.md` (or the target page file) already exists, do not silently overwrite it — read it first and update it in place, telling the user which sections changed.
 
 ## Search reference
 
@@ -224,10 +234,4 @@ python3 <skill-dir>/scripts/search.py "dense analytics layout" --stack react
 
 ## Pre-delivery checklist
 
-Before finishing a UI recommendation or review, verify:
-- [ ] the answer starts from the design-system workflow or explains why not
-- [ ] the recommendation includes concrete color and typography direction
-- [ ] accessibility concerns are explicit, not implied
-- [ ] anti-patterns are called out plainly
-- [ ] stack guidance is verified or clearly labeled as fallback
-- [ ] persisted output paths, if mentioned, are exact
+Before finishing, re-verify the Delivery gate at the top of this skill.

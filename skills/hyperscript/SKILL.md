@@ -1,12 +1,12 @@
 ---
 name: hyperscript
 description: >
-  _hyperscript front-end scripting: `_=` attributes, `script=` / `data-script`,
-  `text/hyperscript` script tags, event handlers like `on click`, DOM commands like
-  `toggle`/`put`/`take`, `send`/`trigger`, `behavior`, `worker`, `socket`, or HTMX
-  companion scripting. Triggers on: "hyperscript", "_=" , "script=", "data-script",
-  "on click", "toggle", "HTMX companion", "inline hyperscript", or when the user
-  shows inline `_=` snippets without naming the language.
+  Use when writing, reviewing, or debugging _hyperscript — `_=` / `script=` /
+  `data-script` attributes, `on click` handlers, DOM commands like `toggle`/`put`,
+  `behavior` definitions, or local UI glue around HTMX events. Triggers on:
+  "hyperscript", "_=", "on click", "behavior", "HTMX companion", inline `_=`
+  snippets shown without naming the language, or hyperscript that silently does
+  nothing (parse errors).
 scope: hyperscript
 target_versions: "_hyperscript 0.9.x (verified against 0.9.14 public docs)"
 last_verified: 2026-04-06
@@ -36,6 +36,7 @@ Use this skill for `_hyperscript` implementation, debugging, and code review. Re
 **CDN install** (dependency-free, no build step):
 
 ```html
+<!-- Pin the latest 0.9.x release; 0.9.14 is the version this skill was verified against -->
 <script src="https://unpkg.com/hyperscript.org@0.9.14"></script>
 ```
 
@@ -76,13 +77,11 @@ _hyperscript.browserInit();
 
 5. **Use JS interop deliberately.** Use `call` and `get` for JS function calls; reserve inline `js ... end` for cases where hyperscript genuinely cannot express the logic. If the solution becomes mostly `js ... end`, use JavaScript directly.
 
-6. **Prefer local behavior, not global sprawl.** Hyperscript is strongest for localized DOM/event behavior scoped to individual elements. State shared across many unrelated elements belongs in JavaScript.
+6. **Prefer local behavior, not global sprawl.** Hyperscript is strongest for localized DOM/event behavior scoped to individual elements. State shared across many unrelated elements belongs in JavaScript, and HTMX request semantics stay in HTMX — use hyperscript only as local glue around `htmx:*` lifecycle events (disabling buttons, toggling classes; see HTMX Companion Guidance).
 
-7. **HTMX ownership stays separate.** Use hyperscript for local glue around HTMX events (disabling buttons, toggling classes on lifecycle events), not as a replacement for HTMX request semantics.
+7. **Advanced features require separate scripts.** `worker`, `socket`, and `eventsource` are NOT in the default hyperscript bundle. They require either the "Whole 9 Yards" release or individual script includes (`/dist/workers.js`, `/dist/socket.js`, `/dist/eventsource.js`). Always emit the correct script includes when using these features.
 
-8. **Advanced features require separate scripts.** `worker`, `socket`, and `eventsource` are NOT in the default hyperscript bundle. They require either the "Whole 9 Yards" release or individual script includes (`/dist/workers.js`, `/dist/socket.js`, `/dist/eventsource.js`). Always emit the correct script includes when using these features.
-
-9. **`behavior` definitions must precede `install`.** Behaviors defined locally (in `<script type="text/hyperscript">`) must appear before elements that install them. Behaviors loaded from external `._hs` files must load before the hyperscript script tag.
+8. **`behavior` definitions must precede `install`.** Behaviors defined locally (in `<script type="text/hyperscript">`) must appear before elements that install them. Behaviors loaded from external `._hs` files must load before the hyperscript script tag.
 
 ## HTMX Companion Guidance
 
@@ -102,6 +101,7 @@ HTMX request/response semantics, `hx-*` attributes, swap strategies, and extensi
 - DOM queries, DOM mutation, transitions, measurement: `references/dom-and-commands.md`
 - Event handlers, queueing, filters, async transparency, waits: `references/events-and-async.md`
 - `fetch`, JS interop, `behavior`, `worker`, `socket`, `eventsource`, extensions: `references/advanced-and-interop.md`
+- Parse errors, silent no-ops, debugging tools (`log`, `beep!`, hdb): `references/debugging.md`
 - Cross-file index and quick lookup: `references/REFERENCE.md`
 
 ## Task Routing
@@ -110,6 +110,7 @@ HTMX request/response semantics, `hx-*` attributes, swap strategies, and extensi
 - Understanding syntax, scope, conversions, functions, or exceptions -> `references/core-language.md`
 - Querying or mutating the DOM -> `references/dom-and-commands.md`
 - Event handlers, queueing, filters, or waits -> `references/events-and-async.md`
+- Hyperscript silently does nothing, parse errors, or inspecting behavior at runtime -> `references/debugging.md`
 - `fetch`, navigation, JS calls, inline JS, `behavior`, `worker`, sockets, eventsource, or extending the language -> `references/advanced-and-interop.md`
 - HTMX + hyperscript patterns -> HTMX Companion Guidance above
 - Unsure where to start -> `references/REFERENCE.md`

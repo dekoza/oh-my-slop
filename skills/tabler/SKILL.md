@@ -1,11 +1,11 @@
 ---
 name: tabler
 description: >
-  Tabler UI components, CSS classes, variants, or layout patterns. Comprehensive reference
-  for Tabler HTML/CSS framework. Triggers on: "Tabler", "Tabler UI", "Tabler component",
-  "Tabler CSS", "Tabler variant", "Tabler layout", "Tabler grid", "Tabler card", "Tabler
-  button", "Tabler icon", or when building UI with Tabler components, choosing CSS classes,
-  or implementing responsive layouts.
+  Use when building or styling UI with the Tabler HTML/CSS framework — choosing
+  component markup, CSS classes, variants, colors, or layout. Triggers on: "Tabler",
+  component requests like "Tabler card/button/modal/table", color classes
+  (".bg-*", ".text-*-fg"), "Tabler icons", dashboard or page layout with Tabler,
+  or when editing templates that already use Tabler classes.
 scope: tabler
 target_versions: "Tabler 1.x"
 last_verified: 2026-03-19
@@ -14,7 +14,7 @@ source_basis: official docs
 
 # Tabler UI Reference
 
-Tabler is the default UI framework for web projects in this context. Comprehensive reference guide for Tabler UI framework (<https://tabler.io/>). Use this skill when building UI with Tabler components, choosing CSS classes, or implementing responsive layouts.
+Reference guide for the Tabler UI framework (<https://tabler.io/>) — component markup, CSS classes, and responsive layout patterns.
 
 ## Quick Start
 
@@ -26,15 +26,15 @@ Tabler is the default UI framework for web projects in this context. Comprehensi
 ## Critical Patterns
 
 1. **Bootstrap Foundation** - Tabler extends Bootstrap 5.3. All Bootstrap utilities work (`.d-flex`, `.justify-content-*`, `.align-items-*`, grid system).
-2. **Color System** - Use `.bg-{color}` for backgrounds and `.text-{color}-fg` for foreground text. Light variants: `.bg-{color}-lt` with `.text-{color}-lt-fg`.
-3. **Size Modifiers** - Most components support size classes: `-xs`, `-sm`, (default), `-lg`, `-xl`.
+2. **Color System** - Use `.bg-{color}` for backgrounds and `.text-{color}-fg` for foreground text (full palette and variants: Color Reference below).
+3. **Size Modifiers** - Most components support size classes `-xs` to `-xl` (per-component availability: Size Reference below).
 4. **State Classes** - Common states: `.active`, `.disabled`, `.loading`.
 5. **Icon Integration** - Use Tabler Icons with `.icon` class. Size with `.icon-{size}` (1-10).
 6. **Responsive Utilities** - Use Bootstrap responsive classes: `.d-{breakpoint}-{display}`, `.col-{breakpoint}-{size}`.
 7. **Data Attributes** - Bootstrap JS components use `data-bs-toggle`, `data-bs-target`, `data-bs-dismiss`.
 8. **Card Hierarchy** - Always structure cards as `.card` > `.card-body` (or `.card-header`/`.card-footer`).
 9. **Form Structure** - Wrap inputs in `.mb-3` for spacing. Use `.form-label`, `.form-control`, `.form-select`.
-10. **Modal Initialization** - Modals require JavaScript initialization via Bootstrap's Modal API or `data-bs-toggle="modal"`.
+10. **JS vs CSS Components** - Most Tabler components are pure CSS. Modals, dropdowns, offcanvas, toasts, tooltips, and carousels need Bootstrap's JS bundle — initialize via `data-bs-toggle`/`data-bs-target` or the JS API. Charts, dropzone, and similar ship as separate plugins (`references/plugins/plugins.md`).
 
 ## Component Routing
 
