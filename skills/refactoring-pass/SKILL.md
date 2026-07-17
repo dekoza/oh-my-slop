@@ -88,6 +88,7 @@ Prefer the simplest named move that helps:
 - **Use abstraction only when current evidence justifies it.** Remove pass-through layers, vague utilities, and just-in-case interfaces.
 - **Separate business policy from delivery mechanics** — not just from UI, but from formatting, transport, persistence, I/O, and frameworks.
 - **Preserve error semantics** unless intentionally changing behavior. Refactor error handling to reveal the main path.
+- **Preserve public compatibility, or provide a transition path.** When a move changes a public signature, class hierarchy, or serialized shape, add the new form and migrate callers before removing the old one; check generated/reflected/serialized/plugin-facing usages before deleting anything "unused." See [Technique Safety](references/technique-safety.md).
 - **Keep patches reviewable.** Group related refactorings. Avoid giant patches that rename, move, redesign, and change logic together.
 
 ## Trigger Rules
@@ -126,6 +127,7 @@ Stop refactoring when:
 
 | File | Use When |
 |---|---|
-| [Code Smells](references/code-smells.md) | Identifying which smell to refactor and which move to apply |
+| [Code Smells](references/code-smells.md) | Identifying which smell to refactor and which move to apply — the six smell families, the full catalog, the smell→treatment priority map, and when *not* to treat a smell |
 | [Refactoring Moves](references/refactoring-moves.md) | Step-by-step instructions for specific refactoring techniques |
+| [Technique Safety](references/technique-safety.md) | Pre-flight checklists for executing a move safely (extraction, inlining, moving, encapsulation, conditionals, data, generalization) and the public-compatibility rule |
 | [Preparatory Refactoring](references/preparatory-refactoring.md) | Reshaping structure before adding a feature |
