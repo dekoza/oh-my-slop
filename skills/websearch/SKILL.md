@@ -1,12 +1,10 @@
 ---
 name: websearch
 description: >
-  Search the web using a locally installed SearXNG instance. Triggers on: "websearch",
-  "search for", "look up", "find online", "searx", "search the web", "search the
-  internet", "search online", or when the user wants to search the web, look something
-  up online, or find information on the internet. Also triggers when the user invokes
-  /skill:websearch to configure the endpoint or perform a search. The SearXNG endpoint
-  is configurable via `/skill:websearch url <endpoint_url>` and persists across session turns.
+  Use when the user wants a live web search run against their local SearXNG instance —
+  looking something up online, finding current information, or configuring the SearXNG
+  endpoint. Triggers on: "websearch", "search the web", "look this up online", "find
+  online", "searx", "/skill:websearch".
 ---
 
 # Websearch via SearXNG

@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Compact the current conversation into a handoff document for another agent to pick up. Use when switching sessions, resuming work later, or delegating to a fresh agent.
+description: Compact the current conversation into a handoff document — goal, progress, decisions, state, and next steps — saved to a temp file so a fresh agent can pick the work up.
 argument-hint: "What will the next session be used for?"
 disable-model-invocation: true
 license: MIT (adapted from mattpocock/skills)
@@ -29,6 +29,10 @@ What we're trying to accomplish. One paragraph.
 - The next concrete steps, in order.
 - Any blockers or open questions.
 
+## Decisions
+
+- Key choices already made and the reasoning behind them — so the next agent doesn't reopen settled questions or unknowingly contradict them.
+
 ## Current state
 
 - Git branch and HEAD commit.
@@ -49,6 +53,7 @@ Skills the next agent should load:
 3. **Tailor to the next session.** If the user described what the next session will focus on, shape the handoff around that. Don't dump everything equally.
 4. **Keep it under 500 words.** A handoff that's longer than a page is a document, not a handoff.
 5. **Save to temp, not workspace.** The handoff is a session artifact, not a project artifact. Write it to `$TMPDIR`, `/tmp`, or `%TEMP%` — never into the repo.
+6. **Record decisions, not just state.** Capture the choices made and why, so the next agent doesn't reopen settled questions or silently contradict them.
 
 ## When to use
 

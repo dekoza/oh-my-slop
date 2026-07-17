@@ -37,8 +37,8 @@ def test_documentation_lifecycle_skill_frontmatter_and_routing_cover_engineering
     assert "how-to" in skill_text.lower()
     assert "reference" in skill_text.lower()
     assert "explanation" in skill_text.lower()
-    assert "Socratic" in skill_text or "socratic" in skill_text
-    assert "dialectic" in skill_text.lower()
+    assert "probing questions" in skill_text.lower()
+    assert "tradeoff" in skill_text.lower()
     assert "documentation drift" in skill_text.lower()
     assert "canonical" in skill_text.lower()
 

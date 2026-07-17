@@ -1,10 +1,11 @@
 ---
 name: research
 description: >
-  Investigate a question against high-trust primary sources and capture the findings
-  as a cited Markdown file in the repo. Triggers on: "research this", "look into how X
-  works", "gather the docs/API facts on", "check the spec for", or when the user wants
-  reading legwork delegated to a background agent while they keep working.
+  Use when a question needs investigating against primary sources — official docs,
+  specs, source code, first-party APIs — and the findings captured as a cited Markdown
+  file, ideally delegated to a background agent while the user keeps working. Triggers
+  on: "research this", "look into how X works", "gather the docs/API facts on", "check
+  the spec for".
 license: MIT (adapted from mattpocock/skills)
 ---
 

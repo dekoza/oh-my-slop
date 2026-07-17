@@ -1,13 +1,11 @@
 ---
 name: cleanroom-rewrite
 description: >
-  Cleanroom rewrite: reimplement a codebase from scratch based on behavioral spec, without
-  copying implementation. Use when: rewriting without looking at original code, legal
-  reimplementations, spec-driven rewrites, behavior-preserving rewrites, or two-agent
-  processes (one specs, one implements). Triggers on: "cleanroom rewrite", "clean room
+  Use when reimplementing a codebase from scratch from a behavioral spec without copying
+  the original's code — a legal-safe reimplementation, a messy legacy rewrite, or a
+  two-agent spec-then-build process. Triggers on: "cleanroom rewrite", "clean room
   reimplementation", "spec-driven rewrite", "behavior-preserving rewrite", "rewrite from
-  scratch without copying", "legal reimplement", "behavioral specification", or when the
-  user describes a two-agent rewrite process.
+  scratch without copying", "legal reimplement".
 ---
 
 # Cleanroom Rewrite
@@ -281,16 +279,6 @@ These excuses have been observed during pressure testing. Do not use them.
 | "It's a tiny script — confidence tags are bureaucracy" | Tags are a contract with the impl agent, not a diary for the spec agent. Without them, the impl agent guesses what's negotiable. |
 | "Everything is obvious — skip tags for clear items" | "Obvious" is subjective and context-dependent. The impl agent has no memory of the original code. If confidence isn't explicit in the spec, it doesn't exist. |
 | "Nobody will know if I peek at the original" | The value of the wall isn't purity — it's that the impl agent makes independent decisions. Reading the original eliminates that independence. |
-
-## Red Flags — STOP
-
-If you catch yourself thinking any of these, STOP and re-read the relevant skill section:
-- "Just include the code for clarity" → Rule 1: No code snippets. Period.
-- "I'll just read a few lines" → Impl Rule 1: The spec is the only contract.
-- "It's too small to need tags" → Rule 4: Tag every behavioral claim.
-- "I'll mark it as context" → Context snippets are still contamination.
-- "I'll rewrite it from scratch" → You read the original. The wall is breached.
-- "The spec is wrong, let me check the original" → Flag the gap. Use ASSUMPTIONS.md. Phase 3 will catch it. |
 
 ## Process Philosophy
 

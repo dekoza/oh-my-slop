@@ -2,10 +2,8 @@
 name: triage
 description: >
   Move issues and external PRs through a state machine of triage roles — categorise,
-  verify the claim, grill if needed, and write durable agent-ready briefs. Maintains
-  an .out-of-scope/ knowledge base of rejected requests. Triggers on: "triage",
-  "what needs my attention", "look at issue #N", "move #N to ready-for-agent",
-  "what's ready for agents to pick up".
+  verify the claim, grill if needed, and write durable agent-ready briefs — maintaining
+  an .out-of-scope/ knowledge base of rejected requests.
 license: MIT (adapted from mattpocock/skills)
 disable-model-invocation: true
 ---

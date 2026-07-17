@@ -1,12 +1,11 @@
 ---
 name: documentation-lifecycle
 description: >
-  Creating, revising, auditing, or reconciling software documentation for planned or
-  implemented changes. Triggers on: "documentation", "spec", "ADR", "runbook", "maintenance
-  docs", "API reference", "tutorial", "how-to", "explanation", "documentation drift",
-  "missing acceptance criteria", "which docs must change", "spec interview", or when
-  documentation is part of the task. Covers: feature specs, ADRs, API/config reference,
-  runbooks, maintenance docs, tutorial/how-to/reference/explanation content.
+  Use when documentation must stay truthful as software changes — writing or revising a
+  spec, ADR, runbook, or API/config reference, splitting user-facing docs by purpose, or
+  reconciling documentation drift. Triggers on: "write a spec", "ADR", "runbook", "which
+  docs must change", "documentation drift", "missing acceptance criteria", "spec
+  interview", "update the API reference".
 ---
 
 # Documentation Lifecycle
@@ -52,7 +51,7 @@ This skill exists to stop two failure modes:
 2. **Spec before implementation for non-trivial behavior changes.** If the task changes user-visible or operator-visible behavior, draft or update the canonical feature spec first.
 3. **Interview before drafting when the request is vague.** Do not turn ambiguity into fake confidence.
 4. **Use adaptive questioning, not bureaucratic questionnaires.** Start with 3-5 high-leverage questions, then branch only where uncertainty remains.
-5. **Borrow the spirit of court-jester.** Use Socratic questioning to expose assumptions and dialectic synthesis to resolve real tradeoffs before freezing the spec.
+5. **Probe before freezing.** Question the assumptions behind the request, and surface real tradeoffs, before locking a spec. Skip the adversarial theater when there is no genuine conflict.
 6. **Separate engineering documentation from user-facing documentation.** Internal implementation docs and external user docs solve different problems.
 7. **Prefer updating the nearest canonical doc over spawning document sprawl.** Do not create documentation theater.
 8. **Status matters.** Mark authoritative docs clearly: Draft, Active, Superseded, Deprecated.
@@ -85,14 +84,14 @@ This skill exists to stop two failure modes:
 5. **Audit for drift** — check status markers, supersession links, acceptance criteria, and whether README or other overview docs now point at stale targets.
 6. **Finish only after reconciliation and file verification** — documentation work is incomplete if the code changed but the authoritative docs did not. Verify the files exist on disk before declaring the task done.
 
-## Interview and Synthesis Guidance
+## Interview Guidance
 
-When the request is muddy, start by steelmanning the user’s goal in 1-2 sentences. Then ask only the questions needed to freeze the contract. Use:
+When the request is muddy, restate the user's goal in 1-2 sentences to confirm you have it right. Then ask only the questions needed to freeze the contract:
 
-- **Socratic questions** for unclear definitions, shaky evidence, hidden stakeholders, and failure consequences
-- **Dialectic synthesis** when the user’s desired outcome conflicts with a real counter-pressure such as speed vs safety, flexibility vs specificity, or internal simplicity vs public clarity
+- Ask **probing questions** where definitions are unclear, evidence is shaky, stakeholders are hidden, or failure consequences are unstated.
+- When the desired outcome collides with a real counter-pressure — speed vs safety, flexibility vs specificity, internal simplicity vs public clarity — name both sides and resolve the tradeoff explicitly before freezing the spec.
 
-If there is no real conflict, do not perform fake adversarial theater. Clarify, confirm, and move on.
+If there is no real conflict, do not manufacture one. Clarify, confirm, and move on.
 
 ## Reference Map
 
