@@ -401,3 +401,12 @@ pytest --create-db
 ```
 
 **Warning**: `--reuse-db` can silently hide schema mismatches. If tests fail with mysterious errors after migrations, run `pytest --create-db` to rebuild.
+
+### 18. Playwright + Django E2E pitfalls
+**Why**: Browser E2E tests against `live_server` fail in ways plain Django tests never do — wrong base URLs and missing static assets produce silent misroutes and blank pages.
+
+- Prevent redirect loops: when the `live_server` fixture is used, always navigate with `live_server.url`.
+- Make the navigation target explicit: a missing `base_url`/`live_server.url` can silently route tests to localhost and fail.
+- Static assets are not automatically served by Django `live_server`; configure static handling for test runs.
+- If static assets are required, run `manage.py collectstatic --noinput` before launching browser E2E tests.
+- Fallback when browser E2E is unavailable: cover flow behavior with Django test client integration tests (or `httpx` transport where appropriate).

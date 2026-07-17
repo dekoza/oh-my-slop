@@ -1,14 +1,11 @@
 ---
 name: django-discipline
 description: >
-  Mandatory Django workflow enforcement. Use when working in any Django project.
-  Enforces: migrations (always run makemigrations first), ORM queries (select_related,
-  prefetch_related, distinct()), imports (PEP 562 lazy __getattr__, # Circular import:
-  comments), linting (ruff check --fix), and model changes. Overrides default Python
-  patterns with Django conventions. Triggers on: "Django project", "manage.py exists",
-  "pyproject.toml contains django", "requirements.txt contains django", or when any
-  code is created/modified in a Django project. This is the DISCIPLINE skill — for
-  framework reference (patterns, gotchas, internals), use django instead.
+  Use whenever creating, modifying, or fixing any code in a Django project —
+  a project with manage.py present or django in pyproject.toml/requirements.txt.
+  Applies to every change in such a project, whether or not the change looks
+  Django-specific. This is the discipline skill — for framework pattern lookups,
+  use django instead.
 scope: django
 target_versions: "Django 6.0, Python 3.12+"
 last_verified: 2026-06-23
@@ -108,7 +105,6 @@ If using WhiteNoise: `WhiteNoiseMiddleware` must be **second** in `MIDDLEWARE`, 
 
 ## Adjacent Tools
 
-- **Celery**: Load the `celery` skill for task patterns
 - **DRF**: Load the `drf` skill for API patterns
 - **django-debug-toolbar**: Dev-only. Never ship to production. Verify `INTERNAL_IPS` is set.
 - **Reference patterns** (model fields, views, templates, forms, admin, auth, middleware): Load the `django` skill
@@ -119,15 +115,15 @@ Every item in the checklist traces to a real production bug. If you skip a step,
 
 ### pytest Settings Module Verification
 
-**Before running pytest**, verify `pyproject.toml` points to test settings:
+**Before running pytest**, verify the pytest config (`pyproject.toml` / `pytest.ini` / `setup.cfg`) points `DJANGO_SETTINGS_MODULE` at the project's dedicated test settings module — whatever the project names it — never at the production/default settings:
 
 ```toml
 # pyproject.toml
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings_test"  # NOT config.settings
+DJANGO_SETTINGS_MODULE = "<project>.settings_test"  # never the production settings module
 ```
 
-If it points to `config.settings`, E2E tests will hit production CSP, CSRF middleware, and database — causing auth failures, origin-check errors, and data pollution. Test settings must:
+If it points at production settings, tests hit production CSP, CSRF middleware, and database — causing auth failures, origin-check errors, and data pollution. Test settings must:
 
 - Disable/remove CSRF middleware (`CsrfViewMiddleware`)
 - Add `http://127.0.0.1` to `CSRF_TRUSTED_ORIGINS` and `ALLOWED_HOSTS`

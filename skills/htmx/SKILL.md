@@ -36,6 +36,8 @@ Use this skill for HTMX implementation and integration. Read only the reference 
 
 ## Development Constraints
 
+Choosing HTMX implies the backend-partials paradigm: the server renders HTML fragments from templates/includes/partials, and frontend JavaScript stays minimal.
+
 - Prefer backend-rendered components and partials.
 - Default structure: templates plus includes/partials/macros.
 - Use partials/includes/macros to avoid duplication and reduce inline HTML.

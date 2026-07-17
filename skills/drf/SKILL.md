@@ -1,36 +1,16 @@
 ---
 name: drf
 description: >
-  Django REST Framework (DRF) work: building, securing, or fixing REST APIs powered by
-  `rest_framework`. Covers: serializers, fields, relations, validators, views (`APIView`,
-  `@api_view`, generics, viewsets), routers, `@action`, authentication, permissions,
-  throttling, filtering, pagination, parsers, renderers, content negotiation, versioning,
-  testing (`APIClient`/`APIRequestFactory`), and `REST_FRAMEWORK` settings. Triggers on:
-  "DRF", "Django REST Framework", "serializer", "APIView", "@api_view", "viewset",
-  "router", "permission", "throttle", "filter", "pagination", "content negotiation",
-  "API versioning", or when working with DRF APIs. Do not use for pure Django ORM, views,
-  templates, forms, or admin work outside the REST framework surface.
+  Use when building, securing, or fixing REST APIs with Django REST Framework
+  (anything importing rest_framework). Triggers on: "DRF", "serializer",
+  "ViewSet", "APIView", "router", "permission classes", "throttling",
+  "pagination". Not for pure Django ORM/template/form/admin work — use django
+  for those.
 ---
 
 # Django REST Framework Reference
 
-Use this skill for DRF API implementation: serializers, views, viewsets, routers, authentication, permissions, throttling, filtering, pagination, testing, and configuration. Read only the reference files needed for the task. For pure Django framework work (ORM, templates, forms, admin), load `@django` instead.
-
-## Quick Start
-
-1. Identify the primary domain of the task (serializers, views/viewsets, auth/permissions, filtering/pagination, requests/responses, parsers/renderers, testing/settings, or internals).
-2. Open the single best-matching file from `references/`.
-3. Open a second reference only if the task clearly crosses domains.
-4. Implement using verified DRF patterns and include tests.
-5. State which references you used and what tests or verification the change needs.
-
-## When Not To Use This Skill
-
-- **Pure Django ORM/views/templates** — Load `@django` for models, querysets, template rendering, forms, admin, or middleware outside `rest_framework`.
-- **HTMX interaction flows** — For partial rendering, swaps, triggers, load `@django-htmx-tabler-knowledge`.
-- **Tabler UI work** — For Tabler components and CSS patterns, load `@tabler`.
-- **HTTP status code deep semantics** — For 400 vs 422, 401 vs 403, redirect codes, load `@http-status-codes`.
-- **Project-specific business rules** — Load the project's custom skill.
+Use this skill for DRF API implementation: serializers, views, viewsets, routers, authentication, permissions, throttling, filtering, pagination, testing, and configuration. Apply the critical rules below, then route to the reference files the task needs.
 
 ## Critical Rules
 
@@ -48,43 +28,40 @@ Use this skill for DRF API implementation: serializers, views, viewsets, routers
 12. **`CursorPagination` defaults to `-created` ordering** — Models MUST have a `created` field, or override the `ordering` attribute.
 13. **`Request` uses composition, not inheritance** — DRF `Request` wraps Django `HttpRequest` via composition. Access standard attributes via `request.META`, `request.session` etc.
 14. **`extra_kwargs` silently ignored for explicit fields** — If you declare a field on the serializer class AND have `extra_kwargs` for it, the `extra_kwargs` do nothing.
+15. **Serializer relations cause N+1 queries** — Nested and related serializer fields fire one query per object during list serialization. Pair every list-returning view with `select_related`/`prefetch_related` on its queryset (django-discipline's ORM rule applies to DRF views too).
 
-## Reference Map
+## When Not To Use This Skill
 
-| File | Domain | Use For |
-|------|--------|---------|
-| `serializers-fields.md` | Serialization | Serializer hierarchy, field types, relations, validators, nested writes |
-| `views-viewsets.md` | Views & Routing | APIView, generics, mixins, viewsets, @action, routers |
-| `auth-permissions.md` | Security | Authentication, permissions, throttling |
-| `filtering-pagination.md` | Query Control | Filter backends, search, ordering, pagination |
-| `requests-responses.md` | HTTP Layer | Request, Response, exceptions, status codes |
-| `parsers-renderers.md` | Content | Parsers, renderers, negotiation, metadata |
-| `testing-settings.md` | Testing & Config | Test utilities, complete settings reference |
-| `internals.md` | Deep Internals | Dispatch flow, parsing pipeline, versioning, schemas |
+- **Pure Django ORM/views/templates** — Load `django` for models, querysets, template rendering, forms, admin, or middleware outside `rest_framework`.
+- **FastAPI / Django Ninja APIs** — This skill is `rest_framework`-only; do not apply DRF patterns to other API frameworks.
+- **HTMX interaction flows** — For partial rendering, swaps, triggers, load `htmx`.
+- **Tabler UI work** — For Tabler components and CSS patterns, load `tabler`.
+- **HTTP status code deep semantics** — For 400 vs 422, 401 vs 403, redirect codes, load `http-status-codes`.
+- **Project-specific business rules** — Load the project's custom skill.
 
-## Task Routing
+## Routing
 
-1. Choose the primary reference from the routes below.
-2. Add one secondary reference only when the task clearly crosses domains.
-3. Keep the answer grounded in the reference files actually used.
-4. State whether tests or verification checks are required.
+Choose the primary reference; add one secondary reference only when the task clearly crosses domains. Keep the answer grounded in the reference files actually used.
 
 **Single-domain** (one file):
-- Serializer work → `references/serializers-fields.md`
-- View/viewset/router work → `references/views-viewsets.md`
-- Auth/permission/throttling work → `references/auth-permissions.md`
-- Filtering/pagination → `references/filtering-pagination.md`
-- Request/response/exception handling → `references/requests-responses.md`
-- Parser/renderer customization → `references/parsers-renderers.md`
-- Test writing or settings → `references/testing-settings.md`
-- Internal hooks/debugging/versioning → `references/internals.md`
+
+| Use for | File |
+|---------|------|
+| Serializer hierarchy, field types, relations, validators, nested writes | `references/serializers-fields.md` |
+| APIView, generics, mixins, viewsets, `@action`, routers | `references/views-viewsets.md` |
+| Authentication, permissions, throttling | `references/auth-permissions.md` |
+| Filter backends, search, ordering, pagination | `references/filtering-pagination.md` |
+| Request, Response, exceptions, status codes | `references/requests-responses.md` |
+| Parsers, renderers, negotiation, metadata | `references/parsers-renderers.md` |
+| Test utilities, complete settings reference | `references/testing-settings.md` |
+| Dispatch flow, parsing pipeline, versioning, schemas | `references/internals.md` |
 
 **Cross-domain** (two files):
+
 - Full CRUD API → `views-viewsets.md` + `serializers-fields.md`
 - Secured API → `auth-permissions.md` + `views-viewsets.md`
 - Filtered/paginated lists → `filtering-pagination.md` + `views-viewsets.md`
 - Custom content handling → `parsers-renderers.md` + `requests-responses.md`
-- Serializer with permissions → `serializers-fields.md` + `auth-permissions.md`
 - Serializer with permissions → `serializers-fields.md` + `auth-permissions.md`
 
 ## Output Expectations
@@ -92,11 +69,3 @@ Use this skill for DRF API implementation: serializers, views, viewsets, routers
 - Name the reference files used.
 - State the minimum tests or verification steps.
 - Call out the critical DRF rules applied.
-
-## Content Ownership
-
-This skill owns DRF patterns: `rest_framework`, serializers, views, viewsets, routers, authentication, permissions, throttling, filtering, pagination, parsers, renderers, testing, versioning, and settings.
-
-Pure Django ORM, views, URLs, templates, forms, admin, auth, middleware, signals, and project architecture are out of scope — load `@django` for those.
-
-For HTMX integration patterns, load `@django-htmx-tabler-knowledge`. For Tabler UI components, load `@tabler`.

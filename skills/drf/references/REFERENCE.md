@@ -17,7 +17,6 @@ These topics are NOT covered by the DRF skill:
 - **Django admin** → `@django`
 - **HTMX attributes / swap strategies** → `@htmx`
 - **Tabler UI components** → `@tabler`
-- **Django + HTMX + Tabler patterns** → `@django-htmx-tabler-knowledge`
 - **HTTP status code deep semantics** → `@http-status-codes`
 
 ## Reference Guides

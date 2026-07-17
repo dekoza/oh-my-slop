@@ -1,14 +1,11 @@
 ---
 name: django
 description: >
-  Django 6.0 framework reference. Use when looking up Django patterns, ORM queries,
-  view classes, template tags, form validation, admin customization, auth flows,
-  middleware setup, signal handlers, or project structure. Covers Django 6.0 internals,
-  gotchas, and best practices. Triggers on: "Django", "manage.py", "models.py",
-  "views.py", "templates", "forms.py", "admin.py", "signals", "middleware", "ORM",
-  "select_related", "prefetch_related", "migration", "makemigrations", or when
-  working with Django-specific code. This is the REFERENCE skill — for workflow
-  enforcement (migrations, imports, linting), use django-discipline instead.
+  Use when working with Django code — looking up ORM, view, template, form, admin,
+  auth, settings, testing, or async patterns, or debugging Django-specific behavior.
+  Triggers on: "Django", "manage.py", "models.py", "ORM", "migration", "template
+  tag", "Django admin", or any file inside a Django project layout. This is the
+  reference skill — the mandatory workflow checklist lives in django-discipline.
 scope: django
 target_versions: "Django 6.0, Python 3.12+"
 last_verified: 2026-03-19
@@ -17,98 +14,33 @@ source_basis: production experience
 
 # Django 6.0 Framework Reference
 
-Use this skill for Django 6.0 framework implementation and integration. Django is a high-level Python web framework that encourages rapid development and clean, pragmatic design. This skill covers the core framework patterns, ORM, views, templates, forms, admin, authentication, testing, and internal architecture. Read only the reference files needed for the task.
+Route the task to the matching reference file below and read only what the task needs. Workflow enforcement — migrations, linting, N+1 prevention, import discipline, rename safety, testing guardrails — lives solely in the `django-discipline` skill, which applies to every change in a Django project alongside this reference.
 
-## Quick Start
+## Critical Gotchas
 
-1. Identify the domain of the task (models, views, URLs, templates, forms, admin, auth, testing, or architecture).
-2. Open the matching file from `references/`.
-3. Implement using Django conventions and best practices for version 6.0.
-4. Validate using Django's testing framework and ensure migrations are included.
+1. **Model field verification** — Read the actual model definition before writing queries or test fixtures. Do not guess field names.
+2. **auto_now=True bypass** — Fields with `auto_now=True` cannot be set via `.save()`. Use `.objects.filter().update(field=value)` to override.
+3. **TemplateResponse for deferred rendering** — Use `TemplateResponse` when middleware must inspect or modify template context after the view returns. Use `render()` for simple views where context is final.
+4. **URL patterns are hierarchical** — Child URLconf should NOT repeat the parent prefix. Catch-all patterns (`path("")`) must be LAST in `urlpatterns`.
+5. **Template tags don't work in static files** — `{{ var|safe }}` and `{% url ... %}` are NOT processed in external `.js` / `.css` files — they're served as static assets. Solutions: inline `<script>` config block, data attributes on DOM elements, or a JSON endpoint view.
+6. **JSON traps** — Values stored in `TextField` are strings; call `json.loads()` before dictionary-style access. Django renders Python lists in templates as `[\'item\']` (single quotes); use `json.dumps()` in the view context for valid JS/JSON.
+7. **Templates own markup** — Inline HTML in Python is last resort and stays under ~60 characters (hard max 66) per indentation block; beyond that, move it into a template/include/partial.
+8. **Form validation at the model level** — Django forms inherit model validation. Define custom validation in model `clean()` and form `clean_*()` methods.
 
-## Critical Rules
+## Routing
 
-1. **Model field verification** - Always read the actual model definition before writing queries or test fixtures. Do not guess field names.
-2. **select_related/prefetch_related** - Use `.select_related()` for FK and `.prefetch_related()` for M2M to prevent N+1 queries. This is the #1 Django performance bug.
-3. **distinct() after M2M filtering** - Always call `.distinct()` after filtering through M2M or reverse FK relations to prevent duplicate rows.
-4. **auto_now=True bypass** - Fields with `auto_now=True` cannot be set via `.save()`. Use `.objects.filter().update(field=value)` to override.
-5. **TemplateResponse for deferred rendering** - Use `TemplateResponse` when middleware must inspect or modify template context after the view returns (e.g., injecting user data, modifying variables). Use `render()` for simple views where context is final and no middleware interaction is needed.
-6. **URL patterns are hierarchical** - Child URLconf should NOT repeat parent prefix. Catch-all patterns (`path("")`) must be LAST in `urlpatterns`.
-7. **Circular import prevention** - Use PEP 562 lazy `__getattr__` in `__init__.py` or place deferred imports inside functions with `# Circular import:` comments.
-8. **Cross-context imports via public API** - Import from public interface (`from apps.context import Symbol`), never from internal modules (`from apps.context.models import Symbol`).
-9. **Test fixtures and migrations** - Check model constraints and field types before writing test fixtures. Use `update_or_create()` to avoid unique constraint violations.
-10. **Form validation at the model level** - Django forms inherit model validation. Always define custom validation in model `clean()` and form `clean_*()` methods.
-
-## Django Web Development Defaults
-
-- Primary web framework context: **Django** with templates/partials as the default rendering approach.
-- Keep HTML generation in templates whenever possible; avoid embedding large markup strings in Python code.
-
-## Template and Rendering Boundaries
-
-- **Inline HTML in Python is last resort only** and must stay minimal.
-- Readability limit: do not exceed ~60 characters (hard max: 66) of inline HTML **total per indentation block**.
-- If markup grows beyond that threshold, move it into a Django template/include/partial.
-
-## Backend Partials and HTMX Mindset
-
-- Prefer backend-rendered components (django-partials style).
-- Default composition path in Django: templates + includes/partials/macros.
-- Keep the HTMX paradigm: server renders HTML fragments, frontend JS remains minimal.
-- Use partials/includes/macros to reduce duplication and keep presentation logic out of Python.
-
-## Additional Django Pitfalls
-
-- **Model field rename safety**: when renaming model fields, grep all usages across views, services, serializers, forms, templates, test fixtures, factories, and admin.
-- **WhiteNoise ordering**: `WhiteNoiseMiddleware` must be second in `MIDDLEWARE`, directly after `SecurityMiddleware`.
-- **JSON in TextField**: values stored in `TextField` are strings; call `json.loads()` before dictionary-style access.
-- **Template tags don't work in static files**: `{{ var|safe }}` and `{% url ... %}` are NOT processed in external `.js` / `.css` files — they're served as static assets. Solutions: inline `<script>` config block, data attributes on DOM elements, or a JSON endpoint view.
-- **JSON serialization in templates**: Django renders Python lists as `[\'item\']` (single quotes). Use `json.dumps()` in the view context for valid JS/JSON.
-
-## Django Testing Guardrails
-
-- Avoid `factory_boy` `django_get_or_create` in uniqueness tests; use `Sequence` for guaranteed unique values.
-- Use test-only prefixes (for example `TEST_xxx`) to avoid collisions with seed or migration data.
-
-## Playwright + Django E2E Pitfalls
-
-- Prevent redirect loops: when `live_server` fixture is used, always navigate with `live_server.url`.
-- Ensure navigation target is explicit: missing `base_url`/`live_server.url` can silently route tests to localhost and fail.
-- Static assets are not automatically served by Django `live_server`; configure static handling for test runs.
-- If static assets are required, run `manage.py collectstatic --noinput` before launching browser E2E tests.
-- Fallback when browser E2E is unavailable: cover flow behavior with Django test client integration tests (or `httpx` transport where appropriate).
-
-## Reference Map
-
-| File | Domain | Patterns |
-|------|--------|----------|
-| models-orm.md | Models & ORM | 25 |
-| views-urls.md | Views & URLs | 24 |
-| templates.md | Templates | 21 |
-| forms-validation.md | Forms & Validation | 21 |
-| admin.md | Admin | 18 |
-| auth-security.md | Auth & Security | 16 |
-| settings-config.md | Settings & Config | 16 |
-| testing.md | Testing | 17 |
-| middleware-signals.md | Middleware & Signals | 18 |
-| architecture.md | Architecture | 20 |
-| async-tasks.md | Async & Tasks | 16 |
-| django6-new.md | Django 6.0 Features | 14 |
-| internals.md | Internals | 10 |
-
-## Task Routing
-
-- **Defining models, querysets, migrations, or ORM optimization** -> `references/models-orm.md`
-- **Building views, URL routing, or class-based views** -> `references/views-urls.md`
-- **Creating or extending templates** -> `references/templates.md`
-- **Building forms, validation, or form rendering** -> `references/forms-validation.md`
-- **Customizing Django admin** -> `references/admin.md`
-- **Authentication, permissions, or security patterns** -> `references/auth-security.md`
-- **Settings, configuration, or environment-specific setup** -> `references/settings-config.md`
-- **Writing tests (unit, integration, or E2E)** -> `references/testing.md`
-- **Middleware, signals, or request/response cycle** -> `references/middleware-signals.md`
-- **Project structure, patterns, or architectural decisions** -> `references/architecture.md`
-- **Async views, tasks, celery, or background jobs** -> `references/async-tasks.md`
-- **Django 6.0 new features or deprecations** -> `references/django6-new.md`
-- **Django internals, metaprogramming, or deep framework behavior** -> `references/internals.md`
-
+| File | Use for |
+|------|---------|
+| `references/models-orm.md` | Defining models, querysets, migrations, ORM optimization |
+| `references/views-urls.md` | Building views, URL routing, class-based views |
+| `references/templates.md` | Creating or extending templates |
+| `references/forms-validation.md` | Building forms, validation, form rendering |
+| `references/admin.md` | Customizing Django admin |
+| `references/auth-security.md` | Authentication, permissions, security patterns |
+| `references/settings-config.md` | Settings, configuration, environment-specific setup |
+| `references/testing.md` | Writing tests (unit, integration, or E2E — includes Playwright/live_server pitfalls) |
+| `references/middleware-signals.md` | Middleware, signals, request/response cycle |
+| `references/architecture.md` | Project structure, patterns, architectural decisions |
+| `references/async-tasks.md` | Async views, tasks, celery, background jobs |
+| `references/django6-new.md` | Django 6.0 new features and deprecations |
+| `references/internals.md` | Django internals, metaprogramming, deep framework behavior |
