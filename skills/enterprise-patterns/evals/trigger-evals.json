@@ -1,0 +1,78 @@
+[
+  {
+    "query": "Should this be a Transaction Script or a full Domain Model? The business logic is getting more complex.",
+    "should_trigger": true
+  },
+  {
+    "query": "Two users edit the same record across separate requests and the last save silently overwrites the other. How do I lock this?",
+    "should_trigger": true
+  },
+  {
+    "query": "Is optimistic or pessimistic offline locking right for an edit form a user fills in over several minutes?",
+    "should_trigger": true
+  },
+  {
+    "query": "Do I need a Unit of Work here, or can I just save each object as I go?",
+    "should_trigger": true
+  },
+  {
+    "query": "I keep ending up with duplicate in-memory copies of the same entity inside one transaction. How do I fix that?",
+    "should_trigger": true
+  },
+  {
+    "query": "Where should we store per-user session state — client, server, or database — now that the web tier is horizontally scaled?",
+    "should_trigger": true
+  },
+  {
+    "query": "My repository has turned into a generic CRUD wrapper over every table. Is that a problem?",
+    "should_trigger": true
+  },
+  {
+    "query": "Should I split this module into a microservice or keep it in-process? I'm worried about chatty remote calls.",
+    "should_trigger": true
+  },
+  {
+    "query": "My controller is doing SQL, opening transactions, and running business rules all at once. How should I restructure the layers?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm exposing a remote API and it's making one call per line item to build a page. How should I design the boundary?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I set the database isolation level to avoid write skew inside this transaction?",
+    "should_trigger": false
+  },
+  {
+    "query": "I'm getting N+1 queries in my Django list view. How do I fix it?",
+    "should_trigger": false
+  },
+  {
+    "query": "How should I shape my DRF serializer for a nested write with related objects?",
+    "should_trigger": false
+  },
+  {
+    "query": "Help me define the aggregate boundaries and ubiquitous language for my ordering domain.",
+    "should_trigger": false
+  },
+  {
+    "query": "What's the right retry and timeout strategy for calls to this flaky third-party payment API?",
+    "should_trigger": false
+  },
+  {
+    "query": "Refactor this function to reduce its cyclomatic complexity and duplication.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a unit test for this pricing calculation using TDD.",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I center a div vertically with flexbox?",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up a GitHub Actions workflow that runs my test suite on every push.",
+    "should_trigger": false
+  }
+]

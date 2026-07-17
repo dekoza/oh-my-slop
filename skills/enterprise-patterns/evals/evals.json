@@ -1,0 +1,71 @@
+{
+  "skill_name": "enterprise-patterns",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I'm building an invoicing feature. Right now each operation is a short script — create invoice, mark paid, void. A teammate says we should build a proper Domain Model with entities and aggregates from the start. Should we?",
+      "expected_output": "Agent chooses the business-logic pattern by force and does not escalate to a Domain Model without evidence.",
+      "expectations": [
+        "Agent says a Transaction Script is fine while the logic stays short and independent",
+        "Agent names the escalation trigger — duplicated decisions/validation, or real invariants and lifecycle appearing — as what would justify moving to a Domain Model",
+        "Agent does NOT recommend a full Domain Model / aggregates just because it is 'proper'",
+        "If it does discuss rich domain modeling, it defers that to domain-driven-design rather than owning it here"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Two support agents open the same customer record, both edit it over a few minutes in their browsers, and whoever saves last silently wipes the other's changes. How should I prevent this?",
+      "expected_output": "Agent recognizes an offline (cross-request) concurrency problem and recommends an offline lock, distinct from DB isolation.",
+      "expectations": [
+        "Agent identifies this as a business transaction spanning a user think-time gap, not something a database transaction/lock covers",
+        "Agent recommends an Optimistic Offline Lock (version/timestamp checked on save) as the default, surfacing conflict resolution to the user",
+        "Agent mentions Pessimistic Offline Lock as the alternative only when contention is high enough to justify blocking",
+        "Agent does NOT answer with database isolation levels as the primary fix (that would be data-intensive's ground)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "We're moving to a horizontally scaled, stateless web tier behind a load balancer. Where should we keep per-user session state?",
+      "expected_output": "Agent weighs client/server/database session placement by its forces rather than picking one by default.",
+      "expectations": [
+        "Agent lays out client vs server vs database session state as a deliberate choice",
+        "Agent ties the choice to the stated forces — statelessness/scaling favors client or database over in-memory server state",
+        "Agent names the risks of the client option (integrity/security) and the database option (extra load, stale-row cleanup)",
+        "Agent insists the session have a clear owner, lifetime, and cleanup story"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Our repository layer is one generic class with save(), get(), list(), delete() over every table, and the controllers call SQL-ish query helpers directly and also open transactions. Is this a good structure?",
+      "expected_output": "Agent flags the generic-repository and controller-centric anti-patterns as review blockers and reshapes responsibilities.",
+      "expectations": [
+        "Agent flags the generic CRUD repository shaped by tables (not use cases) as a forbidden pattern to reshape",
+        "Agent flags the controller owning transactions/SQL/workflow and moves coordination into an application/service operation with explicit transaction ownership",
+        "Agent recommends repositories shaped by what the application actually asks for",
+        "Agent does NOT endorse the current structure as fine"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "I want to split my order module out into a separate microservice so it's cleaner. The web layer would make a remote call for each order line to build the page. Thoughts?",
+      "expected_output": "Agent pushes back on distributing by default and, if remote, insists on a coarse boundary.",
+      "expectations": [
+        "Agent applies don't-distribute-by-default — keep it in-process unless a real boundary forces the split",
+        "Agent identifies the per-order-line remote call as a chatty interface / distributed-object smell",
+        "Agent recommends a coarse-grained Remote Facade with DTOs (one batched round-trip) if the split is truly needed",
+        "Agent notes the latency/serialization/partial-failure cost being taken on, cross-linking production-readiness rather than restating retry/timeout mechanics"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Within one save operation I load the same product twice through different relationships and end up with two in-memory Product objects that drift out of sync, and I'm not sure when each gets written to the DB. Help.",
+      "expected_output": "Agent reaches for Identity Map and Unit of Work to make identity scope and write timing explicit.",
+      "expectations": [
+        "Agent names Identity Map — one in-memory instance per identity per scope — as the fix for the duplicate objects",
+        "Agent names Unit of Work to make the write coordination one logical, explicitly-owned commit",
+        "Agent calls out making loading behavior visible to avoid hidden auto-persistence / N+1 surprises",
+        "Agent keeps the transaction boundary short and explicit rather than scattering saves across callers"
+      ]
+    }
+  ]
+}
