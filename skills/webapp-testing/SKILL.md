@@ -1,55 +1,86 @@
 ---
 name: webapp-testing
 description: >
-  Testing, debugging, reproducing, or demonstrating a local web application with Playwright.
-  Triggers on: "Playwright", "browser testing", "E2E test", "UI test", "browser logs",
-  "screenshots", "recorded video", "UI flow", "webapp testing", "debugging webapp",
-  "reproducing bug", "demonstrating UI", or when the user needs browser-based evidence
-  of web application behavior.
+  Use when browser-based evidence of a local web app's behavior is needed — reproducing a
+  UI bug, demonstrating a flow, inspecting rendered DOM, or capturing screenshots, console
+  logs, or video. Not for writing the project's E2E test suite (see testing-workflow).
+  Triggers on: "reproduce this in the browser", "screenshot", "record a video",
+  "check what actually renders", "browser console".
 license: Complete terms in LICENSE.txt
 ---
 
 # Web Application Testing
 
-Write native Python Playwright scripts for local webapp testing. Prefer small, task-specific scripts over framework-heavy test harnesses unless the project already has one.
-
-## Helper Scripts Available
-
-- `scripts/with_server.py` — manages one or more local servers for the duration of the automation run
-
-**Always run helper scripts with `--help` first.** Treat bundled scripts as black boxes unless the task genuinely requires customization.
+Write small, task-specific Python Playwright scripts that produce **browser evidence**:
+assertions on rendered state first, screenshots/logs/video as supporting artifacts.
+This skill is the evidence tool — the project's E2E *suite* (tiers, Docker env, when E2E
+runs) is owned by the `testing-workflow` skill; a script written here can graduate into
+that suite, but suite rules live there.
 
 ## Core workflow
 
-1. Decide whether the target is a static HTML file or a running web application.
-2. Decide what evidence the user actually needs: DOM assertions, logs, screenshots, or a recorded video.
-3. If video is needed, configure recording on the browser context **before** creating the page.
-4. Navigate, wait for the rendered state to settle, inspect the actual DOM, then choose selectors.
-5. Execute the requested flow and report both the observed UI result and browser-side evidence.
-6. Close the browser context cleanly so artifacts such as videos are fully written.
+Every run follows the same spine — **the assertion step is not optional**; a script that
+only looks and screenshots proves nothing:
 
-## Decision tree
+1. **Target** — static HTML file or running app? Server already running, or start one via
+   the helper?
+2. **Recon** — navigate, wait for rendered state, inspect the actual DOM, choose selectors
+   from what's really there.
+3. **Interact** — drive the requested flow.
+4. **Assert** — verify the expected state in code (`assert`), not by eyeballing a
+   screenshot.
+5. **Evidence** — capture what the user needs: logs, screenshots, video (appendix), and
+   report observed result + artifact paths.
+6. **Teardown** — `context.close()` then `browser.close()`, so artifacts are fully written.
 
-```text
-User task → Static HTML file or dynamic webapp?
-    ├─ Static HTML
-    │   ├─ Read the file directly to identify likely structure
-    │   ├─ Open it with Playwright and verify the rendered DOM
-    │   └─ Use screenshots/video only if the user asked or the behavior is visual
-    │
-    └─ Dynamic webapp
-        ├─ Server already running?
-        │   ├─ Yes → use the supplied URL; do not start a duplicate server
-        │   └─ No → run `python scripts/with_server.py --help`, then use the helper
-        │
-        └─ Need a visual artifact?
-            ├─ Yes → enable Playwright video recording before `context.new_page()`
-            └─ No → use screenshots/logs/assertions as the lighter default
+### Script template (copy, then adapt)
+
+```python
+from playwright.sync_api import sync_playwright, expect
+
+with sync_playwright() as pw:
+    browser = pw.chromium.launch(
+        headless=True,
+        args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+    )
+    context = browser.new_context(viewport={"width": 1440, "height": 900})
+    page = context.new_page()
+    console_msgs = []
+    page.on("console", lambda m: console_msgs.append(f"[{m.type}] {m.text}"))
+
+    # 1-2. Navigate + recon
+    page.goto("http://localhost:5173")
+    page.wait_for_load_state("networkidle")
+
+    # 3. Interact
+    page.get_by_role("button", name="Create task").click()
+    page.locator("input[name='title']").wait_for(state="visible", timeout=8000)
+    page.locator("input[name='title']").fill("Buy milk")
+    page.get_by_role("button", name="Save").click()
+
+    # 4. Assert — the point of the whole script
+    expect(page.locator(".task-list")).to_contain_text("Buy milk")
+    js_errors = [m for m in console_msgs if m.startswith("[error]")]
+    assert not js_errors, f"Console errors: {js_errors}"
+
+    # 5. Evidence
+    page.screenshot(path="/tmp/webapp-testing/after-create.png", full_page=True)
+
+    # 6. Teardown
+    context.close()
+    browser.close()
+
+print("PASS — screenshot at /tmp/webapp-testing/after-create.png")
 ```
 
-## Starting local servers
+## Helper scripts
 
-Run `--help` first, then use the helper.
+- `scripts/with_server.py` — starts one or more local servers, waits for readiness, runs
+  your automation, cleans up. Server errors are echoed to the console (prefixed
+  `[server N]`), so a failed startup is visible, not silent.
+
+**Always run helper scripts with `--help` first.** Treat bundled scripts as black boxes
+unless the task genuinely requires customization.
 
 **Single server:**
 ```bash
@@ -64,7 +95,8 @@ python scripts/with_server.py \
   -- python your_automation.py
 ```
 
-Your Playwright script should contain only browser automation logic; server lifecycle is handled by the helper.
+Keep server lifecycle in the helper and only browser logic in your script. If the user
+already has a server running, use their URL — do not start a duplicate.
 
 ## Reconnaissance-then-action
 
@@ -74,32 +106,140 @@ On dynamic apps, do not guess selectors from source alone.
 2. Wait for `page.wait_for_load_state("networkidle")`.
 3. Inspect rendered state with one or more of:
    ```python
-   page.screenshot(path="/tmp/inspect.png", full_page=True)
+   page.screenshot(path="/tmp/webapp-testing/inspect.png", full_page=True)
    page.content()
    page.locator("button").all()
    ```
-4. Pick selectors from rendered output.
-5. Perform the requested actions.
-6. Capture logs, screenshots, or video artifacts as needed.
+4. Pick selectors from rendered output — prefer `get_by_role(...)`, `text=...`, stable IDs.
+5. Perform the requested actions, with explicit waits for state changes
+   (`wait_for_selector()`, locator `.wait_for()`, URL assertions).
 
-## When to record video
+## Core pattern: waiting for HTMX/JS swaps
 
-Record video when at least one of these is true:
+`networkidle` does **not** wait for HTMX content swaps or JS-driven re-renders — it fires
+when the network is quiet, which can be before the swapped element exists. Wait for the
+**real target state**:
+
+```python
+# ❌ networkidle may fire before the swapped element exists:
+page.locator("button[hx-post]").click()
+page.wait_for_load_state("networkidle")
+page.locator("input[name='opening_float']").fill("500")
+
+# ✅ wait for the element the swap produces:
+page.locator("button[hx-post]").click()
+page.locator("input[name='opening_float']").wait_for(state="visible", timeout=8000)
+page.locator("input[name='opening_float']").fill("500")
+```
+
+The same rule covers fixed sleeps: `wait_for_timeout(500)` is a race condition with
+slower machines — wait for the state, not the clock.
+
+## Pitfalls → correct pattern
+
+| ❌ Pitfall | ✅ Instead |
+|-----------|-----------|
+| Inspecting the DOM before the rendered state settles | Recon after `networkidle` + element-level waits |
+| Starting a second dev server when one is already running | Use the supplied URL |
+| Screenshot-only "verification" | Assert on DOM state; screenshot is supporting evidence |
+| `wait_for_timeout(...)` for content to "probably" load | Wait for the specific selector/state |
+| Enabling video after the page exists | Configure recording on the context first (appendix) |
+| Skipping `context.close()` | Close context before browser — artifacts finalize on close |
+
+## Playwright Python (sync) API gotchas
+
+### Triple-click to select all text
+```python
+# ❌ Wrong — triple_click() does not exist on Locator:
+locator.triple_click()
+
+# ✅ Correct:
+locator.click(click_count=3)
+```
+
+### Reading data attributes
+```python
+basket_id = page.locator("[data-basket-id]").first.get_attribute("data-basket-id")
+text = page.locator("button").first.inner_text()
+```
+
+### Typing text sequentially
+```python
+# ❌ Deprecated:
+locator.type("text", delay=80)
+
+# ✅ Current:
+locator.press_sequentially("text", delay=80)
+```
+
+## Debugging Content Security Policy (CSP) violations
+
+### Common CSP error patterns
+
+| Error Message | Cause | Fix |
+|---------------|-------|-----|
+| `Applying inline style violates... 'style-src'` | Element has `style="..."` attribute | Add `'unsafe-inline'` to `style-src` (replace entire directive) |
+| `Executing inline script violates... 'script-src'` | `<script>...</script>` without hash/nonce | Add `'unsafe-inline'` to `script-src` (replace entire directive) |
+| `Loading the image 'https://...' violates... 'img-src'` | External image domain not allowed | Add domain to `img-src` |
+| `Loading the stylesheet 'https://...' violates... 'style-src'` | External CSS not allowed | Add CDN domain to `style-src` |
+| `'unsafe-inline' is ignored if either a hash or nonce value is present` | Hash/nonce present alongside `'unsafe-inline'` | **Replace** entire directive, don't append |
+
+### Capturing CSP violations
+
+```python
+console_messages = []
+page.on("console", lambda msg: console_messages.append(f"[{msg.type}] {msg.text}"))
+
+# Filter for CSP violations after the run
+csp_errors = [m for m in console_messages if "Content Security Policy" in m]
+```
+
+### Standard test CSP relaxations (django-csp)
+
+```python
+# In test settings (settings_test.py):
+if CONTENT_SECURITY_POLICY:
+    # Inline styles (Leaflet, Chart.js, etc.)
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["style-src"] = (
+        "'self'", "'unsafe-inline'", "cdn.jsdelivr.net", "fonts.googleapis.com"
+    )
+    # Inline scripts (config injection, analytics)
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["script-src"] = (
+        "'self'", "'unsafe-inline'", "'unsafe-eval'",
+        "https://unpkg.com", "https://cdn.jsdelivr.net"
+    )
+    # Map tiles, external images
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["img-src"] = (
+        "'self'", "data:", "https://*.tile.openstreetmap.org"
+    )
+```
+
+**Key rule**: When adding `'unsafe-inline'`, **replace the entire directive tuple**.
+Appending it alongside hashes makes CSP ignore `'unsafe-inline'` entirely.
+
+## Examples
+
+- `examples/element_discovery.py` — inspect buttons, links, and inputs on a page
+- `examples/static_html_automation.py` — automate a local `file://` HTML target
+- `examples/console_logging.py` — capture console logs during automation
+- `examples/video_recording.py` — record and name a browser-video artifact with an
+  orange-dot pointer overlay, click ripple effect, and human-paced smooth pointer movement
+
+## Appendix: video recording
+
+Video is the **rare** case. Record only when at least one of these is true:
 
 - The user explicitly asks for a recording, walkthrough, demo, or repro artifact.
-- The bug is transient or timing-sensitive: toasts, redirects, modal flashes, race conditions, focus loss, animation issues.
+- The bug is transient or timing-sensitive: toasts, redirects, modal flashes, race
+  conditions, focus loss, animation issues.
 - The flow is multi-step and screenshots would hide how the state changed over time.
-- The task is a user-facing walkthrough and the visual path matters.
 
-Do **not** default to video for every task. For trivial static checks, one screenshot plus assertions is usually enough.
+For everything else, assertions + a screenshot are the lighter default. **Video
+supplements logs, assertions, and written findings — it never replaces them.**
 
-For human-facing recordings, make cursor intent visible: add pointer tracking with an **orange dot** and show clicks with a **ripple effect** so the viewer can see where the interaction happened. When the recording is a demo or feature presentation, move at the **pace of a human** and keep pointer motion **smooth** rather than teleporting or jumping between targets.
+### Recording pattern
 
-**Video supplements logs, assertions, and written findings. It does not replace them.**
-
-## Preferred video recording pattern
-
-Use Playwright's built-in context recording. Keep Chromium headless.
+Use Playwright's built-in context recording; keep Chromium headless.
 
 ```python
 from pathlib import Path
@@ -119,7 +259,7 @@ with sync_playwright() as pw:
         record_video_size={"width": 1440, "height": 900},
     )
     page = context.new_page()
-    video = page.video
+    video = page.video  # capture the handle early if you plan to rename
 
     page.goto("http://localhost:5173")
     page.wait_for_load_state("networkidle")
@@ -135,139 +275,17 @@ with sync_playwright() as pw:
 print(f"Video saved to: {final_video_path}")
 ```
 
-## Video artifact rules
+### Artifact rules
 
-- Configure `record_video_dir` and `record_video_size` on `browser.new_context(...)`, not on the page.
-- If you want one video per tested flow, use **one fresh browser context** and one page for that flow.
-- For human review videos, inject a lightweight overlay that shows pointer tracking as an **orange dot** and click feedback as a **ripple effect**.
-- Keep the overlay non-interactive with `pointer-events: none` so it does not break the tested UI.
-- For demos and walkthroughs, drive the flow at the **pace of a human**: add short pauses around key state changes and avoid machine-gun navigation.
-- Move the pointer smoothly with `page.mouse.move(..., steps=...)` or an equivalent stepped motion. Do not jump instantly from one control to another unless the task is pure debugging and the recording is not meant for humans.
-- Capture the `video = page.video` handle early if you plan to rename or move the artifact.
-- `context.close()` is mandatory. The video is finalized only when the browser context closes.
-- If the final filename matters, call `video.save_as(...)` and report the saved path explicitly.
-- Always tell the user where the video file was saved.
+- Configure `record_video_dir`/`record_video_size` on `browser.new_context(...)`, not on
+  the page; one fresh context per recorded flow.
+- `context.close()` is mandatory — the video finalizes only when the context closes.
+- Call `video.save_as(...)` when the filename matters, and always report the saved path.
 
-## Common pitfalls
+### Human-facing recordings
 
-❌ Inspecting the DOM before waiting for the rendered state on dynamic apps.
-
-❌ Starting a second dev server when the user already gave you a running one.
-
-❌ Enabling video after the page already exists. Recording must be configured on the context first.
-
-❌ Forgetting `context.close()`. That loses or truncates video artifacts.
-
-## Best practices
-
-- Use `sync_playwright()` for simple synchronous scripts.
-- Always close the browser context before `browser.close()` when artifacts are involved.
-- Use descriptive selectors: `get_by_role(...)`, `text=...`, CSS selectors, or stable IDs.
-- Prefer explicit waits for state changes: `wait_for_selector()`, locator `.wait_for()`, or URL assertions.
-- For HTMX or JS swaps, wait for the swapped target to appear instead of assuming `networkidle` is enough.
-- Keep the automation script self-contained and report artifact paths clearly.
-- For presentation-grade videos, prefer small deliberate pauses and stepped cursor movement over maximum execution speed.
-
-## Playwright Python (sync) API gotchas
-
-### Triple-click to select all text
-```python
-# ❌ Wrong — triple_click() does not exist on Locator:
-locator.triple_click()
-
-# ✅ Correct:
-locator.click(click_count=3)
-```
-
-### Waiting for HTMX swaps
-`page.wait_for_load_state("networkidle")` does **not** wait for HTMX content swaps.
-
-```python
-# ❌ Wrong — networkidle may fire before the swapped element exists:
-page.locator("button[hx-post]").click()
-page.wait_for_load_state("networkidle")
-page.locator("input[name='opening_float']").fill("500")
-
-# ✅ Correct — wait for the real target state:
-page.locator("button[hx-post]").click()
-page.locator("input[name='opening_float']").wait_for(state="visible", timeout=8000)
-page.locator("input[name='opening_float']").fill("500")
-```
-
-### Reading data attributes
-```python
-basket_id = page.locator("[data-basket-id]").first.get_attribute("data-basket-id")
-text = page.locator("button").first.inner_text()
-```
-
-### Typing text sequentially
-```python
-# ❌ Deprecated:
-locator.type("text", delay=80)
-
-# ✅ Current:
-locator.press_sequentially("text", delay=80)
-```
-
-## Examples
-
-- `examples/element_discovery.py` — inspect buttons, links, and inputs on a page
-- `examples/static_html_automation.py` — automate a local `file://` HTML target
-- `examples/console_logging.py` — capture console logs during automation
-- `examples/video_recording.py` — record and name a browser-video artifact with an orange-dot pointer overlay, click ripple effect, and human-paced smooth pointer movement
-
-## Debugging Content Security Policy (CSP) Violations
-
-### Common CSP Error Patterns
-
-| Error Message | Cause | Fix |
-|---------------|-------|-----|
-| `Applying inline style violates... 'style-src'` | Element has `style="..."` attribute | Add `'unsafe-inline'` to `style-src` (replace entire directive) |
-| `Executing inline script violates... 'script-src'` | `<script>...</script>` without hash/nonce | Add `'unsafe-inline'` to `script-src` (replace entire directive) |
-| `Loading the image 'https://...' violates... 'img-src'` | External image domain not allowed | Add domain to `img-src` |
-| `Loading the stylesheet 'https://...' violates... 'style-src'` | External CSS not allowed | Add CDN domain to `style-src` |
-| `'unsafe-inline' is ignored if either a hash or nonce value is present` | Hash/nonce present alongside `'unsafe-inline'` | **Replace** entire directive, don't append |
-
-### Capturing CSP Violations in Playwright
-
-```python
-console_messages = []
-page.on("console", lambda msg: console_messages.append(f"[{msg.type}] {msg.text}"))
-
-# Filter for CSP violations after test
-csp_errors = [m for m in console_messages if "Content Security Policy" in m]
-```
-
-### Standard Test CSP Relaxations (django-csp)
-
-```python
-# In test settings (settings_test.py):
-if CONTENT_SECURITY_POLICY:
-    # Inline styles (Leaflet, Chart.js, etc.)
-    CONTENT_SECURITY_POLICY["DIRECTIVES"]["style-src"] = (
-        "'self'", "'unsafe-inline'", "cdn.jsdelivr.net", "fonts.googleapis.com"
-    )
-    # Inline scripts (config injection, analytics)
-    CONTENT_SECURITY_POLICY["DIRECTIVES"]["script-src"] = (
-        "'self'", "'unsafe-inline'", "'unsafe-eval'", 
-        "https://unpkg.com", "https://cdn.jsdelivr.net"
-    )
-    # Map tiles, external images
-    CONTENT_SECURITY_POLICY["DIRECTIVES"]["img-src"] = (
-        "'self'", "data:", "https://*.tile.openstreetmap.org"
-    )
-```
-
-**Key rule**: When adding `'unsafe-inline'`, **replace the entire directive tuple**. Appending it alongside hashes makes CSP ignore `'unsafe-inline'` entirely.
-
-### CSP-Friendly Development Checklist
-
-- [ ] No inline `style="..."` in templates unless `'unsafe-inline'` in `style-src`
-- [ ] No inline `<script>...</script>` unless `'unsafe-inline'` in `script-src`
-- [ ] External CDNs added to appropriate `*_src` directives
-- [ ] Test settings relax CSP; production keeps strict hashes
-- [ ] Use SRI hashes for external resources (Leaflet, Tabler, etc.)
-
----
-
-## Examples
+For demos and walkthroughs (not raw debugging): inject a lightweight overlay showing the
+pointer as an **orange dot** with a click **ripple effect** (non-interactive:
+`pointer-events: none`); move at the **pace of a human** — short pauses around key state
+changes, smooth stepped motion via `page.mouse.move(..., steps=...)`, no teleporting
+between targets. See `examples/video_recording.py` for the full pattern.

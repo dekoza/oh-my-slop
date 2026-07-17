@@ -1,17 +1,17 @@
 ---
 name: diagnosing-bugs
 description: >
-  Diagnosis loop for hard bugs, performance regressions, and multi-failure scenarios.
-  Triggers on: "diagnose", "debug this", "something broken", "throwing", "failing",
-  "slow", "performance regression", "fix multiple failing tests", or when the user
-  reports a bug with no obvious cause. Systematic diagnosis: reproduce → isolate →
-  hypothesize → test → fix.
+  Use when facing a bug with no obvious cause, a performance regression, or 5+ test
+  failures at once. Triggers on: "diagnose", "debug this", "something broken",
+  "no idea why", "flaky", "slow since", "fix multiple failing tests".
 license: MIT (adapted from mattpocock/skills)
 ---
 
 # Diagnosing Bugs
 
 A discipline for hard bugs. Skip phases only when explicitly justified.
+
+**The whole skill in one breath:** build a **tight feedback loop** — one command that is *fast (seconds), deterministic, and red-capable* (goes red on this exact bug) — then minimize the repro, test hypotheses against the loop one variable at a time, fix, and convert the repro into a permanent regression test. If 5+ failures exist at once, run Multi-Failure Triage first; otherwise start at Phase 1.
 
 ## Multi-Failure Triage (when 5+ failures exist)
 
@@ -23,44 +23,11 @@ This procedure is tier-agnostic: it works for unit, integration, E2E, or any mix
 
 ### Output capture rule
 
-**`| tee [filename]` is the ONLY allowed method for capturing test output.** `tail`, `head`, bare `>`, and `>>` are **FORBIDDEN**.
-
-- `| tee /tmp/failures.log` writes output to a file **and** streams it to stdout simultaneously. You see everything in real time and can re-read the file later without re-running the command.
-- **Why `tail` and `head` are forbidden:** they destroy insight. `tail` shows only the end — if the run is still going, you see only what's already flushed; if it's done, you missed everything before the last screenful and cannot recover it. `head` shows only the beginning — you miss the failures that come later. Both hide the full picture the user needs to decide whether to **kill a bad run immediately** instead of waiting for it to finish just to confirm what they already suspect. Insight is time-sensitive — once the run ends, that context is gone and cannot be reconstructed.
-- **Why bare `>` and `>>` are forbidden:** they redirect output to a file but you see nothing on screen. If the run hangs or takes unexpectedly long, you have no idea if it's progressing or stuck.
-
-**Enforcement:** using `tail`, `head`, or bare `>`/`>>` on test output = **bug**. No exceptions. Use `| tee` every time.
-
-**After running with `| tee`:** read the log file you just created with `read /tmp/failures_round_0.log` or `grep` directly against the file (`grep -E "^(ERROR|FAILED)" /tmp/failures_round_0.log`). **Never re-run the same pytest command just to inspect output** — the file already has everything you need. Re-running wastes time on a full suite that already completed.
+**`| tee [filename]` is the ONLY allowed method for capturing test output** — `tail`, `head`, and bare `>`/`>>` are forbidden (rationale and canonical rule: `testing-workflow` skill). Triage-specific consequence: **after running with `| tee`, read or `grep` the log file — never re-run the same pytest command just to inspect output.** The file already has everything; re-running wastes a full-suite cycle.
 
 ### Timeout guidelines
 
-There are **two** independent timeout layers. Both must be set correctly, or the shorter one kills the run and the longer one is wasted.
-
-1. **Outer runner timeout** — the budget your harness (pi, CI job, `docker compose run --rm`, `timeout` command) gives the `pytest` process. If this expires, the OS/SIGKILLs pytest and you lose all output.
-2. **Inner pytest timeout** — the `--timeout` flag (from `pytest-timeout`) that pytest itself enforces **per test**. If this expires, pytest kills that single test with a `TimeoutError` and moves on.
-
-The outer timeout must always be **longer** than the inner timeout, otherwise the runner kills pytest before pytest ever gets a chance to enforce per-test budgets. For E2E tests this distinction matters most: a Playwright test can legitimately take 60–180s, so a 120s inner timeout is already too tight, and a 60s default (common when the flag is omitted) guarantees false failures.
-
-#### Outer runner timeout (the harness budget)
-
-| Tier | Minimum outer timeout | Notes |
-|------|----------------------|-------|
-| Unit | 600s (10 min) | Fast per-test but large suites with `-n auto` can exhaust default limits |
-| Integration | 1800s (30 min) | Docker startup + DB setup + HTTP round-trips add up; keep containers warm between runs |
-| E2E | 3600s (1 hour) | Browser launch, page loads, and Playwright overhead are slow; never let these get killed mid-flight |
-
-#### Inner pytest timeout (`--timeout` flag)
-
-| Tier | Minimum `--timeout` value | Notes |
-|------|--------------------------|-------|
-| Unit | 60s | Individual unit tests should be fast; 60s catches hangs without masking real slowness |
-| Integration | 300s (5 min) | DB queries, HTTP round-trips, and container I/O add latency |
-| E2E | 600s (10 min) | Playwright page loads, network waits, and multi-step flows are slow; 60–120s defaults cause false kills |
-
-**Rule:** always pass `--timeout` explicitly on the pytest command line. Never rely on the `pytest-timeout` default (usually 60s or unset) — it is almost always too short for anything beyond unit tests.
-
-**Enforcement:** a test run killed by a timeout is a wasted run — the failure signal is the runner, not the tests. Set both timeouts generously, and always ensure `outer > inner`.
+Set **both** timeout layers explicitly on every triage run — outer (harness budget) and inner (`--timeout` per test), outer > inner. The tier-by-tier floors live in the `testing-workflow` skill's timeout doctrine; for triage the floors that matter most are `--timeout 600` for E2E and an outer budget of 1 hour — a run killed by a default 60s timeout reports on the runner, not the tests, and corrupts your failure map.
 
 ---
 
@@ -337,6 +304,8 @@ pytest tests/ -n auto --dist loadgroup --timeout 600
 - **All green:** Done. Commit.
 - **Any red:** These are new issues, not part of the original triage. Diagnose each as a separate bug using the single-bug workflow.
 
+**After the fires are out:** if the triage revealed E2E-only assertions that lower tiers could carry (the usual reason triage was this slow), schedule the `restore-test-pyramid` skill — see the tier-strategy section of `testing-workflow`.
+
 ---
 
 ### Anti-patterns
@@ -466,6 +435,20 @@ When debugging a UI bug with server-side success, **check these four
 patterns in order**. They account for ~80% of "server says OK but UI is
 wrong" bugs in HTMX + WebSocket apps.
 
+### E2E debugging checklist (Playwright)
+
+When E2E tests fail mysteriously, check in order:
+
+1. **Duplicate IDs** — Playwright strict mode fails on `locator("#id")` resolving to 2+ elements. Search rendered HTML for `id="..."`.
+2. **CSP violations** — Capture console: `page.on("console", lambda m: msgs.append(...))`; filter for "Content Security Policy". Inline styles/scripts blocked if `'unsafe-inline'` missing or hashes present.
+3. **Silent JS failure** — Empty console = script blocked (CSP) or syntax error before execution. Dump `page.content()` and verify `<script>` tags present.
+4. **Template vars in static JS** — `{{ var|safe }}` in `.js` files renders as literal `{{ var|safe }}`. Use inline `<script>` config or data attributes.
+5. **JSON serialization** — Python lists render as `[\'item\']` (single quotes) in Django templates. Use `json.dumps()` in view context.
+6. **CSRF origin check** — `Origin checking failed - null does not match`. Ensure test settings remove CSRF middleware AND add `127.0.0.1` to `CSRF_TRUSTED_ORIGINS`.
+7. **Pytest settings module** — `pyproject.toml` `DJANGO_SETTINGS_MODULE` must be `config.settings_test`, not `config.settings`.
+
+Save rendered HTML on failure: `page.content()` to file for offline inspection.
+
 ## Phase 2 — Reproduce + minimise
 
 Run the loop. Watch it go red — the bug appears.
@@ -504,11 +487,13 @@ For each hypothesis:
 
 If the experiment is inconclusive, tighten the loop further (Phase 1) before forming new hypotheses.
 
+**Escalation rule:** after ~3 refuted hypotheses, stop generating new ones. Write up what has been ruled out (each hypothesis + the experiment that killed it) and present it to the user — the ruled-out list is real progress, and the user often holds the missing fact. Continuing to guess past this point is rabbit-holing.
+
 ### Completion criterion
 
 Phase 3 is done when you have **one confirmed hypothesis** — an experiment that rules out the most likely alternative. Not "I think it's probably X" — "I changed X and the bug went away; I changed X back and the bug returned."
 
-## Phase 4 — Instrument (optional)
+## Phase 4 — Instrument (skip only if Phase 3 already confirmed with concrete data)
 
 If the hypothesis is about internal state (data flow, timing, caching), add instrumentation to make the invisible visible.
 
@@ -537,6 +522,11 @@ Phase 4 is done when instrumentation has **confirmed the hypothesis** with concr
 ## Phase 5 — Fix + regression test
 
 Apply the fix. Run the feedback loop — it should go green.
+
+**Recovery paths when it doesn't go to plan:**
+
+- **Loop stays red** → the hypothesis was wrong or incomplete. Back to Phase 3; the failed fix is itself an experiment result — record what it rules out.
+- **Loop goes green but other tests break** → the hypothesis was incomplete: the "fix" changed behavior beyond the bug. Back to Phase 2 with the new failure folded into the repro — do not patch the newly-broken tests to match.
 
 Then:
 

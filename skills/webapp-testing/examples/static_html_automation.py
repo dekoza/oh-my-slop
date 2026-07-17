@@ -1,10 +1,15 @@
-from playwright.sync_api import sync_playwright
+from pathlib import Path
+
+from playwright.sync_api import expect, sync_playwright
 import os
 
 # Example: Automating interaction with static HTML files using file:// URLs
 
 html_file_path = os.path.abspath('path/to/your/file.html')
 file_url = f'file://{html_file_path}'
+
+artifact_dir = Path('/tmp/webapp-testing')
+artifact_dir.mkdir(parents=True, exist_ok=True)
 
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
@@ -14,20 +19,23 @@ with sync_playwright() as p:
     page.goto(file_url)
 
     # Take screenshot
-    page.screenshot(path='/mnt/user-data/outputs/static_page.png', full_page=True)
+    page.screenshot(path=str(artifact_dir / 'static_page.png'), full_page=True)
 
     # Interact with elements
     page.click('text=Click Me')
     page.fill('#name', 'John Doe')
     page.fill('#email', 'john@example.com')
 
-    # Submit form
+    # Submit form, then wait for the resulting state — not the clock
     page.click('button[type="submit"]')
-    page.wait_for_timeout(500)
+    page.locator('.success-message').wait_for(state='visible', timeout=5000)
+
+    # Assert on the outcome before capturing evidence
+    expect(page.locator('.success-message')).to_contain_text('Thank you')
 
     # Take final screenshot
-    page.screenshot(path='/mnt/user-data/outputs/after_submit.png', full_page=True)
+    page.screenshot(path=str(artifact_dir / 'after_submit.png'), full_page=True)
 
     browser.close()
 
-print("Static HTML automation completed!")
+print(f"Static HTML automation completed! Screenshots in {artifact_dir}")

@@ -1,118 +1,138 @@
 ---
 name: testing-workflow
 description: >
-  TDD workflow, test execution rules, and test environment setup. Triggers on: "TDD", "test-driven",
-  "red-green-refactor", "write tests", "run tests", "pytest", "Playwright", "test execution",
-  "test environment", "Docker test", "compose.test.yml", "tee", "test output", "test suite",
-  "unit tests", "integration tests", "E2E tests", "happy path", or when running any test command.
-  Use when: writing tests, running tests, setting up test environments, or making testing decisions.
+  Use when running tests, setting up or debugging a test environment, choosing which tier
+  a test belongs in, or deciding when E2E tests must run. Triggers on: "run the tests",
+  "pytest", "compose.test.yml", "test environment", "slow test suite",
+  "which tier should this test be", "full suite", "CI is red".
 license: MIT
 ---
 
 # Testing Workflow
 
-## TDD is Mandatory (No Exceptions)
+Owns test **execution and strategy**: tiers and where they run, output capture, timeouts,
+Docker test environments, Playwright setup, and when E2E runs during implementation work.
+The red-green-refactor discipline itself lives in the `tdd` skill — load it before writing
+any implementation code.
 
-**Write tests FIRST, watch them fail, then implement.**
+## Critical rules
 
-- Implementation before tests = **bug** (delete implementation, write tests first, reimplement)
-- "I'll add tests later" is not acceptable
-- Simple changes break things. The test takes 30 seconds. Write it first.
+1. **Capture test output with `| tee /tmp/<name>.log` — never `head`, `tail`, or bare `>`.**
+   Truncation hides failures and forces re-runs; redirection hides hangs. Read the log file
+   afterwards instead of re-running the command.
+2. **Set both timeout layers explicitly on every non-unit run** (see Timeout doctrine below).
+   A run killed by a default 60s timeout is a wasted run reporting on the runner, not the tests.
+3. **Run each tier where it belongs** (see the tier table). Integration and E2E run in Docker
+   via `compose.test.yml`, never against the dev environment.
 
-## Test Execution Rules
+## Test tiers
 
-### Use `tee`, Never `head`/`tail`/`>`
+| Tier | Scope | Where it runs | Feedback speed |
+|------|-------|---------------|----------------|
+| Unit | Pure logic, no DB/browser/IO | Host: `uv run pytest tests/unit/ -x` | Seconds |
+| Integration | Module boundaries: DB, HTTP, IO | Docker: `compose.test.yml` | Tens of seconds |
+| E2E | User flows through the real UI (Playwright) | Docker: `compose.test.yml` | Minutes |
 
-When running tests, output must remain fully visible:
+Makefile targets:
 
-```bash
-# ✅ Correct
-uv run pytest tests/unit/ -x 2>&1 | tee /tmp/test-run.log
+```makefile
+test-unit:             ## Run unit tests on host (fast TDD)
+	uv run pytest tests/unit/ -x
 
-# ❌ Forbidden (hides failures)
-uv run pytest tests/unit/ -x | head -50
-uv run pytest tests/unit/ -x > /tmp/output.log
-uv run pytest tests/unit/ -x 2>&1 | tail -20
+test-integration:      ## Run integration tests in Docker
+	docker compose -f compose.test.yml run --rm tests pytest tests/integration/ -x
+
+test-e2e:              ## Run E2E / Playwright tests in Docker
+	docker compose -f compose.test.yml run --rm tests pytest tests/e2e/ -x
+
+test:                  ## Run full test suite
+	$(MAKE) test-unit
+	$(MAKE) test-integration
+	$(MAKE) test-e2e
 ```
 
-**Why**: Truncation hides real failures. An agent that pipes through `tail` then re-runs tests wastes time and compute.
+## Choosing the tier
 
-### Goal-Driven Execution
+Place each **assertion** at the lowest tier that can honestly verify it:
 
-Transform imperative requests into verifiable goals:
+- Needs real browser behavior (JS execution, HTMX swaps, CSP, focus, navigation) → E2E.
+- Verifies server-response shape, DB state, or template context → integration.
+- Verifies pure logic → unit.
 
-| Instead of... | Transform to... |
-|--------------|-----------------|
-| "Add validation" | "Write tests for invalid inputs, then make them pass" |
-| "Fix the bug" | "Write a test that reproduces it, then make them pass" |
-| "Refactor X" | "Ensure tests pass before and after" |
+Keep E2E thin: one happy-path test per user flow, plus the assertions that genuinely need a
+browser. When a suite has accumulated E2E-only assertions that lower tiers could carry —
+typically discovered after a triage session — run the `restore-test-pyramid` skill
+(`skills/restore-test-pyramid/`) to push them down systematically. A bloated E2E tier is why
+"small ticket, hour-long test run" happens.
 
-## Test Quality Bar
+## E2E policy for implementation runs
 
-- **Unit tests** for logic
-- **Integration tests** for module boundaries (DB/HTTP/IO)
-- **E2E tests** for key flows
-- **UI tests** (Playwright) required for frontend/UI projects
+When implementing ticket-shaped work (e.g. via the `implement` skill), scale E2E cost to the
+**change**, not the project:
 
-Tests must be realistic:
-- Test behavior via the contract, not implementation details
-- Include edge cases and error paths
-- Avoid mocks when real dependencies can be tested
+1. **Per slice**: for each slice with a user-visible flow, write one happy-path E2E test after
+   the slice is green at lower tiers, then run **only that file**
+   (`pytest tests/e2e/test_<slice>.py`) in Docker. Keep containers warm between slices.
+   Slices with no user-visible flow owe no new E2E test — integration suffices.
+2. **End gate for the session**: full unit + full integration + **targeted E2E** — the new
+   tests plus existing E2E files covering flows the diff touches.
+3. **Full E2E suite green is a merge condition, not a session condition.** Push the branch,
+   open a PR referencing the ticket (`Closes #N`); CI (e.g. Gitea Actions) runs the full suite
+   on the PR, and the ticket closes via the merge, gated on that check.
+4. **No CI on the project?** Ask the user before launching a full E2E run expected to exceed
+   ~10–15 minutes. Never start one silently.
 
-## Playwright Rules (Web Apps with Frontend)
+## Timeout doctrine (two independent layers)
 
-### Mandatory for E2E
+Both layers must be set, and the outer must always be **longer** than the inner — otherwise
+the runner kills pytest before pytest can enforce per-test budgets, and all output is lost.
 
-If the project has a frontend/UI, Playwright **MUST** be used for E2E tests.
+1. **Outer runner timeout** — the budget the harness (CI job, `docker compose run`, `timeout`
+   command) gives the whole pytest process.
+2. **Inner pytest timeout** — `--timeout` (pytest-timeout), enforced per test. Always pass it
+   explicitly; the default (60s or unset) is too short for anything beyond unit tests.
 
-### Navigation Reachability
+| Tier | Outer minimum | Inner `--timeout` minimum |
+|------|---------------|---------------------------|
+| Unit | 600s (10 min) | 60s |
+| Integration | 1800s (30 min) | 300s |
+| E2E | 3600s (1 hour) | 600s |
 
-E2E tests for features extending existing UI **MUST navigate via UI, not URLs**:
+A Playwright test can legitimately take 60–180s; a 60–120s inner timeout on E2E guarantees
+false kills.
 
-```python
-# ✅ Correct: Click through navigation
-await page.click("sidebar-item-dashboard")
-await page.click("button-create-task")
+## Playwright rules (web apps with frontend)
 
-# ❌ Forbidden: Hardcoded URL (gives false confidence)
-await page.goto("/tasks/create")
-```
+- **E2E requires Playwright** if the project has a frontend/UI.
+- **Navigate via UI, not URLs**, for features extending existing UI:
 
-A feature with no navigation path is a broken feature, regardless of how well the backend works.
+  ```python
+  # ✅ Click through navigation
+  await page.click("sidebar-item-dashboard")
+  await page.click("button-create-task")
 
-### Headless Mode
+  # ❌ Hardcoded URL — false confidence
+  await page.goto("/tasks/create")
+  ```
 
-Always use `headless=True` in agent environments:
+  A feature with no navigation path is a broken feature, regardless of the backend.
+- **Headless always** in agent environments (`headless=True`), with `--no-sandbox`,
+  `--disable-dev-shm-usage`, `--disable-gpu`.
+- **Never install Playwright without explicit user request**; sudo is forbidden; cap binary
+  downloads at 5 minutes, then fall back.
 
-```python
-browser = await async_playwright().start()
-page = await browser.chromium.launch(headless=True)
-```
+## Docker test environment (web apps)
 
-Critical Chromium arguments:
-- `--no-sandbox` (required in containers)
-- `--disable-dev-shm-usage` (prevents memory exhaustion)
-- `--disable-gpu` (reduces resource overhead)
+Integration and E2E tests run in isolated Docker:
 
-### Installation Constraints
+- `tests` container (pytest + Playwright) + `testdb` container (dedicated PostgreSQL,
+  healthchecked) on an internal network — **no host port mapping**.
+- **Separate compose file** — `compose.test.yml`, not profiles in the main compose; dev
+  `docker compose down` must not affect tests.
+- Persist `.pytest_cache` as a volume so `--lf` works across runs.
 
-- **NEVER** install Playwright without explicit user request
-- **Sudo is forbidden** — use fallback strategies if system Chromium unavailable
-- **Timeout**: 5 minutes max for binary downloads, then fall back
-
-## Docker Test Environment (Web Apps)
-
-Integration and E2E tests for web applications **MUST** run in isolated Docker:
-
-### Architecture
-
-- `tests` container: runs pytest + Playwright
-- `testdb` container: dedicated PostgreSQL (healthchecked before tests)
-- Internal network (`test-net`): no host port mapping
-
-### Test Image: Playwright/Chromium System Dependencies
-
-Chromium in a slim Python image needs these system libraries — install them in `Dockerfile.test` before the browser install:
+Chromium in a slim Python image needs system libraries — install in `Dockerfile.test` before
+the browser install:
 
 ```dockerfile
 FROM python:3.12-slim
@@ -136,47 +156,16 @@ RUN uv run playwright install chromium
 COPY . .
 ```
 
-### Non-Negotiable Constraints
+## Testing guardrails
 
-- **No public ports** — internal Docker networking only
-- **Lifecycle independence** — `docker compose down` (dev) must not affect tests
-- **Separate compose file** — `compose.test.yml`, NOT profiles in main compose
+- Use `httpx.MockTransport` for HTTP client tests — no `unittest.mock` gymnastics.
+- Use `Sequence` in factory_boy for uniqueness tests (not `django_get_or_create`).
+- Check model constraints before writing test fixtures; use `update_or_create()` to avoid
+  unique-constraint violations.
 
-### Makefile Targets
+## Related skills
 
-```makefile
-test-unit:             ## Run unit tests on host (fast TDD)
-	uv run pytest tests/unit/ -x
-
-test-integration:      ## Run integration tests in Docker
-	docker compose -f compose.test.yml run --rm tests pytest tests/integration/ -x
-
-test-e2e:              ## Run E2E / Playwright tests in Docker
-	docker compose -f compose.test.yml run --rm tests pytest tests/e2e/ -x
-
-test:                  ## Run full test suite
-	$(MAKE) test-unit
-	$(MAKE) test-integration
-	$(MAKE) test-e2e
-```
-
-## Testing Guardrails
-
-- Use `httpx.MockTransport` for HTTP client tests — no `unittest.mock` gymnastics needed
-- Use `Sequence` in factory_boy for uniqueness tests (not `django_get_or_create`)
-- Check model constraints before writing test fixtures
-- Use `update_or_create()` to avoid unique constraint violations
-
-## E2E Debugging Checklist (Playwright)
-
-When E2E tests fail mysteriously, check in order:
-
-1. **Duplicate IDs** — Playwright strict mode fails on `locator("#id")` resolving to 2+ elements. Search rendered HTML for `id="..."`.
-2. **CSP violations** — Capture console: `page.on("console", lambda m: msgs.append(...))`; filter for "Content Security Policy". Inline styles/scripts blocked if `'unsafe-inline'` missing or hashes present.
-3. **Silent JS failure** — Empty console = script blocked (CSP) or syntax error before execution. Dump `page.content()` and verify `<script>` tags present.
-4. **Template vars in static JS** — `{{ var|safe }}` in `.js` files renders as literal `{{ var|safe }}`. Use inline `<script>` config or data attributes.
-5. **JSON serialization** — Python lists render as `[\'item\']` (single quotes) in Django templates. Use `json.dumps()` in view context.
-6. **CSRF origin check** — `Origin checking failed - null does not match`. Ensure test settings remove CSRF middleware AND add `127.0.0.1` to `CSRF_TRUSTED_ORIGINS`.
-7. **Pytest settings module** — `pyproject.toml` `DJANGO_SETTINGS_MODULE` must be `config.settings_test`, not `config.settings`.
-
-Save rendered HTML on failure: `page.content()` to file for offline inspection.
+- `tdd` — the red-green-refactor discipline (mandatory for implementation work).
+- `diagnosing-bugs` — mysterious failures, multi-failure triage, E2E debugging checklist.
+- `webapp-testing` — ad-hoc Playwright scripts for browser evidence outside the test suite.
+- `restore-test-pyramid` — periodic ritual to push E2E-only assertions down the pyramid.

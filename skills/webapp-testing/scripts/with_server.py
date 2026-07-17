@@ -16,9 +16,17 @@ Usage:
 
 import subprocess
 import socket
+import threading
 import time
 import sys
 import argparse
+
+def _echo_output(stream, prefix):
+    """Echo a server's output line-by-line so startup errors are visible."""
+    for line in iter(stream.readline, b''):
+        print(f"{prefix} {line.decode(errors='replace')}", end='', flush=True)
+    stream.close()
+
 
 def is_server_ready(port, timeout=30):
     """Wait for server to be ready by polling the port."""
@@ -70,9 +78,18 @@ def main():
                 server['cmd'],
                 shell=True,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.STDOUT
             )
             server_processes.append(process)
+
+            # Drain and echo server output so errors are never silently
+            # swallowed (a PIPE nobody reads hides startup failures and can
+            # deadlock a chatty server once the pipe buffer fills).
+            threading.Thread(
+                target=_echo_output,
+                args=(process.stdout, f"[server {i+1}]"),
+                daemon=True,
+            ).start()
 
             # Wait for this server to be ready
             print(f"Waiting for server on port {server['port']}...")
