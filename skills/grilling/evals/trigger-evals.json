@@ -1,0 +1,78 @@
+[
+  {
+    "query": "I've got a rough plan for splitting the billing service out of the monolith, but I'm not confident in it. Poke holes in it by asking me things until I've actually thought it through.",
+    "should_trigger": true
+  },
+  {
+    "query": "Before you write any code for the CSV import feature, ask me whatever you need to about how it should behave. One question at a time please.",
+    "should_trigger": true
+  },
+  {
+    "query": "I keep flip-flopping on the caching strategy and I can't tell why. Interrogate me about it until we land on something I can defend.",
+    "should_trigger": true
+  },
+  {
+    "query": "Don't start implementing yet. I want to be questioned about the trade-offs first so we actually reach a shared understanding of the design.",
+    "should_trigger": true
+  },
+  {
+    "query": "My spec has gaps and I don't know which ones. Drill into it with me question by question and tell me what you'd recommend for each.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm working a decision ticket off the map and need the interview loop with the user to settle it before anything gets written down.",
+    "should_trigger": true
+  },
+  {
+    "query": "This wayfinding ticket asks whether tenants share one database or get their own. Run the questioning process with me to resolve it.",
+    "should_trigger": true
+  },
+  {
+    "query": "The bug report is too vague to turn into a ticket — I need to question the reporter properly first, one thing at a time.",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you walk me through the design decisions for this scheduler by asking me about them, rather than just handing me a proposal?",
+    "should_trigger": true
+  },
+  {
+    "query": "Red-team this migration plan and give me the three strongest arguments against it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Run a pre-mortem on this rollout — assume it failed badly and tell me why.",
+    "should_trigger": false
+  },
+  {
+    "query": "Convene the council on whether we go with Postgres or DynamoDB for this workload.",
+    "should_trigger": false
+  },
+  {
+    "query": "I want five independent perspectives to weigh in and peer-review each other before I commit to this vendor.",
+    "should_trigger": false
+  },
+  {
+    "query": "I can't tell if this state model feels right just by reading it. Build me a throwaway terminal app so I can click through it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Mock up three radically different versions of the settings screen so I can see which direction works.",
+    "should_trigger": false
+  },
+  {
+    "query": "Look into how Stripe handles idempotency keys against their official docs and write it up with citations.",
+    "should_trigger": false
+  },
+  {
+    "query": "Turn everything we just discussed into a PRD and publish it to the issue tracker.",
+    "should_trigger": false
+  },
+  {
+    "query": "We already agreed on the approach last session. Just implement the ticket now.",
+    "should_trigger": false
+  },
+  {
+    "query": "What's the difference between a shallow clone and a sparse checkout in git?",
+    "should_trigger": false
+  }
+]

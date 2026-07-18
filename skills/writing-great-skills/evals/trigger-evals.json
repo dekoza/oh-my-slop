@@ -1,0 +1,90 @@
+[
+  {
+    "query": "I'm drafting a new SKILL.md for our deployment checklist and I can't tell how much detail belongs in the main file versus a linked reference next to it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Here's the SKILL.md I've been maintaining — can you go through it and tighten the wording? It's grown to about 400 lines and reads like a pile of accumulated notes.",
+    "should_trigger": true
+  },
+  {
+    "query": "The frontmatter blurb on my skill explains what it does but says nothing about when the agent should reach for it. How should I rewrite that line?",
+    "should_trigger": true
+  },
+  {
+    "query": "My trigger list has five phrasings that all mean roughly the same thing. Is it worth keeping them all, or am I just paying tokens twice?",
+    "should_trigger": true
+  },
+  {
+    "query": "Should this one be something only I type by name, or should the agent be allowed to pick it up on its own? I can't decide which way to set it up.",
+    "should_trigger": true
+  },
+  {
+    "query": "I now have twelve skills the model can see every turn and my context window is suffering. Which of these should stop being model-visible?",
+    "should_trigger": true
+  },
+  {
+    "query": "My testing skill keeps loading when someone just asks a syntax question about pytest. It's firing way too eagerly and crowding out everything else.",
+    "should_trigger": true
+  },
+  {
+    "query": "Two of my skills both grab the same kind of request and I can never predict which one the agent will pick. How do I draw the line between them in their text?",
+    "should_trigger": true
+  },
+  {
+    "query": "The agent almost never reaches for my migrations skill unless I name it explicitly, even when the request is obviously about migrations.",
+    "should_trigger": true
+  },
+  {
+    "query": "This file is enormous and half of it is stuff the model would already do by default. Help me cut it down without losing the parts that actually change behavior.",
+    "should_trigger": true
+  },
+  {
+    "query": "I've restated the same rule in three different sections of this thing. How do I collapse that into one place?",
+    "should_trigger": true
+  },
+  {
+    "query": "All my instructions are phrased as \"don't do X\" and the agent keeps doing X anyway. Is there a better way to word them?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to measure whether adding this actually changes what the agent does. How do I set up a baseline run without it first?",
+    "should_trigger": false
+  },
+  {
+    "query": "Should this even be a skill, or would a small script or an AGENTS.md rule be the better artifact here?",
+    "should_trigger": false
+  },
+  {
+    "query": "Run the eval suite against both versions and give me a pass rate comparison before I decide which to keep.",
+    "should_trigger": false
+  },
+  {
+    "query": "What checks does this need to pass before I merge it into the shared repo and let other people install it?",
+    "should_trigger": false
+  },
+  {
+    "query": "Our runbook for the nightly reconciliation job is out of date since we moved to the new queue. Can you bring it back in line with what actually runs?",
+    "should_trigger": false
+  },
+  {
+    "query": "Write an ADR capturing why we moved off Celery and what we considered instead.",
+    "should_trigger": false
+  },
+  {
+    "query": "The API reference still documents the v1 auth header even though we shipped v2 months ago. Update it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rewrite the README intro so it's punchier and actually says what the project does in the first sentence.",
+    "should_trigger": false
+  },
+  {
+    "query": "Teach me how Kubernetes operators work — I want to work through it over several sessions.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarize where we got to on this refactor so a fresh session can pick it up tomorrow.",
+    "should_trigger": false
+  }
+]

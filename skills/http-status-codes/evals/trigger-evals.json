@@ -1,0 +1,86 @@
+[
+  {
+    "query": "Our signup endpoint answers with 400 when the email is already registered. That feels wrong — what should it be sending instead?",
+    "should_trigger": true
+  },
+  {
+    "query": "The API returns the same generic error for everything a caller gets wrong. The body parsed fine, it just failed our business validation — is there a more precise response for that?",
+    "should_trigger": true
+  },
+  {
+    "query": "A signed-in user hits an admin-only route. Should we be telling them they aren't authenticated, or that they're not allowed?",
+    "should_trigger": true
+  },
+  {
+    "query": "We rate limit per API key. When a key blows through its quota, should the response say the client is going too fast or that the service is unavailable?",
+    "should_trigger": true
+  },
+  {
+    "query": "POST /reports queues a background job that takes a couple of minutes. The report doesn't exist yet when we answer — what's the honest response for that?",
+    "should_trigger": true
+  },
+  {
+    "query": "The DELETE worked and there's nothing meaningful to send back. Is an empty 200 body fine or is there a better answer?",
+    "should_trigger": true
+  },
+  {
+    "query": "Two clients PUT the same resource with If-Match and one of them is stale. What do I return to the loser?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm moving an endpoint to a new path and existing clients POST to the old one. Which redirect won't turn their POST into a GET?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm writing a retry wrapper around our HTTP client. Which responses are safe to retry and which mean give up immediately?",
+    "should_trigger": true
+  },
+  {
+    "query": "Filling in the responses section of our OpenAPI file for this PUT. Besides the happy path, what should I be documenting?",
+    "should_trigger": true
+  },
+  {
+    "query": "We reject bad tokens properly but the browser never pops the login prompt. Are we leaving something out of the response?",
+    "should_trigger": true
+  },
+  {
+    "query": "Our access logs are full of 499s from nginx. What is that and should our own service ever emit it?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I register a custom exception handler in DRF so all errors come out wrapped in our standard envelope?",
+    "should_trigger": false
+  },
+  {
+    "query": "My DRF serializer's validate() raises but the error lands at the top level. How do I key it to the nested field instead?",
+    "should_trigger": false
+  },
+  {
+    "query": "Which throttle class do I configure in DRF settings to get per-user rate limits?",
+    "should_trigger": false
+  },
+  {
+    "query": "The custom 404 handler I registered in Litestar never fires. How does handler resolution work there?",
+    "should_trigger": false
+  },
+  {
+    "query": "What backoff and circuit-breaker policy should we wrap around this flaky payment provider?",
+    "should_trigger": false
+  },
+  {
+    "query": "We fall over at peak traffic. Should we shed load or queue incoming requests, and how deep should that queue be?",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I add a unique constraint across two columns on this Django model and migrate it safely?",
+    "should_trigger": false
+  },
+  {
+    "query": "My hx-post fires and the server responds, but the target div never updates.",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I vertically center a div with flexbox?",
+    "should_trigger": false
+  }
+]

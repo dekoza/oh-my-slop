@@ -1,0 +1,78 @@
+[
+  {
+    "query": "Our two-day bookings render as a single day on the month grid, and a one-day booking sometimes shows on the day before. The dates in the database look correct.",
+    "should_trigger": true
+  },
+  {
+    "query": "All-day holidays are showing up one square early on the calendar. Is this something about how end dates are interpreted?",
+    "should_trigger": true
+  },
+  {
+    "query": "Clicking an empty day cell doesn't fire anything, and I can't drag an event to a different slot either. Rendering works fine otherwise and there are no console errors.",
+    "should_trigger": true
+  },
+  {
+    "query": "I want users to be able to drag a booking to a new time and resize it to change its duration. Right now the events are completely static.",
+    "should_trigger": true
+  },
+  {
+    "query": "The container div stays empty — no grid, no headers, nothing appears at all. The script tag loads and the constructor runs without throwing.",
+    "should_trigger": true
+  },
+  {
+    "query": "I need a week view with time slots from 7am to 8pm, business hours shaded, and a toggle to switch to the month grid. What's the right configuration?",
+    "should_trigger": true
+  },
+  {
+    "query": "My endpoint returns a JSON array of appointments and I want the calendar to re-fetch it whenever the user pages to a different month, passing the visible range as query params.",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I customize what each event block looks like — I want a colored dot, the customer name in bold, and a small icon for remote appointments.",
+    "should_trigger": true
+  },
+  {
+    "query": "When someone drops an event onto a new date I need to POST the change to the server and roll the move back visually if the request fails.",
+    "should_trigger": true
+  },
+  {
+    "query": "The scheduling widget lives inside a panel that gets swapped in by an hx-get. After the swap it renders as a blank box until I reload the page.",
+    "should_trigger": true
+  },
+  {
+    "query": "The request fires on click but the target div never gets the returned HTML fragment. I think my swap strategy is wrong.",
+    "should_trigger": false
+  },
+  {
+    "query": "This inline `_=\"on click toggle .open on #drawer\"` attribute silently does nothing — no error anywhere. What's wrong with it?",
+    "should_trigger": false
+  },
+  {
+    "query": "Which Tabler classes give me a card with a header toolbar and a soft-colored badge for the booking status?",
+    "should_trigger": false
+  },
+  {
+    "query": "Design direction question: what palette and typography should this scheduling product use so it reads as professional to clinic staff?",
+    "should_trigger": false
+  },
+  {
+    "query": "Model recurring appointments in Django — the RRULE storage, the timezone-aware datetime fields, and how to expand occurrences in the queryset.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write the DRF serializer and viewset that exposes appointments, with filtering by date range and the right permission classes.",
+    "should_trigger": false
+  },
+  {
+    "query": "Reproduce the booking bug in a real browser and capture a video plus console output so I can see the failure sequence.",
+    "should_trigger": false
+  },
+  {
+    "query": "Build a Gantt chart of project tasks with dependency arrows using a charting library. This is a timeline visualization, not a scheduler.",
+    "should_trigger": false
+  },
+  {
+    "query": "Our Celery beat schedule isn't firing the nightly reminder job. Debug the periodic task configuration.",
+    "should_trigger": false
+  }
+]

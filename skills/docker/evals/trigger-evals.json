@@ -1,0 +1,82 @@
+[
+  {
+    "query": "My build dies at the COPY step with \"file not found in build context\" even though the file is sitting right there in the repo root.",
+    "should_trigger": true
+  },
+  {
+    "query": "Every time I change one line of Python the whole image rebuilds from scratch and reinstalls all dependencies. Why is nothing cached?",
+    "should_trigger": true
+  },
+  {
+    "query": "I get \"Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?\" but systemctl says the service is active.",
+    "should_trigger": true
+  },
+  {
+    "query": "After I pointed my client at a remote host over SSH, builds seem to be running somewhere else and my local files aren't there. How does that switching actually work?",
+    "should_trigger": true
+  },
+  {
+    "query": "One of my containers can't resolve the other by name — it just says \"bad address\". They're both up.",
+    "should_trigger": true
+  },
+  {
+    "query": "I published port 5432 on the database, but when another container connects to localhost:5432 it gets connection refused. From my laptop it works fine.",
+    "should_trigger": true
+  },
+  {
+    "query": "Edits to my source files aren't showing up inside the running container even though I mounted the project directory into it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Everything the app writes to /data vanishes when the container restarts. What's the right way to make that survive?",
+    "should_trigger": true
+  },
+  {
+    "query": "Pushing the image keeps failing with \"denied: requested access to the resource is denied\" and I definitely logged in first.",
+    "should_trigger": true
+  },
+  {
+    "query": "CI can't pull our private base image — \"unauthorized: authentication required\". Works on my machine.",
+    "should_trigger": true
+  },
+  {
+    "query": "Here's the Dockerfile we've been shipping for two years. Can you read through it and tell me what's actually wrong with it? I'm not changing anything yet.",
+    "should_trigger": true
+  },
+  {
+    "query": "I don't have the file in front of me, but from memory our image is python:3.12, it copies the whole repo in first and then runs pip install, all as root. Does that explain why it's so slow?",
+    "should_trigger": true
+  },
+  {
+    "query": "New FastAPI service, nothing containerized yet. Write me the Dockerfile for it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a multi-stage build and a non-root user to our existing Dockerfile so the runtime image stops shipping the compiler toolchain.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need the test suite to get its own database stack. How should I set up the compose files for that?",
+    "should_trigger": false
+  },
+  {
+    "query": "My pod is stuck in CrashLoopBackOff. How do I read the events and figure out why the scheduler keeps restarting it?",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I template the image tag per environment in my chart's values.yaml so staging and prod differ?",
+    "should_trigger": false
+  },
+  {
+    "query": "What IAM policy does the role need for an ECR pull-through cache to work?",
+    "should_trigger": false
+  },
+  {
+    "query": "What timeout and circuit-breaker settings should I put around this flaky third-party payment API?",
+    "should_trigger": false
+  },
+  {
+    "query": "Rename this Python helper function and update all of its callers across the package.",
+    "should_trigger": false
+  }
+]

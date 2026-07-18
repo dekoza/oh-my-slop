@@ -1,0 +1,78 @@
+[
+  {
+    "query": "I click the \"Load more\" button on our comments list and absolutely nothing happens. No error in the console, the network tab shows a 200 response, but the page just sits there unchanged.",
+    "should_trigger": true
+  },
+  {
+    "query": "The delete button fires the request and the row disappears from the database, but the table on screen never updates until I hit refresh. What am I missing in the markup?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want the search box to update just the results table as the user types, without reloading the whole page. The server already has an endpoint that returns the table fragment.",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I make this form submit in the background and replace only the card it lives in with whatever the server returns, instead of navigating away?",
+    "should_trigger": true
+  },
+  {
+    "query": "My response contains a full <tr> but it keeps getting inserted inside the previous row instead of after it. I've tried innerHTML and outerHTML and neither puts the content where I want it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you review these templates? The attributes have piled up over time and I'm not sure the targets and swap strategies are doing what the original author intended.",
+    "should_trigger": true
+  },
+  {
+    "query": "We push order-status updates over server-sent events and I want a div on the dashboard to re-render itself whenever a message with a given name arrives. What's the right attribute wiring for that?",
+    "should_trigger": true
+  },
+  {
+    "query": "The websocket connection stays open but messages coming back from the server never land in the chat log element. Connection shows as established in devtools.",
+    "should_trigger": true
+  },
+  {
+    "query": "After a partial update, the buttons inside the newly inserted fragment stop working entirely — the ones that were on the page at load time still work fine.",
+    "should_trigger": true
+  },
+  {
+    "query": "I need the pagination links to update the list in place and also push the page number into the browser URL so back/forward still work.",
+    "should_trigger": true
+  },
+  {
+    "query": "This element has `_=\"on click toggle .hidden on #panel\"` and it silently does nothing. No console output at all. Why won't it run?",
+    "should_trigger": false
+  },
+  {
+    "query": "Which Tabler classes should I use for a status badge — I want a soft green pill next to the customer name and it should match the rest of the dashboard's color set.",
+    "should_trigger": false
+  },
+  {
+    "query": "Our FullCalendar shows every all-day event one day short — a two-day booking renders as one day. The JSON feed looks right to me.",
+    "should_trigger": false
+  },
+  {
+    "query": "The view that serves this fragment is doing an N+1 across the related author rows and takes 4 seconds. Fix the queryset with the right prefetch.",
+    "should_trigger": false
+  },
+  {
+    "query": "Before we build the admin, I want a visual direction for it: palette, typography pairing, density, and which patterns would make it look amateur.",
+    "should_trigger": false
+  },
+  {
+    "query": "Open the app in a real browser, reproduce the checkout bug, and capture screenshots plus the console log so I can see what actually renders.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a DRF serializer and viewset for the notifications resource, with the right permission classes and pagination settings.",
+    "should_trigger": false
+  },
+  {
+    "query": "Our Alpine.js component's x-show binding isn't reacting when the store value changes. Debug the reactivity.",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up the pytest tiers for this project and get the slow integration suite running in the compose test environment.",
+    "should_trigger": false
+  }
+]

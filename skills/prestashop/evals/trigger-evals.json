@@ -1,0 +1,82 @@
+[
+  {
+    "query": "Starting a new PrestaShop 9 module that syncs orders into our ERP. What folders and files does it need to look like?",
+    "should_trigger": true
+  },
+  {
+    "query": "The client wants a plugin for their shop that drops a promo banner into checkout. How do I scaffold that?",
+    "should_trigger": true
+  },
+  {
+    "query": "My module's main class is 900 lines — install, an API client, and a giant HTML string built inside getContent(). How do I break this apart?",
+    "should_trigger": true
+  },
+  {
+    "query": "I registered hookActionValidateOrder in install() but nothing runs when an order is placed. What did I miss?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to render something just above the add-to-cart button. Which extension point is that, and does it return a string or an array?",
+    "should_trigger": true
+  },
+  {
+    "query": "The settings screen for my module 404s in the Back Office even though the controller class is there.",
+    "should_trigger": true
+  },
+  {
+    "query": "I added config/services.yml under my module but the container says the service doesn't exist when the controller boots.",
+    "should_trigger": true
+  },
+  {
+    "query": "Where should I keep the mapping between shop product IDs and the remote warehouse IDs? Right now I'm stuffing JSON into Configuration and it's getting ugly.",
+    "should_trigger": true
+  },
+  {
+    "query": "I need a URL a nightly cron can hit to run the sync, without leaving it open to anyone on the internet.",
+    "should_trigger": true
+  },
+  {
+    "query": "The ZIP installs fine on my dev shop but the client's install rejects it on upload with no useful message.",
+    "should_trigger": true
+  },
+  {
+    "query": "Reviewing a module I inherited: the front controller is called FooBarController and the page comes back blank.",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I build a Symfony form type with a collection of embedded entities and keep the prototype working?",
+    "should_trigger": false
+  },
+  {
+    "query": "What's the difference between autowiring and passing explicit service arguments in Symfony's container?",
+    "should_trigger": false
+  },
+  {
+    "query": "Composer keeps resolving for PHP 8.1. How do I pin the platform version for this package?",
+    "should_trigger": false
+  },
+  {
+    "query": "Refactor this PHP class to use constructor property promotion and typed properties throughout.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need a WooCommerce hook that changes the cart total before checkout. Where does that go?",
+    "should_trigger": false
+  },
+  {
+    "query": "Building a Shopify app — how should I handle the OAuth install callback and token storage?",
+    "should_trigger": false
+  },
+  {
+    "query": "Adding a Magento 2 observer for the order-placed event. Where does events.xml live?",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I override the product page template in my PrestaShop theme's child theme?",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up a docker compose stack that runs PrestaShop and MySQL locally for development.",
+    "should_trigger": false
+  }
+]

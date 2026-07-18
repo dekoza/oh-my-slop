@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I've finished the auth refactor — three files changed. Can you commit this for me?",
+    "should_trigger": true
+  },
+  {
+    "query": "My working tree has a bunch of unrelated changes piled up. Help me split them into sensible separate commits.",
+    "should_trigger": true
+  },
+  {
+    "query": "What should the commit message say for a change that adds a new /reports endpoint and also fixes a typo in the existing one?",
+    "should_trigger": true
+  },
+  {
+    "query": "Our repo expects conventional commits. Is \"update stuff\" acceptable for this diff, or should I rewrite it?",
+    "should_trigger": true
+  },
+  {
+    "query": "Create a branch for this feature off main and push it to the remote so I can open a review later.",
+    "should_trigger": true
+  },
+  {
+    "query": "Everything's done and tested. Push the changes up.",
+    "should_trigger": true
+  },
+  {
+    "query": "git status is showing a pile of build junk. Can you just run git clean -fdx to get rid of it?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to throw away everything since the last commit and start over. reset --hard is the right call, yeah?",
+    "should_trigger": true
+  },
+  {
+    "query": "I amended a commit that's already on origin and now the push is rejected. Can I just force push over it?",
+    "should_trigger": true
+  },
+  {
+    "query": "Rebase my feature branch onto main please — it's already pushed and a colleague pulled it yesterday.",
+    "should_trigger": true
+  },
+  {
+    "query": "Delete the old config files I don't need anymore and get that change into the repo.",
+    "should_trigger": true
+  },
+  {
+    "query": "My rebase stopped partway and there are <<<<<<< markers in three files. Help me sort them out.",
+    "should_trigger": false
+  },
+  {
+    "query": "CONFLICT (content): Merge conflict in settings.py. How do I resolve this and continue the merge?",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up a hook so Claude Code refuses to run git push --force before the command ever executes.",
+    "should_trigger": false
+  },
+  {
+    "query": "I want destructive git commands mechanically blocked in this project, not just discouraged in the prompt. How do I wire that up?",
+    "should_trigger": false
+  },
+  {
+    "query": "Open a pull request from this branch to main with a description summarizing what changed.",
+    "should_trigger": false
+  },
+  {
+    "query": "File an issue on our Gitea repo about the flaky login test and put it in the current milestone.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add the `bug` label to issue #42 with gh and assign it to me.",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up a GitHub Actions workflow that runs pytest on every pull request.",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I center a div vertically with flexbox?",
+    "should_trigger": false
+  }
+]

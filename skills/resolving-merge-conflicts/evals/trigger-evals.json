@@ -1,0 +1,78 @@
+[
+  {
+    "query": "git pull just left me with `CONFLICT (content): Merge conflict in src/api/routes.py` and I have no idea which side to keep.",
+    "should_trigger": true
+  },
+  {
+    "query": "Six files came back with <<<<<<< HEAD markers after I merged main into my branch. Sort them out so both sets of changes survive.",
+    "should_trigger": true
+  },
+  {
+    "query": "Merging the long-lived feature branch blew up — both sides edited the same migration file. Reconcile them properly, don't just take theirs.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm stuck in a MERGING state after `git merge develop` and the templates are full of conflict markers. Fix it and commit.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm halfway through a rebase and it stopped on the third commit with conflicting files. Work through them and get it finished.",
+    "should_trigger": true
+  },
+  {
+    "query": "The rebase is paused. git status says \"both modified\" on the lockfile and two test files. Resolve those and continue.",
+    "should_trigger": true
+  },
+  {
+    "query": "Rebasing onto main hit conflicts in settings.py where I renamed a config key and someone else added one. Sort it out and finish the rebase.",
+    "should_trigger": true
+  },
+  {
+    "query": "Every time I run git rebase --continue it stops again on the next commit with more conflicts. Just take it all the way through.",
+    "should_trigger": true
+  },
+  {
+    "query": "Should we use merge commits or rebase to keep feature branches up to date with main? Nothing's conflicting yet, I just want a policy.",
+    "should_trigger": false
+  },
+  {
+    "query": "Is it safe to force-push after rebasing a branch that's already on the remote and other people have pulled?",
+    "should_trigger": false
+  },
+  {
+    "query": "Squash my last four commits into one and clean up the messages before I open the PR.",
+    "should_trigger": false
+  },
+  {
+    "query": "I'm about to run `git clean -fd` and there are untracked files in the tree. Is that going to lose my work?",
+    "should_trigger": false
+  },
+  {
+    "query": "Write me a conventional commit message for what's currently staged.",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I undo the last commit but keep all the changes in my working tree?",
+    "should_trigger": false
+  },
+  {
+    "query": "Cut a new branch off main for this ticket and set the upstream so I can push it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review everything on this branch against the ticket and our coding standards before I merge it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Find correctness bugs in the diff I've got in the working tree.",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up a branch protection rule so main can only be updated through a PR with a green build.",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I configure git to sign my commits with an SSH key?",
+    "should_trigger": false
+  }
+]

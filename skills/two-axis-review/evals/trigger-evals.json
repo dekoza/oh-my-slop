@@ -1,0 +1,78 @@
+[
+  {
+    "query": "Everything that landed since the v2.3 tag needs looking at — does any of it break the conventions we documented in CONTRIBUTING?",
+    "should_trigger": true
+  },
+  {
+    "query": "We have a coding standards doc nobody reads. Check the last twenty commits against it and tell me where we've drifted.",
+    "should_trigger": true
+  },
+  {
+    "query": "Go through this branch and tell me whether it actually does what issue #142 asked for. I think we drifted while building it.",
+    "should_trigger": true
+  },
+  {
+    "query": "There were a lot of small decisions made along the way on this PR. Does the result still match what the ticket described?",
+    "should_trigger": true
+  },
+  {
+    "query": "Review everything I've changed since main — I want to know both whether it's up to our standards and whether it matches the PRD.",
+    "should_trigger": true
+  },
+  {
+    "query": "Before I open the PR, audit the diff since commit abc1234 against both the spec and how we write code in this repo.",
+    "should_trigger": true
+  },
+  {
+    "query": "I just finished the last implementation slice for this spec. Check the diff against the ticket before I hand it off.",
+    "should_trigger": true
+  },
+  {
+    "query": "The implementation is done and the tests pass, but I want a second pass over the whole change set against the originating issue.",
+    "should_trigger": true
+  },
+  {
+    "query": "Diff my branch against the point where I forked it and tell me what a reviewer would object to on style grounds.",
+    "should_trigger": true
+  },
+  {
+    "query": "Look at my working tree diff and find correctness bugs — anything that'll blow up at runtime.",
+    "should_trigger": false
+  },
+  {
+    "query": "Check the pending changes on this branch for security vulnerabilities — injection, auth bypass, leaked secrets.",
+    "should_trigger": false
+  },
+  {
+    "query": "This module has grown messy. Extract the duplicated blocks and rename things without changing behavior.",
+    "should_trigger": false
+  },
+  {
+    "query": "Sweep the codebase for over-engineering and give me a ranked list of what I can safely delete.",
+    "should_trigger": false
+  },
+  {
+    "query": "Squash these five commits into one and write me a proper conventional commit message for it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write tests for this new pricing function before I touch the implementation.",
+    "should_trigger": false
+  },
+  {
+    "query": "CI is red and I can't tell which tier these failing tests belong in. Get the suite green locally.",
+    "should_trigger": false
+  },
+  {
+    "query": "Triage this incoming external PR from a contributor and decide whether it's in scope for the project.",
+    "should_trigger": false
+  },
+  {
+    "query": "Turn what we discussed into a spec with user stories and put it on the tracker.",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain how git bisect works and when I'd reach for it.",
+    "should_trigger": false
+  }
+]

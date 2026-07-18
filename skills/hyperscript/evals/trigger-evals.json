@@ -1,0 +1,78 @@
+[
+  {
+    "query": "Someone on my team added `_=\"on click toggle .is-open on #menu\"` to a button and it does absolutely nothing. No console error, no exception, the class never changes. What's going on?",
+    "should_trigger": true
+  },
+  {
+    "query": "I inherited this markup: `<div _=\"on load wait 2s then remove me\">Saved!</div>`. What is this syntax, and why does the element never disappear?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want a plain attribute on the button that shows the hidden filter panel and flips the caret icon, without writing a separate JS file or pulling in a framework.",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I write the copy-to-clipboard interaction inline on the element — grab the input's value, put it on the clipboard, then swap the button label to \"Copied\" for two seconds?",
+    "should_trigger": true
+  },
+  {
+    "query": "I've got the same show/hide-a-tooltip logic pasted onto about fifteen elements. Is there a way to define it once and just attach it by name to each one?",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you review these inline scripts on our templates? Several use `on keyup` and `put ... into` and I'm not confident the event targets or the `me`/`it` references are right.",
+    "should_trigger": true
+  },
+  {
+    "query": "After the server swaps in new content I want a little \"Updated\" flash to fade in and out. Can I hang that off the swap event right on the element instead of writing a global listener?",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to disable the submit button and show a spinner while the request is in flight, then re-enable it when the response comes back — ideally declaratively in the markup next to the button.",
+    "should_trigger": true
+  },
+  {
+    "query": "The `script=` attribute on this div was working yesterday and now the whole handler is inert after I added an `if` branch. I suspect I broke the syntax but nothing tells me where.",
+    "should_trigger": true
+  },
+  {
+    "query": "Is there a way to write \"on click send a custom event to another element\" directly in the HTML? I want two components talking without a shared JS module.",
+    "should_trigger": true
+  },
+  {
+    "query": "The button issues a request and the network tab shows a 200, but the target div never gets replaced. I think my swap target selector is wrong.",
+    "should_trigger": false
+  },
+  {
+    "query": "Which Tabler utility classes give me a muted secondary text style inside a card footer, and how do I get the icon to line up with it?",
+    "should_trigger": false
+  },
+  {
+    "query": "Clicking an empty day cell in our calendar does nothing — no callback fires. Selecting a range doesn't work either, though rendering is fine.",
+    "should_trigger": false
+  },
+  {
+    "query": "My Alpine.js x-data component's computed getter isn't recomputing when the array is mutated. What's the reactivity rule I'm breaking?",
+    "should_trigger": false
+  },
+  {
+    "query": "Rewrite this jQuery click handler as vanilla JS in an external module, keeping the event delegation behavior identical.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need a design direction for this settings page — hierarchy, spacing scale, and how the destructive actions should read visually.",
+    "should_trigger": false
+  },
+  {
+    "query": "The Django form's clean() isn't raising the validation error I expect on the email field. Debug the form and the model constraint.",
+    "should_trigger": false
+  },
+  {
+    "query": "Drive the app in a headless browser, click through the onboarding flow, and record a video plus the browser console output as evidence.",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up Stimulus controllers for this Rails app's dropdown and modal components, following the standard controller naming conventions.",
+    "should_trigger": false
+  }
+]

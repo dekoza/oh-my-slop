@@ -1,0 +1,74 @@
+[
+  {
+    "query": "Search the web for what the current LTS version of Node is.",
+    "should_trigger": true
+  },
+  {
+    "query": "Look this up online: did that CVE in the image library get patched yet?",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you find online whether anyone else has hit this exact error string? \"failed to bind: address already in use\" with Traefik in swarm mode.",
+    "should_trigger": true
+  },
+  {
+    "query": "I need current information on train strikes in Poland this week — check online.",
+    "should_trigger": true
+  },
+  {
+    "query": "Do a quick search and show me a few pages about the new EU accessibility act deadlines.",
+    "should_trigger": true
+  },
+  {
+    "query": "My searx instance moved to http://192.168.1.50:8080 — point the search at the new address.",
+    "should_trigger": true
+  },
+  {
+    "query": "Where is the SearXNG endpoint configured? I reinstalled it and searches stopped working.",
+    "should_trigger": true
+  },
+  {
+    "query": "Google around for a good self-hosted status page project and list what you find.",
+    "should_trigger": true
+  },
+  {
+    "query": "Look into how Redis Streams consumer groups handle pending entries and write it up as a cited markdown file in the repo notes.",
+    "should_trigger": false
+  },
+  {
+    "query": "Check the spec for what the HTTP 425 Too Early status is actually meant for, going by the RFC itself, and leave documented findings.",
+    "should_trigger": false
+  },
+  {
+    "query": "Kick off a background agent to investigate the Litestar DI lifecycle against its source and docs while I keep working, then give me a sourced summary.",
+    "should_trigger": false
+  },
+  {
+    "query": "I want a deep, fact-checked report comparing the three main vector databases, with claims verified across sources.",
+    "should_trigger": false
+  },
+  {
+    "query": "Find where we define the retry policy in this codebase.",
+    "should_trigger": false
+  },
+  {
+    "query": "Grep the repo for every place that still calls the old settings loader.",
+    "should_trigger": false
+  },
+  {
+    "query": "Fetch this specific URL I'm pasting and summarize the page for me.",
+    "should_trigger": false
+  },
+  {
+    "query": "Our README and the code disagree about the default timeout. Reconcile the docs.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write the pytest fixtures for the new billing service.",
+    "should_trigger": false
+  },
+  {
+    "query": "Docker compose keeps merging ports from the override file — why?",
+    "should_trigger": false
+  }
+]

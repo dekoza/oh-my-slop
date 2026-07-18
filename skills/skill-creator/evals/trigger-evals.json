@@ -1,0 +1,86 @@
+[
+  {
+    "query": "I want to build something that makes the agent run the migration checks before it ever commits. Where do I start with that?",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to rework one of my existing SKILL.md files so it covers a second workflow too. What's the safe way to change it without breaking what already works?",
+    "should_trigger": true
+  },
+  {
+    "query": "Should this be its own skill at all, or is it really just a repo-wide contributor rule that belongs in AGENTS.md?",
+    "should_trigger": true
+  },
+  {
+    "query": "Mine fires on maybe half the requests it should and I have no idea why. How do I actually find out what's going wrong with the triggering?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I check whether the agent picks this up from a realistic user request, rather than me just eyeballing the wording and hoping?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I prove this actually changed the agent's behavior instead of just feeling like an improvement?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want a before/after on the same prompts — one run with it installed, one without — and some numbers I can point at.",
+    "should_trigger": true
+  },
+  {
+    "query": "This is meant to stop the agent rationalizing its way out of writing tests. How do I test that it actually holds up under pressure?",
+    "should_trigger": true
+  },
+  {
+    "query": "Before I merge this into the shared repo and let the team install it, what does it need to pass?",
+    "should_trigger": true
+  },
+  {
+    "query": "I rewrote the frontmatter fairly heavily. Is there anything I'm supposed to run before shipping that change?",
+    "should_trigger": true
+  },
+  {
+    "query": "Our pytest suite takes twelve minutes. Can you benchmark it and find the slowest tests so I know what to attack?",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up pytest-benchmark so we can track performance regressions between releases.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a load test that measures p95 latency on the checkout endpoint under a hundred concurrent users.",
+    "should_trigger": false
+  },
+  {
+    "query": "The README install steps are stale since we switched to uv. Fix them so a new contributor can follow them.",
+    "should_trigger": false
+  },
+  {
+    "query": "Draft an ADR for choosing Litestar over FastAPI, including the alternatives we rejected.",
+    "should_trigger": false
+  },
+  {
+    "query": "Our deploy runbook and the actual deploy script have drifted apart. Reconcile the doc with what the script really does.",
+    "should_trigger": false
+  },
+  {
+    "query": "Split this page into a tutorial and a config reference — right now it's trying to be both and serving neither.",
+    "should_trigger": false
+  },
+  {
+    "query": "Is \"don't skip the tests\" a good line to have, or does phrasing it as a prohibition backfire? How would you word it instead?",
+    "should_trigger": false
+  },
+  {
+    "query": "I've restated the same rule in three sections of this prose. How do I collapse it into one compact phrase the agent will still follow?",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain the difference between a leading word and a context pointer, and when each one is doing real work.",
+    "should_trigger": false
+  },
+  {
+    "query": "Compact this conversation into a handoff note so a fresh agent can carry on where we left off.",
+    "should_trigger": false
+  }
+]

@@ -1,0 +1,90 @@
+[
+  {
+    "query": "I want to collect a company name during signup and reject free-email domains. Where does that belong?",
+    "should_trigger": true
+  },
+  {
+    "query": "After registering, users land on the homepage instead of the onboarding page. How do I change where login redirects them?",
+    "should_trigger": true
+  },
+  {
+    "query": "The confirmation email goes out but clicking the link says the key is invalid or expired every time.",
+    "should_trigger": true
+  },
+  {
+    "query": "I want new accounts to be unusable until the address is confirmed, and the confirmation email to use our own template.",
+    "should_trigger": true
+  },
+  {
+    "query": "Password reset emails are sent even for addresses that don't exist, which leaks whether someone has an account. Can I change that?",
+    "should_trigger": true
+  },
+  {
+    "query": "Sign in with Google works locally but in production the callback fails with a redirect URI mismatch.",
+    "should_trigger": true
+  },
+  {
+    "query": "I have two sites in the same deployment and each needs its own set of OAuth credentials. How do I model that?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I offer TOTP plus recovery codes and force it on for staff accounts only?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want users to see every device they're currently signed in on and be able to kill a session remotely.",
+    "should_trigger": true
+  },
+  {
+    "query": "Our React frontend needs to log in against the same backend without server-rendered templates. What's the token flow here?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want our app to be the OAuth provider so a partner's service can let people sign in with our accounts.",
+    "should_trigger": true
+  },
+  {
+    "query": "When someone signs in with a social account that matches an existing email, I want to link them instead of erroring. Where do I hook that?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I swap in a custom user model with email as the username field?",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to restrict this view to users with a specific permission and redirect the rest. What's the built-in decorator?",
+    "should_trigger": false
+  },
+  {
+    "query": "What's the difference between Django's default password hasher and switching to Argon2?",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I write a custom authentication backend that checks credentials against our LDAP server?",
+    "should_trigger": false
+  },
+  {
+    "query": "I'm adding a new field to a model in this project — what checks do I need to run first?",
+    "should_trigger": false
+  },
+  {
+    "query": "How should I structure permission_classes and throttling on this ViewSet for anonymous vs authenticated callers?",
+    "should_trigger": false
+  },
+  {
+    "query": "My serializer needs to accept a nested write for related objects on POST. How do I implement create()?",
+    "should_trigger": false
+  },
+  {
+    "query": "Should a failed credential check return 401 or 403 from this endpoint?",
+    "should_trigger": false
+  },
+  {
+    "query": "The hx-post on my login form submits but the error partial never swaps into the page.",
+    "should_trigger": false
+  },
+  {
+    "query": "Which Tabler classes make a centered card layout for a form page?",
+    "should_trigger": false
+  }
+]

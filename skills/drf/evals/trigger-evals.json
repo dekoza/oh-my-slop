@@ -1,0 +1,90 @@
+[
+  {
+    "query": "My API blows up at import time with ImproperlyConfigured about the Meta class on one of my serializers.",
+    "should_trigger": true
+  },
+  {
+    "query": "POSTing a payload with a nested related object silently ignores the nested part and only creates the parent.",
+    "should_trigger": true
+  },
+  {
+    "query": "The reverse foreign key relation doesn't show up in my API response even though it's on the model. Why?",
+    "should_trigger": true
+  },
+  {
+    "query": "I registered my endpoints with a router and now every URL has a double slash in it.",
+    "should_trigger": true
+  },
+  {
+    "query": "I need a custom detail route on my ViewSet that only staff can hit. How do I wire that up?",
+    "should_trigger": true
+  },
+  {
+    "query": "My object-level permission check never runs on create — anyone can POST a record belonging to another tenant.",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to combine two permission classes so it's either-or, but the negation seems to bind unexpectedly.",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I rate-limit anonymous callers to 20 requests an hour but leave logged-in users alone on this endpoint?",
+    "should_trigger": true
+  },
+  {
+    "query": "Switching to cursor-based paging on my list endpoint raises an error about ordering.",
+    "should_trigger": true
+  },
+  {
+    "query": "PATCHing a record wipes out a field I set with a hidden default. It works fine on PUT.",
+    "should_trigger": true
+  },
+  {
+    "query": "My list endpoint fires hundreds of queries because each item serializes a related object. How do I fix the view?",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to test that an unauthenticated client gets rejected from this endpoint — what's the right test client here?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I annotate each row with a count of related objects and filter on it in a queryset?",
+    "should_trigger": false
+  },
+  {
+    "query": "I need cross-field validation on a ModelForm — start date must be before end date. Where does it go?",
+    "should_trigger": false
+  },
+  {
+    "query": "My template renders a Python list with single quotes and it breaks the inline JavaScript.",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I add a computed, sortable column to the admin changelist for this model?",
+    "should_trigger": false
+  },
+  {
+    "query": "I'm adding a helper function to this Django project — what do I need to run before committing?",
+    "should_trigger": false
+  },
+  {
+    "query": "Social login callback returns but no account is linked. How do I configure the provider credentials?",
+    "should_trigger": false
+  },
+  {
+    "query": "Should this endpoint return 400 or 422 when the body parses but fails business validation?",
+    "should_trigger": false
+  },
+  {
+    "query": "I'm building this API with FastAPI and need a response model for a nested payload.",
+    "should_trigger": false
+  },
+  {
+    "query": "The hx-get on my table row fires but the target div never updates.",
+    "should_trigger": false
+  },
+  {
+    "query": "What retry and circuit-breaker strategy should I use for this flaky upstream service?",
+    "should_trigger": false
+  }
+]

@@ -1,0 +1,78 @@
+[
+  {
+    "query": "Half the team says \"booking\" and the other half says \"reservation\", and the code uses both interchangeably. Can we settle on one and write it down somewhere?",
+    "should_trigger": true
+  },
+  {
+    "query": "The word \"settlement window\" keeps showing up in new code and nobody has defined it — two people clearly mean different things by it.",
+    "should_trigger": true
+  },
+  {
+    "query": "I want the terminology nailed down before we build anything: what exactly is an order versus a cart versus a checkout in this system?",
+    "should_trigger": true
+  },
+  {
+    "query": "We just decided that a subscription can never span two billing accounts. Capture that somewhere it won't get lost by next month.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write up the decision we reached about soft deletes, including the options we rejected and why.",
+    "should_trigger": true
+  },
+  {
+    "query": "Our glossary file is badly out of date after the last three design sessions. Bring it back in line with what we actually decided.",
+    "should_trigger": true
+  },
+  {
+    "query": "As we work through these decision tickets one by one, keep the project's vocabulary and decision record updated as each one lands.",
+    "should_trigger": true
+  },
+  {
+    "query": "The spec and the database columns use different names for the same concept and it's causing real bugs. I want the language fixed first.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm about to rename half the core types. Before I do, let's agree on what each concept is actually called and record it.",
+    "should_trigger": true
+  },
+  {
+    "query": "How should I draw aggregate boundaries between orders and line items, and which one is the consistency boundary?",
+    "should_trigger": false
+  },
+  {
+    "query": "Is this a separate bounded context or just a module? I think we need an anticorruption layer between us and the legacy billing system.",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain the difference between an entity and a value object, and when a factory is worth having.",
+    "should_trigger": false
+  },
+  {
+    "query": "Our deploy runbook is stale and the API reference is missing three endpoints we shipped last quarter.",
+    "should_trigger": false
+  },
+  {
+    "query": "This spec has no acceptance criteria. Write them so QA can actually verify the feature.",
+    "should_trigger": false
+  },
+  {
+    "query": "Should the business logic here live in a Transaction Script or a full Domain Model with a Unit of Work?",
+    "should_trigger": false
+  },
+  {
+    "query": "How do we evolve this event schema without breaking downstream consumers that are still on the old version?",
+    "should_trigger": false
+  },
+  {
+    "query": "Turn this whole conversation into a PRD and publish it to the tracker — no interview, just write up what we said.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rename this variable and extract the duplicated block into a helper without changing behavior.",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up pre-commit hooks so ruff and mypy run before every commit.",
+    "should_trigger": false
+  }
+]

@@ -1,0 +1,74 @@
+[
+  {
+    "query": "This repo has ballooned over two years and I suspect a lot of it is never executed. Can you go through the whole thing and tell me what's safe to delete, most valuable first?",
+    "should_trigger": true
+  },
+  {
+    "query": "We inherited this service and it feels three times bigger than the problem it solves. Give me a prioritised list of the fat to trim — don't change anything yet.",
+    "should_trigger": true
+  },
+  {
+    "query": "I keep finding little helper modules that just reimplement things the standard library already does. Sweep the codebase and tell me everywhere we've rebuilt the wheel.",
+    "should_trigger": true
+  },
+  {
+    "query": "There are half a dozen base classes and protocols in here that only ever have one concrete subclass. Can you find all of those and rank how much noise each one is costing us?",
+    "should_trigger": true
+  },
+  {
+    "query": "Do a YAGNI pass over this project — I want to know how much of this we built for a future that never showed up.",
+    "should_trigger": true
+  },
+  {
+    "query": "We have feature flags from a migration that finished last year and I bet they're all permanently on now. What config and flags can we rip out?",
+    "should_trigger": true
+  },
+  {
+    "query": "Before I onboard two new devs I want an honest read on how much of this code surface is actually load-bearing. Report only, no edits.",
+    "should_trigger": true
+  },
+  {
+    "query": "Half these classes look like they just forward every call straight to another object. Can you check the whole repo for that pattern and tell me which ones to collapse?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm running an architecture review workflow and one of the steps needs a bloat audit of the repo to feed into the candidate list.",
+    "should_trigger": true
+  },
+  {
+    "query": "Collect all the SHORTCUT markers we left in the code during TDD and group them by file so I can see which ones never got an upgrade path.",
+    "should_trigger": false
+  },
+  {
+    "query": "Scan for deepening and simplification opportunities and give me the dual-axis HTML report, then grill me on whichever candidate I pick.",
+    "should_trigger": false
+  },
+  {
+    "query": "Go ahead and delete the dead code you find and collapse those wrappers — just make the changes and run the tests.",
+    "should_trigger": false
+  },
+  {
+    "query": "Extract the duplicated validation out of these three handlers into one function without changing behaviour.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review my current diff for correctness bugs and edge cases I might have missed.",
+    "should_trigger": false
+  },
+  {
+    "query": "Something in the checkout flow started throwing 500s after yesterday's deploy and I have no idea which change caused it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Our test suite takes 40 minutes. Which of these tests belong in which tier and what should we stop running on every push?",
+    "should_trigger": false
+  },
+  {
+    "query": "This module has no tests and unclear behaviour — help me get characterization tests around it before I touch it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Audit our dependencies for known CVEs and outdated versions.",
+    "should_trigger": false
+  }
+]

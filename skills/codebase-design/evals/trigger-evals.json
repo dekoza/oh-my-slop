@@ -1,0 +1,74 @@
+[
+  {
+    "query": "I'm splitting the notification code out of the order service and I can't decide where the line between them should fall. Half the options leave one side knowing far too much about the other.",
+    "should_trigger": true
+  },
+  {
+    "query": "This package has grown to eleven files and I want to carve it in two, but every cut I try means passing five parameters back and forth across the cut. Where should the boundary actually go?",
+    "should_trigger": true
+  },
+  {
+    "query": "I wrote a PaymentProvider interface with exactly one implementation and no second one on the roadmap. Is it pulling its weight or should I just delete it and call Stripe directly?",
+    "should_trigger": true
+  },
+  {
+    "query": "My teammate says this wrapper class is pointless indirection, I say it protects us. How do I tell whether an abstraction like this is actually earning anything?",
+    "should_trigger": true
+  },
+  {
+    "query": "To test this scheduler I have to monkeypatch four globals and stub the clock. I'd rather redesign it so the tests can just call it normally — how should I reshape it?",
+    "should_trigger": true
+  },
+  {
+    "query": "Every test for this module reaches into its private internals, so the tests break whenever I touch anything. How do I restructure it so I can test it from the outside instead?",
+    "should_trigger": true
+  },
+  {
+    "query": "Changing the report format means editing six files across three packages. I want to redesign this so the change stays in one place.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm writing a skill about restructuring modules and I want it to use the same shared design terms the rest of our skills already use rather than inventing its own words.",
+    "should_trigger": true
+  },
+  {
+    "query": "Extract this 200-line function into smaller named functions without changing what it does.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rename this variable everywhere and inline the temp — pure cleanup, behaviour must stay identical.",
+    "should_trigger": false
+  },
+  {
+    "query": "This 2000-line file has no tests at all and I'm scared to touch it. How do I pin down what it currently does before I change anything?",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to get this untested legacy billing class under test, but it constructs its own database connection in the constructor.",
+    "should_trigger": false
+  },
+  {
+    "query": "Help me work out the aggregate boundaries and the shared business vocabulary for our claims-handling domain.",
+    "should_trigger": false
+  },
+  {
+    "query": "The business rules around policy renewal keep coming out wrong. I want to model the domain properly with the language the underwriters actually use.",
+    "should_trigger": false
+  },
+  {
+    "query": "Should this business logic live in the service layer or the model, and do I need a Unit of Work to coordinate the transaction?",
+    "should_trigger": false
+  },
+  {
+    "query": "What's the cleanest way to write this loop and name these local variables inside a single routine?",
+    "should_trigger": false
+  },
+  {
+    "query": "My estimate for this feature is a guess and the team wants a number. How do I ground it in something real?",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I center a div vertically with flexbox?",
+    "should_trigger": false
+  }
+]

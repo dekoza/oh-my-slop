@@ -1,0 +1,74 @@
+[
+  {
+    "query": "We want our own implementation of this vendor library, but legal says we cannot have anyone who read their source write our version. How do we structure that?",
+    "should_trigger": true
+  },
+  {
+    "query": "The license on the original is incompatible with ours. I need a functionally equivalent replacement built without borrowing any of their code.",
+    "should_trigger": true
+  },
+  {
+    "query": "This PHP billing engine is 12k lines of spaghetti nobody understands. I want to throw it away and build a fresh one that behaves identically.",
+    "should_trigger": true
+  },
+  {
+    "query": "Rather than untangle this parser, I'd like to start over on a blank file and reproduce its behavior exactly — nothing copied across.",
+    "should_trigger": true
+  },
+  {
+    "query": "Plan is: one agent documents everything the old service does, then a second agent builds the new one from that document alone, never seeing the old code. Help me run that.",
+    "should_trigger": true
+  },
+  {
+    "query": "Can we split this into a spec phase and a build phase, where the builder only gets the written behavior description and no snippets?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to port this Java tool to Go, but by writing down what it does first and implementing from that, not by translating it line by line.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write me a behavioral specification of this module complete enough that someone could rebuild it from scratch without ever opening the original.",
+    "should_trigger": true
+  },
+  {
+    "query": "This module has no tests and I'm scared to touch it. Help me pin down what it currently does before I change anything.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to add a feature to a 2000-line class with hidden database dependencies and no way to test locally. Where do I break the dependencies?",
+    "should_trigger": false
+  },
+  {
+    "query": "Extract these three nested conditionals into named methods and reduce the duplication, without changing behavior.",
+    "should_trigger": false
+  },
+  {
+    "query": "Clean up this file in place — rename the confusing variables, inline the pointless wrapper, move the helpers where they belong.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rewrite this messy module, it's gotten ugly.",
+    "should_trigger": false
+  },
+  {
+    "query": "Let's incrementally strangle the old endpoint: keep it running while we route traffic to a new one, piece by piece.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write characterization tests around this pricing function so I can safely refactor it afterwards.",
+    "should_trigger": false
+  },
+  {
+    "query": "Draft a spec and acceptance criteria for a brand new notification feature we haven't built yet.",
+    "should_trigger": false
+  },
+  {
+    "query": "Implement the CSV export endpoint with tests, test first.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review the diff on this branch against our coding standards.",
+    "should_trigger": false
+  }
+]

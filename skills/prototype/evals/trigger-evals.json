@@ -1,0 +1,78 @@
+[
+  {
+    "query": "I've sketched the states for our booking flow — draft, held, confirmed, cancelled, expired — but I can't tell on paper whether the transitions actually hang together. Can we build something I can click through and poke at before I commit to it?",
+    "should_trigger": true
+  },
+  {
+    "query": "The retry-and-backoff logic reads fine but I don't trust it. I'd like something throwaway I can run in the terminal and watch behave under a few failure sequences.",
+    "should_trigger": true
+  },
+  {
+    "query": "Before I wire this scoring algorithm into the real app I want to feel it working on made-up data — a little scratch program is fine, I'll throw it away after.",
+    "should_trigger": true
+  },
+  {
+    "query": "I have no idea what the settings page should look like. Show me a few genuinely different takes on the same route so I can pick a direction by looking at them.",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you mock up three or four versions of this dashboard screen? Not polished — I just need to see the options side by side in the browser.",
+    "should_trigger": true
+  },
+  {
+    "query": "We keep arguing about the onboarding layout in the abstract. Build a couple of throwaway variants on /onboarding so we can stop arguing and just look at them.",
+    "should_trigger": true
+  },
+  {
+    "query": "This spec discussion is going in circles because nobody can picture the thing. Give me something cheap and concrete we can react to instead of more prose.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm mapping out the work for this feature and one of the open questions can only really be settled by seeing a rough working version first.",
+    "should_trigger": true
+  },
+  {
+    "query": "Is a queue-per-tenant model actually going to feel right? I'd rather stub it out and run it than keep reasoning about it in my head.",
+    "should_trigger": true
+  },
+  {
+    "query": "Give me a design direction for this product — colour palette, typography, spacing scale — no code, just the system.",
+    "should_trigger": false
+  },
+  {
+    "query": "Here's a screenshot of our current admin panel. Critique it — does it look professional and trustworthy enough for enterprise buyers?",
+    "should_trigger": false
+  },
+  {
+    "query": "Build the real password reset flow now: token generation, email, expiry, and tests for each piece.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write the failing test first, then implement the discount calculation until it passes.",
+    "should_trigger": false
+  },
+  {
+    "query": "Implement the CSV export endpoint we specced last week and get it merged.",
+    "should_trigger": false
+  },
+  {
+    "query": "The dropdown on our staging site doesn't open in Firefox. Open it in a browser, reproduce it, and grab the console output and a screenshot.",
+    "should_trigger": false
+  },
+  {
+    "query": "Take a screenshot of the checkout page as it currently renders so I can confirm the bug is real.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write the end-to-end test suite covering our signup and login journeys.",
+    "should_trigger": false
+  },
+  {
+    "query": "Refactor this view module into smaller components without changing what it renders.",
+    "should_trigger": false
+  },
+  {
+    "query": "What's the current exchange rate between EUR and PLN?",
+    "should_trigger": false
+  }
+]

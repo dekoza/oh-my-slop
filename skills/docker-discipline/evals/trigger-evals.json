@@ -1,0 +1,78 @@
+[
+  {
+    "query": "New Django project, nothing containerized yet. Write the Dockerfile for it.",
+    "should_trigger": true
+  },
+  {
+    "query": "We need to ship this Node service as an image so ops can deploy it. Get me started on the build file.",
+    "should_trigger": true
+  },
+  {
+    "query": "Split our existing image build so the runtime layer doesn't carry gcc and all the build headers around.",
+    "should_trigger": true
+  },
+  {
+    "query": "Everything our container writes into the mounted project folder ends up owned by root on my host and I have to sudo to delete it. Fix the build so that stops.",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to pass a private PyPI token into the build so uv can install our internal package. Where does that go?",
+    "should_trigger": true
+  },
+  {
+    "query": "Write me a compose setup for local dev with the app, Postgres and Redis.",
+    "should_trigger": true
+  },
+  {
+    "query": "I want the test suite to run against its own throwaway database without stomping on my dev containers. How should I lay the compose files out?",
+    "should_trigger": true
+  },
+  {
+    "query": "I changed the web service's host port in the override file and now it's listening on both the old and the new one. How do I actually change it?",
+    "should_trigger": true
+  },
+  {
+    "query": "Our app boots before Postgres is accepting connections and dies. Update the compose config so it waits properly.",
+    "should_trigger": true
+  },
+  {
+    "query": "About to containerize this repo and run the first build. Anything I should put in place beforehand so I don't drag junk into the image?",
+    "should_trigger": true
+  },
+  {
+    "query": "The build stopped with \"failed to solve: failed to compute cache key\". What does that error actually mean?",
+    "should_trigger": false
+  },
+  {
+    "query": "\"Cannot connect to the Docker daemon at unix:///var/run/docker.sock\" — the package is installed, what do I check next?",
+    "should_trigger": false
+  },
+  {
+    "query": "Two containers on the same network can't reach each other by service name. How does name resolution work between containers?",
+    "should_trigger": false
+  },
+  {
+    "query": "Pushing to our registry returns \"denied: requested access to the resource is denied\" even though login succeeded.",
+    "should_trigger": false
+  },
+  {
+    "query": "I inherited this Dockerfile and don't want to touch it yet — walk me through what each stage is doing.",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain the practical difference between a bind mount, a named volume, and tmpfs for my data directory.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write the Deployment and Service manifests so this app runs on our cluster.",
+    "should_trigger": false
+  },
+  {
+    "query": "How should I structure values.yaml in our chart so staging and production get different replica counts?",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a unit test for this pricing function covering the discount edge cases.",
+    "should_trigger": false
+  }
+]

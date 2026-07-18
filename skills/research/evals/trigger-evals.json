@@ -1,0 +1,78 @@
+[
+  {
+    "query": "I need to understand how Stripe's webhook signature verification actually works before I trust our handler. Dig into it properly and write up what you find with links.",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you look into how Postgres logical replication slots behave when a subscriber goes offline for a week? Go to the official docs, not blog posts.",
+    "should_trigger": true
+  },
+  {
+    "query": "Before I commit to this design, find out what the OAuth 2.1 draft actually says about PKCE being mandatory for confidential clients.",
+    "should_trigger": true
+  },
+  {
+    "query": "Go read the CalDAV RFC and tell me what the spec requires for recurring event exceptions. Cite the sections.",
+    "should_trigger": true
+  },
+  {
+    "query": "Gather the facts on the Cloudflare Workers KV API — limits, consistency guarantees, pricing tiers — from their own documentation and save it as a notes file.",
+    "should_trigger": true
+  },
+  {
+    "query": "I want a markdown writeup with sources on how Kubernetes handles pod eviction under memory pressure. Put it in the repo notes.",
+    "should_trigger": true
+  },
+  {
+    "query": "Kick this off in the background while I keep working on the migration: figure out what changed in the Django 5.2 async ORM support and where it's documented.",
+    "should_trigger": true
+  },
+  {
+    "query": "Have an agent dig through the httpx source and docs and report back on how connection pooling limits interact with timeouts, so I can keep coding meanwhile.",
+    "should_trigger": true
+  },
+  {
+    "query": "We're evaluating whether to adopt this library. Investigate its actual maintenance situation and API stability from the repo itself and give me a documented summary.",
+    "should_trigger": true
+  },
+  {
+    "query": "Nobody on the team knows what the ICS timezone rules really are. Look into it and leave a cited document behind so we stop re-litigating it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Search the web for the current price of a Framework 13 laptop.",
+    "should_trigger": false
+  },
+  {
+    "query": "Look this up online real quick: is the conference deadline the 14th or the 15th?",
+    "should_trigger": false
+  },
+  {
+    "query": "Run a searx query for \"htmx sse extension examples\" and show me the top hits.",
+    "should_trigger": false
+  },
+  {
+    "query": "My SearXNG endpoint moved to a new port. Update the config so searches work again.",
+    "should_trigger": false
+  },
+  {
+    "query": "Find where the invoice total is calculated in our codebase — I think it's in the billing module somewhere.",
+    "should_trigger": false
+  },
+  {
+    "query": "Which files in this repo import the legacy auth helper? I need the full list before I delete it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write an ADR documenting why we chose webhooks over polling, and update the runbook to match.",
+    "should_trigger": false
+  },
+  {
+    "query": "The test suite has been failing intermittently since Tuesday and I have no idea why. Help me track it down.",
+    "should_trigger": false
+  },
+  {
+    "query": "Book me a table for four somewhere near the office on Friday.",
+    "should_trigger": false
+  }
+]

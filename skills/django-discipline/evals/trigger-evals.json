@@ -1,0 +1,90 @@
+[
+  {
+    "query": "I added two fields to a model in this project. Walk me through making the change properly.",
+    "should_trigger": true
+  },
+  {
+    "query": "There's a manage.py in the root. I want to rename a model class and every reference to it — how do I do that safely?",
+    "should_trigger": true
+  },
+  {
+    "query": "This repo has django in its pyproject. I'm about to add a plain helper module with no framework code in it — anything I need to follow?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm fixing a date-parsing bug in a utility function inside our Django app. What's the process before I commit?",
+    "should_trigger": true
+  },
+  {
+    "query": "Refactoring a big view module into smaller files here. What do I need to be careful about in this project?",
+    "should_trigger": true
+  },
+  {
+    "query": "Just tweaking a constant and a docstring in this project — do I still need to run anything?",
+    "should_trigger": true
+  },
+  {
+    "query": "I hand-wrote a migration file because it seemed simpler than regenerating it. Is that fine?",
+    "should_trigger": true
+  },
+  {
+    "query": "Adding a new feature to our app, roughly six files touched. Give me the checklist I should be following before I open the PR.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm about to start editing models.py and views.py in this codebase. What rules apply to changes here?",
+    "should_trigger": true
+  },
+  {
+    "query": "Deleting a field from a model and cleaning up the code that used it. What's the safe order of operations?",
+    "should_trigger": true
+  },
+  {
+    "query": "What's the difference between select_related and prefetch_related and when does each apply?",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I write a custom template filter that formats a duration as hours and minutes?",
+    "should_trigger": false
+  },
+  {
+    "query": "My catch-all URL pattern is matching everything. How do hierarchical URLconfs and prefixes work?",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I add a computed, sortable column to the admin changelist for this model?",
+    "should_trigger": false
+  },
+  {
+    "query": "What's the right way to override validation on a ModelForm — clean() or clean_fieldname()?",
+    "should_trigger": false
+  },
+  {
+    "query": "How should I shape a DRF serializer so nested related objects can be written on POST?",
+    "should_trigger": false
+  },
+  {
+    "query": "Social login with GitHub redirects back but never creates a SocialAccount row. What's wrong with my provider config?",
+    "should_trigger": false
+  },
+  {
+    "query": "My hx-post returns 200 but the swap never happens and there's nothing in the console.",
+    "should_trigger": false
+  },
+  {
+    "query": "Should this API return 409 or 412 when the version stamp doesn't match?",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to write a failing test first and then implement the pricing rule. Guide me through it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Which Tabler badge colors should I use for the status column?",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I set up a GitHub Actions workflow that publishes a package to PyPI on tag?",
+    "should_trigger": false
+  }
+]

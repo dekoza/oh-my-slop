@@ -1,0 +1,78 @@
+[
+  {
+    "query": "What's the correct markup for a card with a header, a title, a subtitle and a footer with two right-aligned buttons in Tabler? I keep guessing at the wrapper divs.",
+    "should_trigger": true
+  },
+  {
+    "query": "I need a confirmation dialog in this Tabler admin — what's the expected modal structure, and which class makes it the small centered variant?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I make an outline button that turns into a ghost/subtle style, and what's the class for a small icon-only version of it?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want the status pill on this row to render with a soft/tinted background rather than a solid fill, and the text to stay readable on it. Which of the framework's color classes handle the foreground?",
+    "should_trigger": true
+  },
+  {
+    "query": "Our data table needs sticky headers, a striped body, and a compact row height. What classes does Tabler give me for that instead of hand-rolling CSS?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I drop a Tabler icon into a nav item so it sizes and aligns with the label automatically? Right now it sits a few pixels too high.",
+    "should_trigger": true
+  },
+  {
+    "query": "Set up the shell for a Tabler dashboard page — vertical sidebar, top header with a user menu, and a page body with a title row and three stat cards.",
+    "should_trigger": true
+  },
+  {
+    "query": "This template is already full of .page-wrapper, .card and .btn-list markup. I need to add a filter bar above the list that matches the existing conventions.",
+    "should_trigger": true
+  },
+  {
+    "query": "I need a form section with a label, help text underneath, and an inline validation error styled the way the rest of this admin does it. What are the wrapper and state classes?",
+    "should_trigger": true
+  },
+  {
+    "query": "Which grid and column classes should I use so these four metric tiles sit in a row on desktop and stack two-by-two on tablet in this Tabler layout?",
+    "should_trigger": true
+  },
+  {
+    "query": "Give me a design direction for this B2B admin before we pick a component library — palette, typography, density, and what would make it feel untrustworthy.",
+    "should_trigger": false
+  },
+  {
+    "query": "Clicking the row's edit button sends the request but the panel on the right never gets replaced with the returned fragment. The swap target seems wrong.",
+    "should_trigger": false
+  },
+  {
+    "query": "This element has an inline `_=` attribute that's supposed to toggle a class on click and it silently does nothing. Why won't the handler run?",
+    "should_trigger": false
+  },
+  {
+    "query": "Our timeGrid week view renders but the events all land an hour off. I think it's a timezone setting on the calendar config.",
+    "should_trigger": false
+  },
+  {
+    "query": "I'm on plain Bootstrap 5 — what's the correct accordion markup and which data attributes drive the collapse behavior?",
+    "should_trigger": false
+  },
+  {
+    "query": "Convert these Tailwind utility classes into a proper component layer with @apply and fix the purge config that's dropping them in production.",
+    "should_trigger": false
+  },
+  {
+    "query": "The Django template is rendering an empty list because the context variable name doesn't match the view. Track down where the context is built.",
+    "should_trigger": false
+  },
+  {
+    "query": "Take a screenshot of the settings page at three viewport widths in a real browser so I can see what actually renders.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add ARIA labels and keyboard focus management to this existing modal component without changing any of its visual styling.",
+    "should_trigger": false
+  }
+]

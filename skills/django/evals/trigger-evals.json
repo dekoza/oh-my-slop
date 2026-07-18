@@ -1,0 +1,98 @@
+[
+  {
+    "query": "My list page fires one query per row when it renders the author name. What's the right queryset change to load them all at once?",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to annotate each order with the sum of its line items and then filter on that total. How do I express that as a queryset?",
+    "should_trigger": true
+  },
+  {
+    "query": "My catch-all route is swallowing every other URL in the app and I can't work out the right include() structure.",
+    "should_trigger": true
+  },
+  {
+    "query": "I converted my function view to a class-based one and now the context dict I was passing has vanished from the template.",
+    "should_trigger": true
+  },
+  {
+    "query": "The {% url %} tag inside my external app.js file renders as literal text instead of a path. Why isn't it being processed?",
+    "should_trigger": true
+  },
+  {
+    "query": "A list I put in the context renders in the template with single quotes and breaks the JavaScript that reads it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Where should I put cross-field validation on this form — the form or the model? I have a start date that must precede an end date.",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I make a computed column show up in the changelist and be sortable in the admin?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to restrict a view to users in a specific group and redirect everyone else to login. What's the built-in way?",
+    "should_trigger": true
+  },
+  {
+    "query": "Setting a timestamp field explicitly in save() has no effect — it always writes the current time no matter what I pass.",
+    "should_trigger": true
+  },
+  {
+    "query": "I need different database and cache config per environment without duplicating the whole settings file. What's the usual layout?",
+    "should_trigger": true
+  },
+  {
+    "query": "Calling an async function from inside a view blows up with SynchronousOnlyOperation when it touches the database.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm adding a small string-formatting helper to a utils module in this project. Anything I should follow before I start editing?",
+    "should_trigger": false
+  },
+  {
+    "query": "About to refactor a service function and rename a couple of variables here. What's the process in this repo?",
+    "should_trigger": false
+  },
+  {
+    "query": "I'm fixing a typo in a dataclass and adding a field to it. What checks do I need to run before committing?",
+    "should_trigger": false
+  },
+  {
+    "query": "My ModelSerializer needs to accept nested writes for related objects on POST. How do I make that work?",
+    "should_trigger": false
+  },
+  {
+    "query": "What permission_classes and throttle rate should I set on this ViewSet to limit anonymous callers?",
+    "should_trigger": false
+  },
+  {
+    "query": "Email verification links are being sent but clicking them logs the user out instead of confirming the address.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to configure a Google SocialApp with the right callback URL for my site.",
+    "should_trigger": false
+  },
+  {
+    "query": "Clicking the button does nothing — the hx-get fires but the target never updates.",
+    "should_trigger": false
+  },
+  {
+    "query": "Which Tabler classes give me a card with a colored status header and a table inside?",
+    "should_trigger": false
+  },
+  {
+    "query": "Should this business logic be a Transaction Script or a full Domain Model with a Unit of Work?",
+    "should_trigger": false
+  },
+  {
+    "query": "The test suite takes twelve minutes. How do I decide which tier each of these tests belongs in?",
+    "should_trigger": false
+  },
+  {
+    "query": "What's a good way to structure a Terraform module for an S3 bucket with versioning?",
+    "should_trigger": false
+  }
+]
