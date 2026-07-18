@@ -36,6 +36,30 @@
         "It mentions that the seam allows swapping adapters (production vs test).",
         "It applies the 'one adapter = hypothetical seam, two = real' principle."
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "Our billing policy package imports the Stripe adapter, and the Stripe adapter imports billing models, creating a dependency cycle. Should I leave it because both deploy in one process?",
+      "expected_output": "The response treats the cycle as an architectural coupling problem and recommends an acyclic, stability-directed dependency graph without inventing a separate process.",
+      "files": [],
+      "expectations": [
+        "It identifies the dependency cycle even though deployment is shared.",
+        "It directs dependencies from the volatile Stripe adapter toward stable billing policy.",
+        "It recommends moving shared policy inward, inverting a dependency, or merging only when the modules share one change reason.",
+        "It avoids prescribing a separate process merely to fix source dependencies."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Refund approval and support adjustments duplicate validation, but they serve different actors and change for different reasons. Should I merge the use cases and deploy them as a separate service?",
+      "expected_output": "The response keeps independently changing use cases separate, extracts only genuinely shared policy, and chooses the cheapest enforceable seam.",
+      "files": [],
+      "expectations": [
+        "It preserves use-case separation when actors and change reasons differ.",
+        "It allows duplication when sharing the workflow would couple independent changes.",
+        "It recommends extracting only a stable shared policy or invariant.",
+        "It weighs volatility, substitution value, testability, and cost before choosing a partial seam or a more expensive deployment seam."
+      ]
     }
   ]
 }

@@ -23,6 +23,12 @@ Source dependencies must point **inward** toward higher-level policy:
 
 **Inner layers must not know about outer layers.** Domain code must not import from the web framework, the database, or the UI. If it does, the dependency direction is violated.
 
+## Module Dependency Graphs
+
+Keep the source-dependency graph **acyclic**. A cycle makes the participating modules one change, test, and release unit even if their directories suggest independence. Break a cycle by moving shared policy inward, inverting one dependency through a policy-owned interface, or merging modules that genuinely have the same change reason.
+
+Direct dependencies toward **stability**: a volatile outer module may depend on stable policy, while stable policy must not import a volatile mechanism. Keep stable modules abstract only where real implementations need substitution; an abstraction with no concrete pressure is another shallow interface.
+
 ## What Goes Where
 
 | Layer | Contains | Must Not Import |
@@ -31,6 +37,12 @@ Source dependencies must point **inward** toward higher-level policy:
 | **Application** | Use cases, orchestration, DTOs | Frameworks, DB, web, UI |
 | **Adapters** | Controllers, presenters, repository implementations, API clients | Nothing (they implement inner interfaces) |
 | **Frameworks** | Web server, ORM, config, wiring | Nothing outer (there is nothing outer) |
+
+## Keep Use Cases Separate by Actor
+
+Give each use case one application action and one coherent change reason. Keep use cases separate when they serve different **actors**, team ownership, deployment needs, or release pressure, even if their orchestration currently looks alike. Duplication is cheaper than coupling independent **change reasons**.
+
+Extract only the stable policy or invariant that the use cases genuinely share. Sharing an entire workflow to remove surface duplication makes unrelated actors negotiate every later change.
 
 ## Dependency Inversion at Seams
 
@@ -73,12 +85,14 @@ When you find a violation in existing code:
 
 Preserve behavior at each step. This is refactoring, not rearchitecture.
 
-## When Full Separation Is Too Expensive
+## Choosing a Cost-Effective Seam
 
-For small projects or simple CRUD, full layered architecture may be overkill. The lightest enforceable boundary is:
+Choose seams by policy importance, **volatility**, **substitution value**, testability, and lifecycle cost. Preserve independence where a framework, database, vendor, delivery mechanism, actor, or deployment shape is likely to change; avoid a runtime or deployment split whose operating cost exceeds the option it preserves.
 
-- Business rules in domain objects (not in views/controllers).
-- Domain objects don't import framework types.
-- Tests for business rules don't need the framework.
+Use the lightest enforceable form:
 
-This gives you 80% of the benefit at 20% of the cost. Add more structure only when the project's complexity justifies it.
+- A **partial seam** keeps the interface and dependency direction explicit while the participating modules remain in the same package or process.
+- A source or package seam adds visibility or dependency checks when imports need enforcement.
+- A process or deployment seam earns its cost only when independent operation, scaling, ownership, or release pressure requires it.
+
+For small projects or simple CRUD, start with business rules outside views/controllers, no framework types in domain objects, and business-rule tests that run without the framework. Revisit the seam when change shape, team ownership, deployment needs, or operational constraints raise the cost of coupling.

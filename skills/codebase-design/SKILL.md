@@ -176,7 +176,7 @@ Comments reduce complexity when they document what the code *cannot* say about i
 - **Exploring alternative interfaces** — see [Design It Twice](references/design-it-twice.md): spin up parallel sub-agents to design the interface several radically different ways, then compare on depth, locality, and seam placement.
 - **Platform-native reference** — see [Platform Native](references/platform-native.md): what stdlib, frameworks, and browsers provide before you reach for a dependency.
 - **Complexity and comment discipline** — see [Complexity](references/complexity.md): cognitive load as primary metric, pull complexity downward, when to comment vs redesign.
-- **Dependency direction and boundary testing** — see [Clean Architecture](references/clean-architecture.md): the dependency rule, what goes where, dependency inversion at seams, boundary testing.
+- **Dependency direction, module cycles, seam cost, and use-case separation** — see [Clean Architecture](references/clean-architecture.md): inward dependencies, stability-directed module graphs, actor/change-reason separation, partial seams, and boundary testing.
 
 ## Reference Index
 
