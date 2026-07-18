@@ -1,0 +1,52 @@
+{
+  "skill_name": "construction-craft",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Implement a shipping-fee calculator. The ticket only says domestic = 5, international = 15, and a weight surcharge starts at 10; existing callers mix kilograms and pounds. The current function uses nested conditionals and returns null for unknown regions. Before coding, give the construction plan and the code-shape decisions you would make.",
+      "expected_output": "A construction-ready plan that resolves ambiguous requirements and represents units, mappings, invariants, and expected failures explicitly.",
+      "files": [],
+      "expectations": [
+        "The response records the surcharge unit, amount, and threshold semantics as unresolved pre-construction prerequisites.",
+        "The response uses explicit kilogram/pound representation or boundary normalization instead of a bare mixed-unit number.",
+        "The response uses a validated region mapping or table instead of preserving nested conditionals.",
+        "The response handles unknown-region and invalid external input through validation or domain errors rather than assertions."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "We are adding object storage. The CTO wants S3 now but may switch to GCS next quarter. Bucket and region values are currently copied into environment files, Terraform, and a deployment script, while release setup is a manual checklist. Give the implementation direction and an honest delivery estimate.",
+      "expected_output": "A reversible provider boundary, one authoritative configuration path, versioned release automation, and an uncertainty-bearing estimate.",
+      "files": [],
+      "expectations": [
+        "The response names an authoritative owner for bucket and region values and derives or validates every other representation from it.",
+        "The response identifies provider reversal risk, routes interface shape to codebase-design, and avoids proposing a speculative universal storage framework.",
+        "The response replaces the recurring release checklist with versioned reproducible automation and an explicit verification step.",
+        "The estimate reports a range, assumptions, exclusions or major unknowns, and evidence that would narrow the uncertainty."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Review this design: after an invoice update, the request handler starts a detached thread, passes it the request-scoped database session, and lets it mutate a shared in-memory cache. Decide what must change before implementation.",
+      "expected_output": "A construction decision that exposes unresolved concurrency policy and hands runtime mechanics to the owning guidance.",
+      "files": [],
+      "expectations": [
+        "The response identifies concurrency policy as an unresolved construction prerequisite rather than accepting detached work implicitly.",
+        "The response routes Python task, thread, synchronization, resource, and shutdown mechanics to python-async or equivalent runtime guidance.",
+        "The response records policy questions about required lifetime, consistency, and failure semantics before selecting a mechanism.",
+        "The response does not prescribe an executor, lock, task primitive, or durable job before consulting the runtime owner."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Review this failure policy: an HTTP handler uses an assertion to reject a user-supplied negative quantity, while a pricing function silently returns an error if it receives a negative quantity after the validated domain object was constructed. Decide which mechanism belongs at each boundary and why.",
+      "expected_output": "A boundary policy that validates expected external failures and reserves assertions or invariants for programmer errors and impossible internal states.",
+      "files": [],
+      "expectations": [
+        "The response uses validation with an actionable client or domain error for the user-supplied negative quantity.",
+        "The response uses an assertion, invariant check, or explicit contract failure when the validated internal object later violates its nonnegative invariant.",
+        "The response records that assertions contain no required side effects and may be disabled in some production runtimes."
+      ]
+    }
+  ]
+}

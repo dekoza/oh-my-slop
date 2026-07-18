@@ -1,0 +1,110 @@
+[
+  {
+    "query": "Before I implement this shipping calculator, help me resolve the mixed kg/lb values, magic constants, and repeated region branches.",
+    "branch": "preflight-shape",
+    "should_trigger": true
+  },
+  {
+    "query": "This routine mixes validation, computation, and side effects across six nested branches. Before coding, show the top-level logic and expose any missing decisions.",
+    "branch": "preflight-shape",
+    "should_trigger": true
+  },
+  {
+    "query": "A public API currently exposes provider-specific object IDs, but the contract launches before the storage vendor is settled. Decide what we can safely commit to.",
+    "branch": "reversibility",
+    "should_trigger": true
+  },
+  {
+    "query": "Two workers mutate the same buffer, lock ordering is implicit, and shutdown sometimes hangs. Define ownership and isolation before we add another worker.",
+    "branch": "concurrency",
+    "should_trigger": true
+  },
+  {
+    "query": "Our discount status table has drifted across Python, TypeScript, docs, and a release script; every update needs four edits. How should we stop them disagreeing?",
+    "branch": "knowledge-artifact-drift",
+    "should_trigger": true
+  },
+  {
+    "query": "The pilot uses S3, but procurement may require another provider next quarter. Structure today's work without pretending the switch will be free.",
+    "branch": "reversibility",
+    "should_trigger": true
+  },
+  {
+    "query": "Every release someone copies five setup steps from a wiki and eventually misses one. Make this repeatable and reviewable.",
+    "branch": "recurring-work-decay",
+    "should_trigger": true
+  },
+  {
+    "query": "My manager says to make this parser faster, but we have no latency goal, representative workload, or numbers yet. What should happen before code changes?",
+    "branch": "evidence",
+    "should_trigger": true
+  },
+  {
+    "query": "This patch starts a raw background thread that mutates a shared cache, but nobody owns its failures or shutdown. Decide the safe construction boundary.",
+    "branch": "concurrency",
+    "should_trigger": true
+  },
+  {
+    "query": "Operations must audit configuration changes years later, migrate them between tools, and review ordinary diffs. Which storage format properties matter?",
+    "branch": "knowledge-artifact-drift",
+    "should_trigger": true
+  },
+  {
+    "query": "While changing this deployment script I found a tiny hard-coded workaround that three newer scripts copied. What should I do without turning this into a rewrite?",
+    "branch": "recurring-work-decay",
+    "should_trigger": true
+  },
+  {
+    "query": "The PM wants a delivery date, but the external API docs are incomplete and nobody knows the migration volume. What estimate can we responsibly give, and what would tighten it?",
+    "branch": "evidence",
+    "should_trigger": true
+  },
+  {
+    "query": "Diagnose this intermittent production crash. I can reproduce it only under load and need a hypothesis and instrumentation loop.",
+    "should_trigger": false
+  },
+  {
+    "query": "Refactor this god class using named behavior-preserving moves and tell me which code smells justify each move.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write the failing unit test first and guide me through one red-green TDD slice for this parser bug.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review our retry, timeout, circuit-breaker, and backpressure policy for a failing payment dependency.",
+    "should_trigger": false
+  },
+  {
+    "query": "Show me the correct Django 6 model, migration, and admin configuration for this relationship.",
+    "should_trigger": false
+  },
+  {
+    "query": "Resolve this Git rebase conflict and preserve the intent of both branches without rewriting history.",
+    "should_trigger": false
+  },
+  {
+    "query": "Interview me and turn the answers into a feature specification and architecture decision record.",
+    "should_trigger": false
+  },
+  {
+    "query": "Redesign this dashboard hierarchy, typography, spacing, and chart choices so the interface feels deliberate.",
+    "should_trigger": false
+  },
+  {
+    "query": "Translate this one-time disaster-recovery checklist into French for tonight's operator; do not change the procedure.",
+    "should_trigger": false
+  },
+  {
+    "query": "Count the duplicated string literals in these independent test fixtures for a lint report; do not propose code changes.",
+    "should_trigger": false
+  },
+  {
+    "query": "The vendor migration is complete. Summarize the signed cutover report for an executive status update.",
+    "should_trigger": false
+  },
+  {
+    "query": "The optimization is complete and remeasured against its target. Summarize the before-and-after benchmark table for release notes.",
+    "should_trigger": false
+  }
+]
