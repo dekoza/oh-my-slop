@@ -104,3 +104,18 @@ Before finishing a task, verify:
 - affected tests were run
 - new files are intentional and documented
 - no cache or generated files were touched by accident
+
+## Agent skills
+
+### Issue tracker
+
+Agent work lives on Gitea (`minder/oh-my-slop`, via `tea`); GitHub (`dekoza/oh-my-slop`)
+is intake-only for human-filed issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical default vocabulary — each label string equals its role name. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
