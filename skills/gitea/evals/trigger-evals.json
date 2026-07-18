@@ -1,0 +1,62 @@
+[
+  {
+    "query": "I ran `tea issues list` inside my project and it printed issues from a completely different repository. What's going on?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I mark issue #12 as blocked by issue #7 on our tracker?",
+    "should_trigger": true
+  },
+  {
+    "query": "My script calls `tea api` and never notices failures — it keeps going even when the endpoint 404s.",
+    "should_trigger": true
+  },
+  {
+    "query": "File a ticket on the Gitea tracker for the flaky migration test, and put it under the v2 milestone.",
+    "should_trigger": true
+  },
+  {
+    "query": "Gitea won't let me close this issue, it says something about open dependencies.",
+    "should_trigger": true
+  },
+  {
+    "query": "What's the right way to open a draft PR with tea and then mark it ready for review?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm parsing `tea issues list -o json` with jq and the numeric comparisons on index are returning nonsense.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add a webhook to the repo on our self-hosted Gitea that fires on push and issue events.",
+    "should_trigger": true
+  },
+  {
+    "query": "Where does tea store its config and token, and how do I add a second login for another instance?",
+    "should_trigger": true
+  },
+  {
+    "query": "`tea pr edit 42 -r alice` didn't request a review from alice. Why not?",
+    "should_trigger": true
+  },
+  {
+    "query": "Create a pull request against main with gh and add the reviewers from our CODEOWNERS file.",
+    "should_trigger": false
+  },
+  {
+    "query": "Our GitHub Actions workflow fails on the checkout step with a permissions error.",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I brew a proper cup of tea without over-steeping it?",
+    "should_trigger": false
+  },
+  {
+    "query": "Resolve this merge conflict in settings.py between my branch and main.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a Django management command that emails a weekly digest of open tickets.",
+    "should_trigger": false
+  }
+]
