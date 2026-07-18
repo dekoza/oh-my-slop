@@ -10,9 +10,11 @@ disable-model-invocation: true
 
 # Triage
 
-Move issues on the project issue tracker through a small state machine of triage roles. Use the tracker's CLI — `gh` on GitHub, `tea` on Gitea.
+Move issues through a small state machine of triage roles. The issue tracker and triage label vocabulary should have been provided to you — run `/setup-project-skills` if not. Use the CLI and conventions that doc specifies.
 
-If this repo treats external pull requests as a request surface (check AGENTS.md / CLAUDE.md for a triage convention; ask the maintainer if unstated), triage covers them too: **a PR is an issue with attached code** — same roles, same states, same machine, with a few deltas marked "for a PR" below. Resolve a bare `#42` to an issue or PR per that convention.
+Triage reads whichever surfaces the tracker doc names. Where a repo separates an **intake** tracker (human- and community-filed issues) from an **agent work** tracker, triage works the intake surface — that is where untriaged requests arrive.
+
+If this repo treats external pull requests as a request surface (the tracker doc carries the flag), triage covers them too: **a PR is an issue with attached code** — same roles, same states, same machine, with a few deltas marked "for a PR" below. Resolve a bare `#42` to an issue or PR per the tracker config.
 
 Every comment or issue posted to the issue tracker during triage **must** start with this disclaimer:
 
@@ -44,7 +46,7 @@ For a PR, the same states read against the attached code: `ready-for-agent` mean
 
 Every triaged issue should carry exactly one category role and one state role. If state roles conflict, flag it and ask the maintainer before doing anything else.
 
-These are canonical role names — the actual label strings used in the issue tracker may differ. Check AGENTS.md / CLAUDE.md for a label mapping; if none is documented, use the canonical names as the labels (creating them on first use).
+These are canonical role names — the actual label strings used in the issue tracker may differ. The mapping should have been provided to you — run `/setup-project-skills` if not. If no mapping has been provided, use the canonical names as the labels, creating them on first use.
 
 State transitions: an unlabeled issue normally goes to `needs-triage` first; from there it moves to `needs-info`, `ready-for-agent`, `ready-for-human`, or `wontfix`. `needs-info` returns to `needs-triage` once the reporter replies. The maintainer can override at any time — flag transitions that look unusual and ask before proceeding.
 

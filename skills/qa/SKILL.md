@@ -12,7 +12,9 @@ license: MIT (adapted from mattpocock/skills)
 
 # QA Session
 
-Run an interactive QA session. The user describes problems they're encountering. You clarify, explore the codebase for context, and file issues on the project's tracker (GitHub via `gh`, Gitea via `tea`) that are durable, user-focused, and use the project's domain language.
+Run an interactive QA session. The user describes problems they're encountering. You clarify, explore the codebase for context, and file issues that are durable, user-focused, and use the project's domain language.
+
+The issue tracker should have been provided to you — run `/setup-project-skills` if not. File to the **agent work tracker** it names: these issues are agent-created, so they belong there even though the reports originate with a human. If no tracker has been provided, default to the local-markdown tracker.
 
 ## For each issue the user raises
 
@@ -30,7 +32,7 @@ Do NOT over-interview. If the description is clear enough to file, move on.
 
 While talking to the user, kick off an Agent (subagent_type=Explore) in the background to understand the relevant area. The goal is NOT to find a fix — it's to:
 
-- Learn the domain language used in that area (check the project's domain glossary — e.g. `UBIQUITOUS_LANGUAGE.md` or the vocabulary in `AGENTS.md` — if one exists)
+- Learn the domain language used in that area (read the project's domain glossary — `CONTEXT.md` unless the domain doc config points elsewhere — if one exists)
 - Understand what the feature is supposed to do
 - Identify the user-facing behavior boundary
 
@@ -53,7 +55,7 @@ Keep as a single issue when:
 
 ### 4. File the issue(s)
 
-Create issues with the tracker's CLI — `gh issue create` on GitHub, `tea issues create` on Gitea. Do NOT ask the user to review first — just file and share URLs.
+Create issues per the tracker doc's "publish to the issue tracker" convention. Do NOT ask the user to review first — just file and share URLs.
 
 Issues must be **durable** — they should still make sense after major refactors. Write from the user's perspective.
 

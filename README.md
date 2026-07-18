@@ -32,6 +32,16 @@ For git installs, pi keeps the checkout under `~/.pi/agent/git/...` globally or 
 
 If you only want the markdown skills for OpenCode or some other agent stack, you can still steal `./skills` and wire them up manually. That path still exists. It is just no longer the main story.
 
+### First run in a project
+
+Run [`/setup-project-skills`](skills/setup-project-skills/SKILL.md) once per repo, before the first time you reach for `wayfinder`, `to-tickets`, `to-spec`, `triage`, `qa`, or `two-axis-review`. It interviews you about three things the workflow skills otherwise have to guess at, and writes the answers to `docs/agents/` in that project:
+
+- **Issue tracker** — which forge holds agent work, and which (if any) holds human-filed intake. The skills never open work tickets on the intake tracker.
+- **Triage labels** — the strings behind the canonical roles, so `triage` applies your existing labels instead of creating duplicates.
+- **Domain docs** — where the glossary and ADRs live, and whether the repo is single- or multi-context.
+
+Skip it and the skills still run, falling back to a local-markdown tracker and the canonical label names — but each one re-derives your setup from scratch every session, and they will not always agree with each other. The setup is what makes them agree.
+
 Each skill follows the same structure:
 
 ```
@@ -79,7 +89,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 ## Skills
 
 <details>
-<summary><strong>Skills (59)</strong></summary>
+<summary><strong>Skills (60)</strong></summary>
 
 | Skill | What it covers |
 |-------|---------------|
@@ -127,6 +137,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 | **[UI Design Direction](skills/ui-design-direction/SKILL.md)** | UI/UX direction and hostile design-lead critique for dashboards, landing pages, admin tools, mobile apps, typography, chart choices, trust signals, hierarchy, and conversion friction. |
 | **[Webapp Testing](skills/webapp-testing/SKILL.md)** | Playwright workflow for local webapp testing — server lifecycle, rendered-DOM reconnaissance, browser logs, screenshots, and recorded video artifacts for repros and walkthroughs. |
 | **[Websearch](skills/websearch/SKILL.md)** | Search the web via locally installed SearXNG instance. Configurable endpoint via `/skill:websearch url`. |
+| **[Setup Project Skills](skills/setup-project-skills/SKILL.md)** | Run once per repo to configure the workflow skills — issue tracker bindings (agent work vs human intake), triage label vocabulary, and domain doc layout — written to `docs/agents/` and pointed at from CLAUDE.md/AGENTS.md. |
 | **[QA](skills/qa/SKILL.md)** | Interactive QA session — user reports bugs conversationally, agent clarifies, explores the codebase for domain language, and files durable user-focused tracker issues (single or dependency-ordered breakdowns). |
 | **[Two-Axis Review](skills/two-axis-review/SKILL.md)** | Review changes since a fixed point along two independent axes via parallel sub-agents: Standards (repo conventions + Fowler smell baseline) and Spec (does the diff match the originating issue/PRD). |
 | **[To Spec](skills/to-spec/SKILL.md)** | Turn the current conversation into a spec/PRD — problem statement, user stories, implementation and testing decisions — published to the issue tracker or `docs/specs/`. No interview, pure synthesis. |

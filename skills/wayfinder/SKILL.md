@@ -26,7 +26,9 @@ The map is a single issue on this repo's issue tracker, labelled `wayfinder:map`
 
 The map is an **index**, not a store. It lists the decisions made and points at the tickets that hold their detail; a decision lives in exactly one place — its ticket — so the map never restates it, only gists it and links.
 
-**Where the map, its child tickets, blocking, and frontier queries physically live is tracker-specific.** On GitHub use the `gh` CLI; on Gitea use `tea`, its `gh` counterpart (Gitea has native issue dependencies for blocking). Either way: the map is an issue labelled `wayfinder:map`, tickets are sub-issues of it (or issues whose body links the map), blocking uses the tracker's native "blocked by" relationship where available or a `Blocked by:` body line otherwise, and the frontier query is "open, unassigned, all blockers closed". If the repo has no tracker, fall back to a local-markdown tracker: a `wayfinder/` directory with `map.md` and one file per ticket.
+**Where the map, its child tickets, blocking, and frontier queries physically live is tracker-specific.** The issue tracker should have been provided to you — run `/setup-project-skills` if not. Consult the tracker doc's "Wayfinding operations" section for how _this_ repo expresses them. If no tracker has been provided, default to the local-markdown tracker.
+
+Whatever the tracker: the map is an issue labelled `wayfinder:map`, tickets are children of it, blocking uses the tracker's native "blocked by" relationship where it has one and a `Blocked by:` body line otherwise, and the frontier query is "open, unassigned, all blockers closed".
 
 ### The map body
 

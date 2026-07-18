@@ -12,7 +12,7 @@ disable-model-invocation: true
 
 Break a plan, spec, or conversation into a set of **tickets** — tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
-Publish to the project's issue tracker if it has one (GitHub via the `gh` CLI, Gitea via `tea`); otherwise use the local one-file-per-ticket fallback described below.
+The issue tracker and triage label vocabulary should have been provided to you — run `/setup-project-skills` if not. Publish to the agent work tracker it names, following that doc's conventions. If no tracker has been provided, default to the local-markdown tracker.
 
 ## Process
 
@@ -61,10 +61,12 @@ Iterate until the user approves the breakdown.
 
 ### 5. Publish the tickets to the configured tracker
 
-Publish the approved tickets. **How** depends on what the project uses — the tickets are the same either way, only the shape of the blocking edges changes:
+Publish the approved tickets, following the tracker doc's conventions. The tickets are the same whatever the tracker — only the shape of the blocking edges changes:
 
-- **Local files** → write one file per ticket under `docs/tickets/<feature-slug>/<NN>-<slug>.md`, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below — one ticket per file, never a single combined file.
-- **A real issue tracker (GitHub, Gitea, Linear, …)** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the platform's native blocking / sub-issue relationship where it has one; otherwise set each ticket's "Blocked by" to the blocking issues. If the project uses a triage label for agent-ready work, apply it unless instructed otherwise — the tickets are agent-grabbable by construction.
+- **A forge-backed tracker** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the tracker's native blocking relationship where the doc describes one; otherwise set each ticket's "Blocked by" to the blocking issues.
+- **Local files** → write one file per ticket at the path the tracker doc specifies, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below — one ticket per file, never a single combined file.
+
+Apply the `ready-for-agent` triage label — resolved through the label mapping — unless instructed otherwise; the tickets are agent-grabbable by construction.
 
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
 
