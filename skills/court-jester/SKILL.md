@@ -1,7 +1,12 @@
 ---
 name: court-jester
-description: One-pass adversarial critique of a plan or proposal — picks a critique mode (socratic, dialectic, pre-mortem, red-team, evidence audit) and delivers the 3–5 strongest challenges.
-disable-model-invocation: true
+description: >
+  Use when the user wants a plan, proposal, or conclusion adversarially challenged in one
+  pass — auto-picks the strongest critique mode (socratic, dialectic, pre-mortem,
+  red-team, evidence audit) and delivers the 3–5 strongest challenges plus a synthesis.
+  Triggers on: "court-jester this", "poke holes in this plan", "red-team this design",
+  "run a pre-mortem", "argue the other side", "does the evidence actually support this
+  conclusion", "challenge this proposal".
 license: Complete terms in LICENSE.txt
 ---
 

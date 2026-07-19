@@ -1,0 +1,74 @@
+[
+  {
+    "query": "Court-jester this: I want to merge the two ingestion pipelines into a single service before the next release.",
+    "should_trigger": true
+  },
+  {
+    "query": "What do you think about (court jester this) minting a new 'testing-stuff' skill that routes to all the other test-related skills we already have?",
+    "should_trigger": true
+  },
+  {
+    "query": "Poke holes in this rollout plan before I commit to it.",
+    "should_trigger": true
+  },
+  {
+    "query": "This proposal sounds plausible but I don't trust it yet — challenge it properly.",
+    "should_trigger": true
+  },
+  {
+    "query": "Steelman the case against adopting Kubernetes here, then tell me what survives.",
+    "should_trigger": true
+  },
+  {
+    "query": "Argue the other side of the buy-vs-build decision before we sign the contract.",
+    "should_trigger": true
+  },
+  {
+    "query": "Run a pre-mortem on the Q3 data migration — assume it failed badly and tell me why.",
+    "should_trigger": true
+  },
+  {
+    "query": "Red-team this API design for abuse, gaming, and hostile incentives.",
+    "should_trigger": true
+  },
+  {
+    "query": "These pilot numbers look too good. Test whether the evidence actually supports the conclusion.",
+    "should_trigger": true
+  },
+  {
+    "query": "What hidden assumptions am I making in this architecture proposal?",
+    "should_trigger": true
+  },
+  {
+    "query": "Convene the council on whether we go with Postgres or DynamoDB for this workload.",
+    "should_trigger": false
+  },
+  {
+    "query": "I want five independent perspectives to weigh in and peer-review each other before I commit.",
+    "should_trigger": false
+  },
+  {
+    "query": "Ask me questions one at a time about the CSV import until the spec has no gaps left.",
+    "should_trigger": false
+  },
+  {
+    "query": "I can't articulate why I keep flip-flopping on the caching strategy — interrogate me about it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review the changes on this branch against the originating ticket.",
+    "should_trigger": false
+  },
+  {
+    "query": "Sweep the codebase for bloat, dead code, and reinvented stdlib, and rank what to cut.",
+    "should_trigger": false
+  },
+  {
+    "query": "Checkout is broken and I have no idea why — diagnose it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review this dashboard UI — does it look professional and accessible?",
+    "should_trigger": false
+  }
+]

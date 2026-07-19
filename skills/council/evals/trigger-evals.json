@@ -1,0 +1,66 @@
+[
+  {
+    "query": "Council this: should we migrate the billing service to event sourcing or keep the CRUD model?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want the council to debate on this whole problem. Present each member's take as well as final verdict before you ask me for my decision.",
+    "should_trigger": true
+  },
+  {
+    "query": "Convene the council on whether we go with Postgres or DynamoDB for this workload.",
+    "should_trigger": true
+  },
+  {
+    "query": "I want five independent perspectives to weigh in and peer-review each other before I commit to this vendor.",
+    "should_trigger": true
+  },
+  {
+    "query": "Run a council on whether to sunset the legacy API this quarter or carry it for another year.",
+    "should_trigger": true
+  },
+  {
+    "query": "This choice is expensive to get wrong — have independent advisors argue it out and give me one verdict with a first step.",
+    "should_trigger": true
+  },
+  {
+    "query": "Rerun the council with the updated constraints and tell me whether the verdict changes.",
+    "should_trigger": true
+  },
+  {
+    "query": "Before I sign off on the rewrite, have your advisors debate it and show me where they clash.",
+    "should_trigger": true
+  },
+  {
+    "query": "Red-team this migration plan and give me the three strongest arguments against it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Run a pre-mortem on this rollout — assume it failed badly and tell me why.",
+    "should_trigger": false
+  },
+  {
+    "query": "Poke holes in my plan by asking me questions one at a time until I've actually thought it through.",
+    "should_trigger": false
+  },
+  {
+    "query": "I keep flip-flopping on the caching strategy — interrogate me about it until we land on something I can defend.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review this branch against the originating spec and our coding standards.",
+    "should_trigger": false
+  },
+  {
+    "query": "Audit this codebase for over-engineering and give me a ranked list of what to cut.",
+    "should_trigger": false
+  },
+  {
+    "query": "Does the evidence in this benchmark report actually support its conclusion?",
+    "should_trigger": false
+  },
+  {
+    "query": "Mock up three radically different versions of the settings screen so I can see which direction works.",
+    "should_trigger": false
+  }
+]

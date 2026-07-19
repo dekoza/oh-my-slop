@@ -1,7 +1,12 @@
 ---
 name: llm-council
-description: Convene five independent perspectives (Contrarian, First Principles, Expansionist, Outsider, Executor) on a high-stakes decision, peer-review them, and synthesize a verdict.
-disable-model-invocation: true
+description: >
+  Use when the user wants a high-stakes decision debated by independent perspectives and
+  synthesized into a verdict — five advisors (Contrarian, First Principles, Expansionist,
+  Outsider, Executor) answer independently, peer-review anonymously, then a chairman
+  synthesizes. Triggers on: "council this", "convene the council", "run a council on",
+  "rerun the council", "I want the council to debate this", "five independent
+  perspectives", "have advisors weigh in and peer-review each other".
 ---
 
 
