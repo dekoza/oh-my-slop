@@ -29,3 +29,16 @@ def test_wayfinder_hands_build_ready_work_to_implementation_tickets() -> None:
     assert WORKFLOW_LABEL in wayfinder_text
     assert "`implement`" in wayfinder_text
     assert "never carry a `wayfinder:<type>` label" in wayfinder_text
+
+
+def test_project_setup_and_live_config_define_the_workflow_label() -> None:
+    setup_skill_text = (
+        SKILLS_ROOT / "setup-project-skills" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    live_label_config_text = (
+        REPO_ROOT / "docs" / "agents" / "triage-labels.md"
+    ).read_text(encoding="utf-8")
+
+    assert WORKFLOW_LABEL in setup_skill_text
+    assert WORKFLOW_LABEL in live_label_config_text
+    assert "Workflow and state are separate" in live_label_config_text

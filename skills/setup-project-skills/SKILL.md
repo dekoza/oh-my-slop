@@ -80,17 +80,17 @@ Record both bindings in `docs/agents/issue-tracker.md`. The GitHub and GitLab
 templates carry a "PRs as a request surface" flag, defaulted **off** — leave it off
 and don't raise it; a user who wants external PRs in the triage queue flips it later.
 
-**Section B — Triage label vocabulary.** Skip entirely if `triage` isn't installed.
-
-Otherwise ask exactly one question:
+**Section B — Ticket label vocabulary.** Ask exactly one question:
 
 > Keep the default triage labels? (recommended: **yes**)
 
 Defaults are the canonical roles, each label string equal to its name: `needs-triage`,
 `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`, plus the categories
-`bug` and `enhancement`. Only if the user says no — usually because their tracker
-already uses other names — collect the overrides, so `triage` applies existing labels
-instead of creating duplicates.
+`bug` and `enhancement`. The fixed `workflow:implement` label routes build-ready
+work to `/implement`; it is independent of the state-role mapping. Only if the user
+says no — usually because their tracker already uses other state or category names —
+collect those overrides, so the workflow skills apply existing labels instead of
+creating duplicates.
 
 **Section C — Domain docs.** Default to **single-context**: one `CONTEXT.md` plus
 `docs/adr/` at the repo root. Write it without asking.
@@ -134,8 +134,9 @@ live here and nowhere else:
 [one-line summary — "single-context" or "multi-context"]. See `docs/agents/domain.md`.
 ```
 
-Include the `### Triage labels` sub-block, and write `docs/agents/triage-labels.md`,
-only when `triage` is installed and Section B ran.
+Include the `### Triage labels` sub-block and write `docs/agents/triage-labels.md`.
+The workflow skills need the state mapping and `workflow:implement` routing label
+even when the standalone `triage` skill is not installed.
 
 Then write the docs files, seeding from the templates in this skill folder:
 

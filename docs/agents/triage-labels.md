@@ -27,8 +27,15 @@ vocabulary you actually use; leave it identical to the left to accept the defaul
 Labels must exist before they can be applied. On Gitea, create them with
 `tea labels create --name "..." --color "..."`; on GitHub, `gh label create`.
 
+## Workflow labels
+
+`workflow:implement` marks build-ready work that should run through `/implement`.
+Workflow and state are separate: apply `ready-for-agent` or `ready-for-human` as
+well to record who can execute the ticket.
+
 ## Wayfinder labels
 
 `/wayfinder` uses its own namespace, unaffected by the mapping above: `wayfinder:map`
-for a map, and `wayfinder:<type>` on each ticket where type is `research`,
-`prototype`, `grilling`, or `task`.
+for a map, and `wayfinder:<type>` on each decision ticket where type is `research`,
+`prototype`, `grilling`, or `task`. These labels route decision work; they do not
+mark implementation tickets.
