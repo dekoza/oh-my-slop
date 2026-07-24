@@ -16,6 +16,8 @@ The destination varies per effort, and naming it is the first act of charting �
 
 Wayfinder is **planning** by default: each ticket resolves a decision, and the map is done when the way is clear — nothing left to decide before someone goes and does the thing. The pull to just do the work is usually the signal you've reached the edge of the map and it's time to hand off. An effort can override this in its **Notes** — carrying execution into the map itself — but absent that, produce decisions, not deliverables.
 
+**Route build-ready work out of the decision frontier.** Once the remaining work is implementation rather than decision-making, invoke `to-tickets` to create implementation tickets. Mark each with `workflow:implement` plus its `ready-for-agent` or `ready-for-human` state, then work it with `implement` in a fresh session. Implementation tickets never carry a `wayfinder:<type>` label. When the map's Notes carry execution, link those tickets to the map while keeping them out of Wayfinder's decision frontier.
+
 ## Refer by name
 
 Every map and ticket is an issue, so it has a **name** — its title. In everything the human reads — narration, the map's Decisions-so-far — refer to it by that name, never by a bare id, number, or slug. A wall of `#42, #43, #44` is illegible; names read at a glance. The id and URL don't vanish — a name wraps its link — but they ride *inside* the name, never stand in for it.
