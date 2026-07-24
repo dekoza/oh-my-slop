@@ -66,7 +66,7 @@ Publish the approved tickets, following the tracker doc's conventions. The ticke
 - **A forge-backed tracker** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the tracker's native blocking relationship where the doc describes one; otherwise set each ticket's "Blocked by" to the blocking issues.
 - **Local files** → write one file per ticket at the path the tracker doc specifies, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below — one ticket per file, never a single combined file.
 
-Apply the `ready-for-agent` triage label — resolved through the label mapping — unless instructed otherwise; the tickets are agent-grabbable by construction.
+Apply `workflow:implement` to every forge-backed ticket so the next workflow is explicit. Choose the triage state separately: apply `ready-for-agent` by default, or `ready-for-human` when the ticket requires human implementation, resolving either state through the label mapping.
 
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
 
@@ -79,6 +79,8 @@ Do NOT close or modify any parent issue.
 **What to build:** the end-to-end behaviour this ticket makes work, from the user's perspective — not a layer-by-layer implementation list.
 
 **Blocked by:** the numbers/titles of the tickets that gate this one, or "None — can start immediately".
+
+**Workflow:** implement
 
 **Status:** ready-for-agent
 
