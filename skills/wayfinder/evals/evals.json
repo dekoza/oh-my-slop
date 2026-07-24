@@ -1,0 +1,31 @@
+{
+  "skill_name": "wayfinder",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "You are working a planning-default Wayfinder map. The final decision ticket has just resolved, all fog is clear, and the route now consists of two buildable vertical slices. State the exact next workflow, whether these slices remain Wayfinder tickets, which skill should execute them, and every routing and state label each generated ticket should receive.",
+      "expected_output": "The response hands the decided route to to-tickets, creates separate implementation tickets, labels them for the implement workflow and the appropriate executor, and keeps them outside the Wayfinder decision frontier.",
+      "files": [],
+      "expectations": [
+        "The response invokes `to-tickets` to create the build tickets.",
+        "The generated tickets include `workflow:implement`.",
+        "The generated tickets include `ready-for-agent` or `ready-for-human` according to the required executor.",
+        "The generated tickets do not include a `wayfinder:<type>` label.",
+        "The response invokes `implement` for each build ticket in a fresh session."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Classify three tracker tickets by workflow skill and labels: A) an AFK research question inside an active Wayfinder map; B) an AFK implementation slice generated from an approved spec; C) a human-only implementation slice. Explain workflow routing separately from executor readiness.",
+      "expected_output": "The response distinguishes Wayfinder decision routing from implementation routing and treats ready-for-agent and ready-for-human as a separate executor dimension.",
+      "files": [],
+      "expectations": [
+        "Ticket A includes `wayfinder:research` and does not include `workflow:implement`.",
+        "Ticket B includes both `workflow:implement` and `ready-for-agent`.",
+        "Ticket C includes both `workflow:implement` and `ready-for-human`.",
+        "Tickets B and C do not include a `wayfinder:<type>` label.",
+        "The response reports that readiness labels identify the executor rather than the workflow skill."
+      ]
+    }
+  ]
+}

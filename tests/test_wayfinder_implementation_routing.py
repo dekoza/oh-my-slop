@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -42,3 +43,26 @@ def test_project_setup_and_live_config_define_the_workflow_label() -> None:
     assert WORKFLOW_LABEL in setup_skill_text
     assert WORKFLOW_LABEL in live_label_config_text
     assert "Workflow and state are separate" in live_label_config_text
+
+
+def test_wayfinder_evals_cover_implementation_handoff_and_label_orthogonality() -> None:
+    evals_path = SKILLS_ROOT / "wayfinder" / "evals" / "evals.json"
+    evals_document = json.loads(evals_path.read_text(encoding="utf-8"))
+
+    assert evals_document["skill_name"] == "wayfinder"
+    evals = evals_document["evals"]
+    assert len(evals) >= 2
+
+    prompts = "\n".join(eval_case["prompt"] for eval_case in evals)
+    expectations = "\n".join(
+        expectation
+        for eval_case in evals
+        for expectation in eval_case["expectations"]
+    )
+
+    assert "buildable vertical slices" in prompts
+    assert "AFK research" in prompts
+    assert WORKFLOW_LABEL in expectations
+    assert "ready-for-agent" in expectations
+    assert "ready-for-human" in expectations
+    assert "wayfinder:research" in expectations
