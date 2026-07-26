@@ -568,15 +568,25 @@ Client-side tab switching without server requests.
 document.body.addEventListener('htmx:confirm', function(event) {
     if (!event.target.hasAttribute('hx-confirm')) return;
 
+    // Open the dialog before halting the request. If it cannot open, returning
+    // early leaves htmx to run its native confirm; calling preventDefault()
+    // first would drop the request silently and the button would go dead.
+    var dialog = showMyCustomDialog(event.detail.question);
+    if (!dialog) return;
+
     event.preventDefault();
 
-    showMyCustomDialog(event.detail.question).then(function(confirmed) {
+    dialog.then(function(confirmed) {
         if (confirmed) {
             event.detail.issueRequest();
         }
     });
 });
 ```
+
+See `requests.md` → *Custom Confirm Dialog* for the full contract, including the
+plain-form-submit path (`htmx:confirm` never fires for it) and why one reusable
+dialog beats per-row inline markup.
 
 ## File Upload with Progress
 

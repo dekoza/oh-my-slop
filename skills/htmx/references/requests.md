@@ -389,15 +389,35 @@ Use the `htmx:confirm` event for non-native dialogs:
 
 ```javascript
 document.body.addEventListener('htmx:confirm', function(event) {
+    // htmx:confirm fires on EVERY request, not only those carrying hx-confirm.
+    // Without this guard, every request on the page is routed through the dialog.
+    if (!event.target.hasAttribute('hx-confirm')) return;
+
+    // Open first, halt second. Return a falsy value if the dialog cannot open.
+    var dialog = showCustomDialog(event.detail.question);
+    if (!dialog) return;  // let htmx fall through to the native confirm
+
     event.preventDefault(); // Halt the request
 
-    showCustomDialog(event.detail.question).then(function(confirmed) {
+    dialog.then(function(confirmed) {
         if (confirmed) {
             event.detail.issueRequest(); // Continue the request
         }
     });
 });
 ```
+
+**Never call `preventDefault()` before the dialog is known to be open.** If the
+dialog element is missing or its library failed to load, the request is halted
+with nothing to resume it — the button goes dead with no error in the console.
+Halting only after a successful open leaves the native confirm as the fallback.
+
+**`htmx:confirm` covers htmx-managed requests only.** An `hx-confirm` on a plain
+(non-htmx) form submit never fires this event; that path needs a parallel
+`submit` handler that opens the same dialog and then calls `form.requestSubmit()`.
+
+Prefer one reusable dialog over per-row inline markup — a single stable target is
+easier to assert against in tests and less fragile as rows are swapped in and out.
 
 ### Prompt
 
