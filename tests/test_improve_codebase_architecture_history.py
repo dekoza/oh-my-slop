@@ -102,7 +102,9 @@ def test_three_relations_have_three_distinct_effects() -> None:
 
     assert "**Ticketed**" in section
     assert "the card renders" in section
-    assert "never filed as a new ticket" in section
+    # Held out of the seed, not banned outright: #38 lets the user override.
+    assert "held out of the ticketization seed" in section
+    assert "unless the user overrides" in section
 
     assert "**Decided against**" in section
     assert "reuses the ADR rule verbatim" in section

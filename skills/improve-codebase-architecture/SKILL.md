@@ -11,7 +11,7 @@ license: MIT (adapted from mattpocock/skills)
 
 This skill is manual-only (`disable-model-invocation: true`); it is never auto-triggered. So if you are reading this, the user has **already issued the entire request** by invoking `/skill:improve-codebase-architecture`. The invocation itself is the task — they want an architecture review of the codebase in the current working directory.
 
-Do not ask "what would you like me to do?" or wait for further instructions before acting. That extra round-trip is exactly the friction this section exists to kill. Begin **Phase 1: Explore** immediately, proceed through **Phase 2: Present candidates as an HTML report**, and only pause at the point Phase 2 explicitly tells you to ask "Which of these would you like to explore?"
+Do not ask "what would you like me to do?" or wait for further instructions before acting. That extra round-trip is exactly the friction this section exists to kill. Begin **Phase 1: Explore** immediately and proceed through **Phase 2: Present candidates as an HTML report**. The first legitimate pause is the one **Phase 3** names: the selection prompt, where you propose a set of candidates to ticketize and the user confirms or amends it.
 
 The single legitimate reason to pause before starting: there is no recognizable codebase in the current working directory. Only then ask the user for the path to review.
 
@@ -93,7 +93,7 @@ Cap **200 issues per surface**. When the cap bites, the report says so rather th
 
 **Three relations, three effects:**
 
-- **Ticketed** — the friction is real and still sits in the codebase, so **the card renders**; only the filing is suppressed, and the candidate is **never filed as a new ticket**. Link the existing issue in a `Ticketed #N` badge. Suppress the duplicate write, not the observation — an independent rediscovery corroborates a ticket nobody prioritised.
+- **Ticketed** — the friction is real and still sits in the codebase, so **the card renders**; only the filing is suppressed, and the candidate is held out of the ticketization seed **unless the user overrides**. Link the existing issue in a `Ticketed #N` badge. Suppress the duplicate write, not the observation — an independent rediscovery corroborates a ticket nobody prioritised.
 - **Decided against** — a closed decision ticket is an ADR on a different surface, so it **reuses the ADR rule verbatim**: surface it only when the friction is real enough to warrant revisiting, marked with the Decision callout naming the ticket (`#22`) where an ADR would name `ADR-0007`.
 - **Corroborated** — **evidence, never suppression.** Cite the issue numbers inline in the card's Problem sentence. It may justify a stronger Recommendation strength, but as a judgement call and **never as a counting rule** — a mechanical rule would let issue volume game the grade.
 
@@ -117,6 +117,7 @@ For each candidate, render a card with:
 - **Before / After diagram** — side-by-side, custom-drawn, illustrating the change.
 - **Recommendation strength** — one of `Strong`, `Worth exploring`, `Speculative`, rendered as a badge.
 - **Temporal status** — one of `fresh`, `resolving`, `resolved`. If `resolving`, note which commit is addressing it. If `resolved`, explain why the signal is lagging.
+- **Candidate id** — an axis-prefixed handle assigned here, in report order: `D1…Dn` down the Deepen group, then `S1…Sn` down Simplify. Rendered as a badge; Phase 3 refers to candidates by it.
 
 Group candidates by axis: **Deepen** candidates first, then **Simplify** candidates. A module appearing on both axes gets two cards.
 
@@ -128,9 +129,160 @@ End the report with a **Top recommendation** section: which candidate you'd tack
 
 See [HTML Report](references/html-report.md) for the full HTML scaffold, diagram patterns, and styling guidance.
 
-Do NOT propose interfaces yet. After the file is written, ask the user: "Which of these would you like to explore?"
+Do NOT propose interfaces yet — that is what the grilling loop is for. Once the file is written and open, go straight to Phase 3: the candidates get picked there, as a proposal the user vetoes rather than as an open question.
 
-### 3. Grilling loop
+### 3. Ticketize the chosen candidates
+
+The report sits in a temp directory and will be gone. The candidates the user picked, the ones they didn't, and *why* — none of it survives unless it is written somewhere durable, so the review's findings become a **wayfinder map** with one ticket per chosen candidate. The map and its tickets are the record of truth; the report was a presentation artifact, and its content is fully carried into text here.
+
+**Report written → map charted, always** — including the **zero-pick** case where the user vetoes everything. That run is the most decision-dense output there is ("we reviewed this codebase and consciously declined all of it, here's why"), and it needs somewhere to live. **No report → no map**: the "nothing real surfaced" short-circuit at the top of this skill stays map-free, because charting an empty map would be manufacturing an artifact to match a rule.
+
+#### Selection: propose a set, take the veto
+
+Selection is **default-with-veto** — you propose a concrete set and ask the user to confirm or amend it. Seed the proposal with every candidate that is `Strong` or `Worth exploring` **and** `temporal: fresh` **and** not `Ticketed`.
+
+State the proposal compactly **in the terminal**, followed by one line naming what was skipped and how to pull it in. The user must never have to **re-scan** the HTML to know what is being proposed:
+
+> Proposing 3 of 6 candidates as tickets:
+>
+> - **D1** Collapse the Order intake pipeline — deepen · Strong
+> - **D3** Give the pricing adapter a real seam — deepen · Worth exploring
+> - **S2** Delete the dead `LEGACY_CHECKOUT` flag — simplify · Strong
+>
+> Skipping S1 and S3 (Speculative) and D2 (already ticketed). Say "add S1" to pull any of them in.
+
+Then ask **once**. "Yes", "all", "drop D2", "only D1 and S1", "none" are each a one-word reply: the prompt degenerates to one word when you guessed right and to named picks when you didn't. Stating the default out loud is what makes a bad default visible instead of silent.
+
+**Candidate ids.** Every candidate carries an axis-prefixed id — `D1…Dn` for deepen, `S1…Sn` for simplify — assigned in **report order** (the Deepen group first, then Simplify), rendered as a badge on its card and echoed in the proposal. This is what makes the veto usable: titles are ambiguous exactly where the axes overlap, and one module may hold a card on both axes.
+
+#### Chart the map
+
+Chart a wayfinder map per the [`wayfinder`](../wayfinder/SKILL.md) skill, following its charting mode. Wayfinder owns every tracker operation involved — where the map and its child tickets live, how they are labelled and parented, how blocking edges are wired, how the frontier is queried. This skill carries **no tracker operations of its own**: don't inline an operation set, don't read the tracker doc to author anything, don't reach for a CLI. What follows is *content* — what goes in the bodies — never how to write it.
+
+A repo with no tracker inherits wayfinder's **local-markdown fallback**, and the flow is otherwise identical. No degrade path, no hard stop; at most one line mentioning that `/setup-project-skills` gets them a forge-backed tracker.
+
+Two things about the candidate tickets themselves:
+
+- Create them **unassigned**. The grill target is picked by a later prompt, so at creation time you don't yet know which one it will be — and an assignee *is* a claim, so assigning them all would leave wayfinder's **frontier** query (open, unassigned, unblocked) returning nothing on the very next session. The map would look fully worked the moment it was charted.
+- Label every one `wayfinder:grilling` — wayfinder's default type, and the post-pick flow is a specification interview. The label is uniform, so routing rides in the body instead; a `wayfinder:court-jester` type would bend wayfinder's vocabulary to fit this skill, so it stays uninvented.
+
+#### The candidate ticket body
+
+Question first, evidence below:
+
+```markdown
+Part of #<map>
+
+## Question
+
+Should the Order intake pipeline be collapsed into a single deep module,
+and if so where does the seam land — what stays behind the interface,
+and what do the surviving tests call?
+
+## From the review
+
+**Axis:** deepen · **Strength:** Strong · **Candidate:** D1 · Review of 2026-07-27
+
+**Files:** `orders/handler.py`, `orders/validator.py`, `orders/repo.py`
+
+**Problem** — Understanding one order requires bouncing between four
+modules; `OrderRepo` leaks pricing concerns across its seam.
+
+**Proposed shape** (the review's guess, not a decision) — Collapse the
+four into one `OrderIntake` module; pricing moves behind the interface.
+
+**Benefits** — Tests hit one interface. Pricing stops leaking.
+Four shallow wrappers pass the deletion test.
+```
+
+- **`## Question` states the real open decision.** Not the report card transcribed with a generic "should we do this?" bolted on top — that would let the grilling session treat the proposal as settled, the opposite of what a wayfinder ticket is for.
+- **The report's Solution is demoted to `Proposed shape` — the review's guess, not a decision.** That is its actual epistemic status: it was written before any interview happened, so the ticket must not read as settled.
+- **Problem, Files and Benefits are carried across, not summarized away.** The report is ephemeral, so evidence you don't carry is lost permanently — and it is cheap to copy, expensive to reconstruct.
+- **The `D1`/`S1` id lives in the body as provenance, never as a title prefix.** It is a report-run-local handle that dies with the report, while the ticket's durable identity is its index and its name — and wayfinder refers to tickets by name. In the body it still lets the map's `Out of scope` lines and the terminal proposal be traced back, without a dead handle colonizing every title.
+- **The before/after diagram is not transcribed** — deliberately dropped, not an oversight. Its job is scanning a long report to choose among eight candidates; a ticket's reader has already chosen and is about to open the files. Transcribing Mermaid would also reward drawing every diagram in Mermaid so it survives ticketization — the report's visuals degraded to serve the tracker, and the hand-built ones could not transcribe at all.
+- **Court-jester routing rides on the `## From the review` metadata line**, present **only** when the review judged the candidate contested — a contested trade-off, or rollout/coupling risk:
+
+  ```
+  **Axis:** deepen · **Strength:** Strong · **Route:** court-jester · **Candidate:** D1
+  ```
+
+#### The map body
+
+**Title:** `Architecture review — <repo> — <date>`
+
+Wayfinder owns the body's sections; this is what a review map puts in them, `Decisions so far` and `Not yet specified` both starting empty:
+
+```markdown
+## Destination
+
+Every candidate carried into this map is decided — each one either specified
+far enough to route out as implementation work, or consciously ruled out.
+Done when no candidate ticket remains open.
+
+## Notes
+
+- Review of `<path>`, run <date>. The HTML report was written to a temp path
+  and is gone; this map and its tickets are the record.
+- Skills to consult per session: `codebase-design` for the architecture
+  vocabulary (module, interface, depth, seam, adapter, leverage, locality) —
+  use these terms exactly. `grilling` by default; `court-jester` for any
+  ticket carrying a `Route: court-jester` hint.
+- Candidates are independent decisions unless a blocking edge says otherwise.
+- Stopping criteria for a `deepen` candidate: ≤ 8 public methods; ≤ 4 internal
+  regions; ~600 lines total is the extraction trigger.
+
+## Decisions so far
+
+## Not yet specified
+
+## Out of scope
+
+<!-- unchosen candidates from the review — they never graduate -->
+```
+
+A review map is structurally odd for wayfinder: not one effort finding its way to a single destination, but a **basket** of independent decisions that surfaced together, so the Destination has to be honest about that. A **thematic** destination ("the Order intake and pricing seams are settled") needs a unifying story across candidates that usually doesn't exist; an **aspirational** one ("a deeper, less bloated architecture") is never reachable, so the map could never close.
+
+The **Notes** block is load-bearing because a work-through session weeks later arrives via `/wayfinder` having never loaded this skill: vocabulary discipline and court-jester routing not written on the map are simply lost. So are the three stopping criteria, which exist nowhere else — the Grilling loop section below is their source of truth, and it lives in the skills directory rather than in the repo under review, so a path reference on the map would resolve to nothing for whoever opens it. Qualify them as **deepen-only** and drop the parenthetical attribution the section below carries; provenance means nothing to a reader there. Emit them **always**, including on a **simplify-only** map — three lines of harmless text beat a conditional this skill has to state and the evals have to cover.
+
+**`Not yet specified` is charted empty.** Every candidate arrives with a full report card, so nothing is fog; the section exists only for what a later work-through session surfaces.
+
+#### Recording the unchosen — `Out of scope`
+
+The unchosen candidates go on the map's `Out of scope` section. That is the right home: an unchosen candidate is sharp — it has a full report card, so it isn't fog — and it isn't a step on the route, so it isn't a decision. It never graduates. Dropping these would make every future review start from zero: History Awareness reads exactly what is written here, and re-proposing a deliberately declined candidate is the failure it exists to prevent.
+
+**Three classes, each line led by a bolded class label** so a later review can scan it:
+
+```markdown
+- **Vetoed** — D2 Split the pricing adapter (deepen · Worth exploring) —
+  "deliberate, see ADR-0007" — user's words.
+- **Not added** — S3 Inline the retry helper (simplify · Speculative) —
+  below the proposed set; not raised.
+- **Already ticketed** — D4 Collapse the notification fan-out (deepen ·
+  Strong) — held out of the seed by History Awareness; see
+  [Notifications double-send on retry](link).
+```
+
+- **Vetoed** — you proposed it, the user declined. Quote the user's stated reason **verbatim** when they gave one; "deliberate — see ADR-0007" is worth far more to a later run than "not chosen". And **never invent** a reason for a candidate the user said nothing about.
+- **Not added** — below the proposed set, not pulled in. Use the fixed phrase `below the proposed set; not raised` and add no invented rationale. It reads as "not now", not "no".
+- **Already ticketed** — held out of the seed by History Awareness and not overridden. This class **links the pre-existing ticket**.
+
+**`Vetoed` and `Not added` carry no link.** Those candidates were never ticketized, so the map line *is* the whole record. That diverges from wayfinder's `Out of scope`, which normally links the closed ticket; `Already ticketed` is the sole exception, because its ticket already exists. The divergence is deliberate, and recorded here plainly so nobody later "fixes" it by creating tickets **purely to close them**.
+
+A candidate ruled out later, **during work-through** — a ticket that existed and turned out to sit past the destination — follows wayfinder's normal rule unchanged: **close the ticket, link it**. Two paths into one section.
+
+#### Blocking edges — one narrow rule
+
+Wire **`deepen` blocks `simplify`** in exactly one situation: the two candidates' **Files overlap** *and* the simplify candidate proposes **splitting or reorganizing rather than deleting**. **Otherwise no edge** — candidates are independent decisions, and all of them sit on the frontier.
+
+This is **deliberately rare**, for two reasons. All five ponytail-audit categories are **deletions**, so the report's `simplify` candidates are almost always the no-edge kind; the obvious blanket rule ("same module on both axes, deepen blocks simplify") would fire constantly and be wrong nearly every time. Consolidate-before-split is real, but so is the opposite ordering — deleting redundant checks before consolidating what remains — and which one applies depends on the kind of simplification. Second, a wrong edge is expensive: some trackers **refuse** to close a blocked issue, and no list output reveals blocked-ness, so a speculative edge doesn't merely mis-order the frontier — it hides a ticket and then refuses to let anyone close it, with no visible cause.
+
+The report's **Top recommendation** is expressed as **first in map order**, **not as a blocking edge**. Map order is already how wayfinder breaks frontier ties, so no edge is needed to say "do this one first".
+
+#### Report what you charted
+
+Tell the user what exists now: the map and each candidate ticket, **by name** with its link — wayfinder's rule, because a wall of bare numbers is illegible — alongside the id each was proposed under, so the terminal proposal can be traced.
+
+### 4. Grilling loop
 
 Once the user picks a candidate, conduct a specification interview to walk the design tree with them — constraints, dependencies, the shape of the changed module, what sits behind the seam, what tests survive.
 

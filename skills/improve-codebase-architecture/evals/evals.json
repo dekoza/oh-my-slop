@@ -48,6 +48,46 @@
         "The only trace is a single clause in the report header saying history awareness was skipped.",
         "It does not prompt the user to run /setup-project-skills or warn about the missing tracker."
       ]
+    },
+    {
+      "id": 5,
+      "prompt": "You are mid-review: the HTML report is written and open, and you are about to propose which candidates become tickets. The report holds D1 (deepen, Strong, fresh), D2 (deepen, Strong, fresh, carrying a linked Ticketed #40 badge), S1 (simplify, Strong, fresh) and S2 (simplify, Speculative, fresh). State the set you propose, how you put it to the user, and what becomes of D2.",
+      "expected_output": "The response proposes D1 and S1, holds the ticketed D2 out of the seed while its card still stands, states the set in the terminal with what was skipped, and asks a single confirm-or-amend question.",
+      "files": [],
+      "expectations": [
+        "The seed is D1 and S1 only: Strong or Worth exploring, temporal: fresh, and not Ticketed.",
+        "D2 is held out of the seed because it is already Ticketed, yet its report card renders in full — the filing is suppressed, not the observation.",
+        "S2 is skipped as Speculative but still named in the skipped line, with how to pull it in.",
+        "The set is stated compactly in the terminal with ids, titles, axis and strength, so the user need not re-scan the HTML.",
+        "It asks one confirm-or-amend question rather than making the user enumerate picks from scratch.",
+        "When the map is charted, D2 lands on Out of scope as Already ticketed, linking the pre-existing ticket."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "You are charting the review map for two confirmed candidates. D3 proposes collapsing `billing/gateway.py` and `billing/retry.py` into one deep module. S4 proposes deleting a dead feature flag and two pass-through wrappers in `billing/gateway.py`. D3 is the report's Top recommendation. State whether you wire a blocking edge between the two tickets, and how D3's precedence is expressed.",
+      "expected_output": "The response wires no edge, because S4 deletes rather than splits or reorganizes, and expresses the Top recommendation as first in map order.",
+      "files": [],
+      "expectations": [
+        "The files overlap, but S4 deletes rather than splits or reorganizes, so the narrow rule does not fire and no edge is wired.",
+        "It notes the rule is deliberately rare, because the ponytail-audit categories are all deletions.",
+        "It does not infer a dependency from shared files alone, and names the cost of a wrong edge: a hidden ticket the tracker then refuses to let anyone close.",
+        "D3's precedence is expressed as first in map order, not as a blocking edge.",
+        "Both candidate tickets are created unassigned and labelled wayfinder:grilling."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "You are just past the selection prompt. You proposed D1 and S2; the user replied \"none — D1 is deliberate, see ADR-0007\", saying nothing about S2. No candidate is left to ticketize. State what you produce for this run.",
+      "expected_output": "The response still charts the map, with no candidate tickets, recording D1 as Vetoed with the user's words quoted verbatim and S2 as Not added with the fixed phrase.",
+      "files": [],
+      "expectations": [
+        "A map is still charted: a written report always produces one, and the zero-pick run is the case that most needs the record.",
+        "No candidate tickets are created, so the run ends at the map.",
+        "D1 is recorded as Vetoed, quoting the user's reason verbatim — \"deliberate, see ADR-0007\" — rather than a paraphrase.",
+        "S2 is recorded as Not added with the fixed phrase 'below the proposed set; not raised', and no rationale is invented for it, because the user said nothing about it.",
+        "Neither line carries a link, since neither candidate was ever ticketized."
+      ]
     }
   ]
 }

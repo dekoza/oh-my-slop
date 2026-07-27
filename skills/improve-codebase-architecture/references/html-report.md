@@ -53,7 +53,7 @@ The diagrams carry the weight. Prose is sparse, plain, and uses the glossary ter
 Each candidate is one `<article>`:
 
 - **Title** — short, names the deepening (e.g. "Collapse the Order intake pipeline").
-- **Badge row** — recommendation strength (`Strong` = emerald, `Worth exploring` = amber, `Speculative` = slate), plus a tag for the dependency category (`in-process`, `local-substitutable`, `ports & adapters`, `mock`), plus a linked `Ticketed #N` badge when History Awareness matched an existing issue — cool neutral (`bg-slate-100 text-slate-600`, `border-slate-200`) so it reads as metadata, not as a grade.
+- **Badge row** — the candidate id first (`D1`, `S1`, …), `font-mono text-xs` on a plain bordered chip; every later reference to the candidate uses it. Then recommendation strength (`Strong` = emerald, `Worth exploring` = amber, `Speculative` = slate), plus a tag for the dependency category (`in-process`, `local-substitutable`, `ports & adapters`, `mock`), plus a linked `Ticketed #N` badge when History Awareness matched an existing issue — cool neutral (`bg-slate-100 text-slate-600`, `border-slate-200`) so it reads as metadata, not as a grade.
 - **Files** — monospaced list, `font-mono text-sm`.
 - **Before / After diagram** — the centrepiece. Two columns, side by side. See patterns below.
 - **Problem** — one sentence. What hurts. Corroborating tracker issues are **cited inline here**, as linked numbers inside that same sentence ("Three unrelated concerns share `middleware.py`, and it shows — #12, #19, #23"). Evidence belongs where the claim is; corroboration gets no field of its own.
