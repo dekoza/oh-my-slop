@@ -2,7 +2,7 @@
 name: handoff
 description: Compact the current conversation into a handoff document — goal, progress, decisions, state, and next steps — saved to a temp file so a fresh agent can pick the work up.
 argument-hint: "What will the next session be used for?"
-disable-model-invocation: true
+#disable-model-invocation: true
 license: MIT (adapted from mattpocock/skills)
 ---
 
