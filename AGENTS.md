@@ -9,6 +9,7 @@ If the two conflict, the global file wins.
 This repo packages:
 
 - `skills/` — curated markdown skills for pi agents
+- `prompts/` — slash-command entry points that hand off to those skills
 - `extensions/` — TypeScript pi extensions
 - `scripts/` — repository maintenance scripts
 - `tests/` — Python and Node regression tests for repo invariants
@@ -27,6 +28,7 @@ Run these commands when you touch the related areas. Do not skip them.
 Targeted minimums:
 
 - Any change under `skills/` or to markdown references: `uv run pytest tests/test_validate_refs.py`
+- Any change under `prompts/`: `uv run pytest tests/test_prompt_templates.py tests/test_readme.py`
 - Any change under `extensions/` or to package entrypoints: `node --test tests/node/*.mjs`
 - Any change to `package.json`, `pyproject.toml`, or installable entrypoints: `uv run pytest tests/test_pi_package_installability.py`
 - Any change to `scripts/validate_refs.py`: `uv run pytest tests/test_validate_refs.py`
@@ -44,6 +46,17 @@ This directory is the core product.
 - If you add or rename a reference file, update the owning `SKILL.md` and any tests that assert its content.
 - If a skill has `evals/`, keep the evals aligned with the docs. A skill doc change without matching eval updates is incomplete.
 - Preserve the repo’s “one skill, one boundary” style. Do not blur unrelated frameworks or topics into the same skill.
+
+### `prompts/`
+
+These are slash-command entry points, not a lighter alternative product.
+
+- A template names the skill it fronts and does nothing else: one handoff sentence of the shape *"Use the `<skill-name>` skill to …"*, plus the argument substitution its frontmatter advertises.
+- The skill is the single source of truth. Templates carry **no process text** — no headings, no phases, no vocabulary lists, no output formats, no stopping criteria. Eight templates once sat unmaintained while the skills beneath them were rewritten; `prompts/arch.md` described a flow its skill had not had for three releases.
+- Name the skill, never a path. Install roots vary, so an absolute path rots silently while a name can be checked.
+- A template whose skill sets `disable-model-invocation: true` adds the fallback clause telling the agent to find that skill's `SKILL.md` in the installed package — the flag strips it from the model's `<available_skills>` listing.
+- The reason this surface exists is argument passthrough (`${1:-.}`, `$@`, `$2`), which `/skill:<name>` cannot do. Keep it; it is the whole justification for the file.
+- `tests/test_prompt_templates.py` enforces the above. `scripts/validate_refs.py` is deliberately not widened to `prompts/`; under the naming rule there are no paths there to resolve.
 
 ### `extensions/`
 

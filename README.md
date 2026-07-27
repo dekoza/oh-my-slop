@@ -159,7 +159,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 
 ## Prompt Templates
 
-Prompt templates are slash commands — type `/name` in the editor to expand them into full prompts. Unlike skills, they're explicitly invoked by the user, so no "when this skill loads" boilerplate is needed.
+Prompt templates are slash commands — type `/name` in the editor and it expands into a request that hands off to a bundled skill. Each template is an entry point, not a second copy of the flow: the skill stays the single source of truth, and the template exists because it forwards its arguments, which `/skill:<name>` cannot. So `/arch ~/some/repo` reviews another tree in one shot.
 
 <details>
 <summary><strong>Prompt templates (8)</strong></summary>
@@ -171,7 +171,7 @@ Prompt templates are slash commands — type `/name` in the editor to expand the
 | **`/audit [path]`** | Ranked bloat/over-engineering findings — dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead flags. |
 | **`/debt [path] [--output-debt-file]`** | Harvest `SHORTCUT:` markers left during development. Flags missing upgrade paths. |
 | **`/handoff`** | Compact the conversation into a handoff document for another agent. References artifacts, redacts secrets, saves to temp. |
-| **`/arch [path]`** | Architecture health check with visual HTML report — deepening and simplification candidates, before/after diagrams, grilling loop. |
+| **`/arch [path]`** | Architecture health check with visual HTML report — deepening and simplification candidates, before/after diagrams, then a wayfinder map and an in-session work-through of the candidate you pick. |
 | **`/ui-review <product> <keywords>`** | Data-driven UI/UX critique — design system search, color/typography direction, accessibility, anti-patterns. |
 | **`/proto <question> [logic\|ui]`** | Throwaway prototype — terminal app for state machines or radically different UI variants on one route. |
 
