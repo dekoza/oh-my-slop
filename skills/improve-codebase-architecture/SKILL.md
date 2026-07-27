@@ -30,7 +30,7 @@ This command is _informed_ by the project's domain model and built on a shared d
 
 ### 1. Explore
 
-Understand the project's architecture from existing docs, AGENTS.md, and code inspection.
+Understand the project's architecture from existing docs, AGENTS.md, the issue tracker index, and code inspection.
 
 Then explore the codebase organically and note where you experience friction:
 
@@ -68,6 +68,39 @@ Patterns to recognize:
 
 If a candidate is already being resolved by recent commits, mark it `temporal: resolving` and skip it. If resolved, mark it `temporal: resolved` and skip it. Only flag `temporal: fresh` candidates.
 
+#### History Awareness
+
+Temporal Awareness reads commits; History Awareness reads issues. The failure it prevents is **duplication**: a review that re-proposes friction someone already filed, re-litigates a decision already closed against, or throws away evidence it could have cited.
+
+The tracker index was **already pulled during orientation** and stays in context for the whole session, so matching costs **no extra queries** — read candidate Files and module names against titles you already hold. Run this pass *after* Temporal Awareness, so no drill-down is spent on a candidate that will not render.
+
+**Routing.** Consult the repo's issue-tracker doc. For **every** surface it declares, use that surface's documented **List issues** verb to pull the index, and its **Read an issue** verb for drill-downs. The doc is the thing that knows how many surfaces there are and which one is intake — never hardcode a tracker, a label scheme, or a CLI here.
+
+**Index scope** — number, title, labels, state, closed-at, per surface:
+
+- **Open** issues — no window. Open is open.
+- **Closed** issues — the last **6 months**. Recency is what makes friction meaningful; a bug cluster on a since-rewritten module is noise. Same logic as the git-log window above, at tracker time scale.
+- **Closed `wayfinder:*` maps and tickets — all-time**, by label. A decision from 18 months ago still binds, and label-findable history is what makes decision-respect work without depending on rejection labels existing.
+
+Cap **200 issues per surface**. When the cap bites, the report says so rather than silently reviewing a truncated tracker — and only then does keyword-filtering the **List issues** verb become worth a query.
+
+**Drill-down** pulls body *and* comments in one call — **always with comments**, because the seams people fought with live in the comment thread — capped at **~10 issues per review**. It fires in **exactly two situations**:
+
+- confirming a suspected match whose title alone cannot settle it;
+- opening a **cluster of 3+ issues sharing a module or feature term** — the signal-mining trigger, which runs *before* candidates exist and steers where exploration goes.
+
+**The bar is the moot test: resolving that ticket would make the candidate moot.** Sharing a file is not enough — a repo's busiest module attracts unrelated tickets, and a loose bar would suppress every candidate touching it, silently gutting the review. Weaker-but-real overlap earns a corroboration citation, nothing more. Judge it like the deletion test: a crisp counterfactual, binary, occasionally wrong — no confidence tiers, no "possible duplicate" state. The error to prefer: a duplicate ticket is visible and closeable; a wrongly suppressed candidate is invisible and the user never learns it existed.
+
+**Three relations, three effects:**
+
+- **Ticketed** — the friction is real and still sits in the codebase, so **the card renders**; only the filing is suppressed, and the candidate is **never filed as a new ticket**. Link the existing issue in a `Ticketed #N` badge. Suppress the duplicate write, not the observation — an independent rediscovery corroborates a ticket nobody prioritised.
+- **Decided against** — a closed decision ticket is an ADR on a different surface, so it **reuses the ADR rule verbatim**: surface it only when the friction is real enough to warrant revisiting, marked with the Decision callout naming the ticket (`#22`) where an ADR would name `ADR-0007`.
+- **Corroborated** — **evidence, never suppression.** Cite the issue numbers inline in the card's Problem sentence. It may justify a stronger Recommendation strength, but as a judgement call and **never as a counting rule** — a mechanical rule would let issue volume game the grade.
+
+**Untracked candidates carry nothing** — no badge, no callout, no citation. The card looks exactly as it does today.
+
+**No tracker, or nothing recorded.** With no issue-tracker doc, or a local-markdown fallback with nothing in it, this pass **no-ops silently**: **no badges, no callouts, no citations**, and **no prompt to run `/setup-project-skills`**. The only trace is one clause in the report header.
+
 ### 2. Present candidates as an HTML report
 
 Write a self-contained HTML file to the OS temp directory so nothing lands in the repo. Resolve the temp dir from `$TMPDIR`, falling back to `/tmp` (or `%TEMP%` on Windows), and write to `<tmpdir>/architecture-review-<timestamp>.html` so each run gets a fresh file. Open it for the user — `xdg-open <path>` on Linux, `open <path>` on macOS, `start <path>` on Windows — and tell them the absolute path. If the open command fails (headless shell, no desktop), print the absolute path and tell the user to open it manually; the report is still written.
@@ -91,7 +124,7 @@ End the report with a **Top recommendation** section: which candidate you'd tack
 
 **Use the project's domain terminology for the domain, and the `codebase-design` vocabulary for the architecture.** If the project defines "Order," talk about "the Order intake module" — not "the FooBarHandler," and not "the Order service."
 
-**ADR conflicts**: if a candidate contradicts an existing ADR, only surface it when the friction is real enough to warrant revisiting the ADR. Mark it clearly in the card (e.g. a warning callout: _"contradicts ADR-0007 — but worth reopening because…"_). Don't list every theoretical refactor an ADR forbids.
+**Decision conflicts**: if a candidate contradicts an existing ADR — or a decision ticket closed against it — only surface it when the friction is real enough to warrant revisiting that decision. Mark it clearly in the card with the Decision callout (_"contradicts ADR-0007 — but worth reopening because…"_). Don't list every theoretical refactor a recorded decision forbids.
 
 See [HTML Report](references/html-report.md) for the full HTML scaffold, diagram patterns, and styling guidance.
 

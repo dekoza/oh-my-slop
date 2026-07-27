@@ -37,6 +37,15 @@ The architectural review is rendered as a single self-contained HTML file in the
 
 Repo name, date, and a compact legend: solid box = module, dashed line = seam, red arrow = leakage, thick dark box = deep module. No introduction paragraph — straight into the candidates.
 
+One **tracker summary line** sits under the legend, in `text-sm text-slate-500` — the aggregate view History Awareness never puts on the cards:
+
+> 39 issues read across 2 surfaces — 3 candidates already ticketed, 1 previously decided against.
+
+The same line carries the two exceptions, appended as clauses, in the same muted type — no warning styling, no nag:
+
+- **Truncation** — when a surface hits the 200-issue cap: _"issues.example surface truncated at the 200-issue cap."_
+- **No tracker** — when the repo has none, or a local-markdown fallback with nothing recorded: _"no issue tracker configured — history awareness skipped."_ This is the pass's only trace; the rest of the report is identical to a tracker-free run.
+
 ## Candidate card
 
 The diagrams carry the weight. Prose is sparse, plain, and uses the glossary terms (from the `codebase-design` skill) without ceremony.
@@ -44,15 +53,15 @@ The diagrams carry the weight. Prose is sparse, plain, and uses the glossary ter
 Each candidate is one `<article>`:
 
 - **Title** — short, names the deepening (e.g. "Collapse the Order intake pipeline").
-- **Badge row** — recommendation strength (`Strong` = emerald, `Worth exploring` = amber, `Speculative` = slate), plus a tag for the dependency category (`in-process`, `local-substitutable`, `ports & adapters`, `mock`).
+- **Badge row** — recommendation strength (`Strong` = emerald, `Worth exploring` = amber, `Speculative` = slate), plus a tag for the dependency category (`in-process`, `local-substitutable`, `ports & adapters`, `mock`), plus a linked `Ticketed #N` badge when History Awareness matched an existing issue — cool neutral (`bg-slate-100 text-slate-600`, `border-slate-200`) so it reads as metadata, not as a grade.
 - **Files** — monospaced list, `font-mono text-sm`.
 - **Before / After diagram** — the centrepiece. Two columns, side by side. See patterns below.
-- **Problem** — one sentence. What hurts.
+- **Problem** — one sentence. What hurts. Corroborating tracker issues are **cited inline here**, as linked numbers inside that same sentence ("Three unrelated concerns share `middleware.py`, and it shows — #12, #19, #23"). Evidence belongs where the claim is; corroboration gets no field of its own.
 - **Solution** — one sentence. What changes.
 - **Wins** — bullets, ≤6 words each. e.g. "Tests hit one interface", "Pricing logic stops leaking", "Delete 4 shallow wrappers".
-- **ADR callout** (if applicable) — one line in an amber-tinted box.
+- **Decision callout** (if applicable) — one line in an amber-tinted box, naming the recorded decision the candidate contradicts. An ADR (`ADR-0007`) and a closed decision ticket (`#22`) are the same object on different surfaces, so they share the one callout.
 
-No paragraphs of explanation. If the diagram needs a paragraph to be understood, redraw the diagram.
+No paragraphs of explanation. If the diagram needs a paragraph to be understood, redraw the diagram. A candidate History Awareness found nothing about renders exactly as it does today — no badge, no callout, no citation.
 
 ## Diagram patterns
 
