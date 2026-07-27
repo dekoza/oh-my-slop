@@ -40,7 +40,7 @@ def _ticketization_section() -> str:
 
 def _grilling_section() -> str:
     text = _skill_text()
-    return text[text.index("### 4. Grilling loop") :]
+    return text[text.index("### 4. ") :]
 
 
 def _map_notes_stopping_criteria_line() -> str:
@@ -72,7 +72,7 @@ def test_ticketization_sits_between_the_report_and_the_grilling_loop() -> None:
     assert (
         text.index("### 2. Present candidates")
         < text.index("### 3. Ticketize the chosen candidates")
-        < text.index("### 4. Grilling loop")
+        < text.index("### 4. Grill a candidate")
     )
 
 
@@ -283,9 +283,9 @@ def test_the_notes_block_carries_the_three_deepen_stopping_criteria() -> None:
 
 
 def test_the_map_notes_criteria_match_their_source_of_truth() -> None:
-    """The numbers live in two places on purpose — the Grilling loop is their
-    source, and the map must carry them because a work-through session never
-    loads this skill. The duplication is mandated; the drift is not."""
+    """The numbers live in two places on purpose — the work-through section is
+    their source, and the map must carry them because a work-through session
+    never loads this skill. The duplication is mandated; the drift is not."""
     source = _grilling_section()
     emitted = _map_notes_stopping_criteria_line()
 

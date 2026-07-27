@@ -86,7 +86,48 @@
         "No candidate tickets are created, so the run ends at the map.",
         "D1 is recorded as Vetoed, quoting the user's reason verbatim — \"deliberate, see ADR-0007\" — rather than a paraphrase.",
         "S2 is recorded as Not added with the fixed phrase 'below the proposed set; not raised', and no rationale is invented for it, because the user said nothing about it.",
-        "Neither line carries a link, since neither candidate was ever ticketized."
+        "Neither line carries a link, since neither candidate was ever ticketized.",
+        "No grill is offered: with no candidate tickets created, the prompt is gated off and the session ends at the map, rather than proposing the candidate the user just vetoed."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "You are half an hour into a claimed candidate ticket, 'Collapse the Order intake pipeline', whose body carries no Route: line. Two questions are settled — the seam lands at the repo boundary, and the pricing adapter stays — but the interview has surfaced a rollout risk the report card missed: the collapse cannot ship without a coordinated migration of the payment gateway's callers. Where those callers move depends on call sites nobody in the room has read, and the user has to leave. State what you do with the ticket before the session ends.",
+      "expected_output": "The response posts the partial progress as a comment, writes the corrected Route: back into the body, unassigns itself to release the claim, and leaves the ticket open rather than closing it.",
+      "files": [],
+      "expectations": [
+        "It posts what was established — the settled seam and the pricing adapter, plus the rollout risk — as a comment on the ticket, so the progress is not lost with the session.",
+        "It writes the corrected Route: court-jester back into the ticket body before releasing the claim, because the interview escalated past the card's judgement and the next session would otherwise rediscover the risk.",
+        "It releases the claim by unassigning the ticket, putting it back on the frontier for a later session.",
+        "The ticket is left open and is not closed, because the decision did not converge.",
+        "It does not append a gist to the map's Decisions so far, since no decision landed.",
+        "It states that a false close and a silent loss are both worse than an open ticket carrying real progress."
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "You are just past the grill prompt: the user picked the candidate ticket 'Split the billing gateway's retry seam'. Its body's metadata line reads `**Axis:** deepen · **Strength:** Strong · **Route:** court-jester · **Candidate:** D2`, and the ticket carries the label wayfinder:grilling. State how you run this one and what closes it.",
+      "expected_output": "The response runs court-jester first as a prelude, then holds the live specification interview, which is what resolves and closes the ticket.",
+      "files": [],
+      "expectations": [
+        "It reads the routing from the Route: field in the body, not from the label, and notes the uniform wayfinder:grilling label carries no routing signal.",
+        "court-jester runs before the live interview, as a prelude rather than an alternative to it.",
+        "The specification interview still happens and is what closes the ticket: court-jester is one-pass and agent-driven, so its synthesis is the agent's, and a HITL ticket only resolves through the live exchange.",
+        "It claims the ticket by assigning it before any of this work starts.",
+        "It does not invent a wayfinder:court-jester label type."
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "You are closing out a grill that converged. On 'Collapse the Order intake pipeline', the module's shape is settled, and the user agreed the retry backoff stays naive for now, to be revisited if the gateway starts throttling. State what you produce from here.",
+      "expected_output": "The response closes the ticket with a resolution comment, records the gist on the map, and invokes to-tickets in-session so the deferred simplification lands as an acceptance criterion on the implement ticket.",
+      "files": [],
+      "expectations": [
+        "It posts the resolution comment, closes the ticket, and appends the gist to the map's Decisions so far.",
+        "It invokes to-tickets in-session, while the context is at its peak, marking each generated ticket workflow:implement plus ready-for-agent or ready-for-human.",
+        "The deferred backoff becomes an acceptance criterion on the implement ticket, asking the implementer to write the # SHORTCUT: marker with its upgrade path.",
+        "It does not write a # SHORTCUT: marker into the reviewed repo itself, because this skill never writes code.",
+        "It does not try to note the deferral in the HTML report, which is ephemeral and already gone."
       ]
     }
   ]

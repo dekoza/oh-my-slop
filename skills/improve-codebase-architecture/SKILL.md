@@ -129,7 +129,7 @@ End the report with a **Top recommendation** section: which candidate you'd tack
 
 See [HTML Report](references/html-report.md) for the full HTML scaffold, diagram patterns, and styling guidance.
 
-Do NOT propose interfaces yet — that is what the grilling loop is for. Once the file is written and open, go straight to Phase 3: the candidates get picked there, as a proposal the user vetoes rather than as an open question.
+Do NOT propose interfaces yet — that is what the grill in §4 is for. Once the file is written and open, go straight to Phase 3: the candidates get picked there, as a proposal the user vetoes rather than as an open question.
 
 ### 3. Ticketize the chosen candidates
 
@@ -242,7 +242,7 @@ Done when no candidate ticket remains open.
 
 A review map is structurally odd for wayfinder: not one effort finding its way to a single destination, but a **basket** of independent decisions that surfaced together, so the Destination has to be honest about that. A **thematic** destination ("the Order intake and pricing seams are settled") needs a unifying story across candidates that usually doesn't exist; an **aspirational** one ("a deeper, less bloated architecture") is never reachable, so the map could never close.
 
-The **Notes** block is load-bearing because a work-through session weeks later arrives via `/wayfinder` having never loaded this skill: vocabulary discipline and court-jester routing not written on the map are simply lost. So are the three stopping criteria, which exist nowhere else — the Grilling loop section below is their source of truth, and it lives in the skills directory rather than in the repo under review, so a path reference on the map would resolve to nothing for whoever opens it. Qualify them as **deepen-only** and drop the parenthetical attribution the section below carries; provenance means nothing to a reader there. Emit them **always**, including on a **simplify-only** map — three lines of harmless text beat a conditional this skill has to state and the evals have to cover.
+The **Notes** block is load-bearing because a work-through session weeks later arrives via `/wayfinder` having never loaded this skill: vocabulary discipline and court-jester routing not written on the map are simply lost. So are the three stopping criteria, which exist nowhere else — the work-through section below is their source of truth, and it lives in the skills directory rather than in the repo under review, so a path reference on the map would resolve to nothing for whoever opens it. Qualify them as **deepen-only** and drop the parenthetical attribution the section below carries; provenance means nothing to a reader there. Emit them **always**, including on a **simplify-only** map — three lines of harmless text beat a conditional this skill has to state and the evals have to cover.
 
 **`Not yet specified` is charted empty.** Every candidate arrives with a full report card, so nothing is fog; the section exists only for what a later work-through session surfaces.
 
@@ -282,35 +282,72 @@ The report's **Top recommendation** is expressed as **first in map order**, **no
 
 Tell the user what exists now: the map and each candidate ticket, **by name** with its link — wayfinder's rule, because a wall of bare numbers is illegible — alongside the id each was proposed under, so the terminal proposal can be traced.
 
-### 4. Grilling loop
+### 4. Grill a candidate — a wayfinder work-through
 
-Once the user picks a candidate, conduct a specification interview to walk the design tree with them — constraints, dependencies, the shape of the changed module, what sits behind the seam, what tests survive.
+The candidates are tickets now, so grilling one is no longer a conversation *about* a candidate: it is a **work-through** of a candidate ticket, following [`wayfinder`](../wayfinder/SKILL.md)'s work-through mode — claimed, resolved, closed, recorded on the map. The report is already gone by the time this starts, and the map is the record of truth; what the interview establishes survives only if it lands on the tracker.
 
-Route by what the candidate needs:
+**A named divergence.** Wayfinder's charting mode ends with *"Stop — charting the map is one session's work; do not also resolve the other tickets."* Ticketize-then-grill breaks that rule **on purpose**: the context that makes this grill cheap — the exploration, the audit, the evidence behind every card — exists in this session and nowhere else, and re-reading it in a fresh session buys nothing. Exactly one ticket, the picked one, is worked here; the rest wait for their own sessions. Written out plainly so the next reader records it as a deliberate divergence rather than filing it as a bug.
 
-- **Contested trade-off or rollout/coupling risk** — where the change could go wrong, or reasonable people would disagree on it — run [`court-jester`](../court-jester/SKILL.md) for adversarial review before committing to the shape.
-- **Open-ended "what shape should this take"** — where the design space is wide and nothing's obviously risky — run a collaborative specification interview (`grilling`) to walk the options with the user.
+#### The prompt: separate, defaulted, gated on tickets existing
 
-Default to the interview; escalate to court-jester when the candidate carries real risk.
+Ask **after** ticketization, as its own question — not folded into the selection prompt. Selection settles what gets written down; this settles what gets worked now, and merging the two buries the second question inside a reply to the first.
+
+The report's **Top recommendation** is the default target:
+
+> Charted 3 tickets. Grill **Collapse the Order intake pipeline** (D1, the top recommendation) now?
+>
+> Say "grill S2 instead" to pick another, or "no, stop here" to end at the map.
+
+Both alternatives are first-class answers, not fallbacks — a run that stops at a charted map is a complete run, not an abandoned one.
+
+**The gate is tickets, not report.** A **zero-pick** run charts its map and stops: its Top recommendation still names a candidate the user has just vetoed, and offering it reads as *"you declined everything — shall we grill the thing you declined?"* No candidate tickets → no prompt, and the session ends at the map.
+
+#### Claim first, then resolve — with the close made conditional
+
+**Claim the ticket first**, before any work — assign it, per wayfinder, so a concurrent session skips it. Only then start the interview.
+
+- **The interview converges** — post the answer as a **resolution comment** on the ticket, **close** it, and append the gist to the map's `Decisions so far`. Wayfinder's ordinary resolution, unchanged.
+- **It does not converge** — the decision turns out to need call sites nobody has read, or the session simply runs out — post what **was** established as a comment, **release the claim** (unassign), and leave the ticket **open**.
+
+A false close and a silent loss are both worse than an open ticket carrying real progress: closing advertises a decision that was never made, and dropping the half-formed answer sends the next session back to the report card that no longer exists.
+
+#### Routing: honour the `Route:` field
+
+Routing was decided at ticketization and written onto the body's metadata line. This step **honours it** rather than re-deciding it — the judgement was made minutes ago with the whole report in view.
+
+- **The label carries no routing signal.** Every candidate ticket is `wayfinder:grilling`, uniformly, so `Route:` in the body is the **only** carrier. Said here explicitly so nobody later "simplifies" the pair by inventing a `wayfinder:court-jester` type — the thing §3 keeps uninvented.
+- **No `Route:` line** — run the specification interview ([`grilling`](../grilling/SKILL.md)) and walk the design tree with the user: constraints, dependencies, the shape of the changed module, what sits behind the seam, what tests survive.
+- **`Route: court-jester`** — run [`court-jester`](../court-jester/SKILL.md) and **then** the interview. A prelude, not an alternative: court-jester defaults to one pass and is agent-driven, so its synthesis is the *agent's* recommendation, while every candidate ticket is HITL — wayfinder is explicit that such a ticket "only resolves through that live exchange; the agent never stands in for the human's side of it". court-jester sharpens the thesis; the live interview is what makes the close legitimate.
+- **`Route:` is a hint, not a verdict.** Escalate mid-interview if it surfaces a contested trade-off or rollout/coupling risk the card missed — the field was written from a report card, and the interview sees more than the card did.
+- **An escalation that then fails to converge writes the corrected `Route:` back** into the ticket body, before the claim is released. Otherwise the next session inherits the card's judgement and pays to rediscover the risk.
+
+#### What the interview walks
 
 **Deepening and simplification coexistence.** When a candidate is both a deepening target (consolidate fragmented logic) and a simplification target (split for testability), they are not contradictory — they operate on different axes. Depth is an interface property; internal splitting is an implementation property.
 
 Apply the invariant: **the public interface must remain small and stable while internal structure evolves freely.** If tests call private methods, or callers bypass the interface, the deepening has failed and the Contrarian's critique applies.
 
-Stopping criteria (from council consensus):
+Stopping criteria (from council consensus) — this section is their **source of truth**, and §3 emits them onto the map's Notes for the work-through sessions that never load this skill:
 - Public methods: ≤ 8. If the deepened module exposes more, extract a sub-service.
 - Internal regions: ≤ 4 (e.g., CRUD, Dashboard, Receiver, Misc). If a region exceeds ~120 lines, it's a candidate for its own private class — but keep it internal, same file.
 - Total class: ~600 lines is the extraction trigger. Beyond that, even well-organized regions become hard to scan.
 
-The temporal sequence is: **consolidate first** (establish the boundary), **then split internally** (organize within it). Never do both simultaneously — consolidation creates the coherent boundary that makes internal splitting meaningful.
+**Sequencing — consolidate first, then split internally.** [`codebase-design`](../codebase-design/SKILL.md) carries the rule and the reasoning, and the map's Notes already send every session there; use it rather than a second copy that can drift.
 
-**Shortcut generation.** When a simplification is accepted but deferred (not done now), generate a `# SHORTCUT:` marker at the relevant code site:
+#### When the decision lands, route its work out
 
-```python
-# SHORTCUT: <what's skipped>. Upgrade: <what to do when this matters>.
-```
+A converged decision that is build-ready gets its implementation filed **in-session**, while the context is at its peak: invoke [`to-tickets`](../to-tickets/SKILL.md), marking each generated ticket `workflow:implement` plus its `ready-for-agent` or `ready-for-human` state. This is wayfinder's standing rule to route build-ready work out of the decision frontier, applied to the *candidate's* implementation work. A design nobody filed is worth about as much as a design nobody made.
 
-Note deferred shortcuts in the report so they can be tracked. See [`ponytail-debt`](../ponytail-debt/SKILL.md) for the marker lifecycle and debt tracking.
+**A deferred simplification is not a marker this session writes.** This skill produces a locked design and routes the building out; it **never touches the reviewed repo's code**. [`tdd`](../tdd/SKILL.md) is where a `# SHORTCUT:` marker is authored, and [`ponytail-debt`](../ponytail-debt/SKILL.md) owns its lifecycle, harvesting markers from source. So when the interview accepts a simplification but defers it, the deferral becomes an **acceptance criterion on the implement ticket** just filed, and the implementer writes the marker when the code is actually written:
+
+> - [ ] Tag the skipped retry backoff at its call site with
+>   `# SHORTCUT: <what's skipped>. Upgrade: <what to do when this matters>.`
+
+"A simplification we are not doing now" has exactly three fates:
+
+- **Still an open decision** — its own ticket on the map, created the way wayfinder's work-through creates any newly-surfaced ticket.
+- **Decided skip with a known upgrade path** — a `# SHORTCUT:` marker, authored by the implementer, specified as the acceptance criterion above.
+- **Ruled out** — a line in the map's `Out of scope`.
 
 ## Reference
 
