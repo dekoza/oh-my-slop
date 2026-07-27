@@ -40,6 +40,10 @@
     "should_trigger": true
   },
   {
+    "query": "I read the Gitea issue with `tea issues 393` and built exactly what it described, but the reviewer says I missed acceptance criteria that were never in the body.",
+    "should_trigger": true
+  },
+  {
     "query": "Create a pull request against main with gh and add the reviewers from our CODEOWNERS file.",
     "should_trigger": false
   },

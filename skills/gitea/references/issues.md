@@ -6,7 +6,7 @@ Every command below needs `--repo owner/name` — see `references/repo-context.m
 
 ```sh
 tea issues list --repo minder/app --state all --limit 50
-tea issues 24 --repo minder/app                 # detail view; --comments to include them
+tea issues 24 --repo minder/app --comments      # detail view; without --comments you get the body ALONE
 tea issues create --repo minder/app -t "Title" -d "Body"
 tea issues edit --repo minder/app 24 --add-labels bug --milestone ""
 tea issues close  --repo minder/app 24 25 26    # variadic
@@ -14,6 +14,26 @@ tea issues reopen --repo minder/app 24
 ```
 
 `tea issues` with no subcommand lists; with an index it shows detail.
+
+### A body-only read is not the ticket
+
+The detail view prints the body and **omits every comment**, with no marker saying so and exit `0`. A partial read is therefore indistinguishable from a complete one:
+
+```sh
+tea issues 24 --repo minder/app              # body only — looks complete
+tea issue  24 --repo minder/app              # singular alias, same omission
+tea issues 24 --repo minder/app --comments   # body + comments
+```
+
+That matters because comments are where trackers put the things that **override the body**: a triage brief with its own acceptance criteria, a scope cut, a correction, a decision that makes the original description stale. The body is what someone reported; the comments are what the project concluded.
+
+**Rule: pass `--comments` whenever you are reading a ticket to find out what to do.** Skip it only for lookups that cannot be changed by a comment — confirming a title, a state, a label. When in doubt, pass it; the cost is one flag, and the failure mode is building the wrong thing while believing you read the spec.
+
+Comments are also available typed, when you need to filter or parse them rather than read them:
+
+```sh
+tea api "/repos/minder/app/issues/24/comments"
+```
 
 ### `list` and `create` have disjoint flag sets
 
