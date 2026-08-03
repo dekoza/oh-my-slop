@@ -17,6 +17,7 @@
       "./prompts"
     ],
     "extensions": [
+      "./extensions/inline-skills.ts",
       "./extensions/workflow-watchdog"
     ]
   },
