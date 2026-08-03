@@ -82,7 +82,6 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 | **[provider-failover](extensions/provider-failover/README.md)** | Wraps GitHub Copilot models with automatic provider failover on 429/overload errors. Keeps the best working route sticky. |
 | **[job-pipeline](extensions/job-pipeline/README.md)** | Runs a full development pipeline: model-driven interview → scout → planning loop with adversarial jester critique → TDD workers → proof deck → review → retro. Human gates at every decision point. Earns autonomy through clean retrospectives. |
 | **[subagent-bundled-agents](extensions/subagent-bundled-agents/)** | Seeds bundled markdown subagents from `./agents` into pi's project or shared agent storage without clobbering user overrides once you opt into the extension. |
-| **[inline-skills](extensions/inline-skills.ts)** | Resolves bare `/skillname` references in natural-language input to `/skill:skillname`, matching Claude Code behaviour.
 | **[workflow-watchdog](extensions/workflow-watchdog/)** | Monitors pi's workflow for failure patterns: loop detection (repeating messages), mistake tracking (consecutive tool errors), and optional supervisor model escalation for rescue instructions. |
 
 </details>
