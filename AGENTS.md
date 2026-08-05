@@ -131,4 +131,6 @@ Canonical default vocabulary — each label string equals its role name. See `do
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: `CONTEXT.md` plus `docs/adr/` at the repo root. `CONTEXT.md` holds the
+workflow vocabulary; the skill-authoring vocabulary lives in
+`skills/writing-great-skills/GLOSSARY.md`. See `docs/agents/domain.md`.

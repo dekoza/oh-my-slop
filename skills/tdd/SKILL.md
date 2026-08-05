@@ -9,6 +9,8 @@ license: MIT (adapted from mattpocock/skills)
 
 # Test-Driven Development
 
+When exploring the codebase, read the project's domain glossary — `CONTEXT.md` unless the domain doc config points elsewhere — so test names and interface vocabulary match the project's language, and respect the ADRs covering the area you're touching.
+
 ## STOP — Read This Before Writing Any Code
 
 This skill is **mandatory** for all implementation tasks. If you are about to write, modify, or fix code — stop here and follow this workflow. TDD is not optional. Writing implementation before tests is a bug.

@@ -29,6 +29,15 @@ whatever this file points at — `CONTEXT.md` by default. A repo that keeps its
 glossary somewhere else (`UBIQUITOUS_LANGUAGE.md`, a section of `AGENTS.md`, a wiki
 page) should say so here rather than leaving each skill to guess.
 
+**This repo splits its glossary in two.** `CONTEXT.md` holds the **workflow**
+vocabulary — issue tracker, issue vs ticket, decision ticket, map, frontier, triage
+role. The **skill-authoring** vocabulary — predictability, model- vs user-invoked,
+context load, leading word, progressive disclosure, duplication — lives in
+[`skills/writing-great-skills/GLOSSARY.md`](../../skills/writing-great-skills/GLOSSARY.md),
+which is a disclosed reference of that skill and is already authoritative. Read
+whichever half your task touches; authoring work usually wants both. The two do not
+overlap, and neither should be copied into the other.
+
 ## Use the glossary's vocabulary
 
 When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids.
