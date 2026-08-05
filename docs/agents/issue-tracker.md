@@ -23,6 +23,10 @@ CLI for all operations.
 has both a `gitea` and an `origin` (GitHub) remote, so pass `--remote gitea` or
 `--repo minder/oh-my-slop` when inference picks the wrong one.
 
+Run `tea` from inside the clone even when passing `--repo`: several subcommands
+(`tea issues edit` among them) shell out to `git rev-parse --show-toplevel` first and
+fail outright outside a work tree.
+
 - **Create an issue**: `tea issues create --title "..." --description "..."`.
   Note it is `--description` / `-d`, **not** `--body` — the `gh` habit fails here.
 - **Read an issue**: `tea issues <index> --comments`
@@ -71,8 +75,14 @@ Maps and tickets live on Gitea only — never on the intake tracker.
 
   ```sh
   tea api --method POST /repos/minder/oh-my-slop/issues/<blocked>/dependencies \
-    --data '{"index": <blocker>}'
+    --data '{"index": <blocker>, "owner": "minder", "repo": "oh-my-slop"}'
   ```
+
+  The body is an `IssueMeta`: `owner` and `repo` are **required**, even though the
+  same repo is already in the URL. Omitting them returns
+  `{"message":"repository does not exist [id: 0, uid: 0, owner_name: , name: ]"}`
+  with **HTTP 200 and exit code 0**, so the edge silently never lands — always
+  verify with a `GET` on the same path afterwards.
 
   The endpoint takes the plain issue **index** — no numeric database id, unlike
   GitHub. Semantics: the issue in the URL becomes blocked by the issue in the body.
