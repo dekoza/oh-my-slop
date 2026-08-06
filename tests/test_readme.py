@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts.validate_refs import iter_skill_dirs
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SKILL_BUCKETS = ("reference", "practice", "workflow", "meta")
 README_PATH = REPO_ROOT / "README.md"
 JOB_PIPELINE_README_PATH = REPO_ROOT / "extensions" / "job-pipeline" / "README.md"
 SKILLS_DIR = REPO_ROOT / "skills"
@@ -54,13 +57,48 @@ def test_readme_lists_every_bundled_extension() -> None:
         assert extension_name in readme_text
 
 
+def iter_skill_paths() -> list[str]:
+    return [
+        skill_dir.relative_to(REPO_ROOT).as_posix()
+        for skill_dir in iter_skill_dirs(SKILLS_DIR)
+    ]
+
+
+def readme_bucket_section(readme_text: str, bucket: str) -> str:
+    section = readme_text.split(f"#### {bucket.capitalize()}", maxsplit=1)[1]
+    return section.split("\n#### ", maxsplit=1)[0]
+
+
 def test_readme_links_every_bundled_skill() -> None:
     readme_text = load_readme()
 
-    for skill_dir in sorted(SKILLS_DIR.iterdir()):
-        if not skill_dir.is_dir() or not (skill_dir / "SKILL.md").exists():
-            continue
-        assert f"skills/{skill_dir.name}/SKILL.md" in readme_text
+    for skill_path in iter_skill_paths():
+        assert f"{skill_path}/SKILL.md" in readme_text
+
+
+def test_readme_lists_each_skill_under_its_own_bucket_heading() -> None:
+    """The bucket a skill lives in is the filesystem's fact; the README table is
+    a second copy of it. Without this the two drift the first time a skill is
+    added or re-filed without touching the table."""
+    readme_text = load_readme()
+
+    for bucket in SKILL_BUCKETS:
+        section = readme_bucket_section(readme_text, bucket)
+        expected = {
+            path for path in iter_skill_paths() if path.startswith(f"skills/{bucket}/")
+        }
+
+        assert expected, f"no skills found on disk for bucket {bucket!r}"
+
+        for skill_path in expected:
+            assert f"{skill_path}/SKILL.md" in section, (
+                f"{skill_path} is missing from the README's {bucket} section"
+            )
+
+        for other in set(iter_skill_paths()) - expected:
+            assert f"{other}/SKILL.md" not in section, (
+                f"{other} is listed under the wrong README bucket ({bucket})"
+            )
 
 
 def test_readme_lists_every_bundled_prompt_template() -> None:

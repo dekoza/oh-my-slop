@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "improve-codebase-architecture"
+SKILL_ROOT = REPO_ROOT / "skills" / "workflow" / "improve-codebase-architecture"
 
 
 def _skill_text() -> str:
@@ -184,7 +184,7 @@ def test_consolidate_then_split_is_reduced_to_a_cross_reference() -> None:
     send every session to it."""
     section = _work_through_section()
 
-    assert "../codebase-design/SKILL.md" in section
+    assert "../../practice/codebase-design/SKILL.md" in section
     assert "consolidate" in section.lower()
 
 

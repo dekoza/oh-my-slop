@@ -8,7 +8,7 @@ from scripts.validate_refs import validate_repo
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "webapp-testing"
+SKILL_ROOT = REPO_ROOT / "skills" / "practice" / "webapp-testing"
 
 
 def test_webapp_testing_skill_references_resolve_in_isolation(tmp_path: Path) -> None:
@@ -98,6 +98,6 @@ def test_webapp_testing_skill_evals_cover_video_repro_and_walkthrough_cases() ->
 def test_readme_lists_webapp_testing_skill() -> None:
     readme_text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert "[Webapp Testing](skills/webapp-testing/SKILL.md)" in readme_text
+    assert "[Webapp Testing](skills/practice/webapp-testing/SKILL.md)" in readme_text
     assert "Playwright" in readme_text
     assert "video" in readme_text.lower()

@@ -30,8 +30,8 @@ between "rich domain model" and "a Transaction Script is fine."
 
 | Ground | Owner |
 |---|---|
-| N+1 / Lazy Load in the ORM (`select_related`/`prefetch_related`) | [django](../django/SKILL.md) |
-| DTO / serializer at the HTTP boundary | [drf](../drf/SKILL.md) |
+| N+1 / Lazy Load in the ORM (`select_related`/`prefetch_related`) | [django](../../reference/django/SKILL.md) |
+| DTO / serializer at the HTTP boundary | [drf](../../reference/drf/SKILL.md) |
 | DB transactions, isolation levels, lost-update/write-skew, derived data | [data-intensive](../data-intensive/SKILL.md) |
 | Repository / Service Layer as *domain* access, Aggregates | [domain-driven-design](../domain-driven-design/SKILL.md) |
 | Latency budgets, timeouts, partial failure at remote calls | [production-readiness](../production-readiness/SKILL.md) |
@@ -63,7 +63,7 @@ The central decision. Pick by the actual complexity, not by habit or ORM conveni
 Keep each honest: Transaction Scripts stay use-case-focused (not dumping grounds), Table
 Modules stay tabular (don't fake entities), Domain Models carry the behavior (not anemic).
 **Active Record** is acceptable only for simple domains that accept persistence coupling —
-Django's ORM *is* Active Record, so lean on [django](../django/SKILL.md) for its costs.
+Django's ORM *is* Active Record, so lean on [django](../../reference/django/SKILL.md) for its costs.
 
 ## Coordinate identity and writes explicitly
 

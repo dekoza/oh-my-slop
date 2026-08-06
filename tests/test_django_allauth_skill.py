@@ -8,7 +8,7 @@ from scripts.validate_refs import validate_repo
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "django-allauth"
+SKILL_ROOT = REPO_ROOT / "skills" / "reference" / "django-allauth"
 
 
 def _read_reference(name: str) -> str:

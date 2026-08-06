@@ -8,7 +8,7 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "skill-creator"
+SKILL_ROOT = REPO_ROOT / "skills" / "meta" / "skill-creator"
 SKILL_PATH = SKILL_ROOT / "SKILL.md"
 
 

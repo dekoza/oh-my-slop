@@ -107,7 +107,7 @@ restating it:
 - Use [`codebase-design`](../codebase-design/SKILL.md) for module depth, interface minimalism,
   seams, adapters, comment discipline, command-query separation, and typed results instead of
   null sentinels.
-- Use [`python-async`](../python-async/SKILL.md) for structured concurrency, task and thread
+- Use [`python-async`](../../reference/python-async/SKILL.md) for structured concurrency, task and thread
   ownership, synchronization, cancellation, and shutdown in Python async code; use the relevant
   runtime owner for other ecosystems.
 - Use [`refactoring-pass`](../refactoring-pass/SKILL.md) for smell diagnosis and named

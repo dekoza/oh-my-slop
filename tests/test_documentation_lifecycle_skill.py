@@ -8,7 +8,7 @@ from scripts.validate_refs import validate_repo
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "documentation-lifecycle"
+SKILL_ROOT = REPO_ROOT / "skills" / "practice" / "documentation-lifecycle"
 
 
 def test_documentation_lifecycle_skill_references_resolve_in_isolation(
@@ -179,5 +179,5 @@ def test_documentation_lifecycle_trigger_evals_cover_trigger_and_near_miss_cases
 def test_readme_lists_documentation_lifecycle_skill() -> None:
     readme_text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert "[Documentation Lifecycle](skills/documentation-lifecycle/SKILL.md)" in readme_text
+    assert "[Documentation Lifecycle](skills/practice/documentation-lifecycle/SKILL.md)" in readme_text
     assert "feature spec" in readme_text.lower() or "runbook" in readme_text.lower()

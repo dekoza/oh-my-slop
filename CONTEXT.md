@@ -6,7 +6,7 @@ extensions and tests that keep them installable. This file is the glossary for t
 
 The **skill-authoring** half — Predictability, Model-Invoked, Context Load, Leading
 Word, Router Skill, Progressive Disclosure, Duplication — lives in
-[`skills/writing-great-skills/GLOSSARY.md`](skills/writing-great-skills/GLOSSARY.md)
+[`skills/meta/writing-great-skills/GLOSSARY.md`](skills/meta/writing-great-skills/GLOSSARY.md)
 and is not repeated here.
 
 ## Language

@@ -62,7 +62,7 @@ Place each **assertion** at the lowest tier that can honestly verify it:
 Keep E2E thin: one happy-path test per user flow, plus the assertions that genuinely need a
 browser. When a suite has accumulated E2E-only assertions that lower tiers could carry —
 typically discovered after a triage session — run the `restore-test-pyramid` skill
-(`skills/restore-test-pyramid/`) to push them down systematically. A bloated E2E tier is why
+(`skills/workflow/restore-test-pyramid/`) to push them down systematically. A bloated E2E tier is why
 "small ticket, hour-long test run" happens.
 
 ## E2E policy for implementation runs

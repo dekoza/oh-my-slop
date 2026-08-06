@@ -68,17 +68,46 @@ def iter_references(markdown_file: Path) -> list[tuple[int, str]]:
     return references
 
 
+def iter_skill_dirs(skills_dir: Path) -> list[Path]:
+    """Every skill root under ``skills_dir``, at any bucket depth.
+
+    Mirrors pi's own discovery rule: a directory holding SKILL.md is a skill
+    root and is not descended into, so a skill's own subdirectories can never
+    masquerade as skills. Without the recursion a bucketed tree yields nothing
+    and every caller reports success over an empty set.
+    """
+    if not skills_dir.is_dir():
+        return []
+
+    skill_dirs: list[Path] = []
+
+    for entry in sorted(skills_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        if (entry / "SKILL.md").exists():
+            skill_dirs.append(entry)
+            continue
+        skill_dirs.extend(iter_skill_dirs(entry))
+
+    return skill_dirs
+
+
+def find_skill_dir(skills_dir: Path, skill_name: str) -> Path | None:
+    """The directory of the named skill, whichever bucket currently holds it.
+
+    Callers name skills, not paths, so re-filing a skill into another bucket
+    stays a pure move.
+    """
+    for skill_dir in iter_skill_dirs(skills_dir):
+        if skill_dir.name == skill_name:
+            return skill_dir
+    return None
+
+
 def validate_repo(repo_root: Path) -> list[str]:
-    skills_dir = repo_root / "skills"
     broken_references: list[str] = []
 
-    if not skills_dir.is_dir():
-        return broken_references
-
-    for skill_dir in sorted(skills_dir.iterdir()):
-        if not skill_dir.is_dir() or not (skill_dir / "SKILL.md").exists():
-            continue
-
+    for skill_dir in iter_skill_dirs(repo_root / "skills"):
         for markdown_file in sorted(skill_dir.rglob("*.md")):
             for line_number, reference in iter_references(markdown_file):
                 if should_skip_reference(reference):

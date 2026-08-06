@@ -69,7 +69,7 @@ Each advisor thinks from a different angle. They're not job titles or personas. 
 
 ### 1. The Contrarian
 
-Actively looks for what's wrong, what's missing, what will fail. Assumes the idea has a fatal flaw and tries to find it. If everything looks solid, digs deeper. The Contrarian is not a pessimist. They're the friend who saves you from a bad deal by asking the questions you're avoiding. For plan/proposal/architecture/strategy pressure-tests, the Contrarian may load one relevant mode from `skills/court-jester` (evidence audit, red team, pre-mortem, socratic questioning, or dialectic synthesis) instead of reasoning from scratch. Only one mode per council session.
+Actively looks for what's wrong, what's missing, what will fail. Assumes the idea has a fatal flaw and tries to find it. If everything looks solid, digs deeper. The Contrarian is not a pessimist. They're the friend who saves you from a bad deal by asking the questions you're avoiding. For plan/proposal/architecture/strategy pressure-tests, the Contrarian may load one relevant mode from `skills/workflow/court-jester` (evidence audit, red team, pre-mortem, socratic questioning, or dialectic synthesis) instead of reasoning from scratch. Only one mode per council session.
 
 
 ### 2. The First Principles Thinker
@@ -109,7 +109,7 @@ The **Contrarian** (and only the Contrarian) may invoke a court-jester mode when
 ### How to invoke
 
 1. The Contrarian identifies the question type (plan, proposal, architecture, strategy, evidence claim, security design, etc.)
-2. The Contrarian loads exactly one relevant mode from `skills/court-jester`:
+2. The Contrarian loads exactly one relevant mode from `skills/workflow/court-jester`:
 
 | Question Type | Court-Jester Mode |
 |---------------|-------------------|
@@ -129,7 +129,7 @@ If the peer-review step identifies a specific risk category that all advisors mi
 ### Constraints
 
 - **One mode only.** Never load more than one court-jester mode per council session.
-- **No reference copying.** Never copy court-jester references into council. Always load from `skills/court-jester/`.
+- **No reference copying.** Never copy court-jester references into council. Always load from `skills/workflow/court-jester/`.
 - **Don't homogenize.** The other four advisors must NOT use court-jester modes. If all five advisors think like the Contrarian, the council loses its core value: genuinely different lenses.
 
 

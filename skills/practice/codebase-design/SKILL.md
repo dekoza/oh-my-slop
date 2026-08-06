@@ -34,7 +34,7 @@ When a shortcut is deliberate, tag it so it's harvestable later:
 
 Use `grep -rnE '(#|//) ?SHORTCUT:' .` across the repo to find accumulated shortcuts before they compound. See [TDD](../tdd/SKILL.md) for the shortcut-lifecycle workflow.
 
-**Ship and question:** build the minimal version, then challenge the requirement. Does the caller actually need this shape? Could the seam move? If the requirement survives scrutiny, the minimal version was the right call. If it doesn't, you saved yourself the over-build. For adversarial requirement review, pair with [Court Jester](../court-jester/SKILL.md).
+**Ship and question:** build the minimal version, then challenge the requirement. Does the caller actually need this shape? Could the seam move? If the requirement survives scrutiny, the minimal version was the right call. If it doesn't, you saved yourself the over-build. For adversarial requirement review, pair with [Court Jester](../../workflow/court-jester/SKILL.md).
 
 ## Glossary
 

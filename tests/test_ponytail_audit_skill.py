@@ -7,7 +7,7 @@ from scripts.validate_refs import validate_repo
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "ponytail-audit"
+SKILL_ROOT = REPO_ROOT / "skills" / "workflow" / "ponytail-audit"
 
 
 def _skill_text() -> str:
@@ -85,6 +85,7 @@ def test_improve_codebase_architecture_does_not_run_audit_script() -> None:
     text = (
         REPO_ROOT
         / "skills"
+        / "workflow"
         / "improve-codebase-architecture"
         / "SKILL.md"
     ).read_text(encoding="utf-8")

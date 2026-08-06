@@ -8,7 +8,7 @@ from scripts.validate_refs import validate_repo
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "langchain"
+SKILL_ROOT = REPO_ROOT / "skills" / "reference" / "langchain"
 
 
 def test_langchain_skill_references_resolve_in_isolation(tmp_path: Path) -> None:
@@ -204,6 +204,6 @@ def test_langchain_trigger_evals_cover_trigger_and_near_miss_cases() -> None:
 def test_readme_lists_langchain_skill() -> None:
     readme_text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert "[LangChain](skills/langchain/SKILL.md)" in readme_text
+    assert "[LangChain](skills/reference/langchain/SKILL.md)" in readme_text
     assert "LangGraph" in readme_text
     assert "LangSmith" in readme_text

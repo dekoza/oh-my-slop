@@ -8,7 +8,7 @@ from scripts.validate_refs import validate_repo
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "hyperscript"
+SKILL_ROOT = REPO_ROOT / "skills" / "reference" / "hyperscript"
 
 
 def test_hyperscript_skill_references_resolve_in_isolation(tmp_path: Path) -> None:

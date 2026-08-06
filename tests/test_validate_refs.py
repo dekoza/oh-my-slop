@@ -3,11 +3,12 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from scripts.validate_refs import validate_repo
+from scripts.validate_refs import iter_skill_dirs, validate_repo
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "validate_refs.py"
+MINIMUM_BUNDLED_SKILLS = 60
 
 
 def run_validator(repo_root: Path) -> subprocess.CompletedProcess[str]:
@@ -26,6 +27,24 @@ def test_real_repo_has_no_broken_references() -> None:
     cross-skill link written repo-root-relative instead of source-relative)
     before they land."""
     assert validate_repo(REPO_ROOT) == []
+
+
+def test_skill_discovery_actually_finds_the_bundled_skills() -> None:
+    """The validator reports success over whatever it discovered, so a discovery
+    bug that finds nothing is indistinguishable from a clean tree. Pin the floor
+    so an empty scan fails loudly instead of passing silently."""
+    assert len(iter_skill_dirs(REPO_ROOT / "skills")) >= MINIMUM_BUNDLED_SKILLS
+
+
+def test_skill_discovery_stops_at_the_skill_root(tmp_path: Path) -> None:
+    skills_dir = tmp_path / "skills"
+    skill_dir = skills_dir / "bucket" / "foo"
+    nested = skill_dir / "agents"
+    nested.mkdir(parents=True)
+    _ = (skill_dir / "SKILL.md").write_text("# Foo\n", encoding="utf-8")
+    _ = (nested / "SKILL.md").write_text("# Not a skill\n", encoding="utf-8")
+
+    assert iter_skill_dirs(skills_dir) == [skill_dir]
 
 
 def test_valid_repo_passes(tmp_path: Path) -> None:

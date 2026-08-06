@@ -29,7 +29,7 @@ When distribution is genuinely required:
 - **Data Transfer Object** — a structure that carries batched data across a process or layer
   boundary in one round-trip. **DTOs are transport, not domain models:** keep the mapping
   explicit, and never move business behavior into a DTO. At the HTTP boundary specifically,
-  DRF serializers embody this — [drf](../../drf/SKILL.md) owns that ground.
+  DRF serializers embody this — [drf](../../../reference/drf/SKILL.md) owns that ground.
 
 ## Base-pattern catalog
 

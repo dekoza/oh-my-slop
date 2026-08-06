@@ -41,6 +41,9 @@ If a change affects more than one surface, run every relevant command. Do not re
 
 This directory is the core product.
 
+- Skills live in exactly one of four buckets — `skills/reference/`, `skills/practice/`, `skills/workflow/`, `skills/meta/` — and the directory is the authority on which. File by what the reader came looking for: an API surface (reference), a way of working (practice), a job to run (workflow), or the agent's own toolkit (meta). The buckets are a taxonomy, not a promotion tier: everything under `skills/` ships, because pi recurses until it finds a `SKILL.md`.
+- Retiring a skill means **deleting** it, in a commit whose message names its replacement — or states plainly that it has none. There is no `deprecated/` bucket; an empty directory kept as a gesture is a lie about the tree.
+- Reach for a skill by name, not by path: `find_skill_dir()` in `scripts/validate_refs.py` resolves a name to whichever bucket currently holds it, so re-filing stays a pure move.
 - Keep markdown links and backtick references valid.
 - Do not invent file paths, reference targets, or API details.
 - If you add or rename a reference file, update the owning `SKILL.md` and any tests that assert its content.
@@ -133,4 +136,4 @@ Canonical default vocabulary — each label string equals its role name. See `do
 
 Single-context: `CONTEXT.md` plus `docs/adr/` at the repo root. `CONTEXT.md` holds the
 workflow vocabulary; the skill-authoring vocabulary lives in
-`skills/writing-great-skills/GLOSSARY.md`. See `docs/agents/domain.md`.
+`skills/meta/writing-great-skills/GLOSSARY.md`. See `docs/agents/domain.md`.

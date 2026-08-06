@@ -12,7 +12,7 @@ export const DEFAULT_READ_ONLY_TOOL_NAMES = Object.freeze(['read', 'grep', 'find
 export const DEFAULT_CODING_TOOL_NAMES = Object.freeze(['read', 'bash', 'edit', 'write']);
 
 const BUNDLED_AGENTS_DIR = fileURLToPath(new URL('../../../agents', import.meta.url));
-const BUNDLED_UI_DESIGN_SKILL_PATH = fileURLToPath(new URL('../../../skills/ui-design-direction/SKILL.md', import.meta.url));
+const BUNDLED_UI_DESIGN_SKILL_PATH = fileURLToPath(new URL('../../../skills/practice/ui-design-direction/SKILL.md', import.meta.url));
 
 export function resolveAgentToolNames(toolNames = DEFAULT_READ_ONLY_TOOL_NAMES) {
   return [...toolNames];

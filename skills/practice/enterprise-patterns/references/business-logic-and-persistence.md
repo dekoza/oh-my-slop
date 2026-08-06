@@ -72,7 +72,7 @@ Choose deliberately by how much the domain must stay decoupled from storage:
 - **Active Record** — object wraps a row and its persistence. Acceptable **only** for simple
   domains that accept persistence coupling; do not default to it for complex domains.
   Django's ORM is Active Record — its N+1 / Lazy Load consequences are owned by
-  [django](../../django/SKILL.md).
+  [django](../../../reference/django/SKILL.md).
 
 ## Identity, writes, and loading
 

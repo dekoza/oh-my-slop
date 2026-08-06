@@ -23,7 +23,7 @@ Surface architectural friction and propose **deepening opportunities** — refac
 
 This command is _informed_ by the project's domain model and built on a shared design vocabulary:
 
-- Use the [`codebase-design`](../codebase-design/SKILL.md) skill for the architecture vocabulary (**module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**) and its principles (the deletion test, "the interface is the test surface", "one adapter = hypothetical seam, two = real"). Use these terms exactly in every suggestion — don't drift into "component," "service," "API," or "boundary."
+- Use the [`codebase-design`](../../practice/codebase-design/SKILL.md) skill for the architecture vocabulary (**module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**) and its principles (the deletion test, "the interface is the test surface", "one adapter = hypothetical seam, two = real"). Use these terms exactly in every suggestion — don't drift into "component," "service," "API," or "boundary."
 - The domain language in any project glossary gives names to good seams; ADRs record decisions this command should not re-litigate.
 
 ## Process
@@ -332,13 +332,13 @@ Stopping criteria (from council consensus) — this section is their **source of
 - Internal regions: ≤ 4 (e.g., CRUD, Dashboard, Receiver, Misc). If a region exceeds ~120 lines, it's a candidate for its own private class — but keep it internal, same file.
 - Total class: ~600 lines is the extraction trigger. Beyond that, even well-organized regions become hard to scan.
 
-**Sequencing — consolidate first, then split internally.** [`codebase-design`](../codebase-design/SKILL.md) carries the rule and the reasoning, and the map's Notes already send every session there; use it rather than a second copy that can drift.
+**Sequencing — consolidate first, then split internally.** [`codebase-design`](../../practice/codebase-design/SKILL.md) carries the rule and the reasoning, and the map's Notes already send every session there; use it rather than a second copy that can drift.
 
 #### When the decision lands, route its work out
 
 A converged decision that is build-ready gets its implementation filed **in-session**, while the context is at its peak: invoke [`to-tickets`](../to-tickets/SKILL.md), marking each generated ticket `workflow:implement` plus its `ready-for-agent` or `ready-for-human` state. This is wayfinder's standing rule to route build-ready work out of the decision frontier, applied to the *candidate's* implementation work. A design nobody filed is worth about as much as a design nobody made.
 
-**A deferred simplification is not a marker this session writes.** This skill produces a locked design and routes the building out; it **never touches the reviewed repo's code**. [`tdd`](../tdd/SKILL.md) is where a `# SHORTCUT:` marker is authored, and [`ponytail-debt`](../ponytail-debt/SKILL.md) owns its lifecycle, harvesting markers from source. So when the interview accepts a simplification but defers it, the deferral becomes an **acceptance criterion on the implement ticket** just filed, and the implementer writes the marker when the code is actually written:
+**A deferred simplification is not a marker this session writes.** This skill produces a locked design and routes the building out; it **never touches the reviewed repo's code**. [`tdd`](../../practice/tdd/SKILL.md) is where a `# SHORTCUT:` marker is authored, and [`ponytail-debt`](../ponytail-debt/SKILL.md) owns its lifecycle, harvesting markers from source. So when the interview accepts a simplification but defers it, the deferral becomes an **acceptance criterion on the implement ticket** just filed, and the implementer writes the marker when the code is actually written:
 
 > - [ ] Tag the skipped retry backoff at its call site with
 >   `# SHORTCUT: <what's skipped>. Upgrade: <what to do when this matters>.`

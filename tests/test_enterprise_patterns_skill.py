@@ -8,7 +8,7 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "enterprise-patterns"
+SKILL_ROOT = REPO_ROOT / "skills" / "practice" / "enterprise-patterns"
 SKILL_PATH = SKILL_ROOT / "SKILL.md"
 
 
@@ -49,8 +49,8 @@ def test_enterprise_patterns_defers_to_ddd_and_cross_links_owned_ground() -> Non
     # Do not restate ground other skills own — cross-link instead.
     for owning_skill in (
         "../domain-driven-design/SKILL.md",
-        "../django/SKILL.md",
-        "../drf/SKILL.md",
+        "../../reference/django/SKILL.md",
+        "../../reference/drf/SKILL.md",
         "../data-intensive/SKILL.md",
         "../production-readiness/SKILL.md",
     ):
@@ -146,4 +146,4 @@ def test_enterprise_patterns_has_functional_and_trigger_eval_coverage() -> None:
 def test_readme_catalogs_enterprise_patterns() -> None:
     readme_markdown = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert "**[Enterprise Patterns](skills/enterprise-patterns/SKILL.md)**" in readme_markdown
+    assert "**[Enterprise Patterns](skills/practice/enterprise-patterns/SKILL.md)**" in readme_markdown

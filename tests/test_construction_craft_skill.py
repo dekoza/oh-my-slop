@@ -7,9 +7,11 @@ from pathlib import Path
 
 import yaml
 
+from scripts.validate_refs import iter_skill_dirs
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "construction-craft"
+SKILL_ROOT = REPO_ROOT / "skills" / "practice" / "construction-craft"
 SKILL_PATH = SKILL_ROOT / "SKILL.md"
 
 
@@ -94,7 +96,7 @@ def test_construction_craft_keeps_concurrency_trigger_and_routes_owned_work() ->
         "../testing-workflow/skill.md",
         "../diagnosing-bugs/skill.md",
         "../codebase-design/skill.md",
-        "../python-async/skill.md",
+        "../../reference/python-async/skill.md",
         "../refactoring-pass/skill.md",
         "../production-readiness/skill.md",
     ):
@@ -143,12 +145,8 @@ def test_construction_craft_has_functional_and_trigger_eval_coverage() -> None:
 def test_readme_catalogs_construction_craft_and_reports_the_real_count() -> None:
     readme_markdown = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     count_match = re.search(r"<summary><strong>Skills \((\d+)\)</strong>", readme_markdown)
-    bundled_skill_count = sum(
-        1
-        for skill_directory in (REPO_ROOT / "skills").iterdir()
-        if skill_directory.is_dir() and (skill_directory / "SKILL.md").is_file()
-    )
+    bundled_skill_count = len(iter_skill_dirs(REPO_ROOT / "skills"))
 
-    assert "**[Construction Craft](skills/construction-craft/SKILL.md)**" in readme_markdown
+    assert "**[Construction Craft](skills/practice/construction-craft/SKILL.md)**" in readme_markdown
     assert count_match is not None
     assert int(count_match.group(1)) == bundled_skill_count

@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from scripts.validate_refs import find_skill_dir
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROMPTS_DIR = REPO_ROOT / "prompts"
@@ -53,7 +55,10 @@ def named_skill(template: Path) -> str:
 
 
 def skill_frontmatter(skill_name: str) -> str:
-    text = (SKILLS_DIR / skill_name / "SKILL.md").read_text(encoding="utf-8")
+    skill_dir = find_skill_dir(SKILLS_DIR, skill_name)
+
+    assert skill_dir is not None, f"no bundled skill named `{skill_name}`"
+    text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
 
     return text[4:].partition("\n---\n")[0]
 
@@ -65,9 +70,9 @@ def test_every_template_names_a_skill_that_exists() -> None:
     for template in iter_templates():
         skill_name = named_skill(template)
 
-        assert (SKILLS_DIR / skill_name / "SKILL.md").exists(), (
+        assert find_skill_dir(SKILLS_DIR, skill_name) is not None, (
             f"{template.name} names skill `{skill_name}`, "
-            f"but skills/{skill_name}/SKILL.md does not exist"
+            f"but no bucket under skills/ holds a `{skill_name}` skill"
         )
 
 

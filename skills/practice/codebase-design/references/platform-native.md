@@ -78,7 +78,7 @@ HTMX is a first-class browser platform for hypermedia-driven UIs. If your projec
 | Progressive enhancement | `hx-boost` | Enhances plain links/forms into AJAX. Page works without JS. |
 | CSS request indicators | `htmx-request`, `htmx-swapping`, `hx-settling` | HTMX adds/removes CSS classes during the request lifecycle. Use for loading spinners and transitions. |
 | Attribute inheritance | Built-in | Most `hx-*` attributes inherit to children. Use `hx-disinherit` to stop. |
-| WebSockets | `hx-ext="ws"` | Extension. No custom `WebSocket` client code. See [extensions](../../htmx/references/extensions.md). |
+| WebSockets | `hx-ext="ws"` | Extension. No custom `WebSocket` client code. See [extensions](../../../reference/htmx/references/extensions.md). |
 | Server-Sent Events | `hx-ext="sse"` | Extension. No custom `EventSource` client code. |
 | DOM morphing | `hx-ext="morph"` | Extension. Idiomorph swap — preserves focus, scroll, state better than innerHTML. |
 | Preload | `hx-ext="preload"` | Extension. Preload pages on hover/visible. |
@@ -95,7 +95,7 @@ HTMX is a first-class browser platform for hypermedia-driven UIs. If your projec
 | Polling | `hx-trigger="every <interval>"` | Built-in polling without `setInterval`. |
 | Event cancellation | `hx-on::htmx:beforeRequest` | Return `false` to cancel a request before it fires. |
 
-**Full API reference:** See the [`htmx` skill](../../htmx/SKILL.md) and its reference files for complete attribute docs, swap methods, events, extensions, patterns, and gotchas.
+**Full API reference:** See the [`htmx` skill](../../../reference/htmx/SKILL.md) and its reference files for complete attribute docs, swap methods, events, extensions, patterns, and gotchas.
 
 **Key principle:** HTMX expects HTML responses, not JSON. The server renders partials. The frontend stays minimal. If you're writing custom JS for AJAX, DOM updates, or event-driven UI, you're fighting the platform.
 

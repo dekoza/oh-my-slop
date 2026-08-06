@@ -35,7 +35,7 @@ The script is bundled alongside this SKILL.md in the skill's `scripts/` director
 uv run python <path-to-this-skill>/scripts/ponytail_debt.py <target-path> [--output-debt-file]
 ```
 
-- `<path-to-this-skill>` — directory containing this SKILL.md (e.g. `~/.pi/agent/git/github.com/dekoza/oh-my-slop/skills/ponytail-debt`)
+- `<path-to-this-skill>` — directory containing this SKILL.md (e.g. `~/.pi/agent/git/github.com/dekoza/oh-my-slop/skills/workflow/ponytail-debt`)
 - `<target-path>` — root directory to scan (default: `.`)
 - `--output-debt-file` — write `SHORTCUT-DEBT.md` for persistent tracking
 

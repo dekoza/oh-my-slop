@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "codebase-design"
+SKILL_ROOT = REPO_ROOT / "skills" / "practice" / "codebase-design"
 SKILL_PATH = SKILL_ROOT / "SKILL.md"
 CLEAN_ARCHITECTURE_PATH = SKILL_ROOT / "references" / "clean-architecture.md"
 REFERENCE_INDEX_PATH = SKILL_ROOT / "references" / "REFERENCE.md"

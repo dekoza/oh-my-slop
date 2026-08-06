@@ -8,7 +8,7 @@ from scripts.validate_refs import validate_repo
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "python-async"
+SKILL_ROOT = REPO_ROOT / "skills" / "reference" / "python-async"
 
 
 def test_python_async_skill_references_resolve_in_isolation(tmp_path: Path) -> None:

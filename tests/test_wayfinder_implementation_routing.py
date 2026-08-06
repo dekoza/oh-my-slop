@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+from scripts.validate_refs import find_skill_dir
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = REPO_ROOT / "skills"
@@ -8,11 +10,11 @@ WORKFLOW_LABEL = "workflow:implement"
 
 
 def test_to_tickets_marks_build_work_for_the_implement_workflow() -> None:
-    to_tickets_text = (SKILLS_ROOT / "to-tickets" / "SKILL.md").read_text(
+    to_tickets_text = (find_skill_dir(SKILLS_ROOT, "to-tickets") / "SKILL.md").read_text(
         encoding="utf-8"
     )
     label_template_text = (
-        SKILLS_ROOT / "setup-project-skills" / "triage-labels.md"
+        find_skill_dir(SKILLS_ROOT, "setup-project-skills") / "triage-labels.md"
     ).read_text(encoding="utf-8")
 
     assert WORKFLOW_LABEL in to_tickets_text
@@ -22,7 +24,7 @@ def test_to_tickets_marks_build_work_for_the_implement_workflow() -> None:
 
 
 def test_wayfinder_hands_build_ready_work_to_implementation_tickets() -> None:
-    wayfinder_text = (SKILLS_ROOT / "wayfinder" / "SKILL.md").read_text(
+    wayfinder_text = (find_skill_dir(SKILLS_ROOT, "wayfinder") / "SKILL.md").read_text(
         encoding="utf-8"
     )
 
@@ -34,7 +36,7 @@ def test_wayfinder_hands_build_ready_work_to_implementation_tickets() -> None:
 
 def test_project_setup_and_live_config_define_the_workflow_label() -> None:
     setup_skill_text = (
-        SKILLS_ROOT / "setup-project-skills" / "SKILL.md"
+        find_skill_dir(SKILLS_ROOT, "setup-project-skills") / "SKILL.md"
     ).read_text(encoding="utf-8")
     live_label_config_text = (
         REPO_ROOT / "docs" / "agents" / "triage-labels.md"
@@ -46,7 +48,7 @@ def test_project_setup_and_live_config_define_the_workflow_label() -> None:
 
 
 def test_wayfinder_evals_cover_implementation_handoff_and_label_orthogonality() -> None:
-    evals_path = SKILLS_ROOT / "wayfinder" / "evals" / "evals.json"
+    evals_path = find_skill_dir(SKILLS_ROOT, "wayfinder") / "evals" / "evals.json"
     evals_document = json.loads(evals_path.read_text(encoding="utf-8"))
 
     assert evals_document["skill_name"] == "wayfinder"

@@ -33,7 +33,7 @@ page) should say so here rather than leaving each skill to guess.
 vocabulary — issue tracker, issue vs ticket, decision ticket, map, frontier, triage
 role. The **skill-authoring** vocabulary — predictability, model- vs user-invoked,
 context load, leading word, progressive disclosure, duplication — lives in
-[`skills/writing-great-skills/GLOSSARY.md`](../../skills/writing-great-skills/GLOSSARY.md),
+[`skills/meta/writing-great-skills/GLOSSARY.md`](../../skills/meta/writing-great-skills/GLOSSARY.md),
 which is a disclosed reference of that skill and is already authoritative. Read
 whichever half your task touches; authoring work usually wants both. The two do not
 overlap, and neither should be copied into the other.

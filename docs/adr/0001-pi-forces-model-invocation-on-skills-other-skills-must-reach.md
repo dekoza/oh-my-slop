@@ -11,7 +11,7 @@ both frontmatters rather than deleted. That is deliberate, not leftover debris.
 `<available_skills>` listing. A skill with no description is reachable *only* by the
 human typing its name — nothing in the agent's context can fire it, including another
 skill. (This is the invocation axis as
-[`writing-great-skills/GLOSSARY.md`](../../skills/writing-great-skills/GLOSSARY.md)
+[`writing-great-skills/GLOSSARY.md`](../../skills/meta/writing-great-skills/GLOSSARY.md)
 defines it: model-invocation always *includes* user reach, so it is strictly the more
 reachable of the two.)
 

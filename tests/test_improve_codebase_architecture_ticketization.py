@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "improve-codebase-architecture"
+SKILL_ROOT = REPO_ROOT / "skills" / "workflow" / "improve-codebase-architecture"
 
 
 def _skill_text() -> str:

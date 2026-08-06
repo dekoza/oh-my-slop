@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 SCRIPTS_DIR = (
-    Path(__file__).resolve().parents[1] / "skills" / "skill-creator" / "scripts"
+    Path(__file__).resolve().parents[1] / "skills" / "meta" / "skill-creator" / "scripts"
 )
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -124,11 +124,11 @@ class TestModelFieldsAcceptCliArgs:
     def test_skill_path_preserved_when_provided(self, tmp_path: Path) -> None:
         _build_iteration_dir(tmp_path, num_evals=1, num_runs=1)
         benchmark = generate_benchmark(
-            tmp_path, skill_path="/home/minder/projekty/oh-my-slop/skills/python-async"
+            tmp_path, skill_path="/home/minder/projekty/oh-my-slop/skills/reference/python-async"
         )
         assert (
             benchmark["metadata"]["skill_path"]
-            == "/home/minder/projekty/oh-my-slop/skills/python-async"
+            == "/home/minder/projekty/oh-my-slop/skills/reference/python-async"
         )
 
 
