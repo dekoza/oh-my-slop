@@ -14,7 +14,7 @@ license: MIT (adapted from mattpocock/skills)
 
 Run an interactive QA session. The user describes problems they're encountering. You clarify, explore the codebase for context, and file issues that are durable, user-focused, and use the project's domain language.
 
-The issue tracker should have been provided to you — run `/setup-project-skills` if not. File to the **agent work tracker** it names: these issues are agent-created, so they belong there even though the reports originate with a human. If no tracker has been provided, default to the local-markdown tracker.
+The issue tracker and triage label vocabulary should have been provided to you — run `/setup-project-skills` if not. File to the **agent work tracker** it names: these issues are agent-created, so they belong there even though the reports originate with a human. If no tracker has been provided, default to the local-markdown tracker.
 
 ## For each issue the user raises
 
@@ -58,6 +58,14 @@ Keep as a single issue when:
 Create issues per the tracker doc's "publish to the issue tracker" convention. Do NOT ask the user to review first — just file and share URLs.
 
 Issues must be **durable** — they should still make sense after major refactors. Write from the user's perspective.
+
+#### Labels (forge-backed trackers only)
+
+Apply exactly three labels to every issue at creation time, resolving the category and state roles through the project's triage label mapping — never hardcode their strings. Create any label missing from the tracker before applying it. On the local-markdown tracker, skip labelling entirely.
+
+1. **One category — `bug` or `enhancement`, chosen per issue** from the substance of the report. A QA session catches both kinds; don't blanket-apply `bug`.
+2. **`workflow:implement`** — so the next workflow is explicit: these issues are picked up through `/implement`, not triage discovery.
+3. **One state — `ready-for-agent` or `ready-for-human`, chosen per issue.** Apply `ready-for-agent` when the reproduction steps are concrete and the expected behavior is unambiguous; `ready-for-human` when acting on the issue needs human judgment — a design decision, manual verification, or an enhancement the user described only loosely.
 
 #### For a single issue
 
