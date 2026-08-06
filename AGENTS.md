@@ -77,6 +77,7 @@ These scripts enforce repository invariants.
 
 - Treat `scripts/validate_refs.py` as an authority for markdown reference integrity.
 - If you change how references are parsed or resolved, add tests for the new behavior.
+- `scripts/link-skills.sh` exists because skill discovery is not portable. pi recurses until it finds a `SKILL.md`, so the buckets cost it nothing; Claude Code scans exactly one level of `~/.claude/skills`, so a bucket symlinked in whole resolves fine and silently hides every skill inside it. Do not assume a change to the `skills/` layout is invisible to consumers — it is invisible to pi, and load-bearing for anything that scans one level.
 - Keep script output explicit and machine-readable where possible; the tests depend on predictable failures.
 
 ### `tests/`

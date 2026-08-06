@@ -32,6 +32,21 @@ For git installs, pi keeps the checkout under `~/.pi/agent/git/...` globally or 
 
 If you only want the markdown skills for OpenCode or some other agent stack, you can still steal `./skills` and wire them up manually. That path still exists. It is just no longer the main story.
 
+### Claude Code
+
+Skills here are grouped into buckets — `skills/reference/`, `skills/practice/`, `skills/workflow/`, `skills/meta/`. pi recurses until it finds a `SKILL.md`, so those buckets cost it nothing. **Claude Code scans exactly one level** of `~/.claude/skills`: every immediate child must itself hold a `SKILL.md`, and a grouping directory is not descended into. Symlink a whole bucket in and it resolves without error while every skill inside it goes missing.
+
+`scripts/link-skills.sh` links each skill in at the depth Claude Code expects:
+
+```bash
+scripts/link-skills.sh                 # link all 61 into ~/.claude/skills
+scripts/link-skills.sh --dry-run       # print what it would do, change nothing
+scripts/link-skills.sh --prune         # also drop links to skills this repo no longer has
+scripts/link-skills.sh ~/somewhere     # or point it at another directory
+```
+
+It is idempotent, removes any whole-bucket symlink it finds, and never touches links pointing outside this repo. Re-run it after pulling a change that re-files a skill.
+
 ### First run in a project
 
 Run [`/setup-project-skills`](skills/meta/setup-project-skills/SKILL.md) once per repo, before the first time you reach for `wayfinder`, `to-tickets`, `to-spec`, `triage`, `qa`, or `two-axis-review`. It interviews you about three things the workflow skills otherwise have to guess at, and writes the answers to `docs/agents/` in that project:
