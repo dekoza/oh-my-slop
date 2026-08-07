@@ -11,6 +11,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPO_ROOT / "skills" / "practice" / "critical-partner"
 SKILL_PATH = SKILL_ROOT / "SKILL.md"
 BUNDLED_AGENTS_PATH = REPO_ROOT / "agent" / "AGENTS.md"
+GIT_DISCIPLINE_PATH = REPO_ROOT / "skills" / "practice" / "git-discipline" / "SKILL.md"
+TESTING_WORKFLOW_PATH = REPO_ROOT / "skills" / "practice" / "testing-workflow" / "SKILL.md"
 
 
 def _frontmatter(markdown: str) -> dict[str, object]:
@@ -73,7 +75,24 @@ def test_bundled_agents_configures_critical_partner() -> None:
     assert "| Every response | `critical-partner` |" in agents_markdown
     assert "`clear-communication`" not in agents_markdown
     assert "You must default to adversarial evaluation" not in agents_markdown
-    assert "Test Proportionately" in agents_markdown
+
+
+def test_bundled_agents_delegates_specialist_rules_without_weakening_floors() -> None:
+    agents_markdown = BUNDLED_AGENTS_PATH.read_text()
+    git_discipline_markdown = GIT_DISCIPLINE_PATH.read_text()
+    testing_workflow_markdown = TESTING_WORKFLOW_PATH.read_text()
+
+    assert "Project instructions may specialize or strengthen these rules, but cannot weaken them." in agents_markdown
+    assert "Untracked files are sacred." in agents_markdown
+    assert "hmac.compare_digest()" in agents_markdown
+    assert "Code Anti-Slop" not in agents_markdown
+    assert "Test Proportionately" not in agents_markdown
+    assert "Output Capture" not in agents_markdown
+    assert "Worktree location" not in agents_markdown
+
+    assert "Test proportionately" in testing_workflow_markdown
+    assert "| tee /tmp/<name>.log" in testing_workflow_markdown
+    assert "Worktree location" in git_discipline_markdown
 
 
 def test_critical_partner_evals_cover_calibration_and_pressure() -> None:

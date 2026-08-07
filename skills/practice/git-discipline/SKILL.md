@@ -33,6 +33,8 @@ Before ANY operation that could affect them:
 
 **Rogue files from a subagent:** list them to the user first, then delete them **individually by exact path** — never with a blanket command.
 
+**Worktree location:** when the user requests a Git worktree, create it under the project's root-level, Git-ignored `.worktrees/` directory. Verify that `.worktrees/` is ignored first, then use a descriptive name such as `<task-id>-<short-handle>`.
+
 ## Commit Behavior
 
 ### Commit After Every Execution Wave

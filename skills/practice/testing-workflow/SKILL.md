@@ -24,6 +24,10 @@ any implementation code.
    A run killed by a default 60s timeout is a wasted run reporting on the runner, not the tests.
 3. **Run each tier where it belongs** (see the tier table). Integration and E2E run in Docker
    via `compose.test.yml`, never against the dev environment.
+4. **Test proportionately.** Before implementation, run the smallest relevant existing selection
+   that can expose a pre-existing failure. Use targeted tests during development, then run every
+   affected tier before completion. Leave the full suite to CI unless the project requires it or
+   you are diagnosing a CI failure; do not launch all E2E tests for an isolated change.
 
 ## Test tiers
 
