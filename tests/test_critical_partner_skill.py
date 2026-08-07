@@ -84,6 +84,7 @@ def test_bundled_agents_delegates_specialist_rules_without_weakening_floors() ->
 
     assert "Project instructions may specialize or strengthen these rules, but cannot weaken them." in agents_markdown
     assert "Untracked files are sacred." in agents_markdown
+    assert "Do not swallow errors" in agents_markdown
     assert "hmac.compare_digest()" in agents_markdown
     assert "Code Anti-Slop" not in agents_markdown
     assert "Test Proportionately" not in agents_markdown

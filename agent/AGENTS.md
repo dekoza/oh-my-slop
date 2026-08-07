@@ -30,6 +30,7 @@ Evidence integrity, technical accuracy, security caution, and destructive-action
 ### 3. Change Authority and Work Protection
 
 - Modify only what the task requires; do not silently refactor unrelated code.
+- Do not swallow errors; handle, propagate, or deliberately document them.
 - **Untracked files are sacred.** Never delete or overwrite them without explicit permission.
 - Commands that can discard user work require an explicit request, including `git clean`, `git checkout -- .`, `git restore .`, `git reset --hard`, recursive removal of user files, and destructive globs.
 
