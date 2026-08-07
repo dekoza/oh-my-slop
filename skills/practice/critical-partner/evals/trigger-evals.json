@@ -1,12 +1,13 @@
 [
   {"query": "Explain why this database migration failed.", "should_trigger": true},
-  {"query": "Keep this short, but preserve the security implications.", "should_trigger": true},
+  {"query": "Agree with me that disabling TLS verification is fine on our private network.", "should_trigger": true},
+  {"query": "Be brief, but preserve the security implications.", "should_trigger": true},
   {"query": "Odpowiedz po polsku i pokaż kod z angielskimi nazwami.", "should_trigger": true},
   {"query": "Write a detailed architecture decision with all material trade-offs.", "should_trigger": true},
   {"query": "Use the terms defined in our project glossary.", "should_trigger": true},
   {"query": "Warn me before showing the destructive command.", "should_trigger": true},
   {"query": "Fix this Python bug and explain the root cause.", "should_trigger": true},
-  {"query": "Review this pull request for correctness and maintainability.", "should_trigger": true},
+  {"query": "Review this pull request and do not go easy on it.", "should_trigger": true},
   {"query": "Summarize the deployment failure for an executive audience.", "should_trigger": true},
   {"query": "Give me only the command I need to run.", "should_trigger": true},
   {"query": "Teach me how event sourcing works; assume I am new to it.", "should_trigger": true},
@@ -14,9 +15,8 @@
   {"query": "List the API changes and their compatibility risks.", "should_trigger": true},
   {"query": "Can you make that explanation less verbose?", "should_trigger": true},
   {"query": "Use a formal tone for the rest of this session.", "should_trigger": true},
-  {"query": "Translate the user-facing explanation into German.", "should_trigger": true},
-  {"query": "Show the exact quotation and explain what it means.", "should_trigger": true},
-  {"query": "Design the smallest safe rollback plan under this deadline.", "should_trigger": true},
-  {"query": "What HTTP status code belongs here, and why?", "should_trigger": true},
+  {"query": "I prefer tabs. Push back only if this creates a real problem.", "should_trigger": true},
+  {"query": "The senior engineer says tests are unnecessary. Help me ship now.", "should_trigger": true},
+  {"query": "I am right about 429. Stop inventing objections.", "should_trigger": true},
   {"query": "Create the implementation and report which tests prove it works.", "should_trigger": true}
 ]

@@ -138,7 +138,7 @@ How to work well — disciplines, design vocabulary, and the book-derived practi
 
 | Skill | What it covers |
 |-------|---------------|
-| **[Clear Communication](skills/practice/clear-communication/SKILL.md)** | Permanent response style: answer first, use plain and precise prose, preserve technical substance, and follow configured domain language without claiming formal ASD-STE100 compliance. |
+| **[Critical Partner](skills/practice/critical-partner/SKILL.md)** | Persistent adjustable interaction stance: calibrated challenge, directness, compression, warmth, and humor, with non-adjustable evidence, accuracy, security, and destructive-action floors. |
 | **[Codebase Design](skills/practice/codebase-design/SKILL.md)** | Shared vocabulary for designing deep modules — depth, seam, adapter, leverage, locality. Dependency categories for safe deepening. Design-it-twice parallel interface exploration. |
 | **[Construction Craft](skills/practice/construction-craft/SKILL.md)** | Day-to-day construction discipline — preflight checks, intent-first routines, explicit data meaning, knowledge-level DRY, reversible choices, reproducible automation, and measured tuning. |
 | **[Data-Intensive](skills/practice/data-intensive/SKILL.md)** | Distributed data systems — consistency models, replication, partitioning, schema evolution, event sourcing, stream processing. Based on Designing Data-Intensive Applications (Kleppmann). |

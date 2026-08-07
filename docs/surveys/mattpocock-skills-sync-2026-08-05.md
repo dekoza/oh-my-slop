@@ -131,7 +131,7 @@ No conflict with our `skill-creator`: it owns the eval/benchmark workflow and th
 
 The design argument is the interesting part: concision skills fail by growing — a 400-line skill still leaves the model verbose — so this one is a single precise leading word and nothing else. Names describing the *output* (`/tldr`, `/no-fluff`) make the model clip words and lose you further; naming the *listener's* state asks for both halves at once, fewer words **and** the missing context. It repairs one message; it doesn't prevent the next.
 
-**Resolved by #61:** do not adopt the one-message repair. The permanent `clear-communication` discipline owns plain, concise, precise prose and resolves the glossary through `docs/agents/domain.md` when project exploration requires it.
+**Resolved by #61:** do not adopt the one-message repair. The permanent `critical-partner` discipline owns the configurable interaction stance, including concise and precise prose, and resolves the glossary through `docs/agents/domain.md` when project exploration requires it.
 
 **`to-questionnaire`** (productivity, graduated 2026-07-28) — inverts the grilling primitive. Instead of interviewing you about the *subject*, it interviews you about the **send**: who the recipient is, what expertise they hold, what you can't resolve alone — in exactly two one-exchange rounds. Then writes a Markdown questionnaire against a fixed template (Purpose / From-To-How-used / Context / How to answer / themed sections, one idea per question, an answer stub under each, closing catch-all), ordered most-important-first because async gets one pass.
 
@@ -155,7 +155,7 @@ Model-invoked so the agent can reach for it the moment it hits a human-only step
 
 (Swap the aihero.dev "smart zone" link for a plain parenthetical; upstream updated the figure from ~120k to ~150k tokens.)
 
-**The router half must be rewritten, not ported.** Every skill name is Matt's, and we diverge: no `wizard`/`to-questionnaire` yet, wait-what → `clear-communication`, `code-review` → `two-axis-review`, `setup-matt-pocock-skills` → `setup-project-skills`, plus ~25 skills upstream doesn't have.
+**The router half must be rewritten, not ported.** Every skill name is Matt's, and we diverge: no `wizard`/`to-questionnaire` yet, wait-what → `critical-partner`, `code-review` → `two-axis-review`, `setup-matt-pocock-skills` → `setup-project-skills`, plus ~25 skills upstream doesn't have.
 
 But we need a router more than upstream does. **Our own standard demands it** — `writing-great-skills/SKILL.md:26`: "When user-invoked skills multiply past what you can remember, that piled-up cognitive load is cured by a **router skill**." We have eleven user-invoked skills, invisible to the model, and a flat 61-row alphabetical README table that is an inventory, not a map. A proposed shape: `qa` as a third on-ramp beside `triage`; `council`/`court-jester` as standalone decision tools; `ponytail-*`/`restore-test-pyramid` under codebase health with `improve-codebase-architecture`; and a fourth bucket upstream has no equivalent of — "reference underneath" for the Django/Docker/testing/framework skills.
 
@@ -239,6 +239,6 @@ Not upstream deltas — things the cross-check exposed in our tree.
 
 **Wave 2 — one skill each, self-contained:** §1.1 grilling rounds + caller sync · §1.2 diagnosing-bugs' four rules · §2.2 tdd seam handshake · §4.2/§4.3 the html-report and qa-labelling repairs.
 
-**Wave 3 — adopt new skills:** `to-questionnaire` · `wizard` (with the Gitea/Python adaptation). The wait-what proposal was replaced by `clear-communication` in #61.
+**Wave 3 — adopt new skills:** `to-questionnaire` · `wizard` (with the Gitea/Python adaptation). The wait-what proposal was replaced by `critical-partner` in #61.
 
 **Wave 4 — authoring work, wayfinder-shaped:** the router skill + `PHASE-BOUNDARIES.md` · the `writing-great-skills` restructure decision (§2.3) · §4.1 CONTEXT.md/ADR resolution · the bucket split (§3.1).

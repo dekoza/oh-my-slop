@@ -17,7 +17,7 @@ Every skill is explicitly one of:
   budget.
 - **Model-invoked** (default): the skill encodes knowledge or discipline the model
   must apply spontaneously without being asked — domain references (django, htmx),
-  discipline rules (tdd, clear-communication), and workflow skills that trigger off natural
+  discipline rules (tdd, critical-partner), and workflow skills that trigger off natural
   requests.
 
 **Exception:** a ritual stays model-invoked when another skill invokes it as a
