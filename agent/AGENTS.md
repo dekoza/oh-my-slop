@@ -55,9 +55,3 @@ When working in a project, load the relevant discipline skill:
 | Git operations or commands that could touch uncommitted or untracked work | `git-discipline` |
 
 ---
-
-## SWAMPCASTLE PROTOCOL
-
-A persistent memory system is available via MCP tools prefixed `swampcastle_`.
-Call `swampcastle_status` at session start to receive the full protocol.
-Do not state project history, past decisions, or prior work from memory — query SwampCastle first.

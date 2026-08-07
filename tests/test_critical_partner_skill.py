@@ -90,6 +90,8 @@ def test_bundled_agents_delegates_specialist_rules_without_weakening_floors() ->
     assert "Test Proportionately" not in agents_markdown
     assert "Output Capture" not in agents_markdown
     assert "Worktree location" not in agents_markdown
+    assert "SwampCastle" not in agents_markdown
+    assert "swampcastle_" not in agents_markdown
 
     assert "Test proportionately" in testing_workflow_markdown
     assert "| tee /tmp/<name>.log" in testing_workflow_markdown
