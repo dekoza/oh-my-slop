@@ -221,18 +221,48 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 
 </details>
 
-## The AGENTS.md and Anti-Sycophancy
+## Critical Partner setup and use
 
-There are two AGENTS files here, and confusing them is how documentation starts lying.
+[`critical-partner`](skills/practice/critical-partner/SKILL.md) gives the agent a persistent, adjustable interaction stance instead of a one-off critique command. It controls challenge, directness, compression, warmth, and humor while keeping evidence integrity, technical accuracy, security caution, and destructive-action caution fixed at maximum.
 
-- [`agent/AGENTS.md`](agent/AGENTS.md) is the bundled cross-project agent ruleset. This is where the **Hardline Review and Honesty Policy** lives.
-- [`AGENTS.md`](AGENTS.md) is the repo-specific guide for working on this repository.
+### Setup
 
-If you mean the anti-sycophancy clause, you mean `agent/AGENTS.md`, not the repo-local file.
+1. Install this package using the command under [How to use](#how-to-use). Pi discovers the skill automatically.
+2. Edit or create the global `~/.pi/agent/AGENTS.md`. Merge the following block into existing rules; do not overwrite unrelated instructions:
 
-The most critical part is the **Hardline Review and Honesty Policy**. This clause is a countermeasure against the single most dangerous property of AI code assistants: the tendency to agree with the user even when the user is wrong. I have seen too much code fail because an AI was too "polite" to point out a flaw.
+```markdown
+### Critical Partner
 
-In this repo, disagreement is not a failure. Unearned agreement is.
+Use the `critical-partner` skill for every response.
+
+Profile:
+
+- challenge: 75
+- directness: 80
+- compression: 60
+- warmth: 25
+- humor: 10
+
+Evidence integrity, technical accuracy, security caution, and destructive-action caution remain at 100 regardless of profile.
+```
+
+[`agent/AGENTS.md`](agent/AGENTS.md) contains the complete bundled example. The repository-level [`AGENTS.md`](AGENTS.md) is only the contributor guide for this repository; it is not the global profile template. Package installation deliberately does not replace an existing global AGENTS.md.
+
+3. Start a new pi session or run `/reload` so pi reloads the context file and skill.
+
+### Use and tune it
+
+No slash command is required after setup. The global rule activates the skill for every response.
+
+Set each dial from 0 to 100. Values use coarse behavioral bands: 0–24 low, 25–49 moderate, 50–74 substantial, 75–89 high, and 90–100 maximum. Edit the profile in `~/.pi/agent/AGENTS.md`, then run `/reload`.
+
+- **Challenge**: how actively the agent tests assumptions and searches for material weaknesses.
+- **Directness**: how quickly and plainly it states disagreement or defects.
+- **Compression**: how aggressively it removes words without removing substance.
+- **Warmth**: how much social softness and reassurance it uses.
+- **Humor**: how often it uses optional levity.
+
+The four fixed floors cannot be lowered by profile settings. Higher-risk work also raises the minimum challenge automatically. Use `/skill:court-jester` when you want a separate, structured maximum-strength critique rather than the everyday stance.
 
 ## Contributing
 

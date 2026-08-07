@@ -66,7 +66,8 @@ def iter_skill_paths() -> list[str]:
 
 def readme_bucket_section(readme_text: str, bucket: str) -> str:
     section = readme_text.split(f"#### {bucket.capitalize()}", maxsplit=1)[1]
-    return section.split("\n#### ", maxsplit=1)[0]
+    section = section.split("\n#### ", maxsplit=1)[0]
+    return section.split("\n## ", maxsplit=1)[0]
 
 
 def test_readme_links_every_bundled_skill() -> None:
@@ -118,10 +119,15 @@ def test_job_pipeline_readme_says_root_package_install_stays_opt_in() -> None:
     assert "stays opt-in" in readme_text
 
 
-def test_readme_anti_sycophancy_section_points_to_the_bundled_agent_rules() -> None:
+def test_readme_explains_critical_partner_setup_and_use() -> None:
     readme_text = load_readme()
 
-    section = readme_text.split("## The AGENTS.md and Anti-Sycophancy", maxsplit=1)[1]
+    section = readme_text.split("## Critical Partner setup and use", maxsplit=1)[1]
     section = section.split("\n## ", maxsplit=1)[0]
 
+    assert "(skills/practice/critical-partner/SKILL.md)" in section
     assert "(agent/AGENTS.md)" in section
+    assert "`~/.pi/agent/AGENTS.md`" in section
+    assert "Use the `critical-partner` skill for every response." in section
+    assert "challenge: 75" in section
+    assert "Hardline Review and Honesty Policy" not in readme_text
