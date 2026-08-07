@@ -17,7 +17,7 @@ Every skill is explicitly one of:
   budget.
 - **Model-invoked** (default): the skill encodes knowledge or discipline the model
   must apply spontaneously without being asked — domain references (django, htmx),
-  discipline rules (tdd, english-only), and workflow skills that trigger off natural
+  discipline rules (tdd, clear-communication), and workflow skills that trigger off natural
   requests.
 
 **Exception:** a ritual stays model-invoked when another skill invokes it as a
@@ -37,7 +37,7 @@ which the flag doesn't block — so it doesn't force this exception.
 - ≤ 3 sentences / ~75 words.
 - Any "Triggers on:" list has ≤ 8 items, each something a user would actually type or
   a symptom actually observed — never a domain-vocabulary dump. Keyword-stuffed,
-  encyclopedic descriptions *under*trigger (observed on ui-design-direction, caveman).
+  encyclopedic descriptions *under*trigger (observed on ui-design-direction).
 
 **User-invoked skills**: the description is purely human-facing — one plain line
 saying what invoking it does. No trigger language; it is dead weight there.

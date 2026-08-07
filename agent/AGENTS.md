@@ -10,15 +10,20 @@ If a project has its own `AGENTS.md`, its rules take precedence for project-spec
 
 These rules have no exceptions. They apply to every task, regardless of domain or user language.
 
-### 1. Language: English Always
+### 1. Language: English Code
 
-**All code identifiers, comments, docstrings, and messages MUST be in English.**
+**All code identifiers, comments, docstrings, and internal technical artifacts MUST be in English.**
 
-- This applies regardless of the user's primary language (Polish, German, Japanese, etc.)
-- Code = English always. User-facing messages = ask the user.
+- User-facing conversation defaults to English. Follow an explicit request for another language.
+- Ask which language to use for UI text and other user-facing product content.
 - Violations: `nazwa_użytkownika`, `licznik`, `// Sprawdź czy użytkownik istnieje` = **bug**
 
-### 2. Zero-Tolerance on Hallucination, Lying, and Redundant Work
+### 2. Clear Communication
+
+Use clear, concise, precise prose. Preserve necessary context and technical accuracy.
+Use the `clear-communication` skill for every response.
+
+### 3. Zero-Tolerance on Hallucination, Lying, and Redundant Work
 
 1. **You SHALL NOT state that a file exists, a function works, or a test passes without running the command to prove it in the current turn.**
 2. **No silent refactoring.** If you rewrite untouched code, this is a major defect.
@@ -30,25 +35,25 @@ These rules have no exceptions. They apply to every task, regardless of domain o
 8. **When information is missing, ask rather than guess.** State 1–2 explicit assumptions and mark them as "needs confirmation".
 9. **Think Before Coding.** State assumptions explicitly. Present multiple interpretations when ambiguous. Push back when a simpler approach exists. Stop when confused. Surface tradeoffs.
 
-### 3. Scope Control
+### 4. Scope Control
 
 - Touch only what the task requires. No silent refactoring.
 - Every changed line should trace directly to the user's request.
 
-### 4. Anti-Slop
+### 5. Anti-Slop
 
 - No excessive comments (explain *why*, not *what*).
 - No over-abstraction. Inline is fine for one-off logic.
 - No generic names (`data`, `result`, `item`, `temp`, `info`, `payload`).
 - Errors must be handled, never swallowed. Bare `except: pass` = bug.
 
-### 5. Git Safety
+### 6. Git Safety
 
 - **Untracked files are sacred.** Never delete or overwrite without explicit user permission.
 - **FORBIDDEN without explicit permission:** `git clean`, `git checkout -- .`, `git reset --hard`, `rm -rf` on user files, glob patterns that could hit user files.
 - Delete rogue files **individually by exact path** — never with blanket commands.
 
-### 6. Security Basics
+### 7. Security Basics
 
 - **HMAC verification**: if signature is embedded in the JSON payload, reconstruct the payload with an empty signature field before verifying.
 - **Use `hmac.compare_digest()`** for constant-time token/signature comparison — never use `==`.
@@ -69,12 +74,12 @@ When working in a project, load the relevant discipline skill:
 
 | Project Signal | Load Skill |
 |----------------|------------|
+| Every response | `clear-communication` |
 | `manage.py` exists, or `pyproject.toml`/`requirements.txt` contains `django` | `django-discipline` |
 | Writing/changing code (any language) | `tdd` |
 | Running tests, setting up test environment | `testing-workflow` |
 | Writing Dockerfiles, compose files, deployment configs | `docker-discipline` |
 | Making git operations (commit, push, branch, merge) | `git-discipline` |
-| User writes in non-English language | `english-only` |
 
 ---
 

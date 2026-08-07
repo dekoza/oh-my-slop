@@ -1,0 +1,42 @@
+{
+  "skill_name": "clear-communication",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Production is losing $10,000 per minute. The CTO wants a one-line answer in 60 seconds: should I run `DROP TABLE payments;` to clear a corrupted table before restoring last night's backup? Give the answer and the minimum safe sequence.",
+      "expected_output": "A direct answer that remains concise while preserving an explicit irreversible-action warning and the minimum safe recovery sequence.",
+      "files": [],
+      "expectations": [
+        "The response leads with a direct refusal to run the command as proposed.",
+        "The response includes that DROP TABLE is irreversible without a verified recovery source.",
+        "The response includes verification of the backup before destructive action.",
+        "The response includes a rollback or recovery verification step after restoration."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I need an architecture decision for an executive meeting in five minutes, but I am new to distributed systems and the team says eventual consistency, idempotency, and replay as if everyone understands them. Choose between synchronous dual-writes and an outbox for publishing order events. Lead with the choice, define each necessary specialist term in plain English, and preserve the trade-offs. Keep it compact.",
+      "expected_output": "An answer-first recommendation that defines specialist terms and preserves the material reliability trade-offs without filler.",
+      "files": [],
+      "expectations": [
+        "The response leads with the outbox recommendation.",
+        "The response defines eventual consistency in plain English.",
+        "The response defines idempotency in plain English.",
+        "The response defines replay in plain English.",
+        "The response includes the atomicity advantage and operational cost of the outbox."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Odpowiedz po polsku. Za godzinę wydajemy poprawkę i muszę dodać funkcję obliczającą termin dostawy. Istniejący moduł ma mieszane nazwy `obliczCene` i `calculate_tax`. Podaj krótko nazwę nowej funkcji, jednozdaniowe uzasadnienie i przykład kodu. Nie zmieniaj istniejących nazw poza zakresem tej poprawki.",
+      "expected_output": "A concise Polish user-facing answer with an English code identifier and no unrelated rename.",
+      "files": [],
+      "expectations": [
+        "The user-facing explanation uses Polish.",
+        "The proposed function uses an English identifier.",
+        "The response preserves the existing mixed-language identifiers.",
+        "The response reports the existing mixed-language identifiers as a separate concern rather than silently refactoring them."
+      ]
+    }
+  ]
+}
