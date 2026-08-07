@@ -16,6 +16,7 @@ These rules have no exceptions. They apply to every task, regardless of domain o
 
 - User-facing conversation defaults to English. Follow an explicit request for another language.
 - Ask which language to use for UI text and other user-facing product content.
+- Report each existing non-English code identifier as a separate concern and state that it remains unchanged outside the requested scope.
 - Violations: `nazwa_użytkownika`, `licznik`, `// Sprawdź czy użytkownik istnieje` = **bug**
 
 ### 2. Clear Communication

@@ -42,6 +42,8 @@ def test_clear_communication_has_a_small_model_invoked_contract() -> None:
         "configured domain glossary",
         "explicit user request",
         "safety warnings",
+        "state whether it is irreversible",
+        "recovery prerequisite",
     ):
         assert required_rule in skill_markdown.lower()
 
@@ -55,6 +57,8 @@ def test_bundled_agents_activates_clear_communication_with_a_fallback() -> None:
     assert "Use clear, concise, precise prose." in agents_markdown
     assert "Preserve necessary context and technical accuracy." in agents_markdown
     assert "| Every response | `clear-communication` |" in agents_markdown
+    assert "Report each existing non-English code identifier as a separate concern" in agents_markdown
+    assert "remains unchanged outside the requested scope" in agents_markdown
     assert "`english-only`" not in agents_markdown
 
 
