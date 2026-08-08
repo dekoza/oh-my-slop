@@ -1,0 +1,86 @@
+[
+  {
+    "query": "I'm building a Pyke expert system. I have son_of and daughter_of facts in a .kfb file and I want to define backward-chaining rules in a .krb file to find family relationships. How do I write the use/when clauses and prove a goal?",
+    "should_trigger": true
+  },
+  {
+    "query": "Show me how to create a Pyke engine, assert some facts dynamically, activate a rule base, and prove a goal with pattern variables. Use $ variables in the goal string.",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I use forall and require in a Pyke rule to iterate over a set of values and collect results into a tuple?",
+    "should_trigger": true
+  },
+  {
+    "query": "I need a Pyke plan that returns the result of a computation and can be called multiple times with different arguments. How does the taking clause work?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I use the special knowledge base in Pyke to run a shell command and capture its output?",
+    "should_trigger": true
+  },
+  {
+    "query": "What's the difference between add_universal_fact and assert_ in Pyke, and when should I use engine.reset()?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I write a question base (.kqb) in Pyke and reference it in a .krb rule premise?",
+    "should_trigger": true
+  },
+  {
+    "query": "I have a .krb file but engine.activate('my_rb') doesn't seem to run my forward-chaining rules. How do forward-chaining rules work in Pyke?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I use extending in a Pyke rule base to inherit rules from another .krb file?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm debugging a Pyke rule and want to see which rules fire and how many facts are asserted. What tracing and stats APIs are available?",
+    "should_trigger": true
+  },
+  {
+    "query": "I installed `scitools-pyke` but `import knowledge_engine` fails. What's the correct import path?",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you explain Pyke pattern matching — how $ variables, anonymous variables, and rest variables work in .krb rules?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm comparing Pyke to a generic rules engine like jsonrules. Should I use this skill for jsonrules?",
+    "should_trigger": false
+  },
+  {
+    "query": "Help me write a Django view that renders a template with HTMX partials and handles form validation.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to set up a Docker Compose file for a PostgreSQL database with a backup strategy.",
+    "should_trigger": false
+  },
+  {
+    "query": "Show me how to write a FastAPI endpoint with dependency injection and Pydantic validation.",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to build a React SPA with TypeScript that consumes a REST API. What's the best architecture?",
+    "should_trigger": false
+  },
+  {
+    "query": "Can you explain the difference between optimistic and pessimistic locking in Django?",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I write a unit test for a Redis pub/sub consumer in Python?",
+    "should_trigger": false
+  },
+  {
+    "query": "I need help with a SQL query to find duplicate records in a table.",
+    "should_trigger": false
+  },
+  {
+    "query": "What are the best practices for securing a REST API with JWT authentication?",
+    "should_trigger": false
+  }
+]

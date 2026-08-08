@@ -1,0 +1,74 @@
+{
+  "skill_name": "pyke",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I want to build a Pyke expert system that figures out how two people are related given son_of/daughter_of facts. Show me the .kfb facts, a backward-chaining .krb rule base, and the Python driver that creates the engine, activates the rule base, and proves a goal.",
+      "expected_output": "The response writes a .kfb fact base (family.kfb), a .krb backward-chaining rule base with use/when clauses, and a Python driver that imports knowledge_engine, creates the engine, calls activate, and uses prove_1_goal with $ pattern variables. It explains that activation runs forward-chaining rules and that facts must be asserted before activation.",
+      "files": [],
+      "expectations": [
+        "It creates a .kfb file with son_of/daughter_of facts.",
+        "It writes a .krb file with backward-chaining rules using use/when.",
+        "The driver imports knowledge_engine and calls engine.activate().",
+        "The driver uses engine.prove_1_goal with $ variables in the goal string."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "After engine.activate('my_rules') the forward-chaining rules should have fired and added new facts. But engine.prove_1_goal('my_rules.goal($x)') raises CanNotProve. What did I do wrong, and how do I check the stats?",
+      "expected_output": "The response identifies that facts may not have been asserted before activation (or the rule base was not activated), and explains that activate() runs forward-chaining rules. It suggests checking engine.get_kb('my_rules').get_stats() and engine.print_stats() to see how many facts were asserted and rules fired.",
+      "files": [],
+      "expectations": [
+        "It says facts must be asserted before engine.activate().",
+        "It mentions engine.print_stats() / get_stats() to diagnose.",
+        "It considers that the rule base name passed to activate() must match the .krb filename."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I need a Pyke rule that, given a list of values, computes a sum using forall and collects the results into a tuple. How do I write the forall/require/python premises and capture the result as a pattern variable?",
+      "expected_output": "The response writes a .krb rule using forall/require with a python premise that builds a list, then assigns the tuple to a pattern variable. It uses the pattern $result = tuple(y_list) idiom and explains that forall bindings are undone after the clause.",
+      "files": [],
+      "expectations": [
+        "It uses a forall premise with require.",
+        "It uses python y_list = [] and y_list.append($y) inside the require clause.",
+        "It assigns $result = tuple(y_list).",
+        "It explains that forall bindings are undone before subsequent premises."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I want to generate SQL SELECT statements with Pyke and return a plan that I can call multiple times with different key values. How do I use plans and the taking clause for this?",
+      "expected_output": "The response explains that a plan is produced when a rule has a with clause or a plan_spec with Python statements, and that taking defines the plan's parameters. It writes a rule that proves a goal and returns a plan, then shows calling the plan function multiple times and pickling it.",
+      "files": [],
+      "expectations": [
+        "It explains that plans are produced by with/plan_spec/taking.",
+        "It uses the taking clause to define plan parameters.",
+        "It shows calling the plan function multiple times.",
+        "It mentions plans can be pickled and unpickled."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "How do I use the special knowledge base to run a shell command and capture its stdout lines as a tuple in Pyke?",
+      "expected_output": "The response shows special.command($out, ('cmd', 'arg')) in a rule premise and explains that the command must exit with code 0, and that stdout lines are bound to $out as a tuple. It also mentions special.check_command and special.general_command as alternatives.",
+      "files": [],
+      "expectations": [
+        "It uses special.command($out, (...)) in a rule.",
+        "It explains stdout lines are bound to $out as a tuple.",
+        "It mentions special.check_command for yes/no and special.general_command for (retcode, out, err)."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "I'm writing a question base (.kqb) where the user answers yes/no, and the rule should only fire when the answer is 'yes'. How do I define the question type and reference it in a .krb premise?",
+      "expected_output": "The response writes a .kqb file with a question using $ans = yn, and shows the .krb premise referencing it as qbase.question($param, $ans). It explains that only the answer parameter may be unbound when the rule uses the question.",
+      "files": [],
+      "expectations": [
+        "It writes $ans = yn in the .kqb file.",
+        "It references the question in a .krb premise as qbase.question($p, $ans).",
+        "It explains the answer parameter may be unbound in the premise."
+      ]
+    }
+  ]
+}

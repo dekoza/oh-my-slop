@@ -104,7 +104,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 ## Skills
 
 <details>
-<summary><strong>Skills (62)</strong></summary>
+<summary><strong>Skills (63)</strong></summary>
 
 Grouped by what you came looking for: an API surface (**Reference**), a way of
 working (**Practice**), a job to run (**Workflow**), or the agent's own toolkit
@@ -130,6 +130,7 @@ Framework, library, and protocol lookup — reach for these when you need the AP
 | **[Litestar](skills/reference/litestar/SKILL.md)** | Litestar framework — route handlers, controllers, dependency injection, DTOs, middleware, lifecycle hooks, exception handling, templating, testing, websockets, and guards. |
 | **[PrestaShop](skills/reference/prestashop/SKILL.md)** | PrestaShop 9 modules: module structure, hooks, front/admin controllers, modern configuration pages, services, persistence, external API integrations, cron/commands, packaging, compatibility, or release debugging. Prevents inventing framework classes, guessing hook contracts, or shipping fake Symfony/PrestaShop internals. |
 | **[Python Async](skills/reference/python-async/SKILL.md)** | Python async and concurrency — AnyIO, asyncio, Trio, task groups, cancel scopes, async testing, thread offloading, async streams, event-loop ownership, and uvloop. |
+| **[Pyke](skills/reference/pyke/SKILL.md)** | Pyke (Python Knowledge Engine, scitools-pyke) — .krb/.kfb/.kqb source files, knowledge_engine.engine API, pattern matching, backward/forward chaining, plans, the special knowledge base, and question bases. |
 | **[Tabler](skills/reference/tabler/SKILL.md)** | Tabler UI component reference — CSS classes, variants, layout patterns, modals, plugins. Everything an agent needs to stop guessing class names. |
 
 #### Practice
