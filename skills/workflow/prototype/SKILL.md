@@ -32,11 +32,17 @@ The branches produce very different artifacts — getting this wrong wastes the 
 4. **No persistence by default.** State lives in memory. Persistence is the thing the prototype is _checking_, not something it should depend on. If the question explicitly involves a database, hit a scratch DB or a local file with a clear "PROTOTYPE — wipe me" name.
 5. **Skip the polish — while it's throwaway.** No tests, no error handling beyond what makes the prototype _runnable_, no abstractions. The point is to learn something fast and then delete it. These exemptions end the moment the prototype is absorbed (Rule 7).
 6. **Surface the state.** After every action (logic) or on every variant switch (UI), print or render the full relevant state so the user can see what changed.
-7. **Delete or absorb when done.** When the prototype has answered its question, either delete it or fold the validated decision into the real code — don't leave it rotting in the repo. If you absorb it, the throwaway exemptions are over: the absorbed code gets real tests, error handling, and the abstractions you skipped, held to the same bar as any production code.
+7. **Capture it when done.** Fold any validated decision into the real code, then commit the prototype itself as a **primary source** to a throwaway branch *out of main*, and leave a context pointer to that branch on the implementation issue (using `tea` / Gitea — see `docs/agents/issue-tracker.md`). The main branch keeps only the validated decision.
+
+This is distinct from *absorbing*: lifting a validated reducer keeps the **decision**, not the prototype. The throwaway exemptions end on the folded-in code: it gets real tests, error handling, and the abstractions you skipped, held to the same bar as any production code.
 
 ## When done
 
-The _answer_ is the only thing worth keeping from a prototype. Before deleting or absorbing it, capture the answer in a `NOTES.md` next to the prototype (or a commit message / ADR / issue if the prototype leaves no trace):
+The _answer_ is the only thing worth keeping from a prototype. The prototype itself is a primary source — commit it, don't delete it.
+
+1. **Fold the validated decision into the real code.** Lift the validated reducer/interface/decision into production, held to the same bar as any production code (real tests, error handling, abstractions — the throwaway exemptions end the moment it's absorbed). This is the only thing that stays on main.
+2. **Capture the prototype as a primary source.** Commit the prototype itself to a throwaway branch *out of main* and leave a context pointer to that branch on the implementation issue (using `tea` / Gitea — see `docs/agents/issue-tracker.md`). The main branch keeps only the validated decision.
+3. **Record the answer.** Capture the answer in a `NOTES.md` next to the prototype (or a commit message / ADR / issue if the prototype leaves no trace):
 
 ```markdown
 # Prototype: <one-line name>
@@ -45,10 +51,11 @@ The _answer_ is the only thing worth keeping from a prototype. Before deleting o
 - **Approach:** <what the prototype actually did>
 - **Answer:** <what you now know>
 - **Confidence:** <high / medium / low — and why>
-- **Next step:** <absorb into production / discard / prototype further>
+- **Branch:** <throwaway branch name where the prototype is committed>
+- **Next step:** <fold validated decision into production / prototype further / shelve>
 ```
 
-If the user is around, fill this in as a quick conversation. If not, leave the template with the fields stubbed so the verdict can be filled before the prototype is deleted. Once the answer is captured, delete or absorb the prototype (Rule 7) — never leave it rotting in the repo.
+If the user is around, fill this in as a quick conversation. If not, leave the template with the fields stubbed so the verdict can be filled before the throwaway branch is abandoned. Never leave a prototype rotting in the repo.
 
 ## Reference
 
