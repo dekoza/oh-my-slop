@@ -13,6 +13,10 @@ A discipline for hard bugs. Skip phases only when explicitly justified.
 
 When exploring the codebase, read the project's domain glossary — `CONTEXT.md` unless the domain doc config points elsewhere — for a mental model of the modules involved, and check the ADRs covering the area you're touching, so a hypothesis doesn't contradict a decision already made.
 
+## Redact
+
+This skill has you show commands, outputs and captured artifacts. **Redact every secret first** — write `<REDACTED>` in its place. Build loops against env vars, so the credential stays in the environment rather than in what you show. Captured artifacts carry auth headers: quote only the lines that carry the signal.
+
 **The whole skill in one breath:** build a **tight feedback loop** — one command that is *fast (seconds), deterministic, and red-capable* (goes red on this exact bug) — then minimize the repro, test hypotheses against the loop one variable at a time, fix, and convert the repro into a permanent regression test. If 5+ failures exist at once, run Multi-Failure Triage first; otherwise start at Phase 1.
 
 ## Multi-Failure Triage (when 5+ failures exist)
