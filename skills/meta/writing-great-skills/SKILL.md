@@ -60,6 +60,8 @@ Where the ladder decides _how far down_ a piece sits, **co-location** decides _w
 
 Keep each meaning in a **single source of truth**: one authoritative place, so changing the behaviour is a one-place edit.
 
+The **environment** is a source of truth too — `pyproject.toml` scripts, `manage.py` commands, `compose.test.yml`, the directory layout — and a document that restates it is a **cache**: a copy of a lookup, earning its load only when the lookup is expensive. Cache what the agent cannot find by looking: the unwritten convention, the reason behind a choice, the gotcha no config confesses. Leave the one-file, one-command lookups to the environment, where they cannot go stale.
+
 Check every line for **relevance**: does it still bear on what the skill does?
 
 Then hunt **no-ops** sentence by sentence, not just line by line: run the no-op test on each sentence in isolation, and when one fails, delete the whole sentence rather than trim words from it. Be aggressive — most prose that fails should go, not be rewritten.
