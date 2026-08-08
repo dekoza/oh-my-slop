@@ -1,0 +1,58 @@
+[
+  {
+    "query": "I need to walk the team through setting up Stripe test keys — opening the dashboard, copying the publishable and secret keys, and writing them into .env and GitHub Actions secrets. Can you generate a step-by-step wizard for that?",
+    "should_trigger": true
+  },
+  {
+    "query": "We're migrating from one payment provider to another and the cutover needs the human to click through three dashboards and capture API keys. Draft a wizard for that.",
+    "should_trigger": true
+  },
+  {
+    "query": "I keep having to explain the same third-party onboarding steps to every new contributor. Can you make a wizard that captures the click-path and writes the values into .env?",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to provision credentials for a service where the human has to visit a dashboard, click through a few pages, and paste the values back. Generate a wizard for it.",
+    "should_trigger": true
+  },
+  {
+    "query": "We need a repeatable setup path that opens the Gitea/Forgejo Actions settings page and captures the variable names and values. Can you write a wizard for that?",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to set up CI secrets for a new project — the human has to log into a third-party dashboard and copy tokens. Draft a wizard that captures them and writes .env plus GitHub/Gitea secrets.",
+    "should_trigger": true
+  },
+  {
+    "query": "We're doing a one-off A-to-B migration where the human needs to visit two dashboards, export data, and import it elsewhere. Generate a wizard for the migration steps.",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to implement the Stripe integration now — write the tests and code for it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Build the real payment processing endpoint with tests and merge it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a failing test for the discount calculation, then implement it until it passes.",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up the Docker test environment and run the full test suite against it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Refactor the checkout module into smaller services without changing behavior.",
+    "should_trigger": false
+  },
+  {
+    "query": "Update the CI pipeline to use a newer Python version and fix any breakages.",
+    "should_trigger": false
+  },
+  {
+    "query": "What's the current exchange rate between EUR and PLN?",
+    "should_trigger": false
+  }
+]

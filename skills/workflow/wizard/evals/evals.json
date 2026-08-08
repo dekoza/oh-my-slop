@@ -1,0 +1,39 @@
+{
+  "skill_name": "wizard",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Generate a wizard to walk a human through setting up Stripe test API keys — opening the dashboard, copying the publishable and secret keys, writing them to .env, and setting the secret key as a GitHub Actions secret.",
+      "expected_output": "The response produces a complete bash wizard (template.sh copied, stages authored) with one stage per step, using ask/ask_secret for input, write_env for persistence, and set_secret for CI.",
+      "files": ["template.sh"],
+      "expectations": [
+        "The wizard copies the template.sh library verbatim above the STAGES marker.",
+        "The wizard sets TOTAL_STAGES and TOTAL_MINUTES to match the authored stages.",
+        "The wizard uses ask_secret for the secret key and ask for the publishable key.",
+        "The wizard writes both keys to .env and sets the secret key as a GitHub/Gitea secret."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Generate a wizard for a one-off migration where the human must visit three different dashboards, copy values, and confirm each step before proceeding. The wizard should never run end-to-end — it must be verified statically with bash -n and shellcheck.",
+      "expected_output": "The response produces a verified wizard script, confirms bash -n passes, and explains that it should not be run end-to-end since it blocks on human input.",
+      "files": ["template.sh"],
+      "expectations": [
+        "The wizard uses confirm before any irreversible action.",
+        "The wizard uses open_url before asking for each value.",
+        "The response mentions bash -n and shellcheck verification.",
+        "The response does not attempt to run the wizard end-to-end."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Write the code for a payment processing endpoint that handles Stripe webhooks and updates order status.",
+      "expected_output": "The response implements the payment endpoint with tests, without invoking the wizard skill.",
+      "files": [],
+      "expectations": [
+        "The response writes implementation code (not a wizard).",
+        "The wizard skill is not invoked — this is agent-doable work."
+      ]
+    }
+  ]
+}
