@@ -36,6 +36,17 @@
         "It avoids persistence (state in memory).",
         "It skips polish (no tests, no error handling beyond runnable)."
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "The prototype answered its question \u2014 the variant A layout is the winner. What do I do next?",
+      "expected_output": "The response describes the capture-not-delete process: fold the winning variant into production, commit the prototype as a primary source to a throwaway branch, and leave a context pointer on the implementation issue.",
+      "files": [],
+      "expectations": [
+        "It describes folding the validated decision into production.",
+        "It describes committing the prototype to a throwaway branch out of main.",
+        "It mentions leaving a context pointer on the implementation issue."
+      ]
     }
   ]
 }

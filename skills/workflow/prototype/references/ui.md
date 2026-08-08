@@ -78,14 +78,53 @@ def settings_prototype(request):
   {% include "settings/variant_c.html" %}
 {% endif %}
 
-{# Floating bottom bar #}
-<div class="prototype-bar" style="position:fixed;bottom:0;left:0;right:0;display:flex;gap:8px;padding:8px;background:#f8f9fa;border-top:1px solid #dee2e6;">
-  <a href="?variant=a" class="btn btn-sm {% if variant == 'a' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Variant A</a>
-  <a href="?variant=b" class="btn btn-sm {% if variant == 'b' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Variant B</a>
-  <a href="?variant=c" class="btn btn-sm {% if variant == 'c' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Variant C</a>
+{# Floating bottom bar — gated on DEBUG so a stray prototype can't ship it to users #}
+{% if settings.DEBUG %}
+<div class="prototype-bar" style="position:fixed;bottom:0;left:0;right:0;display:flex;gap:8px;padding:8px;background:#f8f9fa;border-top:1px solid #dee2e6;align-items:center;justify-content:center;" data-variants='["a","b","c"]'>
+  <button class="btn btn-sm btn-outline-secondary" id="prev-variant">&#8592; Prev</button>
+  <span class="badge bg-primary" id="variant-label">Variant A</span>
+  <button class="btn btn-sm btn-outline-secondary" id="next-variant">Next &#8594;</button>
 </div>
+<script>
+  (function() {
+    var bar = document.querySelector('.prototype-bar');
+    if (!bar) return;
+    var variants = JSON.parse(bar.dataset.variants);
+    var url = new URLSearchParams(location.search);
+    var idx = variants.indexOf(url.get('variant') || variants[0]);
+    if (idx < 0) idx = 0;
+    var label = document.getElementById('variant-label');
+    function update() {
+      label.textContent = 'Variant ' + variants[idx].toUpperCase();
+      url.set('variant', variants[idx]);
+      history.replaceState({}, '', '?' + url.toString());
+    }
+    document.getElementById('prev-variant').addEventListener('click', function() {
+      idx = (idx - 1 + variants.length) % variants.length;
+      update();
+    });
+    document.getElementById('next-variant').addEventListener('click', function() {
+      idx = (idx + 1) % variants.length;
+      update();
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.target.matches('input, textarea, [contenteditable]')) return;
+      if (e.key === 'ArrowLeft') { idx = (idx - 1 + variants.length) % variants.length; update(); }
+      else if (e.key === 'ArrowRight') { idx = (idx + 1) % variants.length; update(); }
+    });
+    update();
+  })();
+</script>
+{% endif %}
 ```
 
 ### 4. When done
 
-Capture the answer — which variant won and why — somewhere durable (commit message, ADR, issue, or a `NOTES.md` next to the prototype). Delete the losing variants and the switcher bar. Fold the winning variant into the real page.
+Capture the answer — which variant won and why — somewhere durable (commit message, ADR, issue, or a `NOTES.md` next to the prototype). Fold the validated decision (the winning variant) into the real page, held to the same bar as production code. The prototype itself — losing variants, switcher bar, and `NOTES.md` — is committed as a primary source to a throwaway branch out of main (see the `prototype` skill, Rule 7); leave a context pointer to that branch on the implementation issue.
+
+## Anti-patterns
+
+- **Variants that differ only in colour or copy.** Three slightly-tweaked card grids isn't a UI prototype, it's wallpaper. If two drafts come out too similar, redo one with explicit "do not use a card grid" guidance.
+- **Sharing too much code between variants.** A shared `<Header>` is fine; a shared `<Layout>` defeats the point. Each variant should be structurally different — different layout, information hierarchy, and primary affordance.
+- **Wiring variants to real mutations.** Point them at a stub. A prototype is for learning, not for shipping end-to-end flows.
+- **Promoting the prototype directly to production.** Rewrite it properly when folding it in. Lift the validated decision into real code with real tests, error handling, and abstractions — the throwaway exemptions end the moment it's absorbed.
