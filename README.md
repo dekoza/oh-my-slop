@@ -104,7 +104,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 ## Skills
 
 <details>
-<summary><strong>Skills (61)</strong></summary>
+<summary><strong>Skills (62)</strong></summary>
 
 Grouped by what you came looking for: an API surface (**Reference**), a way of
 working (**Practice**), a job to run (**Workflow**), or the agent's own toolkit
@@ -181,6 +181,7 @@ Rituals you run — session and tracker state, from interview through implementa
 | **[Research](skills/workflow/research/SKILL.md)** | Delegate reading legwork to a background agent — primary sources only, every claim cited, findings landed as a Markdown note in the repo. |
 | **[Restore Test Pyramid](skills/workflow/restore-test-pyramid/SKILL.md)** | User-invoked ritual that pushes E2E-only assertions down to integration/unit tiers — per-assertion classification, fidelity gate (migrated assertion must go red under the same mutation), one happy-path smoke per flow, xdist pass. |
 | **[Teach](skills/workflow/teach/SKILL.md)** | Multi-session teaching ritual — the current directory becomes a stateful workspace (MISSION.md, HTML lessons, learning records, glossary) grounding lessons in the learner's mission and zone of proximal development. |
+| **[To Questionnaire](skills/workflow/to-questionnaire/SKILL.md)** | Turn a decision you can't answer alone into a Markdown questionnaire for the one person who can fill it in — grills the send (who, expertise, need) not the subject, then writes a structured, ordered file. |
 | **[To Spec](skills/workflow/to-spec/SKILL.md)** | Turn the current conversation into a spec/PRD — problem statement, user stories, implementation and testing decisions — published to the issue tracker or `docs/specs/`. No interview, pure synthesis. |
 | **[Wizard](skills/workflow/wizard/SKILL.md)** | Generate an interactive bash wizard that walks a human through a manual setup or migration procedure — opening URLs, capturing values, confirming each step, and writing `.env` files and CI secrets (GitHub and Gitea/Forgejo Actions). |
 | **[To Tickets](skills/workflow/to-tickets/SKILL.md)** | Break a plan, spec, or conversation into tracer-bullet tickets — vertical slices with explicit blocking edges — published to the tracker or one local file per ticket. Expand–contract sequencing for wide refactors. |
@@ -207,7 +208,7 @@ About the agent and its own toolkit, not about your code.
 Prompt templates are slash commands — type `/name` in the editor and it expands into a request that hands off to a bundled skill. Each template is an entry point, not a second copy of the flow: the skill stays the single source of truth, and the template exists because it forwards its arguments, which `/skill:<name>` cannot. So `/arch ~/some/repo` reviews another tree in one shot.
 
 <details>
-<summary><strong>Prompt templates (9)</strong></summary>
+<summary><strong>Prompt templates (10)</strong></summary>
 
 | Command | What it does |
 |---|---|
@@ -216,6 +217,7 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 | **`/audit [path]`** | Ranked bloat/over-engineering findings — dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead flags. |
 | **`/debt [path] [--output-debt-file]`** | Harvest `SHORTCUT:` markers left during development. Flags missing upgrade paths. |
 | **`/handoff`** | Compact the conversation into a handoff document for another agent. References artifacts, redacts secrets, saves to temp. |
+| **`/questionnaire <topic>`** | Turn an unanswerable decision into a Markdown questionnaire for the one person who can fill it in. |
 | **`/arch [path]`** | Architecture health check with visual HTML report — deepening and simplification candidates, before/after diagrams, then a wayfinder map and an in-session work-through of the candidate you pick. |
 | **`/wizard [description]`** | Generate an interactive bash wizard that walks a human through a manual setup or migration procedure. |
 | **`/ui-review <product> <keywords>`** | Data-driven UI/UX critique — design system search, color/typography direction, accessibility, anti-patterns. |
