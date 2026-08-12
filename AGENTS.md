@@ -27,7 +27,7 @@ Run these commands when you touch the related areas. Do not skip them.
 
 Targeted minimums:
 
-- Any change under `skills/` or to markdown references: `uv run pytest tests/test_validate_refs.py`
+- Any change under `skills/` or to markdown references: `uv run pytest tests/test_validate_refs.py tests/test_skill_frontmatter.py`
 - Any change under `prompts/`: `uv run pytest tests/test_prompt_templates.py tests/test_readme.py`
 - Any change under `extensions/` or to package entrypoints: `node --test tests/node/*.mjs`
 - Any change to `package.json`, `pyproject.toml`, or installable entrypoints: `uv run pytest tests/test_pi_package_installability.py`
