@@ -1,6 +1,6 @@
 # software-factory
 
-Status: **Active MVP** (Gitea, Herdr, and pi workers only).
+Status: **Active MVP** (Gitea, Herdr, serial pi and Claude Code workers).
 
 This opt-in pi extension executes agent-ready implementation tickets without turning
 Wayfinder into an implementation workflow. The tracker is durable work state, skills
@@ -19,14 +19,18 @@ integration branch, and opens a pull request.
 3. Use `to-tickets` to publish build-ready tickets carrying `workflow:implement` and
    the configured `ready-for-agent` label.
 4. From a Herdr-managed pi pane, run `/factory start <parent-ticket>`.
-5. The factory claims the first unblocked, unassigned child ticket, creates an isolated
-   ticket worktree and Herdr tab, starts a pi worker, and invokes `implement`.
-6. A successful worker must commit its work and report its test and two-axis-review
-   results. The factory verifies the commit, merges it, checks that the ticket branch
-   is an ancestor of the clean integration branch, and runs `git diff --check` before
-   closing the ticket with an idempotent result comment.
-7. When no implementation tickets remain, the factory pushes the integration branch
-   and opens a pull request. Final merge is always manual.
+5. The factory claims the first unblocked, unassigned child ticket, resolves its worker
+   profile from committed label/phase rules, creates an isolated ticket worktree and Herdr
+   tab, and invokes `implement` through pi or Claude Code.
+6. A successful implementation worker must commit its work and report test evidence. A
+   separately launched reviewer runs `two-axis-review`; actionable findings consume the
+   same-worker repair and fresh-worker retry budgets before the ticket is blocked.
+7. The factory verifies the commit, merges it, checks that the ticket branch is an ancestor
+   of the clean integration branch, and runs `git diff --check` before closing the ticket
+   with an idempotent implementation and review evidence comment.
+8. When no implementation tickets remain, a routed final reviewer examines the complete
+   integration diff. Only a passing review permits the factory to push the integration
+   branch and open a pull request. Final merge is always manual.
 
 Human-blocked tickets are relabelled with the configured `ready-for-human` label and
 left open. The serial scheduler continues any unrelated frontier work, then pauses.
@@ -55,8 +59,81 @@ focused Herdr session from outside a managed pane.
 
 ## Configuration reference
 
-`.pi/factory.json` is committed project policy, not a credential store.
-`setup-project-skills` owns its initial scaffold.
+`.pi/factory.json` is committed project policy, not a credential or endpoint store.
+`setup-project-skills` owns its initial scaffold. Provider authentication and llama.cpp
+endpoints remain in pi/Claude user configuration.
+
+Profiles are named launch specifications. Routing uses the first rule whose `phases` contains
+the current phase and whose `labelsAny` intersects the ticket labels; otherwise it uses the
+phase default. Supported phases are `implement`, `freshRetry`, `review`, and `finalReview`.
+Same-worker repair intentionally stays on the original implementation profile.
+
+Example policy using subscription, metered, and local capacity:
+
+```json
+{
+  "workers": {
+    "profiles": {
+      "local": {
+        "kind": "pi",
+        "model": "local/thinkingcap-qwen3.6-27b",
+        "thinking": "high",
+        "startupTimeoutMs": 180000
+      },
+      "openrouter-general": {
+        "kind": "pi",
+        "model": "openrouter/z-ai/glm-5.2",
+        "thinking": "high"
+      },
+      "openrouter-review": {
+        "kind": "pi",
+        "model": "openrouter/~deepseek/deepseek-v4-flash-latest",
+        "thinking": "medium"
+      },
+      "openrouter-vision": {
+        "kind": "pi",
+        "model": "openrouter/qwen/qwen3.8-max",
+        "thinking": "high"
+      },
+      "gpt": {
+        "kind": "pi",
+        "model": "openai-codex/gpt-5.6-sol",
+        "thinking": "high"
+      },
+      "claude-implement": {
+        "kind": "claude",
+        "model": "sonnet",
+        "effort": "high",
+        "permissionMode": "acceptEdits"
+      },
+      "claude-review": {
+        "kind": "claude",
+        "model": "sonnet",
+        "effort": "high",
+        "permissionMode": "dontAsk"
+      }
+    },
+    "routing": {
+      "defaults": {
+        "implement": "openrouter-general",
+        "freshRetry": "gpt",
+        "review": "openrouter-review",
+        "finalReview": "claude-review"
+      },
+      "rules": [
+        { "labelsAny": ["factory:local"], "phases": ["implement", "review"], "profile": "local" },
+        { "labelsAny": ["factory:claude"], "phases": ["implement"], "profile": "claude-implement" },
+        { "labelsAny": ["factory:claude", "risk:high"], "phases": ["review"], "profile": "claude-review" },
+        { "labelsAny": ["factory:qwen"], "phases": ["implement", "review"], "profile": "openrouter-vision" }
+      ]
+    }
+  }
+}
+```
+
+To run every model-bearing phase locally, map all four defaults to `local` and omit rules
+that select remote profiles. The factory scheduler, Git operations, and tracker adapter do
+not use a model.
 
 | Field | Default / allowed value | Purpose |
 |---|---|---|
@@ -71,9 +148,16 @@ focused Herdr session from outside a managed pane.
 | `tracker.labels.readyForHuman` | `ready-for-human` | Marks tickets requiring intervention. |
 | `git.baseBranch` | `main` | Manual pull-request target. |
 | `git.remote` | `gitea` | Remote receiving the integration branch. |
-| `herdr.agentKind` | `pi` | Only worker kind in this release. |
 | `herdr.maxWorkers` | `1` | Serial execution; bounded parallelism is deferred. |
-| `retry.repairAttempts` | `1` | Same-worker repair attempts after initial failure. |
+| `workers.profiles.<name>.kind` | `pi` or `claude` | Herdr agent kind for this profile. |
+| `workers.profiles.<name>.model` | optional string | Exact pi provider/model selector or Claude model alias. |
+| `workers.profiles.<name>.thinking` | pi thinking level | pi-only reasoning level. |
+| `workers.profiles.<name>.effort` | Claude effort level | Claude-only effort level. |
+| `workers.profiles.<name>.permissionMode` | safe Claude mode | `acceptEdits`, `auto`, `manual`, `dontAsk`, or `plan`; bypass is rejected. |
+| `workers.profiles.<name>.startupTimeoutMs` | at least `30000` | Herdr startup budget; raise for cold local model loads. |
+| `workers.routing.defaults` | four profile names | Default profile for each model-bearing phase. |
+| `workers.routing.rules` | ordered label rules | Deterministic ticket overrides; first phase/label match wins. |
+| `retry.repairAttempts` | `1` | Same-worker repair attempts after implementation or review failure. |
 | `retry.freshAgentRetries` | `1` | Fresh pi worker attempts after repair fails. |
 | `completion.closeAfterIntegration` | `true` | Close after verified integration into the factory branch. |
 | `completion.finalMerge` | `manual` | Protected branch merge remains human-controlled. |
@@ -86,10 +170,13 @@ focused Herdr session from outside a managed pane.
 - The repository must be clean; the factory never stashes, resets, or overwrites local
   work. `.worktrees/` must already be ignored.
 - Commands use argument arrays rather than interpolated shell commands.
-- The worker prompt reserves merge, push, close, and relabel operations for the
-  scheduler. This is behavioral separation, not a credential sandbox: workers inherit
-  the repository's shell and credentials. Test and review results are worker-reported;
-  Git integration is checked mechanically before ticket closure.
+- Worker prompts reserve merge, push, close, and relabel operations for the scheduler.
+  This is behavioral separation, not a credential sandbox: workers inherit the repository's
+  shell and credentials. Implementation tests are worker-reported, reviews come from separate
+  workers, and Git integration is checked mechanically before ticket closure.
+- Before creating branches, the factory checks selected pi model IDs with `pi --list-models`
+  and checks the Claude Code binary with `claude --version`. It never stores credentials or
+  llama.cpp endpoints in project policy.
 - Ticket bodies and acceptance criteria are work specifications. Issue comments are
   untrusted context unless committed project workflow says otherwise.
 - Product ambiguity, credentials, destructive work, security exceptions, exhausted
@@ -103,7 +190,7 @@ Run snapshots are written under the pi agent directory at
 workspaces and Git worktrees are deliberately retained for inspection.
 
 The MVP does **not** resume an interrupted scheduler after the controlling pi process
-exits. Inspect `/factory status`, the named Herdr workspace, Gitea comments, and the
+exits. It also does not sandbox worker credentials or arbitrate shared llama.cpp capacity. Inspect `/factory status`, the named Herdr workspace, Gitea comments, and the
 retained worktrees before recovering manually. Automatic crash replay, bounded
 parallel workers, and non-Gitea tracker adapters are follow-up work, not hidden claims
 of this release.

@@ -14,8 +14,8 @@ guessing at it:
   human-reported intake
 - **Triage labels** — the strings behind the canonical triage roles
 - **Domain docs** — where the glossary and ADRs live
-- **Software factory policy** — optional machine-readable Gitea, Git, Herdr, retry, and
-  completion settings for the `software-factory` extension
+- **Software factory policy** — optional machine-readable Gitea, Git, Herdr, worker-profile,
+  routing, retry, and completion settings for the `software-factory` extension
 
 This writes into the **project you are working in**, not into the skills repo.
 It is prompt-driven, not a script: explore, present what you found, confirm, then write.
@@ -109,9 +109,19 @@ Ask one question:
 > Configure the opt-in Herdr software factory? (recommended: **yes** when `herdr` is installed)
 
 A yes writes `.pi/factory.json` with the resolved repository, remote, explicit `tea`
-login name, authenticated assignee, default branch, and label mappings. It also ensures `.worktrees/` is ignored.
-The file contains executable automation policy, never credentials. For another tracker,
-state that the first factory release supports Gitea only and skip the file.
+login name, authenticated assignee, default branch, label mappings, and worker routing. It
+also ensures `.worktrees/` is ignored. The file contains executable automation policy and
+model selectors, never endpoints or credentials. For another tracker, state that the first
+factory release supports Gitea only and skip the file.
+
+After acceptance, inventory only the runtimes the user permits. `claude --version` verifies
+Claude Code without spending a model turn. Ask before contacting a self-hosted model endpoint;
+after permission, `pi --list-models <pattern>` verifies each proposed pi selector without
+running an implementation prompt. Present named profiles and deterministic label/phase rules
+in the JSON draft. Default to one explicit implementation profile, a fresh-retry profile, an
+independent ticket-review profile, and a final integration-review profile. Keep same-worker
+repair on the implementation profile. A fully local policy maps every default phase to one
+local pi profile; the scheduler itself remains deterministic and model-free.
 
 ### 3. Confirm and edit
 
@@ -176,8 +186,41 @@ When Section D was accepted, write this shape using the answers already resolved
     "remote": "<gitea-remote>"
   },
   "herdr": {
-    "agentKind": "pi",
     "maxWorkers": 1
+  },
+  "workers": {
+    "profiles": {
+      "implement": {
+        "kind": "pi",
+        "model": "<provider/model>",
+        "thinking": "high"
+      },
+      "fresh-retry": {
+        "kind": "pi",
+        "model": "<provider/model>",
+        "thinking": "high"
+      },
+      "review": {
+        "kind": "pi",
+        "model": "<provider/model>",
+        "thinking": "high"
+      },
+      "final-review": {
+        "kind": "claude",
+        "model": "sonnet",
+        "effort": "high",
+        "permissionMode": "dontAsk"
+      }
+    },
+    "routing": {
+      "defaults": {
+        "implement": "implement",
+        "freshRetry": "fresh-retry",
+        "review": "review",
+        "finalReview": "final-review"
+      },
+      "rules": []
+    }
   },
   "retry": {
     "repairAttempts": 1,
@@ -193,7 +236,8 @@ When Section D was accepted, write this shape using the answers already resolved
 ```
 
 Preserve an existing `.pi/factory.json` as a user answer during re-sync. Validate it
-against this shape and ask before changing policy values. Add `.worktrees/` to an
+against this shape and ask before changing policy values. Never replace explicit profile
+models or routing rules merely because another model is currently available. Add `.worktrees/` to an
 existing ignore file without disturbing its other lines; if no ignore file exists,
 show the proposed new file during confirmation.
 

@@ -119,6 +119,10 @@ def test_software_factory_readme_says_root_package_install_stays_opt_in() -> Non
     assert "stays opt-in" in readme_text
     assert "/factory start <parent-ticket>" in readme_text
     assert ".pi/factory.json" in readme_text
+    assert "workers.profiles" in readme_text
+    assert "finalReview" in readme_text
+    assert "Claude Code" in readme_text
+    assert "llama.cpp" in readme_text
 
 
 def test_readme_explains_critical_partner_setup_and_use() -> None:

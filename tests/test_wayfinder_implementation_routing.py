@@ -56,6 +56,12 @@ def test_project_setup_can_emit_machine_readable_factory_policy() -> None:
     assert '"kind": "gitea"' in setup_skill_text
     assert '"login": "<tea-login-name>"' in setup_skill_text
     assert '"maxWorkers": 1' in setup_skill_text
+    assert '"workers"' in setup_skill_text
+    assert '"profiles"' in setup_skill_text
+    assert '"freshRetry"' in setup_skill_text
+    assert '"finalReview"' in setup_skill_text
+    assert "pi --list-models" in setup_skill_text
+    assert "claude --version" in setup_skill_text
     assert '"repairAttempts": 1' in setup_skill_text
     assert '"freshAgentRetries": 1' in setup_skill_text
     assert '"finalMerge": "manual"' in setup_skill_text
