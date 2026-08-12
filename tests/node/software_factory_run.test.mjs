@@ -116,7 +116,9 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 	assert.equal(result.pullRequest, "https://gitea/pr/7");
 	assert.deepEqual(result.completed, [42]);
 	assert.ok(events.includes("profile-preflight:local,gpt,gpt,claude"));
+	assert.ok(events.includes("profile-preflight:local,gpt,gpt"));
 	assert.ok(events.indexOf("profile-preflight:local,gpt,gpt,claude") < events.indexOf("create-run:factory-a1"));
+	assert.ok(events.indexOf("profile-preflight:local,gpt,gpt") < events.indexOf("claim:42"));
 	assert.ok(events.includes("worker:sf-a1-t42:local"));
 	assert.ok(events.includes("worker:sf-a1-t42-v1:gpt"));
 	assert.ok(events.includes("worker:sf-a1-tfinal:claude"));

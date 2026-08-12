@@ -111,6 +111,11 @@ export async function runFactory({
 		state.currentTicket = ticket.index;
 		await save();
 
+		await herdr.preflightProfiles([
+			selectWorkerProfile(config.workers, "implement", ticket),
+			selectWorkerProfile(config.workers, "freshRetry", ticket),
+			selectWorkerProfile(config.workers, "review", ticket),
+		]);
 		// Claiming is deliberately the first ticket-specific write so concurrent factories skip it.
 		await tracker.claim(ticket.index);
 		const ticketWorktree = await git.createTicket(run, ticket.index);

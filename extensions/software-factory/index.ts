@@ -33,6 +33,9 @@ function formatStatus(state: Record<string, unknown>): string {
 		`Completed: ${completed}`,
 		`Human-blocked: ${blocked}`,
 		state.currentTicket ? `Current ticket: #${state.currentTicket}` : undefined,
+		state.finalReview && typeof state.finalReview === "object"
+			? `Final review: ${(state.finalReview as Record<string, unknown>).status} (${(state.finalReview as Record<string, unknown>).profile})`
+			: undefined,
 		state.pullRequest ? `Pull request: ${state.pullRequest}` : undefined,
 	].filter(Boolean).join("\n");
 }
@@ -86,7 +89,7 @@ export default function softwareFactory(pi: ExtensionAPI) {
 				pi.exec(command, commandArgs, options);
 			let herdr;
 			try {
-				herdr = createHerdrRuntime({ exec, agentKind: config.herdr.agentKind });
+				herdr = createHerdrRuntime({ exec });
 			} catch (error) {
 				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
 				return;

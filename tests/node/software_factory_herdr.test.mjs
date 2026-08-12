@@ -91,10 +91,12 @@ test("Herdr runtime preflights selected pi models and the Claude binary without 
 		},
 	});
 
-	await runtime.preflightProfiles([
+	const profiles = [
 		{ kind: "pi", model: "local/thinkingcap-qwen3.6-27b" },
 		{ kind: "claude", model: "sonnet" },
-	]);
+	];
+	await runtime.preflightProfiles(profiles);
+	await runtime.preflightProfiles(profiles);
 
 	assert.deepEqual(calls, [
 		["pi", ["--list-models", "local/thinkingcap-qwen3.6-27b"]],

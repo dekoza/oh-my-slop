@@ -151,17 +151,17 @@ export function createHerdrRuntime({ exec, env = process.env }) {
 		return parseHerdrJson(response.stdout, purpose);
 	}
 
+	const checkedProfiles = new Set();
 	async function preflightProfiles(profiles) {
-		const checked = new Set();
 		for (const profile of profiles) {
 			const key = `${profile.kind}:${profile.model ?? "default"}`;
-			if (checked.has(key)) continue;
-			checked.add(key);
+			if (checkedProfiles.has(key)) continue;
 			if (profile.kind === "claude") {
 				const response = await exec("claude", ["--version"]);
 				if (response.code !== 0) {
 					throw new FactoryWorkerError(`Claude Code is unavailable: ${response.stderr.trim() || `exit ${response.code}`}`);
 				}
+				checkedProfiles.add(key);
 				continue;
 			}
 			const args = profile.model ? ["--list-models", profile.model] : ["--version"];
@@ -176,6 +176,7 @@ export function createHerdrRuntime({ exec, env = process.env }) {
 				});
 				if (!available) throw new FactoryWorkerError(`pi model "${profile.model}" is not available.`);
 			}
+			checkedProfiles.add(key);
 		}
 	}
 

@@ -80,6 +80,25 @@ test("loadFactoryConfig validates pi and Claude worker profiles with determinist
 	assert.deepEqual(config.workers.routing.rules[0].phases, ["implement", "review"]);
 });
 
+test("loadFactoryConfig rejects Claude permission bypass profiles", async () => {
+	const cwd = await projectWithConfig({
+		version: 1,
+		tracker: { kind: "gitea", repo: "minder/example", assignee: "minder" },
+		workers: {
+			profiles: { unsafe: { kind: "claude", model: "sonnet", permissionMode: "bypassPermissions" } },
+			routing: {
+				defaults: { implement: "unsafe", freshRetry: "unsafe", review: "unsafe", finalReview: "unsafe" },
+			},
+		},
+	});
+
+	await assert.rejects(
+		loadFactoryConfig(cwd),
+		(error) => error instanceof FactoryConfigError
+			&& error.message.includes("permissionMode is not an allowed Claude permission mode"),
+	);
+});
+
 test("loadFactoryConfig preserves setup-project-skills label overrides", async () => {
 	const cwd = await projectWithConfig({
 		version: 1,
