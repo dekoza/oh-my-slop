@@ -125,6 +125,10 @@ export function createHerdrRuntime({ exec, env = process.env, agentKind = "pi" }
 		return { name, tabId, paneId };
 	}
 
+	async function retireWorker(tabId) {
+		await run(["tab", "close", tabId], `retiring worker tab ${tabId}`);
+	}
+
 	async function promptWorker(name, prompt, timeout = 7_200_000) {
 		await run([
 			"agent", "prompt", name, prompt,
@@ -143,5 +147,5 @@ export function createHerdrRuntime({ exec, env = process.env, agentKind = "pi" }
 		return parseFactoryResult(transcript);
 	}
 
-	return { createWorkspace, createWorker, promptWorker };
+	return { createWorkspace, createWorker, retireWorker, promptWorker };
 }

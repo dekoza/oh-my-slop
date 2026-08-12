@@ -68,17 +68,61 @@ export async function runFactory({
 		await tracker.claim(ticket.index);
 		const ticketWorktree = await git.createTicket(run, ticket.index);
 		const name = workerName(runId, ticket.index);
-		const worker = await herdr.createWorker({
+		let worker = await herdr.createWorker({
 			workspaceId: state.workspaceId,
 			cwd: ticketWorktree.path,
 			name,
 			label: `#${ticket.index} ${ticket.title}`,
 		});
-		const result = await herdr.promptWorker(
-			worker.name,
-			buildWorkerPrompt({ repo: config.tracker.repo, ticket }),
-		);
+		const initialPrompt = buildWorkerPrompt({ repo: config.tracker.repo, ticket });
+		let result;
+		let lastError;
+		for (let attempt = 0; attempt <= config.retry.repairAttempts; attempt++) {
+			const prompt = attempt === 0
+				? initialPrompt
+				: [
+					"The factory could not verify your previous attempt.",
+					`Failure: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+					"Inspect the current worktree, repair the implementation or completion evidence, rerun the required checks, and end with the required FACTORY_RESULT line.",
+				].join("\n");
+			try {
+				result = await herdr.promptWorker(worker.name, prompt);
+				if (result.status === "blocked") break;
+				await git.verifyTicket(run, ticketWorktree);
+				lastError = undefined;
+				break;
+			} catch (error) {
+				lastError = error;
+			}
+		}
 
+		for (let retry = 1; lastError && retry <= config.retry.freshAgentRetries; retry++) {
+			await herdr.retireWorker?.(worker.tabId);
+			worker = await herdr.createWorker({
+				workspaceId: state.workspaceId,
+				cwd: ticketWorktree.path,
+				name: workerName(runId, ticket.index, `-r${retry}`),
+				label: `#${ticket.index} ${ticket.title} (retry ${retry})`,
+			});
+			try {
+				result = await herdr.promptWorker(worker.name, [
+					initialPrompt,
+					"",
+					"A previous worker failed verification. Inspect and recover the existing worktree rather than assuming it is clean.",
+				].join("\n"));
+				if (result.status !== "blocked") await git.verifyTicket(run, ticketWorktree);
+				lastError = undefined;
+			} catch (error) {
+				lastError = error;
+			}
+		}
+
+		if (!result || lastError) {
+			result = {
+				status: "blocked",
+				reason: `Automation failed after the repair and fresh-worker retry budgets were exhausted: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+			};
+		}
 		if (result.status === "blocked") {
 			await tracker.block(ticket.index, result.reason);
 			state.blocked.push(ticket.index);
@@ -87,7 +131,6 @@ export async function runFactory({
 			continue;
 		}
 
-		await git.verifyTicket(run, ticketWorktree);
 		await git.integrate(run, ticketWorktree, ticket.index);
 		await tracker.complete(ticket.index, result, run);
 		state.completed.push(ticket.index);

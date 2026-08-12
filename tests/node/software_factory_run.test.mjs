@@ -69,6 +69,96 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 	assert.equal(snapshots.at(-1).status, "awaiting-merge");
 });
 
+test("runFactory gives the same worker one repair attempt before integration", async () => {
+	let frontierCalls = 0;
+	let promptCalls = 0;
+	let completed = false;
+	const tracker = {
+		async listFrontier() { return frontierCalls++ === 0 ? [{ index: 5, title: "Repairable" }] : []; },
+		async countOpenChildren() { return 0; },
+		async claim() {},
+		async complete() { completed = true; },
+		async block() {},
+		async createPullRequest() { return "pr"; },
+		async reportRun() {},
+	};
+	const git = {
+		async preflight() {},
+		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
+		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
+		async verifyTicket() {},
+		async integrate() {},
+		async publish() {},
+	};
+	const herdr = {
+		async createWorkspace() { return "w1"; },
+		async createWorker({ name }) { return { name, tabId: "w1:t2", paneId: "w1:p2" }; },
+		async promptWorker() {
+			promptCalls++;
+			if (promptCalls === 1) throw new Error("missing result protocol");
+			return { status: "success", summary: "repaired", tests: ["test: pass"], review: "passed" };
+		},
+	};
+
+	await runFactory({
+		cwd: "/repo", parentIndex: 9, runId: "factory-repair", config: testConfig(),
+		tracker, git, herdr, store: { async save() {} },
+	});
+
+	assert.equal(promptCalls, 2);
+	assert.equal(completed, true);
+});
+
+test("runFactory uses one fresh pi worker after the repair attempt fails", async () => {
+	let frontierCalls = 0;
+	let promptCalls = 0;
+	let workerCalls = 0;
+	const retired = [];
+	const blocked = [];
+	let completed = false;
+	const tracker = {
+		async listFrontier() { return frontierCalls++ === 0 ? [{ index: 6, title: "Fresh retry" }] : []; },
+		async countOpenChildren() { return 0; },
+		async claim() {},
+		async complete() { completed = true; },
+		async block(index, reason) { blocked.push([index, reason]); },
+		async createPullRequest() { return "pr"; },
+		async reportRun() {},
+	};
+	const git = {
+		async preflight() {},
+		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
+		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
+		async verifyTicket() {},
+		async integrate() {},
+		async publish() {},
+	};
+	const herdr = {
+		async createWorkspace() { return "w1"; },
+		async createWorker({ name }) {
+			workerCalls++;
+			return { name, tabId: `w1:t${workerCalls + 1}`, paneId: `w1:p${workerCalls + 1}` };
+		},
+		async retireWorker(tabId) { retired.push(tabId); },
+		async promptWorker() {
+			promptCalls++;
+			if (promptCalls < 3) throw new Error(`attempt ${promptCalls} failed`);
+			return { status: "success", summary: "fresh worker recovered", tests: ["test: pass"], review: "passed" };
+		},
+	};
+
+	await runFactory({
+		cwd: "/repo", parentIndex: 9, runId: "factory-fresh", config: testConfig(),
+		tracker, git, herdr, store: { async save() {} },
+	});
+
+	assert.equal(workerCalls, 2);
+	assert.equal(promptCalls, 3);
+	assert.deepEqual(retired, ["w1:t2"]);
+	assert.deepEqual(blocked, []);
+	assert.equal(completed, true);
+});
+
 test("runFactory routes a human blocker and continues unrelated frontier work", async () => {
 	const blocked = [];
 	let call = 0;

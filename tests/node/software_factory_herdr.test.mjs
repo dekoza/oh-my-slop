@@ -83,6 +83,21 @@ test("Herdr runtime creates one background workspace and a named pi worker tab",
 	]);
 });
 
+test("Herdr runtime retires only the worker tab it was given", async () => {
+	const calls = [];
+	const runtime = createHerdrRuntime({
+		env: { HERDR_ENV: "1" },
+		exec: async (command, args) => {
+			calls.push([command, args]);
+			return response({ result: { type: "ok" } });
+		},
+	});
+
+	await runtime.retireWorker("w4:t2");
+
+	assert.deepEqual(calls, [["herdr", ["tab", "close", "w4:t2"]]]);
+});
+
 test("Herdr runtime refuses to control a session from outside Herdr", () => {
 	assert.throws(
 		() => createHerdrRuntime({ exec: async () => response({}), env: {} }),
