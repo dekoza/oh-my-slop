@@ -7,6 +7,13 @@ export class FactoryGitError extends Error {
 	}
 }
 
+export class FactoryReviewMutationError extends FactoryGitError {
+	constructor(message, options) {
+		super(message, options);
+		this.name = "FactoryReviewMutationError";
+	}
+}
+
 export function createGitRuntime({ exec, cwd, baseBranch, remote }) {
 	async function run(args, purpose, options = {}) {
 		const response = await exec("git", args, { cwd, ...options });
@@ -78,9 +85,9 @@ export function createGitRuntime({ exec, cwd, baseBranch, remote }) {
 
 	async function verifyReviewState(state) {
 		const status = await run(["-C", state.path, "status", "--porcelain"], `checking ${state.label} worktree after review`);
-		if (status.trim() !== "") throw new FactoryGitError(`${state.label} left worktree changes.`);
+		if (status.trim() !== "") throw new FactoryReviewMutationError(`${state.label} left worktree changes.`);
 		const revision = (await run(["-C", state.path, "rev-parse", "HEAD"], `verifying ${state.label} revision`)).trim();
-		if (revision !== state.revision) throw new FactoryGitError(`${state.label} changed HEAD from ${state.revision} to ${revision}.`);
+		if (revision !== state.revision) throw new FactoryReviewMutationError(`${state.label} changed HEAD from ${state.revision} to ${revision}.`);
 	}
 
 	async function integrate(runState, ticketState, ticketIndex) {

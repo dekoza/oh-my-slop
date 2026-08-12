@@ -173,9 +173,10 @@ not use a model.
 - Commands use argument arrays rather than interpolated shell commands.
 - Worker prompts reserve merge, push, close, and relabel operations for the scheduler.
   This is behavioral separation, not a credential sandbox: workers inherit the repository's
-  shell and credentials. Implementation tests are worker-reported, reviews come from separate
-  workers, reviewer worktrees are mechanically checked for HEAD or status changes, and Git
-  integration is checked mechanically before ticket closure.
+  shell and credentials. Review-role launches disable edit/write tools and force Claude plan
+  mode, but shell access still makes the Git guard authoritative. Implementation tests are
+  worker-reported; independently launched reviewers are checked for worktree HEAD or status
+  changes and quarantined on mutation before integration.
 - Before creating branches, the factory checks selected pi model IDs with `pi --list-models`
   and checks the Claude Code binary with `claude --version`. It never stores credentials or
   llama.cpp endpoints in project policy.

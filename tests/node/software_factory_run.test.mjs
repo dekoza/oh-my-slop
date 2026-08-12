@@ -246,6 +246,52 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 	assert.equal(completed, true);
 });
 
+test("runFactory quarantines reviewer mutations instead of asking implementation workers to repair them", async () => {
+	let frontierCalls = 0;
+	let workerPrompts = 0;
+	let integrated = false;
+	const blocked = [];
+	const tracker = {
+		async listFrontier() { return frontierCalls++ === 0 ? [{ index: 13, title: "Mutated review", labels: [] }] : []; },
+		async countOpenChildren() { return 1; },
+		async claim() {},
+		async complete() { throw new Error("must not complete"); },
+		async block(index, reason) { blocked.push([index, reason]); },
+		async reportRun() {},
+	};
+	const git = {
+		async preflight() {},
+		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
+		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
+		async verifyTicket() {},
+		async captureReviewState(path, label) { return { path, label, revision: "abc" }; },
+		async verifyReviewState() {
+			const error = new Error("ticket #13 review changed HEAD");
+			error.name = "FactoryReviewMutationError";
+			throw error;
+		},
+		async integrate() { integrated = true; },
+	};
+	const herdr = {
+		async preflightProfiles() {},
+		async createWorkspace() { return "w1"; },
+		async createWorker({ name }) { return { name, tabId: "w1:t2", paneId: "w1:p2" }; },
+		async retireWorker() {},
+		async promptWorker() { workerPrompts++; return { status: "success", summary: "done", tests: ["test: pass"] }; },
+		async promptReviewer() { return { status: "passed", summary: "clean", findings: [] }; },
+	};
+
+	const result = await runFactory({
+		cwd: "/repo", parentIndex: 9, runId: "factory-review-mutation", config: testConfig(),
+		tracker, git, herdr, store: { async save() {} },
+	});
+
+	assert.equal(result.status, "waiting-for-human");
+	assert.equal(workerPrompts, 1);
+	assert.equal(integrated, false);
+	assert.match(blocked[0][1], /reviewer changed the reviewed worktree/i);
+});
+
 test("runFactory does not publish when final review reports actionable findings", async () => {
 	let frontierCalls = 0;
 	let reviewCalls = 0;

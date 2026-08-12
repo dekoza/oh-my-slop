@@ -80,6 +80,42 @@ test("loadFactoryConfig validates pi and Claude worker profiles with determinist
 	assert.deepEqual(config.workers.routing.rules[0].phases, ["implement", "review"]);
 });
 
+test("loadFactoryConfig requires exact provider/model selectors for pi profiles", async () => {
+	const cwd = await projectWithConfig({
+		version: 1,
+		tracker: { kind: "gitea", repo: "minder/example", assignee: "minder" },
+		workers: {
+			profiles: { ambiguous: { kind: "pi", model: "thinkingcap-qwen3.6-27b", thinking: "high" } },
+			routing: {
+				defaults: { implement: "ambiguous", freshRetry: "ambiguous", review: "ambiguous", finalReview: "ambiguous" },
+			},
+		},
+	});
+
+	await assert.rejects(
+		loadFactoryConfig(cwd),
+		(error) => error instanceof FactoryConfigError && error.message.includes("exact provider/model selector"),
+	);
+});
+
+test("loadFactoryConfig rejects unknown profile fields instead of inheriting defaults", async () => {
+	const cwd = await projectWithConfig({
+		version: 1,
+		tracker: { kind: "gitea", repo: "minder/example", assignee: "minder" },
+		workers: {
+			profiles: { typo: { kind: "pi", modle: "local/thinkingcap-qwen3.6-27b" } },
+			routing: {
+				defaults: { implement: "typo", freshRetry: "typo", review: "typo", finalReview: "typo" },
+			},
+		},
+	});
+
+	await assert.rejects(
+		loadFactoryConfig(cwd),
+		(error) => error instanceof FactoryConfigError && error.message.includes('unknown field "modle"'),
+	);
+});
+
 test("loadFactoryConfig rejects Claude permission bypass profiles", async () => {
 	const cwd = await projectWithConfig({
 		version: 1,

@@ -80,8 +80,17 @@ function parseProfile(name, value) {
 	if (value.kind !== "pi" && value.kind !== "claude") {
 		throw new FactoryConfigError(`${path}.kind must be "pi" or "claude".`);
 	}
+	const allowedFields = value.kind === "pi"
+		? new Set(["kind", "model", "thinking", "startupTimeoutMs"])
+		: new Set(["kind", "model", "effort", "permissionMode", "startupTimeoutMs"]);
+	for (const field of Object.keys(value)) {
+		if (!allowedFields.has(field)) throw new FactoryConfigError(`${path} has unknown field "${field}".`);
+	}
 	const profile = { kind: value.kind };
 	if (value.model !== undefined) profile.model = requireNonEmptyString(value.model, `${path}.model`);
+	if (value.kind === "pi" && profile.model !== undefined && !/^[^/\s]+\/[^\s]+$/.test(profile.model)) {
+		throw new FactoryConfigError(`${path}.model must be an exact provider/model selector.`);
+	}
 	if (value.startupTimeoutMs !== undefined) {
 		if (!Number.isInteger(value.startupTimeoutMs) || value.startupTimeoutMs < 30_000) {
 			throw new FactoryConfigError(`${path}.startupTimeoutMs must be an integer of at least 30000.`);

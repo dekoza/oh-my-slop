@@ -6,6 +6,17 @@ function workerName(runId, ticketIndex, suffix = "") {
 	return `sf-${shortRun}-t${ticketIndex}${suffix}`.slice(0, 32);
 }
 
+function isReviewMutation(error) {
+	return error?.name === "FactoryReviewMutationError";
+}
+
+function blockedReviewMutation(error) {
+	return {
+		status: "blocked",
+		reason: `An independent reviewer changed the reviewed worktree. The factory quarantined it for human inspection: ${error.message}`,
+	};
+}
+
 export async function runFactory({
 	cwd,
 	parentIndex,
@@ -79,18 +90,27 @@ export async function runFactory({
 				name: workerName(runId, "final"),
 				label: "Final integration review",
 				profile: finalProfile,
+				role: "review",
 			});
 			try {
-				const review = await herdr.promptReviewer(finalReviewer.name, buildReviewPrompt({
-					repo: config.tracker.repo,
-					baseBranch: config.git.baseBranch,
-					profile: finalProfile,
-					final: true,
-				}));
-				state.finalReview = { ...review, profile: finalProfile.name };
-			} finally {
-				await herdr.retireWorker?.(finalReviewer.tabId);
-				await git.verifyReviewState(finalReviewGuard);
+				try {
+					const review = await herdr.promptReviewer(finalReviewer.name, buildReviewPrompt({
+						repo: config.tracker.repo,
+						baseBranch: config.git.baseBranch,
+						profile: finalProfile,
+						final: true,
+					}));
+					state.finalReview = { ...review, profile: finalProfile.name };
+				} finally {
+					try {
+						await herdr.retireWorker?.(finalReviewer.tabId);
+					} finally {
+						await git.verifyReviewState(finalReviewGuard);
+					}
+				}
+			} catch (error) {
+				if (!isReviewMutation(error)) throw error;
+				state.finalReview = { ...blockedReviewMutation(error), profile: finalProfile.name };
 			}
 			if (state.finalReview.status !== "passed") {
 				state.status = "waiting-for-human";
@@ -142,6 +162,7 @@ export async function runFactory({
 				name: workerName(runId, ticket.index, `-v${reviewNumber}`),
 				label: `#${ticket.index} review ${reviewNumber}`,
 				profile,
+				role: "review",
 			});
 			try {
 				const review = await herdr.promptReviewer(reviewer.name, buildReviewPrompt({
@@ -152,8 +173,11 @@ export async function runFactory({
 				}));
 				return { ...review, profile: profile.name };
 			} finally {
-				await herdr.retireWorker?.(reviewer.tabId);
-				await git.verifyReviewState(reviewGuard);
+				try {
+					await herdr.retireWorker?.(reviewer.tabId);
+				} finally {
+					await git.verifyReviewState(reviewGuard);
+				}
 			}
 		};
 		let result;
@@ -187,6 +211,11 @@ export async function runFactory({
 				lastError = undefined;
 				break;
 			} catch (error) {
+				if (isReviewMutation(error)) {
+					result = blockedReviewMutation(error);
+					lastError = undefined;
+					break;
+				}
 				lastError = error;
 			}
 		}
@@ -220,6 +249,11 @@ export async function runFactory({
 				}
 				lastError = undefined;
 			} catch (error) {
+				if (isReviewMutation(error)) {
+					result = blockedReviewMutation(error);
+					lastError = undefined;
+					break;
+				}
 				lastError = error;
 			}
 		}

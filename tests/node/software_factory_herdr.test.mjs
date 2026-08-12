@@ -174,6 +174,28 @@ test("Herdr runtime starts Claude Code with profile-specific safe native argumen
 	]);
 });
 
+test("Herdr runtime constrains reviewer editing tools regardless of profile defaults", async () => {
+	const starts = [];
+	const runtime = createHerdrRuntime({
+		env: { HERDR_ENV: "1" },
+		exec: async (_command, args) => {
+			if (args[0] === "tab") return response({ result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p2" } } });
+			starts.push(args);
+			return response({ result: { agent: { name: "reviewer" } } });
+		},
+	});
+
+	await runtime.createWorker({
+		workspaceId: "w1", cwd: "/worktree", name: "reviewer", label: "review",
+		profile: { kind: "claude", model: "sonnet", permissionMode: "acceptEdits" },
+		role: "review",
+	});
+
+	assert.deepEqual(starts[0].slice(-6), [
+		"--model", "sonnet", "--permission-mode", "plan", "--disallowedTools", "Edit,Write,NotebookEdit",
+	]);
+});
+
 test("buildWorkerPrompt uses a portable skill instruction for Claude Code", () => {
 	const prompt = buildWorkerPrompt({
 		repo: "minder/example",

@@ -130,12 +130,17 @@ export function parseReviewResult(transcript) {
 	return { status: result.status, summary: result.summary, findings: result.findings ?? [] };
 }
 
-function nativeAgentArgs(profile) {
+function nativeAgentArgs(profile, role) {
 	const args = [];
 	if (profile.model) args.push("--model", profile.model);
 	if (profile.kind === "pi" && profile.thinking) args.push("--thinking", profile.thinking);
+	if (profile.kind === "pi" && role === "review") args.push("--exclude-tools", "edit,write");
 	if (profile.kind === "claude" && profile.effort) args.push("--effort", profile.effort);
-	if (profile.kind === "claude" && profile.permissionMode) args.push("--permission-mode", profile.permissionMode);
+	if (profile.kind === "claude") {
+		const permissionMode = role === "review" ? "plan" : profile.permissionMode;
+		if (permissionMode) args.push("--permission-mode", permissionMode);
+		if (role === "review") args.push("--disallowedTools", "Edit,Write,NotebookEdit");
+	}
 	return args;
 }
 
@@ -195,7 +200,7 @@ export function createHerdrRuntime({ exec, env = process.env }) {
 		return workspaceId;
 	}
 
-	async function createWorker({ workspaceId, cwd, name, label, profile = { kind: "pi" } }) {
+	async function createWorker({ workspaceId, cwd, name, label, profile = { kind: "pi" }, role = "implement" }) {
 		const tabPayload = await run([
 			"tab", "create",
 			"--workspace", workspaceId,
@@ -208,7 +213,7 @@ export function createHerdrRuntime({ exec, env = process.env }) {
 		if (!tabId || !paneId) throw new FactoryWorkerError("Herdr did not return worker tab and pane IDs.");
 
 		const startupTimeout = profile.startupTimeoutMs ?? 30_000;
-		const nativeArgs = nativeAgentArgs(profile);
+		const nativeArgs = nativeAgentArgs(profile, role);
 		await run([
 			"agent", "start", name,
 			"--kind", profile.kind,
