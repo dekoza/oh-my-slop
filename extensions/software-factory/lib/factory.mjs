@@ -1,4 +1,5 @@
 import { buildWorkerPrompt } from "./herdr.mjs";
+import { selectWorkerProfile } from "./routing.mjs";
 
 function workerName(runId, ticketIndex, suffix = "") {
 	const shortRun = runId.replace(/^factory-/, "").replace(/[^a-z0-9_-]/g, "-").slice(-16);
@@ -80,13 +81,15 @@ export async function runFactory({
 		await tracker.claim(ticket.index);
 		const ticketWorktree = await git.createTicket(run, ticket.index);
 		const name = workerName(runId, ticket.index);
+		const implementationProfile = selectWorkerProfile(config.workers, "implement", ticket);
 		let worker = await herdr.createWorker({
 			workspaceId: state.workspaceId,
 			cwd: ticketWorktree.path,
 			name,
 			label: `#${ticket.index} ${ticket.title}`,
+			profile: implementationProfile,
 		});
-		const initialPrompt = buildWorkerPrompt({ repo: config.tracker.repo, ticket });
+		const initialPrompt = buildWorkerPrompt({ repo: config.tracker.repo, ticket, profile: implementationProfile });
 		let result;
 		let lastError;
 		for (let attempt = 0; attempt <= config.retry.repairAttempts; attempt++) {
@@ -113,15 +116,17 @@ export async function runFactory({
 
 		for (let retry = 1; lastError && retry <= config.retry.freshAgentRetries; retry++) {
 			await herdr.retireWorker?.(worker.tabId);
+			const retryProfile = selectWorkerProfile(config.workers, "freshRetry", ticket);
 			worker = await herdr.createWorker({
 				workspaceId: state.workspaceId,
 				cwd: ticketWorktree.path,
 				name: workerName(runId, ticket.index, `-r${retry}`),
 				label: `#${ticket.index} ${ticket.title} (retry ${retry})`,
+				profile: retryProfile,
 			});
 			try {
 				result = await herdr.promptWorker(worker.name, [
-					initialPrompt,
+					buildWorkerPrompt({ repo: config.tracker.repo, ticket, profile: retryProfile }),
 					"",
 					"A previous worker failed verification. Inspect and recover the existing worktree rather than assuming it is clean.",
 				].join("\n"));

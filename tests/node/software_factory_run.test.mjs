@@ -7,6 +7,17 @@ function testConfig() {
 	return {
 		tracker: { repo: "minder/example" },
 		git: { baseBranch: "main" },
+		workers: {
+			profiles: {
+				local: { kind: "pi", model: "local/thinkingcap-qwen3.6-27b" },
+				gpt: { kind: "pi", model: "openai-codex/gpt-5.6-sol" },
+				claude: { kind: "claude", model: "sonnet" },
+			},
+			routing: {
+				defaults: { implement: "local", freshRetry: "gpt", review: "gpt", finalReview: "claude" },
+				rules: [{ labelsAny: ["factory:claude"], phases: ["implement", "review"], profile: "claude" }],
+			},
+		},
 		retry: { repairAttempts: 1, freshAgentRetries: 1 },
 		completion: { createPullRequest: true },
 	};
@@ -67,7 +78,7 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 	};
 	const herdr = {
 		async createWorkspace() { events.push("workspace"); return "w4"; },
-		async createWorker({ name }) { events.push(`worker:${name}`); return { name, tabId: "w4:t2", paneId: "w4:p2" }; },
+		async createWorker({ name, profile }) { events.push(`worker:${name}:${profile.name}`); return { name, tabId: "w4:t2", paneId: "w4:p2" }; },
 		async promptWorker() {
 			events.push("prompt");
 			return { status: "success", summary: "checkout works", tests: ["test: pass"], review: "passed" };
@@ -90,6 +101,7 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 	assert.equal(result.status, "awaiting-merge");
 	assert.equal(result.pullRequest, "https://gitea/pr/7");
 	assert.deepEqual(result.completed, [42]);
+	assert.ok(events.includes("worker:sf-a1-t42:local"));
 	assert.ok(events.indexOf("claim:42") < events.indexOf("create-ticket:42"));
 	assert.ok(events.indexOf("verify") < events.indexOf("integrate:42"));
 	assert.ok(events.indexOf("integrate:42") < events.indexOf("verify-integration"));
@@ -167,8 +179,10 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 	};
 	const herdr = {
 		async createWorkspace() { return "w1"; },
-		async createWorker({ name }) {
+		async createWorker({ name, profile }) {
 			workerCalls++;
+			if (workerCalls === 1) assert.equal(profile.name, "local");
+			if (workerCalls === 2) assert.equal(profile.name, "gpt");
 			return { name, tabId: `w1:t${workerCalls + 1}`, paneId: `w1:p${workerCalls + 1}` };
 		},
 		async retireWorker(tabId) { retired.push(tabId); },
