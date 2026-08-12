@@ -159,6 +159,42 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 	assert.equal(completed, true);
 });
 
+test("runFactory routes an integration conflict to a human and stops the run", async () => {
+	let frontierCalls = 0;
+	const blocked = [];
+	const reports = [];
+	const tracker = {
+		async listFrontier() { return frontierCalls++ === 0 ? [{ index: 7, title: "Conflicting slice" }] : []; },
+		async countOpenChildren() { return 1; },
+		async claim() {},
+		async complete() { throw new Error("must not complete"); },
+		async block(index, reason) { blocked.push([index, reason]); },
+		async reportRun(_parent, state) { reports.push(state.status); },
+	};
+	const git = {
+		async preflight() {},
+		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
+		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
+		async verifyTicket() {},
+		async integrate() { throw new Error("merge conflict in src/app.ts"); },
+	};
+	const herdr = {
+		async createWorkspace() { return "w1"; },
+		async createWorker({ name }) { return { name, tabId: "w1:t2", paneId: "w1:p2" }; },
+		async promptWorker() { return { status: "success", summary: "done", tests: ["test: pass"], review: "passed" }; },
+	};
+
+	const result = await runFactory({
+		cwd: "/repo", parentIndex: 9, runId: "factory-conflict", config: testConfig(),
+		tracker, git, herdr, store: { async save() {} },
+	});
+
+	assert.equal(result.status, "waiting-for-human");
+	assert.deepEqual(result.blocked, [7]);
+	assert.match(blocked[0][1], /merge conflict in src\/app.ts/);
+	assert.deepEqual(reports, ["waiting-for-human"]);
+});
+
 test("runFactory persists a failed terminal state when preflight aborts", async () => {
 	const snapshots = [];
 	const failure = new Error("dirty repository");

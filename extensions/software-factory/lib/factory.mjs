@@ -132,7 +132,18 @@ export async function runFactory({
 			continue;
 		}
 
-		await git.integrate(run, ticketWorktree, ticket.index);
+		try {
+			await git.integrate(run, ticketWorktree, ticket.index);
+		} catch (error) {
+			const reason = `Integration requires human resolution: ${error instanceof Error ? error.message : String(error)}`;
+			await tracker.block(ticket.index, reason);
+			state.blocked.push(ticket.index);
+			state.currentTicket = undefined;
+			state.status = "waiting-for-human";
+			await save();
+			await tracker.reportRun(parentIndex, state);
+			return state;
+		}
 		await tracker.complete(ticket.index, result, run);
 		state.completed.push(ticket.index);
 		state.currentTicket = undefined;
