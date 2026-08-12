@@ -6,7 +6,7 @@ This repo is a collection of those guardrails — curated skills, pi extensions,
 
 ## How to use
 
-This repo is `pi`-first now. Install it as a package to get the bundled skills without auto-enabling the extensions.
+This repo is `pi`-first now. Install it as a package to get the bundled skills and the monitoring-only workflow watchdog. Extensions that execute project work remain opt-in.
 
 ```bash
 pi install git:github.com/dekoza/oh-my-slop
@@ -17,13 +17,15 @@ pi install .
 After installation, pi auto-discovers:
 
 - skills from `./skills`
+- prompt templates from `./prompts`
+- the monitoring-only `workflow-watchdog` extension
 
-The `workflow-watchdog` extension loads automatically on install (it only monitors — no code execution). The other extensions are shipped but remain opt-in. Add an explicit path in your pi `settings.json` if you want one active:
+The `workflow-watchdog` extension loads automatically on install (it only monitors — no project execution). The software factory stays opt-in. Add its explicit path in your pi `settings.json` when you want it active:
 
 ```json
 {
   "extensions": [
-    "/path/to/oh-my-slop/extensions/job-pipeline/index.ts"
+    "/path/to/oh-my-slop/extensions/software-factory"
   ]
 }
 ```
@@ -54,8 +56,9 @@ Run [`/setup-project-skills`](skills/meta/setup-project-skills/SKILL.md) once pe
 - **Issue tracker** — which forge holds agent work, and which (if any) holds human-filed intake. The skills never open work tickets on the intake tracker.
 - **Triage labels** — the strings behind the canonical roles, so `triage` applies your existing labels instead of creating duplicates.
 - **Domain docs** — where the glossary and ADRs live, and whether the repo is single- or multi-context.
+- **Software factory policy** — for Gitea projects, optional `.pi/factory.json` settings for Herdr workers, retries, integration, and the manual final-merge boundary.
 
-Skip it and the skills still run, falling back to a local-markdown tracker and the canonical label names — but each one re-derives your setup from scratch every session, and they will not always agree with each other. The setup is what makes them agree.
+Skip it and the skills still run, falling back to a local-markdown tracker and the canonical label names — but each one re-derives your setup from scratch every session, and they will not always agree with each other. The setup is what makes them agree. The software factory is stricter: it refuses to start without its machine-readable policy.
 
 Each skill follows the same structure:
 
@@ -89,15 +92,12 @@ Case in point: the agent messed up twice while creating this repo (deleting an u
 These ship in the repo, but the root `pi install` keeps them inactive until you opt in by path.
 
 <details>
-<summary><strong>Extensions (6, opt-in)</strong></summary>
+<summary><strong>Extensions (2)</strong></summary>
 
-| Extension | What it does |
-|---|---|
-| **[adaptive-routing](extensions/adaptive-routing/README.md)** | Classifies prompt intent and routes to the best available model. Supports shadow mode, locking, telemetry, and per-intent policy. |
-| **[provider-failover](extensions/provider-failover/README.md)** | Wraps GitHub Copilot models with automatic provider failover on 429/overload errors. Keeps the best working route sticky. |
-| **[job-pipeline](extensions/job-pipeline/README.md)** | Runs a full development pipeline: model-driven interview → scout → planning loop with adversarial jester critique → TDD workers → proof deck → review → retro. Human gates at every decision point. Earns autonomy through clean retrospectives. |
-| **[subagent-bundled-agents](extensions/subagent-bundled-agents/)** | Seeds bundled markdown subagents from `./agents` into pi's project or shared agent storage without clobbering user overrides once you opt into the extension. |
-| **[workflow-watchdog](extensions/workflow-watchdog/)** | Monitors pi's workflow for failure patterns: loop detection (repeating messages), mistake tracking (consecutive tool errors), and optional supervisor model escalation for rescue instructions. |
+| Extension | Loading | What it does |
+|---|---|---|
+| **[software-factory](extensions/software-factory/README.md)** | Opt-in | Executes Gitea implementation tickets serially in isolated Git worktrees, supervising pi workers through Herdr and stopping at explicit human boundaries. |
+| **[workflow-watchdog](extensions/workflow-watchdog/)** | Automatic | Monitors pi's workflow for failure patterns: loop detection, consecutive tool errors, and optional supervisor-model escalation. |
 
 </details>
 

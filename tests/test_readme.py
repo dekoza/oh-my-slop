@@ -8,7 +8,7 @@ from scripts.validate_refs import iter_skill_dirs
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_BUCKETS = ("reference", "practice", "workflow", "meta")
 README_PATH = REPO_ROOT / "README.md"
-JOB_PIPELINE_README_PATH = REPO_ROOT / "extensions" / "job-pipeline" / "README.md"
+SOFTWARE_FACTORY_README_PATH = REPO_ROOT / "extensions" / "software-factory" / "README.md"
 SKILLS_DIR = REPO_ROOT / "skills"
 EXTENSIONS_DIR = REPO_ROOT / "extensions"
 PROMPTS_DIR = REPO_ROOT / "prompts"
@@ -18,8 +18,8 @@ def load_readme() -> str:
     return README_PATH.read_text(encoding="utf-8")
 
 
-def load_job_pipeline_readme() -> str:
-    return JOB_PIPELINE_README_PATH.read_text(encoding="utf-8")
+def load_software_factory_readme() -> str:
+    return SOFTWARE_FACTORY_README_PATH.read_text(encoding="utf-8")
 
 
 def iter_extension_names() -> list[str]:
@@ -112,11 +112,13 @@ def test_readme_lists_every_bundled_prompt_template() -> None:
         assert command in readme_text, f"README missing prompt template {command}"
 
 
-def test_job_pipeline_readme_says_root_package_install_stays_opt_in() -> None:
-    readme_text = load_job_pipeline_readme()
+def test_software_factory_readme_says_root_package_install_stays_opt_in() -> None:
+    readme_text = load_software_factory_readme()
 
     assert "includes it automatically" not in readme_text
     assert "stays opt-in" in readme_text
+    assert "/factory start <parent-ticket>" in readme_text
+    assert ".pi/factory.json" in readme_text
 
 
 def test_readme_explains_critical_partner_setup_and_use() -> None:
