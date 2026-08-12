@@ -219,6 +219,43 @@ test("runFactory persists a failed terminal state when preflight aborts", async 
 	assert.equal(snapshots.at(-1).error, "dirty repository");
 });
 
+test("runFactory honors a repair response that asks for human input", async () => {
+	let frontierCalls = 0;
+	let prompts = 0;
+	let workers = 0;
+	const blocked = [];
+	const tracker = {
+		async listFrontier() { return frontierCalls++ === 0 ? [{ index: 8, title: "Needs decision" }] : []; },
+		async countOpenChildren() { return 1; },
+		async claim() {},
+		async block(index, reason) { blocked.push([index, reason]); },
+		async reportRun() {},
+	};
+	const git = {
+		async preflight() {},
+		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
+		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
+	};
+	const herdr = {
+		async createWorkspace() { return "w1"; },
+		async createWorker({ name }) { workers++; return { name, tabId: "w1:t2", paneId: "w1:p2" }; },
+		async promptWorker() {
+			prompts++;
+			if (prompts === 1) throw new Error("malformed result");
+			return { status: "blocked", reason: "A product decision is required." };
+		},
+	};
+
+	await runFactory({
+		cwd: "/repo", parentIndex: 9, runId: "factory-repair-blocked", config: testConfig(),
+		tracker, git, herdr, store: { async save() {} },
+	});
+
+	assert.equal(workers, 1);
+	assert.equal(prompts, 2);
+	assert.deepEqual(blocked, [[8, "A product decision is required."]]);
+});
+
 test("runFactory routes a human blocker and continues unrelated frontier work", async () => {
 	const blocked = [];
 	let call = 0;

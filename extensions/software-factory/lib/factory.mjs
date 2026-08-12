@@ -88,7 +88,10 @@ export async function runFactory({
 				].join("\n");
 			try {
 				result = await herdr.promptWorker(worker.name, prompt);
-				if (result.status === "blocked") break;
+				if (result.status === "blocked") {
+					lastError = undefined;
+					break;
+				}
 				await git.verifyTicket(run, ticketWorktree);
 				lastError = undefined;
 				break;
