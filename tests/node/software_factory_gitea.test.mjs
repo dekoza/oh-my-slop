@@ -11,11 +11,16 @@ function trackerWithFixtures({ issues, dependencies = {} }) {
 	const calls = [];
 	const exec = async (command, args) => {
 		calls.push([command, args]);
-		if (command === "tea" && args[0] === "issues" && args[1] === "list") {
-			return result(JSON.stringify(issues));
-		}
 		if (command === "tea" && args[0] === "api") {
-			const match = args.at(-1).match(/issues\/(\d+)\/dependencies$/);
+			const endpoint = args.at(-1);
+			if (endpoint.includes("?state=open")) {
+				return result(JSON.stringify(issues.map((issue) => ({
+					...issue,
+					number: issue.index,
+					labels: ["workflow:implement", "ready-for-agent"].map((name) => ({ name })),
+				}))));
+			}
+			const match = endpoint.match(/issues\/(\d+)\/dependencies$/);
 			return result(JSON.stringify(dependencies[match[1]] ?? []));
 		}
 		throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
@@ -58,10 +63,14 @@ test("listFrontier rejects Gitea API error envelopes even when tea exits zero", 
 		cwd: "/repo",
 		config: { repo: "minder/example", remote: "gitea", assignee: "minder" },
 		exec: async (_command, args) => {
-			if (args[0] === "issues") {
-				return result(JSON.stringify([
-					{ index: "10", title: "Slice", body: "Part of #9", assignees: "" },
-				]));
+			if (args.at(-1).includes("?state=open")) {
+				return result(JSON.stringify([{
+					number: 10,
+					title: "Slice",
+					body: "Part of #9",
+					assignees: [],
+					labels: [{ name: "workflow:implement" }, { name: "ready-for-agent" }],
+				}]));
 			}
 			return result('{"message":"permission denied"}');
 		},

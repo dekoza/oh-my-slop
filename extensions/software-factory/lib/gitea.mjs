@@ -52,18 +52,25 @@ export function createGiteaTracker({ exec, cwd, config }) {
 	}
 
 	async function listChildren(parentIndex, requiredLabels = [labels.implementation]) {
-		const output = await run([
-			"issues", "list",
-			"--repo", config.repo,
-			"--state", "open",
-			"--labels", requiredLabels.join(","),
-			"--fields", "index,title,body,assignees",
-			"--limit", "100",
-			"--output", "json",
-		], "listing implementation tickets");
-		return parseJson(output, "listing implementation tickets")
+		const issues = [];
+		for (let page = 1; ; page++) {
+			const endpoint = `/repos/${config.repo}/issues?state=open&type=issues&limit=50&page=${page}`;
+			const output = await run(["api", endpoint], "listing implementation tickets");
+			const batch = parseJson(output, "listing implementation tickets");
+			if (!Array.isArray(batch)) {
+				throw new GiteaTrackerError("Gitea did not return an issue list.");
+			}
+			issues.push(...batch);
+			if (batch.length < 50) break;
+		}
+		return issues
+			.filter((issue) => {
+				const issueLabels = (issue.labels ?? []).map((label) => typeof label === "string" ? label : label.name);
+				return requiredLabels.every((required) => issueLabels.includes(required));
+			})
 			.filter((issue) => referencesParent(issue.body, parentIndex))
-			.sort((left, right) => Number(left.index) - Number(right.index));
+			.map((issue) => ({ ...issue, index: Number(issue.number) }))
+			.sort((left, right) => left.index - right.index);
 	}
 
 	async function listFrontier(parentIndex) {
