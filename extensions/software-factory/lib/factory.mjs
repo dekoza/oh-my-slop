@@ -44,6 +44,13 @@ export async function runFactory({
 		await tracker.reportRun(parentIndex, state);
 		return state;
 	}
+	const selectedProfiles = initialFrontier.flatMap((ticket) => [
+		selectWorkerProfile(config.workers, "implement", ticket),
+		selectWorkerProfile(config.workers, "freshRetry", ticket),
+		selectWorkerProfile(config.workers, "review", ticket),
+	]);
+	selectedProfiles.push(selectWorkerProfile(config.workers, "finalReview"));
+	await herdr.preflightProfiles(selectedProfiles);
 	const run = await git.createRun(runId);
 	state.integrationBranch = run.integrationBranch;
 	state.integrationPath = run.integrationPath;

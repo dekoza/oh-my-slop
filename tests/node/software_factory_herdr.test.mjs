@@ -75,6 +75,33 @@ test("buildReviewPrompt gives pi and Claude a read-only two-axis-review contract
 	assert.match(prompt, /FACTORY_REVIEW/);
 });
 
+test("Herdr runtime preflights selected pi models and the Claude binary without starting agents", async () => {
+	const calls = [];
+	const runtime = createHerdrRuntime({
+		env: { HERDR_ENV: "1" },
+		exec: async (command, args) => {
+			calls.push([command, args]);
+			if (command === "pi") {
+				return { code: 0, stderr: "", stdout: [
+					"provider  model                    context  max-out  thinking  images",
+					"local     thinkingcap-qwen3.6-27b  231.4K   32.8K    yes       no",
+				].join("\n") };
+			}
+			return { code: 0, stderr: "", stdout: "2.1.80\n" };
+		},
+	});
+
+	await runtime.preflightProfiles([
+		{ kind: "pi", model: "local/thinkingcap-qwen3.6-27b" },
+		{ kind: "claude", model: "sonnet" },
+	]);
+
+	assert.deepEqual(calls, [
+		["pi", ["--list-models", "local/thinkingcap-qwen3.6-27b"]],
+		["claude", ["--version"]],
+	]);
+});
+
 test("Herdr runtime creates one background workspace and a named pi worker tab", async () => {
 	const calls = [];
 	const exec = async (command, args) => {

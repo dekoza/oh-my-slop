@@ -151,6 +151,34 @@ export function createHerdrRuntime({ exec, env = process.env }) {
 		return parseHerdrJson(response.stdout, purpose);
 	}
 
+	async function preflightProfiles(profiles) {
+		const checked = new Set();
+		for (const profile of profiles) {
+			const key = `${profile.kind}:${profile.model ?? "default"}`;
+			if (checked.has(key)) continue;
+			checked.add(key);
+			if (profile.kind === "claude") {
+				const response = await exec("claude", ["--version"]);
+				if (response.code !== 0) {
+					throw new FactoryWorkerError(`Claude Code is unavailable: ${response.stderr.trim() || `exit ${response.code}`}`);
+				}
+				continue;
+			}
+			const args = profile.model ? ["--list-models", profile.model] : ["--version"];
+			const response = await exec("pi", args);
+			if (response.code !== 0) {
+				throw new FactoryWorkerError(`pi worker profile is unavailable: ${response.stderr.trim() || `exit ${response.code}`}`);
+			}
+			if (profile.model) {
+				const available = response.stdout.split("\n").slice(1).some((line) => {
+					const [provider, model] = line.trim().split(/\s+/);
+					return model && (`${provider}/${model}` === profile.model || model === profile.model);
+				});
+				if (!available) throw new FactoryWorkerError(`pi model "${profile.model}" is not available.`);
+			}
+		}
+	}
+
 	async function createWorkspace(cwd, label) {
 		const payload = await run([
 			"workspace", "create",
@@ -218,5 +246,5 @@ export function createHerdrRuntime({ exec, env = process.env }) {
 	const promptWorker = (name, prompt, timeout) => promptAgent(name, prompt, parseFactoryResult, "worker", timeout);
 	const promptReviewer = (name, prompt, timeout) => promptAgent(name, prompt, parseReviewResult, "reviewer", timeout);
 
-	return { createWorkspace, createWorker, retireWorker, promptWorker, promptReviewer };
+	return { preflightProfiles, createWorkspace, createWorker, retireWorker, promptWorker, promptReviewer };
 }

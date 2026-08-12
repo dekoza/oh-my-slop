@@ -79,6 +79,7 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 	let workerNumber = 1;
 	let reviewNumber = 0;
 	const herdr = {
+		async preflightProfiles(profiles) { events.push(`profile-preflight:${profiles.map((profile) => profile.name).join(",")}`); },
 		async createWorkspace() { events.push("workspace"); return "w4"; },
 		async createWorker({ name, profile }) {
 			workerNumber++;
@@ -112,6 +113,8 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 	assert.equal(result.status, "awaiting-merge");
 	assert.equal(result.pullRequest, "https://gitea/pr/7");
 	assert.deepEqual(result.completed, [42]);
+	assert.ok(events.includes("profile-preflight:local,gpt,gpt,claude"));
+	assert.ok(events.indexOf("profile-preflight:local,gpt,gpt,claude") < events.indexOf("create-run:factory-a1"));
 	assert.ok(events.includes("worker:sf-a1-t42:local"));
 	assert.ok(events.includes("worker:sf-a1-t42-v1:gpt"));
 	assert.ok(events.includes("worker:sf-a1-tfinal:claude"));
@@ -150,6 +153,7 @@ test("runFactory gives the same worker one repair attempt before integration", a
 		async publish() {},
 	};
 	const herdr = {
+		async preflightProfiles() {},
 		async createWorkspace() { return "w1"; },
 		async createWorker({ name }) { return { name, tabId: "w1:t2", paneId: "w1:p2" }; },
 		async promptWorker() {
@@ -195,6 +199,7 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 		async publish() {},
 	};
 	const herdr = {
+		async preflightProfiles() {},
 		async createWorkspace() { return "w1"; },
 		async createWorker({ name, profile }) {
 			workerCalls++;
@@ -247,6 +252,7 @@ test("runFactory does not publish when final review reports actionable findings"
 		async publish() { published = true; },
 	};
 	const herdr = {
+		async preflightProfiles() {},
 		async createWorkspace() { return "w1"; },
 		async createWorker({ name }) { return { name, tabId: "w1:t2", paneId: "w1:p2" }; },
 		async retireWorker() {},
@@ -290,6 +296,7 @@ test("runFactory routes an integration conflict to a human and stops the run", a
 		async integrate() { throw new Error("merge conflict in src/app.ts"); },
 	};
 	const herdr = {
+		async preflightProfiles() {},
 		async createWorkspace() { return "w1"; },
 		async createWorker({ name }) { return { name, tabId: "w1:t2", paneId: "w1:p2" }; },
 		async promptWorker() { return { status: "success", summary: "done", tests: ["test: pass"] }; },
@@ -347,6 +354,7 @@ test("runFactory honors a repair response that asks for human input", async () =
 		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
 	};
 	const herdr = {
+		async preflightProfiles() {},
 		async createWorkspace() { return "w1"; },
 		async createWorker({ name }) { workers++; return { name, tabId: "w1:t2", paneId: "w1:p2" }; },
 		async promptWorker() {
@@ -387,6 +395,7 @@ test("runFactory routes a human blocker and continues unrelated frontier work", 
 		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
 	};
 	const herdr = {
+		async preflightProfiles() {},
 		async createWorkspace() { return "w1"; },
 		async createWorker({ name }) { return { name, tabId: "w1:t2", paneId: "w1:p2" }; },
 		async promptWorker() { return { status: "blocked", reason: "A production API credential is required." }; },
