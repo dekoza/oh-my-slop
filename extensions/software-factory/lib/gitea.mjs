@@ -23,6 +23,13 @@ function referencesParent(body, parentIndex) {
 }
 
 export function createGiteaTracker({ exec, cwd, config }) {
+	const labels = {
+		implementation: "workflow:implement",
+		readyForAgent: "ready-for-agent",
+		readyForHuman: "ready-for-human",
+		...(config.labels ?? {}),
+	};
+
 	async function run(args, purpose) {
 		const response = await exec("tea", args, { cwd });
 		if (response.code !== 0) {
@@ -33,21 +40,24 @@ export function createGiteaTracker({ exec, cwd, config }) {
 		return response.stdout;
 	}
 
-	async function listFrontier(parentIndex) {
+	async function listChildren(parentIndex, requiredLabels = [labels.implementation]) {
 		const output = await run([
 			"issues", "list",
 			"--repo", config.repo,
 			"--state", "open",
-			"--labels", "workflow:implement,ready-for-agent",
+			"--labels", requiredLabels.join(","),
 			"--fields", "index,title,body,assignees",
 			"--limit", "100",
 			"--output", "json",
 		], "listing implementation tickets");
-
-		const issues = parseJson(output, "listing implementation tickets")
+		return parseJson(output, "listing implementation tickets")
 			.filter((issue) => referencesParent(issue.body, parentIndex))
-			.filter((issue) => !Array.isArray(issue.assignees) || issue.assignees.length === 0)
 			.sort((left, right) => Number(left.index) - Number(right.index));
+	}
+
+	async function listFrontier(parentIndex) {
+		const issues = (await listChildren(parentIndex, [labels.implementation, labels.readyForAgent]))
+			.filter((issue) => !Array.isArray(issue.assignees) || issue.assignees.length === 0);
 
 		const frontier = [];
 		for (const issue of issues) {
@@ -71,5 +81,89 @@ export function createGiteaTracker({ exec, cwd, config }) {
 		], `claiming #${index}`);
 	}
 
-	return { listFrontier, claim };
+	async function upsertComment(index, marker, body) {
+		const output = await run([
+			"comments", "list", String(index),
+			"--repo", config.repo,
+			"--limit", "100",
+			"--output", "json",
+		], `reading factory comments on #${index}`);
+		const comments = parseJson(output, `reading factory comments on #${index}`);
+		const existing = comments.find((comment) => String(comment.body ?? "").startsWith(marker));
+		const content = `${marker}\n\n${body}`;
+		if (existing) {
+			await run([
+				"comments", "edit", String(existing.id), content,
+				"--repo", config.repo,
+			], `updating factory comment on #${index}`);
+			return;
+		}
+		await run([
+			"comments", "add", String(index), content,
+			"--repo", config.repo,
+		], `commenting on #${index}`);
+	}
+
+	async function countOpenChildren(parentIndex) {
+		return (await listChildren(parentIndex)).length;
+	}
+
+	async function complete(index, result, runState) {
+		const evidence = result.tests.map((test) => `- ${test}`).join("\n");
+		await upsertComment(index, "🤖 `software-factory` — ticket integration", [
+			result.summary,
+			"",
+			`Integrated into \`${runState.integrationBranch}\`.`,
+			"",
+			"Test evidence:",
+			evidence,
+			"",
+			"Two-axis review: passed.",
+		].join("\n"));
+		await run(["issues", "close", String(index), "--repo", config.repo], `closing #${index}`);
+	}
+
+	async function block(index, reason) {
+		await upsertComment(index, "🤖 `software-factory` — human blocker", reason);
+		await run([
+			"issues", "edit", String(index),
+			"--repo", config.repo,
+			"--remove-labels", labels.readyForAgent,
+			"--add-labels", labels.readyForHuman,
+			"--remove-assignees", config.assignee,
+		], `routing #${index} to a human`);
+	}
+
+	async function createPullRequest(runState, parentIndex, baseBranch) {
+		const output = await run([
+			"pulls", "create",
+			"--repo", config.repo,
+			"--head", runState.integrationBranch,
+			"--base", baseBranch,
+			"--title", `Factory implementation for #${parentIndex}`,
+			"--description", `Implements the agent-ready tickets under #${parentIndex}. Final merge remains manual.`,
+		], "creating the factory pull request");
+		return output.match(/https?:\/\/\S+/)?.[0] ?? output.trim();
+	}
+
+	async function reportRun(parentIndex, state) {
+		const lines = [
+			`Status: **${state.status}**`,
+			`Integration branch: \`${state.integrationBranch}\``,
+			`Completed tickets: ${state.completed.length > 0 ? state.completed.map((index) => `#${index}`).join(", ") : "none"}`,
+			`Human-blocked tickets: ${state.blocked.length > 0 ? state.blocked.map((index) => `#${index}`).join(", ") : "none"}`,
+		];
+		if (state.pullRequest) lines.push(`Pull request: ${state.pullRequest}`);
+		await upsertComment(parentIndex, `🤖 \`software-factory\` — run ${state.id}`, lines.join("\n"));
+	}
+
+	return {
+		listFrontier,
+		countOpenChildren,
+		claim,
+		complete,
+		block,
+		createPullRequest,
+		reportRun,
+	};
 }

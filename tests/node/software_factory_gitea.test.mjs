@@ -84,3 +84,50 @@ test("claim uses argument arrays and the configured assignee", async () => {
 		"issues", "edit", "42", "--repo", "minder/example", "--add-assignees", "minder",
 	]]]);
 });
+
+test("complete records idempotent evidence before closing the ticket", async () => {
+	const calls = [];
+	const exec = async (command, args) => {
+		calls.push([command, args]);
+		if (args[0] === "comments" && args[1] === "list") {
+			return result(JSON.stringify([{ id: 700, body: "🤖 `software-factory` — ticket integration\nold" }]));
+		}
+		return result();
+	};
+	const tracker = createGiteaTracker({
+		exec,
+		cwd: "/repo",
+		config: { repo: "minder/example", remote: "gitea", assignee: "minder" },
+	});
+
+	await tracker.complete(
+		42,
+		{ summary: "Checkout works", tests: ["uv run pytest: passed"], review: "passed" },
+		{ integrationBranch: "factory/run/integration" },
+	);
+
+	assert.equal(calls[1][1][0], "comments");
+	assert.equal(calls[1][1][1], "edit");
+	assert.equal(calls[1][1][2], "700");
+	assert.match(calls[1][1][3], /Checkout works/);
+	assert.match(calls[1][1][3], /uv run pytest: passed/);
+	assert.deepEqual(calls.at(-1), ["tea", ["issues", "close", "42", "--repo", "minder/example"]]);
+});
+
+test("block moves a ticket to ready-for-human with the reason", async () => {
+	const calls = [];
+	const tracker = createGiteaTracker({
+		cwd: "/repo",
+		config: { repo: "minder/example", remote: "gitea", assignee: "minder" },
+		exec: async (command, args) => {
+			calls.push([command, args]);
+			if (args[0] === "comments" && args[1] === "list") return result("[]");
+			return result();
+		},
+	});
+
+	await tracker.block(42, "Production credentials are required.");
+
+	assert.ok(calls.some(([, args]) => args[0] === "comments" && args[1] === "add" && args[3].includes("Production credentials")));
+	assert.ok(calls.some(([, args]) => args.includes("--remove-labels") && args.includes("ready-for-agent") && args.includes("ready-for-human")));
+});
