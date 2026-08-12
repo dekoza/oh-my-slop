@@ -159,6 +159,28 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 	assert.equal(completed, true);
 });
 
+test("runFactory persists a failed terminal state when preflight aborts", async () => {
+	const snapshots = [];
+	const failure = new Error("dirty repository");
+
+	await assert.rejects(
+		runFactory({
+			cwd: "/repo",
+			parentIndex: 9,
+			runId: "factory-failed",
+			config: testConfig(),
+			tracker: {},
+			git: { async preflight() { throw failure; } },
+			herdr: {},
+			store: { async save(state) { snapshots.push(structuredClone(state)); } },
+		}),
+		failure,
+	);
+
+	assert.equal(snapshots.at(-1).status, "failed");
+	assert.equal(snapshots.at(-1).error, "dirty repository");
+});
+
 test("runFactory routes a human blocker and continues unrelated frontier work", async () => {
 	const blocked = [];
 	let call = 0;

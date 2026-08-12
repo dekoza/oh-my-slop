@@ -30,6 +30,7 @@ export async function runFactory({
 	};
 	const save = async () => store.save(state);
 
+	try {
 	await save();
 	await git.preflight();
 	const run = await git.createRun(runId);
@@ -136,5 +137,18 @@ export async function runFactory({
 		state.completed.push(ticket.index);
 		state.currentTicket = undefined;
 		await save();
+	}
+	} catch (error) {
+		state.status = "failed";
+		state.error = error instanceof Error ? error.message : String(error);
+		await save();
+		if (state.integrationBranch) {
+			try {
+				await tracker.reportRun(parentIndex, state);
+			} catch {
+				// Preserve the execution error; tracker reporting is secondary evidence.
+			}
+		}
+		throw error;
 	}
 }
