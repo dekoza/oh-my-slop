@@ -22,6 +22,18 @@ test("run store atomically persists and reloads the active run for one repositor
 	assert.deepEqual(await store.loadActive(), state);
 });
 
+test("run store holds an atomic repository lock until the owner releases it", async () => {
+	const root = await mkdtemp(join(tmpdir(), "software-factory-store-lock-"));
+	const first = createRunStore({ root, cwd: "/projects/example" });
+	const second = createRunStore({ root, cwd: "/projects/example" });
+
+	await first.acquire("factory-a1");
+	await assert.rejects(second.acquire("factory-a2"), /already locked by factory-a1/);
+	await first.release("factory-a1");
+	await second.acquire("factory-a2");
+	await second.release("factory-a2");
+});
+
 test("run store returns undefined when a repository has no active run", async () => {
 	const root = await mkdtemp(join(tmpdir(), "software-factory-store-empty-"));
 	const store = createRunStore({ root, cwd: "/projects/other" });

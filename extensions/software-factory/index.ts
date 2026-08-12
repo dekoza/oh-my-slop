@@ -105,6 +105,12 @@ export default function softwareFactory(pi: ExtensionAPI) {
 				},
 			};
 			const runId = createRunId();
+			try {
+				await store.acquire(runId);
+			} catch (error) {
+				ctx.ui.notify(error instanceof Error ? error.message : String(error), "warning");
+				return;
+			}
 			const promise = runFactory({
 				cwd: ctx.cwd,
 				parentIndex,
@@ -121,9 +127,14 @@ export default function softwareFactory(pi: ExtensionAPI) {
 				ctx.ui.notify(formatStatus(state as Record<string, unknown>), "info");
 			}).catch((error) => {
 				ctx.ui.notify(`Factory run failed: ${error instanceof Error ? error.message : String(error)}`, "error");
-			}).finally(() => {
+			}).finally(async () => {
 				activeRuns.delete(ctx.cwd);
 				ctx.ui.setStatus(STATUS_KEY, undefined);
+				try {
+					await store.release(runId);
+				} catch (error) {
+					ctx.ui.notify(`Factory lock release failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+				}
 			});
 		},
 	});
