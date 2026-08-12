@@ -118,6 +118,7 @@ test("runFactory gives the same worker one repair attempt before integration", a
 		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
 		async verifyTicket() {},
 		async integrate() {},
+		async verifyIntegration() {},
 		async publish() {},
 	};
 	const herdr = {
@@ -161,6 +162,7 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
 		async verifyTicket() {},
 		async integrate() {},
+		async verifyIntegration() {},
 		async publish() {},
 	};
 	const herdr = {

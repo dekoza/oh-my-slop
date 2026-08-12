@@ -148,7 +148,7 @@ export async function runFactory({
 
 		try {
 			await git.integrate(run, ticketWorktree, ticket.index);
-			await git.verifyIntegration?.(run, ticketWorktree);
+			await git.verifyIntegration(run, ticketWorktree);
 		} catch (error) {
 			const reason = `Integration requires human resolution: ${error instanceof Error ? error.message : String(error)}`;
 			await tracker.block(ticket.index, reason);
