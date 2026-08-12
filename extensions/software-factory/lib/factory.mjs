@@ -33,6 +33,15 @@ export async function runFactory({
 	try {
 	await save();
 	await git.preflight();
+	const initialFrontier = await tracker.listFrontier(parentIndex);
+	if (initialFrontier.length === 0) {
+		state.status = await tracker.countOpenChildren(parentIndex) > 0
+			? "waiting-for-human"
+			: "nothing-to-do";
+		await save();
+		await tracker.reportRun(parentIndex, state);
+		return state;
+	}
 	const run = await git.createRun(runId);
 	state.integrationBranch = run.integrationBranch;
 	state.integrationPath = run.integrationPath;
@@ -40,8 +49,10 @@ export async function runFactory({
 	state.status = "running";
 	await save();
 
+	let firstFrontier = true;
 	while (true) {
-		const frontier = await tracker.listFrontier(parentIndex);
+		const frontier = firstFrontier ? initialFrontier : await tracker.listFrontier(parentIndex);
+		firstFrontier = false;
 		if (frontier.length === 0) {
 			const openChildren = await tracker.countOpenChildren(parentIndex);
 			if (openChildren > 0) {

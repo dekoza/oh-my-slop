@@ -170,12 +170,12 @@ export function createGiteaTracker({ exec, cwd, config }) {
 	async function reportRun(parentIndex, state) {
 		const lines = [
 			`Status: **${state.status}**`,
-			`Integration branch: \`${state.integrationBranch}\``,
+			state.integrationBranch ? `Integration branch: \`${state.integrationBranch}\`` : undefined,
 			`Completed tickets: ${state.completed.length > 0 ? state.completed.map((index) => `#${index}`).join(", ") : "none"}`,
 			`Human-blocked tickets: ${state.blocked.length > 0 ? state.blocked.map((index) => `#${index}`).join(", ") : "none"}`,
 		];
 		if (state.pullRequest) lines.push(`Pull request: ${state.pullRequest}`);
-		await upsertComment(parentIndex, `🤖 \`software-factory\` — run ${state.id}`, lines.join("\n"));
+		await upsertComment(parentIndex, `🤖 \`software-factory\` — run ${state.id}`, lines.filter(Boolean).join("\n"));
 	}
 
 	return {

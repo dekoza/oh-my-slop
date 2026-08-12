@@ -12,6 +12,32 @@ function testConfig() {
 	};
 }
 
+test("runFactory creates no branches when the parent has no open implementation tickets", async () => {
+	let createdRun = false;
+	const reports = [];
+	const result = await runFactory({
+		cwd: "/repo",
+		parentIndex: 9,
+		runId: "factory-empty",
+		config: testConfig(),
+		tracker: {
+			async listFrontier() { return []; },
+			async countOpenChildren() { return 0; },
+			async reportRun(_parent, state) { reports.push(state.status); },
+		},
+		git: {
+			async preflight() {},
+			async createRun() { createdRun = true; },
+		},
+		herdr: {},
+		store: { async save() {} },
+	});
+
+	assert.equal(result.status, "nothing-to-do");
+	assert.equal(createdRun, false);
+	assert.deepEqual(reports, ["nothing-to-do"]);
+});
+
 test("runFactory claims, implements, verifies, and integrates one frontier ticket before creating a PR", async () => {
 	const events = [];
 	let frontierCalls = 0;
