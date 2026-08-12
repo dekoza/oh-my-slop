@@ -34,6 +34,7 @@ function referencesParent(body, parentIndex) {
 }
 
 export function createGiteaTracker({ exec, cwd, config }) {
+	const login = config.login ?? config.remote;
 	const labels = {
 		implementation: "workflow:implement",
 		readyForAgent: "ready-for-agent",
@@ -42,7 +43,10 @@ export function createGiteaTracker({ exec, cwd, config }) {
 	};
 
 	async function run(args, purpose) {
-		const response = await exec("tea", args, { cwd });
+		const scopedArgs = args[0] === "api"
+			? ["api", "--login", login, ...args.slice(1)]
+			: [...args, "--login", login];
+		const response = await exec("tea", scopedArgs, { cwd });
 		if (response.code !== 0) {
 			throw new GiteaTrackerError(
 				`tea failed while ${purpose}: ${response.stderr.trim() || `exit ${response.code}`}`,

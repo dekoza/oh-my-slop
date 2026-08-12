@@ -35,6 +35,7 @@ test("loadFactoryConfig returns a validated Gitea factory configuration", async 
 			kind: "gitea",
 			repo: "minder/example",
 			remote: "gitea",
+			login: "gitea",
 			assignee: "minder",
 		},
 		git: { ...DEFAULT_FACTORY_CONFIG.git, baseBranch: "main" },

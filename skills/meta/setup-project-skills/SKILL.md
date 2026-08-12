@@ -108,8 +108,8 @@ Ask one question:
 
 > Configure the opt-in Herdr software factory? (recommended: **yes** when `herdr` is installed)
 
-A yes writes `.pi/factory.json` with the resolved repository, remote, authenticated
-assignee, default branch, and label mappings. It also ensures `.worktrees/` is ignored.
+A yes writes `.pi/factory.json` with the resolved repository, remote, explicit `tea`
+login name, authenticated assignee, default branch, and label mappings. It also ensures `.worktrees/` is ignored.
 The file contains executable automation policy, never credentials. For another tracker,
 state that the first factory release supports Gitea only and skip the file.
 
@@ -163,6 +163,7 @@ When Section D was accepted, write this shape using the answers already resolved
     "kind": "gitea",
     "repo": "<owner/repository>",
     "remote": "<gitea-remote>",
+    "login": "<tea-login-name>",
     "assignee": "<authenticated-gitea-user>",
     "labels": {
       "implementation": "workflow:implement",

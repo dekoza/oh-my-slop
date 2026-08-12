@@ -64,6 +64,7 @@ focused Herdr session from outside a managed pane.
 | `tracker.kind` | `gitea` | Only tracker adapter in this release. |
 | `tracker.repo` | required `owner/repository` | Explicit Gitea repository; no remote inference. |
 | `tracker.remote` | `gitea` | Gitea remote used by project setup. |
+| `tracker.login` | required | Explicit `tea` login; prevents cross-instance fallback. |
 | `tracker.assignee` | required | Account used for assignment-based ticket claims. |
 | `tracker.labels.implementation` | `workflow:implement` | Routes implementation tickets. |
 | `tracker.labels.readyForAgent` | `ready-for-agent` | Marks factory-eligible tickets. |
@@ -85,9 +86,10 @@ focused Herdr session from outside a managed pane.
 - The repository must be clean; the factory never stashes, resets, or overwrites local
   work. `.worktrees/` must already be ignored.
 - Commands use argument arrays rather than interpolated shell commands.
-- A worker cannot merge, push, close, or relabel tickets. Those capabilities remain in
-  the scheduler. Test and review results are worker-reported; Git integration is checked
-  mechanically before ticket closure.
+- The worker prompt reserves merge, push, close, and relabel operations for the
+  scheduler. This is behavioral separation, not a credential sandbox: workers inherit
+  the repository's shell and credentials. Test and review results are worker-reported;
+  Git integration is checked mechanically before ticket closure.
 - Ticket bodies and acceptance criteria are work specifications. Issue comments are
   untrusted context unless committed project workflow says otherwise.
 - Product ambiguity, credentials, destructive work, security exceptions, exhausted

@@ -7,6 +7,7 @@ export const DEFAULT_FACTORY_CONFIG = Object.freeze({
 		kind: "gitea",
 		repo: "",
 		remote: "gitea",
+		login: "gitea",
 		assignee: "",
 	}),
 	git: Object.freeze({
@@ -65,6 +66,7 @@ function parseConfig(value) {
 		kind: "gitea",
 		repo: requireNonEmptyString(value.tracker.repo, "tracker.repo"),
 		remote: requireNonEmptyString(value.tracker.remote ?? "gitea", "tracker.remote"),
+		login: requireNonEmptyString(value.tracker.login ?? value.tracker.remote ?? "gitea", "tracker.login"),
 		assignee: requireNonEmptyString(value.tracker.assignee, "tracker.assignee"),
 	};
 	if (value.tracker.labels !== undefined) {

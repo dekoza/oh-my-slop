@@ -54,6 +54,7 @@ def test_project_setup_can_emit_machine_readable_factory_policy() -> None:
 
     assert ".pi/factory.json" in setup_skill_text
     assert '"kind": "gitea"' in setup_skill_text
+    assert '"login": "<tea-login-name>"' in setup_skill_text
     assert '"maxWorkers": 1' in setup_skill_text
     assert '"repairAttempts": 1' in setup_skill_text
     assert '"freshAgentRetries": 1' in setup_skill_text

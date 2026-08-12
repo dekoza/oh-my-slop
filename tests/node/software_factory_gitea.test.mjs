@@ -111,6 +111,7 @@ test("claim uses argument arrays and the configured assignee", async () => {
 
 	assert.deepEqual(calls, [["tea", [
 		"issues", "edit", "42", "--repo", "minder/example", "--add-assignees", "minder",
+		"--login", "gitea",
 	]]]);
 });
 
@@ -140,7 +141,9 @@ test("complete records idempotent evidence before closing the ticket", async () 
 	assert.equal(calls[1][1][2], "700");
 	assert.match(calls[1][1][3], /Checkout works/);
 	assert.match(calls[1][1][3], /uv run pytest: passed/);
-	assert.deepEqual(calls.at(-1), ["tea", ["issues", "close", "42", "--repo", "minder/example"]]);
+	assert.deepEqual(calls.at(-1), ["tea", [
+		"issues", "close", "42", "--repo", "minder/example", "--login", "gitea",
+	]]);
 });
 
 test("block moves a ticket to ready-for-human with the reason", async () => {
