@@ -157,6 +157,98 @@
       ]
     }
   },
+  "_postSubscription": {
+    "comment": "Migration metadata only; the factory loader ignores this top-level key. When Claude Max and GPT subscriptions end, replace workers.routing.defaults and workers.routing.rules with the fragment below. Relabel tickets carrying factory:claude or factory:gpt; the replacement rules deliberately omit those unavailable providers.",
+    "workers": {
+      "routing": {
+        "defaults": {
+          "implement": "local",
+          "freshRetry": "glm",
+          "review": "deepseek",
+          "finalReview": "qwen"
+        },
+        "rules": [
+          {
+            "labelsAny": [
+              "risk:high"
+            ],
+            "phases": [
+              "implement",
+              "freshRetry"
+            ],
+            "profile": "qwen"
+          },
+          {
+            "labelsAny": [
+              "risk:high"
+            ],
+            "phases": [
+              "review"
+            ],
+            "profile": "deepseek"
+          },
+          {
+            "labelsAny": [
+              "factory:glm"
+            ],
+            "phases": [
+              "implement",
+              "freshRetry"
+            ],
+            "profile": "glm"
+          },
+          {
+            "labelsAny": [
+              "factory:deepseek"
+            ],
+            "phases": [
+              "implement",
+              "freshRetry"
+            ],
+            "profile": "deepseek"
+          },
+          {
+            "labelsAny": [
+              "factory:deepseek"
+            ],
+            "phases": [
+              "review"
+            ],
+            "profile": "qwen"
+          },
+          {
+            "labelsAny": [
+              "factory:qwen"
+            ],
+            "phases": [
+              "implement",
+              "freshRetry"
+            ],
+            "profile": "qwen"
+          },
+          {
+            "labelsAny": [
+              "factory:local"
+            ],
+            "phases": [
+              "implement",
+              "freshRetry"
+            ],
+            "profile": "local"
+          },
+          {
+            "labelsAny": [
+              "factory:local"
+            ],
+            "phases": [
+              "review"
+            ],
+            "profile": "qwen"
+          }
+        ]
+      }
+    }
+  },
   "retry": {
     "repairAttempts": 1,
     "freshAgentRetries": 1
