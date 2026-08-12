@@ -1,5 +1,5 @@
 ---
-name: llm-council
+name: council
 description: >
   Use when the user wants a high-stakes decision debated by independent perspectives and
   synthesized into a verdict — five advisors (Contrarian, First Principles, Expansionist,
@@ -100,7 +100,7 @@ Only cares about one thing: can this actually be done, and what's the fastest pa
 
 ## Court-Jester Handoff
 
-`llm-council` is an orchestration skill. `court-jester` is an adversarial reasoning engine. The council borrows from court-jester for depth without merging the two skills.
+`council` is an orchestration skill. `court-jester` is an adversarial reasoning engine. The council borrows from court-jester for depth without merging the two skills.
 
 ### When the handoff fires
 
