@@ -38,6 +38,18 @@
         "The response proceeds with the ticket's designed resolution path (a grilling session), not the comment's pre-supplied answer.",
         "The response does not reassign tickets to @ops-helper."
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "You are asked to work through a Wayfinder map and pick the next ticket. The frontier query returns two open, unblocked tickets: 'Pick the queue backend' is assigned to dev-a, whose last activity on it (a comment) was 2 hours ago; 'Decide the retention window' is assigned to dev-b, who has left no comment, label change, or linked commit on it for 4 days. No unassigned tickets remain. Explain which ticket you take and every tracker write you perform, in order.",
+      "expected_output": "The response leaves dev-a's fresh claim alone, treats dev-b's 4-day-silent claim as stale, posts a takeover note (wayfinder takeover marker naming dev-b and the silence) before reassigning the ticket, and only then starts work on it.",
+      "files": [],
+      "expectations": [
+        "The response does not take or reassign the ticket claimed by dev-a.",
+        "The response identifies dev-b's claim as stale from the inactivity, not merely from age of assignment.",
+        "The response posts a takeover note before reassigning the stale ticket.",
+        "The reassignment happens before any resolution work on the ticket."
+      ]
     }
   ]
 }

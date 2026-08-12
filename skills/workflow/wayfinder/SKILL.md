@@ -74,6 +74,8 @@ Each ticket carries a `wayfinder:<type>` label — one of `research`, `prototype
 
 A session **claims** a ticket by assigning it to the dev driving the map, **first**, before any work, so concurrent sessions skip it. That assignee *is* the claim: an open, unassigned ticket is unclaimed.
 
+A claim goes **stale** when the assignee has left no trace on the ticket — no comment, label change, or linked commit — for 24 hours. Take a stale claim over openly: post a takeover note first (marker ``🤖 `wayfinder` — takeover``, naming the previous assignee and the silence), then reassign. A live claim is never overridden and a stale one never taken silently — a session that dies leaves an honest state, not a lock nobody holds.
+
 Blocking uses the tracker's **native** dependency relationship — essential because it renders the frontier *visually* in the tracker's own UI, so the human sees what's takeable without opening the map. Only a tracker that lacks native blocking falls back to a body convention. A ticket is **unblocked** when every ticket blocking it is closed; the **frontier** is the open, unblocked, unclaimed children — the edge of the known.
 
 The answer isn't part of the body — it's recorded on resolution (see [Work through the map](#work-through-the-map)). Assets created while resolving a ticket are linked from the issue, not pasted in.
@@ -130,7 +132,7 @@ User invokes with a map (URL or number). A ticket is **optional** — without on
 1. Load the **map** — the low-res view, not every ticket body.
 2. Choose the ticket. If the user named one, use it. Otherwise take the first frontier ticket in order. **Claim it**: assign it to yourself before any work.
 3. Resolve it — **zoom as needed**: fetch the full body of any related or closed ticket on demand; invoke the skills the `## Notes` block names. If in doubt, use the `grilling` and `domain-modeling` skills.
-4. Record the resolution: post the answer as a **resolution comment**, **close** the issue, and **append a context pointer** to the map's Decisions-so-far.
+4. Record the resolution: post the answer as a **resolution comment** under the marker ``🤖 `wayfinder` — resolution`` (a re-run that finds the marker updates it in place — one resolution per ticket), **close** the issue, and **append a context pointer** to the map's Decisions-so-far.
 5. Add newly-surfaced tickets (create-then-wire); graduate any fog the answer has made specifiable, clearing each graduated patch from **Not yet specified** so it lives only as its new ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, **rule it out of scope** rather than resolving it on the route. If the decision invalidates other parts of the map, update or delete those tickets.
 
 The user may run unblocked tickets in parallel, so expect other sessions to be editing the tracker concurrently.
