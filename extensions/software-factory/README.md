@@ -158,7 +158,7 @@ not use a model.
 | `workers.routing.defaults` | four profile names | Default profile for each model-bearing phase. |
 | `workers.routing.rules` | ordered label rules | Deterministic ticket overrides; first phase/label match wins. |
 | `retry.repairAttempts` | `1` | Same-worker repair attempts after implementation or review failure. |
-| `retry.freshAgentRetries` | `1` | Fresh pi worker attempts after repair fails. |
+| `retry.freshAgentRetries` | `1` | Fresh routed worker attempts after repair fails. |
 | `completion.closeAfterIntegration` | `true` | Close after verified integration into the factory branch. |
 | `completion.finalMerge` | `manual` | Protected branch merge remains human-controlled. |
 | `completion.createPullRequest` | `true` | Create the final integration pull request. |

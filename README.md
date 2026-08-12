@@ -96,7 +96,7 @@ These ship in the repo, but the root `pi install` keeps them inactive until you 
 
 | Extension | Loading | What it does |
 |---|---|---|
-| **[software-factory](extensions/software-factory/README.md)** | Opt-in | Executes Gitea implementation tickets serially in isolated Git worktrees, supervising pi workers through Herdr and stopping at explicit human boundaries. |
+| **[software-factory](extensions/software-factory/README.md)** | Opt-in | Executes Gitea implementation tickets serially in isolated Git worktrees, routing pi and Claude Code workers through Herdr and stopping at explicit human boundaries. |
 | **[workflow-watchdog](extensions/workflow-watchdog/)** | Automatic | Monitors pi's workflow for failure patterns: loop detection, consecutive tool errors, and optional supervisor-model escalation. |
 
 </details>
