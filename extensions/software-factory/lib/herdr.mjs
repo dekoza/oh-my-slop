@@ -130,11 +130,17 @@ export function createHerdrRuntime({ exec, env = process.env, agentKind = "pi" }
 	}
 
 	async function promptWorker(name, prompt, timeout = 7_200_000) {
-		await run([
+		const promptPayload = await run([
 			"agent", "prompt", name, prompt,
 			"--wait",
 			"--timeout", String(timeout),
 		], `waiting for worker ${name}`, timeout + 5_000);
+		if (findString(promptPayload?.result ?? promptPayload, ["agent_status", "status"]) === "blocked") {
+			return {
+				status: "blocked",
+				reason: `Herdr reports that worker ${name} requires human input. Inspect its tab before continuing.`,
+			};
+		}
 		const payload = await run([
 			"agent", "read", name,
 			"--source", "recent-unwrapped",

@@ -83,6 +83,23 @@ test("Herdr runtime creates one background workspace and a named pi worker tab",
 	]);
 });
 
+test("Herdr runtime surfaces a blocked agent without sending a repair prompt", async () => {
+	const calls = [];
+	const runtime = createHerdrRuntime({
+		env: { HERDR_ENV: "1" },
+		exec: async (command, args) => {
+			calls.push([command, args]);
+			return response({ result: { agent: { agent_status: "blocked" } } });
+		},
+	});
+
+	const result = await runtime.promptWorker("sf-a1-t42", "work");
+
+	assert.equal(result.status, "blocked");
+	assert.match(result.reason, /requires human input/);
+	assert.equal(calls.length, 1);
+});
+
 test("Herdr runtime retires only the worker tab it was given", async () => {
 	const calls = [];
 	const runtime = createHerdrRuntime({
