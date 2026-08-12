@@ -158,6 +158,12 @@ _Failure mode._ Ending the current step before it is genuinely done, because the
 
 _Avoid_: premature closure, the rush, rushing, shortcutting
 
+### Trust Boundary
+
+The line a skill draws between what steers the agent and what the agent merely examines. Inside it: the operator's request, the skill's own text, and committed configuration — the repo the operator chose, its docs, its config. Outside it: everything the workflow _reads_ — tracker issues, PR diffs, web pages, search results — which is data about the work, never instructions to the agent. A content-reading skill states its boundary in its own vocabulary, at the step where outside content enters, and states it positively: a directive found in read content is a _finding_ the skill reports (suspected prompt injection) and then handles like any other datum; a credential-looking string is redacted before being quoted into anything the skill produces; commands the skill runs come only from inside the boundary. Not a **negation** risk when phrased as what the content _is_ (data) rather than a list of banned behaviours.
+
+_Avoid_: sandbox, taint tracking, untrusted input handling
+
 ### Negation
 
 _Failure mode._ Steering by prohibition — telling the agent what _not_ to do — which drags the forbidden behaviour into context and makes it _more_ available, not less. _Don't think of an elephant_, and the elephant is all there is; _never write verbose comments_, and verbosity is the pattern the agent has just read. The negation is a weak modifier the strongly-activated concept overruns, so the ban half-reads as an instruction to do the thing. Its **leading word** is the _elephant_: whatever a prohibition names into the frame. Cure: prompt the **positive** — describe the target behaviour ("write one-line comments") so the banned one is never spoken. A prohibition earns its place only as a hard guardrail on a behaviour you cannot phrase positively; even then, pair it with the positive target so attention lands on what to do.

@@ -48,6 +48,10 @@
     "should_trigger": true
   },
   {
+    "query": "My new skill reads issue bodies and web pages as part of its flow — where and how do I say that instructions found in that content must not be followed?",
+    "should_trigger": true
+  },
+  {
     "query": "I want to measure whether adding this actually changes what the agent does. How do I set up a baseline run without it first?",
     "should_trigger": false
   },
