@@ -112,6 +112,23 @@ These files are install surfaces, not arbitrary config.
 - If you notice a real problem outside the requested scope, report it instead of bundling it silently.
 - Commit in logical units. This repo is actively used; half-finished work should not linger uncommitted.
 
+## Protected surfaces
+
+These are contracts with the outside — consumer repos, muscle memory, installed
+packages. Changing one requires a stated migration path (a commit message naming the
+replacement, a survey note, or a README callout) — never a silent rename:
+
+- **Skill names** — consumer repos reference them from `CLAUDE.md`/`AGENTS.md` after
+  `/setup-project-skills`, and everything here resolves skills by name
+  (`find_skill_dir()`). Bucket moves are free; renames are breaking.
+- **Prompt-template names** — the `/command` surface: muscle memory plus README rows.
+- **The `docs/agents/` contract** — the file names, the `## Agent skills` pointer
+  block, and the tracker templates' load-bearing headings (`## Conventions` ·
+  `## Robot comments` · the two "when a skill says…" headings · `## Wayfinding
+  operations`) that consumer skills dereference in installed repos.
+- **Install surfaces** — `package.json`'s `pi` block and each extension's declared
+  entrypoint.
+
 ## Practical review checklist
 
 Before finishing a task, verify:
