@@ -38,7 +38,7 @@ test("listFrontier returns only unassigned children whose blockers are closed", 
 	const { tracker } = trackerWithFixtures({
 		issues: [
 			{ index: 14, title: "Later slice", body: "## Parent\n\n#9", assignees: [] },
-			{ index: 12, title: "Claimed slice", body: "## Parent\n\n#9", assignees: [{ login: "other" }] },
+			{ index: 12, title: "Claimed slice", body: "## Parent\n\n#9", assignees: "other" },
 			{ index: 11, title: "Wrong parent", body: "## Parent\n\n#8", assignees: [] },
 			{ index: 10, title: "First slice", body: "Part of #9\n\n## What to build", assignees: [] },
 		],
@@ -51,6 +51,26 @@ test("listFrontier returns only unassigned children whose blockers are closed", 
 	assert.deepEqual(await tracker.listFrontier(9), [
 		{ index: 10, title: "First slice" },
 	]);
+});
+
+test("listFrontier rejects Gitea API error envelopes even when tea exits zero", async () => {
+	const tracker = createGiteaTracker({
+		cwd: "/repo",
+		config: { repo: "minder/example", remote: "gitea", assignee: "minder" },
+		exec: async (_command, args) => {
+			if (args[0] === "issues") {
+				return result(JSON.stringify([
+					{ index: "10", title: "Slice", body: "Part of #9", assignees: "" },
+				]));
+			}
+			return result('{"message":"permission denied"}');
+		},
+	});
+
+	await assert.rejects(
+		tracker.listFrontier(9),
+		(error) => error.name === "GiteaTrackerError" && error.message.includes("permission denied"),
+	);
 });
 
 test("listFrontier keeps dependency-free tickets in ascending creation order", async () => {

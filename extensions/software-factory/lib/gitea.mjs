@@ -7,10 +7,21 @@ export class GiteaTrackerError extends Error {
 
 function parseJson(stdout, purpose) {
 	try {
-		return JSON.parse(stdout || "[]");
+		const value = JSON.parse(stdout || "[]");
+		if (value && !Array.isArray(value) && typeof value.message === "string") {
+			throw new GiteaTrackerError(`Gitea rejected the request while ${purpose}: ${value.message}`);
+		}
+		return value;
 	} catch (error) {
+		if (error instanceof GiteaTrackerError) throw error;
 		throw new GiteaTrackerError(`tea returned invalid JSON while ${purpose}.`, { cause: error });
 	}
+}
+
+function hasAssignees(value) {
+	if (Array.isArray(value)) return value.length > 0;
+	if (typeof value === "string") return value.trim() !== "";
+	return Boolean(value);
 }
 
 function referencesParent(body, parentIndex) {
@@ -57,7 +68,7 @@ export function createGiteaTracker({ exec, cwd, config }) {
 
 	async function listFrontier(parentIndex) {
 		const issues = (await listChildren(parentIndex, [labels.implementation, labels.readyForAgent]))
-			.filter((issue) => !Array.isArray(issue.assignees) || issue.assignees.length === 0);
+			.filter((issue) => !hasAssignees(issue.assignees));
 
 		const frontier = [];
 		for (const issue of issues) {
