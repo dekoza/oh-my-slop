@@ -64,6 +64,35 @@ test("loadFactoryConfig preserves setup-project-skills label overrides", async (
 	});
 });
 
+test("loadFactoryConfig rejects attempts to loosen fixed MVP gates", async () => {
+	const cwd = await projectWithConfig({
+		version: 1,
+		tracker: { kind: "gitea", repo: "minder/example", assignee: "minder" },
+		retry: { repairAttempts: 0, freshAgentRetries: 1 },
+		completion: { createPullRequest: false },
+	});
+
+	await assert.rejects(
+		loadFactoryConfig(cwd),
+		(error) => error instanceof FactoryConfigError
+			&& error.message.includes("retry.repairAttempts must be 1"),
+	);
+});
+
+test("loadFactoryConfig keeps pull request creation and integration closure mandatory", async () => {
+	const cwd = await projectWithConfig({
+		version: 1,
+		tracker: { kind: "gitea", repo: "minder/example", assignee: "minder" },
+		completion: { closeAfterIntegration: false, createPullRequest: false },
+	});
+
+	await assert.rejects(
+		loadFactoryConfig(cwd),
+		(error) => error instanceof FactoryConfigError
+			&& error.message.includes("completion.closeAfterIntegration must be true"),
+	);
+});
+
 test("loadFactoryConfig rejects unsupported trackers explicitly", async () => {
 	const cwd = await projectWithConfig({
 		version: 1,

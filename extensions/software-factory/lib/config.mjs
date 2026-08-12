@@ -102,13 +102,25 @@ function parseConfig(value) {
 	};
 	requireCount(retry.repairAttempts, "retry.repairAttempts");
 	requireCount(retry.freshAgentRetries, "retry.freshAgentRetries");
+	if (retry.repairAttempts !== 1) {
+		throw new FactoryConfigError("retry.repairAttempts must be 1 in this release.");
+	}
+	if (retry.freshAgentRetries !== 1) {
+		throw new FactoryConfigError("retry.freshAgentRetries must be 1 in this release.");
+	}
 
 	const completion = {
 		...DEFAULT_FACTORY_CONFIG.completion,
 		...(value.completion ?? {}),
 	};
+	if (completion.closeAfterIntegration !== true) {
+		throw new FactoryConfigError("completion.closeAfterIntegration must be true in this release.");
+	}
 	if (completion.finalMerge !== "manual") {
 		throw new FactoryConfigError('completion.finalMerge must be "manual".');
+	}
+	if (completion.createPullRequest !== true) {
+		throw new FactoryConfigError("completion.createPullRequest must be true in this release.");
 	}
 	if (completion.deploy !== false) {
 		throw new FactoryConfigError("completion.deploy must be false; deployment is outside the factory boundary.");
