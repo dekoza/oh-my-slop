@@ -89,7 +89,11 @@ export function createGiteaTracker({ exec, cwd, config }) {
 			], `reading blockers for #${issue.index}`);
 			const dependencies = parseJson(dependenciesOutput, `reading blockers for #${issue.index}`);
 			if (dependencies.every((dependency) => dependency.state === "closed")) {
-				frontier.push({ index: Number(issue.index), title: String(issue.title) });
+				frontier.push({
+					index: Number(issue.index),
+					title: String(issue.title),
+					labels: (issue.labels ?? []).map((label) => typeof label === "string" ? label : label.name),
+				});
 			}
 		}
 		return frontier;

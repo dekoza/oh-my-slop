@@ -7,7 +7,7 @@ function result(stdout = "") {
 	return { code: 0, stdout, stderr: "" };
 }
 
-function trackerWithFixtures({ issues, dependencies = {} }) {
+function trackerWithFixtures({ issues, dependencies = {}, extraLabels = [] }) {
 	const calls = [];
 	const exec = async (command, args) => {
 		calls.push([command, args]);
@@ -17,7 +17,7 @@ function trackerWithFixtures({ issues, dependencies = {} }) {
 				return result(JSON.stringify(issues.map((issue) => ({
 					...issue,
 					number: issue.index,
-					labels: ["workflow:implement", "ready-for-agent"].map((name) => ({ name })),
+					labels: ["workflow:implement", "ready-for-agent", ...extraLabels].map((name) => ({ name })),
 				}))));
 			}
 			const match = endpoint.match(/issues\/(\d+)\/dependencies$/);
@@ -39,8 +39,9 @@ function trackerWithFixtures({ issues, dependencies = {} }) {
 	};
 }
 
-test("listFrontier returns only unassigned children whose blockers are closed", async () => {
+test("listFrontier returns routing labels for unassigned children whose blockers are closed", async () => {
 	const { tracker } = trackerWithFixtures({
+		extraLabels: ["risk:high"],
 		issues: [
 			{ index: 14, title: "Later slice", body: "## Parent\n\n#9", assignees: [] },
 			{ index: 12, title: "Claimed slice", body: "## Parent\n\n#9", assignees: "other" },
@@ -54,7 +55,11 @@ test("listFrontier returns only unassigned children whose blockers are closed", 
 	});
 
 	assert.deepEqual(await tracker.listFrontier(9), [
-		{ index: 10, title: "First slice" },
+		{
+			index: 10,
+			title: "First slice",
+			labels: ["workflow:implement", "ready-for-agent", "risk:high"],
+		},
 	]);
 });
 
@@ -91,8 +96,8 @@ test("listFrontier keeps dependency-free tickets in ascending creation order", a
 	});
 
 	assert.deepEqual(await tracker.listFrontier(7), [
-		{ index: 21, title: "First" },
-		{ index: 22, title: "Second" },
+		{ index: 21, title: "First", labels: ["workflow:implement", "ready-for-agent"] },
+		{ index: 22, title: "Second", labels: ["workflow:implement", "ready-for-agent"] },
 	]);
 });
 
