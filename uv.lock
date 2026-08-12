@@ -74,13 +74,17 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [{ name = "swampcastle", specifier = ">=4.1.0" }]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest" }]
+dev = [
+    { name = "pytest" },
+    { name = "pyyaml" },
+]
 
 [[package]]
 name = "deprecation"
