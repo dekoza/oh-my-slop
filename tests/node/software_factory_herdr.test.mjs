@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 
 import {
 	FactoryWorkerError,
+	buildReviewPrompt,
 	buildWorkerPrompt,
 	createHerdrRuntime,
 	parseFactoryResult,
+	parseReviewResult,
 } from "../../extensions/software-factory/lib/herdr.mjs";
 
 function response(payload) {
@@ -29,22 +31,48 @@ test("parseFactoryResult reads the last machine-readable worker result", () => {
 	const transcript = [
 		'FACTORY_RESULT {"status":"blocked","reason":"old"}',
 		"more work",
-		'FACTORY_RESULT {"status":"success","summary":"done","tests":["node --test"],"review":"passed"}',
+		'FACTORY_RESULT {"status":"success","summary":"done","tests":["node --test"]}',
 	].join("\n");
 
 	assert.deepEqual(parseFactoryResult(transcript), {
 		status: "success",
 		summary: "done",
 		tests: ["node --test"],
-		review: "passed",
 	});
 });
 
-test("parseFactoryResult rejects success without test and review evidence", () => {
+test("parseFactoryResult requires implementation test evidence but not self-review", () => {
+	assert.deepEqual(
+		parseFactoryResult('FACTORY_RESULT {"status":"success","summary":"done","tests":["node --test: passed"]}'),
+		{ status: "success", summary: "done", tests: ["node --test: passed"] },
+	);
 	assert.throws(
 		() => parseFactoryResult('FACTORY_RESULT {"status":"success","summary":"done"}'),
 		FactoryWorkerError,
 	);
+});
+
+test("review protocol carries actionable findings independently from implementation", () => {
+	assert.deepEqual(
+		parseReviewResult('FACTORY_REVIEW {"status":"failed","summary":"Needs repair","findings":["Missing rollback test"]}'),
+		{ status: "failed", summary: "Needs repair", findings: ["Missing rollback test"] },
+	);
+	assert.deepEqual(
+		parseReviewResult('FACTORY_REVIEW {"status":"passed","summary":"No actionable findings"}'),
+		{ status: "passed", summary: "No actionable findings", findings: [] },
+	);
+});
+
+test("buildReviewPrompt gives pi and Claude a read-only two-axis-review contract", () => {
+	const prompt = buildReviewPrompt({
+		repo: "minder/example",
+		ticket: { index: 42, title: "Deliver checkout" },
+		baseBranch: "factory/run/integration",
+		profile: { kind: "claude" },
+	});
+	assert.match(prompt, /^Use the `two-axis-review` skill/);
+	assert.match(prompt, /Do not edit/);
+	assert.match(prompt, /FACTORY_REVIEW/);
 });
 
 test("Herdr runtime creates one background workspace and a named pi worker tab", async () => {
@@ -138,6 +166,23 @@ test("Herdr runtime surfaces a blocked agent without sending a repair prompt", a
 	assert.equal(result.status, "blocked");
 	assert.match(result.reason, /requires human input/);
 	assert.equal(calls.length, 1);
+});
+
+test("Herdr runtime parses an independent reviewer result", async () => {
+	const runtime = createHerdrRuntime({
+		env: { HERDR_ENV: "1" },
+		exec: async (_command, args) => {
+			if (args[1] === "prompt") return response({ result: { agent: { status: "done" } } });
+			if (args[1] === "read") return response({ result: { output: 'FACTORY_REVIEW {"status":"passed","summary":"clean"}' } });
+			throw new Error(`Unexpected Herdr command: ${args.join(" ")}`);
+		},
+	});
+
+	assert.deepEqual(await runtime.promptReviewer("reviewer", "review"), {
+		status: "passed",
+		summary: "clean",
+		findings: [],
+	});
 });
 
 test("Herdr runtime retires only the worker tab it was given", async () => {

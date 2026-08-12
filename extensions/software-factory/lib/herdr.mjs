@@ -36,9 +36,31 @@ export function buildWorkerPrompt({ repo, ticket, profile = { kind: "pi" } }) {
 		"Do not merge, push, close, or relabel the ticket; the factory owns integration and tracker transitions.",
 		"If a product decision, credential, destructive action, security exception, or unresolved merge conflict needs a human, stop instead of guessing.",
 		"Your final response must end with exactly one single-line result and no text after it:",
-		'FACTORY_RESULT {"status":"success","summary":"...","tests":["command: result"],"review":"passed"}',
+		'FACTORY_RESULT {"status":"success","summary":"...","tests":["command: result"]}',
 		"or",
 		'FACTORY_RESULT {"status":"blocked","reason":"..."}',
+	].join("\n");
+}
+
+export function buildReviewPrompt({ repo, ticket, baseBranch, profile = { kind: "pi" }, final = false }) {
+	const instruction = profile.kind === "claude"
+		? "Use the `two-axis-review` skill to review this work independently."
+		: "/skill:two-axis-review Review this work independently.";
+	const subject = final
+		? `Review the complete integration branch against ${baseBranch} for ${repo}.`
+		: `Review Gitea implementation ticket #${ticket.index} (${ticket.title}) in ${repo} against ${baseBranch}.`;
+	return [
+		instruction,
+		subject,
+		"Inspect the ticket specification, project instructions, committed diff, and test evidence.",
+		"Do not edit files, commit, merge, push, close, or relabel anything.",
+		"Report only actionable standards or specification findings.",
+		"Your final response must end with exactly one single-line result and no text after it:",
+		'FACTORY_REVIEW {"status":"passed","summary":"..."}',
+		"or",
+		'FACTORY_REVIEW {"status":"failed","summary":"...","findings":["..."]}',
+		"or",
+		'FACTORY_REVIEW {"status":"blocked","reason":"..."}',
 	].join("\n");
 }
 
@@ -70,15 +92,39 @@ export function parseFactoryResult(transcript) {
 	if (!Array.isArray(result.tests) || result.tests.length === 0 || result.tests.some((test) => typeof test !== "string")) {
 		throw new FactoryWorkerError("Successful FACTORY_RESULT must include test evidence.");
 	}
-	if (result.review !== "passed") {
-		throw new FactoryWorkerError('Successful FACTORY_RESULT must report review as "passed".');
-	}
 	return {
 		status: "success",
 		summary: result.summary,
 		tests: result.tests,
-		review: "passed",
 	};
+}
+
+export function parseReviewResult(transcript) {
+	const matches = [...String(transcript).matchAll(/^FACTORY_REVIEW\s+(\{.*\})\s*$/gm)];
+	if (matches.length === 0) throw new FactoryWorkerError("Reviewer did not emit a FACTORY_REVIEW line.");
+	let result;
+	try {
+		result = JSON.parse(matches.at(-1)[1]);
+	} catch (error) {
+		throw new FactoryWorkerError("Reviewer emitted malformed FACTORY_REVIEW JSON.", { cause: error });
+	}
+	if (result.status === "blocked") {
+		if (typeof result.reason !== "string" || result.reason.trim() === "") {
+			throw new FactoryWorkerError("Blocked FACTORY_REVIEW must include a reason.");
+		}
+		return { status: "blocked", reason: result.reason };
+	}
+	if (result.status !== "passed" && result.status !== "failed") {
+		throw new FactoryWorkerError('FACTORY_REVIEW status must be "passed", "failed", or "blocked".');
+	}
+	if (typeof result.summary !== "string" || result.summary.trim() === "") {
+		throw new FactoryWorkerError("FACTORY_REVIEW must include a summary.");
+	}
+	if (result.status === "failed" && (!Array.isArray(result.findings) || result.findings.length === 0
+		|| result.findings.some((finding) => typeof finding !== "string" || finding.trim() === ""))) {
+		throw new FactoryWorkerError("Failed FACTORY_REVIEW must include actionable findings.");
+	}
+	return { status: result.status, summary: result.summary, findings: result.findings ?? [] };
 }
 
 function nativeAgentArgs(profile) {
@@ -145,29 +191,32 @@ export function createHerdrRuntime({ exec, env = process.env }) {
 		await run(["tab", "close", tabId], `retiring worker tab ${tabId}`);
 	}
 
-	async function promptWorker(name, prompt, timeout = 7_200_000) {
+	async function promptAgent(name, prompt, parser, role, timeout = 7_200_000) {
 		const promptPayload = await run([
 			"agent", "prompt", name, prompt,
 			"--wait",
 			"--timeout", String(timeout),
-		], `waiting for worker ${name}`, timeout + 5_000);
+		], `waiting for ${role} ${name}`, timeout + 5_000);
 		if (findString(promptPayload?.result ?? promptPayload, ["agent_status", "status"]) === "blocked") {
 			return {
 				status: "blocked",
-				reason: `Herdr reports that worker ${name} requires human input. Inspect its tab before continuing.`,
+				reason: `Herdr reports that ${role} ${name} requires human input. Inspect its tab before continuing.`,
 			};
 		}
 		const payload = await run([
 			"agent", "read", name,
 			"--source", "recent-unwrapped",
 			"--lines", "240",
-		], `reading worker ${name}`);
+		], `reading ${role} ${name}`);
 		const transcript = findString(payload?.result ?? payload, ["output", "text", "content"]);
 		if (transcript === undefined) {
-			throw new FactoryWorkerError(`Herdr did not return readable output for worker ${name}.`);
+			throw new FactoryWorkerError(`Herdr did not return readable output for ${role} ${name}.`);
 		}
-		return parseFactoryResult(transcript);
+		return parser(transcript);
 	}
 
-	return { createWorkspace, createWorker, retireWorker, promptWorker };
+	const promptWorker = (name, prompt, timeout) => promptAgent(name, prompt, parseFactoryResult, "worker", timeout);
+	const promptReviewer = (name, prompt, timeout) => promptAgent(name, prompt, parseReviewResult, "reviewer", timeout);
+
+	return { createWorkspace, createWorker, retireWorker, promptWorker, promptReviewer };
 }
