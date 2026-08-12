@@ -147,7 +147,7 @@ export function createGiteaTracker({ exec, cwd, config }) {
 			"Test evidence:",
 			evidence,
 			"",
-			"Worker-reported two-axis review: passed.",
+			`Independent review: ${result.review.summary}`,
 		].join("\n"));
 		await run(["issues", "close", String(index), "--repo", config.repo], `closing #${index}`);
 	}
@@ -182,6 +182,7 @@ export function createGiteaTracker({ exec, cwd, config }) {
 			`Completed tickets: ${state.completed.length > 0 ? state.completed.map((index) => `#${index}`).join(", ") : "none"}`,
 			`Human-blocked tickets: ${state.blocked.length > 0 ? state.blocked.map((index) => `#${index}`).join(", ") : "none"}`,
 		];
+		if (state.finalReview?.summary) lines.push(`Final integration review: **${state.finalReview.status}** — ${state.finalReview.summary}`);
 		if (state.pullRequest) lines.push(`Pull request: ${state.pullRequest}`);
 		await upsertComment(parentIndex, `🤖 \`software-factory\` — run ${state.id}`, lines.filter(Boolean).join("\n"));
 	}
