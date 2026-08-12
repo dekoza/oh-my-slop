@@ -180,7 +180,7 @@ export function createHerdrRuntime({ exec, env = process.env }) {
 			if (profile.model) {
 				const available = response.stdout.split("\n").slice(1).some((line) => {
 					const [provider, model] = line.trim().split(/\s+/);
-					return model && (`${provider}/${model}` === profile.model || model === profile.model);
+					return model && `${provider}/${model}` === profile.model;
 				});
 				if (!available) throw new FactoryWorkerError(`pi model "${profile.model}" is not available.`);
 			}

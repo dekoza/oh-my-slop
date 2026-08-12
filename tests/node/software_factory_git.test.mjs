@@ -118,6 +118,25 @@ test("review guards reject a reviewer that changes the reviewed HEAD", async () 
 	);
 });
 
+test("review guards quarantine post-review Git command failures", async () => {
+	let statusCalls = 0;
+	const { git } = createRuntime(async (_command, args) => {
+		if (args.includes("status")) {
+			statusCalls++;
+			if (statusCalls > 1) return { code: 1, stdout: "", stderr: "worktree metadata damaged" };
+			return ok();
+		}
+		if (args.includes("rev-parse")) return ok("abc123\n");
+		return ok();
+	});
+
+	const guard = await git.captureReviewState("/repo/.worktrees/ticket", "ticket review");
+	await assert.rejects(
+		git.verifyReviewState(guard),
+		(error) => error.name === "FactoryReviewMutationError" && error.message.includes("could not be verified"),
+	);
+});
+
 test("verifyTicket rejects uncommitted worker changes", async () => {
 	const { git } = createRuntime(async (_command, args) => {
 		if (args.includes("status")) return ok("?? result.tmp\n");

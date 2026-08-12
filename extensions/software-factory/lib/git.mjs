@@ -84,10 +84,15 @@ export function createGitRuntime({ exec, cwd, baseBranch, remote }) {
 	}
 
 	async function verifyReviewState(state) {
-		const status = await run(["-C", state.path, "status", "--porcelain"], `checking ${state.label} worktree after review`);
-		if (status.trim() !== "") throw new FactoryReviewMutationError(`${state.label} left worktree changes.`);
-		const revision = (await run(["-C", state.path, "rev-parse", "HEAD"], `verifying ${state.label} revision`)).trim();
-		if (revision !== state.revision) throw new FactoryReviewMutationError(`${state.label} changed HEAD from ${state.revision} to ${revision}.`);
+		try {
+			const status = await run(["-C", state.path, "status", "--porcelain"], `checking ${state.label} worktree after review`);
+			if (status.trim() !== "") throw new FactoryReviewMutationError(`${state.label} left worktree changes.`);
+			const revision = (await run(["-C", state.path, "rev-parse", "HEAD"], `verifying ${state.label} revision`)).trim();
+			if (revision !== state.revision) throw new FactoryReviewMutationError(`${state.label} changed HEAD from ${state.revision} to ${revision}.`);
+		} catch (error) {
+			if (error instanceof FactoryReviewMutationError) throw error;
+			throw new FactoryReviewMutationError(`${state.label} could not be verified after review: ${error.message}`, { cause: error });
+		}
 	}
 
 	async function integrate(runState, ticketState, ticketIndex) {
