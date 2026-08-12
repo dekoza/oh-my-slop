@@ -47,6 +47,20 @@ def test_project_setup_and_live_config_define_the_workflow_label() -> None:
     assert "Workflow and state are separate" in live_label_config_text
 
 
+def test_project_setup_can_emit_machine_readable_factory_policy() -> None:
+    setup_skill_text = (
+        find_skill_dir(SKILLS_ROOT, "setup-project-skills") / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    assert ".pi/factory.json" in setup_skill_text
+    assert '"kind": "gitea"' in setup_skill_text
+    assert '"maxWorkers": 1' in setup_skill_text
+    assert '"repairAttempts": 1' in setup_skill_text
+    assert '"freshAgentRetries": 1' in setup_skill_text
+    assert '"finalMerge": "manual"' in setup_skill_text
+    assert '"deploy": false' in setup_skill_text
+
+
 def test_wayfinder_evals_cover_implementation_handoff_and_label_orthogonality() -> None:
     evals_path = find_skill_dir(SKILLS_ROOT, "wayfinder") / "evals" / "evals.json"
     evals_document = json.loads(evals_path.read_text(encoding="utf-8"))

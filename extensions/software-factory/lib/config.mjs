@@ -67,6 +67,13 @@ function parseConfig(value) {
 		remote: requireNonEmptyString(value.tracker.remote ?? "gitea", "tracker.remote"),
 		assignee: requireNonEmptyString(value.tracker.assignee, "tracker.assignee"),
 	};
+	if (value.tracker.labels !== undefined) {
+		tracker.labels = {
+			implementation: requireNonEmptyString(value.tracker.labels?.implementation, "tracker.labels.implementation"),
+			readyForAgent: requireNonEmptyString(value.tracker.labels?.readyForAgent, "tracker.labels.readyForAgent"),
+			readyForHuman: requireNonEmptyString(value.tracker.labels?.readyForHuman, "tracker.labels.readyForHuman"),
+		};
+	}
 	if (!/^[^/\s]+\/[^/\s]+$/.test(tracker.repo)) {
 		throw new FactoryConfigError('tracker.repo must have the form "owner/repository".');
 	}

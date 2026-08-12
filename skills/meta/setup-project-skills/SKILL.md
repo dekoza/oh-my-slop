@@ -14,6 +14,8 @@ guessing at it:
   human-reported intake
 - **Triage labels** — the strings behind the canonical triage roles
 - **Domain docs** — where the glossary and ADRs live
+- **Software factory policy** — optional machine-readable Gitea, Git, Herdr, retry, and
+  completion settings for the `software-factory` extension
 
 This writes into the **project you are working in**, not into the skills repo.
 It is prompt-driven, not a script: explore, present what you found, confirm, then write.
@@ -47,6 +49,9 @@ Read the repo's actual state. Don't assume:
   runs at all.
 - Monorepo signals (`pnpm-workspace.yaml`, a `workspaces` field, a populated
   `packages/*`). Absent these, the repo is single-context, which is almost every repo.
+- The default Git branch and remote names, whether `.worktrees/` is ignored, and whether
+  `herdr` is installed. For a proposed Gitea factory, resolve the authenticated Gitea
+  username rather than guessing the ticket assignee.
 
 Verify CLI availability for whatever you're about to propose (`tea`, `gh`, `glab`).
 Recording a tracker whose CLI isn't installed produces a config that fails on first use.
@@ -98,10 +103,21 @@ creating duplicates.
 Offer **multi-context** — a root `CONTEXT-MAP.md` pointing at per-context
 `CONTEXT.md` files — only when exploration found monorepo signals.
 
+**Section D — Software factory.** Offer this only when the agent work tracker is Gitea.
+Ask one question:
+
+> Configure the opt-in Herdr software factory? (recommended: **yes** when `herdr` is installed)
+
+A yes writes `.pi/factory.json` with the resolved repository, remote, authenticated
+assignee, default branch, and label mappings. It also ensures `.worktrees/` is ignored.
+The file contains executable automation policy, never credentials. For another tracker,
+state that the first factory release supports Gitea only and skip the file.
+
 ### 3. Confirm and edit
 
-Show a draft of the `## Agent skills` block and the contents of each
-`docs/agents/*.md` file before writing. Let the user edit first.
+Show a draft of the `## Agent skills` block, each `docs/agents/*.md` file, and the
+factory JSON when selected before writing. Show the `.gitignore` addition separately.
+Let the user edit first.
 
 ### 4. Write
 
@@ -138,6 +154,48 @@ Include the `### Triage labels` sub-block and write `docs/agents/triage-labels.m
 The workflow skills need the state mapping and `workflow:implement` routing label
 even when the standalone `triage` skill is not installed.
 
+When Section D was accepted, write this shape using the answers already resolved above:
+
+```json
+{
+  "version": 1,
+  "tracker": {
+    "kind": "gitea",
+    "repo": "<owner/repository>",
+    "remote": "<gitea-remote>",
+    "assignee": "<authenticated-gitea-user>",
+    "labels": {
+      "implementation": "workflow:implement",
+      "readyForAgent": "<configured ready-for-agent label>",
+      "readyForHuman": "<configured ready-for-human label>"
+    }
+  },
+  "git": {
+    "baseBranch": "<default-branch>",
+    "remote": "<gitea-remote>"
+  },
+  "herdr": {
+    "agentKind": "pi",
+    "maxWorkers": 1
+  },
+  "retry": {
+    "repairAttempts": 1,
+    "freshAgentRetries": 1
+  },
+  "completion": {
+    "closeAfterIntegration": true,
+    "finalMerge": "manual",
+    "createPullRequest": true,
+    "deploy": false
+  }
+}
+```
+
+Preserve an existing `.pi/factory.json` as a user answer during re-sync. Validate it
+against this shape and ask before changing policy values. Add `.worktrees/` to an
+existing ignore file without disturbing its other lines; if no ignore file exists,
+show the proposed new file during confirmation.
+
 Then write the docs files, seeding from the templates in this skill folder:
 
 - [issue-tracker-gitea.md](./issue-tracker-gitea.md) — Gitea via `tea`
@@ -156,9 +214,11 @@ what consumer skills dereference.
 
 ### 5. Done
 
-Tell the user setup is complete and which skills now read from these files. Mention
-they can edit `docs/agents/*.md` directly later; re-running this skill is only needed
-to switch trackers, to re-sync after a skills update (below), or to start over.
+Tell the user setup is complete and which skills now read from these files. When the
+factory was configured, name `.pi/factory.json`, say that `/factory start <parent-ticket>`
+must run inside Herdr, and state that final merge remains manual. Mention they can edit
+`docs/agents/*.md` and `.pi/factory.json` directly later; re-running this skill is only
+needed to switch trackers, to re-sync after a skills update (below), or to start over.
 
 ## Re-syncing after an update
 

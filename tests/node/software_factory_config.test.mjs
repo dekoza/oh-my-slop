@@ -41,6 +41,29 @@ test("loadFactoryConfig returns a validated Gitea factory configuration", async 
 	});
 });
 
+test("loadFactoryConfig preserves setup-project-skills label overrides", async () => {
+	const cwd = await projectWithConfig({
+		version: 1,
+		tracker: {
+			kind: "gitea",
+			repo: "minder/example",
+			assignee: "minder",
+			labels: {
+				implementation: "agent-build",
+				readyForAgent: "bot-ready",
+				readyForHuman: "human-needed",
+			},
+		},
+	});
+
+	const config = await loadFactoryConfig(cwd);
+	assert.deepEqual(config.tracker.labels, {
+		implementation: "agent-build",
+		readyForAgent: "bot-ready",
+		readyForHuman: "human-needed",
+	});
+});
+
 test("loadFactoryConfig rejects unsupported trackers explicitly", async () => {
 	const cwd = await projectWithConfig({
 		version: 1,
