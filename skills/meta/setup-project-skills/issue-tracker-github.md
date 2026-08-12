@@ -19,6 +19,24 @@ Issues for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
 
+## Robot comments
+
+A comment a skill posts on an issue or PR opens with a stable **marker** line:
+
+> 🤖 `<skill-name>` — <purpose>
+
+(skill name in backticks; one purpose per marker, e.g. ``🤖 `triage` — triage notes``).
+Markers make re-runs idempotent: before posting, read the item's comments and look for
+your marker — found, edit that comment in place; not found, post fresh. One live
+marker comment per skill and purpose; anything parsing comments keys on the marker
+text, never on the emoji alone.
+
+- **Find yours**: `gh issue view <number> --comments`; for comment IDs,
+  `gh api repos/<owner>/<repo>/issues/<number>/comments --jq '.[] | {id, body}'`
+- **Edit in place**: `gh issue comment <number> --edit-last --body "..."` when the
+  marker comment is your latest on the item; otherwise
+  `gh api --method PATCH repos/<owner>/<repo>/issues/comments/<comment-id> -f body='...'`
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as

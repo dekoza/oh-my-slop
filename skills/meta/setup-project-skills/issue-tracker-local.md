@@ -16,6 +16,17 @@ markdown files committed alongside the code.
 - The "issue number" a skill refers to is the `<NN>` prefix, scoped to its feature
   directory
 
+## Robot comments
+
+An entry a skill appends under a ticket file's `## Comments` heading opens with a
+stable **marker** line:
+
+> 🤖 `<skill-name>` — <purpose>
+
+(skill name in backticks; one purpose per marker). Markers make re-runs idempotent:
+before appending, look for your marker in the file — found, rewrite that entry in
+place; not found, append fresh. One live marker entry per skill and purpose.
+
 ## When a skill says "publish to the issue tracker"
 
 Create a new file under `docs/tickets/<feature-slug>/` (creating the directory if

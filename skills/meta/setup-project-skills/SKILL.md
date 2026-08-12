@@ -175,5 +175,5 @@ and, where the skill needs tracker-specific mechanics, name the section it needs
 Every tracker template provides the same load-bearing headings, so a consumer can
 dereference them without knowing which forge is in play:
 
-`## Conventions` · `## When a skill says "publish to the issue tracker"` ·
+`## Conventions` · `## Robot comments` · `## When a skill says "publish to the issue tracker"` ·
 `## When a skill says "fetch the relevant ticket"` · `## Wayfinding operations`

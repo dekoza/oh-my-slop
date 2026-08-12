@@ -14,6 +14,23 @@ Issues and PRDs for this repo live as GitLab issues. Use the [`glab`](https://gi
 
 Infer the repo from `git remote -v` — `glab` does this automatically when run inside a clone.
 
+## Robot comments
+
+A note a skill posts on an issue or MR opens with a stable **marker** line:
+
+> 🤖 `<skill-name>` — <purpose>
+
+(skill name in backticks; one purpose per marker, e.g. ``🤖 `triage` — triage notes``).
+Markers make re-runs idempotent: before posting, read the item's notes and look for
+your marker — found, edit that note in place; not found, post fresh. One live marker
+note per skill and purpose; anything parsing notes keys on the marker text, never on
+the emoji alone.
+
+- **Find yours**: `glab issue view <number> --comments`; for note IDs,
+  `glab api projects/:id/issues/<iid>/notes`
+- **Edit in place**: `glab api --method PUT projects/:id/issues/<iid>/notes/<note-id> -f body='...'`
+  (`glab issue note` only creates — editing goes through the notes API)
+
 ## Merge requests as a triage surface
 
 **MRs as a request surface: no.** _(Set to `yes` if this repo treats external merge requests as feature requests; `/triage` reads this flag.)_

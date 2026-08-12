@@ -23,6 +23,22 @@ create lands here.
 Labels must exist before they can be applied — `tea labels create --name "..." --color "..."`.
 Manage them with `tea labels list`.
 
+## Robot comments
+
+A comment a skill posts on an issue or PR opens with a stable **marker** line:
+
+> 🤖 `<skill-name>` — <purpose>
+
+(skill name in backticks; one purpose per marker, e.g. ``🤖 `triage` — triage notes``).
+Markers make re-runs idempotent: before posting, read the item's comments and look for
+your marker — found, edit that comment in place; not found, post fresh. One live
+marker comment per skill and purpose; anything parsing comments keys on the marker
+text, never on the emoji alone.
+
+- **Find yours**: `tea comments list --repo <owner>/<repo> <index>` (shows comment IDs)
+- **Edit in place**: `tea comments edit --repo <owner>/<repo> <comment-id> "new body"` —
+  note `edit` takes the **global comment ID** from the list, not the issue index
+
 ## PRs as a request surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats incoming PRs as
