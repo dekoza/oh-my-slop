@@ -42,6 +42,44 @@ test("loadFactoryConfig returns a validated Gitea factory configuration", async 
 	});
 });
 
+test("loadFactoryConfig validates pi and Claude worker profiles with deterministic routing", async () => {
+	const cwd = await projectWithConfig({
+		version: 1,
+		tracker: { kind: "gitea", repo: "minder/example", assignee: "minder" },
+		workers: {
+			profiles: {
+				local: {
+					kind: "pi",
+					model: "local/thinkingcap-qwen3.6-27b",
+					thinking: "high",
+					startupTimeoutMs: 180000,
+				},
+				claude: {
+					kind: "claude",
+					model: "sonnet",
+					effort: "high",
+					permissionMode: "dontAsk",
+				},
+			},
+			routing: {
+				defaults: {
+					implement: "local",
+					freshRetry: "claude",
+					review: "local",
+					finalReview: "claude",
+				},
+				rules: [{ labelsAny: ["factory:claude"], phases: ["implement", "review"], profile: "claude" }],
+			},
+		},
+	});
+
+	const config = await loadFactoryConfig(cwd);
+	assert.equal(config.workers.profiles.local.model, "local/thinkingcap-qwen3.6-27b");
+	assert.equal(config.workers.profiles.claude.permissionMode, "dontAsk");
+	assert.equal(config.workers.routing.defaults.finalReview, "claude");
+	assert.deepEqual(config.workers.routing.rules[0].phases, ["implement", "review"]);
+});
+
 test("loadFactoryConfig preserves setup-project-skills label overrides", async () => {
 	const cwd = await projectWithConfig({
 		version: 1,
