@@ -139,7 +139,7 @@ export function createGiteaTracker({ exec, cwd, config }) {
 			"Test evidence:",
 			evidence,
 			"",
-			"Two-axis review: passed.",
+			"Worker-reported two-axis review: passed.",
 		].join("\n"));
 		await run(["issues", "close", String(index), "--repo", config.repo], `closing #${index}`);
 	}
