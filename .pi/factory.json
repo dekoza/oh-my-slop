@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "tracker": {
+    "kind": "gitea",
+    "repo": "minder/oh-my-slop",
+    "remote": "gitea",
+    "login": "Kuferek",
+    "assignee": "minder",
+    "labels": {
+      "implementation": "workflow:implement",
+      "readyForAgent": "ready-for-agent",
+      "readyForHuman": "ready-for-human"
+    }
+  },
+  "git": {
+    "baseBranch": "main",
+    "remote": "gitea"
+  },
+  "herdr": {
+    "maxWorkers": 1
+  },
+  "workers": {
+    "profiles": {
+      "claude-implement": {
+        "kind": "claude",
+        "model": "opus",
+        "effort": "high",
+        "permissionMode": "acceptEdits"
+      },
+      "claude-review": {
+        "kind": "claude",
+        "model": "opus",
+        "effort": "high",
+        "permissionMode": "dontAsk"
+      },
+      "final-review": {
+        "kind": "claude",
+        "model": "fable",
+        "effort": "high",
+        "permissionMode": "dontAsk"
+      },
+      "gpt": {
+        "kind": "pi",
+        "model": "openai-codex/gpt-5.6-sol",
+        "thinking": "high"
+      },
+      "glm": {
+        "kind": "pi",
+        "model": "openrouter/z-ai/glm-5.2",
+        "thinking": "high"
+      },
+      "deepseek": {
+        "kind": "pi",
+        "model": "openrouter/deepseek/deepseek-v4-flash-0731",
+        "thinking": "high"
+      },
+      "qwen": {
+        "kind": "pi",
+        "model": "openrouter/qwen/qwen3.8-max",
+        "thinking": "high"
+      },
+      "local": {
+        "kind": "pi",
+        "model": "local/thinkingcap-qwen3.6-27b",
+        "thinking": "high",
+        "startupTimeoutMs": 180000
+      }
+    },
+    "routing": {
+      "defaults": {
+        "implement": "claude-implement",
+        "freshRetry": "gpt",
+        "review": "claude-review",
+        "finalReview": "final-review"
+      },
+      "rules": [
+        {
+          "labelsAny": [
+            "factory:claude",
+            "risk:high"
+          ],
+          "phases": [
+            "implement",
+            "freshRetry"
+          ],
+          "profile": "claude-implement"
+        },
+        {
+          "labelsAny": [
+            "factory:claude",
+            "risk:high"
+          ],
+          "phases": [
+            "review"
+          ],
+          "profile": "claude-review"
+        },
+        {
+          "labelsAny": [
+            "factory:gpt"
+          ],
+          "phases": [
+            "implement",
+            "freshRetry"
+          ],
+          "profile": "gpt"
+        },
+        {
+          "labelsAny": [
+            "factory:glm"
+          ],
+          "phases": [
+            "implement",
+            "freshRetry"
+          ],
+          "profile": "glm"
+        },
+        {
+          "labelsAny": [
+            "factory:deepseek"
+          ],
+          "phases": [
+            "implement",
+            "freshRetry"
+          ],
+          "profile": "deepseek"
+        },
+        {
+          "labelsAny": [
+            "factory:qwen"
+          ],
+          "phases": [
+            "implement",
+            "freshRetry"
+          ],
+          "profile": "qwen"
+        },
+        {
+          "labelsAny": [
+            "factory:local"
+          ],
+          "phases": [
+            "implement",
+            "freshRetry"
+          ],
+          "profile": "local"
+        },
+        {
+          "labelsAny": [
+            "factory:local"
+          ],
+          "phases": [
+            "review"
+          ],
+          "profile": "qwen"
+        }
+      ]
+    }
+  },
+  "retry": {
+    "repairAttempts": 1,
+    "freshAgentRetries": 1
+  },
+  "completion": {
+    "closeAfterIntegration": true,
+    "finalMerge": "manual",
+    "createPullRequest": true,
+    "deploy": false
+  }
+}

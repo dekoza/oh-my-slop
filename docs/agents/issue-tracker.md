@@ -41,6 +41,22 @@ fail outright outside a work tree.
 Labels must exist before they can be applied — `tea labels create --name "..." --color "..."`.
 Manage them with `tea labels list`.
 
+## Robot comments
+
+A comment a skill posts on an issue or PR opens with a stable **marker** line:
+
+> 🤖 `<skill-name>` — <purpose>
+
+(skill name in backticks; one purpose per marker, e.g. ``🤖 `triage` — triage notes``).
+Markers make re-runs idempotent: before posting, read the item's comments and look for
+your marker — found, edit that comment in place; not found, post fresh. One live
+marker comment per skill and purpose; anything parsing comments keys on the marker
+text, never on the emoji alone.
+
+- **Find yours**: `tea comments list --repo minder/oh-my-slop <index>` (shows comment IDs)
+- **Edit in place**: `tea comments edit --repo minder/oh-my-slop <comment-id> "new body"` —
+  note `edit` takes the **global comment ID** from the list, not the issue index
+
 ## PRs as a request surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats incoming PRs as
@@ -115,6 +131,24 @@ Use the `gh` CLI. Pass `--repo dekoza/oh-my-slop` when remote inference is ambig
 - **Close**: `gh issue close <number> --comment "..."`
 - **Create an issue**: `gh issue create` — **reserved for the user.** A skill that
   wants to record work creates it on Gitea instead.
+
+## Robot comments
+
+A comment a skill posts on an issue or PR opens with a stable **marker** line:
+
+> 🤖 `<skill-name>` — <purpose>
+
+(skill name in backticks; one purpose per marker, e.g. ``🤖 `triage` — triage notes``).
+Markers make re-runs idempotent: before posting, read the item's comments and look for
+your marker — found, edit that comment in place; not found, post fresh. One live
+marker comment per skill and purpose; anything parsing comments keys on the marker
+text, never on the emoji alone.
+
+- **Find yours**: `gh issue view <number> --comments`; for comment IDs,
+  `gh api repos/dekoza/oh-my-slop/issues/<number>/comments --jq '.[] | {id, body}'`
+- **Edit in place**: `gh issue comment <number> --edit-last --body "..."` when the
+  marker comment is your latest on the item; otherwise
+  `gh api --method PATCH repos/dekoza/oh-my-slop/issues/comments/<comment-id> -f body='...'`
 
 ## PRs as a request surface
 
