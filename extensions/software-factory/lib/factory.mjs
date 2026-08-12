@@ -294,6 +294,18 @@ export async function runFactory({
 			return state;
 		}
 		await herdr.retireWorker?.(worker.tabId);
+		try {
+			await git.cleanupTicket?.(run, ticketWorktree);
+		} catch (error) {
+			const reason = `Cleanup requires human resolution after verified integration: ${error instanceof Error ? error.message : String(error)}`;
+			await tracker.block(ticket.index, reason);
+			state.blocked.push(ticket.index);
+			state.currentTicket = undefined;
+			state.status = "waiting-for-human";
+			await save();
+			await tracker.reportRun(parentIndex, state);
+			return state;
+		}
 		await tracker.complete(ticket.index, result, run);
 		state.completed.push(ticket.index);
 		state.currentTicket = undefined;

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -72,7 +72,7 @@ test("createRun and createTicket use isolated branches under .worktrees", async 
 	]);
 });
 
-test("real Git worktrees integrate a committed ticket and pass post-merge verification", async () => {
+test("real Git worktrees integrate and clean up a committed ticket", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "software-factory-git-real-"));
 	const rawExec = async (command, args, options = {}) => {
 		try {
@@ -100,6 +100,11 @@ test("real Git worktrees integrate a committed ticket and pass post-merge verifi
 	await git.verifyTicket(run, ticket);
 	await git.integrate(run, ticket, 42);
 	await git.verifyIntegration(run, ticket);
+	await git.cleanupTicket(run, ticket);
+
+	await assert.rejects(access(ticket.path), { code: "ENOENT" });
+	const deletedBranch = await rawExec("git", ["rev-parse", "--verify", ticket.branch], { cwd });
+	assert.notEqual(deletedBranch.code, 0);
 });
 
 test("review guards reject a reviewer that changes the reviewed HEAD", async () => {

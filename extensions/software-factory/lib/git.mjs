@@ -120,6 +120,16 @@ export function createGitRuntime({ exec, cwd, baseBranch, remote }) {
 		], `checking integrated diff for whitespace errors`);
 	}
 
+	async function cleanupTicket(runState, ticketState) {
+		await run([
+			"worktree", "remove", ticketState.path,
+		], `removing integrated ticket worktree ${ticketState.path}`);
+		await run([
+			"-C", runState.integrationPath,
+			"branch", "-d", ticketState.branch,
+		], `deleting integrated ticket branch ${ticketState.branch}`);
+	}
+
 	async function publish(runState) {
 		await run([
 			"push", "--set-upstream", remote, runState.integrationBranch,
@@ -135,6 +145,7 @@ export function createGitRuntime({ exec, cwd, baseBranch, remote }) {
 		verifyReviewState,
 		integrate,
 		verifyIntegration,
+		cleanupTicket,
 		publish,
 	};
 }

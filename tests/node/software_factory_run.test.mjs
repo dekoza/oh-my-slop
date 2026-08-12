@@ -78,6 +78,7 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 		async verifyReviewState(state) { events.push(`verify-review:${state.label}`); },
 		async integrate(_run, _ticket, index) { events.push(`integrate:${index}`); },
 		async verifyIntegration() { events.push("verify-integration"); },
+		async cleanupTicket() { events.push("cleanup-ticket"); },
 		async publish() { events.push("publish"); },
 	};
 	let workerNumber = 1;
@@ -131,9 +132,10 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 	assert.ok(events.indexOf("verify-review:ticket #42 review") < events.indexOf("integrate:42"));
 	assert.ok(events.indexOf("integrate:42") < events.indexOf("verify-integration"));
 	const completionEvent = "complete:42:checkout works:local:gpt";
-	assert.ok(events.indexOf("verify-integration") < events.indexOf(completionEvent));
+	assert.ok(events.indexOf("verify-integration") < events.indexOf("retire:w4:t2"));
+	assert.ok(events.indexOf("retire:w4:t2") < events.indexOf("cleanup-ticket"));
+	assert.ok(events.indexOf("cleanup-ticket") < events.indexOf(completionEvent));
 	assert.ok(events.indexOf("retire:w4:t3") < events.indexOf("integrate:42"));
-	assert.ok(events.indexOf("retire:w4:t2") < events.indexOf(completionEvent));
 	assert.ok(events.indexOf("capture-review:final integration review") < events.indexOf("review:2"));
 	assert.ok(events.indexOf("review:2") < events.indexOf("verify-review:final integration review"));
 	assert.ok(events.indexOf("verify-review:final integration review") < events.indexOf("publish"));
@@ -471,6 +473,47 @@ test("runFactory routes an integration conflict to a human and stops the run", a
 	assert.deepEqual(result.blocked, [7]);
 	assert.match(blocked[0][1], /merge conflict in src\/app.ts/);
 	assert.deepEqual(reports, ["waiting-for-human"]);
+});
+
+test("runFactory routes ticket cleanup failures to a human after verified integration", async () => {
+	let frontierCalls = 0;
+	const blocked = [];
+	const tracker = {
+		async listFrontier() { return frontierCalls++ === 0 ? [{ index: 16, title: "Cleanup failure", labels: [] }] : []; },
+		async countOpenChildren() { return 1; },
+		async claim() {},
+		async complete() { throw new Error("must not close before cleanup succeeds"); },
+		async block(index, reason) { blocked.push([index, reason]); },
+		async reportRun() {},
+	};
+	const git = {
+		async preflight() {},
+		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
+		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
+		async verifyTicket() {},
+		async captureReviewState(path, label) { return { path, label, revision: "abc" }; },
+		async verifyReviewState() {},
+		async integrate() {},
+		async verifyIntegration() {},
+		async cleanupTicket() { throw new Error("worktree is busy"); },
+	};
+	const herdr = {
+		async preflightProfiles() {},
+		async createWorkspace() { return "w1"; },
+		async createWorker({ name }) { return { name, tabId: "w1:t2", paneId: "w1:p2" }; },
+		async promptWorker() { return { status: "success", summary: "done", tests: ["test: pass"] }; },
+		async promptReviewer() { return { status: "passed", summary: "clean", findings: [] }; },
+		async retireWorker() {},
+	};
+
+	const result = await runFactory({
+		cwd: "/repo", parentIndex: 9, runId: "factory-cleanup-failure", config: testConfig(),
+		tracker, git, herdr, store: { async save() {} },
+	});
+
+	assert.equal(result.status, "waiting-for-human");
+	assert.deepEqual(result.blocked, [16]);
+	assert.match(blocked[0][1], /cleanup.*worktree is busy/i);
 });
 
 test("runFactory persists a failed terminal state when preflight aborts", async () => {

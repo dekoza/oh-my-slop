@@ -30,7 +30,8 @@ integration branch, and open a pull request.
    separately launched reviewer runs `two-axis-review`; actionable findings consume the
    same-worker repair and fresh-worker retry budgets before the ticket is blocked.
 7. The factory verifies the commit, merges it, checks that the ticket branch is an ancestor
-   of the clean integration branch, and runs `git diff --check` before closing the ticket
+   of the clean integration branch, and runs `git diff --check`. It then retires the completed
+   worker tab, removes the clean ticket worktree and merged ticket branch, and closes the ticket
    with an idempotent implementation and review evidence comment.
 8. When no implementation tickets remain, a routed final reviewer examines the complete
    integration diff. Only a passing review permits the factory to push the integration
@@ -205,9 +206,11 @@ not use a model.
 
 Run snapshots are written under the pi agent directory at
 `software-factory/runs/`; `/factory status` survives reloads and restarts. Herdr
-workspaces and Git worktrees are deliberately retained for inspection. Completed automated
-worker tabs are retired; any worker or reviewer tab that actually needs human input remains
-open so its prompt and transcript can be inspected.
+integration workspaces and worktrees are retained for final review and recovery. Successfully
+integrated ticket worktrees and their merged local branches are removed before ticket closure;
+blocked or failed ticket worktrees remain for inspection. Completed automated worker tabs are
+retired; any worker or reviewer tab that actually needs human input remains open so its prompt
+and transcript can be inspected.
 
 The MVP does **not** resume an interrupted scheduler after the controlling pi process
 exits. It also does not sandbox worker credentials or arbitrate shared llama.cpp capacity. Inspect `/factory status`, the named Herdr workspace, Gitea comments, and the
