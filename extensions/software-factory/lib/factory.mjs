@@ -27,6 +27,7 @@ export async function runFactory({
 		currentTicket: undefined,
 		completed: [],
 		blocked: [],
+		finalReview: undefined,
 		pullRequest: undefined,
 	};
 	const save = async () => store.save(state);
@@ -57,6 +58,31 @@ export async function runFactory({
 		if (frontier.length === 0) {
 			const openChildren = await tracker.countOpenChildren(parentIndex);
 			if (openChildren > 0) {
+				state.status = "waiting-for-human";
+				await save();
+				await tracker.reportRun(parentIndex, state);
+				return state;
+			}
+
+			const finalProfile = selectWorkerProfile(config.workers, "finalReview");
+			const finalReviewer = await herdr.createWorker({
+				workspaceId: state.workspaceId,
+				cwd: run.integrationPath,
+				name: workerName(runId, "final"),
+				label: "Final integration review",
+				profile: finalProfile,
+			});
+			try {
+				state.finalReview = await herdr.promptReviewer(finalReviewer.name, buildReviewPrompt({
+					repo: config.tracker.repo,
+					baseBranch: config.git.baseBranch,
+					profile: finalProfile,
+					final: true,
+				}));
+			} finally {
+				await herdr.retireWorker?.(finalReviewer.tabId);
+			}
+			if (state.finalReview.status !== "passed") {
 				state.status = "waiting-for-human";
 				await save();
 				await tracker.reportRun(parentIndex, state);

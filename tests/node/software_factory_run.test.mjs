@@ -77,6 +77,7 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 		async publish() { events.push("publish"); },
 	};
 	let workerNumber = 1;
+	let reviewNumber = 0;
 	const herdr = {
 		async createWorkspace() { events.push("workspace"); return "w4"; },
 		async createWorker({ name, profile }) {
@@ -89,7 +90,8 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 			return { status: "success", summary: "checkout works", tests: ["test: pass"] };
 		},
 		async promptReviewer() {
-			events.push("review");
+			reviewNumber++;
+			events.push(`review:${reviewNumber}`);
 			return { status: "passed", summary: "no findings", findings: [] };
 		},
 		async retireWorker(tabId) { events.push(`retire:${tabId}`); },
@@ -112,13 +114,15 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 	assert.deepEqual(result.completed, [42]);
 	assert.ok(events.includes("worker:sf-a1-t42:local"));
 	assert.ok(events.includes("worker:sf-a1-t42-v1:gpt"));
+	assert.ok(events.includes("worker:sf-a1-tfinal:claude"));
 	assert.ok(events.indexOf("claim:42") < events.indexOf("create-ticket:42"));
-	assert.ok(events.indexOf("verify") < events.indexOf("review"));
-	assert.ok(events.indexOf("review") < events.indexOf("integrate:42"));
+	assert.ok(events.indexOf("verify") < events.indexOf("review:1"));
+	assert.ok(events.indexOf("review:1") < events.indexOf("integrate:42"));
 	assert.ok(events.indexOf("integrate:42") < events.indexOf("verify-integration"));
 	assert.ok(events.indexOf("verify-integration") < events.indexOf("complete:42:checkout works"));
 	assert.ok(events.indexOf("retire:w4:t3") < events.indexOf("integrate:42"));
 	assert.ok(events.indexOf("retire:w4:t2") < events.indexOf("complete:42:checkout works"));
+	assert.ok(events.indexOf("review:2") < events.indexOf("publish"));
 	assert.deepEqual(events.slice(-3), ["publish", "pr:factory/factory-a1/integration", "report:awaiting-merge"]);
 	assert.equal(snapshots.at(-1).status, "awaiting-merge");
 });
@@ -212,11 +216,58 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 		tracker, git, herdr, store: { async save() {} },
 	});
 
-	assert.equal(workerCalls, 3);
+	assert.equal(workerCalls, 4);
 	assert.equal(promptCalls, 3);
-	assert.deepEqual(retired, ["w1:t2", "w1:t4", "w1:t3"]);
+	assert.deepEqual(retired, ["w1:t2", "w1:t4", "w1:t3", "w1:t5"]);
 	assert.deepEqual(blocked, []);
 	assert.equal(completed, true);
+});
+
+test("runFactory does not publish when final review reports actionable findings", async () => {
+	let frontierCalls = 0;
+	let reviewCalls = 0;
+	let published = false;
+	let pullRequestCreated = false;
+	const tracker = {
+		async listFrontier() { return frontierCalls++ === 0 ? [{ index: 12, title: "Reviewed slice", labels: [] }] : []; },
+		async countOpenChildren() { return 0; },
+		async claim() {},
+		async complete() {},
+		async block() {},
+		async createPullRequest() { pullRequestCreated = true; },
+		async reportRun() {},
+	};
+	const git = {
+		async preflight() {},
+		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
+		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
+		async verifyTicket() {},
+		async integrate() {},
+		async verifyIntegration() {},
+		async publish() { published = true; },
+	};
+	const herdr = {
+		async createWorkspace() { return "w1"; },
+		async createWorker({ name }) { return { name, tabId: "w1:t2", paneId: "w1:p2" }; },
+		async retireWorker() {},
+		async promptWorker() { return { status: "success", summary: "done", tests: ["test: pass"] }; },
+		async promptReviewer() {
+			reviewCalls++;
+			return reviewCalls === 1
+				? { status: "passed", summary: "ticket clean", findings: [] }
+				: { status: "failed", summary: "integration issue", findings: ["Cross-ticket invariant is untested"] };
+		},
+	};
+
+	const result = await runFactory({
+		cwd: "/repo", parentIndex: 9, runId: "factory-final-review", config: testConfig(),
+		tracker, git, herdr, store: { async save() {} },
+	});
+
+	assert.equal(result.status, "waiting-for-human");
+	assert.deepEqual(result.finalReview.findings, ["Cross-ticket invariant is untested"]);
+	assert.equal(published, false);
+	assert.equal(pullRequestCreated, false);
 });
 
 test("runFactory routes an integration conflict to a human and stops the run", async () => {
