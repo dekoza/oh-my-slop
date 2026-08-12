@@ -158,7 +158,27 @@ what consumer skills dereference.
 
 Tell the user setup is complete and which skills now read from these files. Mention
 they can edit `docs/agents/*.md` directly later; re-running this skill is only needed
-to switch trackers or start over.
+to switch trackers, to re-sync after a skills update (below), or to start over.
+
+## Re-syncing after an update
+
+When exploration finds `docs/agents/` already populated and the user isn't switching
+trackers, the run is a **re-sync**: the templates may have gained sections or changed
+mechanics since these files were written, and the installed files catch up without
+losing what the user answered or edited.
+
+One split governs every file: **answers are the user's, scaffolding is the
+template's.** Answers — the tracker bindings, label overrides, flags like "PRs as a
+request surface", and any local edits — are preserved verbatim. Scaffolding — the
+load-bearing headings, the command mechanics under them, sections the template has
+gained (e.g. `## Robot comments`) — is brought up to the current template.
+
+Per file: diff the installed doc against its template, apply the scaffolding changes,
+carry the answers over, and show the result before writing. Where a local edit and a
+template change touch the same lines, ask — never silently discard either side. A
+section the template dropped is removed only after saying so. Files already current
+are reported as such, and nothing is re-interviewed unless a template change
+invalidated a recorded answer (a renamed flag, a removed option).
 
 ## The consumer contract
 
