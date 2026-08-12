@@ -146,6 +146,25 @@ def test_nested_extension_packages_expose_all_extension_entrypoints() -> None:
     assert declared_entrypoints == actual_entrypoints
 
 
+def test_node_extension_tests_only_import_live_extension_paths() -> None:
+    for test_path in sorted((REPO_ROOT / "tests" / "node").glob("*.mjs")):
+        source = test_path.read_text(encoding="utf-8")
+        for match in EXTENSION_IMPORT_PATTERN.finditer(source):
+            import_path = match.group("path")
+            if not import_path.startswith("../../extensions/"):
+                continue
+
+            resolved = resolve_relative_import(test_path, import_path)
+            assert resolved is not None, (
+                f"{test_path.relative_to(REPO_ROOT)} imports a missing or archived "
+                f"extension path: {import_path}"
+            )
+            assert ".legacy" not in resolved.relative_to(REPO_ROOT).parts, (
+                f"{test_path.relative_to(REPO_ROOT)} must not test archived extension "
+                f"code: {resolved.relative_to(REPO_ROOT)}"
+            )
+
+
 def test_extension_entrypoints_only_use_resolvable_relative_imports() -> None:
     entrypoints = [
         entrypoint
