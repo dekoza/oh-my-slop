@@ -123,6 +123,7 @@ def test_software_factory_readme_says_root_package_install_loads_it_automaticall
     assert ".pi/factory.json" in readme_text
     assert "workers.profiles" in readme_text
     assert readme_text.count('"model": "opus"') >= 2
+    assert '"permissionMode": "auto"' in readme_text
     assert '"claude-final-review"' in readme_text
     assert '"model": "fable"' in readme_text
     assert '"finalReview": "claude-final-review"' in readme_text

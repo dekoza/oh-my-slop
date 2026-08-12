@@ -106,7 +106,7 @@ Example policy using subscription, metered, and local capacity:
         "kind": "claude",
         "model": "opus",
         "effort": "high",
-        "permissionMode": "acceptEdits"
+        "permissionMode": "auto"
       },
       "claude-review": {
         "kind": "claude",
@@ -140,7 +140,9 @@ Example policy using subscription, metered, and local capacity:
 ```
 
 The recommended Claude tiers reserve Opus for explicitly routed high-risk implementation
-and ticket review, while Fable performs the final integration review. Routine work remains
+and ticket review, while Fable performs the final integration review. Claude implementation
+profiles use `auto`, which lets Claude classify routine tool calls without turning each Bash
+command into a human blocker; risky calls can still stop for approval. Routine work remains
 on the pi/OpenRouter defaults, preserving Claude Max capacity and keeping Fable independent
 from ticket implementation.
 
@@ -166,7 +168,7 @@ not use a model.
 | `workers.profiles.<name>.model` | optional string | Exact pi provider/model selector or Claude model alias. |
 | `workers.profiles.<name>.thinking` | pi thinking level | pi-only reasoning level. |
 | `workers.profiles.<name>.effort` | Claude effort level | Claude-only effort level. |
-| `workers.profiles.<name>.permissionMode` | safe Claude mode | `acceptEdits`, `auto`, `manual`, `dontAsk`, or `plan`; bypass is rejected. |
+| `workers.profiles.<name>.permissionMode` | safe Claude mode | Use `auto` for autonomous implementation. `acceptEdits`, `manual`, `dontAsk`, and `plan` are accepted for explicit human-gated policy; bypass is rejected. Review roles are always launched in `plan` mode. |
 | `workers.profiles.<name>.startupTimeoutMs` | at least `30000` | Herdr startup budget; raise for cold local model loads. |
 | `workers.routing.defaults` | four profile names | Default profile for each model-bearing phase. |
 | `workers.routing.rules` | ordered label rules | Deterministic ticket overrides; first phase/label match wins. |
@@ -185,9 +187,10 @@ not use a model.
 - Commands use argument arrays rather than interpolated shell commands.
 - Worker prompts reserve merge, push, close, and relabel operations for the scheduler.
   This is behavioral separation, not a credential sandbox: workers inherit the repository's
-  shell and credentials. Review-role launches disable edit/write tools and force Claude plan
-  mode, but shell access still makes the Git guard authoritative. Implementation tests are
-  worker-reported; independently launched reviewers are checked for worktree HEAD or status
+  shell and credentials. Claude implementation profiles should use classifier-gated `auto`
+  mode; review-role launches disable edit/write tools and force Claude plan mode, but shell
+  access still makes the Git guard authoritative. Implementation tests are worker-reported;
+  independently launched reviewers are checked for worktree HEAD or status
   changes and quarantined on mutation before integration.
 - Before creating branches, the factory checks selected pi model IDs with `pi --list-models`
   and checks the Claude Code binary with `claude --version`. It never stores credentials or
@@ -202,7 +205,9 @@ not use a model.
 
 Run snapshots are written under the pi agent directory at
 `software-factory/runs/`; `/factory status` survives reloads and restarts. Herdr
-workspaces and Git worktrees are deliberately retained for inspection.
+workspaces and Git worktrees are deliberately retained for inspection. Completed automated
+worker tabs are retired; any worker or reviewer tab that actually needs human input remains
+open so its prompt and transcript can be inspected.
 
 The MVP does **not** resume an interrupted scheduler after the controlling pi process
 exits. It also does not sandbox worker credentials or arbitrate shared llama.cpp capacity. Inspect `/factory status`, the named Herdr workspace, Gitea comments, and the

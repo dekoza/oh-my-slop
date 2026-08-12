@@ -196,13 +196,14 @@ test("Herdr runtime constrains reviewer editing tools regardless of profile defa
 	]);
 });
 
-test("buildWorkerPrompt uses a portable skill instruction for Claude Code", () => {
+test("buildWorkerPrompt gives Claude Code the manual-only skill fallback", () => {
 	const prompt = buildWorkerPrompt({
 		repo: "minder/example",
 		ticket: { index: 42, title: "Deliver checkout" },
 		profile: { kind: "claude" },
 	});
 	assert.match(prompt, /^Use the `implement` skill/);
+	assert.match(prompt, /If it isn't among your available skills, locate its `SKILL\.md` in the installed `oh-my-slop` package and follow that\./);
 	assert.doesNotMatch(prompt, /^\/skill:implement/);
 });
 

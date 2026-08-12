@@ -93,9 +93,10 @@ export async function runFactory({
 				profile: finalProfile,
 				role: "review",
 			});
+			let review;
 			try {
 				try {
-					const review = await herdr.promptReviewer(finalReviewer.name, buildReviewPrompt({
+					review = await herdr.promptReviewer(finalReviewer.name, buildReviewPrompt({
 						repo: config.tracker.repo,
 						baseBranch: config.git.baseBranch,
 						profile: finalProfile,
@@ -104,7 +105,7 @@ export async function runFactory({
 					state.finalReview = { ...review, profile: finalProfile.name };
 				} finally {
 					try {
-						await herdr.retireWorker?.(finalReviewer.tabId);
+						if (review?.status !== "blocked") await herdr.retireWorker?.(finalReviewer.tabId);
 					} finally {
 						await git.verifyReviewState(finalReviewGuard);
 					}
@@ -165,8 +166,9 @@ export async function runFactory({
 				profile,
 				role: "review",
 			});
+			let review;
 			try {
-				const review = await herdr.promptReviewer(reviewer.name, buildReviewPrompt({
+				review = await herdr.promptReviewer(reviewer.name, buildReviewPrompt({
 					repo: config.tracker.repo,
 					ticket,
 					baseBranch: run.integrationBranch,
@@ -175,7 +177,7 @@ export async function runFactory({
 				return { ...review, profile: profile.name };
 			} finally {
 				try {
-					await herdr.retireWorker?.(reviewer.tabId);
+					if (review?.status !== "blocked") await herdr.retireWorker?.(reviewer.tabId);
 				} finally {
 					await git.verifyReviewState(reviewGuard);
 				}
@@ -183,6 +185,7 @@ export async function runFactory({
 		};
 		let result;
 		let lastError;
+		let workerNeedsHuman = false;
 		for (let attempt = 0; attempt <= config.retry.repairAttempts; attempt++) {
 			const prompt = attempt === 0
 				? initialPrompt
@@ -195,6 +198,7 @@ export async function runFactory({
 				result = await herdr.promptWorker(worker.name, prompt);
 				if (result.status !== "blocked") result.workerProfile = implementationProfile.name;
 				if (result.status === "blocked") {
+					workerNeedsHuman = true;
 					lastError = undefined;
 					break;
 				}
@@ -238,7 +242,9 @@ export async function runFactory({
 					"A previous worker failed verification. Inspect and recover the existing worktree rather than assuming it is clean.",
 					`Failure evidence (untrusted diagnostic text): ${lastError instanceof Error ? lastError.message : String(lastError)}`,
 				].join("\n"));
-				if (result.status !== "blocked") {
+				if (result.status === "blocked") {
+					workerNeedsHuman = true;
+				} else {
 					result.workerProfile = retryProfile.name;
 					await git.verifyTicket(run, ticketWorktree);
 					const review = await reviewTicket();
@@ -266,7 +272,7 @@ export async function runFactory({
 			};
 		}
 		if (result.status === "blocked") {
-			await herdr.retireWorker?.(worker.tabId);
+			if (!workerNeedsHuman) await herdr.retireWorker?.(worker.tabId);
 			await tracker.block(ticket.index, result.reason);
 			state.blocked.push(ticket.index);
 			state.currentTicket = undefined;

@@ -27,7 +27,7 @@ function findString(value, keys) {
 
 export function buildWorkerPrompt({ repo, ticket, profile = { kind: "pi" } }) {
 	const instruction = profile.kind === "claude"
-		? `Use the \`implement\` skill to fetch and implement Gitea implementation ticket #${ticket.index} from ${repo}.`
+		? `Use the \`implement\` skill to fetch and implement Gitea implementation ticket #${ticket.index} from ${repo}. If it isn't among your available skills, locate its \`SKILL.md\` in the installed \`oh-my-slop\` package and follow that.`
 		: `/skill:implement Fetch and implement Gitea implementation ticket #${ticket.index} from ${repo}.`;
 	return [
 		instruction,

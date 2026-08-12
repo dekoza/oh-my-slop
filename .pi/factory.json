@@ -25,7 +25,7 @@
         "kind": "claude",
         "model": "opus",
         "effort": "high",
-        "permissionMode": "acceptEdits"
+        "permissionMode": "auto"
       },
       "claude-review": {
         "kind": "claude",
@@ -68,8 +68,8 @@
     },
     "routing": {
       "defaults": {
-        "implement": "claude-implement",
-        "freshRetry": "gpt",
+        "implement": "gpt",
+        "freshRetry": "glm",
         "review": "claude-review",
         "finalReview": "final-review"
       },

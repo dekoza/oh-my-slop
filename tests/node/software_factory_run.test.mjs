@@ -292,6 +292,47 @@ test("runFactory quarantines reviewer mutations instead of asking implementation
 	assert.match(blocked[0][1], /reviewer changed the reviewed worktree/i);
 });
 
+test("runFactory retains a human-blocked reviewer tab for inspection", async () => {
+	let frontierCalls = 0;
+	let workerCalls = 0;
+	const retired = [];
+	const tracker = {
+		async listFrontier() { return frontierCalls++ === 0 ? [{ index: 14, title: "Needs review input", labels: [] }] : []; },
+		async countOpenChildren() { return 1; },
+		async claim() {},
+		async block() {},
+		async reportRun() {},
+	};
+	const git = {
+		async preflight() {},
+		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
+		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
+		async verifyTicket() {},
+		async captureReviewState(path, label) { return { path, label, revision: "abc" }; },
+		async verifyReviewState() {},
+	};
+	const herdr = {
+		async preflightProfiles() {},
+		async createWorkspace() { return "w1"; },
+		async createWorker({ name }) {
+			workerCalls++;
+			return { name, tabId: `w1:t${workerCalls + 1}`, paneId: `w1:p${workerCalls + 1}` };
+		},
+		async promptWorker() { return { status: "success", summary: "done", tests: ["test: pass"] }; },
+		async promptReviewer() { return { status: "blocked", reason: "Reviewer needs policy input." }; },
+		async retireWorker(tabId) { retired.push(tabId); },
+	};
+
+	const result = await runFactory({
+		cwd: "/repo", parentIndex: 9, runId: "factory-review-blocked", config: testConfig(),
+		tracker, git, herdr, store: { async save() {} },
+	});
+
+	assert.equal(result.status, "waiting-for-human");
+	assert.deepEqual(result.blocked, [14]);
+	assert.deepEqual(retired, ["w1:t2"]);
+});
+
 test("runFactory does not publish when final review reports actionable findings", async () => {
 	let frontierCalls = 0;
 	let reviewCalls = 0;
@@ -340,6 +381,56 @@ test("runFactory does not publish when final review reports actionable findings"
 	assert.deepEqual(result.finalReview.findings, ["Cross-ticket invariant is untested"]);
 	assert.equal(published, false);
 	assert.equal(pullRequestCreated, false);
+});
+
+test("runFactory retains a human-blocked final reviewer tab for inspection", async () => {
+	let frontierCalls = 0;
+	let reviewCalls = 0;
+	let workerCalls = 0;
+	const retired = [];
+	const tracker = {
+		async listFrontier() { return frontierCalls++ === 0 ? [{ index: 15, title: "Final review input", labels: [] }] : []; },
+		async countOpenChildren() { return 0; },
+		async claim() {},
+		async complete() {},
+		async block() {},
+		async reportRun() {},
+	};
+	const git = {
+		async preflight() {},
+		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
+		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
+		async verifyTicket() {},
+		async captureReviewState(path, label) { return { path, label, revision: "abc" }; },
+		async verifyReviewState() {},
+		async integrate() {},
+		async verifyIntegration() {},
+	};
+	const herdr = {
+		async preflightProfiles() {},
+		async createWorkspace() { return "w1"; },
+		async createWorker({ name }) {
+			workerCalls++;
+			return { name, tabId: `w1:t${workerCalls + 1}`, paneId: `w1:p${workerCalls + 1}` };
+		},
+		async promptWorker() { return { status: "success", summary: "done", tests: ["test: pass"] }; },
+		async promptReviewer() {
+			reviewCalls++;
+			return reviewCalls === 1
+				? { status: "passed", summary: "ticket clean", findings: [] }
+				: { status: "blocked", reason: "Final reviewer needs policy input." };
+		},
+		async retireWorker(tabId) { retired.push(tabId); },
+	};
+
+	const result = await runFactory({
+		cwd: "/repo", parentIndex: 9, runId: "factory-final-review-blocked", config: testConfig(),
+		tracker, git, herdr, store: { async save() {} },
+	});
+
+	assert.equal(result.status, "waiting-for-human");
+	assert.equal(result.finalReview.reason, "Final reviewer needs policy input.");
+	assert.deepEqual(retired, ["w1:t3", "w1:t2"]);
 });
 
 test("runFactory routes an integration conflict to a human and stops the run", async () => {
@@ -442,8 +533,9 @@ test("runFactory honors a repair response that asks for human input", async () =
 	assert.deepEqual(blocked, [[8, "A product decision is required."]]);
 });
 
-test("runFactory routes a human blocker and continues unrelated frontier work", async () => {
+test("runFactory retains a human-blocked worker tab for inspection", async () => {
 	const blocked = [];
+	const retired = [];
 	let call = 0;
 	const tracker = {
 		async listFrontier() {
@@ -467,6 +559,7 @@ test("runFactory routes a human blocker and continues unrelated frontier work", 
 		async createWorkspace() { return "w1"; },
 		async createWorker({ name }) { return { name, tabId: "w1:t2", paneId: "w1:p2" }; },
 		async promptWorker() { return { status: "blocked", reason: "A production API credential is required." }; },
+		async retireWorker(tabId) { retired.push(tabId); },
 	};
 
 	const result = await runFactory({
@@ -483,4 +576,5 @@ test("runFactory routes a human blocker and continues unrelated frontier work", 
 	assert.equal(result.status, "waiting-for-human");
 	assert.deepEqual(result.blocked, [10]);
 	assert.deepEqual(blocked, [[10, "A production API credential is required."]]);
+	assert.deepEqual(retired, []);
 });
