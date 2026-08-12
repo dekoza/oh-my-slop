@@ -29,7 +29,7 @@ function formatStatus(state: Record<string, unknown>): string {
 	return [
 		`Factory run: ${state.id}`,
 		`Status: ${state.status}`,
-		`Parent ticket: #${state.parentIndex}`,
+		`Target ticket or parent: #${state.parentIndex}`,
 		`Completed: ${completed}`,
 		`Human-blocked: ${blocked}`,
 		state.currentTicket ? `Current ticket: #${state.currentTicket}` : undefined,
@@ -45,7 +45,7 @@ export default function softwareFactory(pi: ExtensionAPI) {
 	const agentRoot = join(process.env.PI_AGENT_DIR ?? join(homedir(), ".pi", "agent"), "software-factory");
 
 	pi.registerCommand("factory", {
-		description: "Software factory controls: /factory start <parent-ticket> | /factory status",
+		description: "Software factory controls: /factory start <ticket-or-parent> | /factory status",
 		async handler(args, ctx) {
 			const [subcommand = "status", reference = ""] = args.trim().split(/\s+/, 2);
 			const store = createRunStore({ root: agentRoot, cwd: ctx.cwd });
@@ -60,7 +60,7 @@ export default function softwareFactory(pi: ExtensionAPI) {
 			}
 
 			if (subcommand !== "start") {
-				ctx.ui.notify("Usage: /factory start <parent-ticket> | /factory status", "warning");
+				ctx.ui.notify("Usage: /factory start <ticket-or-parent> | /factory status", "warning");
 				return;
 			}
 			if (!ctx.isProjectTrusted()) {
@@ -69,7 +69,7 @@ export default function softwareFactory(pi: ExtensionAPI) {
 			}
 			const parentIndex = parseParentIndex(reference);
 			if (!parentIndex) {
-				ctx.ui.notify("Usage: /factory start <parent-ticket-number-or-URL>", "warning");
+				ctx.ui.notify("Usage: /factory start <ticket-or-parent-number-or-URL>", "warning");
 				return;
 			}
 			if (activeRuns.has(ctx.cwd)) {
@@ -125,7 +125,7 @@ export default function softwareFactory(pi: ExtensionAPI) {
 				store: statusStore,
 			});
 			activeRuns.set(ctx.cwd, promise);
-			ctx.ui.notify(`Started ${runId} for parent ticket #${parentIndex}.`, "info");
+			ctx.ui.notify(`Started ${runId} for target ticket or parent #${parentIndex}.`, "info");
 			void promise.then((state) => {
 				ctx.ui.notify(formatStatus(state as Record<string, unknown>), "info");
 			}).catch((error) => {

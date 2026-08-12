@@ -23,7 +23,7 @@ After installation, pi auto-discovers:
 
 Both extensions load automatically. Loading the software factory only registers `/factory`;
 it cannot create branches, run workers, update tickets, or push anything until a user explicitly
-runs `/factory start <parent-ticket>` from Herdr in a repository with `.pi/factory.json`.
+runs `/factory start <ticket-or-parent>` from Herdr in a repository with `.pi/factory.json`.
 Existing installations pick up the new entrypoint after `pi update --extensions` and a pi
 restart or `/reload`.
 

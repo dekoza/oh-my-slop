@@ -119,7 +119,7 @@ def test_software_factory_readme_says_root_package_install_loads_it_automaticall
 
     assert "loads automatically" in readme_text
     assert "stays opt-in" not in readme_text
-    assert "/factory start <parent-ticket>" in readme_text
+    assert "/factory start <ticket-or-parent>" in readme_text
     assert ".pi/factory.json" in readme_text
     assert "workers.profiles" in readme_text
     assert readme_text.count('"model": "opus"') >= 2

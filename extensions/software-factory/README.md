@@ -9,7 +9,7 @@ integrates one ticket at a time.
 
 The software factory loads automatically with the root package, but loading only registers
 `/factory`. No factory
-run starts until a user explicitly invokes `/factory start <parent-ticket>` from Herdr.
+run starts until a user explicitly invokes `/factory start <ticket-or-parent>` from Herdr.
 That command can create branches and worktrees, run agents, update Gitea issues, push an
 integration branch, and open a pull request.
 
@@ -20,9 +20,11 @@ integration branch, and open a pull request.
 2. Use `wayfinder` to resolve decision tickets with the required human involvement.
 3. Use `to-tickets` to publish build-ready tickets carrying `workflow:implement` and
    the configured `ready-for-agent` label.
-4. From a Herdr-managed pi pane, run `/factory start <parent-ticket>`.
-5. The factory claims the first unblocked, unassigned child ticket, resolves its worker
-   profile from committed label/phase rules, creates an isolated ticket worktree and Herdr
+4. From a Herdr-managed pi pane, run `/factory start <ticket-or-parent>`. The target
+   can be one agent-ready implementation ticket or a parent containing such tickets.
+5. The factory claims the target ticket, or the first unblocked, unassigned child ticket,
+   resolves its worker profile from committed label/phase rules, creates an isolated ticket
+   worktree and Herdr
    tab, and invokes `implement` through pi or Claude Code.
 6. A successful implementation worker must commit its work and report test evidence. A
    separately launched reviewer runs `two-axis-review`; actionable findings consume the
@@ -53,7 +55,7 @@ refuses to control a focused Herdr session from outside a managed pane.
 
 | Command | Effect |
 |---|---|
-| `/factory start <parent-ticket>` | Start a background serial run for the Gitea parent issue number or URL. |
+| `/factory start <ticket-or-parent>` | Start a background serial run for one eligible Gitea implementation ticket, or for the eligible children of a parent issue. |
 | `/factory status` | Show the last repository-scoped run snapshot. |
 
 ## Configuration reference

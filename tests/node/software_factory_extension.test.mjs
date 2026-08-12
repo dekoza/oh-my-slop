@@ -32,7 +32,7 @@ test("software-factory extension registers one command with start and status gui
 	module.default(pi);
 
 	assert.deepEqual([...commands.keys()], ["factory"]);
-	assert.match(commands.get("factory").description, /start <parent-ticket>/);
+	assert.match(commands.get("factory").description, /start <ticket-or-parent>/);
 
 	const notifications = [];
 	await commands.get("factory").handler("status", {

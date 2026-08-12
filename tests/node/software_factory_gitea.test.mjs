@@ -7,12 +7,22 @@ function result(stdout = "") {
 	return { code: 0, stdout, stderr: "" };
 }
 
-function trackerWithFixtures({ issues, dependencies = {}, extraLabels = [] }) {
+function trackerWithFixtures({ issues, dependencies = {}, extraLabels = [], targetIssue }) {
 	const calls = [];
 	const exec = async (command, args) => {
 		calls.push([command, args]);
 		if (command === "tea" && args[0] === "api") {
 			const endpoint = args.at(-1);
+			if (/\/issues\/\d+$/.test(endpoint)) {
+				return result(JSON.stringify(targetIssue ?? {
+					number: 9,
+					title: "Parent",
+					body: "",
+					state: "open",
+					assignees: [],
+					labels: [],
+				}));
+			}
 			if (endpoint.includes("?state=open")) {
 				return result(JSON.stringify(issues.map((issue) => ({
 					...issue,
@@ -38,6 +48,28 @@ function trackerWithFixtures({ issues, dependencies = {}, extraLabels = [] }) {
 		}),
 	};
 }
+
+test("listFrontier runs an eligible implementation ticket passed directly to the factory", async () => {
+	const { calls, tracker } = trackerWithFixtures({
+		issues: [],
+		targetIssue: {
+			number: 64,
+			title: "Shareable HTML demo",
+			body: "Part of #46",
+			state: "open",
+			assignees: [],
+			labels: [{ name: "workflow:implement" }, { name: "ready-for-agent" }],
+		},
+	});
+
+	assert.deepEqual(await tracker.listFrontier(64), [{
+		index: 64,
+		title: "Shareable HTML demo",
+		labels: ["workflow:implement", "ready-for-agent"],
+	}]);
+	assert.equal(await tracker.countOpenTargets(64), 1);
+	assert.equal(calls.some(([, args]) => args.at(-1).includes("?state=open")), false);
+});
 
 test("listFrontier returns routing labels for unassigned children whose blockers are closed", async () => {
 	const { tracker } = trackerWithFixtures({
@@ -68,6 +100,16 @@ test("listFrontier rejects Gitea API error envelopes even when tea exits zero", 
 		cwd: "/repo",
 		config: { repo: "minder/example", remote: "gitea", assignee: "minder" },
 		exec: async (_command, args) => {
+			if (/\/issues\/\d+$/.test(args.at(-1))) {
+				return result(JSON.stringify({
+					number: 9,
+					title: "Parent",
+					body: "",
+					state: "open",
+					assignees: [],
+					labels: [],
+				}));
+			}
 			if (args.at(-1).includes("?state=open")) {
 				return result(JSON.stringify([{
 					number: 10,

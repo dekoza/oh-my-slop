@@ -260,7 +260,7 @@ what consumer skills dereference.
 ### 5. Done
 
 Tell the user setup is complete and which skills now read from these files. When the
-factory was configured, name `.pi/factory.json`, say that `/factory start <parent-ticket>`
+factory was configured, name `.pi/factory.json`, say that `/factory start <ticket-or-parent>`
 must run inside Herdr, and state that final merge remains manual. Mention they can edit
 `docs/agents/*.md` and `.pi/factory.json` directly later; re-running this skill is only
 needed to switch trackers, to re-sync after a skills update (below), or to start over.

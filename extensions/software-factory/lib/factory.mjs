@@ -42,13 +42,14 @@ export async function runFactory({
 		pullRequest: undefined,
 	};
 	const save = async () => store.save(state);
+	const countOpenTargets = tracker.countOpenTargets ?? tracker.countOpenChildren;
 
 	try {
 	await save();
 	await git.preflight();
 	const initialFrontier = await tracker.listFrontier(parentIndex);
 	if (initialFrontier.length === 0) {
-		state.status = await tracker.countOpenChildren(parentIndex) > 0
+		state.status = await countOpenTargets(parentIndex) > 0
 			? "waiting-for-human"
 			: "nothing-to-do";
 		await save();
@@ -74,8 +75,8 @@ export async function runFactory({
 		const frontier = firstFrontier ? initialFrontier : await tracker.listFrontier(parentIndex);
 		firstFrontier = false;
 		if (frontier.length === 0) {
-			const openChildren = await tracker.countOpenChildren(parentIndex);
-			if (openChildren > 0) {
+			const openTargets = await countOpenTargets(parentIndex);
+			if (openTargets > 0) {
 				state.status = "waiting-for-human";
 				await save();
 				await tracker.reportRun(parentIndex, state);

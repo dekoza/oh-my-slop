@@ -55,6 +55,22 @@ export function createGiteaTracker({ exec, cwd, config }) {
 		return response.stdout;
 	}
 
+	function issueLabels(issue) {
+		return (issue.labels ?? []).map((label) => typeof label === "string" ? label : label.name);
+	}
+
+	function normalizeIssue(issue) {
+		return { ...issue, index: Number(issue.number), labels: issueLabels(issue) };
+	}
+
+	async function getIssue(index) {
+		const output = await run([
+			"api",
+			`/repos/${config.repo}/issues/${Number(index)}`,
+		], `reading factory target #${index}`);
+		return normalizeIssue(parseJson(output, `reading factory target #${index}`));
+	}
+
 	async function listChildren(parentIndex, requiredLabels = [labels.implementation]) {
 		const issues = [];
 		for (let page = 1; ; page++) {
@@ -68,17 +84,25 @@ export function createGiteaTracker({ exec, cwd, config }) {
 			if (batch.length < 50) break;
 		}
 		return issues
-			.filter((issue) => {
-				const issueLabels = (issue.labels ?? []).map((label) => typeof label === "string" ? label : label.name);
-				return requiredLabels.every((required) => issueLabels.includes(required));
-			})
+			.map(normalizeIssue)
+			.filter((issue) => requiredLabels.every((required) => issue.labels.includes(required)))
 			.filter((issue) => referencesParent(issue.body, parentIndex))
-			.map((issue) => ({ ...issue, index: Number(issue.number) }))
 			.sort((left, right) => left.index - right.index);
 	}
 
+	async function listTargets(targetIndex, requiredLabels) {
+		const target = await getIssue(targetIndex);
+		if (target.labels.includes(labels.implementation)) {
+			return target.state === "open"
+				&& requiredLabels.every((required) => target.labels.includes(required))
+				? [target]
+				: [];
+		}
+		return listChildren(targetIndex, requiredLabels);
+	}
+
 	async function listFrontier(parentIndex) {
-		const issues = (await listChildren(parentIndex, [labels.implementation, labels.readyForAgent]))
+		const issues = (await listTargets(parentIndex, [labels.implementation, labels.readyForAgent]))
 			.filter((issue) => !hasAssignees(issue.assignees));
 
 		const frontier = [];
@@ -133,8 +157,8 @@ export function createGiteaTracker({ exec, cwd, config }) {
 		], `commenting on #${index}`);
 	}
 
-	async function countOpenChildren(parentIndex) {
-		return (await listChildren(parentIndex)).length;
+	async function countOpenTargets(parentIndex) {
+		return (await listTargets(parentIndex, [labels.implementation])).length;
 	}
 
 	async function complete(index, result, runState) {
@@ -194,7 +218,7 @@ export function createGiteaTracker({ exec, cwd, config }) {
 
 	return {
 		listFrontier,
-		countOpenChildren,
+		countOpenTargets,
 		claim,
 		complete,
 		block,
