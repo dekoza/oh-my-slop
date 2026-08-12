@@ -59,7 +59,9 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 		},
 		async countOpenChildren() { events.push("count-open"); return 0; },
 		async claim(index) { events.push(`claim:${index}`); },
-		async complete(index, result) { events.push(`complete:${index}:${result.summary}`); },
+		async complete(index, result) {
+			events.push(`complete:${index}:${result.summary}:${result.workerProfile}:${result.review.profile}`);
+		},
 		async block(index) { events.push(`block:${index}`); },
 		async createPullRequest(run) { events.push(`pr:${run.integrationBranch}`); return "https://gitea/pr/7"; },
 		async reportRun(_parent, state) { events.push(`report:${state.status}`); },
@@ -122,9 +124,10 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 	assert.ok(events.indexOf("verify") < events.indexOf("review:1"));
 	assert.ok(events.indexOf("review:1") < events.indexOf("integrate:42"));
 	assert.ok(events.indexOf("integrate:42") < events.indexOf("verify-integration"));
-	assert.ok(events.indexOf("verify-integration") < events.indexOf("complete:42:checkout works"));
+	const completionEvent = "complete:42:checkout works:local:gpt";
+	assert.ok(events.indexOf("verify-integration") < events.indexOf(completionEvent));
 	assert.ok(events.indexOf("retire:w4:t3") < events.indexOf("integrate:42"));
-	assert.ok(events.indexOf("retire:w4:t2") < events.indexOf("complete:42:checkout works"));
+	assert.ok(events.indexOf("retire:w4:t2") < events.indexOf(completionEvent));
 	assert.ok(events.indexOf("review:2") < events.indexOf("publish"));
 	assert.deepEqual(events.slice(-3), ["publish", "pr:factory/factory-a1/integration", "report:awaiting-merge"]);
 	assert.equal(snapshots.at(-1).status, "awaiting-merge");

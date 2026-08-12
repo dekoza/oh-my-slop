@@ -140,7 +140,8 @@ test("complete records idempotent evidence before closing the ticket", async () 
 		{
 			summary: "Checkout works",
 			tests: ["uv run pytest: passed"],
-			review: { status: "passed", summary: "No actionable findings", findings: [] },
+			workerProfile: "gpt",
+			review: { status: "passed", summary: "No actionable findings", findings: [], profile: "claude-review" },
 		},
 		{ integrationBranch: "factory/run/integration" },
 	);
@@ -150,7 +151,8 @@ test("complete records idempotent evidence before closing the ticket", async () 
 	assert.equal(calls[1][1][2], "700");
 	assert.match(calls[1][1][3], /Checkout works/);
 	assert.match(calls[1][1][3], /uv run pytest: passed/);
-	assert.match(calls[1][1][3], /Independent review: No actionable findings/);
+	assert.match(calls[1][1][3], /Implementation profile: `gpt`/);
+	assert.match(calls[1][1][3], /Independent review \(`claude-review`\): No actionable findings/);
 	assert.deepEqual(calls.at(-1), ["tea", [
 		"issues", "close", "42", "--repo", "minder/example", "--login", "gitea",
 	]]);

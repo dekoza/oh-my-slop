@@ -80,12 +80,13 @@ export async function runFactory({
 				profile: finalProfile,
 			});
 			try {
-				state.finalReview = await herdr.promptReviewer(finalReviewer.name, buildReviewPrompt({
+				const review = await herdr.promptReviewer(finalReviewer.name, buildReviewPrompt({
 					repo: config.tracker.repo,
 					baseBranch: config.git.baseBranch,
 					profile: finalProfile,
 					final: true,
 				}));
+				state.finalReview = { ...review, profile: finalProfile.name };
 			} finally {
 				await herdr.retireWorker?.(finalReviewer.tabId);
 			}
@@ -135,12 +136,13 @@ export async function runFactory({
 				profile,
 			});
 			try {
-				return await herdr.promptReviewer(reviewer.name, buildReviewPrompt({
+				const review = await herdr.promptReviewer(reviewer.name, buildReviewPrompt({
 					repo: config.tracker.repo,
 					ticket,
 					baseBranch: run.integrationBranch,
 					profile,
 				}));
+				return { ...review, profile: profile.name };
 			} finally {
 				await herdr.retireWorker?.(reviewer.tabId);
 			}
@@ -157,6 +159,7 @@ export async function runFactory({
 				].join("\n");
 			try {
 				result = await herdr.promptWorker(worker.name, prompt);
+				if (result.status !== "blocked") result.workerProfile = implementationProfile.name;
 				if (result.status === "blocked") {
 					lastError = undefined;
 					break;
@@ -196,6 +199,7 @@ export async function runFactory({
 					"A previous worker failed verification. Inspect and recover the existing worktree rather than assuming it is clean.",
 				].join("\n"));
 				if (result.status !== "blocked") {
+					result.workerProfile = retryProfile.name;
 					await git.verifyTicket(run, ticketWorktree);
 					const review = await reviewTicket();
 					if (review.status === "failed") {
