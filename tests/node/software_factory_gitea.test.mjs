@@ -150,7 +150,7 @@ test("block moves a ticket to ready-for-human with the reason", async () => {
 		config: { repo: "minder/example", remote: "gitea", assignee: "minder" },
 		exec: async (command, args) => {
 			calls.push([command, args]);
-			if (args[0] === "comments" && args[1] === "list") return result("[]");
+			if (args[0] === "comments" && args[1] === "list") return result("No comments found\n");
 			return result();
 		},
 	});

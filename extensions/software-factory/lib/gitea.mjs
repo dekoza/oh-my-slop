@@ -106,7 +106,10 @@ export function createGiteaTracker({ exec, cwd, config }) {
 			"--limit", "100",
 			"--output", "json",
 		], `reading factory comments on #${index}`);
-		const comments = parseJson(output, `reading factory comments on #${index}`);
+		const normalizedOutput = output.replace(/\u001b\[[0-9;]*[mK]/g, "").trim();
+		const comments = normalizedOutput === "No comments found"
+			? []
+			: parseJson(output, `reading factory comments on #${index}`);
 		const existing = comments.find((comment) => String(comment.body ?? "").startsWith(marker));
 		const content = `${marker}\n\n${body}`;
 		if (existing) {
