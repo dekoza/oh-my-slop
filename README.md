@@ -6,7 +6,7 @@ This repo is a collection of those guardrails — curated skills, pi extensions,
 
 ## How to use
 
-This repo is `pi`-first now. Install it as a package to get the bundled skills and the monitoring-only workflow watchdog. Extensions that execute project work remain opt-in.
+This repo is `pi`-first now. Install it as a package to get the bundled skills and extensions.
 
 ```bash
 pi install git:github.com/dekoza/oh-my-slop
@@ -18,19 +18,17 @@ After installation, pi auto-discovers:
 
 - skills from `./skills`
 - prompt templates from `./prompts`
+- the `software-factory` extension
 - the monitoring-only `workflow-watchdog` extension
 
-The `workflow-watchdog` extension loads automatically on install (it only monitors — no project execution). The software factory stays opt-in. Add its explicit path in your pi `settings.json` when you want it active:
+Both extensions load automatically. Loading the software factory only registers `/factory`;
+it cannot create branches, run workers, update tickets, or push anything until a user explicitly
+runs `/factory start <parent-ticket>` from Herdr in a repository with `.pi/factory.json`.
+Existing installations pick up the new entrypoint after `pi update --extensions` and a pi
+restart or `/reload`.
 
-```json
-{
-  "extensions": [
-    "/path/to/oh-my-slop/extensions/software-factory"
-  ]
-}
-```
-
-For git installs, pi keeps the checkout under `~/.pi/agent/git/...` globally or `.pi/git/...` project-locally, so point the path at that installed checkout. The bundled agent definitions in `./agents` are only seeded if you opt into `subagent-bundled-agents`.
+The bundled agent definitions in `./agents` are only seeded if you opt into
+`subagent-bundled-agents`.
 
 If you only want the markdown skills for OpenCode or some other agent stack, you can still steal `./skills` and wire them up manually. That path still exists. It is just no longer the main story.
 
@@ -89,14 +87,14 @@ Case in point: the agent messed up twice while creating this repo (deleting an u
 
 ## Extensions
 
-These ship in the repo, but the root `pi install` keeps them inactive until you opt in by path.
+These ship in the repo and load automatically through the root `pi install` manifest.
 
 <details>
 <summary><strong>Extensions (2)</strong></summary>
 
 | Extension | Loading | What it does |
 |---|---|---|
-| **[software-factory](extensions/software-factory/README.md)** | Opt-in | Executes Gitea implementation tickets serially in isolated Git worktrees, routing pi and Claude Code workers through Herdr and stopping at explicit human boundaries. |
+| **[software-factory](extensions/software-factory/README.md)** | Automatic | Registers `/factory`; an explicit start command executes Gitea implementation tickets serially in isolated Git worktrees, routing pi and Claude Code workers through Herdr and stopping at explicit human boundaries. |
 | **[workflow-watchdog](extensions/workflow-watchdog/)** | Automatic | Monitors pi's workflow for failure patterns: loop detection, consecutive tool errors, and optional supervisor-model escalation. |
 
 </details>

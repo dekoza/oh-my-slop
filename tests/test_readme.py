@@ -43,11 +43,13 @@ def test_readme_install_example_matches_the_repo_slug() -> None:
     assert "pi install git:github.com/dekoza/oh-my-slop" in readme_text
 
 
-def test_readme_install_section_describes_extension_loading() -> None:
+def test_readme_install_section_describes_automatic_extension_loading() -> None:
     readme_text = load_readme()
 
-    assert "get the bundled skills without auto-enabling the extensions" in readme_text or "workflow-watchdog" in readme_text
-    assert "remain opt-in" in readme_text
+    assert "software-factory" in readme_text
+    assert "workflow-watchdog" in readme_text
+    assert "load automatically" in readme_text
+    assert "remain opt-in" not in readme_text
 
 
 def test_readme_lists_every_bundled_extension() -> None:
@@ -112,11 +114,11 @@ def test_readme_lists_every_bundled_prompt_template() -> None:
         assert command in readme_text, f"README missing prompt template {command}"
 
 
-def test_software_factory_readme_says_root_package_install_stays_opt_in() -> None:
+def test_software_factory_readme_says_root_package_install_loads_it_automatically() -> None:
     readme_text = load_software_factory_readme()
 
-    assert "includes it automatically" not in readme_text
-    assert "stays opt-in" in readme_text
+    assert "loads automatically" in readme_text
+    assert "stays opt-in" not in readme_text
     assert "/factory start <parent-ticket>" in readme_text
     assert ".pi/factory.json" in readme_text
     assert "workers.profiles" in readme_text

@@ -1,7 +1,7 @@
 {
   "name": "oh-my-slop",
   "version": "0.1.0",
-  "description": "Pi package with opinionated skills and opt-in extensions for coding agents.",
+  "description": "Pi package with opinionated skills and extensions for coding agents.",
   "private": true,
   "type": "module",
   "keywords": [
@@ -17,6 +17,7 @@
       "./prompts"
     ],
     "extensions": [
+      "./extensions/software-factory",
       "./extensions/workflow-watchdog"
     ]
   },

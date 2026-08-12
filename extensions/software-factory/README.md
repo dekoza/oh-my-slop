@@ -2,14 +2,16 @@
 
 Status: **Active MVP** (Gitea, Herdr, serial pi and Claude Code workers).
 
-This opt-in pi extension executes agent-ready implementation tickets without turning
-Wayfinder into an implementation workflow. The tracker is durable work state, skills
-define how agents work, Herdr owns terminals and agent lifecycle, and this extension
-schedules and integrates one ticket at a time.
+This pi extension executes agent-ready implementation tickets without turning Wayfinder
+into an implementation workflow. The tracker is durable work state, skills define how
+agents work, Herdr owns terminals and agent lifecycle, and this extension schedules and
+integrates one ticket at a time.
 
-The root package does not enable it automatically; it **stays opt-in** because starting
-a factory creates branches and worktrees, runs agents, updates Gitea issues, pushes an
-integration branch, and opens a pull request.
+The software factory loads automatically with the root package, but loading only registers
+`/factory`. No factory
+run starts until a user explicitly invokes `/factory start <parent-ticket>` from Herdr.
+That command can create branches and worktrees, run agents, update Gitea issues, push an
+integration branch, and open a pull request.
 
 ## Workflow
 
@@ -37,18 +39,15 @@ left open. The serial scheduler continues any unrelated frontier work, then paus
 
 ## Install
 
-Add the extension path from the installed package to pi settings:
+Install the root package; its pi manifest loads this extension automatically:
 
-```json
-{
-  "extensions": [
-    "/path/to/oh-my-slop/extensions/software-factory"
-  ]
-}
+```bash
+pi install git:github.com/dekoza/oh-my-slop
 ```
 
-The extension must be invoked inside Herdr (`HERDR_ENV=1`). It refuses to control a
-focused Herdr session from outside a managed pane.
+Existing package installations pick up the entrypoint after `pi update --extensions` and
+a pi restart or `/reload`. The extension must be invoked inside Herdr (`HERDR_ENV=1`). It
+refuses to control a focused Herdr session from outside a managed pane.
 
 ## Commands
 

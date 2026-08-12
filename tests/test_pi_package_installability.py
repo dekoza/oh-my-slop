@@ -115,14 +115,17 @@ def walk_local_import_graph(entrypoint: Path) -> set[Path]:
     return discovered
 
 
-def test_root_package_manifest_exposes_skills_and_workflow_watchdog_extension() -> None:
+def test_root_package_manifest_exposes_skills_and_bundled_extensions() -> None:
     manifest = load_package_manifest()
 
     assert manifest["keywords"]
     assert "pi-package" in manifest["keywords"]
     assert manifest["pi"]["skills"] == ["./skills"]
     assert manifest["pi"]["prompts"] == ["./prompts"]
-    assert manifest["pi"]["extensions"] == ["./extensions/workflow-watchdog"]
+    assert manifest["pi"]["extensions"] == [
+        "./extensions/software-factory",
+        "./extensions/workflow-watchdog",
+    ]
     assert manifest["peerDependencies"]["@earendil-works/pi-coding-agent"] == "*"
 
 
