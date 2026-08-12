@@ -76,12 +76,21 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 		async verifyIntegration() { events.push("verify-integration"); },
 		async publish() { events.push("publish"); },
 	};
+	let workerNumber = 1;
 	const herdr = {
 		async createWorkspace() { events.push("workspace"); return "w4"; },
-		async createWorker({ name, profile }) { events.push(`worker:${name}:${profile.name}`); return { name, tabId: "w4:t2", paneId: "w4:p2" }; },
+		async createWorker({ name, profile }) {
+			workerNumber++;
+			events.push(`worker:${name}:${profile.name}`);
+			return { name, tabId: `w4:t${workerNumber}`, paneId: `w4:p${workerNumber}` };
+		},
 		async promptWorker() {
 			events.push("prompt");
-			return { status: "success", summary: "checkout works", tests: ["test: pass"], review: "passed" };
+			return { status: "success", summary: "checkout works", tests: ["test: pass"] };
+		},
+		async promptReviewer() {
+			events.push("review");
+			return { status: "passed", summary: "no findings", findings: [] };
 		},
 		async retireWorker(tabId) { events.push(`retire:${tabId}`); },
 	};
@@ -102,10 +111,13 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 	assert.equal(result.pullRequest, "https://gitea/pr/7");
 	assert.deepEqual(result.completed, [42]);
 	assert.ok(events.includes("worker:sf-a1-t42:local"));
+	assert.ok(events.includes("worker:sf-a1-t42-v1:gpt"));
 	assert.ok(events.indexOf("claim:42") < events.indexOf("create-ticket:42"));
-	assert.ok(events.indexOf("verify") < events.indexOf("integrate:42"));
+	assert.ok(events.indexOf("verify") < events.indexOf("review"));
+	assert.ok(events.indexOf("review") < events.indexOf("integrate:42"));
 	assert.ok(events.indexOf("integrate:42") < events.indexOf("verify-integration"));
 	assert.ok(events.indexOf("verify-integration") < events.indexOf("complete:42:checkout works"));
+	assert.ok(events.indexOf("retire:w4:t3") < events.indexOf("integrate:42"));
 	assert.ok(events.indexOf("retire:w4:t2") < events.indexOf("complete:42:checkout works"));
 	assert.deepEqual(events.slice(-3), ["publish", "pr:factory/factory-a1/integration", "report:awaiting-merge"]);
 	assert.equal(snapshots.at(-1).status, "awaiting-merge");
@@ -139,8 +151,9 @@ test("runFactory gives the same worker one repair attempt before integration", a
 		async promptWorker() {
 			promptCalls++;
 			if (promptCalls === 1) throw new Error("missing result protocol");
-			return { status: "success", summary: "repaired", tests: ["test: pass"], review: "passed" };
+			return { status: "success", summary: "repaired", tests: ["test: pass"] };
 		},
+		async promptReviewer() { return { status: "passed", summary: "clean", findings: [] }; },
 	};
 
 	await runFactory({
@@ -189,8 +202,9 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 		async promptWorker() {
 			promptCalls++;
 			if (promptCalls < 3) throw new Error(`attempt ${promptCalls} failed`);
-			return { status: "success", summary: "fresh worker recovered", tests: ["test: pass"], review: "passed" };
+			return { status: "success", summary: "fresh worker recovered", tests: ["test: pass"] };
 		},
+		async promptReviewer() { return { status: "passed", summary: "clean", findings: [] }; },
 	};
 
 	await runFactory({
@@ -198,9 +212,9 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 		tracker, git, herdr, store: { async save() {} },
 	});
 
-	assert.equal(workerCalls, 2);
+	assert.equal(workerCalls, 3);
 	assert.equal(promptCalls, 3);
-	assert.deepEqual(retired, ["w1:t2", "w1:t3"]);
+	assert.deepEqual(retired, ["w1:t2", "w1:t4", "w1:t3"]);
 	assert.deepEqual(blocked, []);
 	assert.equal(completed, true);
 });
@@ -227,7 +241,8 @@ test("runFactory routes an integration conflict to a human and stops the run", a
 	const herdr = {
 		async createWorkspace() { return "w1"; },
 		async createWorker({ name }) { return { name, tabId: "w1:t2", paneId: "w1:p2" }; },
-		async promptWorker() { return { status: "success", summary: "done", tests: ["test: pass"], review: "passed" }; },
+		async promptWorker() { return { status: "success", summary: "done", tests: ["test: pass"] }; },
+		async promptReviewer() { return { status: "passed", summary: "clean", findings: [] }; },
 	};
 
 	const result = await runFactory({

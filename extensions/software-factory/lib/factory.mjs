@@ -1,4 +1,4 @@
-import { buildWorkerPrompt } from "./herdr.mjs";
+import { buildReviewPrompt, buildWorkerPrompt } from "./herdr.mjs";
 import { selectWorkerProfile } from "./routing.mjs";
 
 function workerName(runId, ticketIndex, suffix = "") {
@@ -90,6 +90,28 @@ export async function runFactory({
 			profile: implementationProfile,
 		});
 		const initialPrompt = buildWorkerPrompt({ repo: config.tracker.repo, ticket, profile: implementationProfile });
+		let reviewNumber = 0;
+		const reviewTicket = async () => {
+			reviewNumber++;
+			const profile = selectWorkerProfile(config.workers, "review", ticket);
+			const reviewer = await herdr.createWorker({
+				workspaceId: state.workspaceId,
+				cwd: ticketWorktree.path,
+				name: workerName(runId, ticket.index, `-v${reviewNumber}`),
+				label: `#${ticket.index} review ${reviewNumber}`,
+				profile,
+			});
+			try {
+				return await herdr.promptReviewer(reviewer.name, buildReviewPrompt({
+					repo: config.tracker.repo,
+					ticket,
+					baseBranch: run.integrationBranch,
+					profile,
+				}));
+			} finally {
+				await herdr.retireWorker?.(reviewer.tabId);
+			}
+		};
 		let result;
 		let lastError;
 		for (let attempt = 0; attempt <= config.retry.repairAttempts; attempt++) {
@@ -107,6 +129,16 @@ export async function runFactory({
 					break;
 				}
 				await git.verifyTicket(run, ticketWorktree);
+				const review = await reviewTicket();
+				if (review.status === "blocked") {
+					result = review;
+					lastError = undefined;
+					break;
+				}
+				if (review.status === "failed") {
+					throw new Error(`Independent review failed: ${review.findings.join("; ")}`);
+				}
+				result.review = review;
 				lastError = undefined;
 				break;
 			} catch (error) {
@@ -130,7 +162,15 @@ export async function runFactory({
 					"",
 					"A previous worker failed verification. Inspect and recover the existing worktree rather than assuming it is clean.",
 				].join("\n"));
-				if (result.status !== "blocked") await git.verifyTicket(run, ticketWorktree);
+				if (result.status !== "blocked") {
+					await git.verifyTicket(run, ticketWorktree);
+					const review = await reviewTicket();
+					if (review.status === "failed") {
+						throw new Error(`Independent review failed: ${review.findings.join("; ")}`);
+					}
+					if (review.status === "blocked") result = review;
+					else result.review = review;
+				}
 				lastError = undefined;
 			} catch (error) {
 				lastError = error;
@@ -144,6 +184,7 @@ export async function runFactory({
 			};
 		}
 		if (result.status === "blocked") {
+			await herdr.retireWorker?.(worker.tabId);
 			await tracker.block(ticket.index, result.reason);
 			state.blocked.push(ticket.index);
 			state.currentTicket = undefined;
