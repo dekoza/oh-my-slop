@@ -120,7 +120,10 @@ def test_software_factory_readme_says_root_package_install_stays_opt_in() -> Non
     assert "/factory start <parent-ticket>" in readme_text
     assert ".pi/factory.json" in readme_text
     assert "workers.profiles" in readme_text
-    assert "finalReview" in readme_text
+    assert readme_text.count('"model": "opus"') >= 2
+    assert '"claude-final-review"' in readme_text
+    assert '"model": "fable"' in readme_text
+    assert '"finalReview": "claude-final-review"' in readme_text
     assert "Claude Code" in readme_text
     assert "llama.cpp" in readme_text
 

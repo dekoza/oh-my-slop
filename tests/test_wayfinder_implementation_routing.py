@@ -59,7 +59,8 @@ def test_project_setup_can_emit_machine_readable_factory_policy() -> None:
     assert '"workers"' in setup_skill_text
     assert '"profiles"' in setup_skill_text
     assert '"freshRetry"' in setup_skill_text
-    assert '"finalReview"' in setup_skill_text
+    assert '"finalReview": "final-review"' in setup_skill_text
+    assert '"model": "fable"' in setup_skill_text
     assert "pi --list-models" in setup_skill_text
     assert "claude --version" in setup_skill_text
     assert '"repairAttempts": 1' in setup_skill_text

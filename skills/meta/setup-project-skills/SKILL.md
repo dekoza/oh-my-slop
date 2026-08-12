@@ -207,7 +207,7 @@ When Section D was accepted, write this shape using the answers already resolved
       },
       "final-review": {
         "kind": "claude",
-        "model": "sonnet",
+        "model": "fable",
         "effort": "high",
         "permissionMode": "dontAsk"
       }

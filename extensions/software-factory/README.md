@@ -103,13 +103,19 @@ Example policy using subscription, metered, and local capacity:
       },
       "claude-implement": {
         "kind": "claude",
-        "model": "sonnet",
+        "model": "opus",
         "effort": "high",
         "permissionMode": "acceptEdits"
       },
       "claude-review": {
         "kind": "claude",
-        "model": "sonnet",
+        "model": "opus",
+        "effort": "high",
+        "permissionMode": "dontAsk"
+      },
+      "claude-final-review": {
+        "kind": "claude",
+        "model": "fable",
         "effort": "high",
         "permissionMode": "dontAsk"
       }
@@ -119,7 +125,7 @@ Example policy using subscription, metered, and local capacity:
         "implement": "openrouter-general",
         "freshRetry": "gpt",
         "review": "openrouter-review",
-        "finalReview": "claude-review"
+        "finalReview": "claude-final-review"
       },
       "rules": [
         { "labelsAny": ["factory:local"], "phases": ["implement", "review"], "profile": "local" },
@@ -131,6 +137,11 @@ Example policy using subscription, metered, and local capacity:
   }
 }
 ```
+
+The recommended Claude tiers reserve Opus for explicitly routed high-risk implementation
+and ticket review, while Fable performs the final integration review. Routine work remains
+on the pi/OpenRouter defaults, preserving Claude Max capacity and keeping Fable independent
+from ticket implementation.
 
 To run every model-bearing phase locally, map all four defaults to `local` and omit rules
 that select remote profiles. The factory scheduler, Git operations, and tracker adapter do
