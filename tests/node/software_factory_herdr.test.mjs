@@ -16,6 +16,7 @@ test("buildWorkerPrompt invokes implement and keeps integration authority outsid
 	const prompt = buildWorkerPrompt({
 		repo: "minder/example",
 		ticket: { index: 42, title: "Deliver checkout" },
+		profile: { kind: "pi" },
 	});
 
 	assert.match(prompt, /^\/skill:implement /);
@@ -72,6 +73,7 @@ test("Herdr runtime creates one background workspace and a named pi worker tab",
 		cwd: "/repo/.worktrees/factory-a1-t42",
 		name: "factory-a1-t42",
 		label: "#42 Deliver checkout",
+		profile: { kind: "pi", model: "openai-codex/gpt-5.6-sol", thinking: "high" },
 	});
 
 	assert.equal(workspaceId, "w4");
@@ -79,8 +81,46 @@ test("Herdr runtime creates one background workspace and a named pi worker tab",
 	assert.deepEqual(calls, [
 		["herdr", ["workspace", "create", "--cwd", "/repo/.worktrees/factory-a1-integration", "--label", "factory-a1", "--no-focus"]],
 		["herdr", ["tab", "create", "--workspace", "w4", "--cwd", "/repo/.worktrees/factory-a1-t42", "--label", "#42 Deliver checkout", "--no-focus"]],
-		["herdr", ["agent", "start", "factory-a1-t42", "--kind", "pi", "--pane", "w4:p2"]],
+		["herdr", [
+			"agent", "start", "factory-a1-t42", "--kind", "pi", "--pane", "w4:p2", "--timeout", "30000", "--",
+			"--model", "openai-codex/gpt-5.6-sol", "--thinking", "high",
+		]],
 	]);
+});
+
+test("Herdr runtime starts Claude Code with profile-specific safe native arguments", async () => {
+	const calls = [];
+	const runtime = createHerdrRuntime({
+		env: { HERDR_ENV: "1" },
+		exec: async (_command, args) => {
+			calls.push(args);
+			if (args[0] === "tab") return response({ result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p2" } } });
+			return response({ result: { agent: { name: "claude-worker" } } });
+		},
+	});
+
+	await runtime.createWorker({
+		workspaceId: "w1",
+		cwd: "/worktree",
+		name: "claude-worker",
+		label: "#42 review",
+		profile: { kind: "claude", model: "sonnet", effort: "high", permissionMode: "dontAsk", startupTimeoutMs: 90000 },
+	});
+
+	assert.deepEqual(calls[1], [
+		"agent", "start", "claude-worker", "--kind", "claude", "--pane", "w1:p2", "--timeout", "90000", "--",
+		"--model", "sonnet", "--effort", "high", "--permission-mode", "dontAsk",
+	]);
+});
+
+test("buildWorkerPrompt uses a portable skill instruction for Claude Code", () => {
+	const prompt = buildWorkerPrompt({
+		repo: "minder/example",
+		ticket: { index: 42, title: "Deliver checkout" },
+		profile: { kind: "claude" },
+	});
+	assert.match(prompt, /^Use the `implement` skill/);
+	assert.doesNotMatch(prompt, /^\/skill:implement/);
 });
 
 test("Herdr runtime surfaces a blocked agent without sending a repair prompt", async () => {
