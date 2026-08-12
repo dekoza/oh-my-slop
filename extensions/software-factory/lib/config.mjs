@@ -139,6 +139,9 @@ function parseWorkers(value) {
 		if (!Array.isArray(rule.phases) || rule.phases.length === 0 || rule.phases.some((phase) => !ROUTING_PHASES.includes(phase))) {
 			throw new FactoryConfigError(`${path}.phases contains an unsupported routing phase.`);
 		}
+		if (rule.phases.includes("finalReview")) {
+			throw new FactoryConfigError(`${path}: finalReview is run-level and cannot use ticket-label rules.`);
+		}
 		const profile = requireNonEmptyString(rule.profile, `${path}.profile`);
 		if (!profiles[profile]) throw new FactoryConfigError(`${path}.profile references unknown profile "${profile}".`);
 		return {

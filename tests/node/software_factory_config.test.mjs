@@ -99,6 +99,26 @@ test("loadFactoryConfig rejects Claude permission bypass profiles", async () => 
 	);
 });
 
+test("loadFactoryConfig rejects label rules for run-level final review", async () => {
+	const cwd = await projectWithConfig({
+		version: 1,
+		tracker: { kind: "gitea", repo: "minder/example", assignee: "minder" },
+		workers: {
+			profiles: { reviewer: { kind: "claude", model: "sonnet", permissionMode: "dontAsk" } },
+			routing: {
+				defaults: { implement: "reviewer", freshRetry: "reviewer", review: "reviewer", finalReview: "reviewer" },
+				rules: [{ labelsAny: ["risk:high"], phases: ["finalReview"], profile: "reviewer" }],
+			},
+		},
+	});
+
+	await assert.rejects(
+		loadFactoryConfig(cwd),
+		(error) => error instanceof FactoryConfigError
+			&& error.message.includes("finalReview is run-level and cannot use ticket-label rules"),
+	);
+});
+
 test("loadFactoryConfig preserves setup-project-skills label overrides", async () => {
 	const cwd = await projectWithConfig({
 		version: 1,

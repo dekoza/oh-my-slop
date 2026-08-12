@@ -61,6 +61,10 @@ test("review protocol carries actionable findings independently from implementat
 		parseReviewResult('FACTORY_REVIEW {"status":"passed","summary":"No actionable findings"}'),
 		{ status: "passed", summary: "No actionable findings", findings: [] },
 	);
+	assert.throws(
+		() => parseReviewResult('FACTORY_REVIEW {"status":"passed","summary":"Contradictory","findings":["Critical defect"]}'),
+		/pass.*cannot include findings/i,
+	);
 });
 
 test("buildReviewPrompt gives pi and Claude a read-only two-axis-review contract", () => {

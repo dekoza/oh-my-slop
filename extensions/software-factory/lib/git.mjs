@@ -69,6 +69,20 @@ export function createGitRuntime({ exec, cwd, baseBranch, remote }) {
 		}
 	}
 
+	async function captureReviewState(path, label) {
+		const status = await run(["-C", path, "status", "--porcelain"], `checking ${label} worktree`);
+		if (status.trim() !== "") throw new FactoryGitError(`${label} worktree is not clean before review.`);
+		const revision = (await run(["-C", path, "rev-parse", "HEAD"], `capturing ${label} revision`)).trim();
+		return { path, label, revision };
+	}
+
+	async function verifyReviewState(state) {
+		const status = await run(["-C", state.path, "status", "--porcelain"], `checking ${state.label} worktree after review`);
+		if (status.trim() !== "") throw new FactoryGitError(`${state.label} left worktree changes.`);
+		const revision = (await run(["-C", state.path, "rev-parse", "HEAD"], `verifying ${state.label} revision`)).trim();
+		if (revision !== state.revision) throw new FactoryGitError(`${state.label} changed HEAD from ${state.revision} to ${revision}.`);
+	}
+
 	async function integrate(runState, ticketState, ticketIndex) {
 		await run([
 			"-C", runState.integrationPath,
@@ -100,5 +114,15 @@ export function createGitRuntime({ exec, cwd, baseBranch, remote }) {
 		], `publishing ${runState.integrationBranch}`);
 	}
 
-	return { preflight, createRun, createTicket, verifyTicket, integrate, verifyIntegration, publish };
+	return {
+		preflight,
+		createRun,
+		createTicket,
+		verifyTicket,
+		captureReviewState,
+		verifyReviewState,
+		integrate,
+		verifyIntegration,
+		publish,
+	};
 }

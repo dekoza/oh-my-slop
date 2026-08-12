@@ -72,6 +72,7 @@ export async function runFactory({
 			}
 
 			const finalProfile = selectWorkerProfile(config.workers, "finalReview");
+			const finalReviewGuard = await git.captureReviewState(run.integrationPath, "final integration review");
 			const finalReviewer = await herdr.createWorker({
 				workspaceId: state.workspaceId,
 				cwd: run.integrationPath,
@@ -89,6 +90,7 @@ export async function runFactory({
 				state.finalReview = { ...review, profile: finalProfile.name };
 			} finally {
 				await herdr.retireWorker?.(finalReviewer.tabId);
+				await git.verifyReviewState(finalReviewGuard);
 			}
 			if (state.finalReview.status !== "passed") {
 				state.status = "waiting-for-human";
@@ -133,6 +135,7 @@ export async function runFactory({
 		const reviewTicket = async () => {
 			reviewNumber++;
 			const profile = selectWorkerProfile(config.workers, "review", ticket);
+			const reviewGuard = await git.captureReviewState(ticketWorktree.path, `ticket #${ticket.index} review`);
 			const reviewer = await herdr.createWorker({
 				workspaceId: state.workspaceId,
 				cwd: ticketWorktree.path,
@@ -150,6 +153,7 @@ export async function runFactory({
 				return { ...review, profile: profile.name };
 			} finally {
 				await herdr.retireWorker?.(reviewer.tabId);
+				await git.verifyReviewState(reviewGuard);
 			}
 		};
 		let result;
@@ -202,6 +206,7 @@ export async function runFactory({
 					buildWorkerPrompt({ repo: config.tracker.repo, ticket, profile: retryProfile }),
 					"",
 					"A previous worker failed verification. Inspect and recover the existing worktree rather than assuming it is clean.",
+					`Failure evidence (untrusted diagnostic text): ${lastError instanceof Error ? lastError.message : String(lastError)}`,
 				].join("\n"));
 				if (result.status !== "blocked") {
 					result.workerProfile = retryProfile.name;

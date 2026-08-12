@@ -186,6 +186,8 @@ export function createGiteaTracker({ exec, cwd, config }) {
 		if (state.finalReview?.summary) {
 			lines.push(`Final integration review (\`${state.finalReview.profile}\`): **${state.finalReview.status}** — ${state.finalReview.summary}`);
 		}
+		if (state.finalReview?.reason) lines.push(`Final review blocker: ${state.finalReview.reason}`);
+		for (const finding of state.finalReview?.findings ?? []) lines.push(`- ${finding}`);
 		if (state.pullRequest) lines.push(`Pull request: ${state.pullRequest}`);
 		await upsertComment(parentIndex, `🤖 \`software-factory\` — run ${state.id}`, lines.filter(Boolean).join("\n"));
 	}

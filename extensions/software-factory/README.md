@@ -63,9 +63,10 @@ focused Herdr session from outside a managed pane.
 `setup-project-skills` owns its initial scaffold. Provider authentication and llama.cpp
 endpoints remain in pi/Claude user configuration.
 
-Profiles are named launch specifications. Routing uses the first rule whose `phases` contains
-the current phase and whose `labelsAny` intersects the ticket labels; otherwise it uses the
-phase default. Supported phases are `implement`, `freshRetry`, `review`, and `finalReview`.
+Profiles are named launch specifications. Ticket routing uses the first rule whose `phases`
+contains the current phase and whose `labelsAny` intersects the ticket labels; otherwise it
+uses the phase default. Rules support `implement`, `freshRetry`, and `review`. Run-level
+`finalReview` has no ticket labels and is selected only through its explicit default.
 Same-worker repair intentionally stays on the original implementation profile.
 
 Example policy using subscription, metered, and local capacity:
@@ -173,7 +174,8 @@ not use a model.
 - Worker prompts reserve merge, push, close, and relabel operations for the scheduler.
   This is behavioral separation, not a credential sandbox: workers inherit the repository's
   shell and credentials. Implementation tests are worker-reported, reviews come from separate
-  workers, and Git integration is checked mechanically before ticket closure.
+  workers, reviewer worktrees are mechanically checked for HEAD or status changes, and Git
+  integration is checked mechanically before ticket closure.
 - Before creating branches, the factory checks selected pi model IDs with `pi --list-models`
   and checks the Claude Code binary with `claude --version`. It never stores credentials or
   llama.cpp endpoints in project policy.

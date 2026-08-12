@@ -158,6 +158,37 @@ test("complete records idempotent evidence before closing the ticket", async () 
 	]]);
 });
 
+test("reportRun preserves final-review findings and blocker reasons", async () => {
+	const calls = [];
+	const tracker = createGiteaTracker({
+		cwd: "/repo",
+		config: { repo: "minder/example", remote: "gitea", assignee: "minder" },
+		exec: async (command, args) => {
+			calls.push([command, args]);
+			if (args[0] === "comments" && args[1] === "list") return result("No comments found\n");
+			return result();
+		},
+	});
+
+	await tracker.reportRun(9, {
+		id: "factory-a1",
+		status: "waiting-for-human",
+		completed: [42],
+		blocked: [],
+		finalReview: {
+			status: "failed",
+			profile: "claude-review",
+			summary: "Integration needs repair",
+			findings: ["Cross-ticket invariant is untested"],
+			reason: "Reviewer needs architecture input",
+		},
+	});
+
+	const comment = calls.find(([, args]) => args[0] === "comments" && args[1] === "add")[1][3];
+	assert.match(comment, /Cross-ticket invariant is untested/);
+	assert.match(comment, /Reviewer needs architecture input/);
+});
+
 test("block moves a ticket to ready-for-human with the reason", async () => {
 	const calls = [];
 	const tracker = createGiteaTracker({

@@ -102,6 +102,22 @@ test("real Git worktrees integrate a committed ticket and pass post-merge verifi
 	await git.verifyIntegration(run, ticket);
 });
 
+test("review guards reject a reviewer that changes the reviewed HEAD", async () => {
+	let revision = "abc123\n";
+	const { git } = createRuntime(async (_command, args) => {
+		if (args.includes("status")) return ok();
+		if (args.includes("rev-parse")) return ok(revision);
+		return ok();
+	});
+
+	const guard = await git.captureReviewState("/repo/.worktrees/ticket", "ticket review");
+	revision = "def456\n";
+	await assert.rejects(
+		git.verifyReviewState(guard),
+		(error) => error instanceof FactoryGitError && error.message.includes("changed HEAD"),
+	);
+});
+
 test("verifyTicket rejects uncommitted worker changes", async () => {
 	const { git } = createRuntime(async (_command, args) => {
 		if (args.includes("status")) return ok("?? result.tmp\n");

@@ -124,6 +124,9 @@ export function parseReviewResult(transcript) {
 		|| result.findings.some((finding) => typeof finding !== "string" || finding.trim() === ""))) {
 		throw new FactoryWorkerError("Failed FACTORY_REVIEW must include actionable findings.");
 	}
+	if (result.status === "passed" && Array.isArray(result.findings) && result.findings.length > 0) {
+		throw new FactoryWorkerError("A passed FACTORY_REVIEW cannot include findings.");
+	}
 	return { status: result.status, summary: result.summary, findings: result.findings ?? [] };
 }
 

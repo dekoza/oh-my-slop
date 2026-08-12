@@ -74,6 +74,8 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 		},
 		async createTicket(_run, index) { events.push(`create-ticket:${index}`); return { branch: `ticket-${index}`, path: `/worktree/${index}` }; },
 		async verifyTicket() { events.push("verify"); },
+		async captureReviewState(path, label) { events.push(`capture-review:${label}`); return { path, label, revision: "abc" }; },
+		async verifyReviewState(state) { events.push(`verify-review:${state.label}`); },
 		async integrate(_run, _ticket, index) { events.push(`integrate:${index}`); },
 		async verifyIntegration() { events.push("verify-integration"); },
 		async publish() { events.push("publish"); },
@@ -123,14 +125,18 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 	assert.ok(events.includes("worker:sf-a1-t42-v1:gpt"));
 	assert.ok(events.includes("worker:sf-a1-tfinal:claude"));
 	assert.ok(events.indexOf("claim:42") < events.indexOf("create-ticket:42"));
-	assert.ok(events.indexOf("verify") < events.indexOf("review:1"));
-	assert.ok(events.indexOf("review:1") < events.indexOf("integrate:42"));
+	assert.ok(events.indexOf("verify") < events.indexOf("capture-review:ticket #42 review"));
+	assert.ok(events.indexOf("capture-review:ticket #42 review") < events.indexOf("review:1"));
+	assert.ok(events.indexOf("review:1") < events.indexOf("verify-review:ticket #42 review"));
+	assert.ok(events.indexOf("verify-review:ticket #42 review") < events.indexOf("integrate:42"));
 	assert.ok(events.indexOf("integrate:42") < events.indexOf("verify-integration"));
 	const completionEvent = "complete:42:checkout works:local:gpt";
 	assert.ok(events.indexOf("verify-integration") < events.indexOf(completionEvent));
 	assert.ok(events.indexOf("retire:w4:t3") < events.indexOf("integrate:42"));
 	assert.ok(events.indexOf("retire:w4:t2") < events.indexOf(completionEvent));
-	assert.ok(events.indexOf("review:2") < events.indexOf("publish"));
+	assert.ok(events.indexOf("capture-review:final integration review") < events.indexOf("review:2"));
+	assert.ok(events.indexOf("review:2") < events.indexOf("verify-review:final integration review"));
+	assert.ok(events.indexOf("verify-review:final integration review") < events.indexOf("publish"));
 	assert.deepEqual(events.slice(-3), ["publish", "pr:factory/factory-a1/integration", "report:awaiting-merge"]);
 	assert.equal(snapshots.at(-1).status, "awaiting-merge");
 });
@@ -153,6 +159,8 @@ test("runFactory gives the same worker one repair attempt before integration", a
 		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
 		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
 		async verifyTicket() {},
+		async captureReviewState(path, label) { return { path, label, revision: "abc" }; },
+		async verifyReviewState() {},
 		async integrate() {},
 		async verifyIntegration() {},
 		async publish() {},
@@ -182,6 +190,7 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 	let frontierCalls = 0;
 	let promptCalls = 0;
 	let workerCalls = 0;
+	const prompts = [];
 	const retired = [];
 	const blocked = [];
 	let completed = false;
@@ -199,6 +208,8 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
 		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
 		async verifyTicket() {},
+		async captureReviewState(path, label) { return { path, label, revision: "abc" }; },
+		async verifyReviewState() {},
 		async integrate() {},
 		async verifyIntegration() {},
 		async publish() {},
@@ -213,8 +224,9 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 			return { name, tabId: `w1:t${workerCalls + 1}`, paneId: `w1:p${workerCalls + 1}` };
 		},
 		async retireWorker(tabId) { retired.push(tabId); },
-		async promptWorker() {
+		async promptWorker(_name, prompt) {
 			promptCalls++;
+			prompts.push(prompt);
 			if (promptCalls < 3) throw new Error(`attempt ${promptCalls} failed`);
 			return { status: "success", summary: "fresh worker recovered", tests: ["test: pass"] };
 		},
@@ -228,6 +240,7 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 
 	assert.equal(workerCalls, 4);
 	assert.equal(promptCalls, 3);
+	assert.match(prompts[2], /attempt 2 failed/);
 	assert.deepEqual(retired, ["w1:t2", "w1:t4", "w1:t3", "w1:t5"]);
 	assert.deepEqual(blocked, []);
 	assert.equal(completed, true);
@@ -252,6 +265,8 @@ test("runFactory does not publish when final review reports actionable findings"
 		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
 		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
 		async verifyTicket() {},
+		async captureReviewState(path, label) { return { path, label, revision: "abc" }; },
+		async verifyReviewState() {},
 		async integrate() {},
 		async verifyIntegration() {},
 		async publish() { published = true; },
@@ -298,6 +313,8 @@ test("runFactory routes an integration conflict to a human and stops the run", a
 		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
 		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
 		async verifyTicket() {},
+		async captureReviewState(path, label) { return { path, label, revision: "abc" }; },
+		async verifyReviewState() {},
 		async integrate() { throw new Error("merge conflict in src/app.ts"); },
 	};
 	const herdr = {
