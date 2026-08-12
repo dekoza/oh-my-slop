@@ -57,7 +57,9 @@ Keep as a single issue when:
 
 ### 4. File the issue(s)
 
-Create issues per the tracker doc's "publish to the issue tracker" convention. Do NOT ask the user to review first — just file and share URLs.
+First, dedup: search the tracker for an open issue already covering this behavior — by domain concept (step 2 gave you the terms), not just the user's wording. On a hit, show it and ask: extend that issue (post the new evidence as a comment under the ``🤖 `qa` — additional report`` marker per the tracker doc's "Robot comments" convention) or file separately.
+
+No hit — create issues per the tracker doc's "publish to the issue tracker" convention. Do NOT ask the user to review first — just file and share URLs.
 
 Issues must be **durable** — they should still make sense after major refactors. Write from the user's perspective.
 
