@@ -45,6 +45,7 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 			events.push("prompt");
 			return { status: "success", summary: "checkout works", tests: ["test: pass"], review: "passed" };
 		},
+		async retireWorker(tabId) { events.push(`retire:${tabId}`); },
 	};
 	const snapshots = [];
 
@@ -65,6 +66,7 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 	assert.ok(events.indexOf("claim:42") < events.indexOf("create-ticket:42"));
 	assert.ok(events.indexOf("verify") < events.indexOf("integrate:42"));
 	assert.ok(events.indexOf("integrate:42") < events.indexOf("complete:42:checkout works"));
+	assert.ok(events.indexOf("retire:w4:t2") < events.indexOf("complete:42:checkout works"));
 	assert.deepEqual(events.slice(-3), ["publish", "pr:factory/factory-a1/integration", "report:awaiting-merge"]);
 	assert.equal(snapshots.at(-1).status, "awaiting-merge");
 });
@@ -154,7 +156,7 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 
 	assert.equal(workerCalls, 2);
 	assert.equal(promptCalls, 3);
-	assert.deepEqual(retired, ["w1:t2"]);
+	assert.deepEqual(retired, ["w1:t2", "w1:t3"]);
 	assert.deepEqual(blocked, []);
 	assert.equal(completed, true);
 });

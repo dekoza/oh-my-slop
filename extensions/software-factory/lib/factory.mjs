@@ -144,6 +144,7 @@ export async function runFactory({
 			await tracker.reportRun(parentIndex, state);
 			return state;
 		}
+		await herdr.retireWorker?.(worker.tabId);
 		await tracker.complete(ticket.index, result, run);
 		state.completed.push(ticket.index);
 		state.currentTicket = undefined;
