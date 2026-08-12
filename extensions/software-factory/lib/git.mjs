@@ -77,11 +77,28 @@ export function createGitRuntime({ exec, cwd, baseBranch, remote }) {
 		], `integrating ticket #${ticketIndex}`);
 	}
 
+	async function verifyIntegration(runState, ticketState) {
+		const status = await run([
+			"-C", runState.integrationPath, "status", "--porcelain",
+		], `checking integrated branch ${runState.integrationBranch}`);
+		if (status.trim() !== "") {
+			throw new FactoryGitError(`Integration branch ${runState.integrationBranch} is not clean.`);
+		}
+		await run([
+			"-C", runState.integrationPath,
+			"merge-base", "--is-ancestor", ticketState.branch, "HEAD",
+		], `verifying ${ticketState.branch} is integrated`);
+		await run([
+			"-C", runState.integrationPath,
+			"diff", "--check", `${baseBranch}...HEAD`,
+		], `checking integrated diff for whitespace errors`);
+	}
+
 	async function publish(runState) {
 		await run([
 			"push", "--set-upstream", remote, runState.integrationBranch,
 		], `publishing ${runState.integrationBranch}`);
 	}
 
-	return { preflight, createRun, createTicket, verifyTicket, integrate, publish };
+	return { preflight, createRun, createTicket, verifyTicket, integrate, verifyIntegration, publish };
 }

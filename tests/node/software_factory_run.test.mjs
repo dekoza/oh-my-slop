@@ -36,6 +36,7 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 		async createTicket(_run, index) { events.push(`create-ticket:${index}`); return { branch: `ticket-${index}`, path: `/worktree/${index}` }; },
 		async verifyTicket() { events.push("verify"); },
 		async integrate(_run, _ticket, index) { events.push(`integrate:${index}`); },
+		async verifyIntegration() { events.push("verify-integration"); },
 		async publish() { events.push("publish"); },
 	};
 	const herdr = {
@@ -65,7 +66,8 @@ test("runFactory claims, implements, verifies, and integrates one frontier ticke
 	assert.deepEqual(result.completed, [42]);
 	assert.ok(events.indexOf("claim:42") < events.indexOf("create-ticket:42"));
 	assert.ok(events.indexOf("verify") < events.indexOf("integrate:42"));
-	assert.ok(events.indexOf("integrate:42") < events.indexOf("complete:42:checkout works"));
+	assert.ok(events.indexOf("integrate:42") < events.indexOf("verify-integration"));
+	assert.ok(events.indexOf("verify-integration") < events.indexOf("complete:42:checkout works"));
 	assert.ok(events.indexOf("retire:w4:t2") < events.indexOf("complete:42:checkout works"));
 	assert.deepEqual(events.slice(-3), ["publish", "pr:factory/factory-a1/integration", "report:awaiting-merge"]);
 	assert.equal(snapshots.at(-1).status, "awaiting-merge");

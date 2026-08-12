@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 
 import { FactoryGitError, createGitRuntime } from "../../extensions/software-factory/lib/git.mjs";
+
+const execFileAsync = promisify(execFile);
 
 function ok(stdout = "") {
 	return { code: 0, stdout, stderr: "" };
@@ -63,6 +70,36 @@ test("createRun and createTicket use isolated branches under .worktrees", async 
 		["git", ["worktree", "add", "-b", run.integrationBranch, run.integrationPath, "main"]],
 		["git", ["worktree", "add", "-b", ticket.branch, ticket.path, run.integrationBranch]],
 	]);
+});
+
+test("real Git worktrees integrate a committed ticket and pass post-merge verification", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "software-factory-git-real-"));
+	const rawExec = async (command, args, options = {}) => {
+		try {
+			const output = await execFileAsync(command, args, { cwd: options.cwd });
+			return { code: 0, stdout: output.stdout, stderr: output.stderr };
+		} catch (error) {
+			return { code: error.code ?? 1, stdout: error.stdout ?? "", stderr: error.stderr ?? error.message };
+		}
+	};
+	await rawExec("git", ["init", "-q", "-b", "main"], { cwd });
+	await rawExec("git", ["config", "user.name", "Factory Test"], { cwd });
+	await rawExec("git", ["config", "user.email", "factory@example.invalid"], { cwd });
+	await writeFile(join(cwd, ".gitignore"), ".worktrees/\n");
+	await writeFile(join(cwd, "README.md"), "base\n");
+	await rawExec("git", ["add", ".gitignore", "README.md"], { cwd });
+	await rawExec("git", ["commit", "-qm", "base"], { cwd });
+
+	const git = createGitRuntime({ exec: rawExec, cwd, baseBranch: "main", remote: "origin" });
+	const run = await git.createRun("factory-real");
+	const ticket = await git.createTicket(run, 42);
+	await writeFile(join(ticket.path, "feature.txt"), "working\n");
+	await rawExec("git", ["add", "feature.txt"], { cwd: ticket.path });
+	await rawExec("git", ["commit", "-qm", "feature"], { cwd: ticket.path });
+
+	await git.verifyTicket(run, ticket);
+	await git.integrate(run, ticket, 42);
+	await git.verifyIntegration(run, ticket);
 });
 
 test("verifyTicket rejects uncommitted worker changes", async () => {
