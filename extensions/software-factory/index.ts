@@ -26,12 +26,14 @@ function createRunId(): string {
 function formatStatus(state: Record<string, unknown>): string {
 	const completed = Array.isArray(state.completed) ? state.completed.length : 0;
 	const blocked = Array.isArray(state.blocked) ? state.blocked.length : 0;
+	const automationFailed = Array.isArray(state.automationFailed) ? state.automationFailed.length : 0;
 	return [
 		`Factory run: ${state.id}`,
 		`Status: ${state.status}`,
 		`Target ticket or parent: #${state.parentIndex}`,
 		`Completed: ${completed}`,
 		`Human-blocked: ${blocked}`,
+		`Automation-failed: ${automationFailed}`,
 		state.currentTicket ? `Current ticket: #${state.currentTicket}` : undefined,
 		state.finalReview && typeof state.finalReview === "object"
 			? `Final review: ${(state.finalReview as Record<string, unknown>).status} (${(state.finalReview as Record<string, unknown>).profile})`

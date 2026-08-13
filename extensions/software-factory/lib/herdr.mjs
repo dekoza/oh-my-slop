@@ -149,14 +149,18 @@ export function createHerdrRuntime({ exec, env = process.env }) {
 		throw new FactoryWorkerError("Factory error must run inside a Herdr-managed pane.");
 	}
 
-	async function run(args, purpose, timeout) {
+	async function execute(args, purpose, timeout) {
 		const response = await exec("herdr", args, { timeout });
 		if (response.code !== 0) {
 			throw new FactoryWorkerError(
 				`Herdr failed while ${purpose}: ${response.stderr.trim() || `exit ${response.code}`}`,
 			);
 		}
-		return parseHerdrJson(response.stdout, purpose);
+		return response.stdout;
+	}
+
+	async function run(args, purpose, timeout) {
+		return parseHerdrJson(await execute(args, purpose, timeout), purpose);
 	}
 
 	const checkedProfiles = new Set();
@@ -240,13 +244,12 @@ export function createHerdrRuntime({ exec, env = process.env }) {
 				reason: `Herdr reports that ${role} ${name} requires human input. Inspect its tab before continuing.`,
 			};
 		}
-		const payload = await run([
+		const transcript = await execute([
 			"agent", "read", name,
 			"--source", "recent-unwrapped",
 			"--lines", "240",
 		], `reading ${role} ${name}`);
-		const transcript = findString(payload?.result ?? payload, ["output", "text", "content"]);
-		if (transcript === undefined) {
+		if (transcript.trim() === "") {
 			throw new FactoryWorkerError(`Herdr did not return readable output for ${role} ${name}.`);
 		}
 		return parser(transcript);

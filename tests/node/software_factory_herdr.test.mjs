@@ -224,12 +224,18 @@ test("Herdr runtime surfaces a blocked agent without sending a repair prompt", a
 	assert.equal(calls.length, 1);
 });
 
-test("Herdr runtime parses an independent reviewer result", async () => {
+test("Herdr runtime parses raw-text agent read output from the installed CLI", async () => {
 	const runtime = createHerdrRuntime({
 		env: { HERDR_ENV: "1" },
 		exec: async (_command, args) => {
 			if (args[1] === "prompt") return response({ result: { agent: { status: "done" } } });
-			if (args[1] === "read") return response({ result: { output: 'FACTORY_REVIEW {"status":"passed","summary":"clean"}' } });
+			if (args[1] === "read") {
+				return {
+					code: 0,
+					stdout: 'review transcript\nFACTORY_REVIEW {"status":"passed","summary":"clean"}\n',
+					stderr: "",
+				};
+			}
 			throw new Error(`Unexpected Herdr command: ${args.join(" ")}`);
 		},
 	});

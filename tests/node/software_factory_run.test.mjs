@@ -248,6 +248,51 @@ test("runFactory uses one fresh pi worker after the repair attempt fails", async
 	assert.equal(completed, true);
 });
 
+test("runFactory reports exhausted worker errors as automation failure without human-blocking the ticket", async () => {
+	let frontierCalls = 0;
+	const blocked = [];
+	const automationFailures = [];
+	const reports = [];
+	const retired = [];
+	let workerCalls = 0;
+	const tracker = {
+		async listFrontier() { return frontierCalls++ === 0 ? [{ index: 17, title: "Protocol failure", labels: [] }] : []; },
+		async countOpenChildren() { return 1; },
+		async claim() {},
+		async block(index, reason) { blocked.push([index, reason]); },
+		async failAutomation(index, reason) { automationFailures.push([index, reason]); },
+		async reportRun(_parent, state) { reports.push(state.status); },
+	};
+	const git = {
+		async preflight() {},
+		async createRun(id) { return { id, integrationBranch: "integration", integrationPath: "/integration" }; },
+		async createTicket() { return { branch: "ticket", path: "/ticket" }; },
+	};
+	const herdr = {
+		async preflightProfiles() {},
+		async createWorkspace() { return "w1"; },
+		async createWorker({ name }) {
+			workerCalls++;
+			return { name, tabId: `w1:t${workerCalls + 1}`, paneId: `w1:p${workerCalls + 1}` };
+		},
+		async promptWorker() { throw new Error("Herdr returned invalid JSON while reading worker"); },
+		async retireWorker(tabId) { retired.push(tabId); },
+	};
+
+	const result = await runFactory({
+		cwd: "/repo", parentIndex: 9, runId: "factory-automation-failure", config: testConfig(),
+		tracker, git, herdr, store: { async save() {} },
+	});
+
+	assert.equal(result.status, "automation-failed");
+	assert.deepEqual(result.automationFailed, [17]);
+	assert.deepEqual(blocked, []);
+	assert.equal(automationFailures.length, 1);
+	assert.match(automationFailures[0][1], /repair and fresh-worker retry budgets were exhausted/i);
+	assert.deepEqual(reports, ["automation-failed"]);
+	assert.deepEqual(retired, ["w1:t2", "w1:t3"]);
+});
+
 test("runFactory quarantines reviewer mutations instead of asking implementation workers to repair them", async () => {
 	let frontierCalls = 0;
 	let workerPrompts = 0;

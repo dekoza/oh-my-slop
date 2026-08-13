@@ -38,6 +38,7 @@ export async function runFactory({
 		currentTicket: undefined,
 		completed: [],
 		blocked: [],
+		automationFailed: [],
 		finalReview: undefined,
 		pullRequest: undefined,
 	};
@@ -266,10 +267,16 @@ export async function runFactory({
 		}
 
 		if (!result || lastError) {
-			result = {
-				status: "blocked",
-				reason: `Automation failed after the repair and fresh-worker retry budgets were exhausted: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
-			};
+			const reason = `Automation failed after the repair and fresh-worker retry budgets were exhausted: ${lastError instanceof Error ? lastError.message : String(lastError)}`;
+			await herdr.retireWorker?.(worker.tabId);
+			await tracker.failAutomation(ticket.index, reason);
+			state.automationFailed.push(ticket.index);
+			state.currentTicket = undefined;
+			state.status = "automation-failed";
+			state.error = reason;
+			await save();
+			await tracker.reportRun(parentIndex, state);
+			return state;
 		}
 		if (result.status === "blocked") {
 			if (!workerNeedsHuman) await herdr.retireWorker?.(worker.tabId);

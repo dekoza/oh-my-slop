@@ -177,6 +177,17 @@ export function createGiteaTracker({ exec, cwd, config }) {
 		await run(["issues", "close", String(index), "--repo", config.repo], `closing #${index}`);
 	}
 
+	async function failAutomation(index, reason) {
+		await upsertComment(index, "🤖 `software-factory` — automation failure", reason);
+		await run([
+			"issues", "edit", String(index),
+			"--repo", config.repo,
+			"--remove-labels", labels.readyForHuman,
+			"--add-labels", labels.readyForAgent,
+			"--remove-assignees", config.assignee,
+		], `releasing #${index} after automation failure`);
+	}
+
 	async function block(index, reason) {
 		await upsertComment(index, "🤖 `software-factory` — human blocker", reason);
 		await run([
@@ -206,7 +217,9 @@ export function createGiteaTracker({ exec, cwd, config }) {
 			state.integrationBranch ? `Integration branch: \`${state.integrationBranch}\`` : undefined,
 			`Completed tickets: ${state.completed.length > 0 ? state.completed.map((index) => `#${index}`).join(", ") : "none"}`,
 			`Human-blocked tickets: ${state.blocked.length > 0 ? state.blocked.map((index) => `#${index}`).join(", ") : "none"}`,
+			`Automation-failed tickets: ${state.automationFailed?.length > 0 ? state.automationFailed.map((index) => `#${index}`).join(", ") : "none"}`,
 		];
+		if (state.error) lines.push(`Automation error: ${state.error}`);
 		if (state.finalReview?.summary) {
 			lines.push(`Final integration review (\`${state.finalReview.profile}\`): **${state.finalReview.status}** — ${state.finalReview.summary}`);
 		}
@@ -221,6 +234,7 @@ export function createGiteaTracker({ exec, cwd, config }) {
 		countOpenTargets,
 		claim,
 		complete,
+		failAutomation,
 		block,
 		createPullRequest,
 		reportRun,

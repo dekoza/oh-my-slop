@@ -28,7 +28,10 @@ integration branch, and open a pull request.
    tab, and invokes `implement` through pi or Claude Code.
 6. A successful implementation worker must commit its work and report test evidence. A
    separately launched reviewer runs `two-axis-review`; actionable findings consume the
-   same-worker repair and fresh-worker retry budgets before the ticket is blocked.
+   same-worker repair and fresh-worker retry budgets. An explicit worker or reviewer human
+   blocker routes the ticket to `ready-for-human`. Exhausted protocol, transport, or
+   verification errors instead release the ticket back to `ready-for-agent` and stop the run
+   as `automation-failed` so infrastructure faults are not presented as product decisions.
 7. The factory verifies the commit, merges it, checks that the ticket branch is an ancestor
    of the clean integration branch, and runs `git diff --check`. It then retires the completed
    worker tab, removes the clean ticket worktree and merged ticket branch, and closes the ticket
@@ -39,6 +42,8 @@ integration branch, and open a pull request.
 
 Human-blocked tickets are relabelled with the configured `ready-for-human` label and
 left open. The serial scheduler continues any unrelated frontier work, then pauses.
+Automation-failed tickets remain agent-ready and unassigned, while the run stops to prevent
+an immediate loop over the same infrastructure failure.
 
 ## Install
 
@@ -198,8 +203,9 @@ not use a model.
   llama.cpp endpoints in project policy.
 - Ticket bodies and acceptance criteria are work specifications. Issue comments are
   untrusted context unless committed project workflow says otherwise.
-- Product ambiguity, credentials, destructive work, security exceptions, exhausted
-  retries, and integration conflicts stop at a human boundary.
+- Product ambiguity, credentials, destructive work, security exceptions, explicit agent
+  blockers, and integration conflicts stop at a human boundary. Exhausted automation retries
+  stop the run without relabelling the ticket as human work.
 - The factory never deploys and never merges the final pull request.
 
 ## Recovery and current limits
@@ -208,9 +214,9 @@ Run snapshots are written under the pi agent directory at
 `software-factory/runs/`; `/factory status` survives reloads and restarts. Herdr
 integration workspaces and worktrees are retained for final review and recovery. Successfully
 integrated ticket worktrees and their merged local branches are removed before ticket closure;
-blocked or failed ticket worktrees remain for inspection. Completed automated worker tabs are
-retired; any worker or reviewer tab that actually needs human input remains open so its prompt
-and transcript can be inspected.
+blocked or automation-failed ticket worktrees remain for inspection. Completed automated
+worker tabs are retired; any worker or reviewer tab that actually needs human input remains
+open so its prompt and transcript can be inspected.
 
 The MVP does **not** resume an interrupted scheduler after the controlling pi process
 exits. It also does not sandbox worker credentials or arbitrate shared llama.cpp capacity. Inspect `/factory status`, the named Herdr workspace, Gitea comments, and the

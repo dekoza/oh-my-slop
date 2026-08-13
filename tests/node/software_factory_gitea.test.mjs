@@ -231,6 +231,36 @@ test("reportRun preserves final-review findings and blocker reasons", async () =
 	assert.match(comment, /Reviewer needs architecture input/);
 });
 
+test("failAutomation releases a ticket back to ready-for-agent with infrastructure evidence", async () => {
+	const calls = [];
+	const tracker = createGiteaTracker({
+		cwd: "/repo",
+		config: { repo: "minder/example", remote: "gitea", assignee: "minder" },
+		exec: async (command, args) => {
+			calls.push([command, args]);
+			if (args[0] === "comments" && args[1] === "list") return result("No comments found\n");
+			return result();
+		},
+	});
+
+	await tracker.failAutomation(42, "Herdr returned malformed output.");
+
+	assert.ok(calls.some(([, args]) =>
+		args[0] === "comments"
+		&& args[1] === "add"
+		&& args[3].startsWith("🤖 `software-factory` — automation failure")
+		&& args[3].includes("Herdr returned malformed output"),
+	));
+	assert.ok(calls.some(([, args]) =>
+		args.includes("--add-labels")
+		&& args.includes("ready-for-agent")
+		&& args.includes("--remove-labels")
+		&& args.includes("ready-for-human")
+		&& args.includes("--remove-assignees")
+		&& args.includes("minder"),
+	));
+});
+
 test("block moves a ticket to ready-for-human with the reason", async () => {
 	const calls = [];
 	const tracker = createGiteaTracker({
