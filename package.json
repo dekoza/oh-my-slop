@@ -17,7 +17,6 @@
       "./prompts"
     ],
     "extensions": [
-      "./extensions/software-factory",
       "./extensions/workflow-watchdog"
     ]
   },
@@ -28,5 +27,8 @@
     "@earendil-works/pi-coding-agent": "*",
     "@mariozechner/pi-ai": "*",
     "@mariozechner/pi-coding-agent": "*"
-  }
+  },
+  "removedExtensions": [
+    "./extensions/software-factory"
+  ]
 }
