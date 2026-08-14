@@ -1,5 +1,30 @@
 # Survey: Software Factory observation surfaces (2026-08-13)
 
+> ## ⚠️ Status: partially superseded (2026-08-14)
+>
+> **The factory surveyed below was retired.** `fe80c5d` moved `extensions/software-factory/` to
+> `extensions/.legacy/`, and a replacement is being specified in wayfinder map
+> [#75 Specify a reliable Software Factory](http://192.168.129.37:30008/minder/oh-my-slop/issues/75),
+> which explicitly inherits neither legacy architecture.
+>
+> This document is a dated snapshot and is deliberately left unedited below this banner. Read it
+> with the split:
+>
+> | Sections | Status |
+> |---|---|
+> | **§3 Gitea, §4 Herdr, §5 Git, §6 pi extension host, §7 worker transcripts** | **Valid.** These inventory third-party surfaces, not the factory. Nothing about them changed, and all were verified live. Still the factual ground for map #67. |
+> | §1 Scheduler, §2 Run store, §8.3 README-vs-code | **Void.** They describe deleted code. |
+> | §9 (17 missing seams), §10 (seam→ticket map) | **Void.** They are gaps in a specific retired implementation; #75 is designing most of them away by construction. **Do not cite a seam number** — it points at nothing. |
+>
+> The framing in §0 is also void: the monitor no longer discovers what an accidentally-observable
+> factory happens to expose. Map #67 is *upstream* of #75 — it states what an operator must be able
+> to observe, and the factory spec is obliged to make it durably true. §3–§7 stay load-bearing
+> because they bound what the environment can physically deliver, which no specification can wish
+> away.
+>
+> Full detail: the supersession note on
+> [#68](http://192.168.129.37:30008/minder/oh-my-slop/issues/68).
+
 Research for Gitea `minder/oh-my-slop#68`, a decision ticket under wayfinder map #67 (read-only,
 repository-scoped Software Factory monitor). Blocks #69 (run/event model), #70 (tracker-graph
 reconstruction), #72 (service/streaming architecture), #73 (retention/transcripts).
