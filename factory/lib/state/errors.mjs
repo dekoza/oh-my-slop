@@ -21,6 +21,19 @@ export const STATE_ERROR_REASONS = Object.freeze([
 	"invalid-event",
 	/** A transaction misuse: nesting, or a write outside one (§4.4). */
 	"invalid-transaction",
+	/** A deletion that is neither whole-stream nor front-truncation (§4.2, §14.7). */
+	"invalid-truncation",
+	/** A damaged database, or a stream whose chain does not verify (§4.7). */
+	"journal-integrity-failed",
+	/** A rebuild whose reason is outside §4.4's closed five. */
+	"invalid-rebuild",
+	/**
+	 * A projection a reader will not render, because the head it would render
+	 * from does not match this build's contract (§4.4, §14.9). Distinct from the
+	 * two refusals above on purpose: those stop a store from opening, this one
+	 * stops one set of values from being shown while the rest still answer.
+	 */
+	"projection-unreadable",
 ]);
 
 export class FactoryStateError extends Error {

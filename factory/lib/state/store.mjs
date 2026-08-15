@@ -3,10 +3,19 @@ import { mkdirSync } from "node:fs";
 
 import { FactoryStateError } from "./errors.mjs";
 import { buildEnvelope, canonicalJson, GENESIS_PREV_HASH, streamFor } from "./events.mjs";
+import { checkDatabaseIntegrity, verifyJournal } from "./integrity.mjs";
 import { resolveAgentDir, resolveStorePaths } from "./location.mjs";
+import {
+	compareProjectionHead,
+	compareProjectionHeads,
+	projectionUnreadable,
+	refuseMismatchedHeads,
+} from "./projection-contract.mjs";
 import { PROJECTIONS, REBUILD_REASONS } from "./projections.mjs";
+import { quarantineDatabase } from "./quarantine.mjs";
+import { rebuildProjections } from "./rebuild.mjs";
 import { SCHEMA_STATEMENTS, STORE_SCHEMA_VERSION } from "./schema.mjs";
-import { openDatabase } from "./sqlite.mjs";
+import { isCorruptionError, openDatabase } from "./sqlite.mjs";
 
 /**
  * The per-repo durable store (§4).
@@ -27,16 +36,57 @@ import { openDatabase } from "./sqlite.mjs";
  * @throws {FactoryStateError}
  */
 export async function openStore({ repoRoot, agentDir = null }) {
+	return open({ repoRoot, agentDir, compareHeads: true });
+}
+
+/**
+ * The one handle that may open a store whose §4.4 compare fails — because a
+ * rebuild is what *resolves* that failure, and a fail-closed compare would
+ * otherwise lock the operator out of the only operation that fixes it.
+ *
+ * **It carries no append path and no transaction**, and that is the whole point.
+ * `appendEvent` moves every projection head to the event it just wrote, so a
+ * single ordinary append on a store whose compare was skipped would silently
+ * repair a head mismatch — leaving projections that never replayed, no
+ * `projection.rebuilt` record, and a compare that had been made decorative.
+ * The only way forward from here is `rebuild()`, which records what it did.
+ *
+ * @param {{ repoRoot: string, agentDir?: string | null }} where
+ * @returns {Promise<{ rebuild: (why: object) => object, close: () => void }>}
+ */
+export async function openStoreForRebuild({ repoRoot, agentDir = null }) {
+	const store = await open({ repoRoot, agentDir, compareHeads: false });
+
+	return Object.freeze({
+		dbPath: store.dbPath,
+		storeDir: store.storeDir,
+		slug: store.slug,
+		canonicalPath: store.canonicalPath,
+		instanceUuid: store.instanceUuid,
+
+		head: store.head,
+		projectionHeads: store.projectionHeads,
+		projectionContract: store.projectionContract,
+		verifyJournal: store.verifyJournal,
+		readEvents: store.readEvents,
+
+		/** @param {{ reason: string, at?: number, actor?: string }} why */
+		rebuild: (why) => rebuildProjections(store, why),
+		close: store.close,
+	});
+}
+
+async function open({ repoRoot, agentDir, compareHeads }) {
 	const agent = agentDir ?? (await resolveAgentDir()).path;
 	const paths = resolveStorePaths({ repoRoot, agentDir: agent });
 
-	const primary = adopt(paths.primary, paths.canonicalPath);
+	const primary = adopt(paths.primary, paths.canonicalPath, compareHeads);
 	if (primary !== null) return primary;
 
 	// §4.1: the slug is occupied by a different canonical path — two checkouts
 	// whose paths fold to one slug — so this repository moves to the hashed
 	// spelling rather than sharing another repository's brain.
-	const hashed = adopt(paths.onCollision, paths.canonicalPath);
+	const hashed = adopt(paths.onCollision, paths.canonicalPath, compareHeads);
 	if (hashed !== null) return hashed;
 
 	throw new FactoryStateError(
@@ -66,9 +116,9 @@ export function openStoreReadOnly({ dbPath }) {
  *
  * @returns {object | null} the open store, or null when the directory is somebody else's
  */
-function adopt(candidate, canonicalPath) {
+function adopt(candidate, canonicalPath, compareHeads) {
 	mkdirSync(candidate.dir, { recursive: true });
-	const db = openDatabase(candidate.dbPath);
+	const db = openCandidateDatabase(candidate, canonicalPath);
 
 	try {
 		const recorded = recordedRepoPath(db);
@@ -77,8 +127,21 @@ function adopt(candidate, canonicalPath) {
 			return null;
 		}
 
+		// Ownership first, damage second: a store that says it belongs to the
+		// repository next door is none of our business to quarantine. A store too
+		// damaged to say whose it is *is* ours, because the hashed spelling exists
+		// only to avoid sharing with a repository that can still name itself
+		// (§4.1, §4.7).
+		const integrity = checkDatabaseIntegrity(db);
+		if (!integrity.ok) {
+			db.close();
+			throw quarantineAndRefuse(candidate, canonicalPath, integrity.problems);
+		}
+
 		const identity = initialise(db, canonicalPath);
-		verifyProjectionHeads(db, candidate.dbPath);
+		if (compareHeads) {
+			refuseMismatchedHeads(compareProjectionHeads(db, readJournalHead(db)), candidate.dbPath);
+		}
 		return makeStore({ db, candidate, canonicalPath, identity });
 	} catch (error) {
 		db.close();
@@ -87,18 +150,90 @@ function adopt(candidate, canonicalPath) {
 }
 
 /**
+ * Damage most often announces itself on the very first statement, before
+ * anything has had a chance to ask the file a question — so the open itself is
+ * a place §4.7 can fire from, and it fires the same way as any other corruption
+ * rather than surfacing as a generic "cannot open".
+ */
+function openCandidateDatabase(candidate, canonicalPath) {
+	try {
+		return openDatabase(candidate.dbPath);
+	} catch (error) {
+		if (error?.details?.corrupt !== true) throw error;
+		throw quarantineAndRefuse(candidate, canonicalPath, error.details.problems);
+	}
+}
+
+/**
  * The canonical path this store records, or `null` when there is no store here
- * yet. Read without the schema, because an unrecognised store is exactly the
- * case where we must not touch anything.
+ * yet — or when the file is too damaged to say, which the caller reads as the
+ * same "no claim on this directory" and settles a moment later.
+ *
+ * Read without the schema, because an unrecognised store is exactly the case
+ * where we must not touch anything.
  */
 function recordedRepoPath(db) {
-	const table = db
-		.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'store_identity'")
-		.get();
-	if (table === undefined) return null;
+	try {
+		const table = db
+			.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'store_identity'")
+			.get();
+		if (table === undefined) return null;
 
-	const row = db.prepare("SELECT canonical_repo_path FROM store_identity WHERE id = 1").get();
-	return row === undefined ? null : row.canonical_repo_path;
+		const row = db.prepare("SELECT canonical_repo_path FROM store_identity WHERE id = 1").get();
+		return row === undefined ? null : row.canonical_repo_path;
+	} catch (error) {
+		if (!isCorruptionError(error)) throw error;
+		return null;
+	}
+}
+
+/**
+ * §4.7's global stop, in the order the operator needs it to have happened: the
+ * damaged file is moved aside intact, a minimal fresh store takes its place,
+ * and the typed `journal.integrity-failed` fact goes into it — so `status` and
+ * `doctor` have somewhere to answer from — before the refusal is thrown.
+ *
+ * The fresh store is a *different journal*: it mints its own instance uuid, so
+ * a monitor holding a cursor into the quarantined one is told to resync rather
+ * than shown a sequence that now means something else (§4.1).
+ */
+function quarantineAndRefuse(candidate, canonicalPath, problems) {
+	const at = Date.now();
+	const quarantined = quarantineDatabase({ dbPath: candidate.dbPath, at });
+
+	const fresh = openDatabase(candidate.dbPath);
+	try {
+		const store = makeStore({
+			db: fresh,
+			candidate,
+			canonicalPath,
+			identity: initialise(fresh, canonicalPath),
+		});
+		store.append({
+			kind: "journal.integrity-failed",
+			source: "controller",
+			occurredAt: at,
+			observedAt: at,
+			payload: { scope: "store", quarantine_path: quarantined.path, problems: [...problems] },
+		});
+		// §4.4's `post-quarantine`: the projections a monitor is about to read are
+		// empty, and the record says that is because the journal behind them was
+		// quarantined — not because nothing ever happened here.
+		rebuildProjections(store, { reason: REBUILD_REASONS.postQuarantine, at });
+	} finally {
+		fresh.close();
+	}
+
+	return new FactoryStateError(
+		"journal-integrity-failed",
+		`${candidate.dbPath} is corrupt: ${problems.join("; ")}. It is quarantined at ${quarantined.path}, and never repaired (§4.7, §14.10).`,
+		{
+			store: candidate.dbPath,
+			scope: "store",
+			quarantine_path: quarantined.path,
+			problems: [...problems],
+		},
+	);
 }
 
 /**
@@ -142,59 +277,6 @@ function initialise(db, canonicalPath) {
 
 		return identity;
 	});
-}
-
-/**
- * §4.4's startup compare, **fail-closed with no "compare only when both
- * present" downgrade** — that downgrade is the hole the Babysitter audit found,
- * and a missing head row is therefore a mismatch rather than a skipped check.
- *
- * Repair is not this function's business: rebuilding a projection is #91's
- * recorded, reasoned operation, and rebuilding one silently here would make the
- * compare decorative.
- */
-function verifyProjectionHeads(db, dbPath) {
-	const journalHead = readJournalHead(db);
-
-	for (const projection of PROJECTIONS) {
-		const head = db.prepare("SELECT * FROM projection_head WHERE name = ?").get(projection.name);
-
-		if (head === undefined) {
-			throw new FactoryStateError(
-				"projection-head-mismatch",
-				`Projection "${projection.name}" has no head in ${dbPath}; it cannot be compared against the journal.`,
-				{ store: dbPath, projection: projection.name, expected: journalHead.seq, found: null },
-			);
-		}
-
-		if (head.projector_version !== projection.version) {
-			throw new FactoryStateError(
-				"projector-version-change",
-				`Projection "${projection.name}" was built by projector v${head.projector_version}; this factory ships v${projection.version}. It needs a recorded rebuild, not a silent migration.`,
-				{
-					store: dbPath,
-					projection: projection.name,
-					found: head.projector_version,
-					expected: projection.version,
-					rebuild_reason: REBUILD_REASONS.projectorVersionChange,
-				},
-			);
-		}
-
-		if (head.last_seq !== journalHead.seq || head.chain_hash !== journalHead.hash) {
-			throw new FactoryStateError(
-				"projection-head-mismatch",
-				`Projection "${projection.name}" is at seq ${head.last_seq}, the journal at ${journalHead.seq}.`,
-				{
-					store: dbPath,
-					projection: projection.name,
-					found: head.last_seq,
-					expected: journalHead.seq,
-					rebuild_reason: REBUILD_REASONS.headMismatch,
-				},
-			);
-		}
-	}
 }
 
 function makeStore({ db, candidate, canonicalPath, identity }) {
@@ -291,9 +373,33 @@ function makeStore({ db, candidate, canonicalPath, identity }) {
 /**
  * The read half, shared with `openStoreReadOnly` so a reader and the controller
  * cannot disagree about what a projection row says.
+ *
+ * **The projection tables are a versioned read contract (§4.4, monitor O14),
+ * and a mismatched reader refuses to render the affected values rather than
+ * guessing at them** (§14.9). The refusal is per projection: a digest written by
+ * a projector this build does not have says nothing about whether the `run`
+ * table is readable, and blanking a whole screen over one stale head would push
+ * the operator back to `sqlite3`.
+ *
+ * The journal readers are not gated. Events are the thing projections are
+ * derived *from*; their shape is the envelope's, versioned per kind (§4.3).
  */
 function readSurface(db) {
+	const rendering = (name, read) => {
+		const projection = PROJECTIONS.find((candidate) => candidate.name === name);
+		return (...args) => {
+			// Compared on every read rather than cached at open: a rebuild resolves
+			// a mismatch *while* a store is open, and a reader holding the answer it
+			// was given at open would keep refusing values that are now correct.
+			const entry = compareProjectionHead(db, projection, readJournalHead(db));
+			if (!entry.ok) throw projectionUnreadable(entry, db.path);
+			return read(...args);
+		};
+	};
+
 	return {
+		projectionContract: () => compareProjectionHeads(db, readJournalHead(db)),
+
 		readEvents: ({ stream = null, sinceSeq = 0, limit = null } = {}) =>
 			db
 				.prepare(
@@ -305,18 +411,26 @@ function readSurface(db) {
 				.all(sinceSeq, stream, stream, limit ?? -1)
 				.map(toEnvelope),
 
-		readRun: (runId) => decodeRun(db.prepare("SELECT * FROM run WHERE run_id = ?").get(runId)),
-		readTicketExecutions: (runId) =>
+		/** §4.7's per-stream verification. A read, so a reader may run it too. */
+		verifyJournal: (options) => verifyJournal(db, options),
+
+		readRun: rendering("run", (runId) => decodeRun(db.prepare("SELECT * FROM run WHERE run_id = ?").get(runId))),
+		readTicketExecutions: rendering("ticket_execution", (runId) =>
 			db.prepare("SELECT * FROM ticket_execution WHERE run_id = ? ORDER BY ticket").all(runId),
-		readAttempts: ({ runId, ticket = null }) =>
+		),
+		readAttempts: rendering("attempt", ({ runId, ticket = null }) =>
 			db
 				.prepare(
 					"SELECT * FROM attempt WHERE run_id = ? AND (? IS NULL OR ticket = ?) ORDER BY ticket, ordinal",
 				)
 				.all(runId, ticket, ticket),
-		readTicketIndex: (ticket) =>
+		),
+		readTicketIndex: rendering("ticket_index", (ticket) =>
 			db.prepare("SELECT * FROM ticket_index WHERE ticket = ? ORDER BY first_seen_at, run_id").all(ticket),
-		readRunDigest: (runId) => decodeDigest(db.prepare("SELECT * FROM run_digest WHERE run_id = ?").get(runId)),
+		),
+		readRunDigest: rendering("run_digest", (runId) =>
+			decodeDigest(db.prepare("SELECT * FROM run_digest WHERE run_id = ?").get(runId)),
+		),
 
 		/** Escape hatch for the modules that own the canonical tables (§4.5, §4.6). */
 		read: (body) => body(db),

@@ -9,7 +9,14 @@ import { envelopeHash, GENESIS_PREV_HASH, runStream } from "../../factory/lib/st
 import { openDatabase } from "../../factory/lib/state/sqlite.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
-import { attemptLaunched, makeAgentDir, openTestStore, runEnded, runStarted } from "./helpers/factory-store.mjs";
+import {
+	attemptLaunched,
+	makeAgentDir,
+	openTestStore,
+	refusalOf,
+	runEnded,
+	runStarted,
+} from "./helpers/factory-store.mjs";
 
 /**
  * §4.1's store and §4.2's chained journal: where the database lives, that it is
@@ -286,15 +293,6 @@ test("an end reason outside §10.3's seven is refused", async (t) => {
 	assert.ok(error instanceof FactoryStateError);
 	assert.equal(error.details.at, "payload.end_reason");
 });
-
-function refusalOf(body) {
-	try {
-		body();
-	} catch (error) {
-		return error;
-	}
-	throw new assert.AssertionError({ message: "expected a refusal" });
-}
 
 function storeSources() {
 	return ["store.mjs", "projections.mjs", "schema.mjs"]

@@ -117,7 +117,26 @@ is the authority; cite the section a change answers to.
 - The projection tables are the monitor's versioned read contract. A projector whose
   output changes bumps its `version` in `factory/lib/state/projections.mjs`; the head
   compare at open is fail-closed, and a missing head is a mismatch, never a skipped
-  check.
+  check. A mismatched **reader** refuses that projection alone — `projection-unreadable`
+  — and still answers from the rest, because blanking a whole screen over one stale head
+  sends the operator back to `sqlite3`.
+- **Integrity failure is never repaired.** A damaged database is renamed into
+  `quarantine/<stamp>/` byte-for-byte and replaced by a minimal fresh store carrying a
+  typed `journal.integrity-failed` fact, so `status` and `doctor` still have somewhere to
+  answer from; a hash-chain break scopes to its own stream and costs that run's tier-1
+  detail alone. Only projections are rebuildable, only under one of
+  `REBUILD_REASONS`, and every rebuild emits its reason, projector versions, and
+  resulting head. The store whose compare failed is reachable **only** through
+  `openStoreForRebuild`, which carries no `append` and no `transaction` — an
+  ordinary append moves every projection head to the event it wrote, so a write
+  path there would repair a mismatch without recording anything.
+- **`factory/lib/state/truncation.mjs` holds the only two ways a record leaves the
+  journal** — whole-stream deletion for a run stream, front-truncation for
+  `controller.heartbeat`, recording `stream.truncated {stream, up_to_seq, up_to_hash}` on
+  the indefinite `controller` stream. A `DELETE FROM event` anywhere else, or any
+  renumbering or rewriting, is §14.7 broken; `tests/node/factory_state_integrity.test.mjs`
+  greps the tree for it. A global sequence hole is the expected residue and is never read
+  as tampering — only per-stream contiguity is verified.
 
 ### `scripts/`
 

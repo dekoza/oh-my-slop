@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { AssertionError } from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -36,6 +37,53 @@ export async function openTestStore(t, { repoRoot, agentDir } = {}) {
 	return store;
 }
 
+/**
+ * The refusal a call was expected to make. A test that let the call succeed
+ * would otherwise read its own `undefined` as the error's fields and pass.
+ *
+ * @param {() => unknown} body
+ * @returns {Error}
+ */
+export function refusalOf(body) {
+	try {
+		body();
+	} catch (error) {
+		return error;
+	}
+	throw new AssertionError({ message: "expected a refusal" });
+}
+
+/** The same, for the paths that open a store — every one of them is async. */
+export async function refusalOfAsync(body) {
+	try {
+		await body();
+	} catch (error) {
+		return error;
+	}
+	throw new AssertionError({ message: "expected a refusal" });
+}
+
+/**
+ * Damage a closed database the way a bad sector does: every page but the first
+ * overwritten, so the file is still a SQLite file and its schema still reads —
+ * and `PRAGMA integrity_check` reports a malformed disk image.
+ */
+export function corruptDatabaseFile(dbPath) {
+	const file = readFileSync(dbPath);
+	const pageSize = file.readUInt16BE(16) || 65_536;
+	file.fill(0xff, pageSize, file.length);
+	writeFileSync(dbPath, file);
+	return file;
+}
+
+/** Damage of the other kind: the file is no longer a database at all. */
+export function trashDatabaseHeader(dbPath) {
+	const file = readFileSync(dbPath);
+	file.write("this is not a database", 0);
+	writeFileSync(dbPath, file);
+	return file;
+}
+
 /** A run id, and the events that open and close a run around it. */
 export function runStarted(runId = newUlid(), { at = 1_770_000_000_000 } = {}) {
 	return {
@@ -56,6 +104,17 @@ export function runEnded(runId, { at = 1_770_000_600_000, endReason = "drained" 
 		occurredAt: at,
 		observedAt: at,
 		payload: { end_reason: endReason },
+	};
+}
+
+/** §4.8's every-60s record, on the one stream that front-truncates (§12.2). */
+export function heartbeat({ at = 1_770_000_010_000, watching = 0 } = {}) {
+	return {
+		kind: "controller.heartbeat",
+		source: "controller",
+		occurredAt: at,
+		observedAt: at,
+		payload: { watching },
 	};
 }
 

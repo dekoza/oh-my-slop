@@ -38,9 +38,24 @@ export const REBUILD_REASONS = Object.freeze({
 	postQuarantine: "post-quarantine",
 });
 
+/**
+ * §12.2's retention classes, as the rebuild path needs them.
+ *
+ * A `derived` projection is a pure function of the journal that still holds it,
+ * so a rebuild clears and replays it whole. A `permanent` one outlives the
+ * stream it was built from — the tier-2 digest and the cross-run reverse index
+ * answer "was this ticket ever attempted?" for runs whose detail expired years
+ * ago — so a rebuild clears only the runs the journal can still replay and
+ * leaves the rest exactly as they are. Replaying a journal that legitimately no
+ * longer holds a run must never be how that run's permanent history is lost:
+ * expiry is purely subtractive (§12.3), and so is this.
+ */
+export const PROJECTION_CLASSES = Object.freeze({ derived: "derived", permanent: "permanent" });
+
 const run = {
 	name: "run",
 	version: 1,
+	retention: PROJECTION_CLASSES.derived,
 	apply(db, event) {
 		if (event.run === null) return;
 
@@ -74,6 +89,7 @@ const run = {
 const ticketExecution = {
 	name: "ticket_execution",
 	version: 1,
+	retention: PROJECTION_CLASSES.derived,
 	apply(db, event) {
 		if (event.run === null || event.ticket === null) return;
 
@@ -96,6 +112,7 @@ const ticketExecution = {
 const attempt = {
 	name: "attempt",
 	version: 1,
+	retention: PROJECTION_CLASSES.derived,
 	apply(db, event) {
 		if (event.attempt === null) return;
 
@@ -127,6 +144,7 @@ const attempt = {
 const ticketIndex = {
 	name: "ticket_index",
 	version: 1,
+	retention: PROJECTION_CLASSES.permanent,
 	apply(db, event) {
 		if (event.run === null || event.ticket === null) return;
 
@@ -148,6 +166,7 @@ const ticketIndex = {
 const runDigest = {
 	name: "run_digest",
 	version: 1,
+	retention: PROJECTION_CLASSES.permanent,
 	apply(db, event) {
 		if (event.run === null) return;
 
