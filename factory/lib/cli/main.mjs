@@ -37,6 +37,9 @@ const KNOWN_FLAGS = new Set(["--json", "--help", "-h"]);
  * @param {(options: object) => Promise<object>} [context.herdr] §10.3's Herdr
  *   availability probe, injectable for the same reason `probes` is: a test drives
  *   both answers without a terminal multiplexer on the machine
+ * @param {object} [context.signal] the event target §10.5's signals listen on —
+ *   `process` by default, injectable so a test fires a signal at a chosen moment
+ *   instead of racing a real delivery against a run that lasts milliseconds
  * @returns {Promise<{ exitCode: number, value: object, json: boolean }>}
  */
 export async function runCli(argv, context) {
@@ -138,6 +141,7 @@ async function run(parsed, verb, loaded, context) {
 		env: context.env,
 		probes: context.probes,
 		herdr: context.herdr,
+		signal: context.signal,
 		expect: loaded.config.package?.expect ?? null,
 		args: parsed.args,
 		flags: new Set(parsed.flags),

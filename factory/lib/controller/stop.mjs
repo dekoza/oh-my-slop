@@ -38,6 +38,29 @@ import { RUN_LIFECYCLE } from "../domain/vocabulary.mjs";
 /** §4.5's actor slot for this verb: the operator's `stop`, through its process. */
 const ACTOR = "operator:stop";
 
+/**
+ * §10.5's escalation ladder, shared by every writer of a request: this verb,
+ * and the controller's own signal path, which records the very same records.
+ *
+ * The ladder is a decision about **the sequence of requests**, never about the
+ * invocation making them: a Ctrl-C is the second stop request on a run that
+ * already holds one, whatever process pressed it. `base` is what the writer
+ * would record first — `stop` for the verb and for SIGINT, `abandon` for
+ * SIGTERM, which is the escalation rather than a stop.
+ *
+ * @param {{ kind: string, seq: number } | null} latest the run's latest request, if any
+ * @param {"stop" | "abandon"} base
+ * @returns {{ kind: string, supersedes: number | null } | null} the record to append, or null when nothing is left to record
+ */
+export function requestLadder(latest, base) {
+	if (latest !== null && latest.kind === "run.abandon-requested") return null;
+	if (latest !== null) return { kind: "run.abandon-requested", supersedes: latest.seq };
+	return {
+		kind: base === "abandon" ? "run.abandon-requested" : "run.stop-requested",
+		supersedes: null,
+	};
+}
+
 /** The closed set this verb's refusals draw from. */
 export const STOP_ERROR_REASONS = Object.freeze([
 	/** No run in this repository to stop. */
@@ -92,12 +115,13 @@ export async function runStop({ repoRoot, agentDir = null, now = Date.now }) {
 		const { runId, run, pane } = target;
 		const requests = operatorRequests(store, runId);
 		const latest = requests.length === 0 ? null : requests[requests.length - 1];
+		const decision = requestLadder(latest, "stop");
 
 		let action;
 		let record = null;
 		let message;
 
-		if (latest !== null && latest.kind === "run.abandon-requested") {
+		if (decision === null) {
 			// §13.A: abandon and stop are different records and different
 			// endings. The escalation is already on the stream; a third stop
 			// appends nothing, because a second `run.abandon-requested` would
@@ -108,17 +132,17 @@ export async function runStop({ repoRoot, agentDir = null, now = Date.now }) {
 				`Run ${runId} was already asked to abandon by ${latest.payload.actor} ` +
 				`(record ${latest.seq}); it ends "abandoned" when its controller reaches the next ` +
 				`ticket boundary. Nothing more to record.`;
-		} else if (latest !== null) {
+		} else if (decision.kind === "run.abandon-requested") {
 			store.append({
-				kind: "run.abandon-requested",
+				kind: decision.kind,
 				source: "operator",
 				run: runId,
 				occurredAt: now(),
 				observedAt: now(),
-				payload: { actor: ACTOR, supersedes: latest.seq },
+				payload: { actor: ACTOR, supersedes: decision.supersedes },
 			});
 			action = "abandon-escalated";
-			record = { kind: "run.abandon-requested" };
+			record = { kind: decision.kind };
 			message =
 				`Escalated to abandon for run ${runId}: in-flight ticket executions are marked ` +
 				`released, their slots are released, and worker panes are left alive for the next ` +
@@ -126,7 +150,7 @@ export async function runStop({ repoRoot, agentDir = null, now = Date.now }) {
 				"closes a pane (§13.B).";
 		} else {
 			store.append({
-				kind: "run.stop-requested",
+				kind: decision.kind,
 				source: "operator",
 				run: runId,
 				occurredAt: now(),
@@ -134,7 +158,7 @@ export async function runStop({ repoRoot, agentDir = null, now = Date.now }) {
 				payload: { actor: ACTOR },
 			});
 			action = "stop-requested";
-			record = { kind: "run.stop-requested" };
+			record = { kind: decision.kind };
 			message = live
 				? `Stop requested for run ${runId}: it drains at the next ticket boundary and every ` +
 					"in-flight ticket execution finishes. A second `stop` escalates to abandon."
@@ -241,13 +265,20 @@ function isLapsed(row, at) {
 	return row.expiresAt !== null && row.expiresAt <= at;
 }
 
-function operatorRequests(store, runId) {
+/**
+ * The run stream's operator requests, oldest first: §10.5's stop and its
+ * escalation, read from durable state rather than memory, which is what makes
+ * a request written before a controller existed — or by a process it cannot
+ * see — honoured rather than lost.
+ */
+export function operatorRequests(store, runId) {
 	return store
 		.readEvents({ stream: runStream(runId) })
 		.filter((event) => event.kind === "run.stop-requested" || event.kind === "run.abandon-requested");
 }
 
-function requestReport(event) {
+/** A request as both the journal and the operator read it: never the internals. */
+export function requestReport(event) {
 	return { kind: event.kind, actor: event.payload.actor, at: event.occurred_at, seq: event.seq };
 }
 

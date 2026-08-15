@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 import { EXIT_OK, EXIT_REFUSED } from "../../factory/lib/cli/exit-codes.mjs";
 import { runCli } from "../../factory/lib/cli/main.mjs";
 import { ENTRY_MODES } from "../../factory/lib/controller/entry.mjs";
+import { installSignalRequests } from "../../factory/lib/controller/signals.mjs";
+import { requestEffect } from "../../factory/lib/effects/records.mjs";
+import { createProbeRegistry } from "../../factory/lib/reconcile/probes.mjs";
+import { FactoryStateError } from "../../factory/lib/state/errors.mjs";
 import { runStop } from "../../factory/lib/controller/stop.mjs";
 import { newUlid } from "../../factory/lib/identity/ulid.mjs";
 import { runStream } from "../../factory/lib/state/events.mjs";
@@ -404,4 +408,176 @@ test("the report carries the operator requests that decided the reason", async (
 		["run.stop-requested", "run.abandon-requested"],
 	);
 	assert.equal(value.report.operator[0].actor, "operator:stop");
+});
+
+// ── The signal path (§10.5) ─────────────────────────────────────────────────
+
+/**
+ * The slice of `process` the controller listens on, as a test-owned target:
+ * the test fires the signal at the moment it chooses — from inside an injected
+ * probe — rather than racing a real delivery against a run that lasts
+ * milliseconds.
+ */
+function signalTarget() {
+	const handlers = new Map();
+	return {
+		on(name, handler) {
+			const list = handlers.get(name) ?? [];
+			list.push(handler);
+			handlers.set(name, list);
+			return this;
+		},
+		removeListener(name, handler) {
+			handlers.set(name, (handlers.get(name) ?? []).filter((candidate) => candidate !== handler));
+			return this;
+		},
+		fire(name) {
+			for (const handler of [...(handlers.get(name) ?? [])]) handler(name);
+		},
+		listening: () =>
+			[...handlers.entries()]
+				.filter(([, list]) => list.length > 0)
+				.map(([name]) => name)
+				.sort(),
+	};
+}
+
+function invocationWithSignals(t, { fireInHerdr = [] } = {}) {
+	const context = invocation(t);
+	const signals = signalTarget();
+	context.signal = signals;
+	if (fireInHerdr.length > 0) {
+		context.herdr = async () => {
+			for (const name of fireInHerdr) signals.fire(name);
+			return AVAILABLE();
+		};
+	}
+	return { context, signals };
+}
+
+test("the first Ctrl-C ends the run stopped-by-operator, exiting 3", async (t) => {
+	const { context, signals } = invocationWithSignals(t, { fireInHerdr: ["SIGINT"] });
+
+	const { exitCode, value } = await runCli(["start", "42"], context);
+
+	assert.equal(exitCode, 3);
+	assert.equal(value.report.end_reason, "stopped-by-operator");
+
+	const store = await storeOf(t, context);
+	const [request] = store.readEvents({ stream: runStream(value.report.run), kind: "run.stop-requested" });
+	assert.notEqual(request, undefined);
+	assert.equal(request.payload.actor, "operator:signal");
+	assert.equal(request.source, "operator");
+});
+
+test("the second Ctrl-C abandons, exiting 4", async (t) => {
+	const { context } = invocationWithSignals(t, { fireInHerdr: ["SIGINT", "SIGINT"] });
+
+	const { exitCode, value } = await runCli(["start", "42"], context);
+
+	assert.equal(exitCode, 4);
+	assert.equal(value.report.end_reason, "abandoned");
+
+	const store = await storeOf(t, context);
+	const kinds = store
+		.readEvents({ stream: runStream(value.report.run) })
+		.map((event) => event.kind)
+		.filter((kind) => kind === "run.stop-requested" || kind === "run.abandon-requested");
+	assert.deepEqual(kinds, ["run.stop-requested", "run.abandon-requested"], "the escalation did not supersede");
+});
+
+test("a single SIGTERM abandons: it is the escalation, not a stop", async (t) => {
+	const { context } = invocationWithSignals(t, { fireInHerdr: ["SIGTERM"] });
+
+	const { exitCode, value } = await runCli(["start", "42"], context);
+
+	assert.equal(exitCode, 4);
+	assert.equal(value.report.end_reason, "abandoned");
+
+	const store = await storeOf(t, context);
+	assert.equal(
+		store.readEvents({ stream: runStream(value.report.run), kind: "run.stop-requested" }).length,
+		0,
+		"the SIGTERM wrote a stop on its way to abandoning",
+	);
+	assert.equal(
+		store.readEvents({ stream: runStream(value.report.run), kind: "run.abandon-requested" }).length,
+		1,
+	);
+});
+
+test("a signal before the run is opened is recorded on open and honoured, not lost", async (t) => {
+	// §10.1's window before `run.started` commits: there is no stream to write
+	// to yet, so the intent must survive in the controller and land on open.
+	// The probe is the one awaitable that runs before the run exists.
+	const { context, signals } = invocationWithSignals(t);
+	const runId = await runWithRequests(context, {});
+
+	const store = await openStore({ repoRoot: context.cwd, agentDir: context.agentDir });
+	requestEffect(store, {
+		run: runId,
+		ticket: null,
+		phase: "preflight",
+		operation: "label-add",
+		operand: "factory:preflight",
+		actor: "controller",
+		fencingGeneration: 1,
+		payload: { label: "factory:preflight" },
+		at: FIXED_NOW + 5,
+	});
+	store.close();
+
+	const probes = createProbeRegistry();
+	probes.register("issue.labels", () => {
+		signals.fire("SIGINT");
+		return {
+			matched: true,
+			result: { labels: ["factory:preflight"] },
+			foreignSourceId: "gitea:98",
+			occurredAtRaw: "2026-08-15T09:00:00+02:00",
+		};
+	});
+	context.probes = probes;
+
+	const { exitCode, value } = await runCli(["start"], context);
+
+	assert.equal(exitCode, 3, "the pre-open signal was lost");
+	assert.equal(value.report.end_reason, "stopped-by-operator");
+	assert.equal(value.report.run, runId, "the run the signal rode into was not the run it ended");
+});
+
+test("the listener is live for the run and gone when the run ends", async (t) => {
+	// Delivery during the run is the proof the listener was wired: the request
+	// the probe's signal produced is on the run's stream afterwards.
+	const { context, signals } = invocationWithSignals(t, { fireInHerdr: ["SIGINT"] });
+
+	const { exitCode, value } = await runCli(["start", "42"], context);
+
+	assert.equal(exitCode, 3, "the signal fired into a listener that was not there");
+	assert.deepEqual(signals.listening(), [], "the listener outlived the run it served");
+
+	const store = await storeOf(t, context);
+	assert.equal(
+		store.readEvents({ stream: runStream(value.report.run), kind: "run.stop-requested" }).length,
+		1,
+	);
+});
+
+test("a signal against a hold that already released is a no-op the process survives", async (t) => {
+	// The released-then-signalled race is a microsecond in the real process, so
+	// the test exercises the handler against the hold's own refusal rather than
+	// trying to time it: the verdict is the hold's, and the handler's only job
+	// is to carry it without taking the process down.
+	const signals = signalTarget();
+	const hold = {
+		append() {
+			throw new FactoryStateError("lease-released", "The controller lease was released at the end of this run.");
+		},
+	};
+	const store = { readEvents: () => [] };
+	const installed = installSignalRequests({ signal: signals, store, hold, now: () => FIXED_NOW });
+	installed.attach("run-under-test");
+
+	assert.doesNotThrow(() => signals.fire("SIGINT"), "a post-end signal crashed the process");
+	assert.doesNotThrow(() => signals.fire("SIGTERM"));
 });

@@ -14,7 +14,8 @@ import {
 	END_REASON_STOPPED_BY_OPERATOR,
 	RUN_LIFECYCLE,
 } from "../domain/vocabulary.mjs";
-import { runStream } from "../state/events.mjs";
+import { operatorRequests, requestReport } from "./stop.mjs";
+import { installSignalRequests } from "./signals.mjs";
 import { reconcile } from "../reconcile/engine.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
 import { FactoryStateError } from "../state/errors.mjs";
@@ -70,6 +71,8 @@ export const NEW_RUN_FLAG = "--new-run";
  * @param {(options: object) => Promise<object>} [invocation.herdr] §10.3's availability probe
  * @param {() => number} [invocation.watching] actual live Herdr subscriptions; #99 wires
  *   the observer, so zero is the truthful default rather than an attempt-derived guess
+ * @param {object} [invocation.signal] the event target §10.5's signals listen on —
+ *   `process` by default, injectable so a test fires a signal at a chosen moment
  * @returns {Promise<{ message: string, report: object, exitCode: number } | { error: object, exitCode: number }>}
  */
 export async function runStart({
@@ -88,6 +91,7 @@ export async function runStart({
 	timers = { setInterval, clearInterval },
 	herdr,
 	watching = () => 0,
+	signal = globalThis.process,
 }) {
 	let requested;
 	try {
@@ -112,6 +116,7 @@ export async function runStart({
 			timers,
 			herdr,
 			watching,
+			signal,
 			pane: env?.HERDR_PANE_ID ?? null,
 		});
 	} finally {
@@ -168,6 +173,26 @@ async function start(store, context) {
  * "after the run exists" for preflight.
  */
 async function drive(store, hold, context) {
+	// §10.5: the signal path is live from the moment this controller holds the
+	// lease. A signal that arrives before the run has a record has no stream to
+	// write to, so its intent rides in the installer's memory and lands on
+	// attach; the run's `finally` removes the listener, so a signal the run can
+	// no longer be asked about goes nowhere rather than reaching a released hold.
+	const signals = installSignalRequests({
+		signal: context.signal,
+		store,
+		hold,
+		now: context.now,
+	});
+
+	try {
+		return await driveRun(store, hold, context, signals);
+	} finally {
+		signals.remove();
+	}
+}
+
+async function driveRun(store, hold, context, signals) {
 	const startedAt = context.now();
 
 	// §5.4, and the reason it is first: reconcile settles what the last
@@ -205,6 +230,7 @@ async function drive(store, hold, context) {
 
 	const expiry = applyExpiry();
 	openLifecycle(hold, entry, { at: startedAt });
+	signals.attach(entry.run);
 
 	let lifecycle = RUN_LIFECYCLE.preflight;
 	const heartbeat = startHeartbeat({
@@ -320,22 +346,6 @@ function endReasonOf(checked, requests) {
 	if (latest !== null && latest.kind === "run.abandon-requested") return END_REASON_ABANDONED;
 	if (latest !== null && latest.kind === "run.stop-requested") return END_REASON_STOPPED_BY_OPERATOR;
 	return END_REASON_DRAINED;
-}
-
-/**
- * The run stream's operator requests, oldest first: §10.5's stop and its
- * escalation, read from durable state rather than memory, which is what makes
- * a request written before this controller existed — or by a process it
- * cannot see — honoured rather than lost.
- */
-function operatorRequests(store, run) {
-	return store
-		.readEvents({ stream: runStream(run) })
-		.filter((event) => event.kind === "run.stop-requested" || event.kind === "run.abandon-requested");
-}
-
-function requestReport(event) {
-	return { kind: event.kind, actor: event.payload.actor, at: event.occurred_at, seq: event.seq };
 }
 
 /**
