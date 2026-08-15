@@ -137,6 +137,17 @@ is the authority; cite the section a change answers to.
   renumbering or rewriting, is §14.7 broken; `tests/node/factory_state_integrity.test.mjs`
   greps the tree for it. A global sequence hole is the expected residue and is never read
   as tampering — only per-stream contiguity is verified.
+- Every mutation outside the database is an effect: a requested/resolved pair keyed by
+  §4.5's grammar, built in one place (`factory/lib/effects/keys.mjs`) and written in
+  one place (`records.mjs`). A new effect kind is a row in `effects/catalogue.mjs` and
+  nothing else — **an effect kind with no probe cannot be registered**, refused at
+  construction, which is what keeps §5.3's reconciliation invariant structural rather
+  than a review convention. **Reads are not effects**: they appear in the catalogue
+  only as a probe's `call`, and get durable observation cursors instead.
+- The payload digest sits **beside** the effect key, never in it. Re-issuing a key with
+  an identical payload returns the committed result; a different payload is a typed
+  conflict. Keying by the digest would turn that conflict into a different key and two
+  mutations nobody compared.
 
 ### `scripts/`
 
