@@ -64,5 +64,13 @@ export const ATTEMPT_OUTCOMES = Object.freeze([
 	"automation-failure",
 ]);
 
+/**
+ * §4.6's repo-scoped exclusive lease. Named here rather than in the lease
+ * primitive because it is read from two sides: the holder renews it, and an
+ * effect resolution compares its generation against the holder's (§14.5). The
+ * other lease objects — `integration`, `capacity:*` — are the lease module's.
+ */
+export const CONTROLLER_LEASE = "controller";
+
 /** §2.1: every identity-derived path segment is checked against this charset. */
 export const IDENTITY_CHARSET = /^[0-9A-Za-z-]+$/;
