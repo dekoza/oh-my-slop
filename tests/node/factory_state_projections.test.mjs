@@ -7,7 +7,14 @@ import { PROJECTIONS } from "../../factory/lib/state/projections.mjs";
 import { openDatabase } from "../../factory/lib/state/sqlite.mjs";
 import { openStore, openStoreReadOnly } from "../../factory/lib/state/store.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
-import { attemptLaunched, makeAgentDir, openTestStore, runEnded, runStarted } from "./helpers/factory-store.mjs";
+import {
+	attemptLaunched,
+	makeAgentDir,
+	openTestStore,
+	refusalOfAsync,
+	runEnded,
+	runStarted,
+} from "./helpers/factory-store.mjs";
 
 /**
  * §4.4's projections: the five tables the monitor reads, maintained inside the
@@ -225,7 +232,7 @@ test("a projection head behind the journal refuses to open", async (t) => {
 
 	tamper(t, dbPath, "UPDATE projection_head SET last_seq = 0 WHERE name = 'run_digest'");
 
-	const error = await refusalOf(() => openStore({ repoRoot, agentDir }));
+	const error = await refusalOfAsync(() => openStore({ repoRoot, agentDir }));
 
 	assert.ok(error instanceof FactoryStateError);
 	assert.equal(error.reason, "projection-head-mismatch");
@@ -242,7 +249,7 @@ test("a missing projection head is a mismatch, never a skipped compare (§4.4)",
 
 	tamper(t, dbPath, "DELETE FROM projection_head WHERE name = 'attempt'");
 
-	const error = await refusalOf(() => openStore({ repoRoot, agentDir }));
+	const error = await refusalOfAsync(() => openStore({ repoRoot, agentDir }));
 
 	assert.equal(error.reason, "projection-head-mismatch");
 	assert.equal(error.details.projection, "attempt");
@@ -259,7 +266,7 @@ test("a head whose chain hash disagrees refuses even at the right sequence", asy
 
 	tamper(t, dbPath, `UPDATE projection_head SET chain_hash = '${"0".repeat(64)}' WHERE name = 'run'`);
 
-	assert.equal((await refusalOf(() => openStore({ repoRoot, agentDir }))).reason, "projection-head-mismatch");
+	assert.equal((await refusalOfAsync(() => openStore({ repoRoot, agentDir }))).reason, "projection-head-mismatch");
 });
 
 test("a projection built by another projector version refuses with its own reason", async (t) => {
@@ -272,7 +279,7 @@ test("a projection built by another projector version refuses with its own reaso
 
 	tamper(t, dbPath, "UPDATE projection_head SET projector_version = projector_version + 1 WHERE name = 'run'");
 
-	const error = await refusalOf(() => openStore({ repoRoot, agentDir }));
+	const error = await refusalOfAsync(() => openStore({ repoRoot, agentDir }));
 
 	assert.equal(error.reason, "projector-version-change");
 	assert.equal(error.details.projection, "run");
@@ -343,11 +350,3 @@ function tamper(_t, dbPath, sql) {
 	}
 }
 
-async function refusalOf(body) {
-	try {
-		await body();
-	} catch (error) {
-		return error;
-	}
-	throw new assert.AssertionError({ message: "expected a refusal" });
-}
