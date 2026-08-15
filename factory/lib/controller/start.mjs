@@ -6,10 +6,10 @@ import {
 	exitCodeForEndReason,
 } from "../cli/exit-codes.mjs";
 import {
+	CONTROLLER_EXIT_LEASE_LOST,
 	END_REASON_BASELINE_RED,
 	END_REASON_CONTROLLER_LOST,
 	END_REASON_DRAINED,
-	END_REASON_LEASE_LOST,
 	RUN_LIFECYCLE,
 } from "../domain/vocabulary.mjs";
 import { reconcile } from "../reconcile/engine.mjs";
@@ -424,7 +424,7 @@ function leaseLostAnswer(store, hold) {
 		run,
 		lifecycle: row?.lifecycle ?? null,
 		end_reason: null,
-		controller_exit_reason: END_REASON_LEASE_LOST,
+		controller_exit_outcome: CONTROLLER_EXIT_LEASE_LOST,
 		exit_code: EXIT_LEASE_LOST,
 		fencing_generation: hold.fencingGeneration,
 	};

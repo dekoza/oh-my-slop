@@ -132,9 +132,12 @@ class ⇒ `paused`; every controller-derived reason class ⇒ `failed`.
 
 ### 3.2 Run lifecycle
 
-Lifecycle: `preflight` · `running` · `draining` · `ended`. Mandatory **end reason**, seven
+Lifecycle: `preflight` · `running` · `draining` · `ended`. Mandatory **end reason**, six
 members: `drained` · `baseline-red` · `stopped-by-operator` · `abandoned` ·
-`circuit-breaker` · `lease-lost` · `controller-lost`.
+`circuit-breaker` · `controller-lost`. The factory's published exit-code table carries a
+seventh row, `lease-lost` — a **controller exit outcome**, never a run's recorded
+`end_reason` — so the two vocabularies together read "six run end reasons plus one
+controller exit outcome".
 
 `draining` covers operator stop-after-current-ticket and the circuit breaker identically —
 the behaviour is the same and the reason carries the difference. **`controller-lost` is
@@ -142,8 +145,8 @@ never self-asserted**; it is derived solely from the freshness axis. A stale con
 loses its lease emits `controller.lease-lost` and exits 6 but does not append `run.ended`,
 because a successor may already be adopting that `run_id`; terminalization and normal lease
 release are one token-checked transaction, as is every record moving a run's lifecycle. So
-`lease-lost` is the one member of the enum this view **never renders as a run's end reason** —
-it is an exit code a controller process leaves with, and the run it leaves behind is open.
+`lease-lost` is an outcome this view **never renders as a run's end reason** — it is an exit
+code a controller process leaves with, and the run it leaves behind is open.
 
 **`abandoned` and `lease-lost` were added by
 [#87](http://192.168.129.37:30008/minder/oh-my-slop/issues/87)**, reconciling #82's

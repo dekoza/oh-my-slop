@@ -135,7 +135,9 @@ is the authority; cite the section a change answers to.
   token inside the write's own transaction. A holder's in-memory latch is not proof: a
   successor adopts a lapsed row without asking, so `lost` stays false until this process's
   next compare-and-swap. Effects survive that window on §14.5's resolution-time check; a
-  run's lifecycle is authoritative state with no such backstop.
+  run's lifecycle is authoritative state with no such backstop. A loss conceded **before
+  `run.started` commits** names no run — the minted id is advisory until its record exists,
+  so the loss event carries `run: null` and the exit-6 report names no phantom run.
 - **Integrity failure is never repaired.** A damaged database is renamed into
   `quarantine/<stamp>/` byte-for-byte and replaced by a minimal fresh store carrying a
   typed `journal.integrity-failed` fact, so `status` and `doctor` still have somewhere to
@@ -206,15 +208,18 @@ is the authority; cite the section a change answers to.
   until then, so it is not an order of calls anyone can get wrong.
 - **A run ends at most once, and every ended run has a reason.** Normal completion appends
   `run.ended` in the same token-checked transaction that releases the controller lease; a
-  stale holder exits 6 without ending a run now owned by its successor. §10.3's table lives
-  in `factory/lib/cli/exit-codes.mjs` beside the enum it maps, and an
-  import-time check refuses a member with no row or a row naming no member — the
-  co-location §10.3 asks for, made mechanical. `controller-lost` maps to `null` because it
-  is never self-asserted, so `exitCodeForEndReason` refuses it rather than inventing a
-  code. `lease-lost` keeps its row — it is a real exit code — but the `run` projector refuses
-  it on a `run.ended` (`RUN_TERMINAL_REASONS` in `factory/lib/domain/vocabulary.mjs`), because
-  it names a process's exit and not a run's ending; leaving that to convention is how the
-  ending it forbids gets reintroduced with every test still green.
+  stale holder exits 6 without ending a run now owned by its successor. The vocabulary is
+  **six run end reasons plus one controller exit outcome**: `RUN_TERMINAL_REASONS` and
+  `CONTROLLER_EXIT_LEASE_LOST` in `factory/lib/domain/vocabulary.mjs` are two values, never a
+  union collection — a list named "end reasons" containing a value no run may end for is how
+  the forbidden ending gets reintroduced with every test still green. §10.3's seven-row table
+  lives in `factory/lib/cli/exit-codes.mjs` beside them, and import-time checks refuse a
+  member with no row, a row naming no member, and an outcome that leaked into the reasons —
+  the co-location §10.3 asks for, made mechanical. `controller-lost` maps to `null` because
+  it is never self-asserted, so `exitCodeForEndReason` refuses it rather than inventing a
+  code; it refuses `lease-lost` too, whose code is `EXIT_LEASE_LOST` — a real exit, but the
+  `run` projector refuses it on a `run.ended` because it names a process's exit and not a
+  run's ending.
   Neither the table nor the `--json` `schema_version` is reachable from configuration.
   The envelope's `ok` tracks that exit code rather than "a report came back": §10.3's warning
   about `factory start && next-thing` reading a circuit-breaker exit as success is the same

@@ -214,7 +214,10 @@ test("a lost lease stops effects, emits controller.lease-lost, exits non-zero, a
 	assert.equal(guard.lost, true);
 	assert.deepEqual(losses, [
 		{
-			endReason: "lease-lost",
+			// `outcome`, not `endReason`: the run does not end here — this is the
+			// controller process's own exit, and naming it an end reason is exactly
+			// the conflation the vocabulary split removes.
+			outcome: "lease-lost",
 			exitCode: EXIT_LEASE_LOST,
 			details: { lease: "controller", fencing_generation: mine, holder_generation: thief.fencingGeneration },
 		},

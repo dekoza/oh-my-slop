@@ -1,5 +1,5 @@
 import { EXIT_LEASE_LOST } from "../cli/exit-codes.mjs";
-import { END_REASON_LEASE_LOST } from "../domain/vocabulary.mjs";
+import { CONTROLLER_EXIT_LEASE_LOST } from "../domain/vocabulary.mjs";
 import { processIdentity } from "../identity/process.mjs";
 import { FactoryStateError } from "../state/errors.mjs";
 import { LEASE_NAMES, LEASE_RENEWAL_MS } from "../state/leases.mjs";
@@ -29,7 +29,8 @@ import { LEASE_NAMES, LEASE_RENEWAL_MS } from "../state/leases.mjs";
  *   names the candidate; `adopt()` marks it durable once its row exists
  * @param {string | null} [options.pane] the controller pane, named in §10.5's refusal
  * @param {(loss: object) => void} [options.onLost] the run loop's abandon path,
- *   handed the end reason and the exit code the run must leave with
+ *   handed the controller's exit outcome and code — never an end reason,
+ *   because the run this process leaves behind does not end here
  * @param {{ setInterval: Function, clearInterval: Function }} [options.timers]
  *   injectable so a test drives the renewal instead of waiting for it
  * @returns {Readonly<object>} the hold
@@ -107,8 +108,10 @@ export function holdControllerLease({
 		} finally {
 			// A store that cannot record the loss is not a reason to end the run
 			// zero, so the run loop is told either way; the store's own failure
-			// then propagates on its own account.
-			onLost({ endReason: END_REASON_LEASE_LOST, exitCode: EXIT_LEASE_LOST, details });
+			// then propagates on its own account. What it is handed is the
+			// controller's exit *outcome* — the run does not end here, so there is
+			// deliberately no end reason to pass.
+			onLost({ outcome: CONTROLLER_EXIT_LEASE_LOST, exitCode: EXIT_LEASE_LOST, details });
 		}
 	}
 

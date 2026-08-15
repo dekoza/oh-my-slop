@@ -1,4 +1,9 @@
-import { RUN_END_REASONS, RUN_LIFECYCLE, RUN_LIFECYCLES, RUN_TERMINAL_REASONS } from "../domain/vocabulary.mjs";
+import {
+	CONTROLLER_EXIT_LEASE_LOST,
+	RUN_LIFECYCLE,
+	RUN_LIFECYCLES,
+	RUN_TERMINAL_REASONS,
+} from "../domain/vocabulary.mjs";
 import { canonicalJson } from "./events.mjs";
 import { FactoryStateError } from "./errors.mjs";
 
@@ -270,20 +275,20 @@ function requireLifecycle(event) {
 /**
  * §10.3's mandatory reason, held to the six a run can actually end for.
  *
- * `lease-lost` is the seventh member of the published table and is refused here:
- * it names a **controller process's** exit, not a run's ending. The process that
- * lost its lease no longer owns the run — a successor may already be adopting the
- * same `run_id` — so a `run.ended` carrying that reason is a stale writer closing
- * somebody else's work. The rule is enforced on the write path rather than left
- * to the one call site that ends runs, because that is the difference between an
- * invariant and a habit.
+ * `lease-lost` is the published table's seventh row and is refused here: it
+ * names a **controller process's** exit outcome, not a run's ending. The process
+ * that lost its lease no longer owns the run — a successor may already be
+ * adopting the same `run_id` — so a `run.ended` carrying that reason is a stale
+ * writer closing somebody else's work. The rule is enforced on the write path
+ * rather than left to the one call site that ends runs, because that is the
+ * difference between an invariant and a habit.
  */
 function requireEndReason(event) {
 	const endReason = event.payload.end_reason;
 	if (!RUN_TERMINAL_REASONS.includes(endReason)) {
 		throw new FactoryStateError(
 			"invalid-event",
-			RUN_END_REASONS.includes(endReason)
+			endReason === CONTROLLER_EXIT_LEASE_LOST
 				? `"${endReason}" is a controller process's exit, not a reason a run ends; the process that ` +
 					"lost its lease leaves the run open for the successor that may already own it (§14.6)."
 				: `A run ends for one of §10.3's reasons; found ${JSON.stringify(endReason ?? null)}.`,

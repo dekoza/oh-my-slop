@@ -1,4 +1,4 @@
-import { END_REASON_LEASE_LOST, RUN_END_REASONS } from "../domain/vocabulary.mjs";
+import { CONTROLLER_EXIT_LEASE_LOST, RUN_TERMINAL_REASONS } from "../domain/vocabulary.mjs";
 
 /**
  * Exit codes are published contract (§10.3), not configuration.
@@ -21,11 +21,13 @@ export const EXIT_OK = 0;
 export const EXIT_USAGE = 1;
 
 /**
- * §10.3's table, as one value.
+ * §10.3's table, as one value: the six run end reasons **plus the one
+ * controller exit outcome**, `lease-lost` — a code a `factory start` caller can
+ * really receive, from a process whose run it does not end.
  *
- * It sits **beside the end-reason enum it maps** — the import below, and the
- * completeness check under it — because §10.3 co-locates the two for exactly one
- * reason: an end reason added without an exit-code decision, or an exit code
+ * It sits **beside the vocabulary it maps** — the import above, and the
+ * completeness checks under it — because §10.3 co-locates the two for exactly
+ * one reason: a reason added without an exit-code decision, or an exit code
  * left behind by a renamed reason, is a published contract quietly diverging
  * from the vocabulary it publishes. Here that is an import-time failure instead.
  *
@@ -34,13 +36,12 @@ export const EXIT_USAGE = 1;
  * it describes is not the process exiting and there is no exit code to give
  * (§13.A, §14.36).
  *
- * Every reason is **spelled out** rather than reached through a constant. These
+ * Every member is **spelled out** rather than reached through a constant. These
  * are the wire strings a downstream script matches on, so a published table is
- * worth reading straight off the page — and the completeness check below is what
- * makes that safe, because a renamed member cannot quietly leave a stale row
- * behind.
+ * worth reading straight off the page — and the checks below are what make that
+ * safe, because a renamed member cannot quietly leave a stale row behind.
  */
-export const END_REASON_EXIT_CODES = Object.freeze({
+export const OUTCOME_EXIT_CODES = Object.freeze({
 	drained: EXIT_OK,
 	"baseline-red": 2,
 	"stopped-by-operator": 3,
@@ -50,38 +51,58 @@ export const END_REASON_EXIT_CODES = Object.freeze({
 	"controller-lost": null,
 });
 
-// The co-location made mechanical. A member of §10.3's enum with no row, or a
-// row naming something the enum does not, fails at import — long before an
-// operator's script reads a code nobody decided.
-for (const reason of RUN_END_REASONS) {
-	if (!Object.hasOwn(END_REASON_EXIT_CODES, reason)) {
+// The co-location made mechanical, member by member rather than through a
+// union collection that would blur the two domains back together: every run
+// end reason has a row, the controller exit outcome has a row, no row belongs
+// to neither, and the outcome is not quietly also an end reason.
+for (const reason of RUN_TERMINAL_REASONS) {
+	if (!Object.hasOwn(OUTCOME_EXIT_CODES, reason)) {
 		throw new Error(`End reason "${reason}" has no exit code in §10.3's table.`);
 	}
 }
-for (const reason of Object.keys(END_REASON_EXIT_CODES)) {
-	if (!RUN_END_REASONS.includes(reason)) {
-		throw new Error(`Exit-code table row "${reason}" is not one of §10.3's seven end reasons.`);
+if (!Object.hasOwn(OUTCOME_EXIT_CODES, CONTROLLER_EXIT_LEASE_LOST)) {
+	throw new Error(`Controller exit outcome "${CONTROLLER_EXIT_LEASE_LOST}" has no exit code in §10.3's table.`);
+}
+for (const outcome of Object.keys(OUTCOME_EXIT_CODES)) {
+	if (!RUN_TERMINAL_REASONS.includes(outcome) && outcome !== CONTROLLER_EXIT_LEASE_LOST) {
+		throw new Error(
+			`Exit-code table row "${outcome}" is neither one of §10.3's six run end reasons ` +
+				"nor the controller exit outcome.",
+		);
 	}
+}
+if (RUN_TERMINAL_REASONS.includes(CONTROLLER_EXIT_LEASE_LOST)) {
+	throw new Error(
+		`"${CONTROLLER_EXIT_LEASE_LOST}" names a controller process's exit and must not be a run end reason (§14.6).`,
+	);
 }
 
 /**
- * Controller outcome `lease-lost` (§10.3): the controller lost its lease and
- * exited without reacquiring. The stale process reports this code but does not
- * append an unfenced `run.ended` to a run its successor may own. Non-zero by
- * contract, and read from the published table rather than written twice.
+ * Controller exit outcome `lease-lost` (§10.3): the controller lost its lease
+ * and exited without reacquiring. The stale process reports this code but does
+ * not append an unfenced `run.ended` to a run its successor may own. Non-zero
+ * by contract, and read from the published table rather than written twice.
  */
-export const EXIT_LEASE_LOST = END_REASON_EXIT_CODES[END_REASON_LEASE_LOST];
+export const EXIT_LEASE_LOST = OUTCOME_EXIT_CODES[CONTROLLER_EXIT_LEASE_LOST];
 
 /**
  * The code a run leaves with, given the reason it ended.
  *
- * @param {string} endReason one of §10.3's seven
+ * @param {string} endReason one of §10.3's six run end reasons
  * @returns {number}
- * @throws {Error} for `controller-lost`, which has no exit code by construction
+ * @throws {Error} for `controller-lost`, which has no exit code by construction,
+ *   and for `lease-lost`, which is a controller exit outcome rather than a
+ *   reason any run ends — its code is `EXIT_LEASE_LOST`, never a run's
  */
 export function exitCodeForEndReason(endReason) {
-	const code = END_REASON_EXIT_CODES[endReason];
-	if (code === undefined) throw new Error(`"${endReason}" is not one of §10.3's seven end reasons.`);
+	if (endReason === CONTROLLER_EXIT_LEASE_LOST) {
+		throw new Error(
+			`"${endReason}" is the controller process's exit outcome, not a reason a run ends (§14.6); ` +
+				"the run it leaves behind is open and has no code to read off this table.",
+		);
+	}
+	const code = OUTCOME_EXIT_CODES[endReason];
+	if (code === undefined) throw new Error(`"${endReason}" is not one of §10.3's six run end reasons.`);
 	if (code === null) {
 		throw new Error(
 			`"${endReason}" is never self-asserted, so no process ever exits with it (§14.36); ` +

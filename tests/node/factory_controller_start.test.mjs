@@ -4,11 +4,12 @@ import { join } from "node:path";
 
 import { readArtifact } from "../../factory/lib/artifacts/ledger.mjs";
 import {
-	END_REASON_EXIT_CODES,
+	EXIT_LEASE_LOST,
 	EXIT_OK,
 	EXIT_REFUSED,
 	EXIT_USAGE,
 	exitCodeForEndReason,
+	OUTCOME_EXIT_CODES,
 } from "../../factory/lib/cli/exit-codes.mjs";
 import { runCli } from "../../factory/lib/cli/main.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
@@ -16,7 +17,11 @@ import { ENTRY_MODES } from "../../factory/lib/controller/entry.mjs";
 import { HERDR_REMEDIES } from "../../factory/lib/controller/herdr.mjs";
 import { writeRunManifest } from "../../factory/lib/controller/manifest.mjs";
 import { runStart } from "../../factory/lib/controller/start.mjs";
-import { RUN_END_REASONS, RUN_LIFECYCLES } from "../../factory/lib/domain/vocabulary.mjs";
+import {
+	CONTROLLER_EXIT_LEASE_LOST,
+	RUN_LIFECYCLES,
+	RUN_TERMINAL_REASONS,
+} from "../../factory/lib/domain/vocabulary.mjs";
 import { isUlid, newUlid } from "../../factory/lib/identity/ulid.mjs";
 import { HEARTBEAT_STREAM, runStream } from "../../factory/lib/state/events.mjs";
 import { CONTROLLER_LEASE_TTL_MS, openLeases } from "../../factory/lib/state/leases.mjs";
@@ -83,9 +88,12 @@ async function orphanRun(context, { tickets = [42], at = 1_770_000_000_000, then
 
 // ── The published contract (§10.3, §13.A, §14.36) ────────────────────────────
 
-test("every end reason has the exit code §10.3 tabulates, and only those", () => {
-	assert.deepEqual(Object.keys(END_REASON_EXIT_CODES).sort(), [...RUN_END_REASONS].sort());
-	assert.deepEqual(END_REASON_EXIT_CODES, {
+test("§10.3's table maps the six run end reasons plus the one controller exit outcome, and only those", () => {
+	assert.deepEqual(
+		Object.keys(OUTCOME_EXIT_CODES).sort(),
+		[...RUN_TERMINAL_REASONS, CONTROLLER_EXIT_LEASE_LOST].sort(),
+	);
+	assert.deepEqual(OUTCOME_EXIT_CODES, {
 		drained: 0,
 		"baseline-red": 2,
 		"stopped-by-operator": 3,
@@ -97,12 +105,19 @@ test("every end reason has the exit code §10.3 tabulates, and only those", () =
 });
 
 test("controller-lost carries no exit code, because it is never self-asserted", () => {
-	assert.equal(END_REASON_EXIT_CODES["controller-lost"], null);
+	assert.equal(OUTCOME_EXIT_CODES["controller-lost"], null);
 	assert.throws(() => exitCodeForEndReason("controller-lost"), /never self-asserted/);
 });
 
+test("lease-lost is the controller's exit outcome, never a reason a run ends with", () => {
+	// The code is real — a caller can receive it — but it is not an answer to
+	// "why did this run end", so the end-reason mapping refuses to give it out.
+	assert.equal(EXIT_LEASE_LOST, 6);
+	assert.throws(() => exitCodeForEndReason(CONTROLLER_EXIT_LEASE_LOST), /exit outcome/);
+});
+
 test("no run end reason exits 1, which belongs to usage and config alone", () => {
-	for (const reason of RUN_END_REASONS.filter((candidate) => candidate !== "controller-lost")) {
+	for (const reason of RUN_TERMINAL_REASONS.filter((candidate) => candidate !== "controller-lost")) {
 		assert.notEqual(exitCodeForEndReason(reason), EXIT_USAGE, reason);
 	}
 });
@@ -412,7 +427,7 @@ test("a controller that loses its lease exits 6 without closing the run its succ
 	});
 
 	assert.equal(answered.exitCode, 6);
-	assert.equal(answered.report.controller_exit_reason, "lease-lost");
+	assert.equal(answered.report.controller_exit_outcome, "lease-lost");
 	assert.equal(answered.report.end_reason, null);
 
 	const store = await storeOf(t, context);

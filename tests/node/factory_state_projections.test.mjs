@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { RUN_END_REASONS, RUN_TERMINAL_REASONS } from "../../factory/lib/domain/vocabulary.mjs";
+import { CONTROLLER_EXIT_LEASE_LOST, RUN_TERMINAL_REASONS } from "../../factory/lib/domain/vocabulary.mjs";
 import { newUlid } from "../../factory/lib/identity/ulid.mjs";
 import { FactoryStateError } from "../../factory/lib/state/errors.mjs";
 import { PROJECTIONS } from "../../factory/lib/state/projections.mjs";
@@ -148,13 +148,18 @@ test("no run ends `lease-lost`: that reason names a process's exit, not a run's 
 	);
 
 	assert.equal(store.readRun(runId).end_reason, null);
-	assert.equal(RUN_END_REASONS.includes("lease-lost"), true, "the published table still names the exit code");
-	assert.equal(RUN_TERMINAL_REASONS.includes("lease-lost"), false);
-	assert.deepEqual(
-		RUN_END_REASONS.filter((reason) => !RUN_TERMINAL_REASONS.includes(reason)),
-		["lease-lost"],
-		"exactly one member of the enum is a controller outcome rather than a run ending",
-	);
+	// The vocabulary keeps the two domains apart by construction: six reasons a
+	// run ends for, and one controller exit outcome that is never among them.
+	assert.deepEqual(RUN_TERMINAL_REASONS, [
+		"drained",
+		"baseline-red",
+		"stopped-by-operator",
+		"abandoned",
+		"circuit-breaker",
+		"controller-lost",
+	]);
+	assert.equal(CONTROLLER_EXIT_LEASE_LOST, "lease-lost");
+	assert.equal(RUN_TERMINAL_REASONS.includes(CONTROLLER_EXIT_LEASE_LOST), false);
 });
 
 test("every projection head advances with every event, to the journal's own head", async (t) => {

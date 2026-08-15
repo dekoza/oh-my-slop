@@ -359,6 +359,11 @@ one transaction; failure of that compare leaves the run open for re-entry and ex
 In-flight work is abandoned without touching Gitea or git. The fencing check at resolution is
 the backstop, so the exit does not have to win a race to be safe.
 
+A loss conceded **before `run.started` commits** names no run: a minted run id is advisory
+until its record exists, so the `controller.lease-lost` event carries `run: null` on the
+`controller` stream and the exit-6 report names no run — a loss event naming a run that was
+never started would itself be refused by the projector, taking the concession down with it.
+
 **Every record that moves a run's lifecycle is written under the token, in the same transaction
 as the compare.** A successor adopts a *lapsed* row without asking anyone, so the previous
 holder learns it is stale at its next compare-and-swap and not one moment sooner — a window in
@@ -1314,16 +1319,20 @@ repo is itself the trust act**; no replacement gate is introduced.
 
 **Lifecycle:** `preflight` · `running` · `draining` · `ended`.
 
-**End reason (mandatory, seven members):**
+**Run outcomes: six run end reasons plus one controller exit outcome.** Every ended run
+carries a mandatory `end_reason` drawn from the six; `lease-lost` is the seventh row of the
+published table because it is a real exit code a caller can receive, but it is the controller
+*process's* own exit outcome and never a run's recorded `end_reason` — the run it leaves
+behind is open. One table publishes all seven rows so a script reading it finds every code:
 
-| End reason | Exit code | Meaning |
+| Outcome | Exit code | Meaning |
 |---|---|---|
 | `drained` | **0** | the scope drained; nothing left claimable |
 | `baseline-red` | **2** | the required preflight set was not green; names the red check, including a required baseline check when that is the one that failed |
 | `stopped-by-operator` | **3** | a `stop` request was honoured at a ticket boundary; in-flight lanes finished |
 | `abandoned` | **4** | a second `stop` or `SIGTERM`; in-flight lanes `released`, panes left alive |
 | `circuit-breaker` | **5** | N consecutive automation failures in terminal-commit order |
-| `lease-lost` | **6** | the controller process lost its lease and exited without reacquiring; the stale process leaves the run open rather than self-authoring an unfenced `run.ended`, so this is the one member that is **only** an exit code and never a run's recorded `end_reason` |
+| `lease-lost` | **6** | **controller exit outcome, not a run end reason**: the controller process lost its lease and exited without reacquiring; the stale process leaves the run open rather than self-authoring an unfenced `run.ended`, so this row is **only** an exit code and never a run's recorded `end_reason` |
 | `controller-lost` | **— (none)** | **asserted only by a different controller or the monitor**, never self-asserted, so it can have no exit code |
 
 Exit code **1 is reserved for usage and config-load failure** — those happen *before* a run
@@ -1331,8 +1340,8 @@ exists and therefore have no end reason.
 
 > **This table and the `--json` `schema_version` are published contract, not configuration.**
 > Callers' error handling depends on them, so a config knob would let a config file silently
-> break every downstream script. **They are documented here, beside the end-reason enum, so the
-> two cannot diverge** — that co-location is the whole point.
+> break every downstream script. **They are documented here, beside the vocabulary they map, so
+> the two cannot diverge** — that co-location is the whole point.
 >
 > `factory start && next-thing` must never read a circuit-breaker exit as success.
 
@@ -1861,6 +1870,13 @@ members), on these grounds:
 
 **This is additive to the monitor's locked enum**, so the monitor specification is amended in
 place under its §12 protocol rather than reopened.
+
+**Refined by #97's corrections:** the published table keeps its seven rows, but the union is no
+longer called an end-reason enum — that name made "mandatory, drawn from the enum" and "never a
+recorded `end_reason`" true of the same collection. §10.3 now distinguishes the **six run end
+reasons** from the **one controller exit outcome**, `lease-lost`, and the vocabulary carries
+them as two values (`RUN_TERMINAL_REASONS` and `CONTROLLER_EXIT_LEASE_LOST`) whose disjointness
+is checked at import beside the table.
 
 ### 13.B Pane closure — #86 wins outright
 
