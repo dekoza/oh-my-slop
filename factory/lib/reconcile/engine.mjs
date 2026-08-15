@@ -75,6 +75,9 @@ const UNSETTLED_REASONS = Object.freeze({
  * @param {object} [options.probes] the §5.3 probe registry
  * @param {string} [options.mode] `settle` (default) or `report`
  * @param {number} [options.fencingGeneration] the generation the caller holds (§4.6)
+ * @param {object | null} [options.hold] the controller's hold (`controller/lease-guard.mjs`).
+ *   A settling pass opens its startup gate, which is how §5.4's "before the lease
+ *   is used for any effect" holds without a call the run loop must remember
  * @param {string} [options.actor] `controller`, or `operator:<verb>`
  * @param {number} [options.at] UTC epoch milliseconds
  * @param {string | null} [options.causalCommandId]
@@ -87,6 +90,7 @@ export async function reconcile(
 		probes = PROBES,
 		mode = RECONCILE_MODES.settle,
 		fencingGeneration = null,
+		hold = null,
 		actor = "controller",
 		at = Date.now(),
 		causalCommandId = null,
@@ -130,6 +134,14 @@ export async function reconcile(
 		);
 	}
 
+	// §5.4's precondition, discharged where it was actually met. Reconcile's own
+	// resolutions are stamped with the generation the caller passed rather than
+	// fenced through the hold, so opening the gate here cannot deadlock the pass
+	// that opens it. It opens even when a probe could not answer: that is
+	// §12.4's alarm, and refusing to start over it would stop the factory
+	// permanently rather than loudly.
+	if (settling) hold?.recordStartupReconcile();
+
 	return Object.freeze({
 		mode,
 		at,
@@ -137,7 +149,6 @@ export async function reconcile(
 		scope,
 		entities: Object.freeze(entities),
 		unsettled: Object.freeze(unsettled),
-		out_of_scope: Object.freeze(outOfScope(unresolved, held).map(describeEffect)),
 		// **`settled` is what was written**, so it is zero in report mode however
 		// many probes matched: `doctor` printing "settled 3" while appending
 		// nothing would be the one sentence §14.24 cannot afford to get wrong.
@@ -148,21 +159,6 @@ export async function reconcile(
 		causal_command_id: causalCommandId,
 		probes: Object.freeze([...probes.calls]),
 	});
-}
-
-/**
- * Every unresolved effect **no entity in scope holds** — repo-scoped ones, and
- * the ticket-less effects of a run that has already ended.
- *
- * §5.4's scope is run-shaped, so these are outside it by construction. That is
- * precisely why they are listed: an effect in neither the settled set nor the
- * unsettled one would be invisible to the operator, and §12.4's alarm — *a run
- * pinned for weeks means an effect nothing can settle* — would go unrung for the
- * one class of effect nothing will ever probe.
- */
-function outOfScope(unresolved, held) {
-	const claimed = new Set(held.flatMap((entity) => entity.effects.map((effect) => effect.effect_key)));
-	return unresolved.filter((effect) => !claimed.has(effect.effect_key));
 }
 
 /**
@@ -193,23 +189,45 @@ function requireMode(store, mode, fencingGeneration) {
 }
 
 /**
- * §5.4's scope: **every run whose lifecycle is not `ended`, plus any ticket
- * execution holding an unresolved effect.**
+ * §5.4's scope: **every run whose lifecycle is not `ended`, plus any entity
+ * holding an unresolved effect** — a ticket execution, a run that has already
+ * ended, or the repository itself for a repo-scoped one.
  *
- * The second half is deliberately not "every ticket execution of those runs": an
- * unresolved effect outlives its run's ending — that is §12.4's fourth pin — and
- * it is precisely what re-probing exists to settle.
+ * The second clause is not a list of places effects happen to live. An
+ * unresolved effect **outlives its run's ending** — that is why §12.4 makes it a
+ * pin rather than a table-level exception — so an entity is in scope because it
+ * holds one, whatever its own lifecycle says. Scoped to ticket executions alone,
+ * a ticket-less effect of an ended run and a repo-scoped effect would be pinned
+ * by §12.4 and reached by nothing: a permanent pin, with `doctor` shouting about
+ * an obligation no verb could discharge.
+ *
+ * The repository is in scope **only** when it holds one, because there is no
+ * other repository-level state for reconcile to settle.
  */
 function scopeOf(store, unresolved) {
 	const executions = new Map();
+	const holding = new Set();
+	let repository = false;
+
 	for (const effect of unresolved) {
-		if (effect.run_id === null || effect.ticket === null) continue;
-		executions.set(`${effect.run_id}/${effect.ticket}`, { run: effect.run_id, ticket: effect.ticket });
+		if (effect.run_id === null) {
+			repository = true;
+		} else if (effect.ticket === null) {
+			holding.add(effect.run_id);
+		} else {
+			executions.set(`${effect.run_id}/${effect.ticket}`, { run: effect.run_id, ticket: effect.ticket });
+		}
 	}
 
+	// Unended runs first, oldest first, then whatever else is held — by sequence,
+	// never by clock (§14.37), since `unresolved` comes back in request order.
+	const runs = new Set(store.readUnendedRuns().map((row) => row.run_id));
+	for (const run of holding) runs.add(run);
+
 	return Object.freeze({
-		runs: Object.freeze(store.readUnendedRuns().map((row) => row.run_id)),
+		runs: Object.freeze([...runs]),
 		ticket_executions: Object.freeze([...executions.values()]),
+		repository,
 	});
 }
 
@@ -233,6 +251,15 @@ function entitiesOf(scope, unresolved) {
 		entities.push({
 			identity: Object.freeze({ kind: "ticket-execution", run, ticket }),
 			effects: unresolved.filter((effect) => effect.run_id === run && effect.ticket === ticket),
+		});
+	}
+
+	// The repository's own: a repo-scoped effect belongs to no run, so its
+	// conclusion carries no run either and lands on the `controller` stream.
+	if (scope.repository) {
+		entities.push({
+			identity: Object.freeze({ kind: "repository", run: null, ticket: null }),
+			effects: unresolved.filter((effect) => effect.run_id === null),
 		});
 	}
 

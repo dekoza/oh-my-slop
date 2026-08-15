@@ -27,6 +27,12 @@ export const STATE_ERROR_REASONS = Object.freeze([
 	"lease-lost",
 	/** A hold the holder itself gave up — an orderly end, not §14.6's loss. */
 	"lease-released",
+	/**
+	 * A hold asked to stamp an effect before §5.4's startup reconciliation ran
+	 * under it. Resume *is* startup, so the gate is shut until the reconcile
+	 * that settles what the last controller left behind has happened.
+	 */
+	"reconcile-required",
 	/** A lease name outside §4.6's closed set of objects. */
 	"invalid-lease-name",
 	/** A deletion that is neither whole-stream nor front-truncation (§4.2, §14.7). */

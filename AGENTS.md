@@ -193,7 +193,11 @@ is the authority; cite the section a change answers to.
   subsystem that introduces that kind**, registered by its §4.5 *read* so one call serves
   every operation that performs it. An effect nothing could probe is left exactly as it was
   and reported — that is §12.4's alarm, and it is why no probe means no evidence, therefore
-  no `reconcile.concluded` record at all.
+  no `reconcile.concluded` record at all. Scope follows the effect rather than the run: a
+  ticket-less effect of an **ended** run and a repo-scoped one are entities too, or §12.4 would
+  pin them forever with nothing able to probe them. And §5.4's "before the lease is used for any
+  effect" is a latch on the controller's hold that only a settling pass opens — `fence()` refuses
+  until then, so it is not an order of calls anyone can get wrong.
 - `doctor` (`factory/lib/doctor/`) is handed the store from `openRepoStoreReadOnly`, which
   carries no `transaction` and never creates a store, so §14.24 is a property of the handle
   rather than a rule the diagnosis follows. Every section is computed independently and one

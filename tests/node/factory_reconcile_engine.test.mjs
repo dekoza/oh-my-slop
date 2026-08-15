@@ -254,6 +254,19 @@ test("a read-only handle can report and can never settle", async (t) => {
 	assert.equal(refusal.reason, "reconcile-read-only");
 });
 
+test("a settling pass opens the controller's startup gate; a reporting pass never does (§5.4)", async (t) => {
+	const { store } = await storeWithRuns(t);
+	// The hold's own seam, stubbed: what matters here is which pass calls it.
+	const opened = [];
+	const hold = { recordStartupReconcile: () => opened.push("settle") };
+
+	await reconcile(store, { probes: createProbeRegistry(), mode: RECONCILE_MODES.report, hold, at: AT });
+	assert.deepEqual(opened, [], "a read-only diagnosis satisfied the precondition for issuing effects");
+
+	await reconcile(store, { probes: createProbeRegistry(), fencingGeneration: 1, hold, at: AT });
+	assert.deepEqual(opened, ["settle"]);
+});
+
 test("settling with no fencing generation is the caller's bug, and says so", async (t) => {
 	const { store } = await storeWithRuns(t);
 
@@ -262,29 +275,43 @@ test("settling with no fencing generation is the caller's bug, and says so", asy
 	assert.equal(refusal.reason, "reconcile-generation-required");
 });
 
-test("an unresolved effect no entity in scope holds is still visible, whoever holds it", async (t) => {
+test("a ticket-less effect of an ended run is probed too — the pin outlives the run (§5.4)", async (t) => {
 	const { store, ended } = await storeWithRuns(t);
-	// A ticket-less effect of a run that has already ended: §5.4's scope reaches
-	// neither the run (it ended) nor a ticket execution (there is no ticket), so
-	// nothing will ever probe it — which is exactly what must not go unreported.
 	const orphan = labelAdd(store, { run: ended, operand: "drained" });
+	const probes = createProbeRegistry();
+	probes.register("issue.labels", () => ({
+		matched: true,
+		foreignSourceId: "gitea:4716",
+		occurredAtRaw: "2026-08-15T09:00:00+02:00",
+	}));
 
-	const report = await reconcile(store, { probes: createProbeRegistry(), fencingGeneration: 1, at: AT });
+	const report = await reconcile(store, { probes, fencingGeneration: 1, at: AT });
 
-	assert.deepEqual(
-		report.out_of_scope.map((entry) => entry.effect_key),
-		[orphan.key],
-	);
-	assert.equal(unresolvedEffects(store).length, 1, "an out-of-scope effect is left exactly as it was");
+	assert.ok(report.scope.runs.includes(ended), "an ended run holding an effect is out of every probe's reach");
+	assert.deepEqual(unresolvedEffects(store), [], "the pin §12.4 would have held forever is still held");
+	const entity = report.entities.find((candidate) => candidate.entity.run === ended);
+	assert.deepEqual(entity.entity, { kind: "run", run: ended, ticket: null });
+	assert.equal(entity.conclusion, "adopted");
+	assert.equal(entity.evidence[0].effect_key, orphan.key);
+	assert.equal(report.settled, 1);
 });
 
-test("a repo-scoped unresolved effect is reported rather than settled outside §5.4's scope", async (t) => {
+test("a repo-scoped effect is the repository's own, and concludes on the controller stream", async (t) => {
 	const { store } = await storeWithRuns(t);
 	labelAdd(store, { run: null, ticket: null, operand: "repo-wide" });
+	const probes = createProbeRegistry();
+	probes.register("issue.labels", () => ({
+		matched: true,
+		foreignSourceId: "gitea:4717",
+		occurredAtRaw: "2026-08-15T09:00:00+02:00",
+	}));
 
-	const report = await reconcile(store, { probes: createProbeRegistry(), fencingGeneration: 1, at: AT });
+	const report = await reconcile(store, { probes, fencingGeneration: 1, at: AT });
 
-	assert.equal(report.out_of_scope.length, 1);
-	assert.equal(report.out_of_scope[0].operation, "label-add");
-	assert.equal(unresolvedEffects(store).length, 1, "an out-of-scope effect is left exactly as it was");
+	assert.equal(report.scope.repository, true);
+	assert.deepEqual(report.entities.at(-1).entity, { kind: "repository", run: null, ticket: null });
+	assert.deepEqual(unresolvedEffects(store), []);
+
+	const [concluded] = store.readEvents({ kind: "reconcile.concluded" });
+	assert.equal(concluded.stream, "controller", "a conclusion about no run belongs to no run's stream");
 });

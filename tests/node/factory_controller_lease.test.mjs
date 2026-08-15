@@ -99,6 +99,7 @@ function adoptFrom(store, clock) {
 
 test("the hold publishes the fence its effects are stamped with, and permits them", async (t) => {
 	const { leases, guard } = await heldStore(t);
+	guard.recordStartupReconcile();
 
 	const row = leases.inspect(LEASE_NAMES.controller);
 	assert.equal(guard.token, row.token);
@@ -107,6 +108,27 @@ test("the hold publishes the fence its effects are stamped with, and permits the
 	assert.deepEqual(guard.fence(), { token: row.token, generation: row.fencingGeneration });
 	guard.assertMayIssueEffects();
 	assert.equal(row.identity.pane, "herdr:2");
+});
+
+test("the lease is used for no effect until startup reconcile has run under it (§5.4)", async (t) => {
+	const { guard } = await heldStore(t);
+
+	// Not a mode anyone has to remember to enter: the gate is shut until the
+	// reconciliation that §5.4 puts before the first effect actually happened.
+	assert.equal(guard.reconciled, false);
+	assert.throws(
+		() => guard.fence(),
+		(error) => {
+			assert.equal(error.reason, "reconcile-required");
+			assert.equal(error.details.run, RUN);
+			return true;
+		},
+	);
+
+	guard.recordStartupReconcile();
+
+	assert.equal(guard.reconciled, true);
+	assert.equal(guard.fence().generation, guard.fencingGeneration);
 });
 
 test("a second controller cannot take the hold, and is told which run and pane has it", async (t) => {
@@ -238,6 +260,7 @@ test("after the loss, in-flight work is abandoned rather than pushed to Gitea or
 		touched.push(operation);
 	}
 
+	guard.recordStartupReconcile();
 	issueEffect("gitea.comment");
 
 	adoptFrom(store, clock);

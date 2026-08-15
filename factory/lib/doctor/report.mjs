@@ -209,14 +209,12 @@ function integritySection(store) {
  * here for weeks means an effect nothing can settle, which a silent table-level
  * exception would have hidden.
  *
- * Repo-scoped effects answer under `run: null`. They are outside §5.4's scope,
- * which is exactly why they must be visible here: nothing else would ever
- * mention them.
+ * Repo-scoped effects answer under `run: null` — the repository's own pin, which
+ * §5.4 puts in scope for exactly this reason: an obligation nothing reports is
+ * an obligation nobody discharges.
  */
 function pinsSection(unresolved, reconciled) {
-	const unsettleable = new Set(
-		[...(reconciled?.unsettled ?? []), ...(reconciled?.out_of_scope ?? [])].map((entry) => entry.effect_key),
-	);
+	const unsettleable = new Set((reconciled?.unsettled ?? []).map((entry) => entry.effect_key));
 	const pins = new Map();
 
 	for (const effect of unresolved) {
@@ -263,6 +261,13 @@ function baselineSection() {
  * budget counters belong to §8.5's two repair tiers and §8.6's breaker, and a
  * zero reported for a counter nothing increments would answer the operator's
  * question wrongly.
+ *
+ * **When they arrive, they arrive derived**: a `GROUP BY` over the attempt
+ * projection's outcomes, the way §12.10's byte accounting falls out of the
+ * ledger — never a second tally kept in step with the attempts it counts. The
+ * `attempt.outcome` column is already there and already empty, waiting for the
+ * slice that owns §8.8's vocabulary; a parallel counter table would be a number
+ * that can disagree with the attempts it claims to describe.
  *
  * The scope is the runs doctor is already talking about: those still open, plus
  * any run holding an unresolved effect.

@@ -75,7 +75,7 @@ function refusal(error) {
 }
 
 function headline(report) {
-	const unsettled = report.unsettled.length + report.out_of_scope.length;
+	const unsettled = report.unsettled.length;
 	const settled = `settled ${report.settled} effect${report.settled === 1 ? "" : "s"}`;
 	const concluded = `concluded about ${report.entities.length} ${report.entities.length === 1 ? "entity" : "entities"}`;
 

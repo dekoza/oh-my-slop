@@ -45,6 +45,11 @@ export function holdControllerLease({
 	});
 	let lost = false;
 	let released = false;
+	// §5.4: reconcile runs at startup **before the lease is used for any
+	// effect**. Holding that as a latch on the hold itself makes it structural:
+	// there is no order of calls that issues an effect first, and no mode anyone
+	// has to remember to enter.
+	let reconciled = false;
 
 	const renewal = timers.setInterval(() => renew(), LEASE_RENEWAL_MS);
 	renewal.unref?.();
@@ -101,6 +106,13 @@ export function holdControllerLease({
 	 * safe.
 	 */
 	function assertMayIssueEffects() {
+		if (!reconciled && !lost && !released) {
+			throw new FactoryStateError(
+				"reconcile-required",
+				"This controller has not reconciled yet; §5.4 settles what the last one left behind before the lease is used for any effect.",
+				{ lease: LEASE_NAMES.controller, fencing_generation: held.fencingGeneration, run },
+			);
+		}
 		if (lost) {
 			throw new FactoryStateError(
 				"lease-lost",
@@ -126,6 +138,21 @@ export function holdControllerLease({
 		},
 		get lost() {
 			return lost;
+		},
+		get reconciled() {
+			return reconciled;
+		},
+
+		/**
+		 * §5.4's reconciliation happened under this hold, so the gate opens.
+		 *
+		 * Called by the engine rather than by the run loop, so satisfying it means
+		 * having actually reconciled. It opens on a pass that could not settle
+		 * everything: a probe nothing implements is §12.4's alarm, and refusing to
+		 * start over one would stop the factory permanently rather than loudly.
+		 */
+		recordStartupReconcile() {
+			reconciled = true;
 		},
 
 		/** What an effect is stamped with, so a superseded one is not honored (§14.5). */

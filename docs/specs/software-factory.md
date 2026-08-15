@@ -457,8 +457,15 @@ forgets to enter. It also runs on the operator's explicit `reconcile`.
 **`doctor` runs the identical code with a read-only flag**: it computes the same conclusions
 and **prints them, appending nothing**.
 
-**Scope:** every run whose lifecycle is not `ended`, plus any ticket execution holding an
-unresolved effect.
+**Scope:** every run whose lifecycle is not `ended`, plus **any entity holding an unresolved
+effect** — a ticket execution, a run that has already ended, or the repository itself for a
+repo-scoped one.
+
+The second clause is not a list of places effects happen to live; it is there because **an
+unresolved effect outlives its run's ending**, which is exactly why §12.4 makes it a pin rather
+than a table-level exception. Scoped to ticket executions alone, a ticket-less effect of an
+ended run and a repo-scoped effect would be pinned by §12.4 and reached by nothing — a
+permanent pin, with `doctor` shouting about an obligation the operator has no verb to discharge.
 
 **Output:** one `reconcile.concluded` event per affected entity, carrying a conclusion ∈
 `adopted` · `released` · `declared-dead` · `unchanged` and an **ordered, non-empty evidence
@@ -2131,4 +2138,5 @@ touching everything twice.
 | Date | Change | By |
 |---|---|---|
 | 2026-08-15 | Initial lock. Reconciles three cross-ticket contradictions (§13): the end-reason enum is unioned to seven members; the controller stops agents and never closes panes; the effect-key grammar is widened with a `cleanup`/`expiry` phase and nullable identity segments. Restates monitor **O6**, which #79's resolution accepted but never carried. | #87 |
+| 2026-08-15 | §5.4's scope clause generalised from "any ticket execution holding an unresolved effect" to **any entity** holding one — a ticket execution, an already-ended run, or the repository for a repo-scoped effect. Both omissions are reachable (`start --new-run` ends a run whose ticket-less effects were never settled; a repo-scoped artifact write is keyed with a null run), and under the old wording §12.4 pinned them forever with nothing able to probe them. Found while implementing the engine. | #96 |
 | 2026-08-15 | §18.0 both preconditions discharged. §6.3 gains two **verified** Claude Code 2.1.229 loader facts that justify the generator: skills register at **depth 1 only** (a bucketed skill is dropped with no error), and `author` must be an **object**. Both were found by running the real binary, not by reading docs — the second one failed a test that would otherwise have passed. | #87 |
