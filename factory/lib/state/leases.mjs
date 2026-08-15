@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 
+import { CONTROLLER_LEASE } from "../domain/vocabulary.mjs";
 import { FactoryStateError } from "./errors.mjs";
 
 /**
@@ -17,9 +18,15 @@ import { FactoryStateError } from "./errors.mjs";
  * and never tested, and every removal path compares the token first.
  */
 
-/** The two singleton objects. `capacity:*` rows are named by the builders below. */
+/**
+ * The two singleton objects. `capacity:*` rows are named by the builders below.
+ *
+ * The controller's name comes from `domain/vocabulary.mjs` because §14.5's
+ * fencing check reads that row from the other side, and one spelling in two
+ * files is one spelling too many.
+ */
 export const LEASE_NAMES = Object.freeze({
-	controller: "controller",
+	controller: CONTROLLER_LEASE,
 	integration: "integration",
 });
 
@@ -28,7 +35,9 @@ export const LEASE_NAMES = Object.freeze({
  * That is what makes "**there is no worktree lease**" a property of the code
  * rather than a note in a document: no caller can mint one.
  */
-export const LEASE_NAME_PATTERN = /^(controller|integration|capacity:ticket:\d+|capacity:model:[0-9A-Za-z-]+:\d+)$/;
+export const LEASE_NAME_PATTERN = new RegExp(
+	`^(${LEASE_NAMES.controller}|${LEASE_NAMES.integration}|capacity:ticket:\\d+|capacity:model:[0-9A-Za-z-]+:\\d+)$`,
+);
 
 /** §4.8: the controller row is renewed every 10s — that is the liveness fact. */
 export const LEASE_RENEWAL_MS = 10_000;
