@@ -576,12 +576,22 @@ fact may exist only in controller memory.
 - **Tier 2 — run digest, retained indefinitely.** Run identity, start/end, lifecycle plus
   end reason, per-ticket final disposition, outcome-chain *shape*, PR and commit links,
   attention-at-end, transcript pointers, and the **ticket → executions reverse index**.
-- **Pins.** A run never leaves tier 1 while it has an open PR, or a member ticket still
-  carrying `factory:failed` or `factory:needs-human`. Those are precisely the runs an
-  operator is still investigating; a horizon that expires them fires while the evidence is
-  still in use.
+- **Pins — four.** A run never leaves tier 1 while it has an open PR, a member ticket still
+  carrying `factory:failed` or `factory:needs-human`, or **an unresolved effect**. Those are
+  precisely the runs an operator is still investigating; a horizon that expires them fires
+  while the evidence is still in use. The fourth pin is #86's: an unresolved effect is what
+  reconcile re-probes, so expiring its run's stream would destroy the context needed to
+  interpret the probe while leaving the obligation intact.
 
-Values are defaults, not constants.
+**The horizon values are configurable defaults; the pins are code constants.**
+`retention.fullDetailRuns` (20) and `retention.fullDetailDays` (30) live in
+`.pi/factory.json` with a load-time floor of 1 each. The pins, the permanence of tier 2, the
+heartbeat horizon (derived from the tier-1 boundary), and the artifact store root are not
+reachable from config — a pin that can be switched off is not a pin.
+
+**Cleanup obeys the same pins.** A failed attempt's worktree and unpushed branch are the only
+copy of that work, so "the run is still in full detail" and "its forensic artifacts still
+exist" can never disagree.
 
 **Consequence accepted deliberately:** ticket → executions must be answerable in the digest
 tier, so the reverse index survives tier-1 expiry. Otherwise "was this ticket ever
@@ -660,8 +670,20 @@ and never a silent redirect to the run's top, which leaves the operator unable t
 mis-click from a record that never existed.
 
 **Excerpts follow the transcript file, not the tier** — so the transcript pointer lives in
-the **digest** tier. The monitor is never the reason a transcript becomes unreachable;
-deletion is the factory's call and surfaces as `transcript-missing`.
+the **digest** tier.
+
+**The factory never deletes a transcript** (#86's call). It persists a pointer and nothing
+else; the files belong to the harnesses. `transcript-missing` therefore always means
+*someone else* removed it — harness housekeeping or the operator — so "the monitor is never
+the reason a transcript becomes unreachable" is true of the whole system, not just of this
+component.
+
+**Digest-referenced artifacts expire to a dated tombstone, not to absence.** #86's ledger
+deletes the blob and keeps the row with `expired_at`, digest, byte count, class, and
+producer. A digest cited from a long-lived PR body or tracker comment resolves to
+`unavailable(retention-expired)` **with a date**, never to "unknown digest" — the same
+refusal to let *expired* and *never existed* look alike that governs run tombstones above.
+No new vocabulary member: `retention-expired` already covers it.
 
 ---
 
@@ -762,7 +784,8 @@ WAL SQLite decision)*
 **O9.** The attempt record durably carries a **resolved transcript pointer plus worker
 kind/format, captured at attempt start**. No later heuristic can recover it: Herdr drops the
 reference at pane close, pi session paths are keyed on a worktree path that integration
-deletes, and worker and reviewer share one cwd. *(→ #79, #86)*
+deletes, and worker and reviewer share one cwd. *(→ #79, #86 — **discharged**: the pointer
+is retained permanently in the digest tier, and the factory never deletes a transcript)*
 
 **O10.** Run lifecycle and end-reason enums are operator-visible; preflight and baseline are
 an observable phase with per-check and per-probe results; `controller-lost` is derived from
@@ -783,7 +806,10 @@ factory and `factory-monitor` — since the monitor ships as its own package. *(
 **O13.** The two-tier retention shape and its pins; **expiring a run's detail must not orphan
 its transcript pointers** — the pointer and the ticket → executions reverse index belong to
 the permanently retained digest; the monitor never deletes a transcript, and a deletion the
-factory chooses surfaces as `transcript-missing` rather than as silence. *(→ #86)*
+factory chooses surfaces as `transcript-missing` rather than as silence. *(→ #86 —
+**discharged**: pins are now four and are code constants, the horizon values are the only
+configurable numbers, the factory's deletion call is **never**, and expired artifacts leave a
+dated tombstone row)*
 
 **O14.** The projection tables the monitor reads are a **versioned read contract**; a schema
 change bumps the version rather than migrating silently. *(→ #79, new with §7.2)*
@@ -807,13 +833,13 @@ What this specification inherits, and from where.
 | [#81](http://192.168.129.37:30008/minder/oh-my-slop/issues/81) Verification and outcomes | closed | §3.1 enums, verbatim |
 | [#83](http://192.168.129.37:30008/minder/oh-my-slop/issues/83) Worker trust | closed | §2.2 anomaly rationale; §8.4 primary control |
 | [#82](http://192.168.129.37:30008/minder/oh-my-slop/issues/82) Controller lifecycle | closed | O10, O11 discharged; §7.2 store root and §7.3 start trigger corrected |
-| [#84](http://192.168.129.37:30008/minder/oh-my-slop/issues/84) Configuration | **open** | O12 pending |
-| [#85](http://192.168.129.37:30008/minder/oh-my-slop/issues/85) Bounded parallelism | **open** | §3.7 readiness requirement |
-| [#86](http://192.168.129.37:30008/minder/oh-my-slop/issues/86) Retention and ownership | **open** | O13 pending |
+| [#84](http://192.168.129.37:30008/minder/oh-my-slop/issues/84) Configuration | closed | O12 discharged by `.pi/factory-monitor.json`, standalone and `0600` |
+| [#85](http://192.168.129.37:30008/minder/oh-my-slop/issues/85) Bounded parallelism | closed | §3.7 readiness requirement; needed no amendment — saturation surfaces as journal events and in `status`/`doctor` |
+| [#86](http://192.168.129.37:30008/minder/oh-my-slop/issues/86) Retention and ownership | closed | O9 (transcript half) and O13 discharged; §8.1 pins and configurability, §8.6 tombstones |
 
-**Amendment protocol.** Whoever resolves #82, #84, #85, or #86 amends this document in place
-and appends one line to §15. Anything that **contradicts** a locked decision here reopens a
-ticket rather than being silently edited in.
+**Amendment protocol.** Every ticket this specification waited on has now resolved and
+amended it. Anything that **contradicts** a locked decision here reopens a ticket rather than
+being silently edited in.
 
 ---
 
@@ -855,3 +881,4 @@ means touching everything twice.
 |---|---|---|
 | 2026-08-14 | Initial lock. | #74 |
 | 2026-08-15 | O10 and O11 discharged. §7.2 store root corrected to `getAgentDir()` / `PI_CODING_AGENT_DIR` — `PI_AGENT_DIR` is not a pi variable. §7.3 and O11 start trigger narrowed to runs started from a tab, since the shell binary is now the primary entry point; the factory reaches the monitor by typed `pi.events` request only. | #82 |
+| 2026-08-15 | O9 (transcript half) and O13 discharged. §8.1 gains a **fourth pin** (an unresolved effect) and splits configurable horizon values from constant pins; §8.6 records that the factory **never** deletes a transcript, and that an expired digest-referenced artifact leaves a **dated tombstone row** rather than an unknown digest. §12 rows for #84 and #85 brought up to date. | #86 |
