@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { remoteUrlToRepoSlug, resolveRemoteUrl } from "../git/repo.mjs";
+import { parseVersionRange } from "../package/version.mjs";
 import { FACTORY_LABELS } from "../tracker/labels.mjs";
 import { validateChecks } from "./checks.mjs";
 import { validateConcurrency } from "./concurrency.mjs";
@@ -313,16 +314,27 @@ function validatePackage(block, configPath) {
 	}
 	requireNoUnknownKeys(block.expect, PACKAGE_EXPECT_KEYS, "package.expect", configPath);
 
-	return Object.freeze({
-		expect: Object.freeze(
-			Object.fromEntries(
-				PACKAGE_EXPECT_KEYS.map((key) => [
-					key,
-					requireNonEmptyString(block.expect[key], `package.expect.${key}`, configPath),
-				]),
-			),
-		),
-	});
+	const expect = Object.fromEntries(
+		PACKAGE_EXPECT_KEYS.map((key) => [
+			key,
+			requireNonEmptyString(block.expect[key], `package.expect.${key}`, configPath),
+		]),
+	);
+
+	// A range the handshake cannot compare against stops here rather than at
+	// preflight: it would otherwise match nothing and reach the operator as a
+	// version mismatch they cannot fix by changing the version (§11.2).
+	try {
+		parseVersionRange(expect.version);
+	} catch (error) {
+		throw new FactoryConfigError("invalid-value", `${configPath}: ${error.message}`, {
+			file: configPath,
+			at: "package.expect.version",
+			found: expect.version,
+		});
+	}
+
+	return Object.freeze({ expect: Object.freeze(expect) });
 }
 
 /** Every scalar in the document, paired with its `a.b[0].c` path. */

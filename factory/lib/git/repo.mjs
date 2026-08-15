@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 
 /**
  * Git facts the factory needs before a run exists. Both are read through git
@@ -36,6 +37,45 @@ export function resolveRemoteUrl(repoRoot, remoteName) {
 	try {
 		const url = git(["remote", "get-url", remoteName], { cwd: repoRoot });
 		return url === "" ? null : url;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * §11.7's checkout metadata for a directory: the commit it sits on and whether
+ * its worktree is dirty. **Metadata only** — the tree digest is what is
+ * authoritative, uniformly for every install shape, because special-casing
+ * checkouts would make dev runs incomparable to installed runs and dirty
+ * checkouts are the common case.
+ *
+ * Both are null unless `directory` is *itself* a repository root. A package
+ * installed under somebody else's `node_modules` would otherwise report that
+ * repository's commit, which is a fact about the consumer and pins nothing
+ * about the package.
+ *
+ * @param {string} directory
+ * @returns {{ commit: string | null, dirty: boolean | null }}
+ */
+export function describeCheckout(directory) {
+	const top = resolveRepoRoot(directory);
+	if (top === null || realpathOrNull(top) !== realpathOrNull(directory)) return { commit: null, dirty: null };
+
+	let commit;
+	try {
+		commit = git(["rev-parse", "HEAD"], { cwd: directory });
+	} catch {
+		// An unborn HEAD: a checkout with no commit yet. It still has a worktree,
+		// and "no commit" is the honest answer rather than a refusal.
+		commit = null;
+	}
+
+	return { commit: commit === "" ? null : commit, dirty: git(["status", "--porcelain"], { cwd: directory }) !== "" };
+}
+
+function realpathOrNull(path) {
+	try {
+		return realpathSync(path);
 	} catch {
 		return null;
 	}

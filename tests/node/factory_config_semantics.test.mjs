@@ -705,6 +705,19 @@ test("a package block with a name and version loads", (t) => {
 	assert.deepEqual(loaded(t, config).config.package, { expect: { name: "oh-my-slop", version: "0.1.0" } });
 });
 
+test("a version expectation the factory cannot compare against is a load failure, not a preflight surprise", (t) => {
+	const config = clone();
+	config.package = { expect: { name: "oh-my-slop", version: "1.2.3 - 2.0.0" } };
+
+	// §11.2: the loader is where a declaration nobody can act on stops. Left to
+	// preflight, a hyphen range would match nothing and reach the operator as a
+	// version mismatch they cannot fix by changing the version.
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "invalid-value");
+	assert.equal(error.details.at, "package.expect.version");
+});
+
 test("a package block with no expectation refuses — it declares nothing", (t) => {
 	const config = clone();
 	config.package = {};

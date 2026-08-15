@@ -169,6 +169,20 @@ is the authority; cite the section a change answers to.
   — never a second tally to keep in step. Large output goes in as bytes and comes back as
   §6.6's reference (digest, media type, byte count, producer, class); the bytes themselves
   never enter an outbox or an event payload.
+- The package handshake (`factory/lib/package/`) resolves §11.7's four participating
+  artifacts — the binary, the factory extension, the monitor extension when present, and
+  the skills root — from the **one manifest that declares them**, and proves they are one
+  package. The **running executable is the anchor**: a configured package root would be one
+  more thing that can disagree with what is executing. The deterministic tree digest is
+  authoritative uniformly for every install shape, with the git commit and a dirty flag
+  recorded beside it as **metadata only** — checkouts are never special-cased, because that
+  would make dev runs incomparable to installed runs. Findings are **data rather than
+  exceptions**, since `doctor` runs the same handshake in report mode (§10.5);
+  `assertPackageIntact` is the one place they become the automation failure before first
+  claim, and §14.35's split across roots has no severity ladder and no compatibility pass.
+  `package.expect` declares a name and a version — exact or a range from npm's common
+  subset — and nothing else: a hand-declared digest is refused at load, because the digest
+  is observed and would be unmaintainable in development.
 
 ### `scripts/`
 
