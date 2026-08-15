@@ -5,6 +5,7 @@ import { hostname } from "node:os";
 import { EXIT_LEASE_LOST } from "../../factory/lib/cli/exit-codes.mjs";
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
 import { processIdentity } from "../../factory/lib/identity/process.mjs";
+import { newUlid } from "../../factory/lib/identity/ulid.mjs";
 import { CONTROLLER_LEASE_TTL_MS, LEASE_NAMES, LEASE_RENEWAL_MS, openLeases } from "../../factory/lib/state/leases.mjs";
 import { factorySources } from "./helpers/factory-repo.mjs";
 import {
@@ -251,6 +252,103 @@ test("a release that finds the lease already gone is a loss, not a quiet false",
 	assert.equal(leaseLostEvents(store).length, 1);
 	assert.throws(() => guard.assertMayIssueEffects(), { reason: "lease-lost" });
 	assert.equal(openLeases(store).inspect(LEASE_NAMES.controller).token, thief.token, "it dropped another holder's row");
+});
+
+// ── Losing it before the run exists (§14.6, §10.4) ───────────────────────────
+
+/** A hold as `factory start` takes it: no run is known at acquisition. */
+async function runlessStore(t, { onLost = () => {} } = {}) {
+	const store = await openTestStore(t);
+	const clock = stoppedClock();
+	const timers = manualTimers();
+	const guard = holdControllerLease({
+		store,
+		leases: openLeases(store, { now: clock.now }),
+		pane: "herdr:2",
+		onLost,
+		timers: timers.api,
+	});
+	guard.recordStartupReconcile();
+	return { store, guard, clock };
+}
+
+test("an intended run is named in the lease identity but is not yet the durable run", async (t) => {
+	const { store, guard } = await runlessStore(t);
+	const minted = newUlid();
+
+	guard.intend(minted);
+
+	// §10.5's refusal names the run out of the advisory blob, so a second
+	// `factory start` sees what this one is up to…
+	assert.equal(openLeases(store).inspect(LEASE_NAMES.controller).identity.run, minted);
+	// …but no `run.started` has committed, so the hold does not yet claim to be
+	// driving a run any durable record names.
+	assert.equal(guard.run, null);
+
+	guard.append(runStarted(minted));
+	guard.adopt(minted);
+	assert.equal(guard.run, minted);
+});
+
+test("a lease lost before run.started concedes with no phantom run", async (t) => {
+	const losses = [];
+	const { store, guard, clock } = await runlessStore(t, { onLost: (loss) => losses.push(loss) });
+	const minted = newUlid();
+	guard.intend(minted);
+
+	adoptFrom(store, clock);
+
+	// The write being refused is `run.started` itself: the run has no row, so a
+	// concession that named the minted ULID would be rejected by the projector
+	// and the promised typed loss would never surface.
+	assert.throws(() => guard.append(runStarted(minted)), { reason: "lease-lost" });
+
+	assert.equal(guard.lost, true);
+	assert.equal(store.readRun(minted), null, "a run nobody started gained a row");
+	const emitted = store.readEvents({ kind: "controller.lease-lost" });
+	assert.equal(emitted.length, 1);
+	assert.equal(emitted[0].run, null, "the loss event named a run whose run.started was never written");
+	assert.equal(emitted[0].stream, "controller");
+	assert.deepEqual(
+		losses.map((loss) => loss.exitCode),
+		[EXIT_LEASE_LOST],
+	);
+});
+
+test("a theft discovered while intending a run concedes the same way", async (t) => {
+	const losses = [];
+	const { store, guard, clock } = await runlessStore(t, { onLost: (loss) => losses.push(loss) });
+
+	adoptFrom(store, clock);
+
+	assert.throws(() => guard.intend(newUlid()), { reason: "lease-lost" });
+
+	assert.equal(guard.lost, true);
+	assert.equal(guard.run, null);
+	const emitted = store.readEvents({ kind: "controller.lease-lost" });
+	assert.equal(emitted.length, 1);
+	assert.equal(emitted[0].run, null);
+	assert.deepEqual(
+		losses.map((loss) => loss.exitCode),
+		[EXIT_LEASE_LOST],
+	);
+});
+
+test("once run.started has committed, a later loss names the run it leaves open", async (t) => {
+	const { store, guard, clock } = await runlessStore(t);
+	const minted = newUlid();
+	guard.intend(minted);
+	guard.append(runStarted(minted));
+	guard.adopt(minted);
+
+	adoptFrom(store, clock);
+
+	assert.throws(() => guard.append(runMoved(minted, "running")), { reason: "lease-lost" });
+
+	const emitted = store.readEvents({ kind: "controller.lease-lost" });
+	assert.equal(emitted.length, 1);
+	assert.equal(emitted[0].run, minted, "the loss lost track of the run that durably exists");
+	assert.equal(store.readRun(minted).lifecycle, "preflight");
 });
 
 test("a journal that cannot record the loss still hands the run loop its exit", async (t) => {

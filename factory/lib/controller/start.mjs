@@ -185,7 +185,11 @@ async function drive(store, hold, context) {
 	} catch (error) {
 		return refusal(error);
 	}
-	hold.adopt(entry.run);
+	// An adopted run's row already exists, so a loss from here on may name it. A
+	// minted one is only *intended* until its `run.started` commits — a loss in
+	// between reports no run, because no durable record names one (§14.6).
+	if (entry.mode === ENTRY_MODES.adopted) hold.adopt(entry.run);
+	else hold.intend(entry.run);
 
 	// §10.4: the abandoned run is ended by a **different** controller — this one —
 	// which is what lets `controller-lost` be written at all without any process
@@ -354,6 +358,9 @@ function openLifecycle(hold, entry, { at }) {
 		observedAt: at,
 		payload: { scope: entry.scope, mode: entry.mode },
 	});
+	// The append above committed under the token, so the run now durably exists
+	// and a later loss names it rather than reporting no run.
+	hold.adopt(entry.run);
 }
 
 /**

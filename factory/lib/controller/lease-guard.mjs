@@ -23,9 +23,10 @@ import { LEASE_NAMES, LEASE_RENEWAL_MS } from "../state/leases.mjs";
  * @param {object} options.store the open store, for the one event this emits
  * @param {object} options.leases the §4.6 registry, whose clock this shares
  * @param {string | null} [options.run] the run this controller is driving, when it
- *   is already known. It is **not** known at `factory start`: §10.4 decides
- *   between adopting an orphaned run and minting one *under* the lease, because
- *   startup reconcile is what adopts. `adopt()` names it once that is settled
+ *   is already known — a run whose row durably exists. It is **not** known at
+ *   `factory start`: §10.4 decides between adopting an orphaned run and minting
+ *   one *under* the lease, because startup reconcile is what adopts. `intend()`
+ *   names the candidate; `adopt()` marks it durable once its row exists
  * @param {string | null} [options.pane] the controller pane, named in §10.5's refusal
  * @param {(loss: object) => void} [options.onLost] the run loop's abandon path,
  *   handed the end reason and the exit code the run must leave with
@@ -42,10 +43,18 @@ export function holdControllerLease({
 	onLost = () => {},
 	timers = { setInterval, clearInterval },
 }) {
+	// Two names for the run, because they become true at different moments. The
+	// *intended* run is advisory: it goes into the lease's identity blob so
+	// §10.5's refusal can say what this controller is up to. The *driving* run is
+	// durable: its `run.started` (or the adopted row) exists in the store. A loss
+	// event may only name the second — naming a minted ULID whose `run.started`
+	// never committed would be a record about a run that does not exist, which
+	// the projector rightly refuses, taking the §14.6 concession down with it.
+	let intended = run;
 	let driving = run;
 	let held = leases.acquire({
 		name: LEASE_NAMES.controller,
-		identity: processIdentity({ run: driving, pane }),
+		identity: processIdentity({ run: intended, pane }),
 	});
 	let lost = false;
 	let released = false;
@@ -134,6 +143,20 @@ export function holdControllerLease({
 		}
 	}
 
+	/** The advisory half of naming a run — hoisted so `adopt` can reach it. */
+	function intend(runId) {
+		assertMayIssueEffects();
+		try {
+			const described = leases.describe(held, processIdentity({ run: runId, pane }));
+			intended = runId;
+			held = described;
+		} catch (error) {
+			if (!(error instanceof FactoryStateError) || error.reason !== "lease-lost") throw error;
+			concede(error.details);
+			throw error;
+		}
+	}
+
 	return Object.freeze({
 		get token() {
 			return held.token;
@@ -155,27 +178,34 @@ export function holdControllerLease({
 		},
 
 		/**
-		 * Name the run this controller drives, once §10.4 has decided it.
+		 * Name the run this controller means to drive, once §10.4 has decided it.
 		 *
 		 * The decision is made **under** the lease — startup reconcile is what
 		 * adopts an orphaned run — so it cannot be an argument to the acquisition
 		 * that precedes it. Only the advisory blob changes: the token, the
 		 * generation, and the renewal are untouched, because none of them means
-		 * anything different now that the hold has a run to name.
+		 * anything different now that the hold has a run to name. The run stays
+		 * advisory until `adopt()`: a loss conceded in between reports no run,
+		 * because none durably exists to report.
+		 *
+		 * @param {string} runId
+		 */
+		intend,
+
+		/**
+		 * The run durably exists — its row was adopted, or its `run.started` just
+		 * committed under this hold's own token — so a loss from here on names it.
+		 *
+		 * When the run was already intended, this is a local promotion and nothing
+		 * else: the identity blob is current, and the committed append was itself
+		 * the ownership proof, so a second compare here could only lose a race the
+		 * write already won and misreport a started run as never-started.
 		 *
 		 * @param {string} runId
 		 */
 		adopt(runId) {
-			assertMayIssueEffects();
-			try {
-				const described = leases.describe(held, processIdentity({ run: runId, pane }));
-				driving = runId;
-				held = described;
-			} catch (error) {
-				if (!(error instanceof FactoryStateError) || error.reason !== "lease-lost") throw error;
-				concede(error.details);
-				throw error;
-			}
+			if (intended !== runId) intend(runId);
+			driving = runId;
 		},
 
 		/**

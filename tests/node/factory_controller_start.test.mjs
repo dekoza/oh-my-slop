@@ -477,6 +477,54 @@ test("a controller that has not yet noticed the theft still moves no run its suc
 	assert.equal(store.readRun(answered.report.run).lifecycle, "preflight");
 });
 
+test("a lease stolen before the run exists reports no phantom run and still exits 6", async (t) => {
+	const context = invocation(t);
+	const loaded = loadFactoryConfig({ cwd: context.cwd });
+	const timers = manualTimers();
+
+	// A second connection to the same store, standing by to adopt the lapsed row.
+	const thief = await openStore({ repoRoot: context.cwd, agentDir: context.agentDir });
+	t.after(() => thief.close());
+
+	// The theft lands between the acquisition and `run.started`: the first now()
+	// call stamps the acquisition, the second is the run loop's own start-of-run
+	// stamp, taken before the entry is decided — so no run record exists yet when
+	// this controller next proves its ownership. The assertions below hold the
+	// timing honest: no `run.started` may have been written.
+	let calls = 0;
+	const answered = await runStart({
+		...loaded,
+		agentDir: context.agentDir,
+		executable: context.executable,
+		env: context.env,
+		args: ["42"],
+		flags: new Set(),
+		timers: timers.api,
+		now: () => {
+			calls += 1;
+			if (calls === 2) {
+				openLeases(thief, { now: () => FIXED_NOW + CONTROLLER_LEASE_TTL_MS + 1 }).acquire({
+					name: "controller",
+					identity: leaseIdentity({ pid: 5151, pane: "w1:p9" }),
+				});
+			}
+			return FIXED_NOW;
+		},
+		herdr: AVAILABLE,
+	});
+
+	assert.equal(answered.exitCode, 6);
+	assert.equal(answered.report.run, null, "the report named a run whose run.started was never written");
+	assert.equal(answered.report.lifecycle, null);
+	assert.equal(answered.report.end_reason, null);
+
+	const store = await storeOf(t, context);
+	assert.equal(store.readEvents({ kind: "run.started" }).length, 0, "the theft landed too late to exercise the case");
+	const losses = store.readEvents({ kind: "controller.lease-lost" });
+	assert.equal(losses.length, 1);
+	assert.equal(losses[0].run, null, "the loss event named a phantom run");
+});
+
 // ── Recovery and re-entry (§10.4) ────────────────────────────────────────────
 
 test("a restart re-enters an orphaned run, keeping its run id and its scope", async (t) => {
