@@ -1,7 +1,7 @@
 import { EXIT_OK, EXIT_REFUSED } from "../cli/exit-codes.mjs";
 import { CONTROLLER_LEASE } from "../domain/vocabulary.mjs";
 import { runStream } from "../state/events.mjs";
-import { openLeases } from "../state/leases.mjs";
+import { hasLapsed, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
 import { RUN_LIFECYCLE } from "../domain/vocabulary.mjs";
 
@@ -107,7 +107,7 @@ export async function runStop({ repoRoot, agentDir = null, now = Date.now }) {
 
 	try {
 		const row = openLeases(store).inspect(CONTROLLER_LEASE);
-		const live = row !== null && !isLapsed(row, now());
+		const live = row !== null && !hasLapsed(row, now());
 
 		const target = resolveTarget(store, { row, live });
 		if (target.error !== undefined) return refusal(target.error);
@@ -258,11 +258,6 @@ function resolveTarget(store, { row, live }) {
 	}
 
 	return { runId: orphans[0].run_id, run: orphans[0], pane: null };
-}
-
-/** The stop's own clock check against the row's own expiry — the clock belongs to the row. */
-function isLapsed(row, at) {
-	return row.expiresAt !== null && row.expiresAt <= at;
 }
 
 /**

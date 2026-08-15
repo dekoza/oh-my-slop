@@ -252,8 +252,12 @@ function requireLeaseName(name) {
 	}
 }
 
-/** A row is lapsed when its own expiry has passed; an untimed row never is. */
-function hasLapsed(row, at) {
+/**
+ * A row is lapsed when its own expiry has passed; an untimed row never is.
+ * The clock belongs to the row, and this is the one place the check is written:
+ * the acquire path, the stop verb, and the launcher all read liveness through it.
+ */
+export function hasLapsed(row, at) {
 	return row.expiresAt !== null && row.expiresAt <= at;
 }
 

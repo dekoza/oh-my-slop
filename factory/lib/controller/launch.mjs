@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "../cli/exit-codes.mjs";
 import { newUlid } from "../identity/ulid.mjs";
-import { openLeases } from "../state/leases.mjs";
+import { hasLapsed, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
 import { CONTROLLER_LEASE } from "../domain/vocabulary.mjs";
 import { liveRunAnswer } from "./entry.mjs";
@@ -37,7 +37,6 @@ export const FOREGROUND_FLAG = "--foreground";
  * @param {string} invocation.repoRoot
  * @param {object | null} invocation.requested §3.1's parsed selector, or null
  * @param {string[]} invocation.rawArgs the scope exactly as the line carried it
- * @param {object} invocation.config the validated configuration
  * @param {string | null} [invocation.agentDir]
  * @param {string} [invocation.executable] the running binary — §11.7's anchor
  * @param {Record<string, string | undefined>} [invocation.env]
@@ -67,7 +66,7 @@ export async function launch({
 		// a read, and a launcher that raced the controller for the lease would
 		// refuse precisely when a run is already doing the job.
 		const row = openLeases(store).inspect(CONTROLLER_LEASE);
-		const live = row !== null && !isLapsed(row, now());
+		const live = row !== null && !hasLapsed(row, now());
 
 		if (live) {
 			return liveRunAnswer(store, liveOf(row), requested);
@@ -123,8 +122,9 @@ export async function launch({
 			return {
 				error: {
 					kind: "herdr-unreadable-response",
+					command,
 					message:
-						"Herdr's workspace create answered exit 0 but no readable `result.root_pane`; " +
+						`Herdr's ${command} answered exit 0 but no readable \`result.root_pane\`; ` +
 						"no pane was run in. Nothing was closed, because nothing here closes anything (§13.B).",
 				},
 				exitCode: EXIT_REFUSED,
@@ -198,11 +198,6 @@ function parseResult(stdout, command) {
 		return null;
 	}
 	return result;
-}
-
-/** The row's own expiry, the same check the stop verb uses: the clock belongs to the row. */
-function isLapsed(row, at) {
-	return row.expiresAt !== null && row.expiresAt <= at;
 }
 
 /** The lease row as §10.4's resolution reads it: the identity's run and pane, plus the generation. */

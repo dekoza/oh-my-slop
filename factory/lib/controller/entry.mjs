@@ -203,7 +203,7 @@ export function liveRunAnswer(store, live, requested) {
 			// end-reason table would say this invocation drained a scope, and the
 			// whole point of the table is that a caller can read a run's outcome off it.
 			exitCode: EXIT_OK,
-			};
+		};
 	} catch (error) {
 		if (!(error instanceof FactoryRunError)) throw error;
 
