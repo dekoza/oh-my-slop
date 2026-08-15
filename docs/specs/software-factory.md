@@ -351,11 +351,13 @@ is compare-and-delete on the token.
 There is **no worktree lease** — attempt identity already makes worktrees single-writer.
 
 **Losing the controller lease mid-run: stop issuing effects immediately, emit
-`controller.lease-lost`, exit non-zero, and never attempt reacquisition.** Another controller
-may already be adopting, and a controller that fights for its lease back is how two of them
-end up writing to the same tickets. In-flight work is abandoned without touching Gitea or git.
-The fencing check at resolution is the backstop, so the exit does not have to win a race to be
-safe.
+`controller.lease-lost`, exit 6, and never attempt reacquisition.** The losing process does
+**not** append `run.ended`: another controller may already have adopted that same `run_id`, and
+an unfenced terminal event from the stale process would close work it no longer owns. Normal
+run completion therefore compare-and-deletes the controller lease and appends `run.ended` in
+one transaction; failure of that compare leaves the run open for re-entry and exits 6.
+In-flight work is abandoned without touching Gitea or git. The fencing check at resolution is
+the backstop, so the exit does not have to win a race to be safe.
 
 Both legacy systems failed here identically: `software-factory`'s `open(…,"wx")` lock recorded
 a PID it never tested — the live store still holds a lock naming dead pid 3852874, hand-renamed
@@ -1252,10 +1254,11 @@ working or all of them are queued behind rico's single slot:
 > binary; the pi session is a launcher and a monitor host, never the executor.**
 
 - **One invocation, one run.** `factory start <ticket-or-parent>` acquires the controller
-  lease, reconciles, applies expiry (§12.6), preflights, executes to drain, emits `ended` with
-  its reason, releases the lease, prints the classified per-member report, and exits. **No idle
-  polling, no residency.** The lease exists to exclude a *second* controller, not to mark a
-  service up.
+  lease, reconciles, applies expiry (§12.6), preflights, executes to drain, atomically emits
+  `ended` with its reason while releasing the lease, prints the classified per-member report,
+  and exits. Lease loss is the exception: stale authority emits `controller.lease-lost` and
+  exits 6 without closing the run another controller may already be adopting. **No idle polling,
+  no residency.** The lease exists to exclude a *second* controller, not to mark a service up.
 - **A separate OS process, not an in-session async task.** pi has no host task scheduler, and
   `/new`, `/resume`, `/fork`, and quit all fire `session_shutdown` — the legacy
   `Map<cwd, Promise>` pattern loses a multi-hour run to a routine session switch, and nobody
@@ -1307,11 +1310,11 @@ repo is itself the trust act**; no replacement gate is introduced.
 | End reason | Exit code | Meaning |
 |---|---|---|
 | `drained` | **0** | the scope drained; nothing left claimable |
-| `baseline-red` | **2** | the required check set was not green at the pinned base; names the red check |
+| `baseline-red` | **2** | the required preflight set was not green; names the red check, including a required baseline check when that is the one that failed |
 | `stopped-by-operator` | **3** | a `stop` request was honoured at a ticket boundary; in-flight lanes finished |
 | `abandoned` | **4** | a second `stop` or `SIGTERM`; in-flight lanes `released`, panes left alive |
 | `circuit-breaker` | **5** | N consecutive automation failures in terminal-commit order |
-| `lease-lost` | **6** | the controller lost its lease and exited without reacquiring |
+| `lease-lost` | **6** | the controller process lost its lease and exited without reacquiring; the stale process leaves the run open rather than self-authoring an unfenced `run.ended` |
 | `controller-lost` | **— (none)** | **asserted only by a different controller or the monitor**, never self-asserted, so it can have no exit code |
 
 Exit code **1 is reserved for usage and config-load failure** — those happen *before* a run
@@ -1329,7 +1332,10 @@ the behaviour is the same and the reason carries the difference.
 
 **Preflight is an observable phase with per-check and per-probe results**, not a pass/fail
 gate. It runs **after the run exists**, so `baseline-red` can be a run end reason naming a
-specific red check. These are **run-scoped stages that hang off no tracker ticket**.
+specific red check. Despite the historical name, `baseline-red` covers any **required
+preflight** check that is red — package integrity, required runtime availability, or the
+required baseline — because the closed end-reason vocabulary has one pre-execution failure
+outcome. These are **run-scoped stages that hang off no tracker ticket**.
 
 **Herdr availability is a named preflight check** that probes and **fails closed with the exact
 command to start it** — the factory checks the operator's multiplexer, it does not manage it.
@@ -1344,7 +1350,10 @@ command to start it** — the factory checks the operator's multiplexer, it does
   observation by a *different* controller, so the never-self-asserted rule holds.
 - **`factory start` against a live lease-holder resolves against the live selector; it does not
   queue.** In scope → print "already in scope of run *R*, it will be claimed when the frontier
-  reaches it" and exit `0`. Out of scope → refuse, naming the live run.
+  reaches it" and exit `0`. Out of scope → refuse, naming the live run. If membership requires
+  a tracker read the installed slice cannot yet perform — a direct ticket against a
+  parent-scoped selector — refuse as `scope-unresolvable`, naming the run and the missing
+  tracker reader; never guess either branch.
 
 ### 10.5 Stopping, doctor, reconcile, cleanup
 
@@ -1833,10 +1842,13 @@ members), on these grounds:
   dispositions, the other marks them `released` and orphans panes. Reconcile's next run needs to
   know which happened.
 - **`lease-lost` and `controller-lost` are both required and are not synonyms.** `lease-lost` is
-  a controller's own exit; `controller-lost` is an observation made *about* a controller by a
-  different one or by the monitor. #82's own exit-code table already listed `lease-lost`,
-  because "never self-asserted" means `controller-lost` can never be an exit code — that
-  tension is what produced the divergence.
+  a controller process's own exit; `controller-lost` is an observation made *about* a
+  controller by a different one or by the monitor. The losing process emits
+  `controller.lease-lost` but cannot safely append `run.ended`: after expiry, a successor may
+  already own and be adopting the same run. Normal completion couples lease release and the
+  terminal event atomically, so stale authority can never close an adopted run. #82's own
+  exit-code table already listed `lease-lost`, because "never self-asserted" means
+  `controller-lost` can never be an exit code — that tension is what produced the divergence.
 
 **This is additive to the monitor's locked enum**, so the monitor specification is amended in
 place under its §12 protocol rather than reopened.
@@ -1889,7 +1901,8 @@ Numbered, testable, and adversarially exercised by §15's cases. Each is a **nev
 3. **No effect kind is registrable without a probe** — enforced at construction.
 4. **An effect key never contains a hash of its payload.** The digest sits beside the key.
 5. **An effect resolving under a superseded fencing generation is never honored.**
-6. **A lost controller lease is never reacquired.** Stop issuing effects, emit, exit non-zero.
+6. **A lost controller lease is never reacquired and never self-closes the run.** Stop issuing
+   effects, emit, exit 6; normal `run.ended` and lease release are one token-checked transaction.
 7. **No mid-stream journal deletion, ever** — whole-stream deletion or front-truncation only.
 8. **A projection is never committed in a different transaction from its event.**
 9. **A projection schema change never migrates silently** — it bumps the version, and a
@@ -2140,3 +2153,4 @@ touching everything twice.
 | 2026-08-15 | Initial lock. Reconciles three cross-ticket contradictions (§13): the end-reason enum is unioned to seven members; the controller stops agents and never closes panes; the effect-key grammar is widened with a `cleanup`/`expiry` phase and nullable identity segments. Restates monitor **O6**, which #79's resolution accepted but never carried. | #87 |
 | 2026-08-15 | §5.4's scope clause generalised from "any ticket execution holding an unresolved effect" to **any entity** holding one — a ticket execution, an already-ended run, or the repository for a repo-scoped effect. Both omissions are reachable (`start --new-run` ends a run whose ticket-less effects were never settled; a repo-scoped artifact write is keyed with a null run), and under the old wording §12.4 pinned them forever with nothing able to probe them. Found while implementing the engine. | #96 |
 | 2026-08-15 | §18.0 both preconditions discharged. §6.3 gains two **verified** Claude Code 2.1.229 loader facts that justify the generator: skills register at **depth 1 only** (a bucketed skill is dropped with no error), and `author` must be an **object**. Both were found by running the real binary, not by reading docs — the second one failed a test that would otherwise have passed. | #87 |
+| 2026-08-15 | #97 hostile review corrections: normal `run.ended` and controller-lease release are one token-checked transaction; a stale controller emits and exits 6 but leaves the adopted run open. `baseline-red` is clarified as the closed pre-execution outcome for any required red preflight check. §10.4 explicitly permits a fail-closed `scope-unresolvable` result until the tracker membership reader lands. | #97 |

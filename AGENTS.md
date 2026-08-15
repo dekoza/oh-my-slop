@@ -128,8 +128,9 @@ is the authority; cite the section a change answers to.
   `controller` lease is the only one a clock may free**, and the TTL belongs to the
   lease object rather than to its caller; every other row is settled by its superseded
   generation and a probe, never by elapsed time. A lost controller lease is terminal
-  (`factory/lib/controller/lease-guard.mjs`): stop issuing effects, emit, exit non-zero,
-  never reacquire.
+  (`factory/lib/controller/lease-guard.mjs`): stop issuing effects, emit, exit 6, never
+  reacquire, and never self-close the run a successor may already have adopted. Normal
+  `run.ended` and controller-lease release commit in one token-checked transaction.
 - **Integrity failure is never repaired.** A damaged database is renamed into
   `quarantine/<stamp>/` byte-for-byte and replaced by a minimal fresh store carrying a
   typed `journal.integrity-failed` fact, so `status` and `doctor` still have somewhere to
@@ -198,8 +199,10 @@ is the authority; cite the section a change answers to.
   pin them forever with nothing able to probe them. And §5.4's "before the lease is used for any
   effect" is a latch on the controller's hold that only a settling pass opens — `fence()` refuses
   until then, so it is not an order of calls anyone can get wrong.
-- **A run ends exactly once, with a reason, and the reason decides the exit code.**
-  §10.3's table lives in `factory/lib/cli/exit-codes.mjs` beside the enum it maps, and an
+- **A run ends at most once, and every ended run has a reason.** Normal completion appends
+  `run.ended` in the same token-checked transaction that releases the controller lease; a
+  stale holder exits 6 without ending a run now owned by its successor. §10.3's table lives
+  in `factory/lib/cli/exit-codes.mjs` beside the enum it maps, and an
   import-time check refuses a member with no row or a row naming no member — the
   co-location §10.3 asks for, made mechanical. `controller-lost` maps to `null` because it
   is never self-asserted, so `exitCodeForEndReason` refuses it rather than inventing a
@@ -209,7 +212,8 @@ is the authority; cite the section a change answers to.
   misreading a `--json` consumer branching on `ok` would make. A failed run still prints its
   report — `error` is for a refusal, and a run that ran and failed refused nothing.
 - `factory start` (`factory/lib/controller/`) is **one invocation, one run**: acquire, reconcile,
-  end any run `--new-run` abandons, expire, open the run, preflight, drain, end. The order is
+  end any run `--new-run` abandons, expire, open the run, preflight, drain, atomically end and
+  release. The order is
   §10.1's sentence and the two constraints on it — §12.6's expiry window and §10.3's "preflight
   runs after the run exists" — and **the end reason is decided before the run executes**, because
   a red preflight and a lost lease both already settled it. §10.4's re-entry is not a mode: there

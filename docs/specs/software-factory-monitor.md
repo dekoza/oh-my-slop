@@ -138,21 +138,26 @@ members: `drained` · `baseline-red` · `stopped-by-operator` · `abandoned` ·
 
 `draining` covers operator stop-after-current-ticket and the circuit breaker identically —
 the behaviour is the same and the reason carries the difference. **`controller-lost` is
-never self-asserted**; it is derived solely from the freshness axis.
+never self-asserted**; it is derived solely from the freshness axis. A stale controller that
+loses its lease emits `controller.lease-lost` and exits 6 but does not append `run.ended`,
+because a successor may already be adopting that `run_id`; terminalization and normal lease
+release are one token-checked transaction.
 
 **`abandoned` and `lease-lost` were added by
 [#87](http://192.168.129.37:30008/minder/oh-my-slop/issues/87)**, reconciling #82's
 five-member list with the six #85 independently enumerated. Both distinctions are load-bearing
 for the operator: `abandoned` (a second stop or `SIGTERM`) leaves in-flight ticket executions
 `released` and worker panes orphaned, where `stopped-by-operator` lets lanes reach terminal
-dispositions — different worlds for the next reconcile. And `lease-lost` is a controller's own
-exit, where `controller-lost` is an observation made *about* a controller by a different one or
-by this monitor; collapsing them would make `controller-lost` self-assertable, which §3.2
-forbids. Additive to this enum, so it is an amendment rather than a reopen.
+dispositions — different worlds for the next reconcile. And `lease-lost` is a controller
+process's own exit, where `controller-lost` is an observation made *about* a controller by a
+different one or by this monitor; collapsing them would make `controller-lost`
+self-assertable, which §3.2 forbids. Additive to this enum, so it is an amendment rather than a
+reopen.
 
 **Preflight is observable per check and per probe.** This creates **run-scoped stages that
-hang off no tracker ticket**, and `baseline-red` names a *specific* red check — "which
-one" is the operator's immediate next question (§5.3).
+hang off no tracker ticket**, and `baseline-red` names the specific required preflight check
+that was red — package integrity, runtime availability, or the required baseline. "Which one"
+is the operator's immediate next question (§5.3).
 
 ### 3.3 Stages and attempts
 
@@ -895,3 +900,4 @@ means touching everything twice.
 | 2026-08-15 | O10 and O11 discharged. §7.2 store root corrected to `getAgentDir()` / `PI_CODING_AGENT_DIR` — `PI_AGENT_DIR` is not a pi variable. §7.3 and O11 start trigger narrowed to runs started from a tab, since the shell binary is now the primary entry point; the factory reaches the monitor by typed `pi.events` request only. | #82 |
 | 2026-08-15 | O9 (transcript half) and O13 discharged. §8.1 gains a **fourth pin** (an unresolved effect) and splits configurable horizon values from constant pins; §8.6 records that the factory **never** deletes a transcript, and that an expired digest-referenced artifact leaves a **dated tombstone row** rather than an unknown digest. §12 rows for #84 and #85 brought up to date. | #86 |
 | 2026-08-15 | §3.2 end-reason enum widened to **seven** members — `abandoned` and `lease-lost` added, reconciling #82's list with #85's independently enumerated one. O10 annotated. The factory specification is locked at [`software-factory.md`](software-factory.md); all fourteen obligations are checked off in its §16, with O12 verified against #84's own resolution rather than this document's table row. | #87 |
+| 2026-08-15 | #97 review correction: stale lease holders no longer self-close a run a successor may have adopted; normal terminalization and lease release are atomic. `baseline-red` is clarified as any required red preflight check, not only the baseline runner. | #97 |
