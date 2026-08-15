@@ -629,6 +629,47 @@ test("the manifest is keyed by the run, so one run has exactly one set of declar
 	);
 });
 
+test("routing-rule changes conflict with the run manifest even when the rule count is unchanged", async (t) => {
+	const config = cloneValidConfig();
+	config.profiles.alternate = { kind: "pi", model: "local/other" };
+	const context = invocation(t, { config });
+	const run = await orphanRun(context);
+	const store = await storeOf(t, context);
+	const common = {
+		run,
+		scope: { kind: "direct-ticket", tickets: [42] },
+		config,
+		configPath: join(context.cwd, ".pi", "factory.json"),
+		declared: { budgets: ["repair", "freshRetry", "automation"] },
+		handshake: null,
+		hold: { fence: () => ({ token: "pinned", generation: 1 }) },
+		actor: "controller",
+		at: 1_770_000_000_000,
+	};
+
+	writeRunManifest(store, {
+		...common,
+		activeRouting: {
+			set: null,
+			roles: config.routing.roles,
+			rules: [{ labelsAny: ["risk:high"], role: "implement", profile: "alternate" }],
+		},
+	});
+
+	assert.throws(
+		() =>
+			writeRunManifest(store, {
+				...common,
+				activeRouting: {
+					set: null,
+					roles: config.routing.roles,
+					rules: [{ labelsAny: ["docs"], role: "implement", profile: "builder" }],
+				},
+			}),
+		{ reason: "effect-payload-conflict" },
+	);
+});
+
 test("re-entering a run whose declared inputs changed is a red check, not a silent second pin", async (t) => {
 	const config = cloneValidConfig();
 	config.budgets = { repair: 2 };

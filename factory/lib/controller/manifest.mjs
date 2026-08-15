@@ -123,7 +123,16 @@ function overrides({ config, activeRouting, declared }) {
 						: profilePin(config.profiles, bound),
 				]),
 			),
-			rules: activeRouting.rules.length,
+			// Rules decide the model for matching tickets. A count would let a
+			// one-for-one rule edit keep the same manifest digest and silently
+			// re-route an immutable run.
+			rules: activeRouting.rules.map((rule) => ({
+				labels_any: [...rule.labelsAny],
+				role: rule.role,
+				profile: Array.isArray(rule.profile)
+					? rule.profile.map((name) => profilePin(config.profiles, name))
+					: profilePin(config.profiles, rule.profile),
+			})),
 		},
 
 		// The two channels whose config surface has not landed. `null` here means
