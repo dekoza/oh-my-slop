@@ -7,6 +7,8 @@ description: >
   on: "research this", "look into how X works", "gather the docs/API facts on", "check
   the spec for".
 license: MIT (adapted from mattpocock/skills)
+requires:
+  - websearch
 ---
 
 Spin up a **background agent** to do the research, so you keep working while it reads.

@@ -9,6 +9,12 @@ description: >
   Triggers on: "Transaction Script vs Domain Model",
   "Unit of Work", "Identity Map", "optimistic vs pessimistic offline lock",
   "session-state placement", "Remote Facade", "generic repository everywhere".
+requires:
+  - data-intensive
+  - django
+  - domain-driven-design
+  - drf
+  - production-readiness
 ---
 
 # Enterprise Patterns

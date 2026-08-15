@@ -3,6 +3,12 @@ name: implement
 description: Implement a piece of work based on a spec or set of tickets.
 license: MIT (adapted from mattpocock/skills)
 #disable-model-invocation: true
+requires:
+  - construction-craft
+  - git-discipline
+  - tdd
+  - testing-workflow
+  - two-axis-review
 ---
 
 Implement the work described by the user in the spec or tickets.

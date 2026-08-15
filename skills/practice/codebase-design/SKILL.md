@@ -8,6 +8,9 @@ description: >
   module", "where should this seam go", "is this abstraction worth it", "make this
   testable", "module interface", "reduce coupling".
 license: MIT (adapted from mattpocock/skills)
+requires:
+  - court-jester
+  - tdd
 ---
 
 # Codebase Design

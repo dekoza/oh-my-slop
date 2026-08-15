@@ -6,6 +6,8 @@ description: >
   undertriggers, or bloats. Triggers on: "write a skill", "edit this skill",
   "skill description", "skill triggering", "trim this skill".
 license: MIT (adapted from mattpocock/skills)
+requires:
+  - skill-creator
 ---
 
 A skill exists to wrangle determinism out of a stochastic system. **Predictability** — the agent taking the same _process_ every run, not producing the same output — is the root virtue; every lever below serves it.

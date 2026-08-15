@@ -541,10 +541,23 @@ package discovery are not authoritative protocols.
 
 ### 6.3 The Claude plugin artifact
 
-The package ships a **tested generator script** that flattens `skills/<bucket>/<name>` into a
-valid plugin (manifest name `oh-my-slop`, with `references/` / `scripts/` / `assets/` kept
-beside their skill). The factory invokes it against the pinned revision into an immutable
-run-scoped directory, validates strictly, and caches per revision.
+The package ships a **tested generator script** — `scripts/build_claude_plugin.py` — that
+flattens `skills/<bucket>/<name>` into a valid plugin (manifest name `oh-my-slop`, with
+`references/` / `scripts/` / `assets/` kept beside their skill). The factory invokes it against
+the pinned revision into an immutable run-scoped directory, validates strictly, and caches per
+revision.
+
+**Two loader facts, verified live against Claude Code 2.1.229**, both of which fail *silently*
+and so must be held by tests rather than by care:
+
+- **The plugin loader registers `skills/<name>/SKILL.md` at depth 1 only.** A skill left at
+  `skills/<bucket>/<name>/SKILL.md` is absent from the component inventory with no warning and
+  no error — just a smaller `Skills (N)` count. Flattening is therefore load-bearing, not
+  cosmetic, and the generator's acceptance asserts the registered count against the shipped
+  count rather than asserting the tree shape.
+- **`author` must be an object**; npm's string form fails `--strict` with
+  `author: Invalid input: expected object, received string`. The generator normalizes it, so
+  `package.json` stays idiomatic npm.
 
 ### 6.4 Sessions and prompts
 
@@ -2039,14 +2052,24 @@ than being silently edited in — including anything that would reopen §13's th
 
 ### 18.0 Preconditions — not factory code, but blocking
 
-1. **Turn `oh-my-slop`'s own suite green** (§8.3). The baseline gate means the factory cannot run
-   against this repo until `tests/test_pi_package_installability.py:125`, the seven `tests/node/`
-   files importing the moved `extensions/software-factory/lib/*`, and `tests/test_readme.py:11`
-   are fixed.
-2. **Package changes this specification mandates:** `requires:` frontmatter across package skills
-   (§6.2) · a tested Claude plugin generator script (§6.3) · the two review-axis briefs promoted
-   to independently invocable entry skills (§8.4) · the `tee`-over-`head`/`tail` discipline rule
-   migrated into a package skill (§6.8).
+Both are **discharged**; recorded because the reasoning still governs.
+
+1. ~~**Turn `oh-my-slop`'s own suite green** (§8.3).~~ **Done** (`4a037a3`). The retirement of
+   `extensions/software-factory` in `fe80c5d` left its tests, its manifest assertion, and its
+   README entry behind. CI stayed green only because it runs `validate_refs.py`, which walks
+   `skills/` alone — so the gap that hid it is itself now covered by a guard.
+2. ~~**Package changes this specification mandates.**~~ **Done.** `requires:` frontmatter with a
+   mechanical closure gate (§6.2) · `scripts/build_claude_plugin.py` with live Claude
+   verification (§6.3) · `review-standards` and `review-spec` as independently invocable entry
+   skills, with `two-axis-review` no longer assuming a spawn tool (§8.4) · the whole-output
+   capture rule as `construction-craft` Critical rule 8, inside `implement`'s declared closure
+   (§6.8).
+
+**The `requires:` gate is what keeps §6.2 true over time.** A skill that hands work to another —
+by a markdown link to its `SKILL.md`, or the `use the \`x\` skill` imperative — must declare it,
+enforced by `tests/test_skill_requires.py`. An undeclared dependency therefore fails in CI rather
+than at a worker's preflight, which is the only place it would otherwise surface: mid-attempt,
+after a ticket is already claimed.
 
 ### 18.1 Slices
 
@@ -2108,3 +2131,4 @@ touching everything twice.
 | Date | Change | By |
 |---|---|---|
 | 2026-08-15 | Initial lock. Reconciles three cross-ticket contradictions (§13): the end-reason enum is unioned to seven members; the controller stops agents and never closes panes; the effect-key grammar is widened with a `cleanup`/`expiry` phase and nullable identity segments. Restates monitor **O6**, which #79's resolution accepted but never carried. | #87 |
+| 2026-08-15 | §18.0 both preconditions discharged. §6.3 gains two **verified** Claude Code 2.1.229 loader facts that justify the generator: skills register at **depth 1 only** (a bucketed skill is dropped with no error), and `author` must be an **object**. Both were found by running the real binary, not by reading docs — the second one failed a test that would otherwise have passed. | #87 |

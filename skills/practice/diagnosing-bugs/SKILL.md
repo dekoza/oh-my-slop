@@ -29,7 +29,7 @@ This procedure is tier-agnostic: it works for unit, integration, E2E, or any mix
 
 ### Output capture rule
 
-**`| tee [filename]` is the ONLY allowed method for capturing test output** — `tail`, `head`, and bare `>`/`>>` are forbidden (rationale and canonical rule: `testing-workflow` skill). Triage-specific consequence: **after running with `| tee`, read or `grep` the log file — never re-run the same pytest command just to inspect output.** The file already has everything; re-running wastes a full-suite cycle.
+**`| tee [filename]` is the ONLY allowed method for capturing test output** — `tail`, `head`, and bare `>`/`>>` are forbidden (test-run rule: `testing-workflow` skill; the general rule for every command whose output you read is `construction-craft` Critical rule 8). Triage-specific consequence: **after running with `| tee`, read or `grep` the log file — never re-run the same pytest command just to inspect output.** The file already has everything; re-running wastes a full-suite cycle.
 
 ### Timeout guidelines
 

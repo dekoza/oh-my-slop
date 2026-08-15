@@ -102,7 +102,7 @@ These ship in the repo and load automatically through the root `pi install` mani
 ## Skills
 
 <details>
-<summary><strong>Skills (63)</strong></summary>
+<summary><strong>Skills (65)</strong></summary>
 
 Grouped by what you came looking for: an API surface (**Reference**), a way of
 working (**Practice**), a job to run (**Workflow**), or the agent's own toolkit
@@ -139,7 +139,7 @@ How to work well — disciplines, design vocabulary, and the book-derived practi
 |-------|---------------|
 | **[Critical Partner](skills/practice/critical-partner/SKILL.md)** | Persistent adjustable interaction stance: calibrated challenge, directness, compression, warmth, and humor, with non-adjustable evidence, accuracy, security, and destructive-action floors. |
 | **[Codebase Design](skills/practice/codebase-design/SKILL.md)** | Shared vocabulary for designing deep modules — depth, seam, adapter, leverage, locality. Dependency categories for safe deepening. Design-it-twice parallel interface exploration. |
-| **[Construction Craft](skills/practice/construction-craft/SKILL.md)** | Day-to-day construction discipline — preflight checks, intent-first routines, explicit data meaning, knowledge-level DRY, reversible choices, reproducible automation, and measured tuning. |
+| **[Construction Craft](skills/practice/construction-craft/SKILL.md)** | Day-to-day construction discipline — preflight checks, intent-first routines, explicit data meaning, knowledge-level DRY, reversible choices, reproducible automation, measured tuning, and whole-output capture (`tee`, never `head`/`tail`/`>`). |
 | **[Data-Intensive](skills/practice/data-intensive/SKILL.md)** | Distributed data systems — consistency models, replication, partitioning, schema evolution, event sourcing, stream processing. Based on Designing Data-Intensive Applications (Kleppmann). |
 | **[Diagnosing Bugs](skills/practice/diagnosing-bugs/SKILL.md)** | Structured diagnosis loop for hard bugs and performance regressions — build feedback loop, reproduce, minimise, hypothesise, instrument, fix, regression test. 10 feedback-loop construction strategies. |
 | **[Django-Discipline](skills/practice/django-discipline/SKILL.md)** | Mandatory Django workflow discipline — auto-generate migrations, ruff before manual cleanup, N+1 prevention, public API imports. Enforces tool-first patterns agents otherwise skip. |
@@ -178,6 +178,8 @@ Rituals you run — session and tracker state, from interview through implementa
 | **[Prototype](skills/workflow/prototype/SKILL.md)** | Throwaway prototyping discipline — logic branch (terminal app for state machines) or UI branch (radically different variants on one route). Six universal rules: throwaway, one command, no persistence, skip polish, surface state, capture when done. |
 | **[QA](skills/workflow/qa/SKILL.md)** | Interactive QA session — user reports bugs conversationally, agent clarifies, explores the codebase for domain language, and files durable user-focused tracker issues (single or dependency-ordered breakdowns). |
 | **[Research](skills/workflow/research/SKILL.md)** | Delegate reading legwork to a background agent — primary sources only, every claim cited, findings landed as a Markdown note in the repo. |
+| **[Review Spec](skills/workflow/review-spec/SKILL.md)** | The spec axis of a two-axis review, independently invocable — missing requirements, scope creep, and requirements implemented wrongly, each quoting the spec line it rests on. Review only, never edits. |
+| **[Review Standards](skills/workflow/review-standards/SKILL.md)** | The standards axis of a two-axis review, independently invocable — documented repo standards plus a fixed Fowler smell baseline, every finding cited, smells never blocking. Review only, never edits. |
 | **[Restore Test Pyramid](skills/workflow/restore-test-pyramid/SKILL.md)** | User-invoked ritual that pushes E2E-only assertions down to integration/unit tiers — per-assertion classification, fidelity gate (migrated assertion must go red under the same mutation), one happy-path smoke per flow, xdist pass. |
 | **[Teach](skills/workflow/teach/SKILL.md)** | Multi-session teaching ritual — the current directory becomes a stateful workspace (MISSION.md, HTML lessons, learning records, glossary) grounding lessons in the learner's mission and zone of proximal development. |
 | **[To Questionnaire](skills/workflow/to-questionnaire/SKILL.md)** | Turn a decision you can't answer alone into a Markdown questionnaire for the one person who can fill it in — grills the send (who, expertise, need) not the subject, then writes a structured, ordered file. |
@@ -185,7 +187,7 @@ Rituals you run — session and tracker state, from interview through implementa
 | **[Wizard](skills/workflow/wizard/SKILL.md)** | Generate an interactive bash wizard that walks a human through a manual setup or migration procedure — opening URLs, capturing values, confirming each step, and writing `.env` files and CI secrets (GitHub and Gitea/Forgejo Actions). |
 | **[To Tickets](skills/workflow/to-tickets/SKILL.md)** | Break a plan, spec, or conversation into tracer-bullet tickets — vertical slices with explicit blocking edges — published to the tracker or one local file per ticket. Expand–contract sequencing for wide refactors. |
 | **[Triage](skills/workflow/triage/SKILL.md)** | Issue/PR triage state machine — categorise, verify the claim, grill into shape, write durable agent briefs, maintain an .out-of-scope/ knowledge base of rejected requests. |
-| **[Two-Axis Review](skills/workflow/two-axis-review/SKILL.md)** | Review changes since a fixed point along two independent axes via parallel sub-agents: Standards (repo conventions + Fowler smell baseline) and Spec (does the diff match the originating issue/PRD). |
+| **[Two-Axis Review](skills/workflow/two-axis-review/SKILL.md)** | Run both review axes over the changes since a fixed point and aggregate them without reranking — sub-agents when the harness has them, sequentially when it does not. |
 | **[Wayfinder](skills/workflow/wayfinder/SKILL.md)** | Plan work too big for one session as a shared map of investigation tickets on the issue tracker — destination, frontier, fog of war — resolved one ticket per session until the way is clear. |
 
 #### Meta

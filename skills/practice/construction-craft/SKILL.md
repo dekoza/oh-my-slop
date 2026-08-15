@@ -5,6 +5,14 @@ description: >
   shape, or when system knowledge and artifacts are drifting, commitments are expensive to
   reverse, recurring engineering work or quality decay needs containment, concurrency ownership
   is unsafe, or estimates and performance claims lack evidence.
+requires:
+  - codebase-design
+  - diagnosing-bugs
+  - production-readiness
+  - python-async
+  - refactoring-pass
+  - tdd
+  - testing-workflow
 ---
 
 # Construction Craft
@@ -34,6 +42,14 @@ the specialist workflows listed under Routing boundaries.
    into versioned, reproducible scripts or checks.
 7. **Measure tuning.** Set a target, capture a baseline, change one variable, remeasure, and keep
    the clarity cost only when the measured tradeoff earns it.
+8. **Capture command output whole.** Any command whose output you intend to read —
+   tests, builds, linters, type-checkers, migrations, container logs — runs as
+   `<command> 2>&1 | tee /tmp/<descriptive-name>.log`, and you read the log file
+   afterwards. **Never `head`, never `tail`, never a bare `>`.** Truncation hides the
+   line that mattered and forces a second run; redirection hides a hang. If the slice
+   you read was not enough, **read a bigger slice of the same file — never re-run the
+   command to see more.** Test-execution specifics live in
+   [`testing-workflow`](../testing-workflow/SKILL.md).
 
 ## Construction workflow
 

@@ -19,7 +19,9 @@ any implementation code.
 
 1. **Capture test output with `| tee /tmp/<name>.log` — never `head`, `tail`, or bare `>`.**
    Truncation hides failures and forces re-runs; redirection hides hangs. Read the log file
-   afterwards instead of re-running the command.
+   afterwards instead of re-running the command; if the slice you read was not enough, read a
+   bigger slice of the same file. This is the test-run case of construction-craft's Critical
+   rule 8, which applies the same way to builds, linters, and type-checkers.
 2. **Set both timeout layers explicitly on every non-unit run** (see Timeout doctrine below).
    A run killed by a default 60s timeout is a wasted run reporting on the runner, not the tests.
 3. **Run each tier where it belongs** (see the tier table). Integration and E2E run in Docker

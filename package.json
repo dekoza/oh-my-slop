@@ -2,6 +2,7 @@
   "name": "oh-my-slop",
   "version": "0.1.0",
   "description": "Pi package with opinionated skills and extensions for coding agents.",
+  "author": "Dominik Kozaczko",
   "private": true,
   "type": "module",
   "keywords": [

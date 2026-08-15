@@ -3,6 +3,15 @@ name: improve-codebase-architecture
 description: Scan the codebase for deepening and simplification opportunities, present them as a visual dual-axis HTML report (deepen vs. simplify), then grill through the candidate you pick.
 disable-model-invocation: true
 license: MIT (adapted from mattpocock/skills)
+requires:
+  - codebase-design
+  - court-jester
+  - grilling
+  - ponytail-audit
+  - ponytail-debt
+  - tdd
+  - to-tickets
+  - wayfinder
 ---
 
 # Improve Codebase Architecture

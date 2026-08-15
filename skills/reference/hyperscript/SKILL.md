@@ -11,6 +11,8 @@ scope: hyperscript
 target_versions: "_hyperscript 0.9.x (verified against 0.9.14 public docs)"
 last_verified: 2026-04-06
 source_basis: official docs + reference + cookbook + README
+requires:
+  - htmx
 ---
 
 # Hyperscript

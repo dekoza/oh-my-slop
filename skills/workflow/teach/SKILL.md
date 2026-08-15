@@ -4,6 +4,8 @@ description: Teach the user a new skill or concept over multiple sessions, using
 disable-model-invocation: true
 argument-hint: "What would you like to learn about?"
 license: MIT (adapted from mattpocock/skills)
+requires:
+  - websearch
 ---
 
 The user has asked you to teach them something. This is a stateful request - they intend to learn the topic over multiple sessions.
