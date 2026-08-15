@@ -55,6 +55,11 @@ export const EVENT_KINDS = Object.freeze({
 	"run.ended": { payloadVersion: 2, visibility: "operator" },
 	"preflight.checked": { payloadVersion: 1, visibility: "operator" },
 	"attempt.launched": { payloadVersion: 1, visibility: "operator" },
+	// #98: §8.8's disposition as a durable ticket-execution fact. The value is
+	// held to the closed set at the projector; `released` is the one member
+	// this package's writer reaches (abandon, §9.6), and the column speaks the
+	// whole set so the slice that owns the rest writes it additively.
+	"ticket.disposition-changed": { payloadVersion: 1, visibility: "operator" },
 	"effect.requested": { payloadVersion: 1, visibility: "detail" },
 	"effect.resolved": { payloadVersion: 1, visibility: "detail" },
 	"observation.recorded": { payloadVersion: 1, visibility: "detail" },

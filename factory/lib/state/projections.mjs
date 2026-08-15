@@ -3,6 +3,7 @@ import {
 	RUN_LIFECYCLE,
 	RUN_LIFECYCLES,
 	RUN_TERMINAL_REASONS,
+	TICKET_DISPOSITIONS,
 } from "../domain/vocabulary.mjs";
 import { canonicalJson } from "./events.mjs";
 import { FactoryStateError } from "./errors.mjs";
@@ -19,11 +20,11 @@ import { FactoryStateError } from "./errors.mjs";
  * never re-derives state from events, so `version` is bumped whenever a
  * projector's output changes rather than migrated in place.
  *
- * The kinds a projector does not name still advance its rows' `last_seq`. This
- * slice's §4.3 enumeration carries no per-phase or per-disposition kind yet;
- * those arrive additively, and the columns waiting for them (`disposition`,
- * `outcome`, `outcome_chains`) are written by the slice that owns their
- * vocabulary.
+ * The kinds a projector does not name still advance its rows' `last_seq`. The
+ * `disposition` column's writer is #98's abandon (the one member of §8.8's set
+ * this package reaches), and the disposition subsystem (#108, #109) writes it
+ * additively for the rest; the columns still waiting for their vocabulary
+ * (`outcome`, `outcome_chains`) are written by the slice that owns it.
  */
 
 /** §10.3's first lifecycle value: preflight runs *after* the run exists. */
@@ -110,10 +111,43 @@ const run = {
 
 const ticketExecution = {
 	name: "ticket_execution",
-	version: 1,
+	// v2 reads §8.8's disposition from `ticket.disposition-changed` (#98):
+	// abandon's `released` is the one value this package's writer reaches, and
+	// a v1 reader would render a released execution as one still in flight —
+	// the exact misreading §13.A exists to keep reconcile from making.
+	version: 2,
 	retention: PROJECTION_CLASSES.derived,
 	apply(db, event) {
 		if (event.run === null || event.ticket === null) return;
+
+		if (event.kind === "ticket.disposition-changed") {
+			const disposition = event.payload.disposition;
+			if (!TICKET_DISPOSITIONS.includes(disposition)) {
+				throw refusal(
+					"payload.disposition",
+					`A ticket execution settles at one of §8.8's dispositions (${TICKET_DISPOSITIONS.join(
+						", ",
+					)}); found ${JSON.stringify(disposition ?? null)}.`,
+					event,
+				);
+			}
+			// Before the generic upsert on purpose: a disposition has no ticket
+			// execution to settle when no record ever carried that ticket, and
+			// minting the row here would be a fact with no evidence behind it.
+			const updated = db
+				.prepare(
+					"UPDATE ticket_execution SET disposition = ?, ended_at = ?, last_seq = ? WHERE run_id = ? AND ticket = ?",
+				)
+				.run(disposition, event.occurred_at, event.seq, event.run, event.ticket);
+			if (updated.changes === 0) {
+				throw refusal(
+					"ticket",
+					`Ticket ${event.ticket} has no execution in run ${event.run}; a disposition has nothing to settle.`,
+					event,
+				);
+			}
+			return;
+		}
 
 		db.prepare(
 			`INSERT INTO ticket_execution(run_id, ticket, phase, attempt_count, started_at, last_seq)

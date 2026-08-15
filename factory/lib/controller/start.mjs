@@ -7,11 +7,14 @@ import {
 } from "../cli/exit-codes.mjs";
 import {
 	CONTROLLER_EXIT_LEASE_LOST,
+	END_REASON_ABANDONED,
 	END_REASON_BASELINE_RED,
 	END_REASON_CONTROLLER_LOST,
 	END_REASON_DRAINED,
+	END_REASON_STOPPED_BY_OPERATOR,
 	RUN_LIFECYCLE,
 } from "../domain/vocabulary.mjs";
+import { runStream } from "../state/events.mjs";
 import { reconcile } from "../reconcile/engine.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
 import { FactoryStateError } from "../state/errors.mjs";
@@ -240,10 +243,19 @@ async function drive(store, hold, context) {
 
 		// The run's reason is decided before execution: a red required preflight
 		// ends here, while only a green run reaches `running`.
-		const endReason = endReasonOf(checked);
-		if (endReason === END_REASON_DRAINED) {
+		const requests = operatorRequests(store, entry.run);
+		const endReason = endReasonOf(checked, requests);
+		let execution = executionReport(store, entry.run);
+		if (endReason !== END_REASON_BASELINE_RED) {
 			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.running, { at: context.now() });
 			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.draining, { at: context.now() });
+			// §9.6's ticket boundary. Nothing here claims yet (#100-#102), so the
+			// run's first boundary is its drain and the poll is one read; the
+			// scheduler loop makes it per-boundary without moving this decision.
+			execution = settleAtBoundary(store, hold, entry.run, {
+				endReason,
+				at: context.now(),
+			});
 		}
 
 		const endedAt = context.now();
@@ -269,6 +281,7 @@ async function drive(store, hold, context) {
 			reconcile: reconcileReport(reconciled),
 			expiry,
 			preflight: { ok: checked.ok, red: checked.red, checks: checked.checks },
+			operator: requests.map(requestReport),
 			manifest: checked.manifest,
 			liveness: {
 				heartbeats: heartbeat.emitted,
@@ -276,7 +289,7 @@ async function drive(store, hold, context) {
 				lease_renewal_ms: LEASE_RENEWAL_MS,
 				fencing_generation: hold.fencingGeneration,
 			},
-			execution: executionReport(),
+			execution,
 			monitor: {
 				requested: false,
 				missing: "the typed pi.events run-start trigger (#99)",
@@ -290,10 +303,39 @@ async function drive(store, hold, context) {
 	}
 }
 
-/** §10.3's mandatory reason for a run this controller still owns. */
-function endReasonOf(checked) {
+/**
+ * §10.3's mandatory reason for a run this controller still owns, decided
+ * **before** the run executes — and from the loop's own inputs only: the
+ * preflight verdict and the operator's request. §9.6's "never derived from the
+ * lanes" holds structurally here: no execution row reaches this function, so
+ * however differently the lanes end, the reason cannot follow them.
+ */
+function endReasonOf(checked, requests) {
 	if (!checked.ok) return END_REASON_BASELINE_RED;
+
+	// The latest request decides: an abandon supersedes the stop that preceded
+	// it (§13.A), and a request an earlier incarnation already honoured cannot
+	// still be outstanding — honouring a stop ends the run.
+	const latest = requests.length === 0 ? null : requests[requests.length - 1];
+	if (latest !== null && latest.kind === "run.abandon-requested") return END_REASON_ABANDONED;
+	if (latest !== null && latest.kind === "run.stop-requested") return END_REASON_STOPPED_BY_OPERATOR;
 	return END_REASON_DRAINED;
+}
+
+/**
+ * The run stream's operator requests, oldest first: §10.5's stop and its
+ * escalation, read from durable state rather than memory, which is what makes
+ * a request written before this controller existed — or by a process it
+ * cannot see — honoured rather than lost.
+ */
+function operatorRequests(store, run) {
+	return store
+		.readEvents({ stream: runStream(run) })
+		.filter((event) => event.kind === "run.stop-requested" || event.kind === "run.abandon-requested");
+}
+
+function requestReport(event) {
+	return { kind: event.kind, actor: event.payload.actor, at: event.occurred_at, seq: event.seq };
 }
 
 /**
@@ -325,16 +367,70 @@ function applyExpiry() {
  * nothing, "the worst outcome available here". The exit code is still `0`,
  * because the run genuinely drained; what stops that from being a lie is this
  * section naming the three subsystems that would have found work.
+ *
+ * `in_flight` is the one number this slice can already answer from durable
+ * state: the ticket executions the projection holds without a terminal
+ * disposition. A run ending beside a lane it is leaving behind says so in the
+ * same breath rather than reporting a member list of nothing.
  */
-function executionReport() {
+function executionReport(store, run) {
+	const inFlight = store
+		.readTicketExecutions(run)
+		.filter((execution) => execution.disposition === null);
+
 	return {
 		claimed: 0,
 		members: [],
+		in_flight: inFlight.length,
+		released: 0,
 		missing:
-			"the tracker scope and eligibility reader (#100), capacity slots and the scheduler loop (#101), " +
-			"and claiming, release, and the classified drain report (#102)",
+			"the tracker scope and eligibility reader (#100), capacity slots and the scheduler loop that " +
+			"lets every in-flight execution reach its terminal disposition (#101), and claiming, release, " +
+			"and the classified drain report (#102)",
 		spec: "§3.2, §3.5, §9",
 	};
+}
+
+/**
+ * §9.6 at the ticket boundary: what a drain does, split by the reason that
+ * asked for it.
+ *
+ * `drained` and `stopped-by-operator` let every in-flight execution reach its
+ * terminal disposition, integration included — the waiting is the scheduler
+ * loop's, and #101's, so this slice only reports what it is not yet able to
+ * wait for. `abandoned` is the one reason that acts now: it marks the in-flight
+ * executions **`released`** and releases their slots, the durable fact the next
+ * reconcile needs to tell a stopped run from an abandoned one (§13.A).
+ *
+ * **It touches no pane.** A wedged pane is evidence (§13.B, §14.27), and pane
+ * reclamation is cleanup-plan's exclusively.
+ */
+function settleAtBoundary(store, hold, run, { endReason, at }) {
+	if (endReason !== END_REASON_ABANDONED) {
+		return executionReport(store, run);
+	}
+
+	// `released` is §8.8's word for an execution whose work the run gives up on
+	// rather than finishes, and the record carries it: the journal is the next
+	// reconcile's source, and a release that lived only in a dead process's
+	// memory is a release the next controller cannot see.
+	const inFlight = store
+		.readTicketExecutions(run)
+		.filter((execution) => execution.disposition === null);
+
+	inFlight.forEach((execution) =>
+		hold.append({
+			kind: "ticket.disposition-changed",
+			source: "controller",
+			run,
+			ticket: execution.ticket,
+			occurredAt: at,
+			observedAt: at,
+			payload: { disposition: "released" },
+		}),
+	);
+
+	return { ...executionReport(store, run), in_flight: inFlight.length, released: inFlight.length };
 }
 
 /**

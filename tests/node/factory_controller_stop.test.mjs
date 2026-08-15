@@ -14,7 +14,7 @@ import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
-import { FIXED_NOW, leaseIdentity, makeAgentDir } from "./helpers/factory-store.mjs";
+import { FIXED_NOW, herdrAnswering, leaseIdentity, makeAgentDir } from "./helpers/factory-store.mjs";
 
 /**
  * §10.5: **`stop` writes a durable stop-request record carrying the actor
@@ -25,6 +25,13 @@ import { FIXED_NOW, leaseIdentity, makeAgentDir } from "./helpers/factory-store.
  * than by process-table archaeology.
  */
 
+/**
+ * The one thing injected is the Herdr probe, for the same reason as in the
+ * start suite: it is a live read of the operator's terminal multiplexer, and a
+ * suite that only passes on a machine running one would be testing the machine.
+ */
+const AVAILABLE = herdrAnswering();
+
 function invocation(t) {
 	const root = makePackage(t);
 	const executable = join(root, "factory", "bin", "factory.mjs");
@@ -33,7 +40,8 @@ function invocation(t) {
 		cwd: makeRepo(t),
 		agentDir: makeAgentDir(t),
 		executable,
-		env: { PATH: onPath(t, executable) },
+		env: { PATH: onPath(t, executable), HERDR_PANE_ID: "w1:p7" },
+		herdr: AVAILABLE,
 	};
 }
 
@@ -220,4 +228,180 @@ test("runStop answers from the same structured value as the CLI does", async (t)
 
 	assert.equal(answered.exitCode, EXIT_OK);
 	assert.equal(answered.report.run, runId);
+});
+
+// ── The controller honours the record at the ticket boundary (§9.6, §10.5) ──
+
+/**
+ * A run the way §9.6's boundary finds it: not ended, unheld, with the
+ * operator's request already on its stream. A crashed controller is the normal
+ * producer of this shape, and re-entry is the normal consumer of it.
+ */
+async function runWithRequests(context, { kinds = [] } = {}) {
+	const runId = newUlid();
+	const store = await openStore({ repoRoot: context.cwd, agentDir: context.agentDir });
+	try {
+		store.append({
+			kind: "run.started",
+			source: "controller",
+			run: runId,
+			occurredAt: FIXED_NOW,
+			observedAt: FIXED_NOW,
+			payload: { scope: { kind: "direct-ticket", tickets: [42] }, mode: ENTRY_MODES.started },
+		});
+		for (const [i, kind] of kinds.entries()) {
+			store.append({
+				kind,
+				source: "operator",
+				run: runId,
+				occurredAt: FIXED_NOW + 1 + i,
+				observedAt: FIXED_NOW + 1 + i,
+				payload:
+					kind === "run.stop-requested"
+						? { actor: "operator:stop" }
+						: { actor: "operator:stop", supersedes: null },
+			});
+		}
+	} finally {
+		store.close();
+	}
+	return runId;
+}
+
+/** An in-flight ticket execution: launched, and no terminal disposition recorded. */
+async function runWithInFlight(context, { kinds = [] } = {}) {
+	const runId = await runWithRequests(context, { kinds });
+	const store = await openStore({ repoRoot: context.cwd, agentDir: context.agentDir });
+	try {
+		store.append({
+			kind: "attempt.launched",
+			source: "controller",
+			run: runId,
+			ticket: 42,
+			phase: "implement",
+			attempt: `${runId}-t42-a1`,
+			occurredAt: FIXED_NOW + 10,
+			observedAt: FIXED_NOW + 10,
+			payload: { role: "implement" },
+		});
+	} finally {
+		store.close();
+	}
+	return runId;
+}
+
+test("a pending stop ends the re-entered run stopped-by-operator, through draining, exiting 3", async (t) => {
+	const context = invocation(t);
+	const runId = await runWithRequests(context, { kinds: ["run.stop-requested"] });
+
+	const { exitCode, value } = await runCli(["start"], context);
+
+	assert.equal(exitCode, 3);
+	assert.equal(value.report.run, runId);
+	assert.equal(value.report.end_reason, "stopped-by-operator");
+	assert.equal(value.report.lifecycle, "ended");
+
+	const store = await storeOf(t, context);
+	const moved = store
+		.readEvents({ stream: runStream(runId) })
+		.filter((event) => event.kind === "run.lifecycle-changed")
+		.map((event) => event.payload.lifecycle);
+	assert.deepEqual(moved, ["preflight", "running", "draining"], "the stop did not pass through draining");
+	assert.equal(store.readRun(runId).end_reason, "stopped-by-operator");
+});
+
+test("a pending abandon ends the run abandoned, exiting 4", async (t) => {
+	const context = invocation(t);
+	const runId = await runWithRequests(context, { kinds: ["run.abandon-requested"] });
+
+	const { exitCode, value } = await runCli(["start"], context);
+
+	assert.equal(exitCode, 4);
+	assert.equal(value.report.end_reason, "abandoned");
+
+	const store = await storeOf(t, context);
+	assert.equal(store.readRun(runId).end_reason, "abandoned");
+});
+
+test("an abandon supersedes the stop that preceded it", async (t) => {
+	const context = invocation(t);
+	const runId = await runWithRequests(context, {
+		kinds: ["run.stop-requested", "run.abandon-requested"],
+	});
+
+	const { exitCode, value } = await runCli(["start"], context);
+
+	assert.equal(exitCode, 4);
+	assert.equal(value.report.end_reason, "abandoned", "the earlier stop won over its own escalation");
+});
+
+test("abandon marks the in-flight executions released, durably, and the report says so", async (t) => {
+	const context = invocation(t);
+	const runId = await runWithInFlight(context, { kinds: ["run.abandon-requested"] });
+
+	const { exitCode, value } = await runCli(["start"], context);
+
+	assert.equal(exitCode, 4);
+	assert.equal(value.report.execution.in_flight, 1);
+	assert.equal(value.report.execution.released, 1);
+
+	const store = await storeOf(t, context);
+	const [execution] = store.readTicketExecutions(runId);
+	assert.equal(execution.disposition, "released", "the release did not reach the durable projection");
+	assert.notEqual(execution.ended_at, null, "a released execution has no end to wait for");
+
+	const [record] = store.readEvents({ stream: runStream(runId), kind: "ticket.disposition-changed" });
+	assert.notEqual(record, undefined);
+	assert.equal(record.run, runId);
+	assert.equal(record.ticket, 42);
+	assert.equal(record.payload.disposition, "released");
+	assert.equal(record.source, "controller");
+});
+
+test("a stop never marks an execution released: that is abandon's word alone", async (t) => {
+	const context = invocation(t);
+	const runId = await runWithInFlight(context, { kinds: ["run.stop-requested"] });
+
+	const { exitCode, value } = await runCli(["start"], context);
+
+	assert.equal(exitCode, 3);
+	assert.equal(value.report.execution.released, 0);
+
+	const store = await storeOf(t, context);
+	const [execution] = store.readTicketExecutions(runId);
+	assert.equal(execution.disposition, null, "the stop reached into the lanes' dispositions");
+	assert.equal(
+		store.readEvents({ stream: runStream(runId), kind: "ticket.disposition-changed" }).length,
+		0,
+	);
+});
+
+test("the end reason is a property of the controller loop, never derived from the lanes", async (t) => {
+	// §9.6: however differently the lanes end, the reason stays the loop's.
+	// A run whose projection holds an in-flight execution and no request still
+	// ends drained — the lane does not vote.
+	const context = invocation(t);
+	const runId = await runWithInFlight(context, {});
+
+	const { exitCode, value } = await runCli(["start"], context);
+
+	assert.equal(exitCode, 0);
+	assert.equal(value.report.end_reason, "drained");
+	assert.equal(value.report.execution.in_flight, 1, "the run did not report the lane it is leaving behind");
+	assert.match(value.report.execution.missing, /#101/, "the waiting the lane owes is not named");
+});
+
+test("the report carries the operator requests that decided the reason", async (t) => {
+	const context = invocation(t);
+	const runId = await runWithRequests(context, {
+		kinds: ["run.stop-requested", "run.abandon-requested"],
+	});
+
+	const { value } = await runCli(["start"], context);
+
+	assert.deepEqual(
+		value.report.operator.map((request) => request.kind),
+		["run.stop-requested", "run.abandon-requested"],
+	);
+	assert.equal(value.report.operator[0].actor, "operator:stop");
 });
