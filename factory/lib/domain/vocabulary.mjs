@@ -26,6 +26,13 @@ export const PHASES = Object.freeze([
 export const RUN_LIFECYCLES = Object.freeze(["preflight", "running", "draining", "ended"]);
 
 /**
+ * The one end reason a subsystem other than the run loop mints: §4.6's lease
+ * decides it, so it is named here for that code to reach rather than spelled by
+ * hand where it is used.
+ */
+export const END_REASON_LEASE_LOST = "lease-lost";
+
+/**
  * §10.3's seven, mandatory on every ended run. `controller-lost` is asserted
  * only by a different controller or the monitor, never by the run itself, and
  * is therefore the one member with no exit code.
@@ -36,7 +43,7 @@ export const RUN_END_REASONS = Object.freeze([
 	"stopped-by-operator",
 	"abandoned",
 	"circuit-breaker",
-	"lease-lost",
+	END_REASON_LEASE_LOST,
 	"controller-lost",
 ]);
 

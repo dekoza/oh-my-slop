@@ -25,6 +25,8 @@ export const STATE_ERROR_REASONS = Object.freeze([
 	"lease-held",
 	/** A compare-and-swap that found this holder's token gone (§4.6, §14.6). */
 	"lease-lost",
+	/** A hold the holder itself gave up — an orderly end, not §14.6's loss. */
+	"lease-released",
 	/** A lease name outside §4.6's closed set of objects. */
 	"invalid-lease-name",
 ]);

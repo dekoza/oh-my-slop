@@ -30,6 +30,29 @@ export const LEASE_NAMES = Object.freeze({
  */
 export const LEASE_NAME_PATTERN = /^(controller|integration|capacity:ticket:\d+|capacity:model:[0-9A-Za-z-]+:\d+)$/;
 
+/** §4.8: the controller row is renewed every 10s — that is the liveness fact. */
+export const LEASE_RENEWAL_MS = 10_000;
+
+/** Three missed renewals. §4.8 expects an expired row to be one of the two
+ * `controller-lost` signals, "whichever it sees first", so it is deliberately
+ * shorter than the monitor's ~3-minute heartbeat rule. */
+export const CONTROLLER_LEASE_TTL_MS = 3 * LEASE_RENEWAL_MS;
+
+/**
+ * **Which leases a clock may free, and after how long.** The controller lease is
+ * the only one: §10.4 adopts a run whose lease is "free or expired", and that
+ * adoption is what a dead controller's successor needs.
+ *
+ * Everything else is untimed, and that is invariant 22 made structural rather
+ * than left to a caller: an expiring capacity slot would free itself while its
+ * pane is still alive and still holding a resource that physically has one
+ * slot, and an `integration` lease freed by a clock would let a second lane
+ * rebase over a crash the specification says **reconcile settles by probing
+ * git** (§4.6, §9.4). A dead holder is recognised by its superseded fencing
+ * generation, never by elapsed time.
+ */
+const LEASE_TTLS = Object.freeze({ [LEASE_NAMES.controller]: CONTROLLER_LEASE_TTL_MS });
+
 /**
  * §9.4's capacity rows are **discrete and named**, never a counter: a slot row
  * names its holder and is therefore probeable, and §5.3 settles an unresolved
@@ -53,28 +76,34 @@ export function capacityModelSlot(resourceClass, index) {
  *
  * @param {object} store an open store (§4.1)
  * @param {{ now?: () => number }} [options] the clock, injectable for tests
+ * @returns {Readonly<object>} the registry
  */
 export function openLeases(store, { now = Date.now } = {}) {
 	return Object.freeze({
+		/** The registry's clock, so a holder cannot keep a second, disagreeing one. */
+		now,
+
 		/**
-		 * @param {{ name: string, identity: object, ttlMs: number | null, event?: object | null }} request
-		 *   `ttlMs: null` is §9.4's untimed capacity slot; `event` is appended in
-		 *   the **same transaction** as the row, because a lease row is canonical
-		 *   rather than a projection and must not drift from its event (§4.4).
+		 * @param {{ name: string, identity: object, event?: object | null }} request
+		 *   the TTL is **not** a parameter: it belongs to the object (see
+		 *   `LEASE_TTLS`). `event` is appended in the **same transaction** as the
+		 *   row, because a lease row is canonical rather than a projection and
+		 *   must not drift from its event (§4.4).
 		 * @returns {Readonly<object>} the hold, whose token is the ownership proof
 		 * @throws {FactoryStateError} `lease-held` when a live holder has it
 		 */
-		acquire: ({ name, identity, ttlMs, event = null }) =>
+		acquire: ({ name, identity, event = null }) =>
 			store.transaction(({ db, appendEvent }) => {
 				requireLeaseName(name);
 				const at = now();
-				const incumbent = decode(db.prepare("SELECT * FROM lease WHERE name = ?").get(name));
+				const ttlMs = LEASE_TTLS[name] ?? null;
+				const incumbent = readLease(db, name);
 				if (incumbent !== null) {
 					if (!hasLapsed(incumbent, at)) refuseHeld(name, incumbent);
-					// §10.4: a lease that is free *or expired* is adopted. Nothing
-					// probes the previous holder's process to decide that — the
-					// clock and the new generation are the whole mechanism.
-					db.prepare("DELETE FROM lease WHERE name = ? AND holder_token = ?").run(name, incumbent.token);
+					// §10.4: a controller lease that is free *or expired* is adopted.
+					// Nothing probes the previous holder's process to decide that —
+					// the clock and the new generation are the whole mechanism.
+					deleteLease(db, name, incumbent.token);
 				}
 
 				const generation = mintGeneration(db);
@@ -99,11 +128,11 @@ export function openLeases(store, { now = Date.now } = {}) {
 			}),
 
 		/**
-		 * §4.8's liveness write: every 10s, and it costs no journal growth. The
-		 * generation is untouched — a renewal is the same holder saying so, and
-		 * bumping it would invalidate every effect this controller has in flight.
+		 * §4.8's liveness write. The generation is untouched — a renewal is the
+		 * same holder saying so, and bumping it would invalidate every effect this
+		 * controller has in flight.
 		 *
-		 * @returns {object} the renewed hold
+		 * @returns {Readonly<object>} the renewed hold
 		 * @throws {FactoryStateError} `lease-lost` when this token no longer holds the row
 		 */
 		renew: (held) =>
@@ -114,9 +143,7 @@ export function openLeases(store, { now = Date.now } = {}) {
 					.prepare("UPDATE lease SET renewed_at = ?, expires_at = ? WHERE name = ? AND holder_token = ?")
 					.run(at, expiresAt, held.name, held.token);
 
-				if (updated.changes !== 1) {
-					refuseLost(held, decode(db.prepare("SELECT * FROM lease WHERE name = ?").get(held.name)));
-				}
+				if (updated.changes !== 1) refuseLost(held, readLease(db, held.name));
 
 				return Object.freeze({ ...held, renewedAt: at, expiresAt });
 			}),
@@ -130,55 +157,31 @@ export function openLeases(store, { now = Date.now } = {}) {
 		 */
 		release: (held, { event = null } = {}) =>
 			store.transaction(({ db, appendEvent }) => {
-				const removed = db
-					.prepare("DELETE FROM lease WHERE name = ? AND holder_token = ?")
-					.run(held.name, held.token);
-				if (removed.changes === 1 && event !== null) appendEvent(event);
-				return removed.changes === 1;
+				const released = deleteLease(db, held.name, held.token);
+				if (released && event !== null) appendEvent(event);
+				return released;
 			}),
 
-		/**
-		 * The takeover path, for a row whose holder is **demonstrably** gone: a
-		 * lapsed expiry, or a generation the live controller has already
-		 * superseded (§9.4's "held by a dead generation"). Still a
-		 * compare-and-swap — the caller passes the token it read off the row — so
-		 * the "any process may drop any lock" hole stays closed.
-		 *
-		 * Deciding that the holder is gone is the caller's evidence to produce:
-		 * §5.3 settles an unresolved fact by probing the pane or the repository,
-		 * never by waiting for a clock.
-		 *
-		 * @param {{ name: string, token: string, generation: number }} claim
-		 *   `generation` is the reclaimer's own live controller generation
-		 * @throws {FactoryStateError} `lease-held` when the row is not dead,
-		 *   `lease-lost` when the token is not the row's
-		 */
-		reclaim: ({ name, token, generation, event = null }) =>
-			store.transaction(({ db, appendEvent }) => {
-				const row = decode(db.prepare("SELECT * FROM lease WHERE name = ?").get(name));
-				if (row === null) return false;
-				if (row.token !== token) {
-					throw new FactoryStateError(
-						"lease-lost",
-						`The ${name} lease is no longer on the token this reclaim observed; it has been renewed or reclaimed since.`,
-						{ lease: name, fencing_generation: row.fencingGeneration },
-					);
-				}
-				if (!hasLapsed(row, now()) && !isSuperseded(row, generation)) refuseHeld(name, row);
-
-				db.prepare("DELETE FROM lease WHERE name = ? AND holder_token = ?").run(name, token);
-				if (event !== null) appendEvent(event);
-				return true;
-			}),
-
-		inspect: (name) => store.read((db) => decode(db.prepare("SELECT * FROM lease WHERE name = ?").get(name))),
-
-		/** Every held row, for `status`, `doctor`, and reconcile. */
-		list: () => store.read((db) => db.prepare("SELECT * FROM lease ORDER BY name").all().map(decode)),
-
-		/** The counter's current value, which is the live controller's fence. */
-		generation: () => store.read((db) => db.prepare("SELECT value FROM fencing_generation WHERE id = 1").get().value),
+		/** @returns {object | null} the row as the operator and reconcile read it */
+		inspect: (name) => store.read((db) => readLease(db, name)),
 	});
+}
+
+/**
+ * §9.4: a row stamped with a superseded generation **is not honored** — that is
+ * how a crash mid-integration is visible as "held by a dead generation" (§4.6).
+ * The counter is DB-wide, so this is a total order rather than a per-lease
+ * guess, which is the whole reason §4.6 mints from one counter.
+ *
+ * Acting on it — probing the pane or the repository, then taking the row over —
+ * belongs to the ticket that owns the probe (§5.3); this is the predicate it
+ * reads.
+ *
+ * @param {{ fencingGeneration: number }} row
+ * @param {number} generation the live controller's generation
+ */
+export function isSuperseded(row, generation) {
+	return row.fencingGeneration < generation;
 }
 
 function requireLeaseName(name) {
@@ -191,25 +194,7 @@ function requireLeaseName(name) {
 	}
 }
 
-/**
- * §9.4: a row stamped with a superseded generation **is not honored**. The
- * counter is DB-wide, so "older than the live controller's generation" is a
- * total order rather than a per-lease guess — that is the whole reason §4.6
- * mints from one counter.
- *
- * @param {{ fencingGeneration: number }} row
- * @param {number} generation the live controller's generation
- */
-export function isSuperseded(row, generation) {
-	return row.fencingGeneration < generation;
-}
-
-/**
- * A row is lapsed when its own expiry has passed. A row with **no expiry** —
- * §9.4's capacity slots — never lapses: an expiring slot would free itself
- * while its pane is still alive and still talking to the model host,
- * double-booking a resource that physically has one slot (invariant 22).
- */
+/** A row is lapsed when its own expiry has passed; an untimed row never is. */
 function hasLapsed(row, at) {
 	return row.expiresAt !== null && row.expiresAt <= at;
 }
@@ -241,8 +226,8 @@ function refuseHeld(name, incumbent) {
 }
 
 /**
- * The compare half of every compare-and-swap failing: this token is not what
- * the row says, so the hold is gone. For the controller lease §14.6 makes the
+ * The compare half of a compare-and-swap failing: this token is not what the
+ * row says, so the hold is gone. For the controller lease §14.6 makes the
  * consequence absolute — stop, emit, exit, **never reacquire** — which is why
  * this is a refusal and not a `false` a caller can shrug at.
  */
@@ -268,6 +253,19 @@ function refuseLost(held, incumbent) {
 function mintGeneration(db) {
 	db.prepare("UPDATE fencing_generation SET value = value + 1 WHERE id = 1").run();
 	return db.prepare("SELECT value FROM fencing_generation WHERE id = 1").get().value;
+}
+
+function readLease(db, name) {
+	return decode(db.prepare("SELECT * FROM lease WHERE name = ?").get(name));
+}
+
+/**
+ * The **only** statement in the factory that removes a lease row, and it names
+ * the token. Keeping it to one function is what makes "no unconditional removal
+ * path" a fact about the code rather than a habit.
+ */
+function deleteLease(db, name, token) {
+	return db.prepare("DELETE FROM lease WHERE name = ? AND holder_token = ?").run(name, token).changes === 1;
 }
 
 function decode(row) {

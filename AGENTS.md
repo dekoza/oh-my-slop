@@ -122,9 +122,12 @@ is the authority; cite the section a change answers to.
   and nowhere else. **The holder token is the only ownership proof**: the identity blob
   is advisory, nothing tests a pid, and no path removes a row without comparing the
   token — those two are exactly how the legacy systems failed. Fencing generations come
-  from the one DB-wide counter, so they order every lease against every other. A lost
-  controller lease is terminal (`factory/lib/controller/lease-guard.mjs`): stop issuing
-  effects, emit, exit non-zero, never reacquire.
+  from the one DB-wide counter, so they order every lease against every other. **The
+  `controller` lease is the only one a clock may free**, and the TTL belongs to the
+  lease object rather than to its caller; every other row is settled by its superseded
+  generation and a probe, never by elapsed time. A lost controller lease is terminal
+  (`factory/lib/controller/lease-guard.mjs`): stop issuing effects, emit, exit non-zero,
+  never reacquire.
 
 ### `scripts/`
 
