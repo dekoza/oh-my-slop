@@ -39,8 +39,13 @@ export const VISIBILITY_CLASSES = Object.freeze(["operator", "detail", "diagnost
  */
 export const EVENT_KINDS = Object.freeze({
 	"run.started": { payloadVersion: 1, visibility: "operator" },
-	"run.lifecycle-changed": { payloadVersion: 1, visibility: "operator" },
-	"run.ended": { payloadVersion: 1, visibility: "operator" },
+	// v2 for both run terminal kinds (#97): v1 `run.ended` could carry
+	// `lease-lost`, end a run twice, and be followed by lifecycle moves. Those
+	// journals were valid when written, so the projectors replay v1 with the
+	// legacy tolerance and enforce the tightened contract from v2 on — the
+	// version is what lets them tell history from a current writer's mistake.
+	"run.lifecycle-changed": { payloadVersion: 2, visibility: "operator" },
+	"run.ended": { payloadVersion: 2, visibility: "operator" },
 	"preflight.checked": { payloadVersion: 1, visibility: "operator" },
 	"attempt.launched": { payloadVersion: 1, visibility: "operator" },
 	"effect.requested": { payloadVersion: 1, visibility: "detail" },

@@ -225,13 +225,18 @@ Fields: `seq` · `event_id` (ULID) · `envelope_version` · `kind` + `payload_ve
 `prev_hash` · `hash`.
 
 - **Schema versioning is per kind**, not per journal — a global bump forces every unchanged
-  kind to lie about having changed.
+  kind to lie about having changed. The version is how replay tells history from a current
+  writer's mistake: `run.ended` and `run.lifecycle-changed` are on **payload v2**, whose
+  contract refuses `lease-lost` as an ending, a second ending, and movement after the end;
+  v1 records were valid under the contract their version names and replay with v1's
+  tolerance, rendered as written.
 - **Visibility is a three-value class**, not a boolean: `operator` (default feed) · `detail`
   (shown when a node is expanded) · `diagnostic` (filtered by default). Two values cannot
   express "real, but only when you are looking at this node", and the requirement is that
   internals stay *filterable* rather than *unemitted*.
 - **Kinds are dotted `<entity>.<verb>`** from one closed, additive-only enumeration:
-  `run.started` · `run.ended` · `attempt.launched` · `effect.requested` · `effect.resolved` ·
+  `run.started` · `run.lifecycle-changed` · `run.ended` · `preflight.checked` ·
+  `attempt.launched` · `effect.requested` · `effect.resolved` ·
   `observation.recorded` · `observation.degraded` · `reconcile.concluded` ·
   `controller.heartbeat` · `controller.lease-lost` · `projection.rebuilt` ·
   `journal.integrity-failed` · `stream.truncated` · `run.expired` · `capacity.granted` ·
@@ -1929,7 +1934,9 @@ Numbered, testable, and adversarially exercised by §15's cases. Each is a **nev
 6. **A lost controller lease is never reacquired and never self-closes the run.** Stop issuing
    effects, emit, exit 6; normal `run.ended` and lease release are one token-checked transaction,
    and every record moving a run's lifecycle is written under the same compare. No `run.ended`
-   ever carries `lease-lost` — that reason names a process's exit, not a run's ending.
+   is ever **written** carrying `lease-lost` — that reason names a process's exit, not a run's
+   ending. Payload-v1 records that carried it are history, replayed and rendered as written
+   (§4.3); the loss a stale controller concedes before `run.started` commits names no run.
 7. **No mid-stream journal deletion, ever** — whole-stream deletion or front-truncation only.
 8. **A projection is never committed in a different transaction from its event.**
 9. **A projection schema change never migrates silently** — it bumps the version, and a
@@ -2182,3 +2189,4 @@ touching everything twice.
 | 2026-08-15 | §18.0 both preconditions discharged. §6.3 gains two **verified** Claude Code 2.1.229 loader facts that justify the generator: skills register at **depth 1 only** (a bucketed skill is dropped with no error), and `author` must be an **object**. Both were found by running the real binary, not by reading docs — the second one failed a test that would otherwise have passed. | #87 |
 | 2026-08-15 | #97 hostile review corrections: normal `run.ended` and controller-lease release are one token-checked transaction; a stale controller emits and exits 6 but leaves the adopted run open. `baseline-red` is clarified as the closed pre-execution outcome for any required red preflight check. §10.4 explicitly permits a fail-closed `scope-unresolvable` result until the tracker membership reader lands. | #97 |
 | 2026-08-15 | #97 reverse-verification corrections. §4.6 and §14.6 extended: **every** record moving a run's lifecycle is written under the token in the same transaction as the compare, not only `run.ended` — a holder whose row lapsed learns it is stale at its next compare-and-swap, and effects survive that window on §14.5's resolution-time check while a run's lifecycle has no such backstop. §10.3's table row records that `lease-lost` is the one member that is only an exit code and never a recorded `end_reason`; the projector enforces it. | #97 |
+| 2026-08-15 | #97 second reverse-verification corrections. §4.6: a loss conceded before `run.started` commits names no run — the loss event carries `run: null` and the exit-6 report names no phantom id. §10.3 and §13.A: the published table is restated as **six run end reasons plus one controller exit outcome**, ending the contradiction of a mandatory "end-reason enum" containing a member never recorded as one. §4.3: `run.ended` and `run.lifecycle-changed` move to payload v2, whose contract refuses `lease-lost`, duplicate endings, and post-terminal movement, while v1 journals replay with the tolerance they were written under; the `run` and `run_digest` projectors bump to v3, so a store the previous contract wrote refuses at open and is repaired by a recorded rebuild rather than opened silently or classified as corruption. §4.3's kind enumeration gains the `run.lifecycle-changed` and `preflight.checked` records the implementation already emits. §14.6 invariant 6 qualified accordingly. | #97 |

@@ -4,6 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { newUlid } from "../../../factory/lib/identity/ulid.mjs";
+import {
+	canonicalJson,
+	digest,
+	envelopeHash,
+	GENESIS_PREV_HASH,
+	streamFor,
+} from "../../../factory/lib/state/events.mjs";
 import { openStore } from "../../../factory/lib/state/store.mjs";
 import { makeRepo } from "./factory-repo.mjs";
 
@@ -162,6 +169,79 @@ export function attemptLaunched(runId, ticket, ordinal = 1, { at = 1_770_000_100
 		observedAt: at,
 		payload: { role: "implement" },
 	};
+}
+
+/**
+ * Append a journal record **as an older binary wrote it** — a chosen
+ * `payload_version`, a valid hash chain, and no projector applied.
+ *
+ * The write path cannot produce this: `buildEnvelope` stamps every kind with
+ * the version this binary declares, which is exactly why a compatibility test
+ * needs a forgery. The row is hashed the same way `verifyJournal` re-hashes it,
+ * so the forged journal verifies; the projection heads are left where they
+ * were, because what an old journal needs from the current binary is a
+ * **recorded rebuild**, and that is the path under test.
+ */
+export function appendLegacyEvent(store, { kind, source = "controller", run = null, at = FIXED_NOW, payload, payloadVersion = 1 }) {
+	return store.read((db) => {
+		const stream = streamFor(kind, run);
+		const head = db.prepare("SELECT last_seq FROM journal_head WHERE id = 1").get();
+		const previous = db.prepare("SELECT hash FROM event WHERE stream = ? ORDER BY seq DESC LIMIT 1").get(stream);
+
+		const withoutHash = {
+			seq: head.last_seq + 1,
+			event_id: newUlid(),
+			envelope_version: 1,
+			kind,
+			payload_version: payloadVersion,
+			visibility: "operator",
+			stream,
+			run,
+			ticket: null,
+			phase: null,
+			attempt: null,
+			causal_command_id: null,
+			source,
+			occurred_at: at,
+			observed_at: at,
+			foreign_source_id: null,
+			payload,
+			payload_digest: digest(canonicalJson(payload)),
+			prev_hash: previous === undefined ? GENESIS_PREV_HASH : previous.hash,
+		};
+		const hash = envelopeHash(withoutHash);
+
+		db.prepare(
+			`INSERT INTO event(seq, event_id, envelope_version, kind, payload_version, visibility, stream, run,
+			                   ticket, phase, attempt, causal_command_id, source, occurred_at, observed_at,
+			                   foreign_source_id, payload, payload_digest, prev_hash, hash)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			withoutHash.seq,
+			withoutHash.event_id,
+			withoutHash.envelope_version,
+			withoutHash.kind,
+			withoutHash.payload_version,
+			withoutHash.visibility,
+			withoutHash.stream,
+			withoutHash.run,
+			withoutHash.ticket,
+			withoutHash.phase,
+			withoutHash.attempt,
+			withoutHash.causal_command_id,
+			withoutHash.source,
+			withoutHash.occurred_at,
+			withoutHash.observed_at,
+			withoutHash.foreign_source_id,
+			canonicalJson(withoutHash.payload),
+			withoutHash.payload_digest,
+			withoutHash.prev_hash,
+			hash,
+		);
+		db.prepare("UPDATE journal_head SET last_seq = ?, last_hash = ? WHERE id = 1").run(withoutHash.seq, hash);
+
+		return Object.freeze({ ...withoutHash, hash });
+	});
 }
 
 /**

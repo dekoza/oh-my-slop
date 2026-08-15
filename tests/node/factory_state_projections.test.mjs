@@ -14,6 +14,7 @@ import {
 	openTestStore,
 	refusalOfAsync,
 	runEnded,
+	runMoved,
 	runStarted,
 } from "./helpers/factory-store.mjs";
 
@@ -127,6 +128,17 @@ test("a run cannot end twice with competing terminal reasons", async (t) => {
 		["drained"],
 	);
 	assert.equal(store.readRun(runId).end_reason, "drained");
+});
+
+test("an ended run does not move again: its terminal state is where it stays", async (t) => {
+	const { store, runId } = await storeWithRun(t);
+	store.append(runEnded(runId, { endReason: "drained" }));
+
+	assert.throws(
+		() => store.append(runMoved(runId, "running")),
+		{ name: "FactoryStateError", reason: "invalid-event" },
+	);
+	assert.equal(store.readRun(runId).lifecycle, "ended");
 });
 
 test("no run ends `lease-lost`: that reason names a process's exit, not a run's ending", async (t) => {

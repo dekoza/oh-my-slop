@@ -59,10 +59,13 @@ export const PROJECTION_CLASSES = Object.freeze({ derived: "derived", permanent:
 
 const run = {
 	name: "run",
-	// v2 reads §10.3's `run.lifecycle-changed`: `preflight → running → draining`
+	// v2 read §10.3's `run.lifecycle-changed`: `preflight → running → draining`
 	// were previously unreachable values, so a v1 reader would render a run's
-	// whole middle as `preflight`.
-	version: 2,
+	// whole middle as `preflight`. v3 branches the run terminal kinds on their
+	// payload version (#97): a v2 projection could carry `end_reason:
+	// "lease-lost"` — a state these projectors refuse to produce — so opening
+	// one must be a recorded rebuild, not a silent pass.
+	version: 3,
 	retention: PROJECTION_CLASSES.derived,
 	apply(db, event) {
 		if (event.run === null) return;
@@ -84,7 +87,7 @@ const run = {
 		requireRun(db, event);
 
 		if (event.kind === "run.ended") {
-			refuseIfEnded(db, event);
+			if (!isLegacyTerminal(event)) refuseIfEnded(db, event);
 			db.prepare(
 				"UPDATE run SET lifecycle = 'ended', end_reason = ?, ended_at = ?, last_seq = ? WHERE run_id = ?",
 			).run(requireEndReason(event), event.occurred_at, event.seq, event.run);
@@ -92,7 +95,7 @@ const run = {
 		}
 
 		if (event.kind === "run.lifecycle-changed") {
-			refuseIfEnded(db, event);
+			if (!isLegacyTerminal(event)) refuseIfEnded(db, event);
 			db.prepare("UPDATE run SET lifecycle = ?, last_seq = ? WHERE run_id = ?").run(
 				requireLifecycle(event),
 				event.seq,
@@ -184,8 +187,8 @@ const ticketIndex = {
  */
 const runDigest = {
 	name: "run_digest",
-	/** v2 for the same reason the `run` projector is: it carries a lifecycle too. */
-	version: 2,
+	/** v3 for the same reasons the `run` projector is: it renders the same terminal state. */
+	version: 3,
 	retention: PROJECTION_CLASSES.permanent,
 	apply(db, event) {
 		if (event.run === null) return;
@@ -273,6 +276,28 @@ function requireLifecycle(event) {
 }
 
 /**
+ * Is this record from the run terminal kinds' v1 payload era?
+ *
+ * v1 `run.ended` and `run.lifecycle-changed` were written under §10.3's
+ * original reading: `lease-lost` was an acceptable ending, a second ending
+ * overwrote the first, and a move after the end moved the run. Those journals
+ * were valid when written, and a replay that refused them would classify
+ * compatibility as corruption — so v1 replays with v1's tolerance, and the
+ * tightened contract binds from v2 on. The live write path cannot produce a v1
+ * record: `buildEnvelope` stamps every kind with the version this binary
+ * declares, which is what keeps this branch history-only.
+ */
+function isLegacyTerminal(event) {
+	return event.payload_version === 1;
+}
+
+/**
+ * The end reasons v1 payloads could carry: today's six plus `lease-lost`,
+ * frozen here as history rather than imported as anyone's current vocabulary.
+ */
+const LEGACY_END_REASONS = Object.freeze([...RUN_TERMINAL_REASONS, CONTROLLER_EXIT_LEASE_LOST]);
+
+/**
  * §10.3's mandatory reason, held to the six a run can actually end for.
  *
  * `lease-lost` is the published table's seventh row and is refused here: it
@@ -281,10 +306,24 @@ function requireLifecycle(event) {
  * adopting the same `run_id` — so a `run.ended` carrying that reason is a stale
  * writer closing somebody else's work. The rule is enforced on the write path
  * rather than left to the one call site that ends runs, because that is the
- * difference between an invariant and a habit.
+ * difference between an invariant and a habit. A v1 record is the one exception,
+ * replayed under the contract it was written to.
  */
 function requireEndReason(event) {
 	const endReason = event.payload.end_reason;
+	if (isLegacyTerminal(event)) {
+		if (LEGACY_END_REASONS.includes(endReason)) return endReason;
+		throw new FactoryStateError(
+			"invalid-event",
+			`A v1 run.ended carries one of its era's seven reasons; found ${JSON.stringify(endReason ?? null)}.`,
+			{
+				at: "payload.end_reason",
+				found: endReason ?? null,
+				expected: LEGACY_END_REASONS.join("|"),
+				event_id: event.event_id,
+			},
+		);
+	}
 	if (!RUN_TERMINAL_REASONS.includes(endReason)) {
 		throw new FactoryStateError(
 			"invalid-event",

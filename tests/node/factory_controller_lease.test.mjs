@@ -318,6 +318,23 @@ test("a lease lost before run.started concedes with no phantom run", async (t) =
 	);
 });
 
+test("adopt refuses a run with no durable record, which is what keeps the phantom structural", async (t) => {
+	const { store, guard } = await runlessStore(t);
+	const minted = newUlid();
+	guard.intend(minted);
+
+	// A caller marking a run durable before its `run.started` committed is the
+	// phantom-loss bug one call site further out; the guard refuses rather than
+	// trusting every future caller to keep the order.
+	assert.throws(() => guard.adopt(minted), { reason: "run-not-started" });
+	assert.equal(guard.run, null);
+
+	guard.append(runStarted(minted));
+	guard.adopt(minted);
+	assert.equal(guard.run, minted);
+	assert.equal(store.readRun(minted).lifecycle, "preflight");
+});
+
 test("a theft discovered while intending a run concedes the same way", async (t) => {
 	const losses = [];
 	const { store, guard, clock } = await runlessStore(t, { onLost: (loss) => losses.push(loss) });

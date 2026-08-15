@@ -33,6 +33,12 @@ export const STATE_ERROR_REASONS = Object.freeze([
 	 * that settles what the last controller left behind has happened.
 	 */
 	"reconcile-required",
+	/**
+	 * A hold asked to mark a run durable that no record names (§10.4, §14.6). A
+	 * `driving` run with no row would make the §14.6 concession itself an
+	 * invalid event, so `adopt` refuses it; `intend` is the advisory half.
+	 */
+	"run-not-started",
 	/** A lease name outside §4.6's closed set of objects. */
 	"invalid-lease-name",
 	/** A deletion that is neither whole-stream nor front-truncation (§4.2, §14.7). */

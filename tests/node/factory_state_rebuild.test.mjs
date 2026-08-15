@@ -10,6 +10,7 @@ import { openStore, openStoreForRebuild, openStoreReadOnly } from "../../factory
 import { deleteStreamWhole } from "../../factory/lib/state/truncation.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
 import {
+	appendLegacyEvent,
 	attemptLaunched,
 	makeAgentDir,
 	openTestStore,
@@ -126,6 +127,85 @@ test("a projector version change is resolved by a recorded rebuild, never a sile
 		shipped,
 		"the rebuild left the store claiming a version it was not built at",
 	);
+});
+
+// ── v1 journals: valid when written, replayable now (§4.3, §14.6) ────────────
+
+test("a store the previous binary ended lease-lost refuses at open and rebuilds as legacy state", async (t) => {
+	const agentDir = makeAgentDir(t);
+	const repoRoot = makeRepo(t);
+	const first = await openTestStore(t, { repoRoot, agentDir });
+	const dbPath = first.dbPath;
+	const runId = newUlid();
+	first.append(runStarted(runId));
+	// What a 7a2dd54-era controller durably left behind after a lease loss —
+	// valid under the contract its payload version names.
+	appendLegacyEvent(first, {
+		kind: "run.ended",
+		run: runId,
+		at: 1_770_000_600_000,
+		payload: { end_reason: "lease-lost" },
+	});
+	first.close();
+
+	// The old binary finished cleanly: its heads sat at its journal's head,
+	// built by the v2 projectors it shipped.
+	tamper(
+		t,
+		dbPath,
+		`UPDATE projection_head SET
+		   last_seq = (SELECT last_seq FROM journal_head WHERE id = 1),
+		   chain_hash = (SELECT last_hash FROM journal_head WHERE id = 1);
+		 UPDATE projection_head SET projector_version = 2 WHERE name IN ('run', 'run_digest');
+		 UPDATE run SET lifecycle = 'ended', end_reason = 'lease-lost' WHERE run_id = '${runId}'`,
+	);
+
+	// This binary must not silently open a projection carrying a state its own
+	// projectors refuse to produce; the version bump makes the difference loud.
+	const refused = await refusalOfAsync(() => openStore({ repoRoot, agentDir }));
+	assert.equal(refused.details.rebuild_reason, "projector-version-change");
+
+	// And the recorded rebuild must succeed: the journal was valid when written,
+	// so refusing to replay it would classify compatibility as corruption.
+	const forRebuild = await openStoreForRebuild({ repoRoot, agentDir });
+	const rebuild = forRebuild.rebuild({ reason: refused.details.rebuild_reason, at: 1_770_000_700_000 });
+	forRebuild.close();
+	assert.equal(rebuild.unrecoverable_streams.length, 0);
+
+	const reopened = await openTestStore(t, { repoRoot, agentDir });
+	const row = reopened.readRun(runId);
+	assert.equal(row.lifecycle, "ended");
+	assert.equal(row.end_reason, "lease-lost", "the legacy ending is history, rendered as written");
+	assert.equal(reopened.readRunDigest(runId).end_reason, "lease-lost");
+});
+
+test("v1 duplicate endings and post-terminal moves replay as the old contract wrote them", async (t) => {
+	const store = await openTestStore(t);
+	const runId = newUlid();
+	store.append(runStarted(runId));
+	appendLegacyEvent(store, { kind: "run.ended", run: runId, at: 1_770_000_600_000, payload: { end_reason: "drained" } });
+	appendLegacyEvent(store, {
+		kind: "run.ended",
+		run: runId,
+		at: 1_770_000_601_000,
+		payload: { end_reason: "circuit-breaker" },
+	});
+	appendLegacyEvent(store, {
+		kind: "run.lifecycle-changed",
+		run: runId,
+		at: 1_770_000_602_000,
+		payload: { lifecycle: "draining" },
+	});
+
+	// The forged records left the heads behind the journal; the recorded rebuild
+	// is the one way forward, and it must reproduce what the v1 projectors
+	// actually built — last write wins, no refusals invented after the fact.
+	rebuildProjections(store, { reason: REBUILD_REASONS.headMismatch, at: 1_770_000_700_000 });
+
+	const row = store.readRun(runId);
+	assert.equal(row.end_reason, "circuit-breaker", "the v1 replay refused a duplicate ending v1 accepted");
+	assert.equal(row.lifecycle, "draining", "the v1 replay refused a post-terminal move v1 accepted");
+	assert.equal(store.readRunDigest(runId).lifecycle, "draining");
 });
 
 test("nothing can append its way out of a mismatch, because appending would repair it", async (t) => {

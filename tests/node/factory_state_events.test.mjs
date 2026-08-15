@@ -156,6 +156,15 @@ test("schema versioning is per kind, never per journal", () => {
 	);
 });
 
+test("the run terminal kinds are on payload v2: v1 spoke the legacy end-reason contract", () => {
+	// #97: v1 `run.ended` could carry `lease-lost`, end a run twice, and be
+	// followed by lifecycle moves. Those journals were valid when written, so the
+	// semantics change is a version bump the replay path can branch on — not a
+	// rewrite of what the old records meant.
+	assert.equal(EVENT_KINDS["run.ended"].payloadVersion, 2);
+	assert.equal(EVENT_KINDS["run.lifecycle-changed"].payloadVersion, 2);
+});
+
 // ── Sources and foreign facts (§4.3, §5.1) ───────────────────────────────────
 
 test("source is mandatory and comes from the closed set", () => {

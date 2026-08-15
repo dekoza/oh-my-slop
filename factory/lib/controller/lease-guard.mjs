@@ -204,9 +204,23 @@ export function holdControllerLease({
 		 * the ownership proof, so a second compare here could only lose a race the
 		 * write already won and misreport a started run as never-started.
 		 *
+		 * A run with no row refuses. Trusting callers to keep intend/append/adopt
+		 * in order would put the phantom-loss bug one call site out: a `driving`
+		 * run that does not durably exist makes the §14.6 concession itself an
+		 * invalid event, and the typed loss never surfaces.
+		 *
 		 * @param {string} runId
+		 * @throws {FactoryStateError} `run-not-started` when no record names the run
 		 */
 		adopt(runId) {
+			if (store.readRun(runId) === null) {
+				throw new FactoryStateError(
+					"run-not-started",
+					`Run ${runId} has no durable record; adopt() names a run whose row exists, and ` +
+						"intend() is the advisory half that precedes one.",
+					{ run: runId, lease: LEASE_NAMES.controller },
+				);
+			}
 			if (intended !== runId) intend(runId);
 			driving = runId;
 		},
