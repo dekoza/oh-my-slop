@@ -8,7 +8,6 @@ from scripts.validate_refs import iter_skill_dirs
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_BUCKETS = ("reference", "practice", "workflow", "meta")
 README_PATH = REPO_ROOT / "README.md"
-SOFTWARE_FACTORY_README_PATH = REPO_ROOT / "extensions" / "software-factory" / "README.md"
 SKILLS_DIR = REPO_ROOT / "skills"
 EXTENSIONS_DIR = REPO_ROOT / "extensions"
 PROMPTS_DIR = REPO_ROOT / "prompts"
@@ -16,10 +15,6 @@ PROMPTS_DIR = REPO_ROOT / "prompts"
 
 def load_readme() -> str:
     return README_PATH.read_text(encoding="utf-8")
-
-
-def load_software_factory_readme() -> str:
-    return SOFTWARE_FACTORY_README_PATH.read_text(encoding="utf-8")
 
 
 def iter_extension_names() -> list[str]:
@@ -46,9 +41,8 @@ def test_readme_install_example_matches_the_repo_slug() -> None:
 def test_readme_install_section_describes_automatic_extension_loading() -> None:
     readme_text = load_readme()
 
-    assert "software-factory" in readme_text
     assert "workflow-watchdog" in readme_text
-    assert "load automatically" in readme_text
+    assert "loads automatically" in readme_text
     assert "remain opt-in" not in readme_text
 
 
@@ -114,21 +108,26 @@ def test_readme_lists_every_bundled_prompt_template() -> None:
         assert command in readme_text, f"README missing prompt template {command}"
 
 
-def test_software_factory_readme_says_root_package_install_loads_it_automatically() -> None:
-    readme_text = load_software_factory_readme()
+def test_readme_never_advertises_an_archived_extension() -> None:
+    """The README is the only place a retired extension can keep claiming to ship.
 
-    assert "loads automatically" in readme_text
-    assert "stays opt-in" not in readme_text
-    assert "/factory start <ticket-or-parent>" in readme_text
-    assert ".pi/factory.json" in readme_text
-    assert "workers.profiles" in readme_text
-    assert readme_text.count('"model": "opus"') >= 2
-    assert '"permissionMode": "auto"' in readme_text
-    assert '"claude-final-review"' in readme_text
-    assert '"model": "fable"' in readme_text
-    assert '"finalReview": "claude-final-review"' in readme_text
-    assert "Claude Code" in readme_text
-    assert "llama.cpp" in readme_text
+    `validate_refs.py` walks `skills/` alone, so nothing else notices when an
+    extension moves to `extensions/.legacy/` and its README entry stays behind
+    linking a dead path — which is exactly how `software-factory` survived its
+    own retirement in `fe80c5d`.
+    """
+    readme_text = load_readme()
+    archived_dir = EXTENSIONS_DIR / ".legacy"
+
+    if not archived_dir.is_dir():
+        return
+
+    for archived in sorted(path for path in archived_dir.iterdir() if path.is_dir()):
+        link = f"extensions/{archived.name}/"
+        assert link not in readme_text, (
+            f"README links {link}, but that extension is archived under "
+            f"extensions/.legacy/{archived.name}/"
+        )
 
 
 def test_readme_explains_critical_partner_setup_and_use() -> None:

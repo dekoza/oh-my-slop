@@ -18,14 +18,15 @@ After installation, pi auto-discovers:
 
 - skills from `./skills`
 - prompt templates from `./prompts`
-- the `software-factory` extension
 - the monitoring-only `workflow-watchdog` extension
 
-Both extensions load automatically. Loading the software factory only registers `/factory`;
-it cannot create branches, run workers, update tickets, or push anything until a user explicitly
-runs `/factory start <ticket-or-parent>` from Herdr in a repository with `.pi/factory.json`.
-Existing installations pick up the new entrypoint after `pi update --extensions` and a pi
-restart or `/reload`.
+The extension loads automatically. Existing installations pick it up after
+`pi update --extensions` and a pi restart or `/reload`.
+
+The `software-factory` extension was **retired** in `fe80c5d` and archived under
+`extensions/.legacy/`. Its replacement is specified but not yet built — see
+[`docs/specs/software-factory.md`](docs/specs/software-factory.md) and its companion
+[`docs/specs/software-factory-monitor.md`](docs/specs/software-factory-monitor.md).
 
 The bundled agent definitions in `./agents` are only seeded if you opt into
 `subagent-bundled-agents`.
@@ -90,11 +91,10 @@ Case in point: the agent messed up twice while creating this repo (deleting an u
 These ship in the repo and load automatically through the root `pi install` manifest.
 
 <details>
-<summary><strong>Extensions (2)</strong></summary>
+<summary><strong>Extensions (1)</strong></summary>
 
 | Extension | Loading | What it does |
 |---|---|---|
-| **[software-factory](extensions/software-factory/README.md)** | Automatic | Registers `/factory`; an explicit start command executes Gitea implementation tickets serially in isolated Git worktrees, routing pi and Claude Code workers through Herdr and stopping at explicit human boundaries. |
 | **[workflow-watchdog](extensions/workflow-watchdog/)** | Automatic | Monitors pi's workflow for failure patterns: loop detection, consecutive tool errors, and optional supervisor-model escalation. |
 
 </details>
