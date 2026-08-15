@@ -24,3 +24,14 @@ export const EXIT_LEASE_LOST = 6;
 
 /** A verb whose implementation has not landed yet. Never an end reason. */
 export const EXIT_NOT_IMPLEMENTED = 7;
+
+/**
+ * A verb that refused because the state it would have acted on belongs to
+ * somebody else — §10.5's `reconcile` against a live lease-holder.
+ *
+ * It is outside the end-reason range deliberately: no run started, so no run
+ * ended, and a caller must not read this as a run outcome. §10.5 requires only
+ * "non-zero"; the specific code is published here beside the rest so the whole
+ * table is readable in one place.
+ */
+export const EXIT_REFUSED = 8;

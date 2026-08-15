@@ -6,9 +6,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { EXIT_NOT_IMPLEMENTED, EXIT_OK, EXIT_USAGE } from "../../factory/lib/cli/exit-codes.mjs";
+import { EXIT_NOT_IMPLEMENTED, EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "../../factory/lib/cli/exit-codes.mjs";
 import { renderHuman, renderJson, runCli, VERBS } from "../../factory/lib/cli/main.mjs";
+import { openLeases } from "../../factory/lib/state/leases.mjs";
+import { openStore } from "../../factory/lib/state/store.mjs";
+import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { makeRepo, VALID_CONFIG } from "./helpers/factory-repo.mjs";
+import { leaseIdentity, makeAgentDir } from "./helpers/factory-store.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BIN_PATH = join(REPO_ROOT, "factory", "bin", "factory.mjs");
@@ -30,7 +34,7 @@ function* leaves(value, path = "") {
 
 // ── The verb set (§10.2) ─────────────────────────────────────────────────────
 
-test("the verb set is exactly the eight §10.2 verbs", () => {
+test("the verb set is exactly the eight §10.2 verbs", async () => {
 	assert.deepEqual(VERBS, [
 		"start",
 		"status",
@@ -43,31 +47,31 @@ test("the verb set is exactly the eight §10.2 verbs", () => {
 	]);
 });
 
-test("no verb refuses as usage and lists the verb set", (t) => {
-	const { exitCode, value } = runCli([], { cwd: makeRepo(t) });
+test("no verb refuses as usage and lists the verb set", async (t) => {
+	const { exitCode, value } = await runCli([], { cwd: makeRepo(t) });
 
 	assert.equal(exitCode, EXIT_USAGE);
 	assert.equal(value.error.kind, "usage");
 	assert.deepEqual(value.usage.verbs, VERBS);
 });
 
-test("an unknown verb refuses as usage and names it", (t) => {
-	const { exitCode, value } = runCli(["resume"], { cwd: makeRepo(t) });
+test("an unknown verb refuses as usage and names it", async (t) => {
+	const { exitCode, value } = await runCli(["resume"], { cwd: makeRepo(t) });
 
 	assert.equal(exitCode, EXIT_USAGE);
 	assert.equal(value.error.kind, "usage");
 	assert.equal(value.error.verb, "resume");
 });
 
-test("an unknown flag refuses as usage", (t) => {
-	const { exitCode, value } = runCli(["status", "--verbose"], { cwd: makeRepo(t) });
+test("an unknown flag refuses as usage", async (t) => {
+	const { exitCode, value } = await runCli(["status", "--verbose"], { cwd: makeRepo(t) });
 
 	assert.equal(exitCode, EXIT_USAGE);
 	assert.equal(value.error.flag, "--verbose");
 });
 
-test("--config is refused, because config is repo-bound", (t) => {
-	const { exitCode, value } = runCli(["status", "--config", "/elsewhere/factory.json"], {
+test("--config is refused, because config is repo-bound", async (t) => {
+	const { exitCode, value } = await runCli(["status", "--config", "/elsewhere/factory.json"], {
 		cwd: makeRepo(t),
 	});
 
@@ -76,8 +80,8 @@ test("--config is refused, because config is repo-bound", (t) => {
 	assert.match(value.error.message, /repo-bound/);
 });
 
-test("--help lists the verb set and succeeds", (t) => {
-	const { exitCode, value } = runCli(["--help"], { cwd: makeRepo(t) });
+test("--help lists the verb set and succeeds", async (t) => {
+	const { exitCode, value } = await runCli(["--help"], { cwd: makeRepo(t) });
 
 	assert.equal(exitCode, EXIT_OK);
 	assert.equal(value.ok, true);
@@ -86,11 +90,14 @@ test("--help lists the verb set and succeeds", (t) => {
 
 // ── What this slice does not implement, said out loud ────────────────────────
 
-test("every verb this slice does not implement exits typed, naming what is missing", (t) => {
+/** The verbs this package answers; the rest say what they are waiting for. */
+const IMPLEMENTED = new Set(["doctor", "reconcile"]);
+
+test("every verb this slice does not implement exits typed, naming what is missing", async (t) => {
 	const cwd = makeRepo(t);
 
-	for (const verb of VERBS) {
-		const { exitCode, value } = runCli([verb], { cwd });
+	for (const verb of VERBS.filter((candidate) => !IMPLEMENTED.has(candidate))) {
+		const { exitCode, value } = await runCli([verb], { cwd });
 
 		assert.equal(exitCode, EXIT_NOT_IMPLEMENTED, `${verb} exit code`);
 		assert.equal(value.error.kind, "not-implemented", `${verb} error kind`);
@@ -100,60 +107,62 @@ test("every verb this slice does not implement exits typed, naming what is missi
 	}
 });
 
-test("not-implemented is never exit code 1, which belongs to usage and config alone", (t) => {
+test("not-implemented is never exit code 1, which belongs to usage and config alone", async (t) => {
 	const cwd = makeRepo(t);
+	const agentDir = makeAgentDir(t);
 
 	for (const verb of VERBS) {
-		assert.notEqual(runCli([verb], { cwd }).exitCode, EXIT_USAGE, verb);
+		assert.notEqual((await runCli([verb], { cwd, agentDir })).exitCode, EXIT_USAGE, verb);
 	}
 });
 
-test("this slice produces no run end-reason exit code", (t) => {
+test("this slice produces no run end-reason exit code", async (t) => {
 	const cwd = makeRepo(t);
+	const agentDir = makeAgentDir(t);
 	const runEndCodes = new Set([2, 3, 4, 5, 6]);
 
 	for (const argv of [[], ["--help"], ["nonsense"], ...VERBS.map((verb) => [verb])]) {
-		assert.ok(!runEndCodes.has(runCli(argv, { cwd }).exitCode), argv.join(" "));
+		assert.ok(!runEndCodes.has((await runCli(argv, { cwd, agentDir })).exitCode), argv.join(" "));
 	}
 });
 
 // ── The fail-closed load, reached through the binary ─────────────────────────
 
-test("a config-load failure refuses the verb with exit code 1", (t) => {
+test("a config-load failure refuses the verb with exit code 1", async (t) => {
 	const cwd = makeRepo(t, { config: null });
 
-	const { exitCode, value } = runCli(["status"], { cwd });
+	const { exitCode, value } = await runCli(["status"], { cwd });
 
 	assert.equal(exitCode, EXIT_USAGE);
 	assert.equal(value.error.kind, "config-load");
 	assert.equal(value.error.reason, "file-missing");
 });
 
-test("every config-requiring verb refuses on a bad config rather than running", (t) => {
+test("every config-requiring verb refuses on a bad config rather than running", async (t) => {
 	const cwd = makeRepo(t, { config: { schemaVersion: 1 } });
 
 	for (const verb of VERBS.filter((candidate) => candidate !== "migrate")) {
-		const { exitCode, value } = runCli([verb], { cwd });
+		const { exitCode, value } = await runCli([verb], { cwd });
 
 		assert.equal(exitCode, EXIT_USAGE, verb);
 		assert.equal(value.error.kind, "config-load", verb);
 	}
 });
 
-test("migrate does not require a loadable config — it is the verb that repairs one", (t) => {
+test("migrate does not require a loadable config — it is the verb that repairs one", async (t) => {
 	const cwd = makeRepo(t, { config: { version: 1, tracker: { repo: "acme/widgets" } } });
 
-	const { exitCode, value } = runCli(["migrate"], { cwd });
+	const { exitCode, value } = await runCli(["migrate"], { cwd });
 
 	assert.equal(exitCode, EXIT_NOT_IMPLEMENTED);
 	assert.equal(value.error.kind, "not-implemented");
 });
 
-test("no environment variable can redirect the config", (t) => {
+test("no environment variable can redirect the config", async (t) => {
 	const cwd = makeRepo(t, { config: null });
 	const elsewhere = makeRepo(t);
 
-	const { exitCode, value } = runCli(["status"], {
+	const { exitCode, value } = await runCli(["status"], {
 		cwd,
 		env: { FACTORY_CONFIG: join(elsewhere, ".pi", "factory.json") },
 	});
@@ -162,7 +171,7 @@ test("no environment variable can redirect the config", (t) => {
 	assert.equal(value.error.reason, "file-missing");
 });
 
-test("a user-level ~/.pi/factory.json is not a defaults layer", (t) => {
+test("a user-level ~/.pi/factory.json is not a defaults layer", async (t) => {
 	const cwd = makeRepo(t, { config: null });
 	const home = mkdtempSync(join(tmpdir(), "factory-home-"));
 	t.after(() => rmSync(home, { recursive: true, force: true }));
@@ -181,8 +190,8 @@ test("a user-level ~/.pi/factory.json is not a defaults layer", (t) => {
 
 // ── One structured value, two renderings (§10.2) ─────────────────────────────
 
-test("--json renders the structured value with its published schema_version", (t) => {
-	const { value } = runCli(["status", "--json"], { cwd: makeRepo(t) });
+test("--json renders the structured value with its published schema_version", async (t) => {
+	const { value } = await runCli(["status", "--json"], { cwd: makeRepo(t) });
 
 	const parsed = JSON.parse(renderJson(value));
 
@@ -190,13 +199,13 @@ test("--json renders the structured value with its published schema_version", (t
 	assert.deepEqual(parsed, value);
 });
 
-test("human output is the default and carries every fact the JSON carries", (t) => {
+test("human output is the default and carries every fact the JSON carries", async (t) => {
 	const cwd = makeRepo(t, { config: null });
 	const cases = [
-		runCli([], { cwd }),
-		runCli(["--help"], { cwd }),
-		runCli(["status"], { cwd }),
-		runCli(["start"], { cwd: makeRepo(t) }),
+		await runCli([], { cwd }),
+		await runCli(["--help"], { cwd }),
+		await runCli(["status"], { cwd }),
+		await runCli(["start"], { cwd: makeRepo(t) }),
 	];
 
 	for (const { value } of cases) {
@@ -217,9 +226,103 @@ test("human output is the default and carries every fact the JSON carries", (t) 
 	}
 });
 
+// ── doctor and reconcile (§5.4, §10.5) ───────────────────────────────────────
+
+/** The process facts a test drives instead of inheriting from the test runner. */
+async function invocation(t) {
+	const root = makePackage(t);
+	const executable = join(root, "factory", "bin", "factory.mjs");
+
+	return {
+		cwd: makeRepo(t),
+		agentDir: makeAgentDir(t),
+		executable,
+		env: { PATH: onPath(t, executable) },
+	};
+}
+
+test("doctor diagnoses the repository and exits zero, having written nothing", async (t) => {
+	const context = await invocation(t);
+
+	const { exitCode, value } = await runCli(["doctor"], context);
+
+	assert.equal(exitCode, EXIT_OK);
+	assert.equal(value.command, "doctor");
+	assert.equal(value.ok, true);
+	assert.equal(value.report.store.present, false, "doctor created a store for a repository that never ran");
+	assert.equal(value.report.package.ok, true);
+});
+
+test("doctor --baseline names the subsystem that executes the checks", async (t) => {
+	const context = await invocation(t);
+
+	const { exitCode, value } = await runCli(["doctor", "--baseline"], context);
+
+	assert.equal(exitCode, EXIT_NOT_IMPLEMENTED);
+	assert.equal(value.error.kind, "not-implemented");
+	assert.match(value.error.missing, /#104/);
+});
+
+test("--baseline is doctor's flag alone", async (t) => {
+	const context = await invocation(t);
+
+	const { exitCode, value } = await runCli(["status", "--baseline"], context);
+
+	assert.equal(exitCode, EXIT_USAGE);
+	assert.equal(value.error.flag, "--baseline");
+});
+
+test("reconcile settles what it can under the lease, and releases it", async (t) => {
+	const context = await invocation(t);
+
+	const { exitCode, value } = await runCli(["reconcile"], context);
+
+	assert.equal(exitCode, EXIT_OK);
+	assert.equal(value.report.mode, "settle");
+	assert.equal(value.report.actor, "operator:reconcile");
+
+	const store = await openStore({ repoRoot: context.cwd, agentDir: context.agentDir });
+	t.after(() => store.close());
+	assert.equal(openLeases(store).inspect("controller"), null, "reconcile kept the controller lease");
+});
+
+test("reconcile against a live lease-holder refuses, and points at the lock-free reads", async (t) => {
+	const context = await invocation(t);
+	const store = await openStore({ repoRoot: context.cwd, agentDir: context.agentDir });
+	openLeases(store).acquire({
+		name: "controller",
+		identity: leaseIdentity({ run: "01JRUN0000000000000000000A", pane: "herdr:2" }),
+	});
+	store.close();
+
+	const { exitCode, value } = await runCli(["reconcile"], context);
+
+	assert.notEqual(exitCode, EXIT_OK);
+	assert.equal(exitCode, EXIT_REFUSED);
+	assert.equal(value.error.kind, "lease-held");
+	assert.equal(value.error.run, "01JRUN0000000000000000000A");
+	assert.equal(value.error.pane, "herdr:2");
+	assert.match(value.error.message, /status/);
+	assert.match(value.error.message, /doctor/);
+});
+
+test("doctor's human rendering carries every fact its JSON carries", async (t) => {
+	const context = await invocation(t);
+
+	const { value } = await runCli(["doctor"], context);
+	const human = renderHuman(value);
+
+	assert.doesNotMatch(human, /^\s*[{[]/, "human output is not JSON");
+	for (const [path, leaf] of leaves(value)) {
+		if (path === "schema_version" || path === "command") continue;
+		if (typeof leaf === "boolean" || leaf === null) continue;
+		assert.ok(human.includes(String(leaf)), `human rendering drops ${path} = ${JSON.stringify(leaf)}`);
+	}
+});
+
 // ── The binary itself ────────────────────────────────────────────────────────
 
-test("the bin entry runs as a program and reports its refusals on stderr", (t) => {
+test("the bin entry runs as a program and reports its refusals on stderr", async (t) => {
 	const cwd = makeRepo(t, { config: null });
 
 	const result = spawnSync(process.execPath, [BIN_PATH, "status"], { cwd, encoding: "utf8" });
@@ -229,7 +332,7 @@ test("the bin entry runs as a program and reports its refusals on stderr", (t) =
 	assert.match(result.stderr, /factory\.json/);
 });
 
-test("the bin entry prints machine output on stdout under --json", (t) => {
+test("the bin entry prints machine output on stdout under --json", async (t) => {
 	const cwd = makeRepo(t, { config: null });
 
 	const result = spawnSync(process.execPath, [BIN_PATH, "status", "--json"], { cwd, encoding: "utf8" });
@@ -238,7 +341,7 @@ test("the bin entry prints machine output on stdout under --json", (t) => {
 	assert.equal(JSON.parse(result.stdout).error.reason, "file-missing");
 });
 
-test("the bin entry prints successful human output on stdout", (t) => {
+test("the bin entry prints successful human output on stdout", async (t) => {
 	const cwd = makeRepo(t);
 
 	const result = spawnSync(process.execPath, [BIN_PATH, "--help"], { cwd, encoding: "utf8" });

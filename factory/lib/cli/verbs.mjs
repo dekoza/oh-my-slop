@@ -25,14 +25,24 @@ export const VERB_TABLE = Object.freeze({
 	},
 	doctor: {
 		requiresConfig: true,
+		implemented: true,
 		summary: "diagnose the factory without mutating it",
-		missing: "the reconciliation engine and the baseline record it reports (#96)",
+		// §10.5's `--baseline` executes the declared checks in a throwaway
+		// worktree. It is accepted here and refused with the ticket that owes it,
+		// because an operator reading §10.5 will type it — and "unknown flag"
+		// would be a worse answer than "that subsystem has not landed".
+		flags: {
+			"--baseline": {
+				missing: "the check runner and the throwaway-worktree baseline (#104)",
+				spec: "§8.3, §10.5",
+			},
+		},
 		spec: "§10.5",
 	},
 	reconcile: {
 		requiresConfig: true,
+		implemented: true,
 		summary: "settle unresolved effects by re-probing",
-		missing: "the effect registry and its probes (#96)",
 		spec: "§5.4, §10.5",
 	},
 	stop: {

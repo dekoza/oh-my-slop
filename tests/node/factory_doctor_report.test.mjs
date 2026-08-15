@@ -138,6 +138,21 @@ test("the package handshake runs in report mode, and its findings are data", asy
 	assert.match(report.package.tree.digest, /^[0-9a-f]{64}$/);
 });
 
+test("a package that cannot be anchored is a section, not the end of the diagnosis", async (t) => {
+	const { reader, context } = await diagnosable(t);
+
+	const report = await doctorReport(reader, {
+		...context,
+		executable: join(makeAgentDir(t), "nowhere", "factory.mjs"),
+	});
+
+	assert.equal(report.package.ok, false);
+	assert.equal(report.package.error.reason, "package-root-unresolvable");
+	assert.ok(report.alarms.some((alarm) => alarm.reason === "package-unanchored"));
+	assert.equal(report.reconcile.mode, "report", "one unreadable section took the whole diagnosis down");
+	assert.equal(report.store.present, true);
+});
+
 test("monitor config health is advisory-only: a broken monitor never fails the factory", async (t) => {
 	const { reader, context, repoRoot } = await diagnosable(t);
 	writeFileSync(join(repoRoot, ".pi", "factory-monitor.json"), "{ not json", "utf8");

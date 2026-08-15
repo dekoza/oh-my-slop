@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { artifactBytesByClass } from "../artifacts/ledger.mjs";
 import { unresolvedEffects } from "../effects/records.mjs";
+import { FactoryPackageError } from "../package/errors.mjs";
 import { packageHandshake } from "../package/handshake.mjs";
 import { reconcile, RECONCILE_MODES } from "../reconcile/engine.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
@@ -49,7 +50,7 @@ export async function doctorReport(
 	store,
 	{ repoRoot, agentDir, executable = process.argv[1], expect = null, env = process.env, probes = PROBES, at = Date.now() },
 ) {
-	const handshake = packageHandshake({ executable, expect, env });
+	const handshake = attemptHandshake({ executable, expect, env });
 	const unresolved = store === null ? [] : unresolvedEffects(store);
 	const reconciled =
 		store === null
@@ -114,6 +115,10 @@ function alarmsOf(value) {
 				pin,
 			),
 		);
+	}
+
+	if (value.package.error !== null && value.package.error !== undefined) {
+		alarms.push(alarm("package-unanchored", value.package.error.message, value.package.error));
 	}
 
 	for (const finding of value.package.findings) {
@@ -267,10 +272,39 @@ function countersSection(store, unresolved) {
 	});
 }
 
-/** §11.7's handshake, in report mode: probing is a read, and findings are data. */
+/**
+ * §11.7's handshake, or the reason there is none.
+ *
+ * The handshake makes its *findings* data because `doctor` reports them (§10.5),
+ * but it still throws over a package it cannot anchor or read at all — and a
+ * broken install is exactly when `doctor` is run. So the throw is caught here
+ * and becomes a section like any other: one unreadable package must not take the
+ * journal, the pins, and the reconciliation down with it.
+ */
+function attemptHandshake({ executable, expect, env }) {
+	try {
+		return packageHandshake({ executable, expect, env });
+	} catch (error) {
+		if (!(error instanceof FactoryPackageError)) throw error;
+		return { error: Object.freeze({ reason: error.reason, message: error.message, ...error.details }) };
+	}
+}
+
+/**
+ * §11.7's handshake, in report mode: probing is a read, and findings are data.
+ *
+ * `error` and `findings` are kept apart on purpose: a finding is one of §11.7's
+ * closed reasons, which a `--json` consumer branches on, while an unanchorable
+ * package is the handshake never having run.
+ */
 function packageSection(handshake) {
+	if (handshake.error !== undefined) {
+		return Object.freeze({ ok: false, error: handshake.error, findings: Object.freeze([]) });
+	}
+
 	return Object.freeze({
 		ok: handshake.ok,
+		error: null,
 		package: handshake.package,
 		participants: handshake.participants,
 		tree: handshake.tree,

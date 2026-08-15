@@ -1,6 +1,9 @@
 import { FactoryConfigError } from "../config/errors.mjs";
 import { loadFactoryConfig } from "../config/load.mjs";
-import { EXIT_NOT_IMPLEMENTED, EXIT_OK, EXIT_USAGE } from "./exit-codes.mjs";
+import { runDoctor } from "../doctor/verb.mjs";
+import { runReconcile } from "../reconcile/verb.mjs";
+import { EXIT_NOT_IMPLEMENTED, EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "./exit-codes.mjs";
+import { renderReport } from "./render.mjs";
 import { VERB_TABLE, VERBS } from "./verbs.mjs";
 
 export { VERBS } from "./verbs.mjs";
@@ -20,17 +23,24 @@ const KNOWN_FLAGS = new Set(["--json", "--help", "-h"]);
 
 /**
  * @param {string[]} argv arguments after the program name
- * @param {{ cwd: string }} context
- * @returns {{ exitCode: number, value: object, json: boolean }}
+ * @param {object} context the invocation's process facts, injectable so a test
+ *   drives a real repository, a real agent directory, and a real package without
+ *   inheriting the ones the test runner happens to be standing in
+ * @param {string} context.cwd
+ * @param {string | null} [context.agentDir] §4.1's state root; the pi SDK's by default
+ * @param {string} [context.executable] the running binary — §11.7's anchor
+ * @param {Record<string, string | undefined>} [context.env]
+ * @param {object} [context.probes] the §5.3 probe registry
+ * @returns {Promise<{ exitCode: number, value: object, json: boolean }>}
  */
-export function runCli(argv, { cwd }) {
+export async function runCli(argv, context) {
 	const parsed = parseArgv(argv);
 	// Even a refusal to parse the rest of the line is rendered in the shape the
 	// caller asked for, so `--json` is read before anything can reject.
-	return { json: parsed.json, ...dispatch(parsed, { cwd }) };
+	return { json: parsed.json, ...(await dispatch(parsed, context)) };
 }
 
-function dispatch(parsed, { cwd }) {
+async function dispatch(parsed, context) {
 	if (parsed.error) return failure(null, parsed.error, EXIT_USAGE, { usage: shortUsage() });
 
 	if (parsed.help) return help();
@@ -53,9 +63,20 @@ function dispatch(parsed, { cwd }) {
 		);
 	}
 
+	const unknownFlag = parsed.flags.find((flag) => !KNOWN_FLAGS.has(flag) && verb.flags?.[flag] === undefined);
+	if (unknownFlag !== undefined) {
+		return failure(
+			parsed.verb,
+			{ kind: "usage", message: `Unknown flag "${unknownFlag}".`, flag: unknownFlag },
+			EXIT_USAGE,
+			{ usage: shortUsage() },
+		);
+	}
+
+	let loaded = null;
 	if (verb.requiresConfig) {
 		try {
-			loadFactoryConfig({ cwd });
+			loaded = loadFactoryConfig({ cwd: context.cwd });
 		} catch (error) {
 			if (!(error instanceof FactoryConfigError)) throw error;
 			return failure(
@@ -67,13 +88,56 @@ function dispatch(parsed, { cwd }) {
 		}
 	}
 
+	// A flag whose subsystem has not landed refuses **before** the verb runs, so
+	// nobody reads a report that silently left out what they asked for.
+	const unbuilt = parsed.flags.map((flag) => [flag, verb.flags?.[flag]]).find(([, declared]) => declared?.missing);
+	if (unbuilt !== undefined) {
+		return notImplemented(parsed, `factory ${parsed.verb} ${unbuilt[0]}`, unbuilt[1]);
+	}
+
+	if (verb.implemented) return run(parsed, loaded, context);
+
+	return notImplemented(parsed, `factory ${parsed.verb}`, verb);
+}
+
+async function run(parsed, loaded, context) {
+	const invocation = {
+		repoRoot: loaded.repoRoot,
+		agentDir: context.agentDir ?? null,
+		executable: context.executable,
+		env: context.env,
+		probes: context.probes,
+	};
+
+	const answered =
+		parsed.verb === "doctor"
+			? await runDoctor({ ...invocation, expect: loaded.config.package?.expect ?? null })
+			: await runReconcile(invocation);
+
+	if (answered.error !== undefined) {
+		return failure(parsed.verb, answered.error, EXIT_REFUSED, { args: parsed.args });
+	}
+
+	return {
+		exitCode: EXIT_OK,
+		value: {
+			schema_version: OUTPUT_SCHEMA_VERSION,
+			command: parsed.verb,
+			ok: true,
+			message: answered.message,
+			report: answered.report,
+		},
+	};
+}
+
+function notImplemented(parsed, what, declared) {
 	return failure(
 		parsed.verb,
 		{
 			kind: "not-implemented",
-			message: `factory ${parsed.verb} is specified but not built in this package.`,
-			missing: verb.missing,
-			spec: verb.spec,
+			message: `${what} is specified but not built in this package.`,
+			missing: declared.missing,
+			spec: declared.spec,
 		},
 		EXIT_NOT_IMPLEMENTED,
 		{ args: parsed.args },
@@ -89,6 +153,7 @@ export function renderHuman(value) {
 
 	if (value.ok) {
 		lines.push(value.message);
+		if (value.report !== undefined) lines.push(...renderReport(value.report));
 	} else {
 		const scope = value.command === null ? "factory" : `factory ${value.command}`;
 		lines.push(`${scope}: ${value.error.message}`);
@@ -120,6 +185,7 @@ export function renderHuman(value) {
 
 function parseArgv(argv) {
 	const args = [];
+	const flags = [];
 	const json = argv.includes("--json");
 	let verb = null;
 	let help = false;
@@ -138,9 +204,10 @@ function parseArgv(argv) {
 		}
 
 		if (token.startsWith("-")) {
-			if (!KNOWN_FLAGS.has(token)) {
-				return { json, error: { kind: "usage", message: `Unknown flag "${token}".`, flag: token } };
-			}
+			// Which flags are legal depends on the verb, and the verb may follow
+			// them on the line — so they are collected here and judged once the
+			// verb is known.
+			flags.push(token);
 			if (token === "--help" || token === "-h") help = true;
 			continue;
 		}
@@ -149,7 +216,7 @@ function parseArgv(argv) {
 		else args.push(token);
 	}
 
-	return { json, verb, args, help };
+	return { json, verb, args, flags, help };
 }
 
 function help() {
