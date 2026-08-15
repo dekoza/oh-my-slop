@@ -13,10 +13,12 @@
  */
 
 /**
- * Where a probe's answer comes from. These are §5.4's evidence classes, and
- * deliberately the same words: a probe result *is* an entry in a reconcile
- * evidence basis, and the operator's question is which source decided.
- * `journal-intent` is not among them — that is how §14.1 gets teeth.
+ * Where a probe's answer comes from — §5.4's evidence classes, deliberately the
+ * same words, minus `outbox`: a probe reads the world, and the outbox holds what
+ * the *worker* claimed, which §5.2 rules evidence and never proof. A probe
+ * result is an entry in a reconcile evidence basis, and the operator's question
+ * is which source decided. `journal-intent` is not among them either — that is
+ * how §14.1 gets teeth.
  */
 export const PROBE_SOURCES = Object.freeze(["tracker", "git-remote", "git-local", "harness", "artifact"]);
 
@@ -43,6 +45,10 @@ export const PROBE_CALLS = Object.freeze([
  * `embedded-key` is §4.5's exact match on an effect key carried as an HTML
  * comment — never a marker prefix, because bodies are silently editable and
  * deletable, and a prefix would be the weakest link in the scheme.
+ *
+ * `digest-rehash` re-hashes what the probe fetched against the digest stored
+ * beside the key: §4.5's "file exists and re-hashes to its digest", and the same
+ * move for a body the factory wrote rather than a blob.
  */
 export const PROBE_MATCHES = Object.freeze([
 	"present",
@@ -72,23 +78,37 @@ export const READ_OPERATIONS = Object.freeze([
 /**
  * §4.5's mutation inventory, each row carrying the probe that settles it.
  *
- * The cleanup rows are keyed by the *class of thing deleted* rather than by
+ * **An operation names what is mutated; the key's phase segment says why.** So
+ * there is one `worktree-delete`, not an eager one and a cleanup one — the same
+ * mutation with the same probe, keyed `…/integrate/…` when §12.7 reclaims a
+ * merged attempt's worktree and `…/cleanup/…` when §12.8's planner does. A
+ * second name for one mutation would dilute "the database itself enforces
+ * unique" from a whole-system property into a per-caller one.
+ *
+ * Deletions are therefore keyed by the *class of thing deleted* rather than by
  * §12.8's six plan target kinds, because that is the granularity at which the
  * probe differs — a worktree is a path, a branch is a ref, a pane is a pane.
- * §12.8's whitelist and its `--kind` vocabulary belong to the cleanup planner.
+ * §12.8's whitelist and its `--kind` vocabulary stay the cleanup planner's, and
+ * it maps them onto these four.
  */
 export const PROBE_CATALOGUE = Object.freeze({
 	// ── Tracker writes ──────────────────────────────────────────────────────
 	"issue-assign": probe("tracker", "issue.assignees", "present"),
+	// §4.5's list names only "assign", but §3.3 has the loser of a claim
+	// collision un-assign itself, and §3.5 releases a drained claim. Both are
+	// mutations, so both are effects.
 	"issue-unassign": probe("tracker", "issue.assignees", "absent"),
 	"label-add": probe("tracker", "issue.labels", "present"),
 	"label-remove": probe("tracker", "issue.labels", "absent"),
 	"issue-close": probe("tracker", "issue.state", "state-equals"),
 	"comment-post": probe("tracker", "issue.comments", "embedded-key"),
 	"pr-create": probe("tracker", "pulls.by-head-branch", "present"),
-	// A PR body is a comment body: the same embedded key survives an edit to the
-	// prose, and the digest block §7.5 writes there is not evidence it landed.
-	"pr-body-update": probe("tracker", "pulls.by-head-branch", "embedded-key"),
+	// Not `embedded-key`: §7.5 fixes the PR body as a machine-parseable
+	// key-value block followed by `Closes #N`, and nothing there carries an
+	// effect key. So the probe fetches the body and re-hashes it against the
+	// digest stored beside the key — the same move as an artifact, over a body
+	// instead of a blob.
+	"pr-body-update": probe("tracker", "pulls.by-head-branch", "digest-rehash"),
 
 	// ── Git writes ──────────────────────────────────────────────────────────
 	"branch-create": probe("git-local", "git.rev-parse", "present"),
@@ -109,11 +129,14 @@ export const PROBE_CATALOGUE = Object.freeze({
 	"artifact-write": probe("artifact", "artifact.blob", "digest-rehash"),
 	"attestation-write": probe("artifact", "artifact.blob", "digest-rehash"),
 
-	// ── Cleanup deletions ───────────────────────────────────────────────────
-	"cleanup-worktree": probe("git-local", "git.worktree-list", "absent"),
-	"cleanup-branch": probe("git-local", "git.rev-parse", "absent"),
-	"cleanup-pane": probe("harness", "herdr.pane-list", "absent"),
-	"cleanup-artifact": probe("artifact", "artifact.blob", "absent"),
+	// ── Deletions ───────────────────────────────────────────────────────────
+	// `worktree-delete` above serves §12.8's worktree targets too; these are the
+	// classes that only cleanup ever deletes. A pane is here and nowhere else:
+	// §13.B says the controller stops *agents* and never closes a pane, so pane
+	// reclamation exists only as a cleanup-plan entry.
+	"branch-delete": probe("git-local", "git.rev-parse", "absent"),
+	"pane-delete": probe("harness", "herdr.pane-list", "absent"),
+	"artifact-delete": probe("artifact", "artifact.blob", "absent"),
 });
 
 function probe(source, call, match) {

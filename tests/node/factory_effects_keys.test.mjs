@@ -28,9 +28,9 @@ test("a repo-scoped effect still fills every segment, with `-` for the ones it h
 	// An orphaned artifact blob belongs to no run, no ticket, and no attempt
 	// (§4.5). A shorter key would be a second grammar, and two grammars cannot
 	// share one UNIQUE constraint.
-	const key = effectKey({ phase: "cleanup", operation: "cleanup-delete", operand: "artifact-blob" });
+	const key = effectKey({ phase: "cleanup", operation: "artifact-delete", operand: "artifact-blob" });
 
-	assert.equal(key, "-/-/cleanup/-/cleanup-delete/artifact-blob");
+	assert.equal(key, "-/-/cleanup/-/artifact-delete/artifact-blob");
 	assert.equal(key.split("/").length, 6);
 });
 
@@ -53,21 +53,21 @@ test("the phase segment is §2.2's eight-member closed enum, cleanup and expiry 
 	]);
 
 	for (const phase of PHASES) {
-		assert.equal(effectKey({ phase, operation: "cleanup-delete" }).split("/")[2], phase);
+		assert.equal(effectKey({ phase, operation: "artifact-delete" }).split("/")[2], phase);
 	}
 
 	// Free text in the phase slot is what #86 reached for before §13.C widened
 	// the enum; the enum stays closed, so it is a refusal rather than a sixth
 	// spelling of "cleanup".
 	assert.throws(
-		() => effectKey({ phase: "tidy-up", operation: "cleanup-delete" }),
+		() => effectKey({ phase: "tidy-up", operation: "artifact-delete" }),
 		(error) => error instanceof FactoryEffectError && error.reason === "effect-key-invalid",
 	);
 });
 
 test("an identity segment carrying a separator cannot forge a longer key", () => {
 	// §2.1's charset is `[0-9A-Za-z-]`, so nothing an identity slot holds can add
-	// a segment. Without this, a run id of `a/92/cleanup/-/cleanup-delete` names
+	// a segment. Without this, a run id of `a/92/cleanup/-/artifact-delete` names
 	// somebody else's effect.
 	for (const [field, parts] of [
 		["run", { run: "a/92/cleanup", phase: "implement", operation: "issue-close" }],
@@ -84,6 +84,30 @@ test("an identity segment carrying a separator cannot forge a longer key", () =>
 		() => effectKey({ ticket: "92/implement", phase: "implement", operation: "issue-close" }),
 		(error) => error instanceof FactoryEffectError && error.details.at === "ticket",
 	);
+});
+
+test("the operation segment is checked here too, so no caller can forge a longer key", () => {
+	// The operation is the one segment a key cannot omit and the one the
+	// registry gates at *registration*. Left unchecked at construction, a direct
+	// caller of the builder produces `-/-/cleanup/-/a/b/x`, which parses back as
+	// operation `a`, operand `b/x` — a key naming an effect nobody requested.
+	for (const operation of ["a/b", "", "Label-Add", "label add", undefined]) {
+		assert.throws(
+			() => effectKey({ phase: "cleanup", operation, operand: "x" }),
+			(error) => error instanceof FactoryEffectError && error.details.at === "operation",
+			`${JSON.stringify(operation ?? null)} was accepted as an operation`,
+		);
+	}
+});
+
+test("parsing refuses a key it cannot read back, rather than returning NaN", () => {
+	for (const key of ["-/abc/cleanup/-/label-add", "-/-/cleanup/-/Label-Add", "-/-/cleanup/-", "-/-/cleanup/-/"]) {
+		assert.throws(
+			() => parseEffectKey(key),
+			(error) => error instanceof FactoryEffectError && error.reason === "effect-key-invalid",
+			`${key} parsed without complaint`,
+		);
+	}
 });
 
 test("an operand is the key's last segment, so a natural branch name survives whole", () => {
@@ -144,12 +168,12 @@ test("an operand is short, single-line, and never empty", () => {
 });
 
 test("parsing reads the reserved literal back as an absent segment, not as the string `-`", () => {
-	assert.deepEqual(parseEffectKey("-/-/expiry/-/cleanup-delete"), {
+	assert.deepEqual(parseEffectKey("-/-/expiry/-/artifact-delete"), {
 		run: null,
 		ticket: null,
 		phase: "expiry",
 		attempt: null,
-		operation: "cleanup-delete",
+		operation: "artifact-delete",
 		operand: null,
 	});
 });

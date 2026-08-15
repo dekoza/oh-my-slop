@@ -153,7 +153,7 @@ test("a repo-scoped effect is a whole effect: nullable segments, controller stre
 	// would be a record about to be deleted by the thing it documents.
 	const requested = requestEffect(store, {
 		phase: "cleanup",
-		operation: "cleanup-artifact",
+		operation: "artifact-delete",
 		operand: "orphan-blob",
 		actor: "operator:cleanup-execute",
 		fencingGeneration: 1,
@@ -161,7 +161,7 @@ test("a repo-scoped effect is a whole effect: nullable segments, controller stre
 		at: 1_770_000_100_000,
 	});
 
-	assert.equal(requested.key, "-/-/cleanup/-/cleanup-artifact/orphan-blob");
+	assert.equal(requested.key, "-/-/cleanup/-/artifact-delete/orphan-blob");
 
 	const row = store.read((db) => db.prepare("SELECT * FROM effect WHERE effect_key = ?").get(requested.key));
 	assert.equal(row.run_id, null);
@@ -199,6 +199,39 @@ test("an effect names an actor, and the slot is an identity rather than a free-t
 	}
 
 	assert.doesNotThrow(() => requestEffect(store, { ...request, actor: "operator:stop" }));
+});
+
+test("a caller's own mistake is never reported as somebody else taking the lease", async (t) => {
+	const { store, run } = await storeWithRun(t);
+	const request = {
+		run,
+		ticket: 92,
+		phase: "preflight",
+		operation: "issue-assign",
+		actor: "controller",
+		fencingGeneration: 1,
+		payload: { assignee: "minder" },
+		at: 1_770_000_100_000,
+	};
+
+	// The reason reaches the operator's `--json` output, so each one has to mean
+	// what it says. A malformed generation is a caller bug; reporting it as
+	// supersession tells the operator another controller adopted the repository.
+	assert.throws(
+		() => requestEffect(store, { ...request, fencingGeneration: "one" }),
+		(error) => error.reason === "effect-generation-invalid",
+	);
+	assert.throws(
+		() => requestEffect(store, { ...request, actor: "nobody" }),
+		(error) => error.reason === "effect-actor-invalid",
+	);
+
+	// And a payload that cannot be hashed is a typed refusal, not a raw TypeError
+	// escaping from the digest.
+	assert.throws(
+		() => requestEffect(store, { ...request, payload: { at: new Date(0) } }),
+		(error) => error instanceof FactoryEffectError && error.reason === "effect-payload-invalid",
+	);
 });
 
 test("an operand that is the payload's own digest is refused (§14.4)", async (t) => {
@@ -303,7 +336,7 @@ test("unresolved effects are the reconcile scope, oldest first", async (t) => {
  * lease primitive; this test only needs a current holder to exist.
  */
 function holdControllerLease(store, generation) {
-	store.read((db) =>
+	store.transaction(({ db }) =>
 		db
 			.prepare(
 				`INSERT INTO lease(name, holder_token, fencing_generation, expires_at, renewed_at, identity)
@@ -378,7 +411,7 @@ test("acquiring another lease does not fence a controller out of its own effects
 	// lease advances it past 2. Comparing against the counter rather than the
 	// controller lease's holder would fence a live controller out of its own
 	// work mid-integration.
-	store.read((db) => db.prepare("UPDATE fencing_generation SET value = 7 WHERE id = 1").run());
+	store.transaction(({ db }) => db.prepare("UPDATE fencing_generation SET value = 7 WHERE id = 1").run());
 
 	assert.equal(
 		resolveEffect(store, { key, actor: "controller", fencingGeneration: 2, result: {}, at: 1_770_000_200_000 }).outcome,

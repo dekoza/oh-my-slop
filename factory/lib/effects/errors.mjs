@@ -15,6 +15,12 @@ export const EFFECT_ERROR_REASONS = Object.freeze([
 	"effect-kind-without-probe",
 	/** A read offered as an effect; reads get observation cursors (§4.5). */
 	"read-is-not-an-effect",
+	/** An actor slot that is neither the controller nor an operator verb (§4.5). */
+	"effect-actor-invalid",
+	/** A fencing generation that is not a generation at all — a caller's bug. */
+	"effect-generation-invalid",
+	/** A payload that cannot be canonically serialised, and so cannot be digested. */
+	"effect-payload-invalid",
 	/** The same key requested or resolved with a different payload (§4.5). */
 	"effect-payload-conflict",
 	/** A resolution arriving under a superseded fencing generation (§14.5). */

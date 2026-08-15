@@ -26,6 +26,17 @@ const MAX_OPERAND_LENGTH = 128;
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
 const SHA256_SHAPE = /^[0-9a-f]{64}$/i;
 
+/**
+ * An operation is a lowercase, dash-joined verb — never a path segment. Declared
+ * here, with the rest of the grammar, and imported by the registry: the shape a
+ * key may carry and the shape a kind may register are one rule, or a caller of
+ * the builder can forge a key the registry would have refused.
+ */
+export const OPERATION_SHAPE = /^[a-z][a-z0-9-]*$/;
+
+/** A ticket segment is the tracker's own issue number, written as digits. */
+const TICKET_SHAPE = /^[1-9][0-9]*$/;
+
 /** The word that opens the HTML comment a posted body carries its key in. */
 const EFFECT_KEY_MARKER = "factory-effect:";
 
@@ -36,6 +47,7 @@ const EFFECT_KEY_MARKER = "factory-effect:";
  */
 export function effectKey({ run = null, ticket = null, phase, attempt = null, operation, operand = null }) {
 	requirePhase(phase);
+	requireOperation(operation);
 	if (run !== null) requireIdentitySegment(run, "run");
 	if (attempt !== null) requireIdentitySegment(attempt, "attempt");
 	if (ticket !== null) requireTicket(ticket);
@@ -79,6 +91,14 @@ export function parseEffectKey(key) {
 
 	const [run, ticket, phase, attempt, operation] = segments;
 	requirePhase(phase);
+	requireOperation(operation);
+	if (!absent(run)) requireIdentitySegment(run, "run");
+	if (!absent(attempt)) requireIdentitySegment(attempt, "attempt");
+	if (!absent(ticket) && !TICKET_SHAPE.test(ticket)) {
+		// Reading it back as `NaN` would hand the caller a ticket number that
+		// compares equal to nothing and renders as "NaN" on the operator's screen.
+		refuse("ticket", `Ticket segment ${JSON.stringify(ticket)} is not an issue number.`, { found: ticket });
+	}
 
 	return {
 		run: absent(run) ? null : run,
@@ -140,6 +160,20 @@ function requirePhase(phase) {
 		refuse("phase", `Phase must be one of ${PHASES.join(", ")}; found ${JSON.stringify(phase ?? null)}.`, {
 			found: phase ?? null,
 			expected: PHASES.join("|"),
+		});
+	}
+}
+
+/**
+ * The operation is the segment that names the mutation, and the only one the
+ * registry also has an opinion about. Checked here as well, because the builder
+ * is exported: an operation carrying a separator would produce a key
+ * `parseEffectKey` reads back as a different effect entirely.
+ */
+function requireOperation(operation) {
+	if (typeof operation !== "string" || !OPERATION_SHAPE.test(operation)) {
+		refuse("operation", `An operation matches ${OPERATION_SHAPE}; found ${JSON.stringify(operation ?? null)}.`, {
+			found: operation ?? null,
 		});
 	}
 }

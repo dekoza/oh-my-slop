@@ -76,12 +76,17 @@ test("every kind in the shipped catalogue has a probe, and the catalogue is §4.
 		assert.ok(EFFECT_REGISTRY.has(operation), `${operation} is not a registered effect kind`);
 	}
 
-	// Cleanup deletions, one row per class of thing deleted — which is the
-	// granularity at which the probe differs (§12.8's six plan target kinds are
-	// the planner's vocabulary, not the probe's).
-	for (const operation of ["cleanup-worktree", "cleanup-branch", "cleanup-pane", "cleanup-artifact"]) {
+	// Deletions, one row per class of thing deleted — which is the granularity at
+	// which the probe differs (§12.8's six plan target kinds are the planner's
+	// vocabulary, not the probe's).
+	for (const operation of ["worktree-delete", "branch-delete", "pane-delete", "artifact-delete"]) {
 		assert.ok(EFFECT_REGISTRY.has(operation), `${operation} is not a registered effect kind`);
 	}
+
+	// One mutation, one operation: a worktree deleted eagerly after integration
+	// (§12.7) and one reclaimed by the cleanup planner (§12.8) are the same
+	// mutation with the same probe, told apart by the key's phase segment.
+	assert.equal(EFFECT_REGISTRY.operations.filter((operation) => operation.endsWith("worktree-delete")).length, 1);
 
 	for (const operation of EFFECT_REGISTRY.operations) {
 		const probe = EFFECT_REGISTRY.probeFor(operation);

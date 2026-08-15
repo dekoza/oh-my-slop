@@ -32,9 +32,16 @@ import { EFFECT_REGISTRY } from "./registry.mjs";
  * @param {object} store an open store (`state/store.mjs`)
  * @param {object} request
  * @param {string} request.operation a registered effect kind (§4.5)
+ * @param {string | null} [request.operand] a natural discriminator — a label, a branch
+ * @param {string | null} [request.run] the run this effect belongs to, or null when repo-scoped
+ * @param {number | null} [request.ticket] the tracker issue number, or null
+ * @param {string} request.phase §2.2's phase, `cleanup` and `expiry` included
+ * @param {string | null} [request.attempt] the attempt id, or null
  * @param {string} request.actor `controller`, or `operator:<verb>` (monitor O6)
  * @param {number} request.fencingGeneration the generation the requester holds (§4.6)
  * @param {object} request.payload what the mutation will carry — digested, never keyed
+ * @param {number} [request.at] UTC epoch milliseconds; defaults to now
+ * @param {string | null} [request.causalCommandId] the command this effect answers to
  * @returns {{ key: string, outcome: "requested" | "already-requested" | "already-resolved",
  *             state: string, result: unknown }}
  * @throws {FactoryEffectError}
@@ -53,15 +60,16 @@ export function requestEffect(
 		payload,
 		at = Date.now(),
 		causalCommandId = null,
-		registry = EFFECT_REGISTRY,
 	},
 ) {
-	registry.probeFor(operation);
+	// The lookup is the gate: an unregistered kind has no probe, and an effect
+	// nothing can re-probe is one the journal would have to assert (§14.1).
+	EFFECT_REGISTRY.probeFor(operation);
 	requireActor(actor);
 	requireGeneration(fencingGeneration);
 
 	const key = effectKey({ run, ticket, phase, attempt, operation, operand });
-	const payloadDigest = digest(canonicalJson(payload));
+	const payloadDigest = digestOf(payload);
 	requireOperandIsNotTheDigest(operand, payloadDigest);
 
 	return store.transaction(({ appendEvent, db }) => {
@@ -110,14 +118,18 @@ export function requestEffect(
  * @param {object} store an open store (`state/store.mjs`)
  * @param {object} resolution
  * @param {string} resolution.key the effect key, as `requestEffect` returned it
+ * @param {string} resolution.actor `controller`, or `operator:<verb>` (monitor O6)
  * @param {number} resolution.fencingGeneration the generation the resolver holds
  * @param {unknown} resolution.result what the external system answered
+ * @param {number} [resolution.at] UTC epoch milliseconds; defaults to now
+ * @param {string | null} [resolution.causalCommandId] the command this resolution answers to
  * @returns {{ key: string, outcome: "resolved" | "already-resolved", state: string, result: unknown }}
  * @throws {FactoryEffectError}
  */
 export function resolveEffect(store, { key, actor, fencingGeneration, result, at = Date.now(), causalCommandId = null }) {
 	requireActor(actor);
 	requireGeneration(fencingGeneration);
+	const serialisedResult = serialise(result ?? null);
 
 	return store.transaction(({ appendEvent, db }) => {
 		const row = readRow(db, key);
@@ -160,7 +172,7 @@ export function resolveEffect(store, { key, actor, fencingGeneration, result, at
 		db.prepare("UPDATE effect SET state = 'resolved', resolved_at = ?, resolved_seq = ?, result = ? WHERE effect_key = ?").run(
 			at,
 			event.seq,
-			canonicalJson(result ?? null),
+			serialisedResult,
 			key,
 		);
 
@@ -173,19 +185,25 @@ export function resolveEffect(store, { key, actor, fencingGeneration, result, at
  * fourth retention pin. A run held here for weeks means an effect nothing can
  * settle, which is an alarm rather than a leak.
  *
+ * Rows come back with `result` decoded, the same shape `requestEffect` and
+ * `resolveEffect` return it in — one table, one shape, whichever door a caller
+ * came through.
+ *
  * @param {object} store
  * @param {{ run?: string | null }} [scope]
  */
 export function unresolvedEffects(store, { run = null } = {}) {
-	return store.read((db) =>
-		db
-			.prepare(
-				`SELECT * FROM effect
-				 WHERE state = 'requested' AND (? IS NULL OR run_id = ?)
-				 ORDER BY requested_seq`,
-			)
-			.all(run, run),
-	);
+	return store
+		.read((db) =>
+			db
+				.prepare(
+					`SELECT * FROM effect
+					 WHERE state = 'requested' AND (? IS NULL OR run_id = ?)
+					 ORDER BY requested_seq`,
+				)
+				.all(run, run),
+		)
+		.map((row) => ({ ...row, result: decodeResult(row.result) }));
 }
 
 /**
@@ -260,7 +278,7 @@ function decodeResult(result) {
 function requireActor(actor) {
 	if (actor !== "controller" && !/^operator:[a-z][a-z0-9-]*$/.test(actor ?? "")) {
 		throw new FactoryEffectError(
-			"effect-key-invalid",
+			"effect-actor-invalid",
 			`An effect names its actor: "controller", or "operator:<verb>". Found ${JSON.stringify(actor ?? null)}.`,
 			{ at: "actor", found: actor ?? null },
 		);
@@ -289,12 +307,39 @@ function sourceOf(actor) {
 	return actor === "controller" ? "controller" : "operator";
 }
 
+/**
+ * A malformed generation is the caller's bug, and it gets its own reason: the
+ * reason reaches the operator's `--json` output, and reporting this as
+ * supersession would tell them another controller adopted the repository.
+ */
 function requireGeneration(generation) {
 	if (!Number.isSafeInteger(generation) || generation < 0) {
 		throw new FactoryEffectError(
-			"effect-superseded-generation",
+			"effect-generation-invalid",
 			`An effect carries the fencing generation that requested it; found ${JSON.stringify(generation ?? null)}.`,
 			{ at: "fencingGeneration", found: generation ?? null },
+		);
+	}
+}
+
+/**
+ * §4.5's digest, over the effect's payload. A payload the canonical serialiser
+ * cannot represent exactly — a `Date`, a `NaN` — would hash differently on the
+ * way back in, so it is refused here rather than allowed to escape as a raw
+ * `TypeError` from a hash function.
+ */
+function digestOf(payload) {
+	return digest(serialise(payload, "payload"));
+}
+
+function serialise(value, at = "result") {
+	try {
+		return canonicalJson(value);
+	} catch (error) {
+		throw new FactoryEffectError(
+			"effect-payload-invalid",
+			`An effect's ${at} must be canonically serialisable: ${error.message}.`,
+			{ at },
 		);
 	}
 }

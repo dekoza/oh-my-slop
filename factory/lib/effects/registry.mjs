@@ -1,5 +1,6 @@
 import { PROBE_CALLS, PROBE_CATALOGUE, PROBE_MATCHES, PROBE_SOURCES, READ_OPERATIONS } from "./catalogue.mjs";
 import { FactoryEffectError } from "./errors.mjs";
+import { OPERATION_SHAPE } from "./keys.mjs";
 
 /**
  * §4.5's effect registry: the set of mutations the factory may perform, and the
@@ -12,9 +13,6 @@ import { FactoryEffectError } from "./errors.mjs";
  * *can* re-probe. Enforced here, at the seam every effect passes through, it
  * cannot be added by accident.
  */
-
-/** An operation is a lowercase, dash-joined verb — never a path segment. */
-const OPERATION_SHAPE = /^[a-z][a-z0-9-]*$/;
 
 const READS = new Set(READ_OPERATIONS.map(asOperationName));
 
