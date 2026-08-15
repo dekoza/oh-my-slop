@@ -420,6 +420,18 @@ function readSurface(db) {
 		verifyJournal: (options) => verifyJournal(db, options),
 
 		readRun: rendering("run", (runId) => decodeRun(db.prepare("SELECT * FROM run WHERE run_id = ?").get(runId))),
+
+		/**
+		 * §5.4's reconcile scope, and §10.4's re-entry candidates: every run whose
+		 * lifecycle is not `ended`. Oldest first, because a controller re-entering
+		 * a repository takes them in the order they happened (§14.37).
+		 */
+		readUnendedRuns: rendering("run", () =>
+			db
+				.prepare("SELECT * FROM run WHERE lifecycle <> 'ended' ORDER BY started_at, run_id")
+				.all()
+				.map(decodeRun),
+		),
 		readTicketExecutions: rendering("ticket_execution", (runId) =>
 			db.prepare("SELECT * FROM ticket_execution WHERE run_id = ? ORDER BY ticket").all(runId),
 		),
