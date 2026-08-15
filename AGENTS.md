@@ -183,6 +183,24 @@ is the authority; cite the section a change answers to.
   `package.expect` declares a name and a version — exact or a range from npm's common
   subset — and nothing else: a hand-declared digest is refused at load, because the digest
   is observed and would be unmaintainable in development.
+- Reconciliation (`factory/lib/reconcile/`) settles an unresolved effect **only** by
+  re-probing the external system, and `doctor` is the identical computation behind a
+  read-only flag — one code path, so the two verbs cannot answer differently about what the
+  world said. §5.4's conclusion and its evidence basis are built in `conclusions.mjs` and
+  enforced there: a conclusion outside the closed four, an empty basis, or `journal-intent`
+  offered as a source cannot be constructed, which is how §14.1 and §14.2 hold wherever a
+  conclusion is made. The engine ships once; **each effect kind's probe ships with the
+  subsystem that introduces that kind**, registered by its §4.5 *read* so one call serves
+  every operation that performs it. An effect nothing could probe is left exactly as it was
+  and reported — that is §12.4's alarm, and it is why no probe means no evidence, therefore
+  no `reconcile.concluded` record at all.
+- `doctor` (`factory/lib/doctor/`) is handed the store from `openRepoStoreReadOnly`, which
+  carries no `transaction` and never creates a store, so §14.24 is a property of the handle
+  rather than a rule the diagnosis follows. Every section is computed independently and one
+  that cannot answer says which ticket owes it — a plausible zero for a counter nothing
+  increments answers the operator's question wrongly, and an unreadable package must not
+  take the journal, the pins, and the reconciliation down with it. Monitor health is
+  advisory-only and never an alarm; legacy artifacts are reported and never deleted.
 
 ### `scripts/`
 
