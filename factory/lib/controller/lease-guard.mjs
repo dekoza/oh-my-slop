@@ -141,8 +141,14 @@ export function holdControllerLease({
 		get fencingGeneration() {
 			return held.fencingGeneration;
 		},
+		get run() {
+			return driving;
+		},
 		get lost() {
 			return lost;
+		},
+		get released() {
+			return released;
 		},
 		get reconciled() {
 			return reconciled;
@@ -160,8 +166,16 @@ export function holdControllerLease({
 		 * @param {string} runId
 		 */
 		adopt(runId) {
-			driving = runId;
-			held = leases.describe(held, processIdentity({ run: driving, pane }));
+			assertMayIssueEffects();
+			try {
+				const described = leases.describe(held, processIdentity({ run: runId, pane }));
+				driving = runId;
+				held = described;
+			} catch (error) {
+				if (!(error instanceof FactoryStateError) || error.reason !== "lease-lost") throw error;
+				concede(error.details);
+				throw error;
+			}
 		},
 
 		/**
@@ -192,14 +206,18 @@ export function holdControllerLease({
 		 *
 		 * @returns {boolean} whether this holder's row was the one removed
 		 */
-		release() {
+		release({ event = null } = {}) {
 			if (lost || released) return false;
-			released = true;
 			timers.clearInterval(renewal);
 
-			if (leases.release(held)) return true;
+			// `leases.release` compare-and-deletes the token and appends `event` in
+			// one transaction. Set the local latch only after that transaction
+			// commits; a projector failure rolls both halves back.
+			if (leases.release(held, { event })) {
+				released = true;
+				return true;
+			}
 
-			released = false;
 			concede({ lease: LEASE_NAMES.controller, holder_generation: null });
 			return false;
 		},

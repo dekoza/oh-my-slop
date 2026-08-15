@@ -7,7 +7,14 @@ import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mj
 import { processIdentity } from "../../factory/lib/identity/process.mjs";
 import { CONTROLLER_LEASE_TTL_MS, LEASE_NAMES, LEASE_RENEWAL_MS, openLeases } from "../../factory/lib/state/leases.mjs";
 import { factorySources } from "./helpers/factory-repo.mjs";
-import { FIXED_NOW as T0, leaseIdentity, manualTimers, openTestStore, runStarted } from "./helpers/factory-store.mjs";
+import {
+	FIXED_NOW as T0,
+	leaseIdentity,
+	manualTimers,
+	openTestStore,
+	runEnded,
+	runStarted,
+} from "./helpers/factory-store.mjs";
 
 /**
  * §4.6's controller lease from the controller's side: the advisory identity it
@@ -149,6 +156,15 @@ test("an orderly release frees the row and closes the gate with its own reason",
 });
 
 // ── Losing it (§14.6) ────────────────────────────────────────────────────────
+
+test("normal run ending and controller-lease release commit together", async (t) => {
+	const { store, leases, guard } = await heldStore(t);
+
+	assert.equal(guard.release({ event: runEnded(RUN) }), true);
+	assert.equal(leases.inspect(LEASE_NAMES.controller), null);
+	assert.equal(store.readRun(RUN).end_reason, "drained");
+	assert.equal(store.readEvents({}).filter((event) => event.kind === "run.ended").length, 1);
+});
 
 test("a lost lease stops effects, emits controller.lease-lost, exits non-zero, and never reacquires", async (t) => {
 	const losses = [];

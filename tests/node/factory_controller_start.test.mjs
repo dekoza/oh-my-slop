@@ -382,7 +382,7 @@ test("the controller lease is released when the run ends", async (t) => {
 	assert.equal(openLeases(store).inspect("controller"), null);
 });
 
-test("a controller that loses its lease mid-run ends the run lease-lost and exits 6", async (t) => {
+test("a controller that loses its lease exits 6 without closing the run its successor owns", async (t) => {
 	const context = invocation(t);
 	const loaded = loadFactoryConfig({ cwd: context.cwd });
 	const timers = manualTimers();
@@ -412,10 +412,16 @@ test("a controller that loses its lease mid-run ends the run lease-lost and exit
 	});
 
 	assert.equal(answered.exitCode, 6);
-	assert.equal(answered.report.end_reason, "lease-lost");
+	assert.equal(answered.report.controller_exit_reason, "lease-lost");
+	assert.equal(answered.report.end_reason, null);
 
 	const store = await storeOf(t, context);
-	assert.equal(store.readRun(answered.report.run).end_reason, "lease-lost");
+	assert.equal(store.readRun(answered.report.run).end_reason, null);
+	assert.equal(
+		store.readEvents({ stream: runStream(answered.report.run) }).some((e) => e.kind === "run.ended"),
+		false,
+		"a stale controller closed the run its successor may already be driving",
+	);
 	assert.equal(
 		store.readEvents({ stream: runStream(answered.report.run) }).some((e) => e.kind === "run.lifecycle-changed"),
 		false,

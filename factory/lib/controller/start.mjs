@@ -1,4 +1,10 @@
-import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE, exitCodeForEndReason } from "../cli/exit-codes.mjs";
+import {
+	EXIT_LEASE_LOST,
+	EXIT_OK,
+	EXIT_REFUSED,
+	EXIT_USAGE,
+	exitCodeForEndReason,
+} from "../cli/exit-codes.mjs";
 import {
 	END_REASON_BASELINE_RED,
 	END_REASON_CONTROLLER_LOST,
@@ -22,19 +28,19 @@ import { describeScope, PARENT_FLAG, parseScope } from "./scope.mjs";
  * `factory start` (§10.1, §10.3, §10.4).
  *
  * > **One invocation, one run.** It acquires the controller lease, reconciles,
- * > applies expiry, preflights, executes to drain, emits `ended` with its reason,
- * > releases the lease, prints the classified per-member report, and exits. **No
- * > idle polling, no residency.**
+ * > applies expiry, preflights, executes to drain, atomically emits `ended` with
+ * > its reason while releasing the lease, prints the classified per-member
+ * > report, and exits. **No idle polling, no residency.**
  *
  * The lease exists to exclude a *second* controller, not to mark a service up —
  * which is why this file has no loop waiting for work to appear. A resident
  * factory with a work queue is excluded outright (§19): the tracker is already
  * the queue, and labelling a ticket under the run's parent *is* the enqueue.
  *
- * **Every path through here ends the run exactly once, with a reason.** §10.3
- * makes the end reason mandatory and its exit code published contract, so the
- * one thing this must never do is exit without saying why — a caller writing
- * `factory start && next-thing` is trusting exactly that.
+ * **A normal path ends the run at most once, with a reason.** Lease loss is the
+ * exception: stale authority exits 6 but cannot close a run a successor may
+ * already have adopted. The terminal event and token-checked release share one
+ * transaction, so there is no gap in which ownership can change between them.
  *
  * Detached launch into a Herdr pane (§10.1) and the stop-request record (§10.5)
  * are #98's; this run holds the terminal it was started in.
@@ -125,13 +131,32 @@ async function start(store, context) {
 		return liveRun(store, error.details, context.requested);
 	}
 
+	let answered = null;
+	let failure = null;
 	try {
-		return await drive(store, hold, context);
-	} finally {
-		// A start that threw while holding the lease would otherwise exclude the
-		// repository from its own controller until the TTL lapsed.
-		hold.release();
+		answered = await drive(store, hold, context);
+	} catch (error) {
+		failure = error;
 	}
+
+	// A refusal or an unexpected failure before normal terminalization still
+	// gives up this process's hold. A successful drive already released in the
+	// same transaction as `run.ended`.
+	if (!hold.released && !hold.lost) {
+		try {
+			hold.release();
+		} catch (error) {
+			failure ??= error;
+		}
+	}
+
+	// Only the typed ownership loss is converted to exit 6. A disk failure while
+	// recording that loss, or any unrelated exception racing with it, still
+	// propagates rather than being hidden behind the lease verdict.
+	if (failure !== null && !isLeaseLoss(failure)) throw failure;
+	if (hold.lost) return leaseLostAnswer(store, hold);
+	if (failure !== null) throw failure;
+	return answered;
 }
 
 /**
@@ -203,26 +228,27 @@ async function drive(store, hold, context) {
 			at: startedAt,
 		});
 
-		// The reason is decided **before** the run executes, because two of the
-		// three reasons are already settled by this point: a red preflight and a
-		// lost lease both mean this controller drives nothing further. Only a run
-		// that has neither reaches `running`.
-		const endReason = endReasonOf(hold, checked);
+		// Lease loss is a controller-process outcome, not authority to close the
+		// run. The successor may already be driving this same `run_id`.
+		if (hold.lost) return leaseLostAnswer(store, hold);
+
+		// The run's reason is decided before execution: a red required preflight
+		// ends here, while only a green run reaches `running`.
+		const endReason = endReasonOf(checked);
 		if (endReason === END_REASON_DRAINED) {
 			lifecycle = move(store, entry.run, RUN_LIFECYCLE.running, { at: context.now() });
 			lifecycle = move(store, entry.run, RUN_LIFECYCLE.draining, { at: context.now() });
 		}
 
 		const endedAt = context.now();
-		// The red checks ride only the reason they explain. A `lease-lost` run
-		// carrying them would read as a run that ended over its preflight, and the
-		// operator's next question — which of the two happened — is the one the
-		// record has to answer.
-		endRun(store, entry.run, {
-			endReason,
-			at: endedAt,
-			red: endReason === END_REASON_BASELINE_RED ? checked.red : [],
+		const ended = hold.release({
+			event: runEndedEvent(entry.run, {
+				endReason,
+				at: endedAt,
+				red: endReason === END_REASON_BASELINE_RED ? checked.red : [],
+			}),
 		});
+		if (!ended) return leaseLostAnswer(store, hold);
 		lifecycle = RUN_LIFECYCLE.ended;
 
 		const report = {
@@ -258,24 +284,8 @@ async function drive(store, hold, context) {
 	}
 }
 
-/**
- * §10.3's mandatory reason, decided in the order the reasons outrank each other.
- *
- * A lost lease wins over everything: §14.6 stops the controller where it stands,
- * so whatever preflight was in the middle of saying is no longer this
- * controller's to act on. `baseline-red` is next, and it is the reason a red
- * preflight check produces — §10.3 runs preflight after the run exists precisely
- * so this reason can **name the specific red check**.
- *
- * `lease-lost` ends the run even though the successor that took the lease may be
- * driving it by then. §10.3 makes the reason mandatory on an ended run and makes
- * this one a controller's *own* exit, so the alternative is a controller that
- * exits 6 having recorded nothing about why. The successor's own ending is the
- * later record and supersedes it; reconciling the two runs' worth of in-flight
- * work is #114's.
- */
-function endReasonOf(hold, checked) {
-	if (hold.lost) return END_REASON_LEASE_LOST;
+/** §10.3's mandatory reason for a run this controller still owns. */
+function endReasonOf(checked) {
 	if (!checked.ok) return END_REASON_BASELINE_RED;
 	return END_REASON_DRAINED;
 }
@@ -362,8 +372,12 @@ function move(store, run, lifecycle, { at }) {
  * controller that made a `controller-lost` observation — the field is what keeps
  * that reason readable as somebody else's assertion rather than the run's own.
  */
-function endRun(store, run, { endReason, at, red = [], observer = null }) {
-	store.append({
+function endRun(store, run, options) {
+	store.append(runEndedEvent(run, options));
+}
+
+function runEndedEvent(run, { endReason, at, red = [], observer = null }) {
+	return {
 		kind: "run.ended",
 		source: "controller",
 		run,
@@ -374,7 +388,38 @@ function endRun(store, run, { endReason, at, red = [], observer = null }) {
 			...(red.length === 0 ? {} : { red_checks: [...red] }),
 			...(observer === null ? {} : { observed_by: observer }),
 		},
-	});
+	};
+}
+
+/**
+ * A stale process's own result. The run deliberately has no terminal reason:
+ * only the current holder may append one, and a successor can re-enter this
+ * same `run_id`. `controller.lease-lost` is the durable explanation.
+ */
+function leaseLostAnswer(store, hold) {
+	const run = hold.run;
+	const row = run === null ? null : store.readRun(run);
+	const report = {
+		run,
+		lifecycle: row?.lifecycle ?? null,
+		end_reason: null,
+		controller_exit_reason: END_REASON_LEASE_LOST,
+		exit_code: EXIT_LEASE_LOST,
+		fencing_generation: hold.fencingGeneration,
+	};
+	return {
+		message:
+			run === null
+				? `controller lost lease generation ${hold.fencingGeneration} before adopting a run; exiting 6.`
+				: `controller lost lease generation ${hold.fencingGeneration} for run ${run}; ` +
+					"the stale process left the run open for its current owner and is exiting 6.",
+		report,
+		exitCode: EXIT_LEASE_LOST,
+	};
+}
+
+function isLeaseLoss(error) {
+	return error instanceof FactoryStateError && error.reason === "lease-lost";
 }
 
 /** §10.4's answer against a live holder: a message and exit 0, or a refusal. */
