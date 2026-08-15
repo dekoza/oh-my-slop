@@ -132,13 +132,23 @@ class ⇒ `paused`; every controller-derived reason class ⇒ `failed`.
 
 ### 3.2 Run lifecycle
 
-Lifecycle: `preflight` · `running` · `draining` · `ended`. Mandatory **end reason**:
-`drained` · `baseline-red` · `stopped-by-operator` · `circuit-breaker` ·
-`controller-lost`.
+Lifecycle: `preflight` · `running` · `draining` · `ended`. Mandatory **end reason**, seven
+members: `drained` · `baseline-red` · `stopped-by-operator` · `abandoned` ·
+`circuit-breaker` · `lease-lost` · `controller-lost`.
 
 `draining` covers operator stop-after-current-ticket and the circuit breaker identically —
 the behaviour is the same and the reason carries the difference. **`controller-lost` is
 never self-asserted**; it is derived solely from the freshness axis.
+
+**`abandoned` and `lease-lost` were added by
+[#87](http://192.168.129.37:30008/minder/oh-my-slop/issues/87)**, reconciling #82's
+five-member list with the six #85 independently enumerated. Both distinctions are load-bearing
+for the operator: `abandoned` (a second stop or `SIGTERM`) leaves in-flight ticket executions
+`released` and worker panes orphaned, where `stopped-by-operator` lets lanes reach terminal
+dispositions — different worlds for the next reconcile. And `lease-lost` is a controller's own
+exit, where `controller-lost` is an observation made *about* a controller by a different one or
+by this monitor; collapsing them would make `controller-lost` self-assertable, which §3.2
+forbids. Additive to this enum, so it is an amendment rather than a reopen.
 
 **Preflight is observable per check and per probe.** This creates **run-scoped stages that
 hang off no tracker ticket**, and `baseline-red` names a *specific* red check — "which
@@ -789,7 +799,8 @@ is retained permanently in the digest tier, and the factory never deletes a tran
 
 **O10.** Run lifecycle and end-reason enums are operator-visible; preflight and baseline are
 an observable phase with per-check and per-probe results; `controller-lost` is derived from
-liveness and never self-asserted. *(→ #82 — **discharged**)*
+liveness and never self-asserted. *(→ #82 — **discharged**; the end-reason enum was widened to
+seven members by #87, see §3.2)*
 
 **O11.** The monitor service is session-scoped, idempotently started from a command or a run
 started **from a tab**, torn down on `session_shutdown`, and rehostable from any tab; `status`
@@ -836,6 +847,7 @@ What this specification inherits, and from where.
 | [#84](http://192.168.129.37:30008/minder/oh-my-slop/issues/84) Configuration | closed | O12 discharged by `.pi/factory-monitor.json`, standalone and `0600` |
 | [#85](http://192.168.129.37:30008/minder/oh-my-slop/issues/85) Bounded parallelism | closed | §3.7 readiness requirement; needed no amendment — saturation surfaces as journal events and in `status`/`doctor` |
 | [#86](http://192.168.129.37:30008/minder/oh-my-slop/issues/86) Retention and ownership | closed | O9 (transcript half) and O13 discharged; §8.1 pins and configurability, §8.6 tombstones |
+| [#87](http://192.168.129.37:30008/minder/oh-my-slop/issues/87) Factory specification lock | closed | §3.2 end-reason enum widened to seven members; all fourteen obligations checked off in [`software-factory.md`](software-factory.md) §16 |
 
 **Amendment protocol.** Every ticket this specification waited on has now resolved and
 amended it. Anything that **contradicts** a locked decision here reopens a ticket rather than
@@ -882,3 +894,4 @@ means touching everything twice.
 | 2026-08-14 | Initial lock. | #74 |
 | 2026-08-15 | O10 and O11 discharged. §7.2 store root corrected to `getAgentDir()` / `PI_CODING_AGENT_DIR` — `PI_AGENT_DIR` is not a pi variable. §7.3 and O11 start trigger narrowed to runs started from a tab, since the shell binary is now the primary entry point; the factory reaches the monitor by typed `pi.events` request only. | #82 |
 | 2026-08-15 | O9 (transcript half) and O13 discharged. §8.1 gains a **fourth pin** (an unresolved effect) and splits configurable horizon values from constant pins; §8.6 records that the factory **never** deletes a transcript, and that an expired digest-referenced artifact leaves a **dated tombstone row** rather than an unknown digest. §12 rows for #84 and #85 brought up to date. | #86 |
+| 2026-08-15 | §3.2 end-reason enum widened to **seven** members — `abandoned` and `lease-lost` added, reconciling #82's list with #85's independently enumerated one. O10 annotated. The factory specification is locked at [`software-factory.md`](software-factory.md); all fourteen obligations are checked off in its §16, with O12 verified against #84's own resolution rather than this document's table row. | #87 |
