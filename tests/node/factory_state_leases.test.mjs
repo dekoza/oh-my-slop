@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { FactoryStateError } from "../../factory/lib/state/errors.mjs";
 import {
 	capacityModelSlot,
 	capacityTicketSlot,
@@ -12,23 +11,19 @@ import {
 } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { factorySources, makeRepo } from "./helpers/factory-repo.mjs";
-import { FIXED_NOW as T0, leaseIdentity, makeAgentDir, openTestStore, runStarted } from "./helpers/factory-store.mjs";
+import {
+	FIXED_NOW as T0,
+	leaseIdentity,
+	makeAgentDir,
+	openTestStore,
+	refusalOf,
+	runStarted,
+} from "./helpers/factory-store.mjs";
 
 /**
  * §4.6's one primitive: rows in the database, compare-and-swap, and a fencing
  * generation from a single DB-wide counter.
  */
-
-/** The refusal a call throws, so its reason and details can be read. */
-function refusalFrom(body) {
-	try {
-		body();
-	} catch (error) {
-		assert.ok(error instanceof FactoryStateError, `expected a FactoryStateError, got ${error}`);
-		return error;
-	}
-	assert.fail("the call was expected to refuse, and returned");
-}
 
 // ── The row (§4.6) ───────────────────────────────────────────────────────────
 
@@ -75,7 +70,7 @@ test("a second controller cannot acquire the controller lease, and the refusal n
 	const leases = openLeases(store, { now: () => T0 });
 	const first = leases.acquire({ name: LEASE_NAMES.controller, identity: leaseIdentity() });
 
-	const refusal = refusalFrom(() =>
+	const refusal = refusalOf(() =>
 		leases.acquire({
 			name: LEASE_NAMES.controller,
 			identity: leaseIdentity({ pid: 5151, run: "01JRUN0000000000000000000B", pane: "herdr:9" }),
@@ -168,8 +163,9 @@ test("no elapsed time frees a capacity slot or an integration lease", async (t) 
 	// and a crashed integration is settled by probing git, never by a clock.
 	clock = T0 + 365 * 24 * 60 * 60 * 1000;
 
-	assert.equal(refusalFrom(() => leases.acquire({ name: capacityTicketSlot(0), identity: leaseIdentity() })).reason, "lease-held");
-	assert.equal(refusalFrom(() => leases.acquire({ name: LEASE_NAMES.integration, identity: leaseIdentity() })).reason, "lease-held");
+	for (const name of [capacityTicketSlot(0), LEASE_NAMES.integration]) {
+		assert.equal(refusalOf(() => leases.acquire({ name, identity: leaseIdentity() })).reason, "lease-held");
+	}
 	assert.equal(leases.inspect(capacityTicketSlot(0)).token, slot.token);
 	assert.equal(leases.inspect(LEASE_NAMES.integration).token, integration.token);
 });
@@ -248,7 +244,7 @@ test("a capacity row and the event announcing it commit in one transaction", asy
 	assert.equal(store.head().seq, 2);
 
 	// A refused event takes the row down with it: there is no half of this.
-	refusalFrom(() =>
+	refusalOf(() =>
 		leases.acquire({
 			name: capacityTicketSlot(1),
 			identity: leaseIdentity(),
@@ -269,12 +265,13 @@ test("there is no worktree lease, and no other name can be acquired either", asy
 
 	// Attempt identity already makes a worktree single-writer (§4.6), so this is
 	// not a lease that has been left out — it is one that cannot exist.
-	const refusal = refusalFrom(() =>
+	const refusal = refusalOf(() =>
 		leases.acquire({ name: "worktree:01JRUN0000000000000000000A-t93-a1", identity: leaseIdentity() }),
 	);
 	assert.equal(refusal.reason, "invalid-lease-name");
 
-	for (const name of [LEASE_NAMES.controller, LEASE_NAMES.integration, capacityTicketSlot(3), capacityModelSlot("rico", 0)]) {
+	const acceptable = [LEASE_NAMES.controller, LEASE_NAMES.integration, capacityTicketSlot(3), capacityModelSlot("rico", 0)];
+	for (const name of acceptable) {
 		assert.ok(leases.acquire({ name, identity: leaseIdentity() }), `${name} was refused`);
 	}
 });
@@ -306,7 +303,7 @@ test("regression: a recorded pid is advisory — it neither holds a lapsed lease
 	// the dead pid is not what keeps it held.
 	leases.acquire({ name: LEASE_NAMES.controller, identity: leaseIdentity({ pid: 3852874 }) });
 	assert.equal(
-		refusalFrom(() => leases.acquire({ name: LEASE_NAMES.controller, identity: leaseIdentity() })).reason,
+		refusalOf(() => leases.acquire({ name: LEASE_NAMES.controller, identity: leaseIdentity() })).reason,
 		"lease-held",
 	);
 
