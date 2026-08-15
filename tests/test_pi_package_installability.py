@@ -122,7 +122,10 @@ def test_root_package_manifest_exposes_skills_and_bundled_extensions() -> None:
     assert "pi-package" in manifest["keywords"]
     assert manifest["pi"]["skills"] == ["./skills"]
     assert manifest["pi"]["prompts"] == ["./prompts"]
-    assert manifest["pi"]["extensions"] == ["./extensions/workflow-watchdog"]
+    assert manifest["pi"]["extensions"] == [
+        "./extensions/factory",
+        "./extensions/workflow-watchdog",
+    ]
     assert manifest["peerDependencies"]["@earendil-works/pi-coding-agent"] == "*"
 
 

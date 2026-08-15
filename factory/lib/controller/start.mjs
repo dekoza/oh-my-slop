@@ -278,8 +278,12 @@ async function drive(store, hold, context) {
 			},
 			execution: executionReport(),
 			monitor: {
+				// The trigger is a property of the launch surface, not of the run:
+				// the /factory front publishes it after the start answers, and a
+				// start from the shell has no monitor at all (§10.2, §10.6).
 				requested: false,
-				missing: "the typed pi.events run-start trigger (#99)",
+				published_by:
+					"the /factory front, after the start answers; a start from the shell publishes nothing",
 				spec: "§10.6",
 			},
 		};
