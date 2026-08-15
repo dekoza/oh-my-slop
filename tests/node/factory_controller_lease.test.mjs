@@ -345,6 +345,9 @@ test("a theft discovered while intending a run concedes the same way", async (t)
 
 	assert.equal(guard.lost, true);
 	assert.equal(guard.run, null);
+	// And nothing can be marked durable by a hold that already conceded.
+	assert.throws(() => guard.adopt(newUlid()), { reason: "lease-lost" });
+	assert.equal(guard.run, null);
 	const emitted = store.readEvents({ kind: "controller.lease-lost" });
 	assert.equal(emitted.length, 1);
 	assert.equal(emitted[0].run, null);

@@ -183,7 +183,9 @@ export function attemptLaunched(runId, ticket, ordinal = 1, { at = 1_770_000_100
  * **recorded rebuild**, and that is the path under test.
  */
 export function appendLegacyEvent(store, { kind, source = "controller", run = null, at = FIXED_NOW, payload, payloadVersion = 1 }) {
-	return store.read((db) => {
+	// Through the store's write-side escape, not `read`: the row and the head
+	// move together or not at all, exactly as the old binary would have left them.
+	return store.transaction(({ db }) => {
 		const stream = streamFor(kind, run);
 		const head = db.prepare("SELECT last_seq FROM journal_head WHERE id = 1").get();
 		const previous = db.prepare("SELECT hash FROM event WHERE stream = ? ORDER BY seq DESC LIMIT 1").get(stream);

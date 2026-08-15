@@ -213,6 +213,9 @@ export function holdControllerLease({
 		 * @throws {FactoryStateError} `run-not-started` when no record names the run
 		 */
 		adopt(runId) {
+			// A hold that conceded or released marks nothing durable: the same
+			// gate every write passes, so the promotion cannot outlive the hold.
+			assertMayIssueEffects();
 			if (store.readRun(runId) === null) {
 				throw new FactoryStateError(
 					"run-not-started",

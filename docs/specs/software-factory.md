@@ -2071,7 +2071,7 @@ this specification.
 | **O7** | run identity stable, durable across restarts, orderable by start time | §2.1 (ULID) |
 | **O8** | lock-free torn-tail-tolerant reads; nothing observable only in memory; distinguishable journal identity | §4.1 (discharged by the WAL decision) |
 | **O9** | resolved transcript pointer plus worker kind/format, captured at attempt start | §6.5 + §12.9 (permanent in the digest tier) |
-| **O10** | run lifecycle and end reasons operator-visible; preflight observable per check and probe; `controller-lost` never self-asserted | §10.3 — **amended by §13.A**: the enum is now seven members |
+| **O10** | run lifecycle and end reasons operator-visible; preflight observable per check and probe; `controller-lost` never self-asserted | §10.3 — **amended by §13.A**, then refined by #97: six run end reasons plus one controller exit outcome |
 | **O11** | monitor service session-scoped, idempotently started, rehostable; reached by typed `pi.events` only; `status`/`doctor` on the loopback token | §10.6 |
 | **O12** | monitor config surface: `bind`, explicit port for non-loopback, scrypt hash plus salt, optional TLS, fail-closed without a credential, `0600` | §11.6 — **independently verified against #84's resolution**, not merely against the monitor's own table row |
 | **O13** | two-tier retention and its pins; transcript pointers and the ticket → executions index in the permanent digest; a chosen deletion surfaces as `transcript-missing` | §12.2–§12.4, §12.9 |

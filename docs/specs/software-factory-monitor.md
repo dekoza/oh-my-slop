@@ -809,8 +809,8 @@ is retained permanently in the digest tier, and the factory never deletes a tran
 
 **O10.** Run lifecycle and end-reason enums are operator-visible; preflight and baseline are
 an observable phase with per-check and per-probe results; `controller-lost` is derived from
-liveness and never self-asserted. *(→ #82 — **discharged**; the end-reason enum was widened to
-seven members by #87, see §3.2)*
+liveness and never self-asserted. *(→ #82 — **discharged**; the end-reason enum was widened by
+#87 and refined by #97 to six run end reasons plus one controller exit outcome, see §3.2)*
 
 **O11.** The monitor service is session-scoped, idempotently started from a command or a run
 started **from a tab**, torn down on `session_shutdown`, and rehostable from any tab; `status`
