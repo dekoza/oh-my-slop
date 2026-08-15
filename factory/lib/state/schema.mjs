@@ -7,10 +7,13 @@
  * - **projections** — derived from the journal, committed in the same
  *   transaction as the event that changes them, and therefore rebuildable
  *   (§4.4);
- * - **canonical rows** — `effect` and `lease`, which are *not* projections. The
- *   effect table needs a real `UNIQUE` constraint for the database itself to
- *   enforce idempotency, and a lease needs compare-and-swap against a real row.
- *   Their semantics belong to §4.5 and §4.6; this file owns only their shape.
+ * - **canonical rows** — `effect`, `lease`, and `artifact`, which are *not*
+ *   projections. The effect table needs a real `UNIQUE` constraint for the
+ *   database itself to enforce idempotency, a lease needs compare-and-swap
+ *   against a real row, and the artifact ledger outlives the journal records
+ *   that produced it — §12.5's tombstone is permanent while the run stream that
+ *   wrote the blob is tier 1. Their semantics belong to §4.5, §4.6, and §12.1;
+ *   this file owns only their shape.
  */
 
 /**
@@ -20,8 +23,10 @@
  * statement is `IF NOT EXISTS`, so an existing v1 store would keep the old
  * column and fail at the first slot rather than at open — which is precisely
  * the confusion this version guard exists to prevent.
+ *
+ * v3 added the §12.1 `artifact` ledger.
  */
-export const STORE_SCHEMA_VERSION = 2;
+export const STORE_SCHEMA_VERSION = 3;
 
 export const SCHEMA_STATEMENTS = Object.freeze([
 	// ── Identity (§4.1) ─────────────────────────────────────────────────────
@@ -185,6 +190,38 @@ export const SCHEMA_STATEMENTS = Object.freeze([
 		renewed_at INTEGER NOT NULL,
 		identity TEXT
 	)`,
+
+	/**
+	 * §12.1's artifact ledger. **Keyed by the content**, because a
+	 * content-addressed artifact *is* its content: two productions of
+	 * byte-identical output are one blob on disk and one row, so counting bytes
+	 * over this table counts the disk rather than the writes.
+	 *
+	 * The producer columns name the **most recent** production, which is what
+	 * keeps expiry safe without a second table: expiring a run reclaims only the
+	 * blobs no later run has re-produced, and the later run's own expiry reclaims
+	 * those. `created_at` is the first production, kept because §12.5's tombstone
+	 * is dated.
+	 *
+	 * There is no path column, and that is the point (§14.28): nothing that reads
+	 * the ledger can be handed a location, so a `../` is not a thing the store can
+	 * be *told* — rather than a thing it checks for.
+	 */
+	`CREATE TABLE IF NOT EXISTS artifact (
+		algorithm TEXT NOT NULL,
+		digest TEXT NOT NULL,
+		media_type TEXT NOT NULL,
+		bytes INTEGER NOT NULL,
+		run_id TEXT,
+		ticket INTEGER,
+		attempt_id TEXT,
+		created_at INTEGER NOT NULL,
+		produced_at INTEGER NOT NULL,
+		retention_class TEXT NOT NULL CHECK (retention_class IN ('tier-1', 'permanent')),
+		expired_at INTEGER,
+		PRIMARY KEY (algorithm, digest)
+	)`,
+	"CREATE INDEX IF NOT EXISTS artifact_by_run ON artifact (run_id, created_at)",
 
 	/**
 	 * One DB-wide monotonic counter, so fencing generations are totally ordered

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 import { FactoryStateError } from "./errors.mjs";
 import { buildEnvelope, canonicalJson, GENESIS_PREV_HASH, streamFor } from "./events.mjs";
@@ -101,11 +102,15 @@ async function open({ repoRoot, agentDir, compareHeads }) {
  * lock (§4.1). The monitor never re-derives state from events, so this is the
  * whole of what it needs.
  *
+ * `storeDir` rides along because the artifact blobs live beside the database
+ * under the same per-repo state root (§12.1), and a reader resolving a digest
+ * through the ledger has to know which repository's store it is reading.
+ *
  * @param {{ dbPath: string }} where
  */
 export function openStoreReadOnly({ dbPath }) {
 	const db = openDatabase(dbPath, { readOnly: true });
-	return Object.freeze({ dbPath, ...readSurface(db), close: () => db.close() });
+	return Object.freeze({ dbPath, storeDir: dirname(dbPath), ...readSurface(db), close: () => db.close() });
 }
 
 /**

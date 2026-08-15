@@ -46,8 +46,24 @@ import { EFFECT_REGISTRY } from "./registry.mjs";
  *             state: string, result: unknown }}
  * @throws {FactoryEffectError}
  */
-export function requestEffect(
-	store,
+export function requestEffect(store, request) {
+	return store.transaction((tx) => requestEffectIn(tx, request));
+}
+
+/**
+ * The same, in a transaction the caller already opened.
+ *
+ * It exists because some effects commit **beside a canonical row of their own** —
+ * §12.1's artifact ledger is the one today — and the row and the pair have to be
+ * one transaction or an artifact ends up half-visible. The alternative, letting
+ * that caller write the `effect` row itself, would put effect writes in two
+ * places; §4.5 has exactly one.
+ *
+ * @param {{ appendEvent: (input: object) => object, db: object }} tx
+ * @param {object} request the same request `requestEffect` takes
+ */
+export function requestEffectIn(
+	tx,
 	{
 		operation,
 		operand = null,
@@ -72,39 +88,39 @@ export function requestEffect(
 	const payloadDigest = digestOf(payload);
 	requireOperandIsNotTheDigest(operand, payloadDigest);
 
-	return store.transaction(({ appendEvent, db }) => {
-		const existing = readRow(db, key);
-		if (existing !== null) return settleDuplicate(existing, payloadDigest);
+	const existing = readRow(tx.db, key);
+	if (existing !== null) return settleDuplicate(existing, payloadDigest);
 
-		const event = appendEvent({
-			kind: "effect.requested",
-			source: sourceOf(actor),
-			run,
-			ticket,
-			phase,
-			attempt,
-			causalCommandId,
-			occurredAt: at,
-			observedAt: at,
-			payload: {
-				effect_key: key,
-				operation,
-				operand,
-				actor,
-				fencing_generation: fencingGeneration,
-				effect_payload: payload,
-				effect_payload_digest: payloadDigest,
-			},
-		});
+	const event = tx.appendEvent({
+		kind: "effect.requested",
+		source: sourceOf(actor),
+		run,
+		ticket,
+		phase,
+		attempt,
+		causalCommandId,
+		occurredAt: at,
+		observedAt: at,
+		payload: {
+			effect_key: key,
+			operation,
+			operand,
+			actor,
+			fencing_generation: fencingGeneration,
+			effect_payload: payload,
+			effect_payload_digest: payloadDigest,
+		},
+	});
 
-		db.prepare(
+	tx.db
+		.prepare(
 			`INSERT INTO effect(effect_key, run_id, ticket, phase, attempt_id, operation, operand, payload_digest,
 			                    actor, fencing_generation, state, requested_at, requested_seq)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?)`,
-		).run(key, run, ticket, phase, attempt, operation, operand, payloadDigest, actor, fencingGeneration, at, event.seq);
+		)
+		.run(key, run, ticket, phase, attempt, operation, operand, payloadDigest, actor, fencingGeneration, at, event.seq);
 
-		return { key, outcome: "requested", state: "requested", result: null };
-	});
+	return { key, outcome: "requested", state: "requested", result: null };
 }
 
 /**
@@ -126,58 +142,65 @@ export function requestEffect(
  * @returns {{ key: string, outcome: "resolved" | "already-resolved", state: string, result: unknown }}
  * @throws {FactoryEffectError}
  */
-export function resolveEffect(store, { key, actor, fencingGeneration, result, at = Date.now(), causalCommandId = null }) {
+export function resolveEffect(store, resolution) {
+	return store.transaction((tx) => resolveEffectIn(tx, resolution));
+}
+
+/**
+ * The same, in a transaction the caller already opened — the resolution half of
+ * `requestEffectIn`, and the one an artifact write commits its ledger row beside
+ * (§12.1).
+ *
+ * @param {{ appendEvent: (input: object) => object, db: object }} tx
+ * @param {object} resolution the same resolution `resolveEffect` takes
+ */
+export function resolveEffectIn(tx, { key, actor, fencingGeneration, result, at = Date.now(), causalCommandId = null }) {
 	requireActor(actor);
 	requireGeneration(fencingGeneration);
 	const serialisedResult = serialise(result ?? null);
 
-	return store.transaction(({ appendEvent, db }) => {
-		const row = readRow(db, key);
-		if (row === null) {
-			throw new FactoryEffectError(
-				"effect-unrequested",
-				`Effect ${key} was never requested; a resolution is an outcome for a recorded intent (§14.1).`,
-				{ key },
-			);
-		}
-
-		requireCurrentGeneration(db, row, fencingGeneration);
-
-		// A second resolution of the same effect is the reconcile path arriving
-		// after the controller already settled it. It is not an error and it is
-		// not a second record: the committed result stands.
-		if (row.state === "resolved") {
-			return { key, outcome: "already-resolved", state: row.state, result: decodeResult(row.result) };
-		}
-
-		const event = appendEvent({
-			kind: "effect.resolved",
-			source: sourceOf(actor),
-			run: row.run_id,
-			ticket: row.ticket,
-			phase: row.phase,
-			attempt: row.attempt_id,
-			causalCommandId,
-			occurredAt: at,
-			observedAt: at,
-			payload: {
-				effect_key: key,
-				operation: row.operation,
-				actor,
-				fencing_generation: fencingGeneration,
-				result: result ?? null,
-			},
-		});
-
-		db.prepare("UPDATE effect SET state = 'resolved', resolved_at = ?, resolved_seq = ?, result = ? WHERE effect_key = ?").run(
-			at,
-			event.seq,
-			serialisedResult,
-			key,
+	const row = readRow(tx.db, key);
+	if (row === null) {
+		throw new FactoryEffectError(
+			"effect-unrequested",
+			`Effect ${key} was never requested; a resolution is an outcome for a recorded intent (§14.1).`,
+			{ key },
 		);
+	}
 
-		return { key, outcome: "resolved", state: "resolved", result: result ?? null };
+	requireCurrentGeneration(tx.db, row, fencingGeneration);
+
+	// A second resolution of the same effect is the reconcile path arriving
+	// after the controller already settled it. It is not an error and it is
+	// not a second record: the committed result stands.
+	if (row.state === "resolved") {
+		return { key, outcome: "already-resolved", state: row.state, result: decodeResult(row.result) };
+	}
+
+	const event = tx.appendEvent({
+		kind: "effect.resolved",
+		source: sourceOf(actor),
+		run: row.run_id,
+		ticket: row.ticket,
+		phase: row.phase,
+		attempt: row.attempt_id,
+		causalCommandId,
+		occurredAt: at,
+		observedAt: at,
+		payload: {
+			effect_key: key,
+			operation: row.operation,
+			actor,
+			fencing_generation: fencingGeneration,
+			result: result ?? null,
+		},
 	});
+
+	tx.db
+		.prepare("UPDATE effect SET state = 'resolved', resolved_at = ?, resolved_seq = ?, result = ? WHERE effect_key = ?")
+		.run(at, event.seq, serialisedResult, key);
+
+	return { key, outcome: "resolved", state: "resolved", result: result ?? null };
 }
 
 /**

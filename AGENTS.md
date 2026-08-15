@@ -158,6 +158,17 @@ is the authority; cite the section a change answers to.
   an identical payload returns the committed result; a different payload is a typed
   conflict. Keying by the digest would turn that conflict into a different key and two
   mutations nobody compared.
+- **An artifact is never referenced by path** — only by digest, through §12.1's ledger.
+  Everything in `factory/lib/artifacts/` takes content or an address (an algorithm from a
+  closed set plus a fixed-shape digest) and never a location, so the audited `../` escape is
+  not a thing the API can *express* rather than a thing it checks for. The ledger row is
+  canonical like `effect` and `lease`, keyed by the content: two productions of identical
+  bytes are one blob and one row, stamped with the later producer so expiry reclaims it
+  exactly once and no reference counting exists. The retention class is **derived** from the
+  producer rather than passed, and byte accounting per class is a `GROUP BY` over the ledger
+  — never a second tally to keep in step. Large output goes in as bytes and comes back as
+  §6.6's reference (digest, media type, byte count, producer, class); the bytes themselves
+  never enter an outbox or an event payload.
 
 ### `scripts/`
 
