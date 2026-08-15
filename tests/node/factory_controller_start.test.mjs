@@ -336,14 +336,31 @@ test("the heartbeat is diagnostic, on its own front-truncatable stream, naming i
 	}
 });
 
-test("the heartbeat says how many panes are watched, so quiet is not stopped-watching", async (t) => {
+test("the heartbeat counts observer subscriptions, not unfinished attempts", async (t) => {
 	const context = invocation(t);
+	await orphanRun(context, {
+		then: (store, runId) =>
+			store.append({
+				kind: "attempt.launched",
+				source: "controller",
+				run: runId,
+				ticket: 42,
+				phase: "implement",
+				attempt: `${runId}-t42-a1`,
+				occurredAt: 1_770_000_000_100,
+				observedAt: 1_770_000_000_100,
+				payload: { role: "implement" },
+			}),
+	});
 
-	await runCli(["start", "42"], context);
+	await runCli(["start"], context);
 
 	const store = await storeOf(t, context);
 	const [beat] = store.readEvents({ stream: HEARTBEAT_STREAM });
 
+	// #99 has not started a Herdr observer, so it watches zero panes. An
+	// unfinished attempt is a desired observation target, not proof of a live
+	// subscription; conflating them makes stopped-watching look healthy.
 	assert.equal(beat.payload.watching, 0);
 });
 

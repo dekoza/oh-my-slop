@@ -59,6 +59,8 @@ export const NEW_RUN_FLAG = "--new-run";
  * @param {() => number} [invocation.now]
  * @param {object} [invocation.timers] injectable renewal and heartbeat clocks
  * @param {(options: object) => Promise<object>} [invocation.herdr] §10.3's availability probe
+ * @param {() => number} [invocation.watching] actual live Herdr subscriptions; #99 wires
+ *   the observer, so zero is the truthful default rather than an attempt-derived guess
  * @returns {Promise<{ message: string, report: object, exitCode: number } | { error: object, exitCode: number }>}
  */
 export async function runStart({
@@ -76,6 +78,7 @@ export async function runStart({
 	now = Date.now,
 	timers = { setInterval, clearInterval },
 	herdr,
+	watching = () => 0,
 }) {
 	let requested;
 	try {
@@ -99,6 +102,7 @@ export async function runStart({
 			now,
 			timers,
 			herdr,
+			watching,
 			pane: env?.HERDR_PANE_ID ?? null,
 		});
 	} finally {
@@ -175,14 +179,12 @@ async function drive(store, hold, context) {
 		run: entry.run,
 		now: context.now,
 		timers: context.timers,
-		// Both are **derived from the run's own projections**, never constants.
-		// A hardcoded zero here would be the plausible zero this codebase refuses
-		// everywhere else — and worse than elsewhere, because §5.1 asks the beat
-		// to make *quiet* distinguishable from *stopped watching*, which a
-		// literal cannot do. Read this way they are already right, and they stay
-		// right on the day attempts start launching panes.
 		activity: () => `${lifecycle}: ${store.readTicketExecutions(entry.run).length} ticket executions`,
-		watching: () => watchedPanes(store, entry.run),
+		// This is the observer's live subscription count. An unfinished attempt is
+		// only a target it should watch; treating that row as proof of a subscription
+		// makes a dead observer look healthy. Until #99 wires the observer, zero is
+		// the only observed value.
+		watching: context.watching,
 	});
 
 	try {
@@ -254,19 +256,6 @@ async function drive(store, hold, context) {
 	} finally {
 		heartbeat.stop();
 	}
-}
-
-/**
- * §5.1's "watching N panes", counted rather than declared.
- *
- * **All worker attempts run as Herdr panes** (§6.4), one pane per live attempt,
- * so the attempts this run has launched and not yet ended *are* the panes being
- * watched. Counting them off the projection means the number is a fact about
- * this run rather than a placeholder waiting for the observer to land: it is
- * zero today because nothing has been launched, not because nothing counts it.
- */
-function watchedPanes(store, run) {
-	return store.readAttempts({ runId: run }).filter((attempt) => attempt.ended_at === null).length;
 }
 
 /**
