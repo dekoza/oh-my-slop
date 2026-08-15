@@ -79,6 +79,7 @@ const run = {
 		requireRun(db, event);
 
 		if (event.kind === "run.ended") {
+			refuseIfEnded(db, event);
 			db.prepare(
 				"UPDATE run SET lifecycle = 'ended', end_reason = ?, ended_at = ?, last_seq = ? WHERE run_id = ?",
 			).run(requireEndReason(event), event.occurred_at, event.seq, event.run);
@@ -86,6 +87,7 @@ const run = {
 		}
 
 		if (event.kind === "run.lifecycle-changed") {
+			refuseIfEnded(db, event);
 			db.prepare("UPDATE run SET lifecycle = ?, last_seq = ? WHERE run_id = ?").run(
 				requireLifecycle(event),
 				event.seq,
@@ -291,6 +293,13 @@ function requireRun(db, event) {
 function refuseIfPresent(db, event) {
 	if (db.prepare("SELECT 1 FROM run WHERE run_id = ?").get(event.run) !== undefined) {
 		throw refusal("run", `Run ${event.run} has already started; a run id is minted once.`, event);
+	}
+}
+
+function refuseIfEnded(db, event) {
+	const row = db.prepare("SELECT lifecycle FROM run WHERE run_id = ?").get(event.run);
+	if (row?.lifecycle === RUN_LIFECYCLE.ended) {
+		throw refusal("run", `Run ${event.run} has already ended; its terminal reason is immutable.`, event);
 	}
 }
 

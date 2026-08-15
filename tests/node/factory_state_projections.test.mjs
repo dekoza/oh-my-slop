@@ -111,6 +111,23 @@ test("a projector that throws takes its event down with it", async (t) => {
 	assert.deepEqual(store.head(), { seq: 1, hash: store.readEvents({})[0].hash });
 });
 
+test("a run cannot end twice with competing terminal reasons", async (t) => {
+	const store = await openTestStore(t);
+	const runId = newUlid();
+	store.append(runStarted(runId));
+	store.append(runEnded(runId, { endReason: "drained" }));
+
+	assert.throws(
+		() => store.append(runEnded(runId, { endReason: "circuit-breaker" })),
+		{ name: "FactoryStateError", reason: "invalid-event" },
+	);
+	assert.deepEqual(
+		store.readEvents({}).filter((event) => event.kind === "run.ended").map((event) => event.payload.end_reason),
+		["drained"],
+	);
+	assert.equal(store.readRun(runId).end_reason, "drained");
+});
+
 test("every projection head advances with every event, to the journal's own head", async (t) => {
 	const { store, runId } = await storeWithRun(t);
 	store.append(attemptLaunched(runId, 90));
