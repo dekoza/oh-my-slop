@@ -429,6 +429,54 @@ test("a controller that loses its lease exits 6 without closing the run its succ
 	);
 });
 
+test("a controller that has not yet noticed the theft still moves no run its successor owns", async (t) => {
+	const context = invocation(t);
+	const loaded = loadFactoryConfig({ cwd: context.cwd });
+	const timers = manualTimers();
+
+	const answered = await runStart({
+		...loaded,
+		agentDir: context.agentDir,
+		executable: context.executable,
+		env: context.env,
+		args: ["42"],
+		flags: new Set(),
+		timers: timers.api,
+		now: () => FIXED_NOW,
+		// The same theft as above, with the renewal deliberately **not** fired:
+		// a successor adopts a lapsed row without asking anyone, so a holder
+		// learns it is stale at its next compare-and-swap and not one moment
+		// sooner. Everything between the lapse and that discovery is written by a
+		// process that no longer owns the run.
+		herdr: async () => {
+			const store = await openStore({ repoRoot: context.cwd, agentDir: context.agentDir });
+			openLeases(store, { now: () => FIXED_NOW + CONTROLLER_LEASE_TTL_MS + 1 }).acquire({
+				name: "controller",
+				identity: leaseIdentity({ pid: 5151, pane: "w1:p9" }),
+			});
+			store.close();
+			return AVAILABLE();
+		},
+	});
+
+	assert.equal(answered.exitCode, 6);
+	assert.equal(answered.report.end_reason, null);
+
+	const store = await storeOf(t, context);
+	const events = store.readEvents({ stream: runStream(answered.report.run) });
+
+	// A green preflight would have moved this run to `running` and then to
+	// `draining`. Neither is this process's to write once the row is gone, and
+	// parking a successor's run at `draining` while it preflights is exactly the
+	// state §10.4's re-entry reads to decide what happened.
+	assert.deepEqual(
+		events.filter((event) => event.kind === "run.lifecycle-changed").map((event) => event.payload.lifecycle),
+		[],
+	);
+	assert.equal(events.some((event) => event.kind === "run.ended"), false);
+	assert.equal(store.readRun(answered.report.run).lifecycle, "preflight");
+});
+
 // ── Recovery and re-entry (§10.4) ────────────────────────────────────────────
 
 test("a restart re-enters an orphaned run, keeping its run id and its scope", async (t) => {

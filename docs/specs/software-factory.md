@@ -359,6 +359,15 @@ one transaction; failure of that compare leaves the run open for re-entry and ex
 In-flight work is abandoned without touching Gitea or git. The fencing check at resolution is
 the backstop, so the exit does not have to win a race to be safe.
 
+**Every record that moves a run's lifecycle is written under the token, in the same transaction
+as the compare.** A successor adopts a *lapsed* row without asking anyone, so the previous
+holder learns it is stale at its next compare-and-swap and not one moment sooner — a window in
+which "do I still hold the lease?" answered from memory is answered wrong. Effects survive that
+window because §14.5 declines a superseded one at resolution; a run's lifecycle has no such
+backstop, since it is authoritative state read by the monitor and by the next controller's
+re-entry. A stale writer would park a successor's run at `draining` while the successor is
+preflighting it.
+
 Both legacy systems failed here identically: `software-factory`'s `open(…,"wx")` lock recorded
 a PID it never tested — the live store still holds a lock naming dead pid 3852874, hand-renamed
 to `.lock.stale` to escape it — and `job-pipeline`'s `releaseJobLock` was an unconditional
@@ -1314,7 +1323,7 @@ repo is itself the trust act**; no replacement gate is introduced.
 | `stopped-by-operator` | **3** | a `stop` request was honoured at a ticket boundary; in-flight lanes finished |
 | `abandoned` | **4** | a second `stop` or `SIGTERM`; in-flight lanes `released`, panes left alive |
 | `circuit-breaker` | **5** | N consecutive automation failures in terminal-commit order |
-| `lease-lost` | **6** | the controller process lost its lease and exited without reacquiring; the stale process leaves the run open rather than self-authoring an unfenced `run.ended` |
+| `lease-lost` | **6** | the controller process lost its lease and exited without reacquiring; the stale process leaves the run open rather than self-authoring an unfenced `run.ended`, so this is the one member that is **only** an exit code and never a run's recorded `end_reason` |
 | `controller-lost` | **— (none)** | **asserted only by a different controller or the monitor**, never self-asserted, so it can have no exit code |
 
 Exit code **1 is reserved for usage and config-load failure** — those happen *before* a run
@@ -1902,7 +1911,9 @@ Numbered, testable, and adversarially exercised by §15's cases. Each is a **nev
 4. **An effect key never contains a hash of its payload.** The digest sits beside the key.
 5. **An effect resolving under a superseded fencing generation is never honored.**
 6. **A lost controller lease is never reacquired and never self-closes the run.** Stop issuing
-   effects, emit, exit 6; normal `run.ended` and lease release are one token-checked transaction.
+   effects, emit, exit 6; normal `run.ended` and lease release are one token-checked transaction,
+   and every record moving a run's lifecycle is written under the same compare. No `run.ended`
+   ever carries `lease-lost` — that reason names a process's exit, not a run's ending.
 7. **No mid-stream journal deletion, ever** — whole-stream deletion or front-truncation only.
 8. **A projection is never committed in a different transaction from its event.**
 9. **A projection schema change never migrates silently** — it bumps the version, and a
@@ -2154,3 +2165,4 @@ touching everything twice.
 | 2026-08-15 | §5.4's scope clause generalised from "any ticket execution holding an unresolved effect" to **any entity** holding one — a ticket execution, an already-ended run, or the repository for a repo-scoped effect. Both omissions are reachable (`start --new-run` ends a run whose ticket-less effects were never settled; a repo-scoped artifact write is keyed with a null run), and under the old wording §12.4 pinned them forever with nothing able to probe them. Found while implementing the engine. | #96 |
 | 2026-08-15 | §18.0 both preconditions discharged. §6.3 gains two **verified** Claude Code 2.1.229 loader facts that justify the generator: skills register at **depth 1 only** (a bucketed skill is dropped with no error), and `author` must be an **object**. Both were found by running the real binary, not by reading docs — the second one failed a test that would otherwise have passed. | #87 |
 | 2026-08-15 | #97 hostile review corrections: normal `run.ended` and controller-lease release are one token-checked transaction; a stale controller emits and exits 6 but leaves the adopted run open. `baseline-red` is clarified as the closed pre-execution outcome for any required red preflight check. §10.4 explicitly permits a fail-closed `scope-unresolvable` result until the tracker membership reader lands. | #97 |
+| 2026-08-15 | #97 reverse-verification corrections. §4.6 and §14.6 extended: **every** record moving a run's lifecycle is written under the token in the same transaction as the compare, not only `run.ended` — a holder whose row lapsed learns it is stale at its next compare-and-swap, and effects survive that window on §14.5's resolution-time check while a run's lifecycle has no such backstop. §10.3's table row records that `lease-lost` is the one member that is only an exit code and never a recorded `end_reason`; the projector enforces it. | #97 |

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { RUN_END_REASONS, RUN_TERMINAL_REASONS } from "../../factory/lib/domain/vocabulary.mjs";
 import { newUlid } from "../../factory/lib/identity/ulid.mjs";
 import { FactoryStateError } from "../../factory/lib/state/errors.mjs";
 import { PROJECTIONS } from "../../factory/lib/state/projections.mjs";
@@ -126,6 +127,34 @@ test("a run cannot end twice with competing terminal reasons", async (t) => {
 		["drained"],
 	);
 	assert.equal(store.readRun(runId).end_reason, "drained");
+});
+
+test("no run ends `lease-lost`: that reason names a process's exit, not a run's ending", async (t) => {
+	const { store, runId } = await storeWithRun(t);
+
+	// It is one of §10.3's seven — it has a published exit code — and it is still
+	// refused here. The process that lost its lease has no ownership proof left,
+	// and a successor may already be adopting this same run id, so closing the
+	// run would be a stale writer ending somebody else's work.
+	assert.throws(
+		() => store.append(runEnded(runId, { endReason: "lease-lost" })),
+		(error) => {
+			assert.equal(error.reason, "invalid-event");
+			assert.equal(error.details.found, "lease-lost");
+			assert.ok(!error.details.expected.includes("lease-lost"));
+			assert.match(error.message, /controller process's exit/);
+			return true;
+		},
+	);
+
+	assert.equal(store.readRun(runId).end_reason, null);
+	assert.equal(RUN_END_REASONS.includes("lease-lost"), true, "the published table still names the exit code");
+	assert.equal(RUN_TERMINAL_REASONS.includes("lease-lost"), false);
+	assert.deepEqual(
+		RUN_END_REASONS.filter((reason) => !RUN_TERMINAL_REASONS.includes(reason)),
+		["lease-lost"],
+		"exactly one member of the enum is a controller outcome rather than a run ending",
+	);
 });
 
 test("every projection head advances with every event, to the journal's own head", async (t) => {

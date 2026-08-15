@@ -196,6 +196,39 @@ export function holdControllerLease({
 			return { token: held.token, generation: held.fencingGeneration };
 		},
 
+		/**
+		 * Append a record that only the current holder may write, under proof that
+		 * this process still is one.
+		 *
+		 * `fence()` and `assertMayIssueEffects` both read the latch, which is the
+		 * right answer for an effect — §14.5's fencing check at resolution is the
+		 * backstop, so an effect stamped by a stale generation is simply never
+		 * honored. **A run's lifecycle has no such backstop**: it is authoritative
+		 * state, written once and read by the monitor and by the next controller,
+		 * so a stale writer corrupts it outright rather than having its write
+		 * ignored later. The latch cannot help there — a successor adopts a lapsed
+		 * row without telling anyone, so `lost` stays false until this process's
+		 * next compare-and-swap. Hence the compare happens here, in the same
+		 * transaction as the write.
+		 *
+		 * @param {object} event
+		 * @throws {FactoryStateError} `lease-lost`, having conceded, when the row is
+		 *   no longer this holder's. §14.6 is absolute: stop, emit, exit — so this
+		 *   is a refusal rather than a `false` a caller can carry on past.
+		 */
+		append(event) {
+			assertMayIssueEffects();
+			if (leases.attest(held, { event })) return;
+
+			concede({ lease: LEASE_NAMES.controller, holder_generation: null });
+			throw new FactoryStateError(
+				"lease-lost",
+				`The ${LEASE_NAMES.controller} lease is no longer this holder's, so "${event.kind}" was not ` +
+					"written: the run belongs to whoever holds it now (§14.6).",
+				{ lease: LEASE_NAMES.controller, fencing_generation: held.fencingGeneration, run: driving },
+			);
+		},
+
 		assertMayIssueEffects,
 		renew,
 

@@ -130,7 +130,12 @@ is the authority; cite the section a change answers to.
   generation and a probe, never by elapsed time. A lost controller lease is terminal
   (`factory/lib/controller/lease-guard.mjs`): stop issuing effects, emit, exit 6, never
   reacquire, and never self-close the run a successor may already have adopted. Normal
-  `run.ended` and controller-lease release commit in one token-checked transaction.
+  `run.ended` and controller-lease release commit in one token-checked transaction, and
+  **every record moving a run's lifecycle goes through `hold.append`**, which compares the
+  token inside the write's own transaction. A holder's in-memory latch is not proof: a
+  successor adopts a lapsed row without asking, so `lost` stays false until this process's
+  next compare-and-swap. Effects survive that window on §14.5's resolution-time check; a
+  run's lifecycle is authoritative state with no such backstop.
 - **Integrity failure is never repaired.** A damaged database is renamed into
   `quarantine/<stamp>/` byte-for-byte and replaced by a minimal fresh store carrying a
   typed `journal.integrity-failed` fact, so `status` and `doctor` still have somewhere to
@@ -206,7 +211,11 @@ is the authority; cite the section a change answers to.
   import-time check refuses a member with no row or a row naming no member — the
   co-location §10.3 asks for, made mechanical. `controller-lost` maps to `null` because it
   is never self-asserted, so `exitCodeForEndReason` refuses it rather than inventing a
-  code. Neither the table nor the `--json` `schema_version` is reachable from configuration.
+  code. `lease-lost` keeps its row — it is a real exit code — but the `run` projector refuses
+  it on a `run.ended` (`RUN_TERMINAL_REASONS` in `factory/lib/domain/vocabulary.mjs`), because
+  it names a process's exit and not a run's ending; leaving that to convention is how the
+  ending it forbids gets reintroduced with every test still green.
+  Neither the table nor the `--json` `schema_version` is reachable from configuration.
   The envelope's `ok` tracks that exit code rather than "a report came back": §10.3's warning
   about `factory start && next-thing` reading a circuit-breaker exit as success is the same
   misreading a `--json` consumer branching on `ok` would make. A failed run still prints its

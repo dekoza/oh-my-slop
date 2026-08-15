@@ -13,6 +13,7 @@ import {
 	manualTimers,
 	openTestStore,
 	runEnded,
+	runMoved,
 	runStarted,
 } from "./helpers/factory-store.mjs";
 
@@ -164,6 +165,37 @@ test("normal run ending and controller-lease release commit together", async (t)
 	assert.equal(leases.inspect(LEASE_NAMES.controller), null);
 	assert.equal(store.readRun(RUN).end_reason, "drained");
 	assert.equal(store.readEvents({}).filter((event) => event.kind === "run.ended").length, 1);
+});
+
+test("a record only the holder may write goes in under the token, not beside it", async (t) => {
+	const { store, guard } = await heldStore(t);
+	guard.recordStartupReconcile();
+
+	guard.append(runMoved(RUN, "running"));
+
+	assert.equal(store.readRun(RUN).lifecycle, "running");
+});
+
+test("a stale holder cannot move a run whose lease a successor already adopted", async (t) => {
+	const losses = [];
+	const { store, guard, clock } = await heldStore(t, { onLost: (loss) => losses.push(loss) });
+	guard.recordStartupReconcile();
+	const thief = adoptFrom(store, clock);
+
+	// Nothing has told this holder yet — the renewal has not fired, so its latch
+	// still says it holds the lease. A successor adopts a *lapsed* row without
+	// asking anyone, so the compare has to happen in the write's own transaction
+	// rather than in the holder's memory.
+	assert.equal(guard.lost, false);
+	assert.throws(() => guard.append(runMoved(RUN, "running")), { reason: "lease-lost" });
+
+	assert.equal(store.readRun(RUN).lifecycle, "preflight", "a stale holder moved a run its successor owns");
+	assert.equal(guard.lost, true, "the refused write is §14.6's loss, discovered by the compare");
+	assert.deepEqual(
+		losses.map((loss) => loss.exitCode),
+		[EXIT_LEASE_LOST],
+	);
+	assert.equal(openLeases(store).inspect(LEASE_NAMES.controller).token, thief.token);
 });
 
 test("a lost lease stops effects, emits controller.lease-lost, exits non-zero, and never reacquires", async (t) => {

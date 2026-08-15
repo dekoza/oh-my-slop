@@ -65,6 +65,26 @@ export const RUN_END_REASONS = Object.freeze([
 	END_REASON_CONTROLLER_LOST,
 ]);
 
+/**
+ * The six a `run.ended` may actually carry, and the one it may not.
+ *
+ * `lease-lost` is in §10.3's published table because it names an **exit code** —
+ * a controller process's own outcome — and it stays there so a script reading
+ * that table finds every code it can receive. But no run *ends* for it: the
+ * process that lost its lease has no ownership proof left, and a successor may
+ * already be driving the same `run_id`, so the terminal event is not its to
+ * write. Normal completion appends `run.ended` in the same token-checked
+ * transaction that releases the lease.
+ *
+ * That is why this list exists rather than a comment saying so. `controller-lost`
+ * is protected structurally already — `exitCodeForEndReason` refuses to invent a
+ * code for it — and leaving its twin to a convention would let the next writer
+ * reintroduce exactly the ending this rule forbids with every test still green.
+ */
+export const RUN_TERMINAL_REASONS = Object.freeze(
+	RUN_END_REASONS.filter((reason) => reason !== END_REASON_LEASE_LOST),
+);
+
 /** §8.8. */
 export const TICKET_DISPOSITIONS = Object.freeze(["published", "paused", "failed", "released"]);
 

@@ -183,6 +183,30 @@ export function openLeases(store, { now = Date.now } = {}) {
 			}),
 
 		/**
+		 * Append `event` **only while this token still holds the row**, both in one
+		 * transaction.
+		 *
+		 * The token is the ownership proof, and the latch a holder keeps in memory
+		 * is not: a successor adopts a *lapsed* row without asking anyone, so the
+		 * previous holder learns it is stale at its next compare-and-swap and not
+		 * one moment sooner. Between the lapse and that discovery a holder that
+		 * writes through `store.append` is writing about state somebody else now
+		 * owns. This is the write path for the records where that matters — the
+		 * ones that move a run's authoritative lifecycle.
+		 *
+		 * @param {object} held the hold whose token is compared
+		 * @param {{ event: object }} write
+		 * @returns {boolean} whether this holder still held the row, and therefore
+		 *   whether the event was appended
+		 */
+		attest: (held, { event }) =>
+			store.transaction(({ db, appendEvent }) => {
+				if (!holdsLease(db, held)) return false;
+				appendEvent(event);
+				return true;
+			}),
+
+		/**
 		 * Compare-and-delete on the token. There is **no unconditional removal
 		 * path** in this module: `job-pipeline`'s `releaseJobLock` was a bare
 		 * `rmSync`, so any process could drop any owner's lock.
@@ -291,6 +315,13 @@ function mintGeneration(db) {
 
 function readLease(db, name) {
 	return decode(db.prepare("SELECT * FROM lease WHERE name = ?").get(name));
+}
+
+/** The compare half of every compare-and-swap here, asked without swapping. */
+function holdsLease(db, held) {
+	return (
+		db.prepare("SELECT 1 FROM lease WHERE name = ? AND holder_token = ?").get(held.name, held.token) !== undefined
+	);
 }
 
 /**

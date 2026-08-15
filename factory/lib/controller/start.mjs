@@ -191,11 +191,13 @@ async function drive(store, hold, context) {
 	// which is what lets `controller-lost` be written at all without any process
 	// ever self-asserting it (§14.36).
 	for (const abandoned of entry.abandon) {
-		endRun(store, abandoned, { endReason: END_REASON_CONTROLLER_LOST, at: startedAt, observer: entry.run });
+		hold.append(
+			runEndedEvent(abandoned, { endReason: END_REASON_CONTROLLER_LOST, at: startedAt, observer: entry.run }),
+		);
 	}
 
 	const expiry = applyExpiry();
-	openLifecycle(store, entry, { at: startedAt });
+	openLifecycle(hold, entry, { at: startedAt });
 
 	let lifecycle = RUN_LIFECYCLE.preflight;
 	const heartbeat = startHeartbeat({
@@ -236,8 +238,8 @@ async function drive(store, hold, context) {
 		// ends here, while only a green run reaches `running`.
 		const endReason = endReasonOf(checked);
 		if (endReason === END_REASON_DRAINED) {
-			lifecycle = move(store, entry.run, RUN_LIFECYCLE.running, { at: context.now() });
-			lifecycle = move(store, entry.run, RUN_LIFECYCLE.draining, { at: context.now() });
+			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.running, { at: context.now() });
+			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.draining, { at: context.now() });
 		}
 
 		const endedAt = context.now();
@@ -338,13 +340,13 @@ function executionReport() {
  * because a re-entered run preflights again — the world it checked may have
  * changed while nobody was driving.
  */
-function openLifecycle(store, entry, { at }) {
+function openLifecycle(hold, entry, { at }) {
 	if (entry.mode === ENTRY_MODES.adopted) {
-		move(store, entry.run, RUN_LIFECYCLE.preflight, { at });
+		move(hold, entry.run, RUN_LIFECYCLE.preflight, { at });
 		return;
 	}
 
-	store.append({
+	hold.append({
 		kind: "run.started",
 		source: "controller",
 		run: entry.run,
@@ -354,8 +356,19 @@ function openLifecycle(store, entry, { at }) {
 	});
 }
 
-function move(store, run, lifecycle, { at }) {
-	store.append({
+/**
+ * A run's lifecycle moves **through the hold**, never through the store.
+ *
+ * These four records are the run's authoritative state — the monitor renders
+ * them and the next controller re-enters on them — and unlike an effect they
+ * have no §14.5 backstop that quietly declines a superseded write. A holder
+ * whose row lapsed and was adopted learns it is stale only at its next
+ * compare-and-swap, so a plain `store.append` here would let a stale process
+ * park a successor's run at `draining` while the successor preflights it.
+ * `hold.append` compares the token in the same transaction as the write.
+ */
+function move(hold, run, lifecycle, { at }) {
+	hold.append({
 		kind: "run.lifecycle-changed",
 		source: "controller",
 		run,
@@ -371,11 +384,12 @@ function move(store, run, lifecycle, { at }) {
  * the preflight checks behind a `baseline-red`, and `observer` names the
  * controller that made a `controller-lost` observation — the field is what keeps
  * that reason readable as somebody else's assertion rather than the run's own.
+ *
+ * There is no `lease-lost` caller and there cannot be one: the reason names a
+ * controller process's exit, and the projector refuses it on a `run.ended`
+ * (§14.6). The run this controller drives ends by riding its lease release; the
+ * runs `--new-run` abandons end through `hold.append`, under the same proof.
  */
-function endRun(store, run, options) {
-	store.append(runEndedEvent(run, options));
-}
-
 function runEndedEvent(run, { endReason, at, red = [], observer = null }) {
 	return {
 		kind: "run.ended",

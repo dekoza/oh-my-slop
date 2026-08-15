@@ -116,6 +116,18 @@ export function runStarted(runId = newUlid(), { at = FIXED_NOW } = {}) {
 	};
 }
 
+/** §10.3's four lifecycles, moved between — `ended` is `runEnded`'s alone. */
+export function runMoved(runId, lifecycle, { at = 1_770_000_300_000 } = {}) {
+	return {
+		kind: "run.lifecycle-changed",
+		source: "controller",
+		run: runId,
+		occurredAt: at,
+		observedAt: at,
+		payload: { lifecycle },
+	};
+}
+
 export function runEnded(runId, { at = 1_770_000_600_000, endReason = "drained" } = {}) {
 	return {
 		kind: "run.ended",
