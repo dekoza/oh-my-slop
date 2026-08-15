@@ -157,7 +157,13 @@ export function openLeases(store, { now = Date.now } = {}) {
 			store.transaction(({ db, appendEvent }) => {
 				const row = decode(db.prepare("SELECT * FROM lease WHERE name = ?").get(name));
 				if (row === null) return false;
-				if (row.token !== token) refuseLost({ name, fencingGeneration: generation }, row);
+				if (row.token !== token) {
+					throw new FactoryStateError(
+						"lease-lost",
+						`The ${name} lease is no longer on the token this reclaim observed; it has been renewed or reclaimed since.`,
+						{ lease: name, fencing_generation: row.fencingGeneration },
+					);
+				}
 				if (!hasLapsed(row, now()) && !isSuperseded(row, generation)) refuseHeld(name, row);
 
 				db.prepare("DELETE FROM lease WHERE name = ? AND holder_token = ?").run(name, token);

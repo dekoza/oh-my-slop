@@ -118,6 +118,13 @@ is the authority; cite the section a change answers to.
   output changes bumps its `version` in `factory/lib/state/projections.mjs`; the head
   compare at open is fail-closed, and a missing head is a mismatch, never a skipped
   check.
+- Every lock is one row and one compare-and-swap, from `factory/lib/state/leases.mjs`
+  and nowhere else. **The holder token is the only ownership proof**: the identity blob
+  is advisory, nothing tests a pid, and no path removes a row without comparing the
+  token — those two are exactly how the legacy systems failed. Fencing generations come
+  from the one DB-wide counter, so they order every lease against every other. A lost
+  controller lease is terminal (`factory/lib/controller/lease-guard.mjs`): stop issuing
+  effects, emit, exit non-zero, never reacquire.
 
 ### `scripts/`
 
