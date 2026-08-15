@@ -23,10 +23,22 @@ After installation, pi auto-discovers:
 The extension loads automatically. Existing installations pick it up after
 `pi update --extensions` and a pi restart or `/reload`.
 
+Installing the package also puts **`factory`** on your `PATH` from this package's `bin`
+field — one package, one version, never separately installable. It is the Software
+Factory's operator surface, carrying every verb (`start`, `status`, `doctor`,
+`reconcile`, `stop`, `cleanup-plan`, `cleanup-execute`, `migrate`), because the moment
+a diagnostic matters most is when the controller — and possibly pi with it — is dead.
+Run `factory --help` for the set. It reads exactly one policy file,
+`<repo root>/.pi/factory.json`, refuses to start on anything it does not understand
+there, and prints human output by default and `--json` on request. The verbs
+themselves are landing slice by slice; until one does, it says so and names what is
+missing rather than going quiet.
+
 The `software-factory` extension was **retired** in `fe80c5d` and archived under
-`extensions/.legacy/`. Its replacement is specified but not yet built — see
-[`docs/specs/software-factory.md`](docs/specs/software-factory.md) and its companion
-[`docs/specs/software-factory-monitor.md`](docs/specs/software-factory-monitor.md).
+`extensions/.legacy/`. Its replacement is specified in
+[`docs/specs/software-factory.md`](docs/specs/software-factory.md), with its companion
+[`docs/specs/software-factory-monitor.md`](docs/specs/software-factory-monitor.md), and
+is being built against it.
 
 The bundled agent definitions in `./agents` are only seeded if you opt into
 `subagent-bundled-agents`.

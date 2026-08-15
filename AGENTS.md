@@ -11,6 +11,7 @@ This repo packages:
 - `skills/` — curated markdown skills for pi agents
 - `prompts/` — slash-command entry points that hand off to those skills
 - `extensions/` — TypeScript pi extensions
+- `factory/` — the `factory` binary and its plain-ESM libraries, shipped from the root package's `bin`
 - `scripts/` — repository maintenance scripts
 - `tests/` — Python and Node regression tests for repo invariants
 - `README.md`, `package.json`, `pyproject.toml`, `uv.lock` — package metadata and install surfaces
@@ -30,6 +31,7 @@ Targeted minimums:
 - Any change under `skills/` or to markdown references: `uv run pytest tests/test_validate_refs.py tests/test_skill_frontmatter.py`
 - Any change under `prompts/`: `uv run pytest tests/test_prompt_templates.py tests/test_readme.py`
 - Any change under `extensions/` or to package entrypoints: `node --test tests/node/*.mjs`
+- Any change under `factory/`: `node --test tests/node/factory_*.test.mjs`
 - Any change to `package.json`, `pyproject.toml`, or installable entrypoints: `uv run pytest tests/test_pi_package_installability.py`
 - Any change to `scripts/validate_refs.py`: `uv run pytest tests/test_validate_refs.py`
 
@@ -70,6 +72,25 @@ These are installable pi extensions, so entrypoints matter.
 - Do not break relative imports or rename files casually; the extension tests assume resolvable local module graphs.
 - If you change extension behavior, update the Node tests in `tests/node/`.
 - Do not add placeholder providers, fake registration logic, or speculative configuration knobs.
+
+### `factory/`
+
+The Software Factory's operator binary. [`docs/specs/software-factory.md`](docs/specs/software-factory.md)
+is the authority; cite the section a change answers to.
+
+- Plain ESM under Node (`.mjs`), no build step. TypeScript is reserved for the pi
+  extension entries under `extensions/`.
+- The binary ships from the **root** `package.json`'s `bin` — one package, one version.
+  It is never separately installable and never grows its own `package.json`.
+- Config is fail-closed and repo-bound: one file at `<repo root>/.pi/factory.json`, no
+  `--config`, no env overrides, no merge layering, and no warn-and-continue path.
+  `extensions/config-loader.ts`'s fallback-on-parse-error is the failure mode this
+  code exists to end — do not reach for it here.
+- Exit code `1` means usage or config-load failure and nothing else; `0` and `2`–`6`
+  belong to the run end-reason table.
+- Every command answers from one structured value, rendered human by default and
+  `--json` on request. A verb that cannot do its job says what is missing; it never
+  goes quiet and never half-runs.
 
 ### `scripts/`
 

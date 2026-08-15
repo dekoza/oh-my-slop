@@ -176,3 +176,35 @@ def test_extension_entrypoints_only_use_resolvable_relative_imports() -> None:
         discovered_files.update(walk_local_import_graph(entrypoint))
 
     assert discovered_files
+
+
+def test_root_package_manifest_ships_the_factory_binary() -> None:
+    """The factory binary ships from the root package's bin field: one package,
+    one version (§11.7). Anything else reopens the split-brain the anti-shadowing
+    guard exists to catch."""
+    manifest = load_package_manifest()
+
+    assert manifest["bin"] == {"factory": "./factory/bin/factory.mjs"}
+
+    binary_path = REPO_ROOT / manifest["bin"]["factory"].removeprefix("./")
+    assert binary_path.is_file()
+    assert binary_path.read_text(encoding="utf-8").startswith("#!/usr/bin/env node")
+
+
+def test_the_factory_binary_is_not_separately_installable() -> None:
+    """`bin` and both extensions are never separately installable (§11.7), so the
+    binary carries no package manifest of its own and no nested package declares
+    an executable."""
+    assert not (REPO_ROOT / "factory" / "package.json").exists()
+
+    for manifest_path in iter_nested_extension_manifest_paths():
+        nested_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert "bin" not in nested_manifest, (
+            f"{manifest_path.relative_to(REPO_ROOT)} declares its own bin entry"
+        )
+
+
+def test_removed_extensions_metadata_is_gone() -> None:
+    """`removedExtensions` was dead metadata about a retirement git history
+    already records (§11.8)."""
+    assert "removedExtensions" not in load_package_manifest()

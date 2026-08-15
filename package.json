@@ -10,6 +10,9 @@
     "skills",
     "extensions"
   ],
+  "bin": {
+    "factory": "./factory/bin/factory.mjs"
+  },
   "pi": {
     "skills": [
       "./skills"
@@ -28,8 +31,5 @@
     "@earendil-works/pi-coding-agent": "*",
     "@mariozechner/pi-ai": "*",
     "@mariozechner/pi-coding-agent": "*"
-  },
-  "removedExtensions": [
-    "./extensions/software-factory"
-  ]
+  }
 }
