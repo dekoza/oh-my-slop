@@ -1,13 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { CONFIG_BLOCKS, CONFIG_SCHEMA_VERSION, loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { remoteUrlToRepoSlug } from "../../factory/lib/git/repo.mjs";
-import { cloneValidConfig as clone, makeRepo } from "./helpers/factory-repo.mjs";
+import { cloneValidConfig as clone, factorySources, makeRepo } from "./helpers/factory-repo.mjs";
 
 function loadFailure(cwd) {
 	try {
@@ -260,16 +259,11 @@ test("https and scp remote URLs both resolve to the same repository", (t) => {
 // ── What the loader must never reuse ─────────────────────────────────────────
 
 test("no factory source reaches for the config-loader extension's fallback semantics", () => {
-	const factoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "factory");
-
-	for (const entry of readdirSync(factoryRoot, { recursive: true, withFileTypes: true })) {
-		if (!entry.isFile() || !entry.name.endsWith(".mjs")) continue;
-		const source = readFileSync(join(entry.parentPath, entry.name), "utf8");
-
+	for (const [path, source] of factorySources()) {
 		assert.doesNotMatch(
 			source,
 			/from\s+["'][^"']*config-loader|\bloadJsonConfigFile\s*\(/,
-			`${entry.name} calls the silently-defaulting loader §11.2 rules out`,
+			`${path} calls the silently-defaulting loader §11.2 rules out`,
 		);
 	}
 });

@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * Fixtures shared by the factory's node tests. They build a real git repository
@@ -72,4 +73,23 @@ export function makeRepo(
 	}
 
 	return root;
+}
+
+/**
+ * Every `.mjs` the binary ships, as `[path relative to factory/, source]`.
+ *
+ * Several invariants are statements about the code rather than about one call —
+ * "`node:sqlite` is imported once", "`PI_AGENT_DIR` is never read", "nothing
+ * reaches for the extension loader's fallback" — and each test that checks one
+ * was growing its own copy of this walk.
+ */
+export function factorySources() {
+	const factoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "factory");
+
+	return readdirSync(factoryRoot, { recursive: true, withFileTypes: true })
+		.filter((entry) => entry.isFile() && entry.name.endsWith(".mjs"))
+		.map((entry) => {
+			const path = join(entry.parentPath, entry.name);
+			return [relative(factoryRoot, path), readFileSync(path, "utf8")];
+		});
 }

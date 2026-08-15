@@ -1,14 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { MAX_SUPPORTED_TICKET_CONCURRENCY } from "../../factory/lib/config/concurrency.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { resourceClassOf } from "../../factory/lib/config/profiles.mjs";
 import { FACTORY_LABELS } from "../../factory/lib/tracker/labels.mjs";
-import { cloneValidConfig as clone, makeRepo } from "./helpers/factory-repo.mjs";
+import { cloneValidConfig as clone, factorySources, makeRepo } from "./helpers/factory-repo.mjs";
 
 /**
  * §11.3–§11.6 block semantics: a config that loads is coherent, not merely
@@ -28,18 +26,6 @@ function loadFailure(t, config, { routingSet = null } = {}) {
 
 function loaded(t, config, { routingSet = null } = {}) {
 	return loadFactoryConfig({ cwd: makeRepo(t, { config }), routingSet });
-}
-
-/** Every `.mjs` the binary ships, as `[path relative to factory/, source]`. */
-function factorySources() {
-	const factoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "factory");
-
-	return readdirSync(factoryRoot, { recursive: true, withFileTypes: true })
-		.filter((entry) => entry.isFile() && entry.name.endsWith(".mjs"))
-		.map((entry) => {
-			const path = join(entry.parentPath, entry.name);
-			return [relative(factoryRoot, path), readFileSync(path, "utf8")];
-		});
 }
 
 // ── Checks: five fields, none of them defaulted (§11.6) ──────────────────────

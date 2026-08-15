@@ -91,15 +91,33 @@ is the authority; cite the section a change answers to.
 - Defaults exist only in `factory/lib/config/defaults.mjs` (`budgets`, `retention`),
   where an upstream decision already fixed the value. Everywhere else absence refuses —
   a policy the loader fills in is a policy nobody can read on disk.
-- Policy that is not configuration lives in code and is read from exactly one place:
-  the label vocabulary in `factory/lib/tracker/labels.mjs`, and
-  `MAX_SUPPORTED_TICKET_CONCURRENCY` in `factory/lib/config/concurrency.mjs`. The
-  scheduler stays capacity-parametric and never reads the ceiling — that is what makes
-  raising it a one-line change, and `tests/node/factory_config_semantics.test.mjs`
-  guards it.
+- Policy that is not configuration lives in code, and each piece is read from exactly
+  one place: the label vocabulary in `factory/lib/tracker/labels.mjs`;
+  `MAX_SUPPORTED_TICKET_CONCURRENCY` in `factory/lib/config/concurrency.mjs`; the
+  closed domain enums — phases, run lifecycles, end reasons, dispositions, attempt
+  outcomes — in `factory/lib/domain/vocabulary.mjs`; and the event-kind enumeration in
+  `factory/lib/state/events.mjs`. A vocabulary that grows a second home has already
+  started to drift. The scheduler stays capacity-parametric and never reads the
+  ceiling — that is what makes raising it a one-line change, and
+  `tests/node/factory_config_semantics.test.mjs` guards it.
 - Every command answers from one structured value, rendered human by default and
   `--json` on request. A verb that cannot do its job says what is missing; it never
   goes quiet and never half-runs.
+- Durable state is one SQLite store per repository under the pi SDK's `getAgentDir()`.
+  `node:sqlite` is imported by exactly one module — `factory/lib/state/sqlite.mjs` —
+  and `PI_AGENT_DIR` is never read; it is not a pi variable, and the day someone sets
+  `PI_CODING_AGENT_DIR` the old spelling splits pi and the factory into two brains.
+  `tests/node/factory_state_*.test.mjs` guards both.
+- An event and every projection it changes commit in **one** transaction, written from
+  one place: `appendEvent` in `factory/lib/state/store.mjs`. That deletes the
+  stale-projection failure class rather than detecting it, so no precedence rule
+  between journal and projection exists to get wrong. `effect` and `lease` rows are
+  canonical rather than projections — they ride the same transaction and are never
+  rebuilt from the journal.
+- The projection tables are the monitor's versioned read contract. A projector whose
+  output changes bumps its `version` in `factory/lib/state/projections.mjs`; the head
+  compare at open is fail-closed, and a missing head is a mismatch, never a skipped
+  check.
 
 ### `scripts/`
 

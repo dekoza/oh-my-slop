@@ -1,0 +1,41 @@
+/**
+ * Durable-state refusals (§4.1, §4.4, §4.7). Like the config loader's, every
+ * one of them stops the caller: the store never warns and continues, and a
+ * projection is never rendered from a head it could not verify.
+ *
+ * The reason reaches the operator's `--json` output, so it is a closed set the
+ * constructor enforces rather than a free string each throw site invents.
+ */
+export const STATE_ERROR_REASONS = Object.freeze([
+	/** The database file could not be opened or created (§4.1). */
+	"store-unopenable",
+	/** A store written by a different schema version (§4.1). */
+	"store-schema-version",
+	/** A slug collision whose hashed spelling is also somebody else's (§4.1). */
+	"repo-path-mismatch",
+	/** A projection head that does not match the journal head (§4.4). */
+	"projection-head-mismatch",
+	/** A projection built by a different projector version (§4.4). */
+	"projector-version-change",
+	/** An envelope that violates §4.3 — refused before it can be chained. */
+	"invalid-event",
+	/** A transaction misuse: nesting, or a write outside one (§4.4). */
+	"invalid-transaction",
+]);
+
+export class FactoryStateError extends Error {
+	/**
+	 * @param {string} reason machine-readable cause, one of STATE_ERROR_REASONS
+	 * @param {string} message operator-facing sentence naming what is wrong
+	 * @param {Record<string, unknown>} [details] extra structured fields (store, projection, expected, found)
+	 */
+	constructor(reason, message, details = {}) {
+		super(message);
+		if (!STATE_ERROR_REASONS.includes(reason)) {
+			throw new Error(`Unknown state error reason "${reason}".`);
+		}
+		this.name = "FactoryStateError";
+		this.reason = reason;
+		this.details = details;
+	}
+}
