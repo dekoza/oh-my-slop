@@ -90,7 +90,7 @@ export async function preflight(
 			configPath,
 			activeRouting,
 			declared,
-			handshake: handshake.handshake,
+			handshake: handshake.handshake ?? null,
 			hold,
 			actor,
 			at,

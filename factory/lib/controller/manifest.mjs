@@ -171,7 +171,7 @@ function profilePin(profiles, name) {
  * the digest.
  */
 function packagePin(handshake) {
-	if (handshake === null || handshake.package === undefined) {
+	if (handshake === null || handshake === undefined || handshake.package === undefined) {
 		return { name: null, version: null, tree_digest: null };
 	}
 

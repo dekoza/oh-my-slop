@@ -234,6 +234,19 @@ test("preflight stages hang off no tracker ticket", async (t) => {
 	assert.deepEqual(store.readTicketExecutions(value.report.run), [], "a run-scoped stage created a ticket execution");
 });
 
+test("an unanchorable package is a recorded red check, not an unhandled exception", async (t) => {
+	const context = invocation(t);
+	context.executable = "/definitely/not/a/package/factory.mjs";
+
+	const { exitCode, value } = await runCli(["start", "42"], context);
+
+	assert.equal(exitCode, 2);
+	assert.equal(value.report.end_reason, "baseline-red");
+	assert.deepEqual(value.report.preflight.red, ["package-handshake"]);
+	assert.equal(value.report.preflight.checks.find((check) => check.check === "package-handshake").result, "failed");
+	assert.ok(value.report.manifest, "the failed handshake prevented the remaining static evidence from being recorded");
+});
+
 test("a red preflight check ends the run baseline-red, naming the check, exiting 2", async (t) => {
 	const context = invocation(t, { herdr: UNAVAILABLE });
 
