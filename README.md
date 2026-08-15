@@ -103,11 +103,12 @@ Case in point: the agent messed up twice while creating this repo (deleting an u
 These ship in the repo and load automatically through the root `pi install` manifest.
 
 <details>
-<summary><strong>Extensions (1)</strong></summary>
+<summary><strong>Extensions (2)</strong></summary>
 
 | Extension | Loading | What it does |
 |---|---|---|
 | **[workflow-watchdog](extensions/workflow-watchdog/)** | Automatic | Monitors pi's workflow for failure patterns: loop detection, consecutive tool errors, and optional supervisor-model escalation. |
+| **[local-router](extensions/local-router/)** | Opt-in | Registers a `local` provider backed by an OpenAI-compatible router (default `http://127.0.0.1:8080`): models are discovered at load time and on refresh. Enable it in your pi settings only when a router is reachable — without one, its discovery fails. |
 
 </details>
 
