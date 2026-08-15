@@ -1,8 +1,15 @@
 import { readFileSync } from "node:fs";
 
 import { remoteUrlToRepoSlug, resolveRemoteUrl } from "../git/repo.mjs";
+import { FACTORY_LABELS } from "../tracker/labels.mjs";
+import { validateChecks } from "./checks.mjs";
+import { validateConcurrency } from "./concurrency.mjs";
+import { validateBudgets, validateRetention } from "./defaults.mjs";
 import { discoverConfigPath } from "./discover.mjs";
 import { FactoryConfigError } from "./errors.mjs";
+import { validateProfiles } from "./profiles.mjs";
+import { validateRouting } from "./routing.mjs";
+import { requireExactKeys, requireNoUnknownKeys, requireNonEmptyString, requireObject } from "./shape.mjs";
 
 /**
  * The factory's fail-closed configuration load (§11.1, §11.2).
@@ -22,21 +29,22 @@ export const CONFIG_SCHEMA_VERSION = 2;
  * every key has an upstream-fixed default (`budgets`, `retention`) and the
  * optional `package.expect` may be omitted.
  *
- * `interior` names who validates what is inside a block. The blocks marked
- * `deferred` are the repo binding's neighbours, not its parts: their semantics
- * — profile shapes, routing overlap, the five check fields, budget ceilings,
- * concurrency sizes, retention floors — are #89's, and land against this table.
+ * This table answers presence and container shape only. Every block's interior is
+ * validated too — profile shapes, routing overlap, the five check fields, budget
+ * ceilings, concurrency sizes, retention floors — by the sibling module named
+ * after it, so no surviving key becomes an inferred runtime policy at execution
+ * time.
  */
 export const CONFIG_BLOCKS = Object.freeze({
-	tracker: { required: true, container: "object", interior: "owned" },
-	git: { required: true, container: "object", interior: "owned" },
-	profiles: { required: true, container: "object", interior: "deferred" },
-	routing: { required: true, container: "object", interior: "deferred" },
-	checks: { required: true, container: "array", interior: "deferred" },
-	budgets: { required: false, container: "object", interior: "deferred" },
-	concurrency: { required: true, container: "object", interior: "deferred" },
-	retention: { required: false, container: "object", interior: "deferred" },
-	package: { required: false, container: "object", interior: "deferred" },
+	tracker: { required: true, container: "object" },
+	git: { required: true, container: "object" },
+	profiles: { required: true, container: "object" },
+	routing: { required: true, container: "object" },
+	checks: { required: true, container: "array" },
+	budgets: { required: false, container: "object" },
+	concurrency: { required: true, container: "object" },
+	retention: { required: false, container: "object" },
+	package: { required: false, container: "object" },
 });
 
 const TRACKER_KEYS = Object.freeze(["kind", "repo", "remote", "login", "assignee"]);
@@ -44,20 +52,27 @@ const GIT_KEYS = Object.freeze(["baseBranch", "remote"]);
 const SUPPORTED_TRACKER_KINDS = Object.freeze(["gitea"]);
 const REPO_SLUG_PATTERN = /^[^/\s]+\/[^/\s]+$/;
 const TODO_SENTINEL_PATTERN = /^TODO\b/;
+const PACKAGE_EXPECT_KEYS = Object.freeze(["name", "version"]);
 
 /**
- * @returns {{ repoRoot: string, configPath: string, config: object, remote: { name: string, url: string, slug: string } }}
+ * @param {{ cwd: string, routingSet?: string | null }} invocation `routingSet` is
+ *   the run's §11.5 selection: a name from `routing.sets`, or null for the
+ *   declared default. It is a per-run input rather than config, so an unknown
+ *   name refuses instead of quietly leaving the default active.
+ * @returns {{ repoRoot: string, configPath: string, config: object, activeRouting: { set: string | null, roles: object, rules: ReadonlyArray<object> }, remote: { name: string, url: string, slug: string } }}
+ *   `config.routing` is what the file declares, sets and all; `activeRouting` is
+ *   the one this run routes by.
  * @throws {FactoryConfigError}
  */
-export function loadFactoryConfig({ cwd }) {
+export function loadFactoryConfig({ cwd, routingSet = null }) {
 	const { repoRoot, configPath } = discoverConfigPath(cwd);
 	const source = readConfigFile(configPath);
 	const document = parseConfigFile(source, configPath);
 
-	const config = validateConfig(document, configPath);
+	const { config, activeRouting } = validateConfig(document, configPath, routingSet);
 	const remote = crossCheckRemote(config, repoRoot, configPath);
 
-	return { repoRoot, configPath, config, remote };
+	return { repoRoot, configPath, config, activeRouting, remote };
 }
 
 /**
@@ -102,7 +117,7 @@ function crossCheckRemote(config, repoRoot, configPath) {
  * out of `factory migrate` is a hole-filling problem before it is a shape
  * problem (§11.8).
  */
-function validateConfig(document, configPath) {
+function validateConfig(document, configPath, routingSet) {
 	requireObject(document, "the configuration", configPath, "");
 	requireSchemaVersion(document, configPath);
 	requireNoTodoSentinel(document, configPath);
@@ -110,7 +125,28 @@ function validateConfig(document, configPath) {
 	requireTrackerBlock(document.tracker, configPath);
 	requireGitBlock(document.git, configPath);
 
-	return document;
+	const profiles = validateProfiles(document.profiles, configPath);
+	const routings = validateRouting(document.routing, profiles, routingSet, configPath);
+
+	const config = Object.freeze({
+		...document,
+		profiles,
+		routing: routings.block,
+		checks: validateChecks(document.checks, configPath),
+		budgets: validateBudgets(document.budgets, configPath),
+		concurrency: validateConcurrency(document.concurrency, profiles, routings, configPath),
+		retention: validateRetention(document.retention, configPath),
+		...(document.package === undefined ? {} : { package: validatePackage(document.package, configPath) }),
+	});
+
+	return {
+		config,
+		activeRouting: Object.freeze({
+			set: routings.active.name,
+			roles: routings.active.roles,
+			rules: routings.active.rules,
+		}),
+	};
 }
 
 function readConfigFile(configPath) {
@@ -212,6 +248,7 @@ function requireKnownBlocks(document, configPath) {
 }
 
 function requireTrackerBlock(tracker, configPath) {
+	refuseConfiguredLabels(tracker, configPath);
 	requireExactKeys(tracker, TRACKER_KEYS, "tracker", configPath);
 
 	for (const key of TRACKER_KEYS) {
@@ -243,42 +280,49 @@ function requireGitBlock(git, configPath) {
 	}
 }
 
-function requireExactKeys(block, allowed, blockName, configPath) {
-	for (const key of Object.keys(block)) {
-		if (allowed.includes(key)) continue;
+/**
+ * §3.2's vocabulary lives in `lib/tracker/labels.mjs`. A config still carrying
+ * `tracker.labels` is answered by name, because the author is renaming an
+ * eligibility predicate and needs to be told the names are no longer theirs.
+ */
+function refuseConfiguredLabels(tracker, configPath) {
+	if (tracker.labels === undefined) return;
+	throw new FactoryConfigError(
+		"unknown-key",
+		`${configPath} declares "tracker.labels". The factory's label vocabulary is fixed constants in code (§3.2): ${Object.values(FACTORY_LABELS).join(", ")}. Per-install names make the tracker graph un-auditable across repos.`,
+		{ file: configPath, at: "tracker.labels" },
+	);
+}
+
+/**
+ * §11.7's declared half. `expect` is the operator's expectation of the package
+ * they installed; the tree digest stays purely observational — recorded per run
+ * and compared across attempts, never hand-declared, because a digest in config
+ * would be unmaintainable in development.
+ */
+function validatePackage(block, configPath) {
+	requireExactKeys(block, ["expect"], "package", configPath);
+	requireObject(block.expect, "package.expect", configPath, "package.expect");
+
+	if (block.expect.digest !== undefined) {
 		throw new FactoryConfigError(
 			"unknown-key",
-			`${configPath} declares unknown key "${blockName}.${key}". The factory never ignores config it does not understand.`,
-			{ file: configPath, at: `${blockName}.${key}` },
+			`${configPath} declares "package.expect.digest". The tree digest is observational: the run records it and compares it across attempts, and a hand-declared one would be unmaintainable in development (§11.7).`,
+			{ file: configPath, at: "package.expect.digest" },
 		);
 	}
+	requireNoUnknownKeys(block.expect, PACKAGE_EXPECT_KEYS, "package.expect", configPath);
 
-	for (const key of allowed) {
-		if (block[key] !== undefined) continue;
-		throw new FactoryConfigError(
-			"missing-key",
-			`${configPath} is missing required key "${blockName}.${key}"; it has no default.`,
-			{ file: configPath, at: `${blockName}.${key}` },
-		);
-	}
-}
-
-function requireNonEmptyString(value, path, configPath) {
-	if (typeof value === "string" && value.trim() !== "") return;
-	throw new FactoryConfigError(
-		"invalid-value",
-		`${configPath}: ${path} must be a non-empty string.`,
-		{ file: configPath, at: path, found: value === undefined ? null : typeof value, expected: "non-empty string" },
-	);
-}
-
-function requireObject(value, description, configPath, at) {
-	if (value !== null && typeof value === "object" && !Array.isArray(value)) return;
-	throw new FactoryConfigError(
-		"invalid-value",
-		`${configPath}: ${description} must be a JSON object.`,
-		{ file: configPath, at, expected: "object", found: Array.isArray(value) ? "array" : value === null ? "null" : typeof value },
-	);
+	return Object.freeze({
+		expect: Object.freeze(
+			Object.fromEntries(
+				PACKAGE_EXPECT_KEYS.map((key) => [
+					key,
+					requireNonEmptyString(block.expect[key], `package.expect.${key}`, configPath),
+				]),
+			),
+		),
+	});
 }
 
 /** Every scalar in the document, paired with its `a.b[0].c` path. */

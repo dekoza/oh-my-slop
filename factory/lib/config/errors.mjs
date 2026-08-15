@@ -5,7 +5,9 @@
  */
 /**
  * The five §11.2 failures plus the refusals §11.1 adds around them: no repo
- * root, no file, and a remote that does not answer for `tracker.repo`.
+ * root, no file, and a remote that does not answer for `tracker.repo`. The last
+ * group is §11.5's and §11.6's coherence refusals — a config that is
+ * well-formed in every key and still describes a run that cannot happen.
  *
  * The reason reaches the operator's `--json` output, so it is a closed set the
  * constructor enforces rather than a free string each throw site invents.
@@ -22,6 +24,12 @@ export const CONFIG_LOAD_REASONS = Object.freeze([
 	"todo-sentinel",
 	"remote-unresolvable",
 	"remote-mismatch",
+	"model-unsupported",
+	"routing-overlap",
+	"unknown-routing-set",
+	"concurrency-ceiling",
+	"resource-unsized",
+	"resource-unreachable",
 ]);
 
 export class FactoryConfigError extends Error {

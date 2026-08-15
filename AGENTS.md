@@ -88,6 +88,15 @@ is the authority; cite the section a change answers to.
   code exists to end — do not reach for it here.
 - Exit code `1` means usage or config-load failure and nothing else; `0` and `2`–`6`
   belong to the run end-reason table.
+- Defaults exist only in `factory/lib/config/defaults.mjs` (`budgets`, `retention`),
+  where an upstream decision already fixed the value. Everywhere else absence refuses —
+  a policy the loader fills in is a policy nobody can read on disk.
+- Policy that is not configuration lives in code and is read from exactly one place:
+  the label vocabulary in `factory/lib/tracker/labels.mjs`, and
+  `MAX_SUPPORTED_TICKET_CONCURRENCY` in `factory/lib/config/concurrency.mjs`. The
+  scheduler stays capacity-parametric and never reads the ceiling — that is what makes
+  raising it a one-line change, and `tests/node/factory_config_semantics.test.mjs`
+  guards it.
 - Every command answers from one structured value, rendered human by default and
   `--json` on request. A verb that cannot do its job says what is missing; it never
   goes quiet and never half-runs.

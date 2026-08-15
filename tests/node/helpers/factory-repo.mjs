@@ -23,9 +23,9 @@ export const VALID_CONFIG = Object.freeze({
 		assignee: "factory-bot",
 	},
 	git: { baseBranch: "main", remote: "gitea" },
-	profiles: { local: { kind: "pi", model: "ollama/qwen3" } },
+	profiles: { builder: { kind: "pi", model: "local/qwen3" } },
 	routing: {
-		roles: { implement: "local", freshRetry: "local", review: ["local", "local"] },
+		roles: { implement: "builder", freshRetry: "builder", review: ["builder", "builder"] },
 		rules: [],
 	},
 	checks: [
