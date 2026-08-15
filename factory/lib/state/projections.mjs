@@ -1,4 +1,4 @@
-import { RUN_END_REASONS, RUN_LIFECYCLES } from "../domain/vocabulary.mjs";
+import { RUN_END_REASONS, RUN_LIFECYCLE, RUN_LIFECYCLES } from "../domain/vocabulary.mjs";
 import { canonicalJson } from "./events.mjs";
 import { FactoryStateError } from "./errors.mjs";
 
@@ -22,7 +22,7 @@ import { FactoryStateError } from "./errors.mjs";
  */
 
 /** §10.3's first lifecycle value: preflight runs *after* the run exists. */
-const INITIAL_LIFECYCLE = RUN_LIFECYCLES[0];
+const INITIAL_LIFECYCLE = RUN_LIFECYCLE.preflight;
 
 /**
  * §4.4's closed set of reasons a projection may be rebuilt. Declared here, with
@@ -54,7 +54,10 @@ export const PROJECTION_CLASSES = Object.freeze({ derived: "derived", permanent:
 
 const run = {
 	name: "run",
-	version: 1,
+	// v2 reads §10.3's `run.lifecycle-changed`: `preflight → running → draining`
+	// were previously unreachable values, so a v1 reader would render a run's
+	// whole middle as `preflight`.
+	version: 2,
 	retention: PROJECTION_CLASSES.derived,
 	apply(db, event) {
 		if (event.run === null) return;
@@ -79,6 +82,15 @@ const run = {
 			db.prepare(
 				"UPDATE run SET lifecycle = 'ended', end_reason = ?, ended_at = ?, last_seq = ? WHERE run_id = ?",
 			).run(requireEndReason(event), event.occurred_at, event.seq, event.run);
+			return;
+		}
+
+		if (event.kind === "run.lifecycle-changed") {
+			db.prepare("UPDATE run SET lifecycle = ?, last_seq = ? WHERE run_id = ?").run(
+				requireLifecycle(event),
+				event.seq,
+				event.run,
+			);
 			return;
 		}
 
@@ -165,7 +177,8 @@ const ticketIndex = {
  */
 const runDigest = {
 	name: "run_digest",
-	version: 1,
+	/** v2 for the same reason the `run` projector is: it carries a lifecycle too. */
+	version: 2,
 	retention: PROJECTION_CLASSES.permanent,
 	apply(db, event) {
 		if (event.run === null) return;
@@ -186,6 +199,15 @@ const runDigest = {
 			db.prepare(
 				"UPDATE run_digest SET lifecycle = 'ended', end_reason = ?, ended_at = ?, last_seq = ? WHERE run_id = ?",
 			).run(requireEndReason(event), event.occurred_at, event.seq, event.run);
+			return;
+		}
+
+		if (event.kind === "run.lifecycle-changed") {
+			db.prepare("UPDATE run_digest SET lifecycle = ?, last_seq = ? WHERE run_id = ?").run(
+				requireLifecycle(event),
+				event.seq,
+				event.run,
+			);
 			return;
 		}
 
@@ -214,6 +236,33 @@ export const PROJECTIONS = Object.freeze([run, ticketExecution, attempt, ticketI
 /** §2.1: the attempt id is `<run>-t<ticket>-a<n>`, so `n` is read off it. */
 function attemptOrdinal(event) {
 	return Number.parseInt(event.attempt.slice(event.attempt.lastIndexOf("-a") + 2), 10);
+}
+
+/**
+ * A transition's destination, held to §10.3's four — and never to `ended`.
+ *
+ * An ended run carries a **mandatory** end reason, and `run.ended` is the record
+ * that carries one. A `lifecycle-changed` allowed to say `ended` would be a way
+ * to reach that state with the reason slot empty, which is the one thing §10.3
+ * does not permit a run to be.
+ */
+function requireLifecycle(event) {
+	const lifecycle = event.payload.lifecycle;
+	if (!RUN_LIFECYCLES.includes(lifecycle) || lifecycle === RUN_LIFECYCLE.ended) {
+		throw new FactoryStateError(
+			"invalid-event",
+			`A run moves to one of §10.3's lifecycles, and reaches "${RUN_LIFECYCLE.ended}" only ` +
+				"through run.ended, which carries the mandatory reason; found " +
+				`${JSON.stringify(lifecycle ?? null)}.`,
+			{
+				at: "payload.lifecycle",
+				found: lifecycle ?? null,
+				expected: RUN_LIFECYCLES.filter((value) => value !== RUN_LIFECYCLE.ended).join("|"),
+				event_id: event.event_id,
+			},
+		);
+	}
+	return lifecycle;
 }
 
 function requireEndReason(event) {

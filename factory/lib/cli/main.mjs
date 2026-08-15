@@ -13,10 +13,15 @@ export { VERBS } from "./verbs.mjs";
  * so a fact can never reach one rendering and miss the other.
  */
 
-/** The `--json` envelope version. Published contract, never configuration (§10.3). */
+/**
+ * The `--json` envelope version. **Published contract, never configuration**
+ * (§10.3), and a module constant for that reason: nothing the config file can
+ * say reaches it, so no policy file can quietly re-version the output every
+ * downstream script parses.
+ */
 const OUTPUT_SCHEMA_VERSION = 1;
 
-const SYNOPSIS = "factory <verb> [--json]";
+const SYNOPSIS = "factory <verb> [args] [--json]";
 const KNOWN_FLAGS = new Set(["--json", "--help", "-h"]);
 
 /**
@@ -29,6 +34,9 @@ const KNOWN_FLAGS = new Set(["--json", "--help", "-h"]);
  * @param {string} [context.executable] the running binary — §11.7's anchor
  * @param {Record<string, string | undefined>} [context.env]
  * @param {object} [context.probes] the §5.3 probe registry
+ * @param {(options: object) => Promise<object>} [context.herdr] §10.3's Herdr
+ *   availability probe, injectable for the same reason `probes` is: a test drives
+ *   both answers without a terminal multiplexer on the machine
  * @returns {Promise<{ exitCode: number, value: object, json: boolean }>}
  */
 export async function runCli(argv, context) {
@@ -108,27 +116,45 @@ async function dispatch(parsed, context) {
  * config settled — and destructures what it needs. One shape means a new verb
  * is a table row rather than a row and a branch, and a handler that grows a
  * dependency does not change its caller.
+ *
+ * A handler may name its own `exitCode`, because `start` answers with a run's
+ * end reason and §10.3 publishes what each of those exits with. **`ok` tracks
+ * that exit code rather than "a report was produced"**: §10.3's whole warning is
+ * that `factory start && next-thing` must not read a circuit-breaker exit as
+ * success, and an envelope saying `ok: true` beside exit 5 is that same
+ * misreading handed to every `--json` consumer instead of to the shell. A run
+ * that ended `baseline-red` still prints its report — it is a report about a
+ * failure, and `error` stays absent because nothing refused.
  */
 async function run(parsed, verb, loaded, context) {
 	const answered = await verb.handler({
 		repoRoot: loaded.repoRoot,
+		configPath: loaded.configPath,
+		config: loaded.config,
+		activeRouting: loaded.activeRouting,
+		declared: loaded.declared,
 		agentDir: context.agentDir ?? null,
 		executable: context.executable,
 		env: context.env,
 		probes: context.probes,
+		herdr: context.herdr,
 		expect: loaded.config.package?.expect ?? null,
+		args: parsed.args,
+		flags: new Set(parsed.flags),
 	});
 
 	if (answered.error !== undefined) {
-		return failure(parsed.verb, answered.error, EXIT_REFUSED, { args: parsed.args });
+		return failure(parsed.verb, answered.error, answered.exitCode ?? EXIT_REFUSED, { args: parsed.args });
 	}
 
+	const exitCode = answered.exitCode ?? EXIT_OK;
 	return {
-		exitCode: EXIT_OK,
+		exitCode,
 		value: {
 			schema_version: OUTPUT_SCHEMA_VERSION,
 			command: parsed.verb,
-			ok: true,
+			ok: exitCode === EXIT_OK,
+			exit_code: exitCode,
 			message: answered.message,
 			report: answered.report,
 		},
@@ -156,7 +182,11 @@ export function renderJson(value) {
 export function renderHuman(value) {
 	const lines = [];
 
-	if (value.ok) {
+	// The branch is on **whether something refused**, not on `ok`. A run that
+	// ended `baseline-red` is `ok: false` and still has a whole report to print;
+	// switching on `ok` would replace it with an error section that does not
+	// exist.
+	if (value.error === undefined) {
 		lines.push(value.message);
 		if (value.report !== undefined) lines.push(...renderReport(value.report));
 	} else {
@@ -253,7 +283,9 @@ function help() {
 }
 
 function failure(command, error, exitCode, extra = {}) {
-	const value = { schema_version: OUTPUT_SCHEMA_VERSION, command, ok: false, error };
+	// `exit_code` rides the envelope on both paths, so a `--json` consumer reads
+	// the same verdict the shell does without having to have been the shell.
+	const value = { schema_version: OUTPUT_SCHEMA_VERSION, command, ok: false, exit_code: exitCode, error };
 	if (extra.args !== undefined && extra.args.length > 0) value.args = extra.args;
 	if (extra.usage !== undefined) value.usage = extra.usage;
 

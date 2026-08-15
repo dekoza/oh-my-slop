@@ -7,7 +7,7 @@ import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mj
 import { processIdentity } from "../../factory/lib/identity/process.mjs";
 import { CONTROLLER_LEASE_TTL_MS, LEASE_NAMES, LEASE_RENEWAL_MS, openLeases } from "../../factory/lib/state/leases.mjs";
 import { factorySources } from "./helpers/factory-repo.mjs";
-import { FIXED_NOW as T0, leaseIdentity, openTestStore, runStarted } from "./helpers/factory-store.mjs";
+import { FIXED_NOW as T0, leaseIdentity, manualTimers, openTestStore, runStarted } from "./helpers/factory-store.mjs";
 
 /**
  * §4.6's controller lease from the controller's side: the advisory identity it
@@ -45,27 +45,6 @@ test("a machine with no boot id records null rather than inventing one", () => {
 function stoppedClock() {
 	let at = T0;
 	return { now: () => at, advance: (ms) => (at += ms) };
-}
-
-function manualTimers() {
-	const scheduled = [];
-	return {
-		api: {
-			setInterval: (fn, ms) => {
-				const handle = { fn, ms, cleared: false };
-				scheduled.push(handle);
-				return handle;
-			},
-			clearInterval: (handle) => {
-				handle.cleared = true;
-			},
-		},
-		/** Fire every live interval once. */
-		tick: () => {
-			for (const handle of scheduled.filter((candidate) => !candidate.cleared)) handle.fn();
-		},
-		intervals: () => scheduled.filter((handle) => !handle.cleared).map((handle) => handle.ms),
-	};
 }
 
 async function heldStore(t, { onLost = () => {}, store: override = null } = {}) {

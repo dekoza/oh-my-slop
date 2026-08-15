@@ -198,6 +198,35 @@ is the authority; cite the section a change answers to.
   pin them forever with nothing able to probe them. And §5.4's "before the lease is used for any
   effect" is a latch on the controller's hold that only a settling pass opens — `fence()` refuses
   until then, so it is not an order of calls anyone can get wrong.
+- **A run ends exactly once, with a reason, and the reason decides the exit code.**
+  §10.3's table lives in `factory/lib/cli/exit-codes.mjs` beside the enum it maps, and an
+  import-time check refuses a member with no row or a row naming no member — the
+  co-location §10.3 asks for, made mechanical. `controller-lost` maps to `null` because it
+  is never self-asserted, so `exitCodeForEndReason` refuses it rather than inventing a
+  code. Neither the table nor the `--json` `schema_version` is reachable from configuration.
+  The envelope's `ok` tracks that exit code rather than "a report came back": §10.3's warning
+  about `factory start && next-thing` reading a circuit-breaker exit as success is the same
+  misreading a `--json` consumer branching on `ok` would make. A failed run still prints its
+  report — `error` is for a refusal, and a run that ran and failed refused nothing.
+- `factory start` (`factory/lib/controller/`) is **one invocation, one run**: acquire, reconcile,
+  end any run `--new-run` abandons, expire, open the run, preflight, drain, end. The order is
+  §10.1's sentence and the two constraints on it — §12.6's expiry window and §10.3's "preflight
+  runs after the run exists" — and **the end reason is decided before the run executes**, because
+  a red preflight and a lost lease both already settled it. §10.4's re-entry is not a mode: there
+  is no `resume`, a scope-less `start` adopts the orphaned run keeping its `run_id`, and a scope
+  that would widen an adopted run's membership refuses (§3.1). Against a **live** holder it
+  resolves rather than queueing — a private queue is §19's excluded work queue one indirection
+  down — and refuses whatever it cannot decide from durable state, because an optimistic "already
+  in scope" promises a frontier that never arrives.
+- Preflight is **observable, not a gate**: every check writes a `preflight.checked` stage on the
+  run's stream carrying **no ticket**, in §9.7's order — artifacts and config, then probes, then
+  the expensive baseline. A check whose subsystem has not landed answers `unbuilt`, which is
+  neither `passed` nor `failed`: reporting it green would be the plausible zero, and reporting it
+  red would end every run in this package. What keeps that honest is the drain report naming the
+  subsystems that would have found work, so §9.7's *green-looking run that did nothing* cannot
+  hide. The run manifest and the package handshake are **effects keyed by the run**, so a
+  re-entry whose declared inputs changed is a typed conflict — §3.1's immutable membership and
+  §11.7's single pin arriving as a refusal rather than as a rule anyone follows.
 - `doctor` (`factory/lib/doctor/`) is handed the store from `openRepoStoreReadOnly`, which
   carries no `transaction` and never creates a store, so §14.24 is a property of the handle
   rather than a rule the diagnosis follows. Every section is computed independently and one

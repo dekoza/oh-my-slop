@@ -151,3 +151,59 @@ export function attemptLaunched(runId, ticket, ordinal = 1, { at = 1_770_000_100
 		payload: { role: "implement" },
 	};
 }
+
+/**
+ * Interval timers a test fires by hand, so no suite waits on a clock.
+ *
+ * `tick(ms)` fires the intervals registered at that period — the controller
+ * runs two at once (§4.8's 10-second renewal and 60-second heartbeat), and a
+ * tick that fired both could not tell you which cadence did the work. `tick()`
+ * with no period fires every live interval, which is what a test wants when it
+ * is driving the whole hold rather than one of its clocks.
+ */
+export function manualTimers() {
+	const scheduled = [];
+
+	return {
+		api: {
+			setInterval: (fn, ms) => {
+				const handle = { fn, ms, cleared: false };
+				scheduled.push(handle);
+				return handle;
+			},
+			clearInterval: (handle) => {
+				handle.cleared = true;
+			},
+		},
+		tick: (ms = null) => {
+			for (const handle of scheduled.filter((live) => !live.cleared && (ms === null || live.ms === ms))) {
+				handle.fn();
+			}
+		},
+		intervals: () => scheduled.filter((handle) => !handle.cleared).map((handle) => handle.ms),
+	};
+}
+
+/**
+ * §10.3's Herdr availability answer, as a probe a test injects.
+ *
+ * The real probe connects to the operator's multiplexer socket, so a suite that
+ * used it would pass or fail on whether the machine happens to be running one.
+ * `herdr.mjs`'s own tests drive the real connect against a real socket; every
+ * other suite says which answer it wants and moves on.
+ *
+ * @param {boolean} [available]
+ */
+export function herdrAnswering(available = true) {
+	return async () =>
+		Object.freeze({
+			available,
+			binary: "/usr/bin/herdr",
+			socket: "/run/herdr.sock",
+			reason: available ? null : "herdr-server-down",
+			command: available ? null : "herdr",
+			message: available
+				? "Herdr answers on /run/herdr.sock."
+				: "Nothing answers on /run/herdr.sock. Start it with `herdr`.",
+		});
+}

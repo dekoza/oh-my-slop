@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { newUlid } from "../../factory/lib/identity/ulid.mjs";
 import { runStream } from "../../factory/lib/state/events.mjs";
-import { REBUILD_REASONS } from "../../factory/lib/state/projections.mjs";
+import { PROJECTIONS, REBUILD_REASONS } from "../../factory/lib/state/projections.mjs";
 import { rebuildProjections } from "../../factory/lib/state/rebuild.mjs";
 import { openDatabase } from "../../factory/lib/state/sqlite.mjs";
 import { openStore, openStoreForRebuild, openStoreReadOnly } from "../../factory/lib/state/store.mjs";
@@ -44,13 +44,13 @@ test("a rebuild records its reason, its projector versions, and the head it rebu
 	const [recorded] = store.readEvents({ sinceSeq: last.seq }).filter((e) => e.kind === "projection.rebuilt");
 	assert.equal(recorded.payload.reason, "operator-requested");
 	assert.deepEqual(recorded.payload.head, { seq: last.seq, hash: last.hash });
-	assert.deepEqual(recorded.payload.projectors, {
-		run: 1,
-		ticket_execution: 1,
-		attempt: 1,
-		ticket_index: 1,
-		run_digest: 1,
-	});
+	// Read off the shipped projectors rather than pinned here: what this asserts
+	// is that a rebuild records *which* versions it built at, not what today's
+	// numbers happen to be.
+	assert.deepEqual(
+		recorded.payload.projectors,
+		Object.fromEntries(PROJECTIONS.map((projection) => [projection.name, projection.version])),
+	);
 	assert.deepEqual(
 		store.projectionHeads().map((head) => [head.name, head.last_seq]),
 		[
@@ -118,11 +118,12 @@ test("a projector version change is resolved by a recorded rebuild, never a sile
 	const rebuild = forRebuild.rebuild({ reason: refused.details.rebuild_reason });
 	forRebuild.close();
 
-	assert.equal(rebuild.projectors.run, 1);
+	const shipped = PROJECTIONS.find((projection) => projection.name === "run").version;
+	assert.equal(rebuild.projectors.run, shipped);
 	const reopened = await openTestStore(t, { repoRoot, agentDir });
 	assert.equal(
 		reopened.projectionHeads().find((head) => head.name === "run").projector_version,
-		1,
+		shipped,
 		"the rebuild left the store claiming a version it was not built at",
 	);
 });
@@ -233,7 +234,9 @@ test("a mismatched reader refuses the affected values and still answers the rest
 
 	// The monitor is reading a store whose digest was written by a projector it
 	// does not have. Rendering it anyway means guessing at a shape.
-	tamper(t, dbPath, "UPDATE projection_head SET projector_version = 2 WHERE name = 'run_digest'");
+	const shipped = PROJECTIONS.find((projection) => projection.name === "run_digest").version;
+	const ahead = shipped + 1;
+	tamper(t, dbPath, `UPDATE projection_head SET projector_version = ${ahead} WHERE name = 'run_digest'`);
 
 	const reader = openStoreReadOnly({ dbPath });
 	t.after(() => reader.close());
@@ -241,7 +244,7 @@ test("a mismatched reader refuses the affected values and still answers the rest
 	const error = refusalOf(() => reader.readRunDigest(runId));
 	assert.equal(error.reason, "projection-unreadable");
 	assert.equal(error.details.projection, "run_digest");
-	assert.deepEqual([error.details.found, error.details.expected], [2, 1]);
+	assert.deepEqual([error.details.found, error.details.expected], [ahead, shipped]);
 
 	assert.equal(reader.readRun(runId).run_id, runId, "an unrelated projection was withheld too");
 	assert.deepEqual(
@@ -251,8 +254,8 @@ test("a mismatched reader refuses the affected values and still answers the rest
 				name: "run_digest",
 				ok: false,
 				reason: "projector-version-change",
-				expected: 1,
-				found: 2,
+				expected: shipped,
+				found: ahead,
 				rebuild_reason: "projector-version-change",
 			},
 		],

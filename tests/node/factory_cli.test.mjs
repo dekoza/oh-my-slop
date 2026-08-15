@@ -12,7 +12,7 @@ import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { makeRepo, VALID_CONFIG } from "./helpers/factory-repo.mjs";
-import { leaseIdentity, makeAgentDir } from "./helpers/factory-store.mjs";
+import { herdrAnswering, leaseIdentity, makeAgentDir } from "./helpers/factory-store.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BIN_PATH = join(REPO_ROOT, "factory", "bin", "factory.mjs");
@@ -23,10 +23,11 @@ function assertRenderingsAgree(value) {
 
 	assert.doesNotMatch(human, /^\s*[{[]/, "human output is not JSON");
 	for (const [path, leaf] of leaves(value)) {
-		// `schema_version`, `command`, and `ok` are envelope: the version is a
-		// machine contract, the command is what the operator just typed, and the
-		// exit code carries the verdict.
-		if (path === "schema_version" || path === "command") continue;
+		// `schema_version`, `command`, `ok`, and `exit_code` are envelope: the
+		// version is a machine contract, the command is what the operator just
+		// typed, and the exit status *is* the human rendering of the verdict —
+		// the shell shows it without the page having to repeat it.
+		if (path === "schema_version" || path === "command" || path === "exit_code") continue;
 		if (typeof leaf === "boolean" || leaf === null) continue;
 		assert.ok(human.includes(String(leaf)), `human rendering of ${value.command} drops ${path} = ${JSON.stringify(leaf)}`);
 	}
@@ -113,13 +114,15 @@ test("--help lists the verb set and succeeds", async (t) => {
 // ── What this slice does not implement, said out loud ────────────────────────
 
 /** The verbs this package answers; the rest say what they are waiting for. */
-const IMPLEMENTED = new Set(["doctor", "reconcile"]);
+const IMPLEMENTED = new Set(["start", "doctor", "reconcile"]);
+const UNIMPLEMENTED = VERBS.filter((verb) => !IMPLEMENTED.has(verb));
 
 test("every verb this slice does not implement exits typed, naming what is missing", async (t) => {
 	const cwd = makeRepo(t);
+	const agentDir = makeAgentDir(t);
 
-	for (const verb of VERBS.filter((candidate) => !IMPLEMENTED.has(candidate))) {
-		const { exitCode, value } = await runCli([verb], { cwd });
+	for (const verb of UNIMPLEMENTED) {
+		const { exitCode, value } = await runCli([verb], { cwd, agentDir });
 
 		assert.equal(exitCode, EXIT_NOT_IMPLEMENTED, `${verb} exit code`);
 		assert.equal(value.error.kind, "not-implemented", `${verb} error kind`);
@@ -133,7 +136,10 @@ test("not-implemented is never exit code 1, which belongs to usage and config al
 	const cwd = makeRepo(t);
 	const agentDir = makeAgentDir(t);
 
-	for (const verb of VERBS) {
+	// Only the unbuilt verbs: `start` with no arguments *is* a usage refusal —
+	// §3.1's scope is declared, never inferred — and that is exactly what 1 is
+	// reserved for.
+	for (const verb of UNIMPLEMENTED) {
 		assert.notEqual((await runCli([verb], { cwd, agentDir })).exitCode, EXIT_USAGE, verb);
 	}
 });
@@ -227,7 +233,7 @@ test("human output is the default and carries every fact the JSON carries", asyn
 		await runCli([], { cwd }),
 		await runCli(["--help"], { cwd }),
 		await runCli(["status"], { cwd }),
-		await runCli(["start"], { cwd: makeRepo(t) }),
+		await runCli(["start"], { cwd: makeRepo(t), agentDir: makeAgentDir(t) }),
 	];
 
 	for (const { value } of cases) assertRenderingsAgree(value);
@@ -245,6 +251,10 @@ function invocation(t) {
 		agentDir: makeAgentDir(t),
 		executable,
 		env: { PATH: onPath(t, executable) },
+		// §10.3's availability check is a live read of the operator's terminal
+		// multiplexer; a suite that only passed on a machine running one would be
+		// testing the machine. The run lifecycle's own suite drives both answers.
+		herdr: herdrAnswering(),
 	};
 }
 
@@ -311,6 +321,28 @@ test("reconcile against a live lease-holder refuses, and points at the lock-free
 	assert.equal(value.error.pane, "herdr:2");
 	assert.match(value.error.message, /status/);
 	assert.match(value.error.message, /doctor/);
+});
+
+test("start runs a whole run and answers with its end reason's exit code", async (t) => {
+	const context = invocation(t);
+
+	const { exitCode, value } = await runCli(["start", "42"], context);
+
+	assert.equal(exitCode, EXIT_OK);
+	assert.equal(value.command, "start");
+	assert.equal(value.report.end_reason, "drained");
+	assertRenderingsAgree(value);
+});
+
+test("start's own flags are start's alone, and are not read as unknown", async (t) => {
+	const context = invocation(t);
+
+	assert.equal((await runCli(["start", "--parent", "75"], context)).exitCode, EXIT_OK);
+	assert.equal((await runCli(["start", "--new-run", "42"], context)).exitCode, EXIT_OK);
+
+	const { exitCode, value } = await runCli(["doctor", "--new-run"], context);
+	assert.equal(exitCode, EXIT_USAGE);
+	assert.equal(value.error.flag, "--new-run");
 });
 
 test("doctor's human rendering carries every fact its JSON carries", async (t) => {

@@ -48,6 +48,23 @@ export const CONFIG_BLOCKS = Object.freeze({
 	package: { required: false, container: "object" },
 });
 
+/**
+ * The blocks §6.8 counts as **per-run overrides** — a human departing from a
+ * value an upstream decision already fixed.
+ *
+ * `retention` defaults upstream too and is deliberately not here: §6.8's
+ * overrides are the ones that change how a *run* behaves — extra denies,
+ * budgets, model choices, the worker-context file — while retention governs what
+ * is reclaimed afterwards. Listing it would put a cleanup policy in the run
+ * manifest's evidence as though a human had overridden the run.
+ *
+ * The distinction is recorded here because the validated config has already
+ * collapsed it: `budgets.repair: 1` reads identically whether an operator chose
+ * it or nobody wrote the block at all, and evidence of an override needs to know
+ * which.
+ */
+const OVERRIDE_BLOCKS = Object.freeze(["budgets"]);
+
 const TRACKER_KEYS = Object.freeze(["kind", "repo", "remote", "login", "assignee"]);
 const GIT_KEYS = Object.freeze(["baseBranch", "remote"]);
 const SUPPORTED_TRACKER_KINDS = Object.freeze(["gitea"]);
@@ -60,9 +77,10 @@ const PACKAGE_EXPECT_KEYS = Object.freeze(["name", "version"]);
  *   the run's §11.5 selection: a name from `routing.sets`, or null for the
  *   declared default. It is a per-run input rather than config, so an unknown
  *   name refuses instead of quietly leaving the default active.
- * @returns {{ repoRoot: string, configPath: string, config: object, activeRouting: { set: string | null, roles: object, rules: ReadonlyArray<object> }, remote: { name: string, url: string, slug: string } }}
+ * @returns {{ repoRoot: string, configPath: string, config: object, activeRouting: { set: string | null, roles: object, rules: ReadonlyArray<object> }, declared: Record<string, ReadonlyArray<string>>, remote: { name: string, url: string, slug: string } }}
  *   `config.routing` is what the file declares, sets and all; `activeRouting` is
- *   the one this run routes by.
+ *   the one this run routes by; `declared` is which override keys the file
+ *   actually wrote (§6.8).
  * @throws {FactoryConfigError}
  */
 export function loadFactoryConfig({ cwd, routingSet = null }) {
@@ -73,7 +91,22 @@ export function loadFactoryConfig({ cwd, routingSet = null }) {
 	const { config, activeRouting } = validateConfig(document, configPath, routingSet);
 	const remote = crossCheckRemote(config, repoRoot, configPath);
 
-	return { repoRoot, configPath, config, activeRouting, remote };
+	return { repoRoot, configPath, config, activeRouting, declared: declaredOverrides(document), remote };
+}
+
+/**
+ * Which override keys this file writes — read off the **document**, before the
+ * defaults were folded in, because that is the only moment the two are still
+ * distinguishable. It is a list of keys rather than of values: the values are in
+ * `config`, and a second copy of them here would be a second thing to keep in
+ * step.
+ */
+function declaredOverrides(document) {
+	return Object.freeze(
+		Object.fromEntries(
+			OVERRIDE_BLOCKS.map((name) => [name, Object.freeze(Object.keys(document[name] ?? {}).sort())]),
+		),
+	);
 }
 
 /**

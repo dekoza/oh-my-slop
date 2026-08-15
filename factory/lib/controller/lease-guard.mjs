@@ -22,7 +22,10 @@ import { LEASE_NAMES, LEASE_RENEWAL_MS } from "../state/leases.mjs";
  * @param {object} options
  * @param {object} options.store the open store, for the one event this emits
  * @param {object} options.leases the §4.6 registry, whose clock this shares
- * @param {string} options.run the run this controller is driving
+ * @param {string | null} [options.run] the run this controller is driving, when it
+ *   is already known. It is **not** known at `factory start`: §10.4 decides
+ *   between adopting an orphaned run and minting one *under* the lease, because
+ *   startup reconcile is what adopts. `adopt()` names it once that is settled
  * @param {string | null} [options.pane] the controller pane, named in §10.5's refusal
  * @param {(loss: object) => void} [options.onLost] the run loop's abandon path,
  *   handed the end reason and the exit code the run must leave with
@@ -34,14 +37,15 @@ import { LEASE_NAMES, LEASE_RENEWAL_MS } from "../state/leases.mjs";
 export function holdControllerLease({
 	store,
 	leases,
-	run,
+	run = null,
 	pane = null,
 	onLost = () => {},
 	timers = { setInterval, clearInterval },
 }) {
+	let driving = run;
 	let held = leases.acquire({
 		name: LEASE_NAMES.controller,
-		identity: processIdentity({ run, pane }),
+		identity: processIdentity({ run: driving, pane }),
 	});
 	let lost = false;
 	let released = false;
@@ -82,7 +86,7 @@ export function holdControllerLease({
 			store.append({
 				kind: "controller.lease-lost",
 				source: "controller",
-				run,
+				run: driving,
 				occurredAt: at,
 				observedAt: at,
 				payload: {
@@ -109,22 +113,23 @@ export function holdControllerLease({
 		if (!reconciled && !lost && !released) {
 			throw new FactoryStateError(
 				"reconcile-required",
-				"This controller has not reconciled yet; §5.4 settles what the last one left behind before the lease is used for any effect.",
-				{ lease: LEASE_NAMES.controller, fencing_generation: held.fencingGeneration, run },
+				"This controller has not reconciled yet; §5.4 settles what the last one left behind " +
+					"before the lease is used for any effect.",
+				{ lease: LEASE_NAMES.controller, fencing_generation: held.fencingGeneration, run: driving },
 			);
 		}
 		if (lost) {
 			throw new FactoryStateError(
 				"lease-lost",
 				"The controller lease is lost; this controller issues no further effects and does not reacquire (§14.6).",
-				{ lease: LEASE_NAMES.controller, fencing_generation: held.fencingGeneration, run },
+				{ lease: LEASE_NAMES.controller, fencing_generation: held.fencingGeneration, run: driving },
 			);
 		}
 		if (released) {
 			throw new FactoryStateError(
 				"lease-released",
 				"The controller lease was released at the end of this run; it issues no further effects.",
-				{ lease: LEASE_NAMES.controller, fencing_generation: held.fencingGeneration, run },
+				{ lease: LEASE_NAMES.controller, fencing_generation: held.fencingGeneration, run: driving },
 			);
 		}
 	}
@@ -141,6 +146,22 @@ export function holdControllerLease({
 		},
 		get reconciled() {
 			return reconciled;
+		},
+
+		/**
+		 * Name the run this controller drives, once §10.4 has decided it.
+		 *
+		 * The decision is made **under** the lease — startup reconcile is what
+		 * adopts an orphaned run — so it cannot be an argument to the acquisition
+		 * that precedes it. Only the advisory blob changes: the token, the
+		 * generation, and the renewal are untouched, because none of them means
+		 * anything different now that the hold has a run to name.
+		 *
+		 * @param {string} runId
+		 */
+		adopt(runId) {
+			driving = runId;
+			held = leases.describe(held, processIdentity({ run: driving, pane }));
 		},
 
 		/**

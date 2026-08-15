@@ -39,7 +39,9 @@ export const VISIBILITY_CLASSES = Object.freeze(["operator", "detail", "diagnost
  */
 export const EVENT_KINDS = Object.freeze({
 	"run.started": { payloadVersion: 1, visibility: "operator" },
+	"run.lifecycle-changed": { payloadVersion: 1, visibility: "operator" },
 	"run.ended": { payloadVersion: 1, visibility: "operator" },
+	"preflight.checked": { payloadVersion: 1, visibility: "operator" },
 	"attempt.launched": { payloadVersion: 1, visibility: "operator" },
 	"effect.requested": { payloadVersion: 1, visibility: "detail" },
 	"effect.resolved": { payloadVersion: 1, visibility: "detail" },

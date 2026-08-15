@@ -158,6 +158,31 @@ export function openLeases(store, { now = Date.now } = {}) {
 			}),
 
 		/**
+		 * Re-state the holder's **advisory** identity, compare-and-swapped on the
+		 * token like every other write here.
+		 *
+		 * It exists because §10.4 decides which run this controller drives *under
+		 * the lease* — startup reconcile is what adopts an orphaned run — so the
+		 * hold is taken before there is a run to name. Nothing reads the blob as
+		 * proof (§4.6); what would go wrong without this is narrower and still
+		 * real: §10.5's refusal names the holding run out of it, and a permanent
+		 * "(unnamed)" would leave the next operator with nothing to look at.
+		 *
+		 * @returns {Readonly<object>} the hold, carrying the new identity
+		 * @throws {FactoryStateError} `lease-lost` when this token no longer holds the row
+		 */
+		describe: (held, identity) =>
+			store.transaction(({ db }) => {
+				const updated = db
+					.prepare("UPDATE lease SET identity = ? WHERE name = ? AND holder_token = ?")
+					.run(JSON.stringify(identity), held.name, held.token);
+
+				if (updated.changes !== 1) refuseLost(held, readLease(db, held.name));
+
+				return Object.freeze({ ...held, identity });
+			}),
+
+		/**
 		 * Compare-and-delete on the token. There is **no unconditional removal
 		 * path** in this module: `job-pipeline`'s `releaseJobLock` was a bare
 		 * `rmSync`, so any process could drop any owner's lock.

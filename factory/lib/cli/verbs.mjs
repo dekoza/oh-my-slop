@@ -1,3 +1,5 @@
+import { PARENT_FLAG } from "../controller/scope.mjs";
+import { NEW_RUN_FLAG, runStart } from "../controller/start.mjs";
 import { runDoctor } from "../doctor/verb.mjs";
 import { runReconcile } from "../reconcile/verb.mjs";
 
@@ -19,8 +21,20 @@ import { runReconcile } from "../reconcile/verb.mjs";
 export const VERB_TABLE = Object.freeze({
 	start: {
 		requiresConfig: true,
+		handler: runStart,
 		summary: "run one drain of a ticket or parent's scope",
-		missing: "the controller lease, the run lifecycle, and the end-reason report (#97)",
+		// §3.1's two scope forms need telling apart on one line, and `<ticket>`
+		// and `<parent>` are both issue numbers. The flag is the discriminator —
+		// bare numbers are the direct-ticket set, and `--parent` says the single
+		// number given is the parent whose members the run covers.
+		//
+		// `--foreground` is deliberately absent: §10.1's default is a detached
+		// Herdr pane, and the flag only means something once there is something
+		// to be detached *from*. Both arrive together in #98.
+		flags: {
+			[NEW_RUN_FLAG]: { spec: "§10.4" },
+			[PARENT_FLAG]: { spec: "§3.1" },
+		},
 		spec: "§10.1, §10.3",
 	},
 	status: {

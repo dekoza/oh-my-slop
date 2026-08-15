@@ -22,29 +22,45 @@ export const PHASES = Object.freeze([
 	"expiry",
 ]);
 
-/** §10.3. */
-export const RUN_LIFECYCLES = Object.freeze(["preflight", "running", "draining", "ended"]);
+/**
+ * §10.3's four, in the order a run passes through them. `preflight` is first
+ * because preflight runs **after the run exists** — that is what lets
+ * `baseline-red` be a run end reason naming a specific red check.
+ */
+export const RUN_LIFECYCLE = Object.freeze({
+	preflight: "preflight",
+	running: "running",
+	draining: "draining",
+	ended: "ended",
+});
+
+export const RUN_LIFECYCLES = Object.freeze(Object.values(RUN_LIFECYCLE));
 
 /**
- * The one end reason a subsystem other than the run loop mints: §4.6's lease
- * decides it, so it is named here for that code to reach rather than spelled by
- * hand where it is used.
+ * The end reasons other modules reach for by name. Every one of them is minted
+ * somewhere other than the line that lists them: §4.6's lease decides
+ * `lease-lost`, preflight decides `baseline-red`, the drain decides `drained`,
+ * and `controller-lost` is only ever written *about* another controller. Naming
+ * them here is what keeps those call sites from spelling a member by hand.
  */
+export const END_REASON_DRAINED = "drained";
+export const END_REASON_BASELINE_RED = "baseline-red";
 export const END_REASON_LEASE_LOST = "lease-lost";
+export const END_REASON_CONTROLLER_LOST = "controller-lost";
 
 /**
  * §10.3's seven, mandatory on every ended run. `controller-lost` is asserted
  * only by a different controller or the monitor, never by the run itself, and
- * is therefore the one member with no exit code.
+ * is therefore the one member with no exit code (§14.36).
  */
 export const RUN_END_REASONS = Object.freeze([
-	"drained",
-	"baseline-red",
+	END_REASON_DRAINED,
+	END_REASON_BASELINE_RED,
 	"stopped-by-operator",
 	"abandoned",
 	"circuit-breaker",
 	END_REASON_LEASE_LOST,
-	"controller-lost",
+	END_REASON_CONTROLLER_LOST,
 ]);
 
 /** §8.8. */
