@@ -13,8 +13,15 @@
  *   Their semantics belong to §4.5 and §4.6; this file owns only their shape.
  */
 
-/** Bumped when these statements change. A store on another version refuses. */
-export const STORE_SCHEMA_VERSION = 1;
+/**
+ * Bumped when these statements change. A store on another version refuses.
+ *
+ * v2 made `lease.expires_at` nullable for §9.4's untimed capacity slots. Every
+ * statement is `IF NOT EXISTS`, so an existing v1 store would keep the old
+ * column and fail at the first slot rather than at open — which is precisely
+ * the confusion this version guard exists to prevent.
+ */
+export const STORE_SCHEMA_VERSION = 2;
 
 export const SCHEMA_STATEMENTS = Object.freeze([
 	// ── Identity (§4.1) ─────────────────────────────────────────────────────
@@ -164,11 +171,17 @@ export const SCHEMA_STATEMENTS = Object.freeze([
 	)`,
 	"CREATE INDEX IF NOT EXISTS effect_unresolved ON effect (state, run_id)",
 
+	/**
+	 * `expires_at` is nullable because §9.4's capacity slots carry **no TTL**: an
+	 * expiring slot would free itself while its pane is still alive, double-booking
+	 * a resource that physically has one slot (invariant 22). A null expiry is the
+	 * row saying "no clock frees this" rather than a sentinel a reader must decode.
+	 */
 	`CREATE TABLE IF NOT EXISTS lease (
 		name TEXT PRIMARY KEY,
 		holder_token TEXT NOT NULL,
 		fencing_generation INTEGER NOT NULL,
-		expires_at INTEGER NOT NULL,
+		expires_at INTEGER,
 		renewed_at INTEGER NOT NULL,
 		identity TEXT
 	)`,

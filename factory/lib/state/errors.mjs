@@ -21,6 +21,12 @@ export const STATE_ERROR_REASONS = Object.freeze([
 	"invalid-event",
 	/** A transaction misuse: nesting, or a write outside one (§4.4). */
 	"invalid-transaction",
+	/** A lease another holder still holds (§4.6, §10.5). */
+	"lease-held",
+	/** A compare-and-swap that found this holder's token gone (§4.6, §14.6). */
+	"lease-lost",
+	/** A lease name outside §4.6's closed set of objects. */
+	"invalid-lease-name",
 ]);
 
 export class FactoryStateError extends Error {
