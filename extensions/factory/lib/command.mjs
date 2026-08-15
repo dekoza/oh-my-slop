@@ -41,6 +41,7 @@ import {
  * @param {string | null} [context.agentDir]
  * @param {object} [context.probes]
  * @param {(options: object) => Promise<object>} [context.herdr]
+ * @param {(args: string[], options: object) => Promise<object>} [context.runHerdr]
  * @returns {Promise<number>} the answer's exit code — reported, never thrown
  */
 export async function runFactoryCommand(argv, context) {
@@ -52,6 +53,7 @@ export async function runFactoryCommand(argv, context) {
 		env: context.env,
 		probes: context.probes,
 		herdr: context.herdr,
+		runHerdr: context.runHerdr,
 	});
 
 	let text = result.json ? renderJson(result.value) : renderHuman(result.value);

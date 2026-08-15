@@ -85,6 +85,50 @@ function makeDisplay() {
 	return { calls, fn: (text, { isError = false } = {}) => calls.push({ text, isError }) };
 }
 
+/**
+ * The launcher's Herdr commands, answered without a multiplexer: a workspace
+ * is created, the pane run succeeds. Without this, a default `start` on a tree
+ * whose default is the detached launcher would spawn the operator's real herdr
+ * — machine-dependent, and with side effects.
+ */
+function fakeRunHerdr() {
+	const calls = [];
+	return {
+		calls,
+		fn: async (args) => {
+			calls.push(args);
+			if (args[0] === "workspace" && args[1] === "create") {
+				return {
+					exitCode: 0,
+					stdout: JSON.stringify({
+						id: "cli:workspace:create",
+						result: {
+							type: "workspace_created",
+							workspace: { workspace_id: "w99", label: "factory-test", number: 1 },
+							tab: { tab_id: "w99:t1" },
+							root_pane: { pane_id: "w99:p1", workspace_id: "w99", tab_id: "w99:t1" },
+						},
+					}),
+					stderr: "",
+				};
+			}
+			if (args[0] === "pane" && args[1] === "run") {
+				return {
+					exitCode: 0,
+					stdout: JSON.stringify({ id: "cli:pane:run", result: { type: "pane_run" } }),
+					stderr: "",
+				};
+			}
+			return { exitCode: 1, stdout: "", stderr: `unscheduled: ${args.join(" ")}` };
+		},
+	};
+}
+
+/** The report names a run: a foreground run, re-entry against a live holder, or a detached launch. */
+function namesARun(report) {
+	return report.detached === true || report.run !== undefined || report.live === true;
+}
+
 // ── §10.2: a thin wrapper over the same code ─────────────────────────────────
 
 test("the front answers with exactly the value the binary answers, rendered the same way", async (t) => {
@@ -128,17 +172,22 @@ test("/factory start publishes the typed request carrying the run's report, and 
 	attachMonitor(events, "http://127.0.0.1:48080/");
 	const display = makeDisplay();
 
-	const code = await runFactoryCommand(["start", "42"], { ...context, events, display: display.fn });
-	const direct = await runCli(["start", "42"], invocation(t));
+	const code = await runFactoryCommand(["start", "42"], {
+		...context,
+		runHerdr: fakeRunHerdr().fn,
+		events,
+		display: display.fn,
+	});
 
-	assert.equal(code, direct.exitCode);
-	assert.equal(direct.value.report.end_reason, "drained");
-
+	assert.equal(code, 0);
 	const requests = events.emitted.filter((entry) => entry.channel === FACTORY_RUN_START);
 	assert.equal(requests.length, 1);
 	assert.equal(requests[0].data.repo, context.cwd);
 	assert.deepEqual(requests[0].data.argv, ["start", "42"]);
-	assert.equal(requests[0].data.report.end_reason, "drained");
+	// The report is whatever the binary's start answered with — a foreground
+	// run, a live-run resolution, or a detached launch — and the trigger
+	// carries it whole.
+	assert.ok(namesARun(requests[0].data.report), "the trigger must carry a run-naming report");
 	// Column 0: the report's own `monitor:` section is nested, the trigger's
 	// line is not.
 	assert.match(display.calls[0].text, /^monitor: http:\/\/127.0.0.1:48080\//m);
@@ -149,7 +198,14 @@ test("/factory start prints no monitor line when nothing listens", async (t) => 
 	const events = makeBus();
 	const display = makeDisplay();
 
-	await runFactoryCommand(["start", "42"], { ...context, events, display: display.fn });
+	const code = await runFactoryCommand(["start", "42"], {
+		...context,
+		runHerdr: fakeRunHerdr().fn,
+		events,
+		display: display.fn,
+	});
+
+	assert.equal(code, 0);
 
 	const requests = events.emitted.filter((entry) => entry.channel === FACTORY_RUN_START);
 	assert.equal(requests.length, 1);
@@ -161,10 +217,14 @@ test("a broken event bus never fails the command (never fatal)", async (t) => {
 	const events = makeBus({ throwOnEmit: true });
 	const display = makeDisplay();
 
-	const code = await runFactoryCommand(["start", "42"], { ...context, events, display: display.fn });
-	const direct = await runCli(["start", "42"], invocation(t));
+	const code = await runFactoryCommand(["start", "42"], {
+		...context,
+		runHerdr: fakeRunHerdr().fn,
+		events,
+		display: display.fn,
+	});
 
-	assert.equal(code, direct.exitCode);
+	assert.equal(code, 0);
 	assert.equal(display.calls.length, 1);
 	assert.doesNotMatch(display.calls[0].text, /^monitor: /m);
 });
