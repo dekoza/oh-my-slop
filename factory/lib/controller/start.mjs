@@ -21,7 +21,8 @@ import { PROBES } from "../reconcile/probes.mjs";
 import { FactoryStateError } from "../state/errors.mjs";
 import { LEASE_RENEWAL_MS, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
-import { decideEntry, ENTRY_MODES, resolveAgainstLiveRun } from "./entry.mjs";
+import { decideEntry, ENTRY_MODES, liveRunAnswer } from "./entry.mjs";
+import { FOREGROUND_FLAG, launch } from "./launch.mjs";
 import { FactoryRunError, isUsageRefusal } from "./errors.mjs";
 import { HEARTBEAT_INTERVAL_MS, startHeartbeat } from "./heartbeat.mjs";
 import { holdControllerLease } from "./lease-guard.mjs";
@@ -73,6 +74,9 @@ export const NEW_RUN_FLAG = "--new-run";
  *   the observer, so zero is the truthful default rather than an attempt-derived guess
  * @param {object} [invocation.signal] the event target §10.5's signals listen on —
  *   `process` by default, injectable so a test fires a signal at a chosen moment
+ * @param {(args: string[], options: object) => Promise<object>} [invocation.runHerdr]
+ *   §10.1's Herdr command runner for the detached launch, injectable for the same
+ *   reason `herdr` is: a test drives both answers without a multiplexer on the machine
  * @returns {Promise<{ message: string, report: object, exitCode: number } | { error: object, exitCode: number }>}
  */
 export async function runStart({
@@ -92,12 +96,32 @@ export async function runStart({
 	herdr,
 	watching = () => 0,
 	signal = globalThis.process,
+	runHerdr,
 }) {
 	let requested;
 	try {
 		requested = parseScope(args, { parent: flags.has(PARENT_FLAG) });
 	} catch (error) {
 		return refusal(error);
+	}
+
+	// §10.1's process shape: the **default launch is detached into a Herdr pane**,
+	// and `--foreground` is the invocation running as the controller in this
+	// terminal. They are one verb because they are one job with one decision
+	// between them; the branch is the decision, and the two shapes share the
+	// scope parse and §10.4's live-run answer above it.
+	if (!flags.has(FOREGROUND_FLAG)) {
+		return launch({
+			repoRoot,
+			requested,
+			rawArgs: args,
+			agentDir,
+			executable,
+			env,
+			herdr,
+			runHerdr,
+			now,
+		});
 	}
 
 	const store = await openStore({ repoRoot, agentDir });
@@ -136,7 +160,7 @@ async function start(store, context) {
 	} catch (error) {
 		// §10.4: a live holder is resolved against, never queued behind.
 		if (!(error instanceof FactoryStateError) || error.reason !== "lease-held") throw error;
-		return liveRun(store, error.details, context.requested);
+		return liveRunAnswer(store, error.details, context.requested);
 	}
 
 	let answered = null;
@@ -229,7 +253,7 @@ async function driveRun(store, hold, context, signals) {
 	}
 
 	const expiry = applyExpiry();
-	openLifecycle(hold, entry, { at: startedAt });
+	openLifecycle(hold, entry, { at: startedAt, pane: context.pane });
 	signals.attach(entry.run);
 
 	let lifecycle = RUN_LIFECYCLE.preflight;
@@ -299,6 +323,7 @@ async function driveRun(store, hold, context, signals) {
 			run: entry.run,
 			lifecycle,
 			end_reason: endReason,
+			detached: false,
 			exit_code: exitCodeForEndReason(endReason),
 			started_at: startedAt,
 			ended_at: endedAt,
@@ -450,19 +475,23 @@ function settleAtBoundary(store, hold, run, { endReason, at }) {
  * because a re-entered run preflights again — the world it checked may have
  * changed while nobody was driving.
  */
-function openLifecycle(hold, entry, { at }) {
+function openLifecycle(hold, entry, { at, pane }) {
 	if (entry.mode === ENTRY_MODES.adopted) {
 		move(hold, entry.run, RUN_LIFECYCLE.preflight, { at });
 		return;
 	}
 
+	// The pane is the controller's own: Herdr injects it into the pane it
+	// manages, and the record is where #118's cleanup finds the pane of a
+	// finished run. It is recorded, never acted on — this run and every later
+	// one leave the pane exactly as found (§13.B).
 	hold.append({
 		kind: "run.started",
 		source: "controller",
 		run: entry.run,
 		occurredAt: at,
 		observedAt: at,
-		payload: { scope: entry.scope, mode: entry.mode },
+		payload: { scope: entry.scope, mode: entry.mode, pane },
 	});
 	// The append above committed under the token, so the run now durably exists
 	// and a later loss names it rather than reporting no run.
@@ -547,32 +576,6 @@ function leaseLostAnswer(store, hold) {
 
 function isLeaseLoss(error) {
 	return error instanceof FactoryStateError && error.reason === "lease-lost";
-}
-
-/** §10.4's answer against a live holder: a message and exit 0, or a refusal. */
-function liveRun(store, live, requested) {
-	try {
-		const resolved = resolveAgainstLiveRun(store, live, requested);
-		return {
-			message: resolved.message,
-			report: {
-				run: resolved.run,
-				live: true,
-				claimed: 0,
-				pane: resolved.pane,
-				lifecycle: resolved.lifecycle,
-				scope: { ...resolved.scope, described: describeScope(resolved.scope) },
-				queued: false,
-			},
-			// `EXIT_OK`, not `drained`'s code: **no run ran here**. Reaching for the
-			// end-reason table would say this invocation drained a scope, and the
-			// whole point of the table is that a caller can read a run's outcome
-			// off it.
-			exitCode: EXIT_OK,
-		};
-	} catch (error) {
-		return refusal(error);
-	}
 }
 
 /**

@@ -326,7 +326,7 @@ test("reconcile against a live lease-holder refuses, and points at the lock-free
 test("start runs a whole run and answers with its end reason's exit code", async (t) => {
 	const context = invocation(t);
 
-	const { exitCode, value } = await runCli(["start", "42"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
 
 	assert.equal(exitCode, EXIT_OK);
 	assert.equal(value.command, "start");
@@ -337,8 +337,8 @@ test("start runs a whole run and answers with its end reason's exit code", async
 test("start's own flags are start's alone, and are not read as unknown", async (t) => {
 	const context = invocation(t);
 
-	assert.equal((await runCli(["start", "--parent", "75"], context)).exitCode, EXIT_OK);
-	assert.equal((await runCli(["start", "--new-run", "42"], context)).exitCode, EXIT_OK);
+	assert.equal((await runCli(["start", "--foreground", "--parent", "75"], context)).exitCode, EXIT_OK);
+	assert.equal((await runCli(["start", "--foreground", "--new-run", "42"], context)).exitCode, EXIT_OK);
 
 	const { exitCode, value } = await runCli(["doctor", "--new-run"], context);
 	assert.equal(exitCode, EXIT_USAGE);

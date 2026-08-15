@@ -298,7 +298,7 @@ test("a pending stop ends the re-entered run stopped-by-operator, through draini
 	const context = invocation(t);
 	const runId = await runWithRequests(context, { kinds: ["run.stop-requested"] });
 
-	const { exitCode, value } = await runCli(["start"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground"], context);
 
 	assert.equal(exitCode, 3);
 	assert.equal(value.report.run, runId);
@@ -318,7 +318,7 @@ test("a pending abandon ends the run abandoned, exiting 4", async (t) => {
 	const context = invocation(t);
 	const runId = await runWithRequests(context, { kinds: ["run.abandon-requested"] });
 
-	const { exitCode, value } = await runCli(["start"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground"], context);
 
 	assert.equal(exitCode, 4);
 	assert.equal(value.report.end_reason, "abandoned");
@@ -333,7 +333,7 @@ test("an abandon supersedes the stop that preceded it", async (t) => {
 		kinds: ["run.stop-requested", "run.abandon-requested"],
 	});
 
-	const { exitCode, value } = await runCli(["start"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground"], context);
 
 	assert.equal(exitCode, 4);
 	assert.equal(value.report.end_reason, "abandoned", "the earlier stop won over its own escalation");
@@ -343,7 +343,7 @@ test("abandon marks the in-flight executions released, durably, and the report s
 	const context = invocation(t);
 	const runId = await runWithInFlight(context, { kinds: ["run.abandon-requested"] });
 
-	const { exitCode, value } = await runCli(["start"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground"], context);
 
 	assert.equal(exitCode, 4);
 	assert.equal(value.report.execution.in_flight, 1);
@@ -366,7 +366,7 @@ test("a stop never marks an execution released: that is abandon's word alone", a
 	const context = invocation(t);
 	const runId = await runWithInFlight(context, { kinds: ["run.stop-requested"] });
 
-	const { exitCode, value } = await runCli(["start"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground"], context);
 
 	assert.equal(exitCode, 3);
 	assert.equal(value.report.execution.released, 0);
@@ -387,7 +387,7 @@ test("the end reason is a property of the controller loop, never derived from th
 	const context = invocation(t);
 	const runId = await runWithInFlight(context, {});
 
-	const { exitCode, value } = await runCli(["start"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground"], context);
 
 	assert.equal(exitCode, 0);
 	assert.equal(value.report.end_reason, "drained");
@@ -401,7 +401,7 @@ test("the report carries the operator requests that decided the reason", async (
 		kinds: ["run.stop-requested", "run.abandon-requested"],
 	});
 
-	const { value } = await runCli(["start"], context);
+	const { value } = await runCli(["start", "--foreground"], context);
 
 	assert.deepEqual(
 		value.report.operator.map((request) => request.kind),
@@ -458,7 +458,7 @@ function invocationWithSignals(t, { fireInHerdr = [] } = {}) {
 test("the first Ctrl-C ends the run stopped-by-operator, exiting 3", async (t) => {
 	const { context, signals } = invocationWithSignals(t, { fireInHerdr: ["SIGINT"] });
 
-	const { exitCode, value } = await runCli(["start", "42"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
 
 	assert.equal(exitCode, 3);
 	assert.equal(value.report.end_reason, "stopped-by-operator");
@@ -473,7 +473,7 @@ test("the first Ctrl-C ends the run stopped-by-operator, exiting 3", async (t) =
 test("the second Ctrl-C abandons, exiting 4", async (t) => {
 	const { context } = invocationWithSignals(t, { fireInHerdr: ["SIGINT", "SIGINT"] });
 
-	const { exitCode, value } = await runCli(["start", "42"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
 
 	assert.equal(exitCode, 4);
 	assert.equal(value.report.end_reason, "abandoned");
@@ -489,7 +489,7 @@ test("the second Ctrl-C abandons, exiting 4", async (t) => {
 test("a single SIGTERM abandons: it is the escalation, not a stop", async (t) => {
 	const { context } = invocationWithSignals(t, { fireInHerdr: ["SIGTERM"] });
 
-	const { exitCode, value } = await runCli(["start", "42"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
 
 	assert.equal(exitCode, 4);
 	assert.equal(value.report.end_reason, "abandoned");
@@ -539,7 +539,7 @@ test("a signal before the run is opened is recorded on open and honoured, not lo
 	});
 	context.probes = probes;
 
-	const { exitCode, value } = await runCli(["start"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground"], context);
 
 	assert.equal(exitCode, 3, "the pre-open signal was lost");
 	assert.equal(value.report.end_reason, "stopped-by-operator");
@@ -551,7 +551,7 @@ test("the listener is live for the run and gone when the run ends", async (t) =>
 	// the probe's signal produced is on the run's stream afterwards.
 	const { context, signals } = invocationWithSignals(t, { fireInHerdr: ["SIGINT"] });
 
-	const { exitCode, value } = await runCli(["start", "42"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
 
 	assert.equal(exitCode, 3, "the signal fired into a listener that was not there");
 	assert.deepEqual(signals.listening(), [], "the listener outlived the run it served");

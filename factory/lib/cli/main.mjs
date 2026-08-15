@@ -142,6 +142,7 @@ async function run(parsed, verb, loaded, context) {
 		probes: context.probes,
 		herdr: context.herdr,
 		signal: context.signal,
+		runHerdr: context.runHerdr,
 		expect: loaded.config.package?.expect ?? null,
 		args: parsed.args,
 		flags: new Set(parsed.flags),

@@ -1,4 +1,5 @@
 import { PARENT_FLAG } from "../controller/scope.mjs";
+import { FOREGROUND_FLAG } from "../controller/launch.mjs";
 import { NEW_RUN_FLAG, runStart } from "../controller/start.mjs";
 import { runStop } from "../controller/stop.mjs";
 import { runDoctor } from "../doctor/verb.mjs";
@@ -29,12 +30,14 @@ export const VERB_TABLE = Object.freeze({
 		// bare numbers are the direct-ticket set, and `--parent` says the single
 		// number given is the parent whose members the run covers.
 		//
-		// `--foreground` is deliberately absent: §10.1's default is a detached
-		// Herdr pane, and the flag only means something once there is something
-		// to be detached *from*. Both arrive together in #98.
+		// `--foreground` is §10.1's process-shape decision: the default launch is
+		// detached into a Herdr pane, and the flag runs the invocation as the
+		// controller in the invoking terminal — the shape a dying SSH connection
+		// would otherwise take with it.
 		flags: {
 			[NEW_RUN_FLAG]: { spec: "§10.4" },
 			[PARENT_FLAG]: { spec: "§3.1" },
+			[FOREGROUND_FLAG]: { spec: "§10.1" },
 		},
 		spec: "§10.1, §10.3",
 	},
