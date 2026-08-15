@@ -173,6 +173,45 @@ test("a lost lease stops effects, emits controller.lease-lost, exits non-zero, a
 	);
 });
 
+test("a journal that cannot record the loss still hands the run loop its exit", async (t) => {
+	const losses = [];
+	const store = await openTestStore(t);
+	store.append(runStarted(RUN));
+	const clock = stoppedClock();
+	const timers = manualTimers();
+	const leases = openLeases(store, { now: clock.now });
+	const guard = holdControllerLease({
+		store: {
+			...store,
+			append: () => {
+				throw new Error("disk full");
+			},
+		},
+		leases,
+		run: RUN,
+		pane: "herdr:2",
+		onLost: (loss) => losses.push(loss),
+		now: clock.now,
+		timers: timers.api,
+	});
+
+	clock.advance(CONTROLLER_LEASE_TTL_MS + 1);
+	openLeases(store, { now: clock.now }).acquire({
+		name: LEASE_NAMES.controller,
+		identity: { host: "workshop", boot_id: null, pid: 5151, process_start_time: T0, run: RUN, pane: "herdr:9" },
+		ttlMs: CONTROLLER_LEASE_TTL_MS,
+	});
+
+	// The store failing is not a reason to keep issuing effects, and not a
+	// reason for the run to end zero.
+	assert.throws(() => timers.tick(), /disk full/);
+	assert.equal(guard.lost, true);
+	assert.deepEqual(
+		losses.map((loss) => loss.exitCode),
+		[EXIT_LEASE_LOST],
+	);
+});
+
 test("after the loss, in-flight work is abandoned rather than pushed to Gitea or git", async (t) => {
 	const { store, guard, clock, timers } = await heldStore(t);
 	const touched = [];

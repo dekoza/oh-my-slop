@@ -79,20 +79,25 @@ export function holdControllerLease({
 		timers.clearInterval(renewal);
 
 		const at = now();
-		store.append({
-			kind: "controller.lease-lost",
-			source: "controller",
-			run,
-			occurredAt: at,
-			observedAt: at,
-			payload: {
-				lease: LEASE_NAMES.controller,
-				fencing_generation: held.fencingGeneration,
-				holder_generation: error.details.holder_generation ?? null,
-			},
-		});
-
-		onLost({ endReason: "lease-lost", exitCode: EXIT_LEASE_LOST, details: error.details });
+		try {
+			store.append({
+				kind: "controller.lease-lost",
+				source: "controller",
+				run,
+				occurredAt: at,
+				observedAt: at,
+				payload: {
+					lease: LEASE_NAMES.controller,
+					fencing_generation: held.fencingGeneration,
+					holder_generation: error.details.holder_generation ?? null,
+				},
+			});
+		} finally {
+			// A store that cannot record the loss is not a reason to end the run
+			// zero, so the run loop is told either way; the store's own failure
+			// then propagates on its own account.
+			onLost({ endReason: "lease-lost", exitCode: EXIT_LEASE_LOST, details: error.details });
+		}
 	}
 
 	return Object.freeze({
