@@ -114,7 +114,7 @@ test("--help lists the verb set and succeeds", async (t) => {
 // ── What this slice does not implement, said out loud ────────────────────────
 
 /** The verbs this package answers; the rest say what they are waiting for. */
-const IMPLEMENTED = new Set(["start", "doctor", "reconcile"]);
+const IMPLEMENTED = new Set(["start", "doctor", "reconcile", "stop"]);
 const UNIMPLEMENTED = VERBS.filter((verb) => !IMPLEMENTED.has(verb));
 
 test("every verb this slice does not implement exits typed, naming what is missing", async (t) => {

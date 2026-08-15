@@ -1,5 +1,6 @@
 import { PARENT_FLAG } from "../controller/scope.mjs";
 import { NEW_RUN_FLAG, runStart } from "../controller/start.mjs";
+import { runStop } from "../controller/stop.mjs";
 import { runDoctor } from "../doctor/verb.mjs";
 import { runReconcile } from "../reconcile/verb.mjs";
 
@@ -67,8 +68,8 @@ export const VERB_TABLE = Object.freeze({
 	},
 	stop: {
 		requiresConfig: true,
+		handler: runStop,
 		summary: "request a drain at the next ticket boundary",
-		missing: "the durable stop-request record (#98)",
 		spec: "§10.5",
 	},
 	"cleanup-plan": {
