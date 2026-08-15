@@ -7,7 +7,7 @@ import { newUlid } from "../../factory/lib/identity/ulid.mjs";
 import { FactoryStateError } from "../../factory/lib/state/errors.mjs";
 import { envelopeHash, GENESIS_PREV_HASH, runStream } from "../../factory/lib/state/events.mjs";
 import { openDatabase } from "../../factory/lib/state/sqlite.mjs";
-import { openStore } from "../../factory/lib/state/store.mjs";
+import { openRepoStoreReadOnly, openStore } from "../../factory/lib/state/store.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
 import {
 	attemptLaunched,
@@ -95,6 +95,35 @@ test("a neighbour's unreadable store does not block a repo from its own", async 
 
 	assert.notEqual(mine.dbPath, neighbourPath);
 	assert.equal(mine.canonicalPath, realpathSync(join(base, "a", "b")));
+});
+
+test("a repository's own store opens read-only, at whichever spelling holds it", async (t) => {
+	const agentDir = makeAgentDir(t);
+	const base = makeAgentDir(t);
+	mkdirSync(join(base, "a-b"), { recursive: true });
+	mkdirSync(join(base, "a", "b"), { recursive: true });
+
+	const neighbour = await openStore({ repoRoot: join(base, "a-b"), agentDir });
+	t.after(() => neighbour.close());
+	const mine = await openStore({ repoRoot: join(base, "a", "b"), agentDir });
+	const runId = newUlid();
+	mine.append(runStarted(runId));
+	t.after(() => mine.close());
+
+	const reader = await openRepoStoreReadOnly({ repoRoot: join(base, "a", "b"), agentDir });
+	t.after(() => reader.close());
+
+	assert.equal(reader.dbPath, mine.dbPath, "the reader landed on the neighbour's store");
+	assert.equal(reader.readRun(runId).run_id, runId);
+	assert.equal(reader.transaction, undefined, "a read-only handle carries no write path (§14.24)");
+});
+
+test("a repository with no store yet reads as absent, and none is created (§14.24)", async (t) => {
+	const agentDir = makeAgentDir(t);
+	const repoRoot = makeRepo(t);
+
+	assert.equal(await openRepoStoreReadOnly({ repoRoot, agentDir }), null);
+	assert.equal(existsSync(join(agentDir, "software-factory")), false, "a read created a store");
 });
 
 test("a journal instance uuid makes a cursor from another journal detectable", async (t) => {

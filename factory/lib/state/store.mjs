@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { FactoryStateError } from "./errors.mjs";
@@ -98,6 +98,37 @@ async function open({ repoRoot, agentDir, compareHeads }) {
 }
 
 /**
+ * This repository's store, opened **read-only and never created** — the handle
+ * `doctor` diagnoses through (§10.5).
+ *
+ * It answers `null` for a repository the factory has never run in, because
+ * "there is no state yet" is a fact `doctor` reports rather than a store it
+ * quietly brings into existence: §14.24's "appends nothing, writes no
+ * projection" would be a strange promise to keep while creating the file.
+ *
+ * Which of §4.1's two spellings holds the store is settled the same way
+ * `openStore` settles it — by the recorded canonical path, never by guessing
+ * from the slug.
+ *
+ * @param {{ repoRoot: string, agentDir?: string | null }} where
+ * @returns {Promise<object | null>} the read-only store, or null when there is none
+ */
+export async function openRepoStoreReadOnly({ repoRoot, agentDir = null }) {
+	const agent = agentDir ?? (await resolveAgentDir()).path;
+	const paths = resolveStorePaths({ repoRoot, agentDir: agent });
+
+	for (const candidate of [paths.primary, paths.onCollision]) {
+		if (!existsSync(candidate.dbPath)) continue;
+
+		const reader = openStoreReadOnly({ dbPath: candidate.dbPath });
+		if (reader.canonicalPath === paths.canonicalPath) return reader;
+		reader.close();
+	}
+
+	return null;
+}
+
+/**
  * A reader's view: the same projection tables, no append path, and no write
  * lock (§4.1). The monitor never re-derives state from events, so this is the
  * whole of what it needs.
@@ -110,7 +141,27 @@ async function open({ repoRoot, agentDir, compareHeads }) {
  */
 export function openStoreReadOnly({ dbPath }) {
 	const db = openDatabase(dbPath, { readOnly: true });
-	return Object.freeze({ dbPath, storeDir: dirname(dbPath), ...readSurface(db), close: () => db.close() });
+	// The identity a writer would have found, so a reader can say *which*
+	// repository and which journal it is answering about. Null when the file
+	// carries no identity yet — a store half-created by a writer that is still
+	// inside its first transaction.
+	const identity = readIdentity(db);
+
+	return Object.freeze({
+		dbPath,
+		storeDir: dirname(dbPath),
+		canonicalPath: identity?.canonical_repo_path ?? null,
+		instanceUuid: identity?.instance_uuid ?? null,
+		head: () => readJournalHead(db),
+		projectionHeads: () => db.prepare("SELECT * FROM projection_head ORDER BY name").all(),
+		...readSurface(db),
+		close: () => db.close(),
+	});
+}
+
+function readIdentity(db) {
+	const table = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'store_identity'").get();
+	return table === undefined ? null : (db.prepare("SELECT * FROM store_identity WHERE id = 1").get() ?? null);
 }
 
 /**
@@ -405,15 +456,21 @@ function readSurface(db) {
 	return {
 		projectionContract: () => compareProjectionHeads(db, readJournalHead(db)),
 
-		readEvents: ({ stream = null, sinceSeq = 0, limit = null } = {}) =>
+		/**
+		 * `kind` narrows to one §4.3 kind. It exists because the alarms `doctor`
+		 * must not miss — `journal.integrity-failed` above all — live on the
+		 * *indefinite* controller stream, and finding them by reading that stream
+		 * whole would cost more every day the repository is used.
+		 */
+		readEvents: ({ stream = null, kind = null, sinceSeq = 0, limit = null } = {}) =>
 			db
 				.prepare(
 					`SELECT * FROM event
-					 WHERE seq > ? AND (? IS NULL OR stream = ?)
+					 WHERE seq > ? AND (? IS NULL OR stream = ?) AND (? IS NULL OR kind = ?)
 					 ORDER BY seq ASC
 					 LIMIT ?`,
 				)
-				.all(sinceSeq, stream, stream, limit ?? -1)
+				.all(sinceSeq, stream, stream, kind, kind, limit ?? -1)
 				.map(toEnvelope),
 
 		/** §4.7's per-stream verification. A read, so a reader may run it too. */
