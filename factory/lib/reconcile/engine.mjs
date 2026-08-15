@@ -99,8 +99,9 @@ export async function reconcile(
 		if (answers.answered.length === 0) continue;
 
 		const concluded = concludeEntity(answers.answered);
-		if (settling) settled += commit(store, entity, answers.answered, concluded, { actor, fencingGeneration, at, causalCommandId });
-		else settled += answers.answered.filter((answer) => answer.answer.matched).length;
+		settled += settling
+			? commit(store, entity, answers.answered, concluded, { actor, fencingGeneration, at, causalCommandId })
+			: answers.answered.filter((answer) => answer.answer.matched).length;
 
 		entities.push(
 			Object.freeze({
@@ -218,7 +219,15 @@ async function probeAll(effects, { probes, store, at }) {
 		const implementation = probes.implementationFor(probe.call);
 
 		if (implementation === null) {
-			failed.push(unsettledEffect(effect, probe, UNSETTLED_REASONS.probeUnavailable, `No probe implements the read "${probe.call}" in this package; the effect stays unresolved rather than being settled by reasoning (§14.1).`));
+			failed.push(
+				unsettledEffect(
+					effect,
+					probe,
+					UNSETTLED_REASONS.probeUnavailable,
+					`No probe implements the read "${probe.call}" in this package; the effect stays unresolved ` +
+						"rather than being settled by reasoning (§14.1).",
+				),
+			);
 			continue;
 		}
 
@@ -374,7 +383,8 @@ function requireAnswer(answer, effect, probe) {
 	if (typeof answer?.matched !== "boolean") {
 		throw new FactoryReconcileError(
 			"probe-answer-invalid",
-			`The probe for ${effect.effect_key} answered ${JSON.stringify(answer?.matched ?? null)}; a probe says whether §4.5's declared match held.`,
+			`The probe for ${effect.effect_key} answered ${JSON.stringify(answer?.matched ?? null)}; a probe ` +
+				"says whether §4.5's declared match held.",
 			{ at: "matched", effect_key: effect.effect_key, call: probe.call, found: answer?.matched ?? null },
 		);
 	}

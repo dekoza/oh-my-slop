@@ -20,7 +20,15 @@ import { doctorReport } from "./report.mjs";
  * @param {number} [invocation.at]
  * @returns {Promise<{ message: string, report: object }>}
  */
-export async function runDoctor({ repoRoot, agentDir = null, expect = null, executable, env, probes, at = Date.now() }) {
+export async function runDoctor({
+	repoRoot,
+	agentDir = null,
+	expect = null,
+	executable,
+	env,
+	probes,
+	at = Date.now(),
+}) {
 	const store = await openRepoStoreReadOnly({ repoRoot, agentDir });
 
 	try {

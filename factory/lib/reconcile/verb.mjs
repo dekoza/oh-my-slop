@@ -66,7 +66,10 @@ function refusal(error) {
 
 	return {
 		kind: "lease-held",
-		message: `Run ${run ?? "(unnamed)"} holds the controller lease in pane ${pane ?? "(unknown)"}, so reconcile cannot take it — reconciling from outside the lease would race the run it describes. \`factory status\` and \`factory doctor\` are lock-free reads and work against a live run (§10.5).`,
+		message:
+			`Run ${run ?? "(unnamed)"} holds the controller lease in pane ${pane ?? "(unknown)"}, so reconcile ` +
+			"cannot take it — reconciling from outside the lease would race the run it describes. " +
+			"`factory status` and `factory doctor` are lock-free reads and work against a live run (§10.5).",
 		...error.details,
 	};
 }

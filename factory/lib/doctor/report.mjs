@@ -48,7 +48,15 @@ const MONITOR_CONFIG = join(".pi", "factory-monitor.json");
  */
 export async function doctorReport(
 	store,
-	{ repoRoot, agentDir, executable = process.argv[1], expect = null, env = process.env, probes = PROBES, at = Date.now() },
+	{
+		repoRoot,
+		agentDir,
+		executable = process.argv[1],
+		expect = null,
+		env = process.env,
+		probes = PROBES,
+		at = Date.now(),
+	},
 ) {
 	const handshake = attemptHandshake({ executable, expect, env });
 	const unresolved = store === null ? [] : unresolvedEffects(store);
@@ -102,7 +110,9 @@ function alarmsOf(value) {
 	}
 
 	for (const stream of value.integrity?.broken ?? []) {
-		alarms.push(alarm("journal-stream-broken", `Stream ${stream} does not verify against its own chain (§4.7).`, { stream }));
+		alarms.push(
+			alarm("journal-stream-broken", `Stream ${stream} does not verify against its own chain (§4.7).`, { stream }),
+		);
 	}
 
 	for (const pin of value.pins) {
@@ -110,7 +120,8 @@ function alarmsOf(value) {
 			alarm(
 				"unresolved-effect-pin",
 				pin.unsettleable > 0
-					? `${describeRun(pin.run)} holds ${pin.unresolved} unresolved effect(s), ${pin.unsettleable} of which nothing in this package can settle (§12.4).`
+					? `${describeRun(pin.run)} holds ${pin.unresolved} unresolved effect(s), ${pin.unsettleable} of ` +
+						"which nothing in this package can settle (§12.4)."
 					: `${describeRun(pin.run)} holds ${pin.unresolved} unresolved effect(s), still awaiting a probe (§12.4).`,
 				pin,
 			),
@@ -128,7 +139,11 @@ function alarmsOf(value) {
 	for (const projection of value.store.projections ?? []) {
 		if (projection.ok) continue;
 		alarms.push(
-			alarm("projection-unreadable", `Projection ${projection.name} is not readable by this build (§14.9).`, projection),
+			alarm(
+				"projection-unreadable",
+				`Projection ${projection.name} is not readable by this build (§14.9).`,
+				projection,
+			),
 		);
 	}
 
@@ -201,7 +216,13 @@ function pinsSection(unresolved, reconciled) {
 	const pins = new Map();
 
 	for (const effect of unresolved) {
-		const pin = pins.get(effect.run_id) ?? { run: effect.run_id, unresolved: 0, unsettleable: 0, oldest_requested_at: effect.requested_at, effects: [] };
+		const pin = pins.get(effect.run_id) ?? {
+			run: effect.run_id,
+			unresolved: 0,
+			unsettleable: 0,
+			oldest_requested_at: effect.requested_at,
+			effects: [],
+		};
 		pin.unresolved += 1;
 		if (unsettleable.has(effect.effect_key)) pin.unsettleable += 1;
 		pin.oldest_requested_at = Math.min(pin.oldest_requested_at, effect.requested_at);

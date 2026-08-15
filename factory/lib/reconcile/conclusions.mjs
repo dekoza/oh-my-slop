@@ -117,7 +117,8 @@ export function reconcileConclusion(conclusion, entries) {
 	if (basis.length === 0) {
 		throw new FactoryReconcileError(
 			"evidence-empty",
-			`A ${conclusion} conclusion carries a non-empty evidence basis; a conclusion with nothing behind it is the journal establishing an external fact (§14.1, §14.2).`,
+			`A ${conclusion} conclusion carries a non-empty evidence basis; a conclusion with nothing behind ` +
+				"it is the journal establishing an external fact (§14.1, §14.2).",
 			{ at: "evidence", conclusion },
 		);
 	}
@@ -133,7 +134,8 @@ function requireSource(entry, index, conclusion) {
 	if (source === JOURNAL_INTENT) {
 		throw new FactoryReconcileError(
 			"evidence-journal-intent",
-			`${JOURNAL_INTENT} is never a member of an evidence basis: the journal records intent and never establishes an external fact (§14.1, §14.2).`,
+			`${JOURNAL_INTENT} is never a member of an evidence basis: the journal records intent and never ` +
+				"establishes an external fact (§14.1, §14.2).",
 			{ at: `evidence[${index}].source`, found: source, conclusion },
 		);
 	}
