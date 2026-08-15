@@ -399,8 +399,11 @@ store is the only coupling.
 ### 7.2 Reading the durable store
 
 The store is one SQLite database per repository at
-`${PI_AGENT_DIR:-~/.pi/agent}/software-factory/repos/<slug>/state.db` (WAL,
-`synchronous=FULL`), opened **read-only**, taking no write lock.
+`${PI_CODING_AGENT_DIR:-~/.pi/agent}/software-factory/repos/<slug>/state.db` (WAL,
+`synchronous=FULL`), opened **read-only**, taking no write lock. The root is resolved by the
+SDK's `getAgentDir()`; `PI_AGENT_DIR` — the spelling this specification originally carried —
+**is not a pi variable** and was read only by the retired factory's own code (amended by
+[#82](http://192.168.129.37:30008/minder/oh-my-slop/issues/82)).
 
 - **The monitor reads #79's projection tables; it does not re-derive state from events.** A
   monitor that computes its own answer can contradict the controller, and a monitor that
@@ -423,7 +426,10 @@ Session-scoped, and deliberately **not a daemon**. Never start background resour
 the extension factory.
 
 - Starts through **one idempotent path** from either trigger: an explicit monitor command,
-  or a run starting in that tab.
+  or a run started **from a tab**. Since
+  [#82](http://192.168.129.37:30008/minder/oh-my-slop/issues/82) made the shell binary the
+  primary entry point, not every run has a hosting tab — a shell-launched run hosts no
+  monitor, and the operator opens one from any tab.
 - Tears down on `session_shutdown` after flushing a typed `service-stopping` event, so the
   page renders "monitor host gone, the run may still be running" rather than guessing from
   a dropped socket.
@@ -760,12 +766,13 @@ deletes, and worker and reviewer share one cwd. *(→ #79, #86)*
 
 **O10.** Run lifecycle and end-reason enums are operator-visible; preflight and baseline are
 an observable phase with per-check and per-probe results; `controller-lost` is derived from
-liveness and never self-asserted. *(→ #82)*
+liveness and never self-asserted. *(→ #82 — **discharged**)*
 
 **O11.** The monitor service is session-scoped, idempotently started from a command or a run
-start, torn down on `session_shutdown`, and rehostable from any tab; `status` and `doctor`
-authenticate over loopback with the ephemeral token and must not require the password path.
-*(→ #82)*
+started **from a tab**, torn down on `session_shutdown`, and rehostable from any tab; `status`
+and `doctor` authenticate over loopback with the ephemeral token and must not require the
+password path. The factory reaches it by a **typed `pi.events` request only** — never an
+import, a spawn, or a fatal dependency. *(→ #82 — **discharged**)*
 
 **O12.** The config surface carries `bind` (default `127.0.0.1`), an explicit port required
 for non-loopback binds, the scrypt password hash plus salt, optional `tls.cert`/`tls.key`,
@@ -799,7 +806,7 @@ What this specification inherits, and from where.
 | [#79](http://192.168.129.37:30008/minder/oh-my-slop/issues/79) Durable state and events | closed | §7.2 store shape; O1–O9, O14 |
 | [#81](http://192.168.129.37:30008/minder/oh-my-slop/issues/81) Verification and outcomes | closed | §3.1 enums, verbatim |
 | [#83](http://192.168.129.37:30008/minder/oh-my-slop/issues/83) Worker trust | closed | §2.2 anomaly rationale; §8.4 primary control |
-| [#82](http://192.168.129.37:30008/minder/oh-my-slop/issues/82) Controller lifecycle | **open** | O10, O11 pending |
+| [#82](http://192.168.129.37:30008/minder/oh-my-slop/issues/82) Controller lifecycle | closed | O10, O11 discharged; §7.2 store root and §7.3 start trigger corrected |
 | [#84](http://192.168.129.37:30008/minder/oh-my-slop/issues/84) Configuration | **open** | O12 pending |
 | [#85](http://192.168.129.37:30008/minder/oh-my-slop/issues/85) Bounded parallelism | **open** | §3.7 readiness requirement |
 | [#86](http://192.168.129.37:30008/minder/oh-my-slop/issues/86) Retention and ownership | **open** | O13 pending |
@@ -847,3 +854,4 @@ means touching everything twice.
 | Date | Change | By |
 |---|---|---|
 | 2026-08-14 | Initial lock. | #74 |
+| 2026-08-15 | O10 and O11 discharged. §7.2 store root corrected to `getAgentDir()` / `PI_CODING_AGENT_DIR` — `PI_AGENT_DIR` is not a pi variable. §7.3 and O11 start trigger narrowed to runs started from a tab, since the shell binary is now the primary entry point; the factory reaches the monitor by typed `pi.events` request only. | #82 |
