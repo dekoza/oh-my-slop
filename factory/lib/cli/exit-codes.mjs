@@ -65,9 +65,10 @@ for (const reason of Object.keys(END_REASON_EXIT_CODES)) {
 }
 
 /**
- * End reason `lease-lost` (§10.3): the controller lost its lease and exited
- * without reacquiring. Non-zero by contract, and read from the table rather than
- * written twice.
+ * Controller outcome `lease-lost` (§10.3): the controller lost its lease and
+ * exited without reacquiring. The stale process reports this code but does not
+ * append an unfenced `run.ended` to a run its successor may own. Non-zero by
+ * contract, and read from the published table rather than written twice.
  */
 export const EXIT_LEASE_LOST = END_REASON_EXIT_CODES[END_REASON_LEASE_LOST];
 

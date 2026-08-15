@@ -200,10 +200,12 @@ export function holdControllerLease({
 		renew,
 
 		/**
-		 * The orderly end of a run. A release whose compare-and-swap fails means
-		 * the lease was already somebody else's, which is a loss like any other
-		 * and gets §14.6's treatment rather than a quiet `false`.
+		 * The orderly end of a run. When `event` is supplied, the token-checked
+		 * release and that terminal event commit in one transaction. A failed
+		 * compare appends neither: the lease is already somebody else's, so the
+		 * stale holder gets §14.6's treatment rather than a quiet `false`.
 		 *
+		 * @param {{ event?: object | null }} [options]
 		 * @returns {boolean} whether this holder's row was the one removed
 		 */
 		release({ event = null } = {}) {

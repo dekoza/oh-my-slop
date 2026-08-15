@@ -208,9 +208,10 @@ test("a release that finds the lease already gone is a loss, not a quiet false",
 	const { store, guard, clock } = await heldStore(t, { onLost: (loss) => losses.push(loss) });
 	const thief = adoptFrom(store, clock);
 
-	assert.equal(guard.release(), false);
+	assert.equal(guard.release({ event: runEnded(RUN) }), false);
 
 	assert.equal(guard.lost, true);
+	assert.equal(store.readRun(RUN).end_reason, null, "a stale holder committed its terminal event");
 	assert.deepEqual(
 		losses.map((loss) => loss.exitCode),
 		[EXIT_LEASE_LOST],

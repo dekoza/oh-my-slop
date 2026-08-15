@@ -37,11 +37,13 @@ export const RUN_LIFECYCLE = Object.freeze({
 export const RUN_LIFECYCLES = Object.freeze(Object.values(RUN_LIFECYCLE));
 
 /**
- * The end reasons other modules reach for by name. Every one of them is minted
- * somewhere other than the line that lists them: §4.6's lease decides
- * `lease-lost`, preflight decides `baseline-red`, the drain decides `drained`,
- * and `controller-lost` is only ever written *about* another controller. Naming
- * them here is what keeps those call sites from spelling a member by hand.
+ * The run and controller outcomes other modules reach for by name. Preflight
+ * decides `baseline-red`, the drain decides `drained`, and `controller-lost` is
+ * only ever written *about* another controller. `lease-lost` names the stale
+ * controller's exit report and remains in §10.3's published end-reason
+ * vocabulary, but the stale process cannot mint `run.ended` after losing its
+ * ownership proof. Naming them here keeps call sites from spelling wire members
+ * by hand.
  */
 export const END_REASON_DRAINED = "drained";
 export const END_REASON_BASELINE_RED = "baseline-red";
