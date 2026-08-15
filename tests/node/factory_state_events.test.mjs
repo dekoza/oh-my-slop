@@ -111,12 +111,29 @@ test("the kind enumeration is §4.3's closed, dotted list", () => {
 			"run.expired",
 			"run.lifecycle-changed",
 			"run.started",
+			"run.stop-requested",
+			"run.abandon-requested",
 			"stream.truncated",
 		].sort(),
 	);
 
 	for (const kind of Object.keys(EVENT_KINDS)) {
 		assert.match(kind, /^[a-z]+\.[a-z-]+$/, `${kind} is not <entity>.<verb>`);
+	}
+});
+
+test("§10.5's stop and abandon requests are run-scoped operator facts", () => {
+	// The stop request lands on the run's stream so the monitor watching that
+	// run sees `draining` the moment it is *requested* rather than when the
+	// phase ends — and it is an operator fact: the verb's process writes it,
+	// not the controller.
+	for (const kind of ["run.stop-requested", "run.abandon-requested"]) {
+		assert.equal(EVENT_KINDS[kind].visibility, "operator", kind);
+		assert.equal(EVENT_KINDS[kind].payloadVersion, 1, kind);
+
+		const built = envelope({ kind, payload: { actor: "operator:stop" } });
+		assert.equal(built.run, RUN_ID, `${kind} left the run's stream`);
+		assert.equal(built.stream, `run:${RUN_ID}`);
 	}
 });
 
