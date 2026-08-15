@@ -218,7 +218,9 @@ function liveOf(row) {
 function spawnHerdr(args, { env, binary }) {
 	return new Promise((resolve) => {
 		const child = spawn(binary, args, {
-			env: { ...env },
+			// The context's env is the operator's environment when the CLI carries
+		// one; a direct call without one still means "as this shell would run it".
+			env: { ...(env ?? process.env) },
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stdout = "";
