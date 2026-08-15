@@ -1,7 +1,5 @@
 import { FactoryConfigError } from "../config/errors.mjs";
 import { loadFactoryConfig } from "../config/load.mjs";
-import { runDoctor } from "../doctor/verb.mjs";
-import { runReconcile } from "../reconcile/verb.mjs";
 import { EXIT_NOT_IMPLEMENTED, EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "./exit-codes.mjs";
 import { renderReport } from "./render.mjs";
 import { VERB_TABLE, VERBS } from "./verbs.mjs";
@@ -44,6 +42,22 @@ async function dispatch(parsed, context) {
 	if (parsed.error) return failure(null, parsed.error, EXIT_USAGE, { usage: shortUsage() });
 
 	if (parsed.help) return help();
+
+	const verb = parsed.verb === null ? null : VERB_TABLE[parsed.verb];
+
+	// Flags are judged before the verb is: a line that gets both wrong should
+	// still name the flag it could not read, rather than reporting only that a
+	// verb was missing.
+	const unknownFlag = parsed.flags.find((flag) => !KNOWN_FLAGS.has(flag) && verb?.flags?.[flag] === undefined);
+	if (unknownFlag !== undefined) {
+		return failure(
+			parsed.verb,
+			{ kind: "usage", message: `Unknown flag "${unknownFlag}".`, flag: unknownFlag },
+			EXIT_USAGE,
+			{ usage: shortUsage() },
+		);
+	}
+
 	if (parsed.verb === null) {
 		return failure(
 			null,
@@ -53,21 +67,10 @@ async function dispatch(parsed, context) {
 		);
 	}
 
-	const verb = VERB_TABLE[parsed.verb];
 	if (verb === undefined) {
 		return failure(
 			null,
 			{ kind: "usage", message: `Unknown verb "${parsed.verb}".`, verb: parsed.verb },
-			EXIT_USAGE,
-			{ usage: shortUsage() },
-		);
-	}
-
-	const unknownFlag = parsed.flags.find((flag) => !KNOWN_FLAGS.has(flag) && verb.flags?.[flag] === undefined);
-	if (unknownFlag !== undefined) {
-		return failure(
-			parsed.verb,
-			{ kind: "usage", message: `Unknown flag "${unknownFlag}".`, flag: unknownFlag },
 			EXIT_USAGE,
 			{ usage: shortUsage() },
 		);
@@ -95,24 +98,26 @@ async function dispatch(parsed, context) {
 		return notImplemented(parsed, `factory ${parsed.verb} ${unbuilt[0]}`, unbuilt[1]);
 	}
 
-	if (verb.implemented) return run(parsed, loaded, context);
+	if (verb.handler !== undefined) return run(parsed, verb, loaded, context);
 
 	return notImplemented(parsed, `factory ${parsed.verb}`, verb);
 }
 
-async function run(parsed, loaded, context) {
-	const invocation = {
+/**
+ * Every handler is handed the same invocation — the process facts plus what the
+ * config settled — and destructures what it needs. One shape means a new verb
+ * is a table row rather than a row and a branch, and a handler that grows a
+ * dependency does not change its caller.
+ */
+async function run(parsed, verb, loaded, context) {
+	const answered = await verb.handler({
 		repoRoot: loaded.repoRoot,
 		agentDir: context.agentDir ?? null,
 		executable: context.executable,
 		env: context.env,
 		probes: context.probes,
-	};
-
-	const answered =
-		parsed.verb === "doctor"
-			? await runDoctor({ ...invocation, expect: loaded.config.package?.expect ?? null })
-			: await runReconcile(invocation);
+		expect: loaded.config.package?.expect ?? null,
+	});
 
 	if (answered.error !== undefined) {
 		return failure(parsed.verb, answered.error, EXIT_REFUSED, { args: parsed.args });
@@ -175,7 +180,9 @@ export function renderHuman(value) {
 			lines.push("  verbs:");
 			const width = Math.max(...value.usage.verbs.map((name) => name.length));
 			for (const name of value.usage.verbs) {
-				lines.push(`    ${name.padEnd(width)}  ${value.usage.summaries[name]}`);
+				const flags = value.usage.flags?.[name];
+				const takes = flags === undefined ? "" : ` [${flags.join(" ")}]`;
+				lines.push(`    ${name.padEnd(width)}  ${value.usage.summaries[name]}${takes}`);
 			}
 		}
 	}
@@ -232,6 +239,13 @@ function help() {
 				verbs: VERBS,
 				summaries: Object.fromEntries(
 					Object.entries(VERB_TABLE).map(([name, verb]) => [name, verb.summary]),
+				),
+				// A flag an operator can type is a flag `--help` names. Only the
+				// verbs that take one appear here.
+				flags: Object.fromEntries(
+					Object.entries(VERB_TABLE)
+						.filter(([, verb]) => verb.flags !== undefined)
+						.map(([name, verb]) => [name, Object.keys(verb.flags)]),
 				),
 			},
 		},

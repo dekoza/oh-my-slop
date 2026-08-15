@@ -1,3 +1,4 @@
+import { resolveAgentDir } from "../state/location.mjs";
 import { openRepoStoreReadOnly } from "../state/store.mjs";
 import { doctorReport } from "./report.mjs";
 
@@ -29,10 +30,22 @@ export async function runDoctor({
 	probes,
 	at = Date.now(),
 }) {
-	const store = await openRepoStoreReadOnly({ repoRoot, agentDir });
+	// Resolved **once, here**, because the diagnosis reports where §4.1's state
+	// root came from as well as reading from it — and a `null` handed onward as
+	// "the default" is a path nothing can print and `join` refuses outright.
+	const agent = agentDir === null ? await resolveAgentDir() : { path: agentDir, source: "caller" };
+	const store = await openRepoStoreReadOnly({ repoRoot, agentDir: agent.path });
 
 	try {
-		const report = await doctorReport(store, { repoRoot, agentDir, expect, executable, env, probes, at });
+		const report = await doctorReport(store, {
+			repoRoot,
+			agentDir: agent,
+			expect,
+			executable,
+			env,
+			probes,
+			at,
+		});
 		return { message: headline(report), report };
 	} finally {
 		store?.close();

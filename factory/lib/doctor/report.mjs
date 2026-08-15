@@ -38,7 +38,9 @@ const MONITOR_CONFIG = join(".pi", "factory-monitor.json");
  *   repository has no factory state yet
  * @param {object} context
  * @param {string} context.repoRoot
- * @param {string} context.agentDir where §4.1's state root lives
+ * @param {{ path: string, source: string }} context.agentDir where §4.1's state
+ *   root is, and how it was resolved — reported rather than swallowed, because a
+ *   run that fell back to the documented default is a fact doctor should state
  * @param {string} [context.executable] the running binary, anchoring §11.7's handshake
  * @param {object | null} [context.expect] `package.expect` from config
  * @param {Record<string, string | undefined>} [context.env]
@@ -68,7 +70,7 @@ export async function doctorReport(
 	const value = {
 		schema_version: 1,
 		at,
-		store: storeSection(store),
+		store: storeSection(store, agentDir),
 		integrity: store === null ? null : integritySection(store),
 		reconcile: reconciled,
 		pins: pinsSection(unresolved, reconciled),
@@ -76,7 +78,7 @@ export async function doctorReport(
 		counters: countersSection(store, unresolved),
 		package: packageSection(handshake),
 		monitor: monitorSection(repoRoot),
-		legacy: legacySection(repoRoot, agentDir),
+		legacy: legacySection(repoRoot, agentDir.path),
 		artifacts: store === null ? null : Object.freeze({ by_class: artifactBytesByClass(store) }),
 	};
 
@@ -158,16 +160,18 @@ function describeRun(run) {
 	return run === null ? "The repository" : `Run ${run}`;
 }
 
-function storeSection(store) {
+function storeSection(store, agentDir) {
 	if (store === null) {
 		return Object.freeze({
 			present: false,
+			agent_dir: agentDir,
 			message: "This repository has no factory state yet; nothing has run here (§4.1).",
 		});
 	}
 
 	return Object.freeze({
 		present: true,
+		agent_dir: agentDir,
 		path: store.dbPath,
 		canonical_repo_path: store.canonicalPath,
 		instance_uuid: store.instanceUuid,

@@ -1,3 +1,4 @@
+import { PROBE_SOURCES } from "../effects/catalogue.mjs";
 import { resolveEffectIn, unresolvedEffects } from "../effects/records.mjs";
 import { EFFECT_REGISTRY } from "../effects/registry.mjs";
 import { EVENT_SOURCES, FOREIGN_TIMESTAMP_KEY } from "../state/events.mjs";
@@ -49,6 +50,15 @@ const OBSERVATION_SOURCES = Object.freeze({
 	artifact: "controller",
 });
 
+// A probe source with no event source to record it under would be a `TypeError`
+// at reconcile time, in the middle of settling somebody's run. Checked at
+// import, where §4.5's vocabulary and §4.3's meet.
+for (const source of PROBE_SOURCES) {
+	if (OBSERVATION_SOURCES[source] === undefined) {
+		throw new Error(`Probe source "${source}" has no event source to record its answer under (§4.3).`);
+	}
+}
+
 /**
  * Why an effect was left unresolved. Reported, never thrown: a probe that cannot
  * answer is the ordinary state of a factory whose subsystems land one at a time,
@@ -86,31 +96,35 @@ export async function reconcile(
 
 	const unresolved = unresolvedEffects(store);
 	const scope = scopeOf(store, unresolved);
+	const held = entitiesOf(scope, unresolved);
 	const entities = [];
 	const unsettled = [];
 	let settled = 0;
+	let settleable = 0;
 
-	for (const entity of entitiesOf(scope, unresolved)) {
+	for (const entity of held) {
 		// Probing first, whole: a probe is a read of the external system, so it
 		// happens identically in both modes and nothing is written until every
 		// answer for this entity is in hand.
-		const answers = await probeAll(entity.effects, { probes, store, at });
-		for (const answer of answers.failed) unsettled.push(answer);
-		if (answers.answered.length === 0) continue;
+		const { readings, unprobed } = await probeAll(entity.effects, { probes, store, at });
+		unsettled.push(...unprobed);
+		if (readings.length === 0) continue;
 
-		const concluded = concludeEntity(answers.answered);
-		settled += settling
-			? commit(store, entity, answers.answered, concluded, { actor, fencingGeneration, at, causalCommandId })
-			: answers.answered.filter((answer) => answer.answer.matched).length;
+		const matched = readings.filter((reading) => reading.answer.matched).length;
+		const concluded = concludeEntity(readings);
+		settleable += matched;
+		if (settling) {
+			settled += commit(store, entity, readings, concluded, { actor, fencingGeneration, at, causalCommandId });
+		}
 
 		entities.push(
 			Object.freeze({
 				entity: entity.identity,
 				...concluded,
 				effects: Object.freeze({
-					probed: answers.answered.length,
-					settled: answers.answered.filter((answer) => answer.answer.matched).length,
-					unsettled: entity.effects.length - answers.answered.length,
+					probed: readings.length,
+					settleable: matched,
+					unsettled: entity.effects.length - readings.length,
 				}),
 			}),
 		);
@@ -123,12 +137,32 @@ export async function reconcile(
 		scope,
 		entities: Object.freeze(entities),
 		unsettled: Object.freeze(unsettled),
-		out_of_scope: Object.freeze(unresolved.filter((effect) => effect.run_id === null).map(describeEffect)),
+		out_of_scope: Object.freeze(outOfScope(unresolved, held).map(describeEffect)),
+		// **`settled` is what was written**, so it is zero in report mode however
+		// many probes matched: `doctor` printing "settled 3" while appending
+		// nothing would be the one sentence §14.24 cannot afford to get wrong.
+		// `settleable` is the half both modes compute identically.
 		settled,
+		settleable,
 		fencing_generation: fencingGeneration,
 		causal_command_id: causalCommandId,
 		probes: Object.freeze([...probes.calls]),
 	});
+}
+
+/**
+ * Every unresolved effect **no entity in scope holds** — repo-scoped ones, and
+ * the ticket-less effects of a run that has already ended.
+ *
+ * §5.4's scope is run-shaped, so these are outside it by construction. That is
+ * precisely why they are listed: an effect in neither the settled set nor the
+ * unsettled one would be invisible to the operator, and §12.4's alarm — *a run
+ * pinned for weeks means an effect nothing can settle* — would go unrung for the
+ * one class of effect nothing will ever probe.
+ */
+function outOfScope(unresolved, held) {
+	const claimed = new Set(held.flatMap((entity) => entity.effects.map((effect) => effect.effect_key)));
+	return unresolved.filter((effect) => !claimed.has(effect.effect_key));
 }
 
 /**
@@ -206,23 +240,25 @@ function entitiesOf(scope, unresolved) {
 }
 
 /**
- * Every effect this entity holds, re-probed. The answers come back in the order
+ * Every effect this entity holds, re-probed. The readings come back in the order
  * the effects were requested — §14.37's "ordering is by sequence, never by
  * clock" — because that order is what decides which answer is the deciding one.
+ *
+ * @returns {Promise<{ readings: object[], unprobed: object[] }>} one reading per
+ *   effect the world answered about, and one report per effect it did not
  */
 async function probeAll(effects, { probes, store, at }) {
-	const answered = [];
-	const failed = [];
+	const readings = [];
+	const unprobed = [];
 
 	for (const effect of effects) {
 		const probe = EFFECT_REGISTRY.probeFor(effect.operation);
 		const implementation = probes.implementationFor(probe.call);
 
 		if (implementation === null) {
-			failed.push(
+			unprobed.push(
 				unsettledEffect(
 					effect,
-					probe,
 					UNSETTLED_REASONS.probeUnavailable,
 					`No probe implements the read "${probe.call}" in this package; the effect stays unresolved ` +
 						"rather than being settled by reasoning (§14.1).",
@@ -233,13 +269,13 @@ async function probeAll(effects, { probes, store, at }) {
 
 		try {
 			const answer = requireAnswer(await implementation({ effect, probe, store, at }), effect, probe);
-			answered.push({ effect, probe, answer, entry: entryFor(effect, probe, answer) });
+			readings.push({ effect, probe, answer, entry: entryFor(effect, probe, answer) });
 		} catch (error) {
-			failed.push(unsettledEffect(effect, probe, UNSETTLED_REASONS.probeFailed, error.message));
+			unprobed.push(unsettledEffect(effect, UNSETTLED_REASONS.probeFailed, error.message));
 		}
 	}
 
-	return { answered, failed };
+	return { readings, unprobed };
 }
 
 /**
@@ -256,24 +292,24 @@ async function probeAll(effects, { probes, store, at }) {
  * The deciding answer leads the basis, because the operator's question is which
  * source decided.
  */
-function concludeEntity(answers) {
-	const landed = answers.find((answer) => answer.answer.matched);
+function concludeEntity(readings) {
+	const landed = readings.find((reading) => reading.answer.matched);
 	if (landed !== undefined) {
-		return conclusionWith(ABSENCE_MATCHES.has(landed.probe.match) ? "released" : "adopted", landed, answers);
+		return conclusionWith(ABSENCE_MATCHES.has(landed.probe.match) ? "released" : "adopted", landed, readings);
 	}
 
-	const unprovable = answers.find(
-		(answer) => answer.probe.source === "harness" && answer.probe.match === "token-matches",
+	const unprovable = readings.find(
+		(reading) => reading.probe.source === "harness" && reading.probe.match === "token-matches",
 	);
-	if (unprovable !== undefined) return conclusionWith("declared-dead", unprovable, answers);
+	if (unprovable !== undefined) return conclusionWith("declared-dead", unprovable, readings);
 
-	return conclusionWith("unchanged", answers[0], answers);
+	return conclusionWith("unchanged", readings[0], readings);
 }
 
-function conclusionWith(conclusion, deciding, answers) {
+function conclusionWith(conclusion, deciding, readings) {
 	return reconcileConclusion(conclusion, [
 		deciding.entry,
-		...answers.filter((answer) => answer !== deciding).map((answer) => answer.entry),
+		...readings.filter((reading) => reading !== deciding).map((reading) => reading.entry),
 	]);
 }
 
@@ -285,11 +321,11 @@ function conclusionWith(conclusion, deciding, answers) {
  *
  * @returns {number} how many effects the world settled
  */
-function commit(store, entity, answers, concluded, { actor, fencingGeneration, at, causalCommandId }) {
+function commit(store, entity, readings, concluded, { actor, fencingGeneration, at, causalCommandId }) {
 	return store.transaction((tx) => {
 		let settled = 0;
 
-		for (const { effect, probe, answer } of answers) {
+		for (const { effect, probe, answer } of readings) {
 			tx.appendEvent(observationOf(effect, probe, answer, { at, causalCommandId }));
 
 			// §5.3: only a probe settles a requested record, and only when the
@@ -321,9 +357,9 @@ function commit(store, entity, answers, concluded, { actor, fencingGeneration, a
 				conclusion: concluded.conclusion,
 				evidence: concluded.evidence.map((entry) => ({ ...entry })),
 				effects: {
-					probed: answers.length,
+					probed: readings.length,
 					settled,
-					unsettled: entity.effects.length - answers.length,
+					unsettled: entity.effects.length - readings.length,
 				},
 			},
 		});
@@ -411,7 +447,7 @@ function requireAnswer(answer, effect, probe) {
 	return answer;
 }
 
-function unsettledEffect(effect, probe, reason, message) {
+function unsettledEffect(effect, reason, message) {
 	return Object.freeze({ ...describeEffect(effect), reason, message });
 }
 

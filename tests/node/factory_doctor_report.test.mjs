@@ -64,7 +64,7 @@ async function diagnosable(t, { effects = true } = {}) {
 		reader,
 		context: {
 			repoRoot,
-			agentDir,
+			agentDir: { path: agentDir, source: "caller" },
 			executable: join(root, "factory", "bin", "factory.mjs"),
 			env: { PATH: onPath(t, join(root, "factory", "bin", "factory.mjs")) },
 			at: AT,
@@ -79,7 +79,7 @@ async function openReader(t, { repoRoot, agentDir }) {
 }
 
 test("doctor computes the reconciliation and appends nothing to the journal (§14.24)", async (t) => {
-	const { reader, context, repoRoot, agentDir } = await diagnosable(t);
+	const { reader, context, agentDir } = await diagnosable(t);
 	const probes = createProbeRegistry();
 	probes.register("herdr.pane-list", () => ({
 		matched: false,
@@ -101,7 +101,6 @@ test("doctor computes the reconciliation and appends nothing to the journal (§1
 	t.after(() => witness.close());
 	assert.deepEqual(witness.head(), headBefore);
 	assert.equal(existsSync(join(agentDir, "software-factory")), true);
-	assert.ok(repoRoot.length > 0);
 });
 
 test("the baseline is reported as of when it last ran, saying plainly it was not re-run", async (t) => {
@@ -217,7 +216,7 @@ test("a quarantined journal stays loud in doctor, however many times it restarts
 	const reader = await openReader(t, { repoRoot, agentDir });
 	const report = await doctorReport(reader, {
 		repoRoot,
-		agentDir,
+		agentDir: { path: agentDir, source: "caller" },
 		executable: join(root, "factory", "bin", "factory.mjs"),
 		env: { PATH: onPath(t, join(root, "factory", "bin", "factory.mjs")) },
 		at: AT,
@@ -236,7 +235,7 @@ test("a repository the factory has never run in still gets an answer", async (t)
 
 	const report = await doctorReport(null, {
 		repoRoot,
-		agentDir,
+		agentDir: { path: agentDir, source: "caller" },
 		executable: join(root, "factory", "bin", "factory.mjs"),
 		env: { PATH: onPath(t, join(root, "factory", "bin", "factory.mjs")) },
 		at: AT,

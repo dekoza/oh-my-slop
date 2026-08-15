@@ -229,7 +229,9 @@ test("report mode reaches the same conclusion and appends nothing to the journal
 		reported.entities.map((entity) => [entity.entity.ticket, entity.conclusion, entity.evidence[0].source]),
 		settled.entities.map((entity) => [entity.entity.ticket, entity.conclusion, entity.evidence[0].source]),
 	);
-	assert.equal(reported.settled, settled.settled, "report mode counts what settling would settle");
+	assert.equal(reported.settleable, settled.settleable, "the two modes disagree about what the world said");
+	assert.equal(reported.settled, 0, "report mode claimed to have settled something it never wrote");
+	assert.equal(settled.settled, 1);
 });
 
 test("a read-only handle can report and can never settle", async (t) => {
@@ -258,6 +260,22 @@ test("settling with no fencing generation is the caller's bug, and says so", asy
 	const refusal = await refusalOfAsync(() => reconcile(store, { probes: createProbeRegistry(), at: AT }));
 
 	assert.equal(refusal.reason, "reconcile-generation-required");
+});
+
+test("an unresolved effect no entity in scope holds is still visible, whoever holds it", async (t) => {
+	const { store, ended } = await storeWithRuns(t);
+	// A ticket-less effect of a run that has already ended: §5.4's scope reaches
+	// neither the run (it ended) nor a ticket execution (there is no ticket), so
+	// nothing will ever probe it — which is exactly what must not go unreported.
+	const orphan = labelAdd(store, { run: ended, operand: "drained" });
+
+	const report = await reconcile(store, { probes: createProbeRegistry(), fencingGeneration: 1, at: AT });
+
+	assert.deepEqual(
+		report.out_of_scope.map((entry) => entry.effect_key),
+		[orphan.key],
+	);
+	assert.equal(unresolvedEffects(store).length, 1, "an out-of-scope effect is left exactly as it was");
 });
 
 test("a repo-scoped unresolved effect is reported rather than settled outside §5.4's scope", async (t) => {

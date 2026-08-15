@@ -17,6 +17,21 @@ import { leaseIdentity, makeAgentDir } from "./helpers/factory-store.mjs";
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BIN_PATH = join(REPO_ROOT, "factory", "bin", "factory.mjs");
 
+/** The §10.2 property: no fact reaches one rendering and misses the other. */
+function assertRenderingsAgree(value) {
+	const human = renderHuman(value);
+
+	assert.doesNotMatch(human, /^\s*[{[]/, "human output is not JSON");
+	for (const [path, leaf] of leaves(value)) {
+		// `schema_version`, `command`, and `ok` are envelope: the version is a
+		// machine contract, the command is what the operator just typed, and the
+		// exit code carries the verdict.
+		if (path === "schema_version" || path === "command") continue;
+		if (typeof leaf === "boolean" || leaf === null) continue;
+		assert.ok(human.includes(String(leaf)), `human rendering of ${value.command} drops ${path} = ${JSON.stringify(leaf)}`);
+	}
+}
+
 /** Every scalar the structured value carries, with its path, for the drift check. */
 function* leaves(value, path = "") {
 	if (Array.isArray(value)) {
@@ -34,7 +49,7 @@ function* leaves(value, path = "") {
 
 // ── The verb set (§10.2) ─────────────────────────────────────────────────────
 
-test("the verb set is exactly the eight §10.2 verbs", async () => {
+test("the verb set is exactly the eight §10.2 verbs", () => {
 	assert.deepEqual(VERBS, [
 		"start",
 		"status",
@@ -68,6 +83,13 @@ test("an unknown flag refuses as usage", async (t) => {
 
 	assert.equal(exitCode, EXIT_USAGE);
 	assert.equal(value.error.flag, "--verbose");
+});
+
+test("a flag is named even when the verb is missing too", async (t) => {
+	const { exitCode, value } = await runCli(["--verbose"], { cwd: makeRepo(t) });
+
+	assert.equal(exitCode, EXIT_USAGE);
+	assert.equal(value.error.flag, "--verbose", "the operator was told only that a verb was missing");
 });
 
 test("--config is refused, because config is repo-bound", async (t) => {
@@ -171,7 +193,7 @@ test("no environment variable can redirect the config", async (t) => {
 	assert.equal(value.error.reason, "file-missing");
 });
 
-test("a user-level ~/.pi/factory.json is not a defaults layer", async (t) => {
+test("a user-level ~/.pi/factory.json is not a defaults layer", (t) => {
 	const cwd = makeRepo(t, { config: null });
 	const home = mkdtempSync(join(tmpdir(), "factory-home-"));
 	t.after(() => rmSync(home, { recursive: true, force: true }));
@@ -208,28 +230,13 @@ test("human output is the default and carries every fact the JSON carries", asyn
 		await runCli(["start"], { cwd: makeRepo(t) }),
 	];
 
-	for (const { value } of cases) {
-		const human = renderHuman(value);
-
-		assert.doesNotMatch(human, /^\s*[{[]/, "human output is not JSON");
-		for (const [path, leaf] of leaves(value)) {
-			// `schema_version`, `command`, and `ok` are envelope: the version is a
-			// machine contract, the command is what the operator just typed, and the
-			// exit code carries the verdict.
-			if (path === "schema_version" || path === "command") continue;
-			if (typeof leaf === "boolean" || leaf === null) continue;
-			assert.ok(
-				human.includes(String(leaf)),
-				`human rendering of ${value.command} drops ${path} = ${JSON.stringify(leaf)}`,
-			);
-		}
-	}
+	for (const { value } of cases) assertRenderingsAgree(value);
 });
 
 // ── doctor and reconcile (§5.4, §10.5) ───────────────────────────────────────
 
 /** The process facts a test drives instead of inheriting from the test runner. */
-async function invocation(t) {
+function invocation(t) {
 	const root = makePackage(t);
 	const executable = join(root, "factory", "bin", "factory.mjs");
 
@@ -242,7 +249,7 @@ async function invocation(t) {
 }
 
 test("doctor diagnoses the repository and exits zero, having written nothing", async (t) => {
-	const context = await invocation(t);
+	const context = invocation(t);
 
 	const { exitCode, value } = await runCli(["doctor"], context);
 
@@ -254,7 +261,7 @@ test("doctor diagnoses the repository and exits zero, having written nothing", a
 });
 
 test("doctor --baseline names the subsystem that executes the checks", async (t) => {
-	const context = await invocation(t);
+	const context = invocation(t);
 
 	const { exitCode, value } = await runCli(["doctor", "--baseline"], context);
 
@@ -264,7 +271,7 @@ test("doctor --baseline names the subsystem that executes the checks", async (t)
 });
 
 test("--baseline is doctor's flag alone", async (t) => {
-	const context = await invocation(t);
+	const context = invocation(t);
 
 	const { exitCode, value } = await runCli(["status", "--baseline"], context);
 
@@ -273,7 +280,7 @@ test("--baseline is doctor's flag alone", async (t) => {
 });
 
 test("reconcile settles what it can under the lease, and releases it", async (t) => {
-	const context = await invocation(t);
+	const context = invocation(t);
 
 	const { exitCode, value } = await runCli(["reconcile"], context);
 
@@ -287,7 +294,7 @@ test("reconcile settles what it can under the lease, and releases it", async (t)
 });
 
 test("reconcile against a live lease-holder refuses, and points at the lock-free reads", async (t) => {
-	const context = await invocation(t);
+	const context = invocation(t);
 	const store = await openStore({ repoRoot: context.cwd, agentDir: context.agentDir });
 	openLeases(store).acquire({
 		name: "controller",
@@ -307,22 +314,16 @@ test("reconcile against a live lease-holder refuses, and points at the lock-free
 });
 
 test("doctor's human rendering carries every fact its JSON carries", async (t) => {
-	const context = await invocation(t);
+	const context = invocation(t);
 
 	const { value } = await runCli(["doctor"], context);
-	const human = renderHuman(value);
 
-	assert.doesNotMatch(human, /^\s*[{[]/, "human output is not JSON");
-	for (const [path, leaf] of leaves(value)) {
-		if (path === "schema_version" || path === "command") continue;
-		if (typeof leaf === "boolean" || leaf === null) continue;
-		assert.ok(human.includes(String(leaf)), `human rendering drops ${path} = ${JSON.stringify(leaf)}`);
-	}
+	assertRenderingsAgree(value);
 });
 
 // ── The binary itself ────────────────────────────────────────────────────────
 
-test("the bin entry runs as a program and reports its refusals on stderr", async (t) => {
+test("the bin entry runs as a program and reports its refusals on stderr", (t) => {
 	const cwd = makeRepo(t, { config: null });
 
 	const result = spawnSync(process.execPath, [BIN_PATH, "status"], { cwd, encoding: "utf8" });
@@ -332,7 +333,7 @@ test("the bin entry runs as a program and reports its refusals on stderr", async
 	assert.match(result.stderr, /factory\.json/);
 });
 
-test("the bin entry prints machine output on stdout under --json", async (t) => {
+test("the bin entry prints machine output on stdout under --json", (t) => {
 	const cwd = makeRepo(t, { config: null });
 
 	const result = spawnSync(process.execPath, [BIN_PATH, "status", "--json"], { cwd, encoding: "utf8" });
@@ -341,7 +342,25 @@ test("the bin entry prints machine output on stdout under --json", async (t) => 
 	assert.equal(JSON.parse(result.stdout).error.reason, "file-missing");
 });
 
-test("the bin entry prints successful human output on stdout", async (t) => {
+test("the bin entry diagnoses with the agent directory it resolves for itself", (t) => {
+	const cwd = makeRepo(t);
+
+	// No injected `agentDir`: this is the path the operator's `factory doctor`
+	// actually takes, and the only place §4.1's resolution is exercised.
+	const result = spawnSync(process.execPath, [BIN_PATH, "doctor", "--json"], {
+		cwd,
+		encoding: "utf8",
+		env: { ...process.env, PI_CODING_AGENT_DIR: makeAgentDir(t) },
+	});
+
+	assert.equal(result.status, EXIT_OK, result.stderr);
+	const value = JSON.parse(result.stdout);
+	assert.equal(value.report.store.present, false);
+	assert.ok(value.report.store.agent_dir.path.length > 0, "doctor cannot say where the state root is");
+	assert.ok(["pi-sdk", "env", "default"].includes(value.report.store.agent_dir.source));
+});
+
+test("the bin entry prints successful human output on stdout", (t) => {
 	const cwd = makeRepo(t);
 
 	const result = spawnSync(process.execPath, [BIN_PATH, "--help"], { cwd, encoding: "utf8" });

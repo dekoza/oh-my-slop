@@ -1,3 +1,6 @@
+import { runDoctor } from "../doctor/verb.mjs";
+import { runReconcile } from "../reconcile/verb.mjs";
+
 /**
  * The §10.2 verb set. Every operator verb lives in this one deterministic
  * binary — nothing is reachable only from a pi session, because the moment
@@ -8,7 +11,10 @@
  * load would make it unreachable precisely when it is needed.
  *
  * `missing` and `spec` are what a not-yet-built verb says instead of going
- * quiet: the subsystem that owes it, and the section that specifies it.
+ * quiet: the subsystem that owes it, and the section that specifies it. A verb
+ * that *is* built names its `handler` here rather than being matched by name
+ * where it is dispatched: a table row and a branch elsewhere are two places to
+ * remember, and the one that gets forgotten runs the other verb's code.
  */
 export const VERB_TABLE = Object.freeze({
 	start: {
@@ -25,7 +31,7 @@ export const VERB_TABLE = Object.freeze({
 	},
 	doctor: {
 		requiresConfig: true,
-		implemented: true,
+		handler: runDoctor,
 		summary: "diagnose the factory without mutating it",
 		// §10.5's `--baseline` executes the declared checks in a throwaway
 		// worktree. It is accepted here and refused with the ticket that owes it,
@@ -41,7 +47,7 @@ export const VERB_TABLE = Object.freeze({
 	},
 	reconcile: {
 		requiresConfig: true,
-		implemented: true,
+		handler: runReconcile,
 		summary: "settle unresolved effects by re-probing",
 		spec: "§5.4, §10.5",
 	},
