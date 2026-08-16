@@ -15,6 +15,7 @@ import {
 	END_REASON_STOPPED_BY_OPERATOR,
 	RUN_LIFECYCLE,
 } from "../domain/vocabulary.mjs";
+import { FactoryEffectError } from "../effects/errors.mjs";
 import { latestRequest, operatorRequests, requestReport } from "./stop.mjs";
 import { installSignalRequests } from "./signals.mjs";
 import { reconcile } from "../reconcile/engine.mjs";
@@ -865,8 +866,23 @@ function leaseLostAnswer(store, hold) {
 	};
 }
 
+/**
+ * The two ways this process learns the lease is somebody else's.
+ *
+ * The first is its own compare-and-swap failing — a renewal, an `append`, a
+ * release. The second is §14.5's backstop firing underneath one: **an effect
+ * refused for a superseded generation is proof of the same fact**, discovered by
+ * the write rather than by the latch, because a successor adopts a lapsed row
+ * without telling anyone and `lost` stays false until this process's next
+ * compare. Both mean §14.6 without discretion — stop, emit, exit 6 — and
+ * neither is an error to crash on: the release that follows performs the
+ * compare that concedes, and the run is left open for whoever owns it now.
+ */
 function isLeaseLoss(error) {
-	return error instanceof FactoryStateError && error.reason === "lease-lost";
+	return (
+		(error instanceof FactoryStateError && error.reason === "lease-lost") ||
+		(error instanceof FactoryEffectError && error.reason === "effect-superseded-generation")
+	);
 }
 
 /**

@@ -289,6 +289,28 @@ is the authority; cite the section a change answers to.
   hide. The run manifest and the package handshake are **effects keyed by the run**, so a
   re-entry whose declared inputs changed is a typed conflict — §3.1's immutable membership and
   §11.7's single pin arriving as a refusal rather than as a rule anyone follows.
+- The **checks are declared, never discovered** (`factory/lib/checks/`). `run.mjs` executes
+  the validated `checks` block and nothing else — no manifest, no Makefile, and `AGENTS.md`
+  prose is never parsed at runtime (§14.34) — and its selector is the closed pair
+  `required | all`, so **per-surface targeting is not a question the API can be asked**.
+  Classification is §8.2's fault attribution and lives in one function: a required check
+  exiting **inside its declared expected-failure codes** is the worker's failure, and a
+  timeout, a signal, an exec that is not there, or any other code is `unrunnable` — an
+  automation failure. A timed-out check is killed as a **process group**, because a suite
+  that survives the check that gave up on it holds the port the next one needs. §14.23's
+  "two lanes never run mechanical checks concurrently" is one in-process chain, not a lease:
+  §11.6 declares no parallel-safety, and `checks[].parallelSafe` is the recorded v2 upgrade.
+  **Running a check is not an effect** — there is nothing for a probe to ask the world — but
+  recording its output is, so `artifacts.mjs` is what writes, keyed by the *execution* and
+  not by the check alone: a re-entered run preflights again, and two executions' bytes under
+  one key would make an ordinary re-entry a §4.5 conflict. `baseline.mjs` is §8.3's gate in a
+  **detached throwaway worktree** under `baselines/` — deleted eagerly when green, retained
+  when red (§12.7) — and it writes nothing durable, which is exactly what lets
+  `doctor --baseline` share it verbatim under §14.24 — both verbs reach it through the one
+  `baselineForRepo`, so they cannot answer differently about what the base is or what the
+  checks said, and a caller that already pinned a base passes it rather than fetching a
+  second one. Differential no-new-failures verification is **deliberately absent**; §8.3
+  records it as the v2 answer, and the comment saying so is load-bearing.
 - **The tracker is read through `tea`, and holds no credential of its own.**
   `.pi/factory.json` carries `tracker.repo`, `tracker.remote`, and `tracker.login` — no
   base URL and no token, which is not an omission: §6.8 states that `tea` credentials are

@@ -166,6 +166,51 @@ function makeHandle(dir, git) {
 			return Object.freeze({ path, created: true });
 		},
 
+		/**
+		 * A **throwaway** worktree at a commit, on no branch (§10.5, §12.7).
+		 *
+		 * Detached is what makes it throwaway: it writes no ref, so §14.11 holds
+		 * without the path having to be blessed, and nothing about it can outlive
+		 * the directory. §8.3's baseline and `doctor --baseline` are its only
+		 * callers, and neither has any work to preserve — the commit they check
+		 * out is already published.
+		 *
+		 * @param {{ path: string, at: string }} what
+		 * @returns {Promise<{ path: string, commit: string }>}
+		 */
+		addDetachedWorktree: async ({ path, at }) => {
+			const existing = (await listWorktrees(dir, git)).find((worktree) => worktree.worktree === path);
+			if (existing !== undefined) {
+				throw new FactoryGitError(
+					"worktree-occupied",
+					`${path} is already a worktree of ${existing.branch ?? "a detached head"}; a throwaway worktree is never reused (§12.7).`,
+					{ path, found: existing.branch ?? existing.head },
+				);
+			}
+			await git(["worktree", "add", "--quiet", "--detach", path, at], { cwd: dir });
+			return Object.freeze({ path, commit: at });
+		},
+
+		/**
+		 * Remove a worktree and its registration.
+		 *
+		 * `--force`, and only ever aimed at a throwaway: a check run leaves caches
+		 * and build output behind, so a plain `remove` would refuse every green
+		 * baseline. §14.26's "a worktree with uncommitted or untracked files never
+		 * enters a cleanup plan, and there is no `--force`" is about **attempt**
+		 * worktrees, which are the only copy of a worker's work; this one is a
+		 * checkout of an already-published commit plus the detritus of running the
+		 * project's own tests over it. The moment a baseline is *red* it is
+		 * retained instead (§12.7), because that is when an operator wants to `cd`
+		 * in.
+		 *
+		 * @param {{ path: string }} what
+		 */
+		removeWorktree: async ({ path }) => {
+			await git(["worktree", "remove", "--force", path], { cwd: dir });
+			return Object.freeze({ path, removed: true });
+		},
+
 		listWorktrees: () => listWorktrees(dir, git),
 
 		/** Reads and worktree-scoped writes for the modules above this one. */

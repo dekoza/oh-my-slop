@@ -20,17 +20,27 @@ import { resolveRemoteUrl } from "./repo.mjs";
 const LFS_ATTRIBUTE = /(^|\s)filter\s*=\s*lfs(\s|$)/m;
 
 /**
- * @param {object} store an open store (`state/store.mjs`)
+ * @param {object} where the repository this runs for: **a store satisfies it**,
+ *   and so does a `doctor` that has none yet — the check needs the checkout's
+ *   path and the state directory the clone hangs under, and neither is a fact
+ *   about the journal
+ * @param {string} where.canonicalPath the operator's checkout, read only for the
+ *   remote URL `git.remote` names (§11.3)
+ * @param {string} where.storeDir the repository's store directory
  * @param {object} config the validated configuration
- * @returns {Promise<{ check: string, class: string, result: string, message: string, detail: object }>}
+ * @returns {Promise<{ check: string, class: string, result: string, message: string,
+ *   detail: object, clone?: object, base?: object }>}
  *   a check in `controller/preflight.mjs`'s shape; never throws for a fact
- *   about the repository — a red repository is a result, not a crash
+ *   about the repository — a red repository is a result, not a crash. A passing
+ *   check carries the opened clone and the pinned base **beside** the reported
+ *   fields, because §8.3's baseline runs in that clone at that commit and
+ *   re-deriving them would be a second answer to "what is the base".
  */
-export async function gitIsolationCheck(store, config) {
+export async function gitIsolationCheck({ canonicalPath, storeDir }, config) {
 	const remoteName = config.git.remote;
 	const baseBranch = config.git.baseBranch;
 
-	const remoteUrl = resolveRemoteUrl(store.canonicalPath, remoteName);
+	const remoteUrl = resolveRemoteUrl(canonicalPath, remoteName);
 	if (remoteUrl === null) {
 		return failed(`The checkout defines no git remote "${remoteName}", which git.remote names (§11.3).`, {
 			remote: remoteName,
@@ -40,7 +50,7 @@ export async function gitIsolationCheck(store, config) {
 	let clone;
 	let base;
 	try {
-		clone = await openPrivateClone({ storeDir: store.storeDir, remoteUrl });
+		clone = await openPrivateClone({ storeDir, remoteUrl });
 		base = await clone.fetchBase({ baseBranch });
 	} catch (error) {
 		if (!(error instanceof FactoryGitError)) throw error;
@@ -59,10 +69,14 @@ export async function gitIsolationCheck(store, config) {
 		);
 	}
 
-	return passed(
-		`The private clone is healthy and ${baseBranch} pins to ${base.commit} — a plain repo, fetchable now.`,
-		{ clone: clone.dir, remote: remoteName, url: remoteUrl, base_branch: baseBranch, base_commit: base.commit },
-	);
+	return {
+		...passed(
+			`The private clone is healthy and ${baseBranch} pins to ${base.commit} — a plain repo, fetchable now.`,
+			{ clone: clone.dir, remote: remoteName, url: remoteUrl, base_branch: baseBranch, base_commit: base.commit },
+		),
+		clone,
+		base,
+	};
 }
 
 /** §7.8's two refusal classes, read from the fetched tree. */

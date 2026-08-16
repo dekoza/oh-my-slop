@@ -29,11 +29,16 @@ export const VALID_CONFIG = Object.freeze({
 		roles: { implement: "builder", freshRetry: "builder", review: ["builder", "builder"] },
 		rules: [],
 	},
+	// A **real** command: #104's runner executes the declared checks for real, in
+	// a throwaway worktree at the pinned base, so a fixture check has to be cheap,
+	// deterministic, and green against `makeRemote`'s seed commit. It prints the
+	// commit it ran at, which is what makes "the baseline ran at the pinned base"
+	// observable from a suite rather than asserted.
 	checks: [
 		{
 			name: "unit",
-			command: "uv run pytest",
-			timeout: 600,
+			command: "git rev-parse HEAD",
+			timeout: 60,
 			severity: "required",
 			expectedFailureExitCodes: [1],
 		},

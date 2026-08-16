@@ -49,6 +49,17 @@ waits for one. What it exits with is the classified per-member report — closed
 needs-human, awaiting-merge-dependency, blocked-external, human-owned, failed — and each
 member says which ticket it is waiting on.
 
+The checks a run verifies against are **declared, never discovered**: the `checks`
+block in `.pi/factory.json` names each command, its timeout, whether it is required or
+advisory, and which exit codes count as a genuine failure. Nothing is inferred from a
+`pyproject.toml`, a `package.json`, or a Makefile, and `AGENTS.md` prose is never
+parsed at runtime. The controller runs the full required set at the pinned base before
+it claims anything, and a red base aborts the run naming the check that was red rather
+than blaming the first worker for it. `factory doctor --baseline` runs the same set on
+demand, in a throwaway worktree inside the factory-private clone — never your
+checkout — deleted when it passes and kept when it fails, which is when you want to
+`cd` into it.
+
 The `software-factory` extension was **retired** in `fe80c5d` and archived under
 `extensions/.legacy/`. Its replacement is the **`factory`** extension and the **`factory`
 binary**, specified in

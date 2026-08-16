@@ -270,14 +270,20 @@ test("doctor diagnoses the repository and exits zero, having written nothing", a
 	assert.equal(value.report.package.ok, true);
 });
 
-test("doctor --baseline names the subsystem that executes the checks", async (t) => {
+test("doctor --baseline executes the declared checks; doctor without it re-runs nothing", async (t) => {
 	const context = invocation(t);
 
-	const { exitCode, value } = await runCli(["doctor", "--baseline"], context);
+	const executed = await runCli(["doctor", "--baseline"], context);
+	const reported = await runCli(["doctor"], context);
 
-	assert.equal(exitCode, EXIT_NOT_IMPLEMENTED);
-	assert.equal(value.error.kind, "not-implemented");
-	assert.match(value.error.missing, /#104/);
+	assert.equal(executed.exitCode, EXIT_OK);
+	assert.equal(executed.value.report.baseline.rerun, true);
+	assert.equal(executed.value.report.baseline.ok, true);
+
+	assert.equal(reported.value.report.baseline.rerun, false);
+	// The expensive mode wrote nothing durable (§14.24), so the default mode has
+	// no record of it to report — the two modes are not a cache.
+	assert.equal(reported.value.report.baseline.recorded, false);
 });
 
 test("--baseline is doctor's flag alone", async (t) => {
