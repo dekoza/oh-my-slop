@@ -176,6 +176,43 @@ test("a harness probe that cannot match the attempt's token declares the worker 
 	assert.equal(unresolvedEffects(store).length, 1, "declaring the worker dead is not settling the effect");
 });
 
+test("re-probing an unchanged foreign fact reuses its durable observation", async (t) => {
+	const { store, live } = await storeWithRuns(t);
+	store.append(attemptLaunched(live, 92));
+	requestEffect(store, {
+		run: live,
+		ticket: 92,
+		phase: "implement",
+		attempt: `${live}-t92-a1`,
+		operation: "agent-start",
+		actor: "controller",
+		fencingGeneration: 1,
+		payload: { role: "implement" },
+		at: FIXED_NOW,
+	});
+	const probes = createProbeRegistry();
+	probes.register("herdr.pane-list", () => ({
+		matched: false,
+		foreignSourceId: `herdr:FACTORY_ATTEMPT:${live}-t92-a1:absent:false`,
+		detail: { pane: null, alive: false },
+	}));
+
+	await reconcile(store, { probes, fencingGeneration: 1, at: AT });
+	const repeated = await reconcile(store, { probes, fencingGeneration: 2, at: AT + 1 });
+
+	assert.equal(repeated.entities[0].conclusion, "declared-dead");
+	assert.equal(
+		store.readEvents({ kind: "observation.recorded" }).length,
+		1,
+		"the unique foreign fact was already recorded; a no-change confirmation is not a second fact",
+	);
+	assert.equal(
+		store.readEvents({ kind: "reconcile.concluded" }).length,
+		2,
+		"each reconciliation still records the conclusion it reached",
+	);
+});
+
 test("an effect no probe implements is left alone and reported, never concluded about (§14.1)", async (t) => {
 	const { store, live } = await storeWithRuns(t);
 	const effect = labelAdd(store, { run: live, ticket: 92 });

@@ -353,7 +353,14 @@ function commit(store, entity, readings, concluded, { actor, fencingGeneration, 
 		let settled = 0;
 
 		for (const { effect, probe, answer } of readings) {
-			tx.appendEvent(observationOf(effect, probe, answer, { at, causalCommandId }));
+			const observation = observationOf(effect, probe, answer, { at, causalCommandId });
+			// §5.1's unique index makes a foreign fact durable once. An unmatched
+			// effect remains unresolved and is therefore re-probed at every startup;
+			// if the external fact has not changed, its observation is already the
+			// durable evidence and must not be inserted a second time.
+			if (!observationRecorded(tx.db, observation.foreignSourceId)) {
+				tx.appendEvent(observation);
+			}
 
 			// §5.3: only a probe settles a requested record, and only when the
 			// declared match actually held. A probe that found the mutation absent
@@ -393,6 +400,19 @@ function commit(store, entity, readings, concluded, { actor, fencingGeneration, 
 
 		return settled;
 	});
+}
+
+/** §5.1's database-enforced foreign-fact deduplication. */
+function observationRecorded(db, foreignSourceId) {
+	if (foreignSourceId === null) return false;
+	return (
+		db
+			.prepare(
+				`SELECT 1 FROM event
+				 WHERE kind = 'observation.recorded' AND foreign_source_id = ?`,
+			)
+			.get(foreignSourceId) !== undefined
+	);
 }
 
 /** §5.3: the probe is itself written as an observation event carrying its source. */
