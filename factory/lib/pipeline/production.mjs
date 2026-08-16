@@ -241,6 +241,7 @@ async function runWorker(context, { identity, opened, repair, review }) {
 		repair,
 		review,
 		sessionArgs: binding.args,
+		sessionEnv: binding.exports,
 		recheckContext: {
 			executable: context.executable,
 			expect: context.config.package?.expect ?? null,

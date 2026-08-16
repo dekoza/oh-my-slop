@@ -139,6 +139,10 @@ const GONE_STATUSES = Object.freeze(["released", "exited"]);
  *   brief does, and it is not optional in practice: both axis skills open by
  *   asking the caller for a fixed point and there is nobody in the pane to ask
  * @param {ReadonlyArray<string>} [context.sessionArgs] §6.8's binding for this posture
+ * @param {Record<string, string>} [context.sessionEnv] §6.8's closed pane set — the
+ *   controller-owned config-directory variables and declared capability values the
+ *   worker pane must carry. The pane's shell belongs to the multiplexer server, so
+ *   nothing here arrives by inheritance; what is not in this set is not there
  * @param {number | null} [context.startupTimeoutMs] the profile's declared startup guard
  * @param {ReadonlyArray<object>} [context.closureFindings] layer-1/2 findings, if any
  * @param {object} context.herdr the Herdr control surface (`controller/herdr-control.mjs`)
@@ -167,6 +171,7 @@ export async function launchWorker(
 		repair = null,
 		review = null,
 		sessionArgs = [],
+		sessionEnv = {},
 		startupTimeoutMs = null,
 		closureFindings = [],
 		herdr,
@@ -270,6 +275,7 @@ export async function launchWorker(
 		agentKind,
 		worktreePath,
 		sessionArgs,
+		sessionEnv,
 		startupTimeoutMs,
 		payload: {
 			runtime,
@@ -596,7 +602,7 @@ function writeAttemptManifest(
  */
 async function startedAgent(
 	store,
-	{ hold, identity, herdr, agent, agentKind, worktreePath, sessionArgs, startupTimeoutMs, payload, actor, at },
+	{ hold, identity, herdr, agent, agentKind, worktreePath, sessionArgs, sessionEnv = {}, startupTimeoutMs, payload, actor, at },
 ) {
 	const { run, ticket, phase, attempt } = identity;
 
@@ -629,8 +635,15 @@ async function startedAgent(
 
 	// §6.5's second identity channel, into the shell the agent is about to
 	// occupy — so the tuple is reachable from every process the worker starts
-	// and not only from the prompt it was handed once.
-	const exported = await herdr.exportIdentity(opened.pane, attemptEnvironment({ identity, payload }));
+	// and not only from the prompt it was handed once. §6.8's session binding
+	// rides the same export: the pane's shell is the multiplexer server's, not
+	// this controller's, so the controller-owned config roots reach the worker
+	// only by being written here. Identity is spread last — no declared value
+	// may shadow it.
+	const exported = await herdr.exportIdentity(opened.pane, {
+		...sessionEnv,
+		...attemptEnvironment({ identity, payload }),
+	});
 	if (!exported.ok) throw launchFailure(exported, identity);
 
 	const started = await herdr.startAgent({

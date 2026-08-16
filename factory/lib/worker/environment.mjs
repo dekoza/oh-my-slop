@@ -159,8 +159,15 @@ export function prepareWorkerEnvironment({
 		 * and §6.2's probe take the same binding, because a probe that proves a
 		 * different environment from the one the worker gets proves nothing.
 		 *
+		 * `env` is the spawn environment for a probe the controller runs itself.
+		 * `exports` is the **closed** pane set: a worker pane's shell belongs to
+		 * the multiplexer server, not to this controller, so the launch types
+		 * exactly these variables into it — never the controller's whole
+		 * environment, which would put every ambient value in pane scrollback and
+		 * reopen the inheritance channel this environment exists to close.
+		 *
 		 * @param {{ kind: string, posture: string }} session
-		 * @returns {{ env: Record<string, string | undefined>, args: ReadonlyArray<string> }}
+		 * @returns {{ env: Record<string, string | undefined>, exports: Record<string, string>, args: ReadonlyArray<string> }}
 		 */
 		binding({ kind, posture }) {
 			// **Both** variables, in both bindings. A pi worker that shells out to
@@ -168,11 +175,13 @@ export function prepareWorkerEnvironment({
 			// config with all their skills and hooks, which is the one thing this
 			// environment exists to prevent; the runtime that does not read a
 			// variable is not harmed by it being set.
-			const isolated = { ...env, [CONFIG_DIR_ENV.pi]: roots.pi, [CONFIG_DIR_ENV.claude]: roots.claude };
+			const configDirs = { [CONFIG_DIR_ENV.pi]: roots.pi, [CONFIG_DIR_ENV.claude]: roots.claude };
+			const isolated = { ...env, ...configDirs };
 
 			if (kind === "pi") {
 				return Object.freeze({
 					env: Object.freeze(isolated),
+					exports: Object.freeze({ ...configDirs }),
 					args: Object.freeze([
 						...piSessionArguments({ posture }),
 						...extensions.flatMap((extension) => ["--extension", extension.path]),
@@ -185,6 +194,7 @@ export function prepareWorkerEnvironment({
 				// that was never written — one posture vocabulary, one refusal.
 				return Object.freeze({
 					env: Object.freeze(isolated),
+					exports: Object.freeze({ ...configDirs }),
 					args: Object.freeze(claudeSessionArguments({ posture, settingsPath: settingsPaths[posture] })),
 				});
 			}

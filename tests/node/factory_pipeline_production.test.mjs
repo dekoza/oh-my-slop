@@ -12,6 +12,7 @@ import { runStart } from "../../factory/lib/controller/start.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
+import { workerConfigRoots } from "../../factory/lib/worker/environment.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { cloneValidConfig, makeRepo } from "./helpers/factory-repo.mjs";
 import { makeAgentDir, makeHome, herdrAnswering } from "./helpers/factory-store.mjs";
@@ -146,6 +147,26 @@ test("runStart composes the production pipeline through publication without inje
 		"the published branch was not pushed once to the configured remote",
 	);
 	assert.equal(git(repoRoot, "status", "--porcelain=v1", "--untracked-files=all"), checkoutBefore);
+});
+
+test("every launched worker pane carries the controller-owned runtime binding, not the source pane's environment (§6.8)", async (t) => {
+	const { answer, herdr, repoRoot, agentDir } = await runProduction(t);
+	assert.equal(answer.report.execution.members[0].disposition, "published");
+
+	const store = await openStore({ repoRoot, agentDir });
+	t.after(() => store.close());
+	const roots = workerConfigRoots(store.storeDir);
+
+	// One builder and two review axes launched; the controller's own environment
+	// in this test carries neither config-directory variable, so anything the
+	// panes have was handed over deliberately rather than inherited.
+	assert.equal(herdr.panes.length, 3);
+	for (const pane of herdr.panes) {
+		const variables = exported(pane.exported);
+		assert.equal(variables.PI_CODING_AGENT_DIR, roots.pi, `${pane.pane_id} lacks the controller-owned pi root`);
+		assert.equal(variables.CLAUDE_CONFIG_DIR, roots.claude, `${pane.pane_id} lacks the controller-owned Claude root`);
+		assert.equal(variables.FACTORY_TICKET, "147", `${pane.pane_id} lost the identity channel`);
+	}
 });
 
 test("profile model, thinking, and startup timeout reach the worker through its runtime adapter (§6.1, §11.4)", async (t) => {
