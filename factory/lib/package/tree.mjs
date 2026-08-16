@@ -23,13 +23,17 @@ import { join, relative, sep } from "node:path";
 export const TREE_DIGEST_ALGORITHM = "sha256";
 
 /**
- * The two exclusions §11.7 names, and nothing else. `node_modules` is the
+ * The exclusions §11.7 names, and nothing else. `node_modules` is the
  * installer's tree rather than the package's own, and it is exactly what
  * differs between a global install and a checkout; a VCS directory rewrites
- * itself on every command. Anything wider would be this module deciding what
- * counts as the package, which is the digest's whole job to observe.
+ * itself on every command; `__pycache__` is the interpreter's tree — proven
+ * live when preflight's own plugin build reran python in the package root,
+ * the rewritten .pyc header (it carries the source mtime) changed the digest,
+ * and the attempt recheck refused a package nothing changed as
+ * handshake-drift. Anything wider would be this module deciding what counts
+ * as the package, which is the digest's whole job to observe.
  */
-const EXCLUDED_DIRECTORIES = Object.freeze(["node_modules", ".git", ".hg", ".svn"]);
+const EXCLUDED_DIRECTORIES = Object.freeze(["node_modules", "__pycache__", ".git", ".hg", ".svn"]);
 
 /**
  * One entry's contribution: `<relative path> NUL <kind> NUL <content hash> LF`.

@@ -78,6 +78,20 @@ test("node_modules and VCS directories are excluded, wherever they sit", (t) => 
 	assert.equal(treeDigest(noisy).files, 1);
 });
 
+test("python bytecode caches are excluded: the interpreter's tree is not the package's (§11.7)", (t) => {
+	const clean = makeTree(t, { "scripts/build.py": "print(1)\n" });
+	const cached = makeTree(t, { "scripts/build.py": "print(1)\n" });
+
+	// Proven live: preflight's own plugin build runs python in the package root,
+	// and the rewritten .pyc (its header carries the source mtime) made the
+	// recheck compute a different digest than the pin — handshake-drift on a
+	// package nothing changed (run 01M06828THSRYS3F4WZSZD8EAJ).
+	writeTree(cached, { "scripts/__pycache__/build.cpython-314.pyc": "bytecode-with-mtime-header" });
+
+	assert.equal(treeDigest(cached).digest, treeDigest(clean).digest);
+	assert.equal(treeDigest(cached).files, 1);
+});
+
 test("a symlink is hashed as its target string, and never followed", (t) => {
 	const root = makeTree(t, { "real.txt": "content", "alias.txt": { symlink: "real.txt" } });
 

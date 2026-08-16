@@ -67,7 +67,13 @@ export async function ensureClaudePlugin({
 
 	let built;
 	try {
-		built = await runCommand(python, [...GENERATOR, "--out", scratch], { cwd: packageRoot });
+		// The handshake pinned this tree, so the build must not write into it:
+		// a rewritten .pyc under the package root is handshake-drift at the very
+		// next attempt recheck (§11.7).
+		built = await runCommand(python, [...GENERATOR, "--out", scratch], {
+			cwd: packageRoot,
+			env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
+		});
 	} catch (error) {
 		rmSync(scratch, { recursive: true, force: true });
 		throw new FactoryWorkerError(

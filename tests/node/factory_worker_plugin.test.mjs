@@ -5,6 +5,7 @@ import test from "node:test";
 
 import { ensureClaudePlugin, pluginCachePath, readPluginManifest } from "../../factory/lib/worker/plugin.mjs";
 import { FactoryWorkerError } from "../../factory/lib/worker/errors.mjs";
+import { treeDigest } from "../../factory/lib/package/tree.mjs";
 import { makeTree, realGeneratorFiles } from "./helpers/factory-package.mjs";
 
 /**
@@ -51,6 +52,20 @@ test("the generator builds a flattened plugin into the per-revision cache", asyn
 		readdirSync(join(cacheRoot, "plugins")).filter((entry) => entry.includes("building")),
 		[],
 	);
+});
+
+test("building the plugin leaves the pinned package byte-identical — no bytecode cache lands in it (§11.7)", async (t) => {
+	const packageRoot = fixturePackage(t);
+	const cacheRoot = makeTree(t, {});
+	const before = treeDigest(packageRoot);
+
+	await ensureClaudePlugin({ packageRoot, treeDigest: "sha256:rev1", cacheRoot });
+
+	// The digest, not just the absence of __pycache__: the handshake pinned this
+	// tree, and any file the build writes into it is handshake-drift at the
+	// attempt recheck (run 01M06828THSRYS3F4WZSZD8EAJ proved it live).
+	assert.deepEqual(treeDigest(packageRoot), before);
+	assert.equal(existsSync(join(packageRoot, "scripts", "__pycache__")), false);
 });
 
 test("a second run over the same revision reuses the cache without rebuilding", async (t) => {

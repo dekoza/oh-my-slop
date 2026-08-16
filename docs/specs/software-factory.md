@@ -1774,8 +1774,10 @@ validate:
 - canonical executable path (for the binary: the resolved `PATH` entry **and** its realpath),
   resolved package root, package name plus declared version;
 - a **deterministic tree digest** — sorted relative paths plus content hashes over the package's
-  own files, excluding `node_modules` and VCS dirs — **authoritative uniformly for every install
-  shape**, with git commit and a dirty-worktree flag recorded as **metadata only**.
+  own files, excluding `node_modules`, `__pycache__`, and VCS dirs (derived trees that belong to
+  the installer, the interpreter, and the VCS, not to the package) — **authoritative uniformly
+  for every install shape**, with git commit and a dirty-worktree flag recorded as
+  **metadata only**.
   Special-casing checkouts would make dev runs incomparable to installed runs, and dirty
   checkouts are the common case;
 - **live-probed** runtime/harness version, effective production flags, adapter/bridge identity,
