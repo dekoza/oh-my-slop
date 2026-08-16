@@ -1,15 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { rmSync } from "node:fs";
+
 import { requestEffect, unresolvedEffects } from "../../factory/lib/effects/records.mjs";
-import { openPrivateClone } from "../../factory/lib/git/clone.mjs";
-import { attemptWorktreePath } from "../../factory/lib/git/isolation.mjs";
+import { attemptWorktreePath, privateClonePath } from "../../factory/lib/git/isolation.mjs";
 import { registerGitProbes } from "../../factory/lib/git/probes.mjs";
-import { newUlid } from "../../factory/lib/identity/ulid.mjs";
 import { reconcile } from "../../factory/lib/reconcile/engine.mjs";
 import { createProbeRegistry } from "../../factory/lib/reconcile/probes.mjs";
-import { makeRemote, makeRepo } from "./helpers/factory-repo.mjs";
-import { attemptLaunched, FIXED_NOW, openTestStore, runStarted } from "./helpers/factory-store.mjs";
+import { mintedAttempt } from "./helpers/factory-git.mjs";
+import { FIXED_NOW } from "./helpers/factory-store.mjs";
 
 /**
  * §5.3: the git probes ship with git isolation — the reads that settle
@@ -23,20 +23,12 @@ import { attemptLaunched, FIXED_NOW, openTestStore, runStarted } from "./helpers
 const AT = FIXED_NOW + 100_000;
 
 async function crashFixture(t) {
-	const remote = makeRemote(t);
-	const store = await openTestStore(t, { repoRoot: makeRepo(t, { remotes: { gitea: remote } }) });
-	const clone = await openPrivateClone({ storeDir: store.storeDir, remoteUrl: remote });
-	const base = await clone.fetchBase({ baseBranch: "main" });
-
-	const run = newUlid(FIXED_NOW);
-	store.append(runStarted(run, { at: FIXED_NOW }));
-	store.append(attemptLaunched(run, 42, 1, { at: FIXED_NOW }));
+	const minted = await mintedAttempt(t);
 
 	const probes = createProbeRegistry();
 	registerGitProbes(probes);
 
-	const attempt = `${run}-t42-a1`;
-	return { store, clone, base, probes, run, attempt, branch: `factory/t42/a${attempt}` };
+	return { ...minted, probes };
 }
 
 function requested(store, { run, attempt, operation, operand, payload }) {
@@ -108,8 +100,6 @@ test("a worktree is re-found from the attempt id alone, because its path is dete
 
 test("with no clone on disk the probe fails, and the effect is reported rather than guessed", async (t) => {
 	const { store, probes, run, attempt, branch } = await crashFixture(t);
-	const { rmSync } = await import("node:fs");
-	const { privateClonePath } = await import("../../factory/lib/git/isolation.mjs");
 	requested(store, { run, attempt, operation: "branch-create", operand: branch, payload: { branch } });
 	rmSync(privateClonePath(store.storeDir), { recursive: true, force: true });
 

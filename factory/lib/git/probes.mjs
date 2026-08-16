@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 
-import { FactoryGitError } from "./errors.mjs";
 import { runGit } from "./clone.mjs";
+import { FactoryGitError } from "./errors.mjs";
 import { attemptWorktreePath, privateClonePath } from "./isolation.mjs";
 
 /**

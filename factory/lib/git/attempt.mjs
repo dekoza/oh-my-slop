@@ -21,6 +21,33 @@ export const FACTORY_GIT_IDENTITY = Object.freeze({
 });
 
 /**
+ * §7.3's mandatory correlation trailer, `Factory-Attempt: <run>/<ticket>/<attempt>`.
+ *
+ * The obligation to *carry* it rides the worker's prompt (#107) and the check
+ * that it arrived rides integration (#113); what belongs here is the one
+ * spelling both sides share. Two independent formatters would be the drift
+ * §7.3's "verified at integration" cannot survive.
+ *
+ * @param {{ run: string, ticket: number, attempt: string }} identity
+ * @returns {string} the full trailer line
+ * @throws {FactoryGitError} `identity-charset` · `identity-mismatch`
+ */
+export function factoryAttemptTrailer({ run, ticket, attempt }) {
+	// The same tuple-consistency rule the branch is minted under: a trailer
+	// naming a mismatched pair would correlate an attempt with somebody else's
+	// ticket in every commit it stamps.
+	attemptBranch({ ticket, attempt });
+	if (typeof run !== "string" || !attempt.startsWith(`${run}-t`)) {
+		throw new FactoryGitError(
+			"identity-mismatch",
+			`Attempt id ${attempt} does not name run ${JSON.stringify(run ?? null)} (§2.1).`,
+			{ at: "run", found: run ?? null, expected: `${attempt.split("-t")[0]}` },
+		);
+	}
+	return `Factory-Attempt: ${run}/${ticket}/${attempt}`;
+}
+
+/**
  * Create — or find already created — the attempt's branch and worktree.
  *
  * The base commit is **pinned by the first request**: it rides both effect

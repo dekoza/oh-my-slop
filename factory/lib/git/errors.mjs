@@ -12,7 +12,11 @@ export const GIT_ERROR_REASONS = Object.freeze([
 	"identity-charset",
 	/** A derived path that canonicalizes outside its declared root (§2.1). */
 	"identity-path-escape",
-	/** An attempt id that does not name the ticket it is offered with (§2.1). */
+	/**
+	 * An identity slot that does not fit its role (§2.1): a non-number ticket,
+	 * an attempt id naming a different ticket or run, an effect key missing the
+	 * segment its probe needs.
+	 */
 	"identity-mismatch",
 	/** A ref outside `factory/` and `refs/factory/*` (§14.11). */
 	"ref-outside-namespace",

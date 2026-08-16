@@ -11,7 +11,10 @@ import { resolveRemoteUrl } from "./repo.mjs";
  *   closed with a diagnostic naming the file. No silent degradation.
  *
  * The plainness read runs against the *fetched base tree*, never against the
- * operator's checkout — §7.1's topology holds even for preflight.
+ * operator's checkout — §7.1's topology holds even for preflight. The one
+ * checkout read anywhere in this subsystem is the remote's URL from the
+ * checkout's git config, which §11.3's `git.remote` key sanctions: the config
+ * names the remote, and only the checkout knows where that name points.
  */
 
 const LFS_ATTRIBUTE = /(^|\s)filter\s*=\s*lfs(\s|$)/m;
@@ -56,13 +59,10 @@ export async function gitIsolationCheck(store, config) {
 		);
 	}
 
-	return {
-		check: "git-isolation",
-		class: "probe",
-		result: "passed",
-		message: `The private clone is healthy and ${baseBranch} pins to ${base.commit} — a plain repo, fetchable now.`,
-		detail: { clone: clone.dir, remote: remoteName, url: remoteUrl, base_branch: baseBranch, base_commit: base.commit },
-	};
+	return passed(
+		`The private clone is healthy and ${baseBranch} pins to ${base.commit} — a plain repo, fetchable now.`,
+		{ clone: clone.dir, remote: remoteName, url: remoteUrl, base_branch: baseBranch, base_commit: base.commit },
+	);
 }
 
 /** §7.8's two refusal classes, read from the fetched tree. */
@@ -83,5 +83,13 @@ async function plainRepoRefusals(clone, commit) {
 }
 
 function failed(message, detail) {
-	return { check: "git-isolation", class: "probe", result: "failed", message, detail };
+	return verdict("failed", message, detail);
+}
+
+function passed(message, detail) {
+	return verdict("passed", message, detail);
+}
+
+function verdict(result, message, detail) {
+	return { check: "git-isolation", class: "probe", result, message, detail };
 }

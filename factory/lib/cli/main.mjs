@@ -10,7 +10,11 @@ export { VERBS } from "./verbs.mjs";
 
 // §5.3: each subsystem's probes join the shipped registry as the subsystem
 // lands, and the binary's composition root is where they meet — once per
-// process, however many invocations a test drives through `runCli`.
+// process, however many invocations a test drives through `runCli`. This is
+// deliberately the **only** place `PROBES` is populated: an entry point that
+// reaches `start`, `reconcile`, or `doctor` without passing through this
+// module gets an empty default registry and must register (or inject) its own,
+// which the engine surfaces as `probe-unavailable` rather than hiding.
 registerGitProbes(PROBES);
 
 /**

@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { openPrivateClone } from "../../factory/lib/git/clone.mjs";
+import { openPrivateClone, runGit } from "../../factory/lib/git/clone.mjs";
 import { privateClonePath } from "../../factory/lib/git/isolation.mjs";
 import { makeRemote } from "./helpers/factory-repo.mjs";
 
@@ -102,7 +102,6 @@ test("fetches into the private clone are serialized, however many callers ask (ย
 
 	let inFlight = 0;
 	let peak = 0;
-	const { runGit } = await import("../../factory/lib/git/clone.mjs");
 	const watching = async (args, options) => {
 		if (args[0] === "fetch") {
 			inFlight += 1;
@@ -125,6 +124,18 @@ test("fetches into the private clone are serialized, however many callers ask (ย
 
 	assert.equal(peak, 1, "two fetches ran into the clone at once");
 	assert.equal(new Set(results.map((result) => result.commit)).size, 1);
+});
+
+test("every opener of one clone shares one handle, so serialization is the repo's, not the caller's", async (t) => {
+	const remote = makeRemote(t);
+	const storeDir = makeStoreDir(t);
+
+	const first = await openPrivateClone({ storeDir, remoteUrl: remote });
+	const second = await openPrivateClone({ storeDir, remoteUrl: remote });
+
+	// ยง7.7 serializes fetches into the *clone*; two handles with two private
+	// fetch chains would serialize nothing against each other.
+	assert.equal(first, second);
 });
 
 test("a branch collision is a typed refusal, never a force", async (t) => {

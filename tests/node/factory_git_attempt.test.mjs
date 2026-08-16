@@ -3,32 +3,19 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
-import { openPrivateClone } from "../../factory/lib/git/clone.mjs";
-import { createAttemptWorktree, FACTORY_GIT_IDENTITY } from "../../factory/lib/git/attempt.mjs";
-import { newUlid } from "../../factory/lib/identity/ulid.mjs";
-import { makeRemote, makeRepo } from "./helpers/factory-repo.mjs";
-import { attemptLaunched, FIXED_NOW, openTestStore, runStarted } from "./helpers/factory-store.mjs";
+import {
+	createAttemptWorktree,
+	FACTORY_GIT_IDENTITY,
+	factoryAttemptTrailer,
+} from "../../factory/lib/git/attempt.mjs";
+import { mintedAttempt, TEST_HOLD as HOLD } from "./helpers/factory-git.mjs";
+import { FIXED_NOW } from "./helpers/factory-store.mjs";
 
 /**
  * §7.2, §7.3: an attempt's branch and worktree, created fresh from the pinned
  * base at claim time, as effects the database can enforce unique and reconcile
  * can settle.
  */
-
-const HOLD = { fence: () => ({ token: "pinned", generation: 1 }) };
-
-async function fixture(t) {
-	const remote = makeRemote(t);
-	const store = await openTestStore(t, { repoRoot: makeRepo(t, { remotes: { gitea: remote } }) });
-	const clone = await openPrivateClone({ storeDir: store.storeDir, remoteUrl: remote });
-	const base = await clone.fetchBase({ baseBranch: "main" });
-	const run = newUlid(FIXED_NOW);
-	store.append(runStarted(run, { at: FIXED_NOW }));
-	// The tuple is minted before anything git happens (§6.5): the attempt's
-	// journal record is what lets its effects carry the attempt id at all.
-	store.append(attemptLaunched(run, 42, 1, { at: FIXED_NOW }));
-	return { store, clone, base, run, attempt: `${run}-t42-a1` };
-}
 
 function effectRows(store) {
 	return store
@@ -37,7 +24,7 @@ function effectRows(store) {
 }
 
 test("an attempt gets a fresh worktree on its own branch at the pinned base, as resolved effects", async (t) => {
-	const { store, clone, base, run, attempt } = await fixture(t);
+	const { store, clone, base, run, attempt } = await mintedAttempt(t);
 
 	const created = await createAttemptWorktree(store, clone, {
 		hold: HOLD,
@@ -80,7 +67,7 @@ test("an attempt gets a fresh worktree on its own branch at the pinned base, as 
 });
 
 test("factory commits are authored as the factory identity, never as the operator (§7.3)", async (t) => {
-	const { store, clone, base, run, attempt } = await fixture(t);
+	const { store, clone, base, run, attempt } = await mintedAttempt(t);
 	const { worktreePath } = await createAttemptWorktree(store, clone, {
 		hold: HOLD,
 		run,
@@ -103,7 +90,7 @@ test("factory commits are authored as the factory identity, never as the operato
 });
 
 test("re-entering the same attempt is the committed result, not a second mutation", async (t) => {
-	const { store, clone, base, run, attempt } = await fixture(t);
+	const { store, clone, base, run, attempt } = await mintedAttempt(t);
 	const context = {
 		hold: HOLD,
 		run,
@@ -123,7 +110,7 @@ test("re-entering the same attempt is the committed result, not a second mutatio
 });
 
 test("the base is never chased mid-attempt: a moved base on re-entry is a typed conflict (§7.2)", async (t) => {
-	const { store, clone, base, run, attempt } = await fixture(t);
+	const { store, clone, base, run, attempt } = await mintedAttempt(t);
 	const context = {
 		hold: HOLD,
 		run,
@@ -142,5 +129,22 @@ test("the base is never chased mid-attempt: a moved base on re-entry is a typed 
 	await assert.rejects(
 		createAttemptWorktree(store, clone, { ...context, baseCommit: moved }),
 		(error) => error.name === "FactoryEffectError" && error.reason === "effect-payload-conflict",
+	);
+});
+
+test("the Factory-Attempt trailer has one spelling, shared by prompt and verifier (§7.3)", async (t) => {
+	const { run, attempt } = await mintedAttempt(t);
+
+	assert.equal(factoryAttemptTrailer({ run, ticket: 42, attempt }), `Factory-Attempt: ${run}/42/${attempt}`);
+
+	// A trailer naming a mismatched tuple would correlate every commit it
+	// stamps with somebody else's work.
+	assert.throws(
+		() => factoryAttemptTrailer({ run, ticket: 7, attempt }),
+		(error) => error.name === "FactoryGitError" && error.reason === "identity-mismatch",
+	);
+	assert.throws(
+		() => factoryAttemptTrailer({ run: "01OTHERRUN00000000000000AA", ticket: 42, attempt }),
+		(error) => error.name === "FactoryGitError" && error.reason === "identity-mismatch",
 	);
 });

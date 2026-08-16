@@ -5,11 +5,9 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { createAttemptWorktree } from "../../factory/lib/git/attempt.mjs";
-import { openPrivateClone } from "../../factory/lib/git/clone.mjs";
 import { assessHarvest } from "../../factory/lib/git/harvest.mjs";
-import { newUlid } from "../../factory/lib/identity/ulid.mjs";
-import { makeRemote, makeRepo } from "./helpers/factory-repo.mjs";
-import { attemptLaunched, FIXED_NOW, openTestStore, runStarted } from "./helpers/factory-store.mjs";
+import { mintedAttempt, TEST_HOLD } from "./helpers/factory-git.mjs";
+import { FIXED_NOW } from "./helpers/factory-store.mjs";
 
 /**
  * §7.4's harvest-side predicates — builder faults, controller-enforced: an
@@ -19,19 +17,13 @@ import { attemptLaunched, FIXED_NOW, openTestStore, runStarted } from "./helpers
  */
 
 async function attemptFixture(t) {
-	const remote = makeRemote(t);
-	const store = await openTestStore(t, { repoRoot: makeRepo(t, { remotes: { gitea: remote } }) });
-	const clone = await openPrivateClone({ storeDir: store.storeDir, remoteUrl: remote });
-	const base = await clone.fetchBase({ baseBranch: "main" });
-	const run = newUlid(FIXED_NOW);
-	store.append(runStarted(run, { at: FIXED_NOW }));
-	store.append(attemptLaunched(run, 42, 1, { at: FIXED_NOW }));
+	const { store, clone, base, run, attempt } = await mintedAttempt(t);
 
 	const created = await createAttemptWorktree(store, clone, {
-		hold: { fence: () => ({ token: "pinned", generation: 1 }) },
+		hold: TEST_HOLD,
 		run,
 		ticket: 42,
-		attempt: `${run}-t42-a1`,
+		attempt,
 		phase: "implement",
 		baseCommit: base.commit,
 		actor: "controller",

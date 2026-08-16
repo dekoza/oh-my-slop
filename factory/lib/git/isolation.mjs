@@ -79,7 +79,7 @@ export function attemptWorktreePath(storeDir, attempt) {
 export function attemptBranch({ ticket, attempt }) {
 	if (!Number.isSafeInteger(ticket) || ticket <= 0) {
 		throw new FactoryGitError(
-			"identity-charset",
+			"identity-mismatch",
 			`Ticket must be a positive issue number; found ${JSON.stringify(ticket ?? null)}.`,
 			{ at: "ticket", found: ticket ?? null },
 		);

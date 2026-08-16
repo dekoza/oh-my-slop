@@ -39,6 +39,14 @@ const execFileAsync = promisify(execFile);
  * @returns {Promise<Readonly<{ dir: string, fetchBase: Function, createBranch: Function,
  *                              addWorktree: Function, listWorktrees: Function, git: Function }>>}
  */
+/**
+ * §7.7's serialization is a property of the *repository*, not of whoever asked
+ * first: every opener of one clone directory shares one handle and therefore
+ * one fetch chain. Keyed by the runner too, because a test that injects an
+ * observing runner is asking for a handle whose calls it can see.
+ */
+const HANDLES = new Map();
+
 export async function openPrivateClone({ storeDir, remoteUrl, git = runGit }) {
 	const dir = privateClonePath(storeDir);
 
@@ -64,7 +72,12 @@ export async function openPrivateClone({ storeDir, remoteUrl, git = runGit }) {
 		await convergeOrigin(dir, remoteUrl, git);
 	}
 
-	return makeHandle(dir, git);
+	const cached = HANDLES.get(dir);
+	if (cached !== undefined && cached.git === git) return cached.handle;
+
+	const handle = makeHandle(dir, git);
+	HANDLES.set(dir, { git, handle });
+	return handle;
 }
 
 function makeHandle(dir, git) {
