@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -24,12 +25,22 @@ function exported(command) {
 	);
 }
 
-function workerTurn() {
+function workerTurn({ builderStatuses = ["completed"], onAbandon = null } = {}) {
+	let builderTurn = 0;
 	return async ({ pane, text }) => {
 		const identity = exported(pane.exported);
+		const status =
+			identity.FACTORY_PHASE === "implement"
+				? (builderStatuses[Math.min(builderTurn++, builderStatuses.length - 1)] ?? "completed")
+				: "completed";
+		if (status === "abandon") {
+			onAbandon?.();
+			return;
+		}
+
 		const result = {
 			schema_version: 1,
-			status: "completed",
+			status,
 			run: identity.FACTORY_RUN,
 			ticket: Number(identity.FACTORY_TICKET),
 			phase: identity.FACTORY_PHASE,
@@ -37,7 +48,7 @@ function workerTurn() {
 			summary: "the fixture worker completed its assigned role",
 		};
 
-		if (identity.FACTORY_PHASE === "implement") {
+		if (identity.FACTORY_PHASE === "implement" && status === "completed") {
 			writeFileSync(join(pane.cwd, "implemented.txt"), "production composition reached the builder\n", "utf8");
 			git(pane.cwd, "add", "implemented.txt");
 			git(
@@ -48,6 +59,12 @@ function workerTurn() {
 				`feat: implement ticket ${identity.FACTORY_TICKET}\n\nFactory-Attempt: ${identity.FACTORY_RUN}/${identity.FACTORY_TICKET}/${identity.FACTORY_ATTEMPT}`,
 			);
 			result.commits = [git(pane.cwd, "rev-parse", "HEAD")];
+		} else if (status === "needs-human") {
+			result.reason_class = "product-ambiguity";
+			result.question = "Which behavior should the implementation preserve?";
+		} else if (status === "worker-failed") {
+			result.classification = "implementation-failure";
+			result.explanation = "the builder could not produce a valid change";
 		} else {
 			assert.match(text, /review-(standards|spec)/, "a review attempt received no axis invocation");
 			result.commits = [git(pane.cwd, "rev-parse", "HEAD")];
@@ -59,7 +76,7 @@ function workerTurn() {
 	};
 }
 
-test("runStart composes the production pipeline through publication without injected pipeline or execute (#147)", async (t) => {
+async function runProduction(t, { turn = workerTurn(), signal = undefined } = {}) {
 	const packageRoot = makePackage(t);
 	const executable = join(packageRoot, "factory", "bin", "factory.mjs");
 	const repoRoot = makeRepo(t);
@@ -68,7 +85,7 @@ test("runStart composes the production pipeline through publication without inje
 	const loaded = loadFactoryConfig({ cwd: repoRoot });
 	const tracker = fakeGitea({ issues: [giteaIssue({ number: 147, title: "feat: production pipeline" })] });
 	const where = { repo: loaded.config.tracker.repo, login: loaded.config.tracker.login };
-	const herdr = fakeHerdr({ onPrompt: workerTurn() });
+	const herdr = fakeHerdr({ onPrompt: turn });
 	const checkoutBefore = git(repoRoot, "status", "--porcelain=v1", "--untracked-files=all");
 
 	const answer = await runStart({
@@ -83,7 +100,14 @@ test("runStart composes the production pipeline through publication without inje
 		workerTransports: workerTransportsAnswering(packageRoot),
 		tracker: createGiteaReader({ ...where, request: tracker.request }),
 		trackerWriter: createGiteaWriter({ ...where, request: tracker.write }),
+		...(signal === undefined ? {} : { signal }),
 	});
+
+	return { answer, tracker, loaded, repoRoot, checkoutBefore };
+}
+
+test("runStart composes the production pipeline through publication without injected pipeline or execute (#147)", async (t) => {
+	const { answer, tracker, loaded, repoRoot, checkoutBefore } = await runProduction(t);
 
 	assert.equal(answer.exitCode, EXIT_OK);
 	assert.equal(answer.report.execution.missing ?? null, null);
@@ -103,4 +127,36 @@ test("runStart composes the production pipeline through publication without inje
 		"the published branch was not pushed once to the configured remote",
 	);
 	assert.equal(git(repoRoot, "status", "--porcelain=v1", "--untracked-files=all"), checkoutBefore);
+});
+
+test("a builder question reaches a durable paused disposition instead of escaping the claimed lane (#147, §8.9)", async (t) => {
+	const { answer, tracker } = await runProduction(t, {
+		turn: workerTurn({ builderStatuses: ["needs-human"] }),
+	});
+
+	assert.equal(answer.report.execution.members[0].disposition, "paused");
+	assert.match(tracker.comments.at(-1).body, /Which behavior should the implementation preserve\?/);
+	assert.match(tracker.comments.at(-1).body, /product-ambiguity/);
+});
+
+test("an exhausted builder failure reaches a durable failed disposition instead of escaping the claimed lane (#147, §8.10)", async (t) => {
+	const { answer, tracker } = await runProduction(t, {
+		turn: workerTurn({ builderStatuses: ["worker-failed", "worker-failed"] }),
+	});
+
+	assert.equal(answer.report.execution.members[0].disposition, "failed");
+	assert.match(tracker.comments.at(-1).body, /repair-budget-exhausted/);
+	assert.match(tracker.comments.at(-1).body, /worker-failed/);
+});
+
+test("an operator abandon durably releases a claimed production lane without waiting for its worker (#147, §8.9)", async (t) => {
+	const signal = new EventEmitter();
+	const { answer } = await runProduction(t, {
+		signal,
+		turn: workerTurn({ builderStatuses: ["abandon"], onAbandon: () => signal.emit("SIGTERM", "SIGTERM") }),
+	});
+
+	assert.equal(answer.report.end_reason, "abandoned");
+	assert.equal(answer.report.execution.members[0].disposition, "released");
+	assert.equal(answer.report.execution.released, 1);
 });

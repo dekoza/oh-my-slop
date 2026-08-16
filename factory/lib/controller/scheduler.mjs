@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+
 import { FactoryCapacityError } from "../capacity/errors.mjs";
 import { FactoryStateError } from "../state/errors.mjs";
 
@@ -60,6 +62,9 @@ import { FactoryStateError } from "../state/errors.mjs";
  * @param {() => number} [loop.at]
  * @returns {Promise<Readonly<object>>} what the run report says about execution
  */
+/** How often a lane wait checks the durable abandon request (§10.5). */
+const ABANDON_POLL_MS = 25;
+
 export async function schedule({
 	capacity,
 	frontier,
@@ -90,11 +95,26 @@ export async function schedule({
 	 */
 	let frontierAtDecision = null;
 
-	/** Wait for **a** ticket execution to terminate — §9.6's `otherwise`. */
+	/**
+	 * Wait for **a** ticket execution to terminate — §9.6's `otherwise` — while
+	 * still honoring an abandon that arrives after the wait began. A stop drains
+	 * and therefore keeps waiting; abandon is the only request that wakes this
+	 * boundary without a lane result.
+	 */
 	async function awaitOne() {
-		const lane = await Promise.race([...lanes.values()].map((live) => live.promise));
-		lanes.delete(lane.ticket);
-		settled.push(lane);
+		for (;;) {
+			const lane = await Promise.race([
+				...[...lanes.values()].map((live) => live.promise),
+				delay(ABANDON_POLL_MS).then(() => null),
+			]);
+			if (lane === null) {
+				if (abandoning()) return false;
+				continue;
+			}
+			lanes.delete(lane.ticket);
+			settled.push(lane);
+			return true;
+		}
 	}
 
 	/**
@@ -122,6 +142,10 @@ export async function schedule({
 		// states are still read live.
 		const view = await frontier();
 		frontierAtDecision = view;
+		// A signal may land while the live frontier read is in flight. Re-check
+		// before either claiming another ticket or waiting on a lane: abandon is a
+		// request to stop waiting, and the boundary settlement records `released`.
+		if (abandoning()) break;
 		const candidate = nextClaimable(view, {
 			running: lanes.keys(),
 			// §2.1: a run has **one** ticket execution per ticket, so a ticket this
