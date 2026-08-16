@@ -1,9 +1,12 @@
 import { setTimeout as delay } from "node:timers/promises";
 
+import { FactoryCapacityError } from "../capacity/errors.mjs";
 import { resourceClassOf } from "../config/profiles.mjs";
 import { PHASE_IMPLEMENT } from "../domain/vocabulary.mjs";
 import { createAttemptWorktree } from "../git/attempt.mjs";
+import { FactoryGitError } from "../git/errors.mjs";
 import { attemptBranch } from "../git/isolation.mjs";
+import { FactoryTrackerError } from "../tracker/errors.mjs";
 import { snapshotTicket } from "../tracker/snapshot.mjs";
 import { createClaudeAdapter } from "../worker/claude.mjs";
 import { FactoryWorkerError } from "../worker/errors.mjs";
@@ -18,6 +21,7 @@ import { createRetrySeam } from "./retry.mjs";
 import { harvestPhase } from "./phases.mjs";
 import { integrationVerify, integratePublish } from "./integration.mjs";
 import { reviewPhase } from "./review.mjs";
+import { FactoryPipelineError } from "./errors.mjs";
 import { walkStages } from "./stages.mjs";
 import { reviewAutomationRetry } from "./budgets.mjs";
 
@@ -43,11 +47,25 @@ export function createProductionPipeline(store, context) {
 		env,
 		now,
 	} = context;
-	const { clone, worker, socket, handshake } = requireProductionPreflight(preflight);
+	const { clone, worker, socket } = requireProductionPreflight(preflight);
 	const retryPlans = new Map();
 	const adapters = workerAdapters({ herdr, socket, now });
 
 	return async function productionPipeline(lane) {
+		try {
+			return await executeProduction(lane);
+		} catch (error) {
+			if (!PRODUCTION_FAILURES.some((kind) => error instanceof kind)) throw error;
+			return Object.freeze({
+				disposition: "failed",
+				reason_class: null,
+				fault: "automation",
+				reason: error.message,
+			});
+		}
+	};
+
+	async function executeProduction(lane) {
 		const { ticket, attempt, slots, capacity } = lane;
 		const ticketSnapshot = await snapshotTicket(tracker, ticket);
 		const labels = ticketSnapshot.labels;
@@ -115,8 +133,17 @@ export function createProductionPipeline(store, context) {
 			actor: "controller",
 			now,
 		});
-	};
+	}
 }
+
+/** Typed subsystem refusals become §8.9 automation failures after a claim. */
+const PRODUCTION_FAILURES = Object.freeze([
+	FactoryCapacityError,
+	FactoryGitError,
+	FactoryPipelineError,
+	FactoryTrackerError,
+	FactoryWorkerError,
+]);
 
 function phaseExecutors(context) {
 	return {
@@ -213,7 +240,7 @@ async function runWorker(context, { identity, opened, repair, review }) {
 		ticketSnapshot: context.ticketSnapshot,
 		repair,
 		review,
-		sessionArgs: [...binding.args, ...profileArguments(profile)],
+		sessionArgs: binding.args,
 		recheckContext: {
 			executable: context.executable,
 			expect: context.config.package?.expect ?? null,
@@ -378,21 +405,11 @@ function namedProfile(profiles, name) {
 }
 
 function observedModel(runtime, profile) {
-	if (profile.kind === "pi") {
-		return runtime.models.some((model) => `${model.provider}/${model.id}` === profile.model) ? profile.model : null;
-	}
-	return runtime.models.find((model) => model.value === profile.model)?.resolved ?? null;
+	return runtime.resolvedModels?.[profile.model] ?? null;
 }
 
 function pluginName(runtime) {
 	return runtime?.plugin?.manifest?.name ?? null;
-}
-
-function profileArguments(profile) {
-	const args = ["--model", profile.model];
-	if (profile.kind === "pi" && profile.thinking !== undefined) args.push("--thinking", profile.thinking);
-	if (profile.kind === "claude" && profile.effort !== undefined) args.push("--effort", profile.effort);
-	return args;
 }
 
 function runOfAttempt(attempt) {

@@ -206,6 +206,7 @@ export function provePiClosure(probed, closure, { skillsRoots }) {
  * @returns {Readonly<object>} the adapter
  */
 export function createPiAdapter(context) {
+	const lifecycle = lifecycleOperations({ runtime: "pi", agentKind: "pi" }, context.launch ?? {});
 	return createWorkerAdapter({
 		kind: "pi",
 		operations: {
@@ -214,12 +215,24 @@ export function createPiAdapter(context) {
 				probe: () => probePiRuntime(context),
 				prove: (runtime, closure) => provePiClosure(runtime, closure, context),
 			}),
-			// Herdr's own kind vocabulary happens to spell pi the same way; it is
-			// passed explicitly all the same, because the two names answer to
-			// different owners and a coincidence is not a binding.
-			...lifecycleOperations({ runtime: "pi", agentKind: "pi" }, context.launch ?? {}),
+			// Profile flags are a pi runtime difference and therefore enter through
+			// this adapter's launch operation, never through the pipeline composer.
+			launch: (attempt) =>
+				lifecycle.launch({
+					...attempt,
+					sessionArgs: [...(attempt.sessionArgs ?? []), ...profileArguments(attempt.profile)],
+					startupTimeoutMs: attempt.profile.startupTimeoutMs ?? null,
+				}),
+			awaitCompletion: lifecycle.awaitCompletion,
+			cancel: lifecycle.cancel,
 		},
 	});
+}
+
+function profileArguments(profile) {
+	const args = ["--model", profile.model];
+	if (profile.thinking !== undefined) args.push("--thinking", profile.thinking);
+	return args;
 }
 
 // ── The probe's pieces ───────────────────────────────────────────────────────
@@ -372,6 +385,11 @@ function observation({ ok, version, failures, skillCommands = {}, models = [], c
 		failures: Object.freeze([...failures]),
 		skillCommands,
 		models,
+		// Runtime-neutral launch observation: the composer asks one map whatever
+		// harness produced it; pi's exact selector resolves to itself.
+		resolvedModels: Object.freeze(
+			Object.fromEntries(models.map((model) => [`${model.provider}/${model.id}`, `${model.provider}/${model.id}`])),
+		),
 		classes: Object.freeze(classes),
 	});
 }

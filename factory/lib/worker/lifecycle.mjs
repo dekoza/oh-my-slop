@@ -139,6 +139,7 @@ const GONE_STATUSES = Object.freeze(["released", "exited"]);
  *   brief does, and it is not optional in practice: both axis skills open by
  *   asking the caller for a fixed point and there is nobody in the pane to ask
  * @param {ReadonlyArray<string>} [context.sessionArgs] §6.8's binding for this posture
+ * @param {number | null} [context.startupTimeoutMs] the profile's declared startup guard
  * @param {ReadonlyArray<object>} [context.closureFindings] layer-1/2 findings, if any
  * @param {object} context.herdr the Herdr control surface (`controller/herdr-control.mjs`)
  * @param {object} [context.recheck] injectable, so a suite can drive drift
@@ -166,6 +167,7 @@ export async function launchWorker(
 		repair = null,
 		review = null,
 		sessionArgs = [],
+		startupTimeoutMs = null,
 		closureFindings = [],
 		herdr,
 		recheck = attemptRecheck,
@@ -268,6 +270,7 @@ export async function launchWorker(
 		agentKind,
 		worktreePath,
 		sessionArgs,
+		startupTimeoutMs,
 		payload: {
 			runtime,
 			role: role.name,
@@ -591,7 +594,10 @@ function writeAttemptManifest(
  * into three effects would give reconcile two intermediate states it has no
  * question to ask about.
  */
-async function startedAgent(store, { hold, identity, herdr, agent, agentKind, worktreePath, sessionArgs, payload, actor, at }) {
+async function startedAgent(
+	store,
+	{ hold, identity, herdr, agent, agentKind, worktreePath, sessionArgs, startupTimeoutMs, payload, actor, at },
+) {
 	const { run, ticket, phase, attempt } = identity;
 
 	const requested = requestEffect(store, {
@@ -627,7 +633,13 @@ async function startedAgent(store, { hold, identity, herdr, agent, agentKind, wo
 	const exported = await herdr.exportIdentity(opened.pane, attemptEnvironment({ identity, payload }));
 	if (!exported.ok) throw launchFailure(exported, identity);
 
-	const started = await herdr.startAgent({ name: agent, kind: agentKind, pane: opened.pane, args: [...sessionArgs] });
+	const started = await herdr.startAgent({
+		name: agent,
+		kind: agentKind,
+		pane: opened.pane,
+		args: [...sessionArgs],
+		timeoutMs: startupTimeoutMs,
+	});
 	if (!started.ok) throw launchFailure(started, identity);
 
 	const resolved = resolveEffect(store, {

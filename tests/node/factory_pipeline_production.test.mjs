@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -11,8 +11,9 @@ import { FOREGROUND_FLAG } from "../../factory/lib/controller/launch.mjs";
 import { runStart } from "../../factory/lib/controller/start.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
+import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
-import { makeRepo } from "./helpers/factory-repo.mjs";
+import { cloneValidConfig, makeRepo } from "./helpers/factory-repo.mjs";
 import { makeAgentDir, makeHome, herdrAnswering } from "./helpers/factory-store.mjs";
 import { fakeGitea, giteaIssue } from "./helpers/factory-tracker.mjs";
 import { fakeHerdr, workerTransportsAnswering } from "./helpers/factory-worker.mjs";
@@ -76,14 +77,26 @@ function workerTurn({ builderStatuses = ["completed"], onAbandon = null } = {}) 
 	};
 }
 
-async function runProduction(t, { turn = workerTurn(), signal = undefined } = {}) {
+async function runProduction(
+	t,
+	{
+		turn = workerTurn(),
+		signal = undefined,
+		config = undefined,
+		issue = giteaIssue({ number: 147, title: "feat: production pipeline" }),
+		onTrackerWrite = null,
+	} = {},
+) {
 	const packageRoot = makePackage(t);
 	const executable = join(packageRoot, "factory", "bin", "factory.mjs");
-	const repoRoot = makeRepo(t);
+	const repoRoot = makeRepo(t, config === undefined ? {} : { config });
 	const agentDir = makeAgentDir(t);
 	const env = { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" };
 	const loaded = loadFactoryConfig({ cwd: repoRoot });
-	const tracker = fakeGitea({ issues: [giteaIssue({ number: 147, title: "feat: production pipeline" })] });
+	const tracker = fakeGitea({
+		issues: [issue],
+		onWrite: (write, world) => onTrackerWrite?.({ write, world, loaded }),
+	});
 	const where = { repo: loaded.config.tracker.repo, login: loaded.config.tracker.login };
 	const herdr = fakeHerdr({ onPrompt: turn });
 	const checkoutBefore = git(repoRoot, "status", "--porcelain=v1", "--untracked-files=all");
@@ -103,11 +116,11 @@ async function runProduction(t, { turn = workerTurn(), signal = undefined } = {}
 		...(signal === undefined ? {} : { signal }),
 	});
 
-	return { answer, tracker, loaded, repoRoot, checkoutBefore };
+	return { answer, tracker, loaded, repoRoot, agentDir, herdr, checkoutBefore };
 }
 
 test("runStart composes the production pipeline through publication without injected pipeline or execute (#147)", async (t) => {
-	const { answer, tracker, loaded, repoRoot, checkoutBefore } = await runProduction(t);
+	const { answer, tracker, loaded, repoRoot, agentDir, checkoutBefore } = await runProduction(t);
 
 	assert.equal(answer.exitCode, EXIT_OK);
 	assert.equal(answer.report.execution.missing ?? null, null);
@@ -116,7 +129,13 @@ test("runStart composes the production pipeline through publication without inje
 		"published",
 		JSON.stringify({ member: answer.report.execution.members[0], comments: tracker.comments }, null, 2),
 	);
-	assert.equal(tracker.writes.filter((write) => write.operation === "push").length, 0);
+	const store = await openStore({ repoRoot, agentDir });
+	t.after(() => store.close());
+	assert.equal(
+		store.readEvents({ kind: "effect.requested" }).filter((event) => event.payload.operation === "push").length,
+		1,
+		"the production path did not request exactly one push",
+	);
 	assert.equal(tracker.writes.filter((write) => write.operation === "pr-create").length, 1);
 	assert.equal(tracker.pulls.length, 1);
 	assert.equal(
@@ -127,6 +146,23 @@ test("runStart composes the production pipeline through publication without inje
 		"the published branch was not pushed once to the configured remote",
 	);
 	assert.equal(git(repoRoot, "status", "--porcelain=v1", "--untracked-files=all"), checkoutBefore);
+});
+
+test("profile model, thinking, and startup timeout reach the worker through its runtime adapter (§6.1, §11.4)", async (t) => {
+	const config = cloneValidConfig();
+	config.profiles.builder.thinking = "high";
+	config.profiles.builder.startupTimeoutMs = 4321;
+	const { herdr } = await runProduction(t, {
+		config,
+		turn: workerTurn({ builderStatuses: ["needs-human"] }),
+	});
+	const started = herdr.calls.find((args) => args.slice(0, 2).join(" ") === "agent start");
+
+	assert.ok(started.includes("--model"));
+	assert.ok(started.includes("local/qwen3"));
+	assert.ok(started.includes("--thinking"));
+	assert.ok(started.includes("high"));
+	assert.deepEqual(started.slice(started.indexOf("--timeout"), started.indexOf("--timeout") + 2), ["--timeout", "4321"]);
 });
 
 test("a builder question reaches a durable paused disposition instead of escaping the claimed lane (#147, §8.9)", async (t) => {
@@ -159,4 +195,15 @@ test("an operator abandon durably releases a claimed production lane without wai
 	assert.equal(answer.report.end_reason, "abandoned");
 	assert.equal(answer.report.execution.members[0].disposition, "released");
 	assert.equal(answer.report.execution.released, 1);
+});
+
+test("a subsystem refusal after claim becomes a durable automation failure instead of an unexplained lane (#147, §8.9)", async (t) => {
+	const { answer, tracker } = await runProduction(t, {
+		onTrackerWrite: ({ write, loaded }) => {
+			if (write.operation === "issue-assign") rmSync(loaded.remote.url, { recursive: true, force: true });
+		},
+	});
+
+	assert.equal(answer.report.execution.members[0].disposition, "failed");
+	assert.match(tracker.comments.at(-1).body, /cannot pin|git|fetch/i);
 });

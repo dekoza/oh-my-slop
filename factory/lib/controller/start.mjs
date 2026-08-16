@@ -29,6 +29,7 @@ import { FactoryStateError } from "../state/errors.mjs";
 import { LEASE_RENEWAL_MS, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
 import { CLAIM_OUTCOMES, claimTicket } from "../tracker/claims.mjs";
+import { attemptIdOf } from "../worker/attempt.mjs";
 import { applyDisposition } from "../tracker/disposition.mjs";
 import { readScope } from "../tracker/frontier.mjs";
 import { createGiteaReader } from "../tracker/gitea.mjs";
@@ -599,7 +600,7 @@ function ticketExecution(store, entry, hold, context) {
 	return async ({ ticket, member, slots, capacity }) => {
 		// §7.3's deterministic identity, so a re-entered run rebuilds the same one
 		// and §4.5's duplicate check returns the claim already committed.
-		const attempt = `${entry.run}-t${ticket}-a1`;
+		const attempt = attemptIdOf({ run: entry.run, ticket, ordinal: 1 });
 		const claim = await claimTicket(store, {
 			reader: context.tracker,
 			writer: context.trackerWriter,

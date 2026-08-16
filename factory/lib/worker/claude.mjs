@@ -174,6 +174,7 @@ export function proveClaudeClosure(probed, closure) {
  * @returns {Readonly<object>} the adapter
  */
 export function createClaudeAdapter(context) {
+	const lifecycle = lifecycleOperations({ runtime: "claude", agentKind: "claude" }, context.launch ?? {});
 	return createWorkerAdapter({
 		kind: "claude",
 		operations: {
@@ -182,9 +183,24 @@ export function createClaudeAdapter(context) {
 				probe: (packageRev) => probeClaudeRuntime({ ...context, packageRev }),
 				prove: proveClaudeClosure,
 			}),
-			...lifecycleOperations({ runtime: "claude", agentKind: "claude" }, context.launch ?? {}),
+			// Claude's model and effort flags stay behind the runtime-neutral launch
+			// operation; the production composer never branches on their spelling.
+			launch: (attempt) =>
+				lifecycle.launch({
+					...attempt,
+					sessionArgs: [...(attempt.sessionArgs ?? []), ...profileArguments(attempt.profile)],
+					startupTimeoutMs: attempt.profile.startupTimeoutMs ?? null,
+				}),
+			awaitCompletion: lifecycle.awaitCompletion,
+			cancel: lifecycle.cancel,
 		},
 	});
+}
+
+function profileArguments(profile) {
+	const args = ["--model", profile.model];
+	if (profile.effort !== undefined) args.push("--effort", profile.effort);
+	return args;
 }
 
 // ── The probe's three steps ──────────────────────────────────────────────────
@@ -367,6 +383,7 @@ function observation({
 		plugin,
 		commands,
 		models,
+		resolvedModels: Object.freeze(Object.fromEntries(models.map((model) => [model.value, model.resolved]))),
 		// §9.7: a cloud class has nothing to observe and stays declared-only, so
 		// `max_instances` is null by construction and reachability is the probe's
 		// own success — one request, no second place to disagree.

@@ -151,8 +151,6 @@ export async function preflight(
 		red.length === 0 && isolation.clone !== undefined && isolation.base !== undefined && workerContext !== null
 			? Object.freeze({
 					clone: isolation.clone,
-					base: isolation.base,
-					handshake: handshake.handshake,
 					socket: herdrAvailable.detail.socket,
 					worker: workerContext,
 				})
