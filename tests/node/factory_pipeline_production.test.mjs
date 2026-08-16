@@ -175,6 +175,15 @@ test("a builder question reaches a durable paused disposition instead of escapin
 	assert.match(tracker.comments.at(-1).body, /product-ambiguity/);
 });
 
+test("a repair re-enters through nextAttempt and publishes the repairing builder branch (#147, §8.5)", async (t) => {
+	const { answer, tracker } = await runProduction(t, {
+		turn: workerTurn({ builderStatuses: ["worker-failed", "completed"] }),
+	});
+
+	assert.equal(answer.report.execution.members[0].disposition, "published");
+	assert.match(tracker.pulls[0].head.ref, /\/a.*-a2$/);
+});
+
 test("an exhausted builder failure reaches a durable failed disposition instead of escaping the claimed lane (#147, §8.10)", async (t) => {
 	const { answer, tracker } = await runProduction(t, {
 		turn: workerTurn({ builderStatuses: ["worker-failed", "worker-failed"] }),
