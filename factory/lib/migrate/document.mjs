@@ -39,9 +39,10 @@ const TODO_PREFIX = "TODO";
  * inside one of them that no row names is refused: the container is taken
  * apart, so an unnamed key would be dropped by omission rather than by decision.
  *
- * `tracker` and `git` are deliberately absent — they carry over whole, so an
- * unexpected key inside them survives into the v2 file and meets the loader's
- * own `unknown-key` refusal, with the written file to point at.
+ * `tracker`, `git`, and each profile are deliberately absent — they carry over
+ * whole (minus one named key each, where §11.8 says so), so an unexpected key
+ * inside them survives into the v2 file and meets the loader's own `unknown-key`
+ * refusal, with the written file to point at.
  */
 const LEGACY_INTERIORS = Object.freeze({
 	herdr: Object.freeze(["maxWorkers"]),
