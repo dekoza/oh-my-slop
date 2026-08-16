@@ -430,9 +430,14 @@ is the authority; cite the section a change answers to.
   is not something it can be *told* to do — and **status comes from `--include` rather than
   the exit code**: `tea api` exits `0` on a 404 and prints the error body, so a client
   trusting the exit code would parse `{"message":"not found"}` as an answer. The writer's
-  surface is §4.5's three tracker mutations and no fourth, each keyed by the effect kind
-  that names it; it performs them and records nothing, because §4.5 has exactly one place
-  effects are written and `claims.mjs` is the caller that owns the pair.
+  surface is the tracker mutations §3.3 and §8.9 need and no others, each keyed by the
+  effect kind that names it — labels through Gitea's **appending** `POST` and never the
+  replacing `PUT`, so a disposition cannot discard a label a human added, and **with no
+  removal at all**, which is how §14.20's "a label is cleared by a human or not at all"
+  becomes unexpressible rather than checked. It performs them and records nothing, because
+  §4.5 has exactly one place effects are written; `mutations.mjs` owns that pair for both
+  callers, so "record the intent, perform, record the outcome" has one home rather than one
+  per subsystem that writes to a ticket.
 - **A claim is an assignee plus a structured comment plus a re-read** (`tracker/claims.mjs`,
   §3.3), and the slots are already held when it runs (§14.21) — claiming work that cannot
   start puts a falsehood on the tracker for humans and other tooling to read. Whose claim an
@@ -454,6 +459,23 @@ is the authority; cite the section a change answers to.
   §3.3's *a live claim is never contested* outranks its *the loser un-assigns itself* where the
   two collide. The claim's effects carry **no attempt**: §9.4 mints one before the claim but
   none has *launched*, and the claim belongs to the ticket execution.
+- **A disposition is §8.9's table applied to the tracker** (`tracker/disposition.mjs`), and
+  the table is data: three rows add one label and **retain the assignee** — retaining being
+  the absence of a mutation, visible as one — and `released` drops the claim and adds none.
+  The eligibility change goes first and the announcement second, because a comment with no
+  label behind it leaves the ticket claimable for the next run to die on identically, which
+  is exactly §14.20's failure. No row removes a label and no row re-adds `ready-for-agent`.
+  All four post **one machine-parseable block** — identity tuple, the outcome chain read
+  back from the journal, evidence by digest — and it is JSON rather than the claim comment's
+  YAML because it carries a worker's exact question, which is where hand-rolled quoting
+  breaks. **The block carries no clock reading of ours**: the tracker dates every comment,
+  and a timestamp in the body would make a re-entered settlement a §4.5 payload conflict
+  rather than the comment already posted — which is why the comment effect digests the block
+  and not the prose rendered from it. Evidence comes from the ticket execution's own
+  artifact-write effect rows rather than §12.1's ledger, whose producer columns name the
+  *most recent* production and would move under a settlement already requested. A pause with
+  no question, a publication with no PR link, and a reason class whose §14.18 disposition is
+  a different one are all refused before any mutation.
 - §3.5's drain is `factory/lib/controller/drain.mjs`, and it owns **both** clauses: nothing
   claimable now, and nothing that can become claimable without external change — the second
   read off `awaits_external`, which `frontier.mjs` computes per member. The report's classes

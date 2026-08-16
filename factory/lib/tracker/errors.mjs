@@ -64,6 +64,20 @@ export const TRACKER_ERROR_REASONS = Object.freeze([
 	 */
 	"observation-unidentified",
 	/**
+	 * A disposition outside §8.9's four. A ticket execution settles as one of
+	 * them, and every one has a tracker action; a fifth word would be a state the
+	 * frontier cannot read back and a human cannot clear.
+	 */
+	"disposition-unknown",
+	/**
+	 * A disposition filed without what its comment block exists to carry — a
+	 * pause with no question, a publication with no PR link, a reason class whose
+	 * §14.18 disposition is a different one. Fail-closed rather than posting a
+	 * block with a hole in it: the block is what a human acts on, and §11.2's "no
+	 * silent guessing" is the same rule applied to the tracker.
+	 */
+	"disposition-incomplete",
+	/**
 	 * A scope value outside §3.1's two forms. `parseScope` produces only those
 	 * two, but the frontier reader is exported and the scheduler calls it — and a
 	 * shape nobody recognises would otherwise be read as a direct-ticket set.

@@ -48,10 +48,8 @@ function invocation(t) {
  * A run over a scope, with a pipeline that records what it was handed. The
  * pipeline is #107's seam; everything below the claim is this package's.
  */
-async function runOver(t, { world, tickets, pipeline, lanes = [] }) {
-	const context = invocation(t);
+async function runOver(t, { world, tickets, pipeline, lanes = [], context = invocation(t), gitea = fakeGitea(world) }) {
 	const loaded = loadFactoryConfig({ cwd: context.repoRoot });
-	const gitea = fakeGitea(world);
 	const where = { repo: loaded.config.tracker.repo, login: loaded.config.tracker.login };
 
 	const answer = await runStart({
@@ -250,6 +248,50 @@ test("§8.9: released drops the claim with no label, so the ticket returns to th
 		[[42, "released"]],
 	);
 	assert.equal(answer.report.execution.in_flight, 0);
+});
+
+test("§3.4: a cleared factory:needs-human is a fresh ticket execution, never a requeue", async (t) => {
+	const gitea = fakeGitea({ issues: [giteaIssue({ number: 42 })] });
+	const context = invocation(t);
+	const paused = await runOver(t, {
+		context,
+		gitea,
+		tickets: [42],
+		pipeline: async () => ({
+			disposition: "paused",
+			reason_class: "product-ambiguity",
+			question: "Which of the two invoice rules applies?",
+		}),
+	});
+
+	assert.equal(paused.answer.report.execution.members[0].disposition, "paused");
+	assert.ok(gitea.issues[0].labels.map((label) => label.name).includes(FACTORY_LABELS.needsHuman));
+
+	// **The human's action is the trigger**: they answer in a comment and remove
+	// the label. The factory never guesses whether a comment is an answer, and it
+	// never re-adds `ready-for-agent` itself (§3.4, §14.20).
+	gitea.issues[0].labels = gitea.issues[0].labels.filter((label) => label.name !== FACTORY_LABELS.needsHuman);
+	const lanes = [];
+	const resumed = await runOver(t, { context, gitea, tickets: [42], lanes });
+
+	assert.notEqual(resumed.answer.report.run, paused.answer.report.run);
+	assert.equal(resumed.answer.report.execution.claimed, 1);
+	assert.equal(resumed.answer.report.execution.members[0].disposition, "published");
+	// A **fresh ticket execution with a new attempt chain**: the attempt id is the
+	// new run's own first attempt, not a continuation of the paused one.
+	assert.equal(lanes[0].attempt, `${resumed.answer.report.run}-t42-a1`);
+	assert.equal(lanes[0].claim.outcome, CLAIM_OUTCOMES.takenOver, "a retained assignee blocked the resumed claim");
+
+	// §2.3: cross-run history for one tracker ticket is a **list of ticket
+	// executions, never a merge** — two rows with their own dispositions, not one
+	// row that ended up published having once been paused.
+	const store = await eventsOf(t, context);
+	assert.deepEqual(
+		[paused, resumed].map((run) =>
+			store.readTicketExecutions(run.answer.report.run).map((row) => [row.ticket, row.disposition]),
+		),
+		[[[42, "paused"]], [[42, "published"]]],
+	);
 });
 
 test("a run reads the frontier again at every scheduling decision, and caches nothing", async (t) => {

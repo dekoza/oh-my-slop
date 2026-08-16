@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { writeArtifact } from "../../factory/lib/artifacts/writes.mjs";
 import { resolveStage } from "../../factory/lib/pipeline/stages.mjs";
 import { claimTicket, isClaimComment } from "../../factory/lib/tracker/claims.mjs";
-import { applyDisposition } from "../../factory/lib/tracker/disposition.mjs";
+import { applyDisposition, DISPOSITION_ACTIONS } from "../../factory/lib/tracker/disposition.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { FACTORY_LABELS } from "../../factory/lib/tracker/labels.mjs";
 import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
@@ -177,6 +178,148 @@ test("published sets factory:awaiting-merge, retains the assignee, and links the
 	const body = context.gitea.comments.at(-1).body;
 	assert.deepEqual(blockIn(body).pr, { number: 7, url: "http://gitea.example/acme/widgets/pulls/7" });
 	assert.ok(body.includes("http://gitea.example/acme/widgets/pulls/7"), "the PR link is not visible to a human");
+});
+
+test("settling the same ticket execution again mutates nothing — the effect key is the idempotency", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+	await claimed(context, 10);
+	const first = await dispose(context, {
+		ticket: 10,
+		disposition: "paused",
+		reasonClass: "missing-access",
+		question: "Which credential should the deploy use?",
+	});
+	const writesAfterFirst = context.gitea.writes.length;
+
+	// A re-entered run re-derives the same disposition from durable state and
+	// arrives here again. Nothing about the block reads a clock, so the payload
+	// is the one already committed and Gitea is never asked twice (§4.5, §10.4).
+	const again = await dispose(context, {
+		ticket: 10,
+		disposition: "paused",
+		reasonClass: "missing-access",
+		question: "Which credential should the deploy use?",
+		at: TRACKER_NOW + 90_000,
+	});
+
+	assert.equal(context.gitea.writes.length, writesAfterFirst, "a second settlement mutated the tracker");
+	assert.equal(again.comment.id, first.comment.id);
+	assert.equal(again.comment.outcome, "already-resolved");
+	assert.equal(labelsOf(context.gitea, 10).filter((label) => label === FACTORY_LABELS.needsHuman).length, 1);
+});
+
+test("a second, different disposition for one ticket execution is a typed conflict, never a second block", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+	await claimed(context, 10);
+	await dispose(context, { ticket: 10, disposition: "failed", fault: "automation" });
+
+	// One ticket execution settles once. The comment's effect key does not carry
+	// the disposition, precisely so that a second one disagreeing about how this
+	// execution ended is §4.5's payload conflict rather than two blocks on the
+	// ticket saying different things.
+	await assert.rejects(() => dispose(context, { ticket: 10, disposition: "released" }), {
+		reason: "effect-payload-conflict",
+	});
+	assert.equal(context.gitea.comments.filter((comment) => comment.body.includes('"disposition"')).length, 1);
+});
+
+test("a disposition refuses rather than posting a block it cannot carry", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+	await claimed(context, 10);
+	const writesBefore = context.gitea.writes.length;
+
+	// §3.4: the exact question is what the human answers, so a pause without one
+	// puts a ticket in front of somebody with nothing to reply to.
+	await assert.rejects(() => dispose(context, { ticket: 10, disposition: "paused", reasonClass: "dependency-unmet" }), {
+		reason: "disposition-incomplete",
+	});
+	// §8.9: `published` links the PR. A published ticket whose work nobody can
+	// find is the same failure as no publication at all.
+	await assert.rejects(() => dispose(context, { ticket: 10, disposition: "published" }), {
+		reason: "disposition-incomplete",
+	});
+	// §14.18 owns which class settles as what, so a class filed under the wrong
+	// disposition is refused by the one function that maps them.
+	await assert.rejects(
+		() => dispose(context, { ticket: 10, disposition: "failed", reasonClass: "product-ambiguity" }),
+		{ reason: "disposition-incomplete" },
+	);
+	await assert.rejects(() => dispose(context, { ticket: 10, disposition: "abandoned" }), {
+		reason: "disposition-unknown",
+	});
+
+	assert.equal(context.gitea.writes.length, writesBefore, "a refused disposition still wrote to the tracker");
+});
+
+test("§14.20: no disposition removes a label or re-adds ready-for-agent", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 }), giteaIssue({ number: 11 })] });
+	await claimed(context, 10);
+	await dispose(context, {
+		ticket: 10,
+		disposition: "failed",
+		reasonClass: "check-unrunnable",
+	});
+
+	// The legacy failure this replaces removed `ready-for-human` and added
+	// `ready-for-agent` back, re-arming a ticket for the next run to die on
+	// identically with nobody watching. Every label the fixture started with is
+	// still there, one label has been added, and no write removed anything.
+	assert.deepEqual(labelsOf(context.gitea, 10), ["workflow:implement", "ready-for-agent", FACTORY_LABELS.failed]);
+	assert.deepEqual(
+		context.gitea.writes.filter((write) => write.operation.startsWith("label")).map((write) => write.body.labels),
+		[[FACTORY_LABELS.failed]],
+	);
+	assert.deepEqual(
+		Object.values(DISPOSITION_ACTIONS)
+			.map((row) => row.label)
+			.filter((label) => label !== null),
+		[FACTORY_LABELS.awaitingMerge, FACTORY_LABELS.needsHuman, FACTORY_LABELS.failed],
+	);
+});
+
+test("the block references this ticket execution's evidence by digest, and never by path", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+	const attempt = await claimed(context, 10);
+	const written = writeArtifact(context.store, {
+		content: "1 passed, 0 failed\n",
+		mediaType: "text/plain",
+		role: "check-output",
+		name: "unit-e1",
+		run: context.run,
+		ticket: 10,
+		phase: "verify",
+		actor: "controller",
+		fencingGeneration: context.hold.fencingGeneration,
+		at: TRACKER_NOW,
+	});
+	// A second run's artifact for a different ticket must not be in this block.
+	writeArtifact(context.store, {
+		content: "somebody else's output\n",
+		mediaType: "text/plain",
+		role: "check-output",
+		name: "unit-e2",
+		run: context.run,
+		ticket: 11,
+		phase: "verify",
+		actor: "controller",
+		fencingGeneration: context.hold.fencingGeneration,
+		at: TRACKER_NOW,
+	});
+
+	await dispose(context, { ticket: 10, disposition: "failed", fault: "automation" });
+
+	const evidence = blockIn(context.gitea.comments.at(-1).body).evidence;
+	assert.deepEqual(
+		evidence.map((reference) => reference.digest),
+		[written.reference.digest],
+	);
+	// §14.28: an artifact is addressed by digest, never by a location — so there
+	// is nothing in the block for a `../` to be typed into.
+	assert.equal(JSON.stringify(evidence).includes("/blobs/"), false);
+	assert.equal(evidence[0].produced_by, written.key);
+	assert.equal(evidence[0].bytes, written.reference.bytes);
+	assert.ok(evidence[0].digest.length > 0);
+	assert.equal(attempt.endsWith("-a1"), true);
 });
 
 test("released drops the claim with no label, and still carries the block", async (t) => {
