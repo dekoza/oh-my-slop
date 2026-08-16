@@ -48,6 +48,39 @@ export function cloneValidConfig() {
 }
 
 /**
+ * A real bare repository standing in for the Gitea remote, reachable as a local
+ * path. The path ends in `acme/widgets.git` so `VALID_CONFIG`'s remote
+ * cross-check still holds, and the seed commit is what §7.2's fetch pins.
+ *
+ * @param {import("node:test").TestContext} t owner of the temp directory's lifetime
+ * @param {{ files?: Record<string, string>, branch?: string }} [options] tree of the
+ *   seed commit — a test hands over `.gitmodules` or LFS attributes to make the
+ *   remote §7.8-refusable
+ * @returns {string} the bare repository's path
+ */
+export function makeRemote(t, { files = { "README.md": "seed\n" }, branch = "main" } = {}) {
+	const root = mkdtempSync(join(tmpdir(), "factory-remote-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+
+	const seed = join(root, "seed");
+	execFileSync("git", ["init", "--quiet", "-b", branch, seed]);
+	for (const [path, body] of Object.entries(files)) {
+		mkdirSync(dirname(join(seed, path)), { recursive: true });
+		writeFileSync(join(seed, path), body, "utf8");
+	}
+	execFileSync("git", ["-C", seed, "add", "--all"]);
+	execFileSync(
+		"git",
+		["-C", seed, "-c", "user.name=Seed", "-c", "user.email=seed@example.invalid", "commit", "--quiet", "-m", "seed"],
+	);
+
+	const bare = join(root, "acme", "widgets.git");
+	mkdirSync(dirname(bare), { recursive: true });
+	execFileSync("git", ["clone", "--bare", "--quiet", seed, bare]);
+	return bare;
+}
+
+/**
  * @param {import("node:test").TestContext} t owner of the temp directory's lifetime
  * @param {{ config?: object | string | null, remotes?: Record<string, string> }} [options]
  *   `config: null` writes no policy file; a string is written verbatim, so a test
