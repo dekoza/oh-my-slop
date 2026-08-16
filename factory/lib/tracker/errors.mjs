@@ -33,6 +33,20 @@ export const TRACKER_ERROR_REASONS = Object.freeze([
 	 * read nothing declared.
 	 */
 	"tracker-read-undeclared",
+	/**
+	 * A tracker mutation this subsystem does not declare. The mirror of the read
+	 * refusal above, and the stricter of the two: a write outside §4.5's
+	 * catalogue is a mutation with no effect kind, therefore no probe, therefore
+	 * nothing that could ever settle it (§14.3, §5.3).
+	 */
+	"tracker-write-undeclared",
+	/**
+	 * The tracker answered without stating its own clock. §3.3 arbitrates a claim
+	 * contest and measures staleness against **the tracker's** time, so a process
+	 * that does not know it cannot decide either — and substituting the host's
+	 * would settle both by the skew between two machines rather than by the facts.
+	 */
+	"tracker-clock-unknown",
 	/** A fact class outside §5.2's closed set. */
 	"fact-class-unknown",
 	/**
