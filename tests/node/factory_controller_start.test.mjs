@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
 import { readArtifact } from "../../factory/lib/artifacts/ledger.mjs";
@@ -28,7 +29,7 @@ import { HEARTBEAT_STREAM, runStream } from "../../factory/lib/state/events.mjs"
 import { CONTROLLER_LEASE_TTL_MS, openLeases } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
-import { cloneValidConfig, factorySources, makeRepo } from "./helpers/factory-repo.mjs";
+import { cloneValidConfig, factorySources, makeRemote, makeRepo } from "./helpers/factory-repo.mjs";
 import { FIXED_NOW, herdrAnswering, leaseIdentity, makeAgentDir, manualTimers } from "./helpers/factory-store.mjs";
 
 /**
@@ -249,6 +250,36 @@ test("preflight stages hang off no tracker ticket", async (t) => {
 
 	assert.ok(checks.every((event) => event.ticket === null && event.phase === "preflight"));
 	assert.deepEqual(store.readTicketExecutions(value.report.run), [], "a run-scoped stage created a ticket execution");
+});
+
+test("a run never reads or writes the operator's checkout — protection is topological (§7.1)", async (t) => {
+	const context = invocation(t);
+	const snapshot = () => ({
+		status: execFileSync("git", ["-C", context.cwd, "status", "--porcelain"], { encoding: "utf8" }),
+		refs: execFileSync("git", ["-C", context.cwd, "for-each-ref"], { encoding: "utf8" }),
+	});
+	const before = snapshot();
+
+	const { exitCode } = await runCli(["start", "--foreground", "42"], context);
+
+	assert.equal(exitCode, EXIT_OK);
+	assert.deepEqual(snapshot(), before, "the run touched the operator's checkout");
+});
+
+test("a repo with submodules or LFS ends the run baseline-red at git-isolation (§7.8)", async (t) => {
+	const remote = makeRemote(t, { files: { ".gitmodules": '[submodule "lib"]\n\tpath = lib\n\turl = ../lib.git\n' } });
+	const context = invocation(t);
+	context.cwd = makeRepo(t, { remotes: { gitea: remote } });
+
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
+
+	assert.equal(exitCode, 2);
+	assert.equal(value.report.end_reason, "baseline-red");
+	assert.deepEqual(value.report.preflight.red, ["git-isolation"]);
+	assert.match(
+		value.report.preflight.checks.find((check) => check.check === "git-isolation").message,
+		/\.gitmodules/,
+	);
 });
 
 test("an unanchorable package is a recorded red check, not an unhandled exception", async (t) => {
