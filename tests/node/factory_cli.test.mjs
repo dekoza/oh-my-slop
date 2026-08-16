@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,7 +11,7 @@ import { renderHuman, renderJson, runCli, VERBS } from "../../factory/lib/cli/ma
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
-import { makeRepo, VALID_CONFIG } from "./helpers/factory-repo.mjs";
+import { cloneLegacyConfig, makeRepo, VALID_CONFIG } from "./helpers/factory-repo.mjs";
 import { herdrAnswering, leaseIdentity, makeAgentDir, makeHome } from "./helpers/factory-store.mjs";
 import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
@@ -115,7 +115,7 @@ test("--help lists the verb set and succeeds", async (t) => {
 // ── What this slice does not implement, said out loud ────────────────────────
 
 /** The verbs this package answers; the rest say what they are waiting for. */
-const IMPLEMENTED = new Set(["start", "status", "doctor", "reconcile", "stop"]);
+const IMPLEMENTED = new Set(["start", "status", "doctor", "reconcile", "stop", "migrate"]);
 const UNIMPLEMENTED = VERBS.filter((verb) => !IMPLEMENTED.has(verb));
 
 test("every verb this slice does not implement exits typed, naming what is missing", async (t) => {
@@ -179,12 +179,16 @@ test("every config-requiring verb refuses on a bad config rather than running", 
 });
 
 test("migrate does not require a loadable config — it is the verb that repairs one", async (t) => {
-	const cwd = makeRepo(t, { config: { version: 1, tracker: { repo: "acme/widgets" } } });
+	const cwd = makeRepo(t, { config: cloneLegacyConfig() });
 
 	const { exitCode, value } = await runCli(["migrate"], { cwd });
 
-	assert.equal(exitCode, EXIT_NOT_IMPLEMENTED);
-	assert.equal(value.error.kind, "not-implemented");
+	// Every other verb refuses this file at load; this one reads it and rewrites
+	// it, which is why its table row is the one with `requiresConfig: false`.
+	assert.equal(exitCode, EXIT_OK);
+	assert.equal(value.command, "migrate");
+	assert.equal(JSON.parse(readFileSync(join(cwd, ".pi", "factory.json"), "utf8")).schemaVersion, 2);
+	assert.ok(value.report.holes.length > 0);
 });
 
 test("no environment variable can redirect the config", async (t) => {

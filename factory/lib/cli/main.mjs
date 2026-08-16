@@ -144,11 +144,16 @@ async function dispatch(parsed, context) {
  */
 async function run(parsed, verb, loaded, context) {
 	const answered = await verb.handler({
-		repoRoot: loaded.repoRoot,
-		configPath: loaded.configPath,
-		config: loaded.config,
-		activeRouting: loaded.activeRouting,
-		declared: loaded.declared,
+		// `loaded` is null for the one verb §11.8 exempts from the load, and every
+		// config-derived field is null with it — `migrate` reads the file this
+		// binary could not load, from `cwd`, which is why the invocation directory
+		// is handed over beside the settled config rather than instead of it.
+		cwd: context.cwd,
+		repoRoot: loaded?.repoRoot ?? null,
+		configPath: loaded?.configPath ?? null,
+		config: loaded?.config ?? null,
+		activeRouting: loaded?.activeRouting ?? null,
+		declared: loaded?.declared ?? null,
 		agentDir: context.agentDir ?? null,
 		executable: context.executable,
 		env: context.env,
@@ -161,7 +166,7 @@ async function run(parsed, verb, loaded, context) {
 		// are: a suite drives real tracker answer shapes without a Gitea, and the
 		// default is built from the config the verb was handed.
 		tracker: context.tracker,
-		expect: loaded.config.package?.expect ?? null,
+		expect: loaded?.config.package?.expect ?? null,
 		args: parsed.args,
 		flags: new Set(parsed.flags),
 	});
