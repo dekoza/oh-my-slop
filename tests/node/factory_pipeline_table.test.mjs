@@ -131,7 +131,7 @@ test("a pair the table does not map is a typed refusal, never a fallthrough (§8
 		(error) => {
 			assert.equal(error.name, "FactoryPipelineError");
 			assert.equal(error.reason, "outcome-unmapped");
-			assert.deepEqual(error.details.domain, ["passed", "failed", "unrunnable"]);
+			assert.deepEqual(error.details.domain, ["passed", "failed", "unrunnable", "rebase-conflict"]);
 			return true;
 		},
 	);

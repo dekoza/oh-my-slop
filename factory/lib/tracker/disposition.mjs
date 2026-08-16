@@ -115,7 +115,12 @@ export const DISPOSITION_LABELS = Object.freeze(
  * @param {string | null} [settlement.fault] §8.10's "`failed` / automation"
  * @param {string | null} [settlement.question] **the exact question**, for `paused`
  * @param {{ number: number, url: string } | null} [settlement.pr] the PR, for `published`
- * @param {string | null} [settlement.reason] one line of prose for a human
+ * @param {string | null} [settlement.reason] one line of prose for a human —
+ *   §8.7's summary, on the disposition that has one
+ * @param {ReadonlyArray<object> | null} [settlement.advisory] §8.7's advisory
+ *   findings, surfaced in the comment. **Blocking findings are never passed
+ *   here**: a blocking finding is one a repair already answered, and publishing
+ *   it would be a criticism of code that is no longer there
  * @returns {Promise<Readonly<object>>}
  * @throws {FactoryTrackerError} `disposition-unknown` · `disposition-incomplete`
  * @throws {FactoryPipelineError} `reason-class-unknown` — a class in neither of
@@ -139,6 +144,7 @@ export async function applyDisposition(
 		question = null,
 		pr = null,
 		reason = null,
+		advisory = null,
 	},
 ) {
 	const row = actionFor(disposition);
@@ -154,6 +160,7 @@ export async function applyDisposition(
 		question,
 		pr,
 		reason,
+		advisory,
 	});
 
 	const labelled =
@@ -217,7 +224,7 @@ export async function applyDisposition(
  * non-deterministic, and a re-entered settlement would then arrive as §4.5's
  * payload conflict instead of returning the comment already posted.
  */
-function dispositionBlock(store, { run, ticket, attempt, disposition, reasonClass, fault, question, pr, reason }) {
+function dispositionBlock(store, { run, ticket, attempt, disposition, reasonClass, fault, question, pr, reason, advisory }) {
 	return {
 		schema_version: DISPOSITION_BLOCK_SCHEMA_VERSION,
 		// §2.1's identities, whole: the ticket execution is `(run, ticket)` and the
@@ -229,6 +236,12 @@ function dispositionBlock(store, { run, ticket, attempt, disposition, reasonClas
 		question,
 		reason,
 		pr,
+		// §8.7: the summary lands in the PR body block **and in the ticket
+		// comment**, with advisory findings surfaced and blocking findings never.
+		// The comment is the half a human reads without leaving the tracker, so
+		// leaving the findings to the PR alone would put them behind a click on the
+		// one disposition where nobody has to make it.
+		advisory,
 		// §8.10's re-entry: read back from the journal rather than accumulated,
 		// because the walk that produced it may have been a previous controller's.
 		// The **shape** of the chain is what a human's next action depends on, so it

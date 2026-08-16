@@ -134,6 +134,20 @@ export const OUTCOME_TABLE = Object.freeze([
 		budget: BUDGET_KINDS.automation,
 		exhausted: Object.freeze({ reasonClass: "check-unrunnable" }),
 	}),
+	/**
+	 * §9.5 puts the rebase in this phase, so a conflict ends it here (§20, #113).
+	 * Routed exactly as `integrate × rebase-conflict` is, and for the same reason:
+	 * the prior tip is precisely what conflicts, so the tier is a **fresh-retry
+	 * from the new base tip** rather than a repair, and a second conflict is
+	 * `failed` / `rebase-conflict` with no automatic resolution attempted.
+	 */
+	row({
+		phase: PHASE_VERIFY,
+		outcome: "rebase-conflict",
+		action: STAGE_ACTIONS.freshRetry,
+		budget: BUDGET_KINDS.repair,
+		exhausted: Object.freeze({ reasonClass: "rebase-conflict" }),
+	}),
 
 	// ── review (§8.4): the three verdict-shaped results, then the attempt-level
 	// outcomes a reviewer attempt can end with instead of a verdict. Both levels
@@ -201,13 +215,7 @@ export const OUTCOME_TABLE = Object.freeze([
 	 * never trip the breaker" holds by construction rather than by a rule anyone
 	 * has to remember.
 	 */
-	row({
-		phase: PHASE_INTEGRATE,
-		outcome: "integration-red",
-		action: STAGE_ACTIONS.dispose,
-		reasonClass: "integration-red",
-		evidence: EVIDENCE_TRUST.fact,
-	}),
+	row({ phase: PHASE_INTEGRATE, outcome: "integration-red", action: STAGE_ACTIONS.dispose, reasonClass: "integration-red" }),
 
 	// ── The four rows that name no phase ─────────────────────────────────────
 	row({ phase: TABLE_WIDE, outcome: "repair-budget-exhausted", action: STAGE_ACTIONS.dispose, reasonClass: "repair-budget-exhausted" }),

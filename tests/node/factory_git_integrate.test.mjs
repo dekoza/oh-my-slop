@@ -339,13 +339,14 @@ test("a head that is not the verified commit list is refused before the remote h
 	assert.deepEqual(effectRows(store).filter((row) => row.operation === "push"), []);
 });
 
-test("the integration worktree is released on success and kept when something went wrong (§12.7)", async (t) => {
+test("releasing the integration worktree removes it, and asking twice is not an error (§12.7)", async (t) => {
 	const { store, clone, attempt, branch } = await workedAttempt(t);
 	const opened = await openIntegrationWorktree(clone, { storeDir: store.storeDir, attempt, branch });
 
-	assert.equal(await releaseIntegrationWorktree(clone, { path: opened.path, keep: true }), false);
-	assert.equal(existsSync(opened.path), true);
-
-	assert.equal(await releaseIntegrationWorktree(clone, { path: opened.path, keep: false }), true);
+	assert.equal(await releaseIntegrationWorktree(clone, { path: opened.path }), true);
 	assert.equal(existsSync(opened.path), false);
+
+	// §7.7's re-entry: a step that already reclaimed it runs again and finds
+	// nothing to do, rather than failing an integration that succeeded.
+	assert.equal(await releaseIntegrationWorktree(clone, { path: opened.path }), false);
 });

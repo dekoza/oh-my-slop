@@ -351,12 +351,38 @@ test("§8.9: every disposition gets the same block — identity tuple, outcome c
 				question: extra.question ?? null,
 				reason: extra.reason ?? null,
 				pr: extra.pr ?? null,
+				// §8.7's advisory findings, on every block for the same reason the
+				// question is: one shape, whatever the disposition, so a machine
+				// reading a ticket's history parses one thing.
+				advisory: extra.advisory ?? null,
 				outcome_chain: 1,
 				evidence: 0,
 			},
 			`${disposition} does not carry §8.9's block`,
 		);
 	}
+});
+
+test("§8.7's summary and advisory findings land in the ticket comment; blocking findings never do", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+	const attempt = await claimed(context, 10);
+	resolveStages(context, 10, attempt, [["implement", "completed"]]);
+
+	await dispose(context, {
+		ticket: 10,
+		disposition: "published",
+		pr: { number: 7, url: "http://gitea.example/acme/widgets/pulls/7" },
+		reason: "3 required check(s) green at abcdef012345; 2 review axis verdict(s): approved, approved.",
+		advisory: [{ axis: "review-standards", severity: "advisory", statement: "this helper could be inlined" }],
+	});
+
+	const posted = context.gitea.comments.at(-1).body;
+	const block = blockIn(posted);
+	assert.match(block.reason, /3 required check\(s\) green/);
+	assert.deepEqual(block.advisory.map((finding) => finding.statement), ["this helper could be inlined"]);
+	// The caller passes no blocking findings, and the block has no slot to put one
+	// in: a blocking finding is one a repair already answered.
+	assert.equal(Object.hasOwn(block, "blocking"), false);
 });
 
 test("released drops the claim with no label, and still carries the block", async (t) => {

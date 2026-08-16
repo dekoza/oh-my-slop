@@ -609,6 +609,7 @@ function ticketExecution(store, entry, hold, context) {
 				question: outcome?.question ?? null,
 				pr: outcome?.pr ?? null,
 				reason: outcome?.reason ?? null,
+				advisory: outcome?.advisory ?? null,
 			});
 		}
 

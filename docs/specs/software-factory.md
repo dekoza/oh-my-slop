@@ -1060,7 +1060,7 @@ Controller-derived: `invalid-result` · `no-result` · `dead-worker` · `timeout
 
 **Phase results.**
 `harvest` → `passed` | `predicate-failed` ·
-`verify` → `passed` | `failed` | `unrunnable` ·
+`verify` → `passed` | `failed` | `unrunnable` | `rebase-conflict` ·
 `review` → `approved` | `rejected` | `mutation-detected` ·
 `integrate` → `integrated` | `rebase-conflict` | `predicate-failed` | `push-failed` | `integration-red`.
 
@@ -1127,6 +1127,7 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | verify | `passed` | → review | — |
 | verify | `failed` | repair, check output presented as fact | repair |
 | verify | `unrunnable` | retry; exhausted ⇒ `failed` / `check-unrunnable` | automation |
+| verify | `rebase-conflict` | fresh-retry from the new base tip | repair |
 | review | reviewer attempt `completed` | take its verdict | — |
 | review | both axes `approved` | → integrate | — |
 | review | either axis `rejected` | repair, findings in the untrusted block | repair |
@@ -1139,7 +1140,7 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | integrate | `rebase-conflict` | fresh-retry from the new base tip | repair |
 | integrate | `predicate-failed` | `failed` / automation | — |
 | integrate | `push-failed` | retry | automation |
-| integrate | `integration-red` | `failed` / `integration-red`, check output presented as fact | — |
+| integrate | `integration-red` | `failed` / `integration-red` | — |
 | — | repair budget exhausted | `failed` / `repair-budget-exhausted` | — |
 | — | automation budget exhausted | `failed` / `automation-budget-exhausted` | — |
 | — | duplicate result, identical | return the existing result, idempotent | — |
@@ -1158,7 +1159,9 @@ human removing the label is what makes the label mean "someone has acknowledged 
 - **A `rebase-conflict` consumes a fresh-retry, not a repair**, because the prior tip is
   precisely what conflicts. A second conflict is `failed` / `rebase-conflict`, and **the
   controller never attempts automatic resolution**, which would put a model inside a controller
-  phase.
+  phase. It appears under **two phases** because §9.5 puts a rebase in each: `verify` opens with
+  one, and `integrate`'s compare-and-publish loop redoes it when the base moved again. The row is
+  the same in both.
 - **`wrote-but-hung` is not a failure.** The outbox is valid, so harvest it, stop the agent as
   routine shutdown, and record the anomaly.
 - **The whole table is re-enterable.** Reconcile replays it from durable state after a crash

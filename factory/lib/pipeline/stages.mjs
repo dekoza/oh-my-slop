@@ -135,10 +135,9 @@ export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome
  * **A row this package does not yet wire raises rather than falling through.**
  * The plausible fallthrough is "carry on to the next phase", which is precisely
  * how an unbuilt repair tier turns a failing attempt into a publication. What is
- * wired here is §8.1's first four phases, §8.5's two repair tiers and §8.9's
- * dispositions; the budgets (#111) and integration (#113) each replace one
- * refusal with behaviour, and the stages already recorded stay on the chain
- * either way.
+ * wired here is §8.1's whole pipeline, §8.5's two repair tiers and §8.9's
+ * dispositions; the budgets (#111) replace the one refusal that is left, and the
+ * stages already recorded stay on the chain either way.
  *
  * @param {object} store an open store
  * @param {object} context
@@ -213,6 +212,9 @@ export async function walkStages(store, { hold, run, ticket, attempt, phases, ne
 				ticket,
 				reasonClass: resolved.detail?.reason_class ?? null,
 				question: resolved.detail?.question ?? null,
+				pr: resolved.detail?.pr ?? null,
+				summary: resolved.detail?.summary ?? null,
+				advisory: resolved.detail?.advisory ?? null,
 			});
 		}
 
@@ -290,13 +292,26 @@ async function retried(nextAttempt, request) {
  * the same detail**: §3.4's pause is the exact question a worker asked, and a
  * disposition that had to go back for it would be reading a record this walk
  * just resolved.
+ *
+ * **The pull request, the summary, and the advisory findings ride the same
+ * way** (§7.5, §8.7): §8.9 refuses a `published` disposition with no PR link,
+ * and §8.7 puts the summary and the advisory findings in the ticket comment as
+ * well as in the PR body. All three come off the disposing phase's own detail,
+ * so there is one place they are produced and one place they are read.
  */
-function settle(phase, outcome, { store, run, ticket, reasonClass = null, question = null, conflict = null }) {
+function settle(
+	phase,
+	outcome,
+	{ store, run, ticket, reasonClass = null, question = null, conflict = null, pr = null, summary = null, advisory = null },
+) {
 	const row = routeOutcome(phase, outcome);
 
 	return Object.freeze({
 		...dispositionOf(row, { reasonClass }),
 		question,
+		pr,
+		reason: summary,
+		advisory,
 		phase,
 		outcome,
 		conflict,
@@ -331,7 +346,6 @@ async function answerFor(store, { run, ticket, phase, attempt, phases }) {
  */
 const UNBUILT = Object.freeze({
 	[STAGE_ACTIONS.retry]: { missing: "the budgets and the circuit breaker (#111)", spec: "§8.6" },
-	[PHASE_INTEGRATE]: { missing: "integration and publication — the first pull request (#113)", spec: "§7.5" },
 });
 
 function unbuilt({ row, phase }) {

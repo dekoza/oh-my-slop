@@ -139,7 +139,7 @@ function answering(outcomes) {
 	return { phases, calls };
 }
 
-test("a green attempt walks implement → harvest → verify → review, and stops where integrate is unbuilt", async (t) => {
+test("a green attempt walks the whole pipeline and settles as published (§8.1, §8.9)", async (t) => {
 	const context = await executing(t);
 	const { phases, calls } = answering({
 		implement: "completed",
@@ -148,16 +148,19 @@ test("a green attempt walks implement → harvest → verify → review, and sto
 		review: "approved",
 	});
 
-	await assert.rejects(
-		() => context.walk(phases),
-		(error) => {
-			assert.equal(error.reason, "not-yet-implemented");
-			assert.equal(error.details.phase, "integrate");
-			assert.match(error.details.missing, /#113/);
-			return true;
-		},
-	);
+	const settled = await context.walk({
+		...phases,
+		// §7.5's publication is what the integrate executor answers with, and §8.9
+		// refuses a `published` disposition that carries no link to it.
+		integrate: async () => ({
+			outcome: "integrated",
+			detail: { pr: { number: 7001, url: "http://gitea.example/acme/widgets/pulls/7001" }, summary: "all green" },
+		}),
+	});
 
+	assert.equal(settled.disposition, "published");
+	assert.deepEqual(settled.pr, { number: 7001, url: "http://gitea.example/acme/widgets/pulls/7001" });
+	assert.equal(settled.reason, "all green");
 	assert.deepEqual(calls, ["implement", "harvest", "verify", "review"]);
 	assert.deepEqual(
 		outcomeChain(context.store, { run: context.run, ticket: context.ticket }),
@@ -166,8 +169,23 @@ test("a green attempt walks implement → harvest → verify → review, and sto
 			{ phase: "harvest", outcome: "passed", attempt: context.attempt },
 			{ phase: "verify", outcome: "passed", attempt: context.attempt },
 			{ phase: "review", outcome: "approved", attempt: context.attempt },
+			{ phase: "integrate", outcome: "integrated", attempt: context.attempt },
 		],
-		"the chain a stopped walk leaves behind is the chain `factory status` reads",
+		"the chain a finished walk leaves behind is the chain the status verb reads",
+	);
+});
+
+test("a phase the caller wired no executor for is a composition defect, named as one", async (t) => {
+	const context = await executing(t);
+	const { phases } = answering({ implement: "completed", harvest: "passed", verify: "passed", review: "approved" });
+
+	await assert.rejects(
+		() => context.walk(phases),
+		(error) => {
+			assert.equal(error.reason, "phase-unwired");
+			assert.equal(error.details.phase, "integrate");
+			return true;
+		},
 	);
 });
 
@@ -233,15 +251,12 @@ test("a repair re-enters implement under a new attempt, never the one that faile
 		review: async () => ({ outcome: "approved" }),
 	};
 
-	await assert.rejects(
-		() => context.walk(phases, { nextAttempt: seam.nextAttempt }),
-		(error) => {
-			// The repaired attempt walked clean through review to integrate, which is #113's.
-			assert.equal(error.reason, "not-yet-implemented");
-			assert.equal(error.details.phase, "integrate");
-			return true;
-		},
+	// The repaired attempt walks clean through review to a publication.
+	const settled = await context.walk(
+		{ ...phases, integrate: async () => ({ outcome: "integrated", detail: { pr: { number: 7002, url: "u" } } }) },
+		{ nextAttempt: seam.nextAttempt },
 	);
+	assert.equal(settled.disposition, "published");
 
 	assert.deepEqual(seen, [context.attempt, `${context.run}-t${context.ticket}-a2`]);
 	assert.deepEqual(
@@ -258,6 +273,7 @@ test("a repair re-enters implement under a new attempt, never the one that faile
 			["harvest", "passed", `${context.run}-t${context.ticket}-a2`],
 			["verify", "passed", `${context.run}-t${context.ticket}-a2`],
 			["review", "approved", `${context.run}-t${context.ticket}-a2`],
+			["integrate", "integrated", `${context.run}-t${context.ticket}-a2`],
 		],
 		"the chain is a list across attempts: the repair is on it, and the failure it answers still is",
 	);
@@ -398,6 +414,9 @@ test("a cancelled attempt releases the ticket, an honest state rather than a fai
 		reason_class: null,
 		fault: null,
 		question: null,
+		pr: null,
+		reason: null,
+		advisory: null,
 		phase: "implement",
 		outcome: "cancelled",
 		conflict: null,
@@ -454,7 +473,7 @@ test("the walk writes nothing to the tracker: its whole output is the journal (#
 	const { phases } = answering({ implement: "completed", harvest: "passed", verify: "passed", review: "approved" });
 	const before = context.store.head().seq;
 
-	await assert.rejects(() => context.walk(phases), /not built/);
+	await assert.rejects(() => context.walk(phases), /wired no executor/);
 
 	assert.deepEqual(
 		[
@@ -527,7 +546,7 @@ test("a crash between an external effect and its recorded resolution replays cle
 		review: async () => ({ outcome: "approved" }),
 	};
 	await assert.rejects(() => context.walk({ implement, ...rest }), /controller died/);
-	await assert.rejects(() => context.walk({ implement, ...rest }), /not built/);
+	await assert.rejects(() => context.walk({ implement, ...rest }), /wired no executor/);
 
 	assert.deepEqual(
 		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).map((step) => step.phase),

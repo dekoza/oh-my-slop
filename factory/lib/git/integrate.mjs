@@ -3,7 +3,7 @@ import { existsSync, rmSync } from "node:fs";
 import { PHASE_INTEGRATE } from "../domain/vocabulary.mjs";
 import { requestEffect, resolveEffect } from "../effects/records.mjs";
 import { FactoryGitError } from "./errors.mjs";
-import { assertFactoryRef, evidenceRef, integrationWorktreePath } from "./isolation.mjs";
+import { assertFactoryRef, attemptWorktreePath, evidenceRef, integrationWorktreePath } from "./isolation.mjs";
 
 /**
  * §7.5's git steps, and §7.4's **integration-side** predicates — the controller's
@@ -265,9 +265,15 @@ export async function adoptRebasedHead(clone, { branch, from, to }) {
  * stamped with the attempt before it. What must never appear is a commit
  * belonging to a different ticket execution.
  *
+ * **It needs no worktree.** Every question here is about commits and trees —
+ * `rev-list`, `diff --check` between two revisions, trailers off a log — which
+ * the bare clone answers. That is what makes §7.7's "integration is re-runnable
+ * end to end" hold after a success has already reclaimed the worktree: a
+ * re-entry re-derives the same verdict from refs that are still there.
+ *
  * @param {object} clone the private clone's handle
  * @param {object} what
- * @param {string} what.worktreePath the integration worktree
+ * @param {string} [what.worktreePath] where to run, when a caller has one open
  * @param {string} what.baseCommit the base these commits are published onto
  * @param {string} what.head the commit that will be pushed
  * @param {string} what.run
@@ -275,7 +281,7 @@ export async function adoptRebasedHead(clone, { branch, from, to }) {
  * @returns {Promise<Readonly<object>>} a verdict: `pushable`, the commit list,
  *   and — when it is not — the refusal and what git said about it
  */
-export async function assessIntegration(clone, { worktreePath, baseCommit, head, run, ticket }) {
+export async function assessIntegration(clone, { worktreePath = null, baseCommit, head, run, ticket }) {
 	const commits = await commitsBetween(clone, { worktreePath, baseCommit, head });
 	if (commits.length === 0) {
 		return verdict({
@@ -376,27 +382,85 @@ export async function pushAttemptBranch(
 }
 
 /**
+ * §12.7's eager reclamation: **on integrated success the attempt's own worktree
+ * goes, immediately.**
+ *
+ * The branch is pushed, so the worktree holds nothing unique — which is exactly
+ * why this is safe here and nowhere else. On failure or pause the same worktree
+ * is **the only copy of that work** (§7.7) and is retained and pinned, so this
+ * function has one caller and it is on the integrated path.
+ *
+ * It is an effect because it is a mutation outside the database with a probe
+ * that can re-read it, and it is keyed `…/integrate/…` rather than
+ * `…/cleanup/…`: §4.5's operation names what is mutated and the key's phase
+ * segment says why, so §12.8's planner deleting one later is the same operation
+ * under a different reason.
+ *
+ * @param {object} store an open store
+ * @param {object} clone the private clone's handle
+ * @param {object} context
+ * @param {object} context.hold the controller's hold
+ * @param {string} context.run
+ * @param {number} context.ticket
+ * @param {string} context.attempt
+ * @param {string} context.actor
+ * @param {number} context.at
+ * @returns {Promise<Readonly<{ path: string, removed: boolean }>>}
+ */
+export async function reclaimAttemptWorktree(store, clone, { hold, run, ticket, attempt, actor, at }) {
+	const path = attemptWorktreePath(store.storeDir, attempt);
+
+	const settled = await asEffect(store, {
+		hold,
+		run,
+		ticket,
+		attempt,
+		actor,
+		at,
+		operation: "worktree-delete",
+		operand: null,
+		payload: { path },
+		perform: async () => {
+			const registered = (await clone.listWorktrees()).some((worktree) => worktree.worktree === path);
+			if (registered) await clone.removeWorktree({ path });
+			// Removed by a previous pass, by an operator, or never created: all three
+			// are the state this effect was asking for, so all three resolve it.
+			return { path, removed: registered };
+		},
+	});
+
+	return Object.freeze({ path, removed: settled.result?.removed ?? false });
+}
+
+/**
  * Give up the integration worktree (§12.7).
  *
- * `keep` is the outcome's, not this function's: an integrated attempt leaves
- * nothing here worth looking at, while a rebase conflict or a red re-verify is
- * precisely when an operator wants to `cd` in — the same rule §12.7 gives a
- * baseline worktree, for the same reason.
+ * **Called only where the outcome says to.** An integrated attempt leaves
+ * nothing here worth looking at — the branch is pushed — while a rebase
+ * conflict, a red set, or a failed predicate is precisely when an operator wants
+ * to `cd` in, so those paths simply do not call it. That is the same rule §12.7
+ * gives a baseline worktree, expressed the same way: retention is the absence of
+ * a removal, not a flag threaded through one.
  *
  * @param {object} clone the private clone's handle
- * @param {{ path: string, keep: boolean }} what
- * @returns {Promise<boolean>} whether it was removed
+ * @param {{ path: string }} what
+ * @returns {Promise<boolean>} whether there was one to remove
  */
-export async function releaseIntegrationWorktree(clone, { path, keep }) {
-	if (keep) return false;
+export async function releaseIntegrationWorktree(clone, { path }) {
+	if (!(await clone.listWorktrees()).some((worktree) => worktree.worktree === path)) return false;
 	await clone.removeWorktree({ path });
 	return true;
 }
 
 /** The commits one range holds, oldest first — the order they will be pushed in. */
 async function commitsBetween(clone, { worktreePath, baseCommit, head }) {
-	const listed = await clone.git(["rev-list", "--reverse", `${baseCommit}..${head}`], { cwd: worktreePath });
+	const listed = await clone.git(["rev-list", "--reverse", `${baseCommit}..${head}`], where(worktreePath));
 	return listed === "" ? [] : listed.split("\n");
+}
+
+/** The clone's own directory when no worktree is open, which is every read here. */
+function where(worktreePath) {
+	return worktreePath === null || worktreePath === undefined ? {} : { cwd: worktreePath };
 }
 
 /**
@@ -406,7 +470,7 @@ async function commitsBetween(clone, { worktreePath, baseCommit, head }) {
  */
 async function diffCheck(clone, { worktreePath, baseCommit, head }) {
 	try {
-		await clone.git(["diff", "--check", `${baseCommit}..${head}`], { cwd: worktreePath });
+		await clone.git(["diff", "--check", `${baseCommit}..${head}`], where(worktreePath));
 		return null;
 	} catch (error) {
 		if (!(error instanceof FactoryGitError)) throw error;
@@ -417,9 +481,7 @@ async function diffCheck(clone, { worktreePath, baseCommit, head }) {
 /** The commits with no §7.3 trailer naming this ticket execution, oldest first. */
 async function untrailedCommits(clone, { worktreePath, baseCommit, head, run, ticket }) {
 	const format = `%H${FIELD}%(trailers:key=${TRAILER_KEY},valueonly,separator=${escaped(VALUE)})${escaped(RECORD)}`;
-	const listed = await clone.git(["log", "--reverse", `--format=${format}`, `${baseCommit}..${head}`], {
-		cwd: worktreePath,
-	});
+	const listed = await clone.git(["log", "--reverse", `--format=${format}`, `${baseCommit}..${head}`], where(worktreePath));
 
 	const wanted = `${run}/${ticket}/`;
 	return listed

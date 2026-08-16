@@ -206,7 +206,18 @@ export const CONTROLLER_DERIVED_OUTCOMES = Object.freeze(
  */
 export const PHASE_RESULTS = Object.freeze({
 	[PHASE_HARVEST]: Object.freeze(["passed", "predicate-failed"]),
-	[PHASE_VERIFY]: Object.freeze(Object.values(CHECK_RESULTS)),
+	/**
+	 * The three check results, **plus `rebase-conflict`** (§20, #113).
+	 *
+	 * §9.5 puts the rebase inside this phase — "acquire for `rebase + verify`,
+	 * release across `review`" — so the checks always run at the post-rebase
+	 * commit and §8.2's invariant needs no conditional re-check path. A rebase
+	 * that cannot be replayed therefore ends the *verify* phase, and calling it
+	 * `unrunnable` would charge the automation budget for two changes that do not
+	 * compose. §8.10 routes it exactly as it routes the `integrate` row of the
+	 * same name, which stays reachable through §9.5's compare-and-publish loop.
+	 */
+	[PHASE_VERIFY]: Object.freeze([...Object.values(CHECK_RESULTS), "rebase-conflict"]),
 	[PHASE_REVIEW]: Object.freeze(["approved", "rejected", "mutation-detected"]),
 	[PHASE_INTEGRATE]: Object.freeze([
 		"integrated",
