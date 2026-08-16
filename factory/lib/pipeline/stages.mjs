@@ -1,8 +1,8 @@
-import { PHASE_IMPLEMENT } from "../domain/vocabulary.mjs";
+import { PHASE_IMPLEMENT, PHASE_INTEGRATE, PHASE_REVIEW } from "../domain/vocabulary.mjs";
 import { canonicalJson, digest, runStream } from "../state/events.mjs";
 import { dispositionOf } from "./dispositions.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
-import { ACTIONS, routeOutcome } from "./table.mjs";
+import { ACTIONS, TABLE_WIDE, routeOutcome } from "./table.mjs";
 
 /**
  * A stage result, as a durable record.
@@ -55,10 +55,8 @@ export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome
 	const row = routeOutcome(phase, outcome);
 	const committedDigest = resultDigest({ outcome, detail });
 
-	const existing = stageRecords(store, { run, ticket }).find(
-		(record) => record.phase === phase && record.attempt === attempt,
-	);
-	if (existing !== undefined) {
+	const existing = recordedStage(store, { run, ticket, phase, attempt });
+	if (existing !== null) {
 		if (existing.payload.result_digest === committedDigest) {
 			// §8.10: the duplicate-identical row. The committed result is returned
 			// unchanged and nothing is appended — a second record saying the same
@@ -154,31 +152,72 @@ export async function walkStages(store, { hold, run, ticket, attempt, phases, ac
 
 	for (;;) {
 		const answer = await answerFor(store, { run, ticket, phase, attempt, phases });
-		const resolved = resolveStage(store, {
-			hold,
-			run,
-			ticket,
-			phase,
-			attempt,
-			outcome: answer.outcome,
-			detail: answer.detail ?? null,
-			actor,
-			at: now(),
-		});
-		const row = resolved.row;
 
-		if (row.action === ACTIONS.advance) {
-			phase = row.to;
+		let resolved;
+		try {
+			resolved = resolveStage(store, {
+				hold,
+				run,
+				ticket,
+				phase,
+				attempt,
+				outcome: answer.outcome,
+				detail: answer.detail ?? null,
+				actor,
+				at: now(),
+			});
+		} catch (error) {
+			// §8.10's last row, and the reason the conflict is typed rather than
+			// merely thrown: **two results disagreeing under one semantic key is a
+			// disposition, not a crash.** A walk that let it escape would leave the
+			// ticket execution at no disposition at all — the one state §8.9 has no
+			// word for, and the state a human cannot act on.
+			if (error.reason !== "stage-result-conflict") throw error;
+			return settle(TABLE_WIDE, "duplicate-conflicting", {
+				store,
+				run,
+				ticket,
+				conflict: Object.freeze({ ...error.details }),
+			});
+		}
+
+		if (resolved.row.action === ACTIONS.advance) {
+			phase = resolved.row.to;
 			continue;
 		}
 
-		if (row.action === ACTIONS.dispose) {
-			const settled = dispositionOf(row, { reasonClass: resolved.detail?.reason_class ?? null });
-			return Object.freeze({ ...settled, phase, outcome: resolved.outcome });
+		if (resolved.row.action === ACTIONS.dispose) {
+			return settle(phase, resolved.outcome, {
+				store,
+				run,
+				ticket,
+				reasonClass: resolved.detail?.reason_class ?? null,
+			});
 		}
 
-		throw unbuilt({ row, phase });
+		throw unbuilt({ row: resolved.row, phase });
 	}
+}
+
+/**
+ * The ticket execution's terminal answer: §14.18's disposition, and the chain
+ * that produced it.
+ *
+ * The chain rides along because §8.9's pause and failure comments are required
+ * to carry it (#109) and the walk is the last place it is cheap to read — the
+ * caller would otherwise re-derive from the journal a list this function has
+ * just finished writing.
+ */
+function settle(phase, outcome, { store, run, ticket, reasonClass = null, conflict = null }) {
+	const row = routeOutcome(phase, outcome);
+
+	return Object.freeze({
+		...dispositionOf(row, { reasonClass }),
+		phase,
+		outcome,
+		conflict,
+		chain: outcomeChain(store, { run, ticket }),
+	});
 }
 
 /**
@@ -190,10 +229,8 @@ export async function walkStages(store, { hold, run, ticket, attempt, phases, ac
  * rather than the row, because there is no outcome yet to route.
  */
 async function answerFor(store, { run, ticket, phase, attempt, phases }) {
-	const recorded = stageRecords(store, { run, ticket }).find(
-		(record) => record.phase === phase && record.attempt === attempt,
-	);
-	if (recorded !== undefined) {
+	const recorded = recordedStage(store, { run, ticket, phase, attempt });
+	if (recorded !== null) {
 		return { outcome: recorded.payload.outcome, detail: recorded.payload.detail };
 	}
 
@@ -213,9 +250,8 @@ const UNBUILT = Object.freeze({
 	[ACTIONS.freshRetry]: { missing: "the two repair tiers (#110)", spec: "§8.5" },
 	[ACTIONS.retry]: { missing: "the budgets and the circuit breaker (#111)", spec: "§8.6" },
 	[ACTIONS.verdict]: { missing: "review fan-out and the mutation attestation (#112)", spec: "§8.4" },
-	[ACTIONS.idempotentReturn]: { missing: "the two repair tiers (#110)", spec: "§8.5" },
-	review: { missing: "review fan-out and the mutation attestation (#112)", spec: "§8.4" },
-	integrate: { missing: "integration and publication — the first pull request (#113)", spec: "§7.5" },
+	[PHASE_REVIEW]: { missing: "review fan-out and the mutation attestation (#112)", spec: "§8.4" },
+	[PHASE_INTEGRATE]: { missing: "integration and publication — the first pull request (#113)", spec: "§7.5" },
 });
 
 function unbuilt({ row, phase }) {
@@ -278,4 +314,13 @@ function stageRecords(store, { run, ticket }) {
 	return store
 		.readEvents({ stream: runStream(run), kind: "stage.resolved" })
 		.filter((record) => record.ticket === ticket);
+}
+
+/** The result committed under one semantic key, or `null` for a stage nobody resolved. */
+function recordedStage(store, { run, ticket, phase, attempt }) {
+	return (
+		stageRecords(store, { run, ticket }).find(
+			(record) => record.phase === phase && record.attempt === attempt,
+		) ?? null
+	);
 }

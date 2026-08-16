@@ -225,7 +225,29 @@ test("a cancelled attempt releases the ticket, an honest state rather than a fai
 		fault: null,
 		phase: "implement",
 		outcome: "cancelled",
+		conflict: null,
+		// §8.9's pause and failure comments are required to carry the chain, so the
+		// walk hands back the one it just wrote rather than making #109 re-derive it.
+		chain: [{ phase: "implement", outcome: "cancelled", attempt: context.attempt }],
 	});
+});
+
+test("a conflicting duplicate is routed to failed / automation, not thrown at the caller (§8.10)", async (t) => {
+	const context = await executing(t);
+	// A second controller resolves the stage differently while this one is still
+	// running the phase — the only way one walk meets a conflict it did not write.
+	const implement = async () => {
+		context.resolve("implement", "worker-failed");
+		return { outcome: "completed", detail: null };
+	};
+
+	const settled = await context.walk({ implement });
+
+	assert.deepEqual(settled.disposition, "failed");
+	assert.equal(settled.fault, "automation");
+	assert.equal(settled.outcome, "duplicate-conflicting");
+	assert.equal(settled.conflict.committed, "worker-failed");
+	assert.equal(settled.conflict.found, "completed");
 });
 
 test("a worker's own test evidence is context, never the verdict (§14.16)", async (t) => {

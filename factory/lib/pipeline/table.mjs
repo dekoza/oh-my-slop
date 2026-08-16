@@ -245,7 +245,17 @@ export const TABLE_WIDE_OUTCOMES = Object.freeze(
 	OUTCOME_TABLE.filter((entry) => entry.phase === TABLE_WIDE).map((entry) => entry.outcome),
 );
 
-const INDEX = new Map(OUTCOME_TABLE.map((entry) => [`${entry.phase} ${entry.outcome}`, entry]));
+/**
+ * Phase → outcome → row. Nested rather than keyed on a joined string: a single
+ * key would have to spell `TABLE_WIDE`'s `null` as text, and the point of
+ * §8.10's phase-less rows is that they belong to no phase — not that they belong
+ * to one named "null".
+ */
+const INDEX = new Map();
+for (const entry of OUTCOME_TABLE) {
+	if (!INDEX.has(entry.phase)) INDEX.set(entry.phase, new Map());
+	INDEX.get(entry.phase).set(entry.outcome, entry);
+}
 
 /**
  * The one way to read the table.
@@ -260,7 +270,7 @@ const INDEX = new Map(OUTCOME_TABLE.map((entry) => [`${entry.phase} ${entry.outc
  *   failure becomes a publication.
  */
 export function routeOutcome(phase, outcome) {
-	const found = INDEX.get(`${phase} ${outcome}`);
+	const found = INDEX.get(phase)?.get(outcome);
 	if (found !== undefined) return found;
 
 	throw new FactoryPipelineError(

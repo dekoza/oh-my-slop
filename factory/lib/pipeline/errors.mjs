@@ -14,9 +14,11 @@
  */
 export const PIPELINE_ERROR_REASONS = Object.freeze([
 	/**
-	 * §8.10: a `(phase, outcome)` pair outside the table's declared domains. The
-	 * table is total, so this names a caller asking a question that was never
-	 * possible — never a gap to be defaulted through.
+	 * §8.10: the table does not hold the answer being asked of it — a
+	 * `(phase, outcome)` pair outside its declared domains, or a row asked for a
+	 * disposition when its action is not `dispose`. The table is total over those
+	 * domains, so either way this names a caller asking a question that was never
+	 * possible, and never a gap to be defaulted through.
 	 */
 	"outcome-unmapped",
 	/**
@@ -43,9 +45,10 @@ export const PIPELINE_ERROR_REASONS = Object.freeze([
 	"reason-class-unknown",
 	/**
 	 * §8.10's last row: two different results committed under one semantic key —
-	 * `(run, ticket, phase)`, §2.1's stage identity. The identical case is
-	 * idempotent and returns the committed result; this is the other one, and it
-	 * routes to `failed` / automation rather than picking a winner.
+	 * `(run, ticket, phase, attempt)`, §2.1's stage identity plus the attempt it
+	 * was resolved under. The identical case is idempotent and returns the
+	 * committed result; this is the other one, and it routes to `failed` /
+	 * automation rather than picking a winner.
 	 */
 	"stage-result-conflict",
 ]);

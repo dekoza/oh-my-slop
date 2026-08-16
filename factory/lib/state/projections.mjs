@@ -25,9 +25,8 @@ import { FactoryStateError } from "./errors.mjs";
  *
  * The kinds a projector does not name still advance its rows' `last_seq`. The
  * `disposition` column's writer is #98's abandon (the one member of §8.8's set
- * this package reaches), and the disposition subsystem (#108, #109) writes it
- * additively for the rest; `outcome_chains` is still waiting for the slice that
- * owns its vocabulary.
+ * this package reaches), and the tracker actions beside it (#109) write the rest
+ * additively; `outcome_chains` is #108's, filled from `stage.resolved`.
  */
 
 /** §10.3's first lifecycle value: preflight runs *after* the run exists. */

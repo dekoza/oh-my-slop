@@ -889,6 +889,14 @@ exit-code contract** (§11.6).
 - **The controller reruns the full required set itself**, in a controller-owned verification
   worktree, **at the exact post-rebase commit that will be pushed**. One rule, no conditional
   re-check paths. Worker-reported test evidence remains **context only**.
+- **`verify` runs the advisory checks alongside the required ones**, and judges on the required
+  set alone. That is the one place "advisory checks record evidence and never block" can happen:
+  §8.3's baseline runs the required set by itself, and §8.7's attestation carries *every* check
+  with its required flag.
+- **A required set in which one check was `unrunnable` is `unrunnable`, even beside a genuine
+  failure.** §14.16 makes the controller's rerun the only attestation boundary, so an incomplete
+  rerun attests nothing; calling the phase `failed` would charge the worker's repair budget for a
+  broken host, and a real failure that survives the retry reports itself one phase later.
 
 Neither legacy implementation ever executed the project's own checks; both trusted
 agent-reported evidence, and `software-factory` merely demanded a `"tests":["command: result"]`
@@ -1047,7 +1055,8 @@ Controller-derived, never worker-writable: `repair-budget-exhausted` ·
 Run-scoped, not a ticket disposition: `baseline-red`.
 
 > **The invariant:** *every worker-writable reason class ⇒ `paused`; every controller-derived
-> reason class ⇒ `failed`.*
+> reason class ⇒ `failed`.* §8.10's two "`failed` / automation" rows name no class at all, and the
+> same rule answers them: an automation fault is controller-derived by definition, so it fails.
 
 A worker asking a question needs an answer; the controller giving up needs an investigation.
 Stated as a rule rather than as a table property, so a class added later cannot be filed to the
@@ -1095,10 +1104,14 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | verify | `passed` | → review | — |
 | verify | `failed` | repair, check output presented as fact | repair |
 | verify | `unrunnable` | retry; exhausted ⇒ `failed` / `check-unrunnable` | automation |
+| review | reviewer attempt `completed` | take its verdict | — |
 | review | both axes `approved` | → integrate | — |
 | review | either axis `rejected` | repair, findings in the untrusted block | repair |
 | review | `mutation-detected` | `failed` / `review-mutation`, **no retry** | — |
-| review | reviewer attempt died / timed out / invalid | retry | automation |
+| review | reviewer attempt `needs-human` | `paused` (worker reason class) | — |
+| review | reviewer attempt `wrote-but-hung` | take its verdict, record the anomaly | — |
+| review | reviewer attempt `cancelled` | `released` | — |
+| review | reviewer attempt `worker-failed` · `invalid-result` · `no-result` · `dead-worker` · `timeout` · `automation-failure` | retry | automation |
 | integrate | `integrated` | `published` | — |
 | integrate | `rebase-conflict` | fresh-retry from the new base tip | repair |
 | integrate | `predicate-failed` | `failed` / automation | — |
@@ -1121,6 +1134,13 @@ human removing the label is what makes the label mean "someone has acknowledged 
 - **The whole table is re-enterable.** Reconcile replays it from durable state after a crash
   between an external effect and its recorded resolution, which §7.7's end-to-end idempotent
   integration makes safe.
+- **A stage result's semantic key is `(run, ticket, phase, attempt)`** — §2.1's stage identity
+  plus the attempt it was resolved under. §8.5's repair re-enters a phase, so a key without the
+  attempt slot would read every repair as the conflicting duplicate two rows above, and a working
+  pipeline would fail itself.
+- **The last two rows are dispositions, not crashes.** A conflicting duplicate is a *typed*
+  conflict precisely so the ticket execution still reaches `failed`; letting it escape the walk
+  would leave it at no disposition, which is the one state §8.9 has no word for.
 
 ---
 

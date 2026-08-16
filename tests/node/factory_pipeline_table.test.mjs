@@ -48,6 +48,37 @@ test("the table is total over (phase × outcome), with exactly one row per pair 
 	);
 });
 
+test("§8.10's stated properties are carried as fields, not as prose (§8.10)", () => {
+	// "mutation-detected is the only outcome with no retry at all."
+	assert.deepEqual(
+		OUTCOME_TABLE.filter((row) => !row.retryable).map((row) => row.outcome),
+		["mutation-detected"],
+	);
+	// "A rebase-conflict consumes a fresh-retry, not a repair … a second conflict
+	// is failed / rebase-conflict."
+	const conflict = routeOutcome("integrate", "rebase-conflict");
+	assert.equal(conflict.action, "fresh-retry");
+	assert.equal(conflict.budget, "repair");
+	assert.deepEqual(conflict.exhausted, { reasonClass: "rebase-conflict" });
+	// "unrunnable → retry; exhausted ⇒ failed / check-unrunnable."
+	assert.deepEqual(routeOutcome("verify", "unrunnable").exhausted, { reasonClass: "check-unrunnable" });
+	// §8.5's trust framing: controller-produced evidence as fact, worker-authored
+	// text in the untrusted block.
+	assert.equal(routeOutcome("verify", "failed").evidence, "fact");
+	assert.equal(routeOutcome("review", "rejected").evidence, "untrusted");
+	assert.equal(routeOutcome("implement", "worker-failed").evidence, "untrusted");
+});
+
+test("wrote-but-hung is an anomaly on an ordinary row, never a failure (§8.10)", () => {
+	assert.deepEqual(
+		OUTCOME_TABLE.filter((row) => row.anomaly !== null).map((row) => [row.phase, row.action, row.budget]),
+		[
+			["implement", "advance", null],
+			["review", "verdict", null],
+		],
+	);
+});
+
 // ── §8.8's three levels, and §8.1's two agent-borne phases ───────────────────
 
 test("exactly two phases are agent-borne; the other three have no model in them (§8.1)", () => {
