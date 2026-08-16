@@ -236,6 +236,11 @@ export async function runGit(args, { cwd }) {
 			command: ["git", ...args],
 			cwd,
 			stderr: (error.stderr ?? "").trim(),
+			// Both streams, because git does not agree with itself about which one a
+			// diagnosis goes to: `diff --check` prints the damage it found to stdout
+			// and exits non-zero, so a refusal carrying stderr alone would say a check
+			// failed and not what it found (§7.4).
+			stdout: (error.stdout ?? "").trim(),
 		});
 	}
 }

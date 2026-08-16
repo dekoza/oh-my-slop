@@ -28,6 +28,7 @@ import { attemptWorktreePath, privateClonePath } from "./isolation.mjs";
 export function registerGitProbes(registry) {
 	registry.register("git.rev-parse", probeRevParse);
 	registry.register("git.worktree-list", probeWorktreeList);
+	registry.register("git.ls-remote", probeLsRemote);
 }
 
 /** `branch-create` · `evidence-ref` · `branch-delete`: does the ref exist, and where. */
@@ -75,6 +76,40 @@ async function probeWorktreeList({ effect, probe, store }) {
 		foreignSourceId: `git:worktree:${path}`,
 		occurredAtRaw: present ? mtimeOf(path) : mtimeOf(cloneDir),
 		detail: { clone: cloneDir, path, present },
+	};
+}
+
+/**
+ * `push`: does the remote carry this branch, at the commit the local branch is
+ * at (§4.5's `sha-equals`).
+ *
+ * The comparison is against the **local** branch rather than against a sha in
+ * the record, for the reason the other two probes recompute their targets: an
+ * effect row carries no payload. That is also the right comparison — §7.5 pushes
+ * one branch and never touches it again (§14.12), so local and remote agreeing
+ * *is* the fact "this push landed", and a remote ahead of the local branch is
+ * something this factory did not do.
+ */
+async function probeLsRemote({ effect, store }) {
+	const cloneDir = privateClonePath(store.storeDir);
+	const branch = refOf(effect);
+	const listed = await runGit(["ls-remote", "origin", branch], { cwd: cloneDir });
+	const remote = listed === "" ? null : listed.split("\n")[0].split("\t")[0];
+
+	let local = null;
+	try {
+		local = await runGit(["rev-parse", "--verify", "--quiet", `${branch}^{commit}`], { cwd: cloneDir });
+	} catch (error) {
+		if (!missingRef(error)) throw error;
+	}
+
+	const equal = remote !== null && remote === local;
+	return {
+		matched: equal,
+		result: { branch, sha: remote, remote_sha: remote },
+		foreignSourceId: `git:remote:${branch}@${remote ?? "absent"}`,
+		occurredAtRaw: remote === null ? mtimeOf(cloneDir) : await runGit(["show", "--no-patch", "--format=%cI", local], { cwd: cloneDir }),
+		detail: { clone: cloneDir, ref: branch, remote_sha: remote, local_sha: local },
 	};
 }
 

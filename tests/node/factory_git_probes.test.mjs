@@ -8,7 +8,7 @@ import { attemptWorktreePath, privateClonePath } from "../../factory/lib/git/iso
 import { registerGitProbes } from "../../factory/lib/git/probes.mjs";
 import { reconcile } from "../../factory/lib/reconcile/engine.mjs";
 import { createProbeRegistry } from "../../factory/lib/reconcile/probes.mjs";
-import { mintedAttempt } from "./helpers/factory-git.mjs";
+import { mintedAttempt, workedAttempt } from "./helpers/factory-git.mjs";
 import { FIXED_NOW } from "./helpers/factory-store.mjs";
 
 /**
@@ -96,6 +96,54 @@ test("a worktree is re-found from the attempt id alone, because its path is dete
 
 	assert.equal(report.settled, 1);
 	assert.deepEqual(unresolvedEffects(store), []);
+});
+
+test("a push the crash left unrecorded settles by asking the remote, never the journal (§14.1)", async (t) => {
+	const { store, clone, run, attempt, branch, head } = await workedAttempt(t);
+	const registry = createProbeRegistry();
+	registerGitProbes(registry);
+	requestEffect(store, {
+		run,
+		ticket: 42,
+		phase: "integrate",
+		attempt,
+		operation: "push",
+		operand: branch,
+		actor: "controller",
+		fencingGeneration: 1,
+		payload: { branch, head },
+		at: FIXED_NOW,
+	});
+	// The mutation the controller died before recording.
+	await clone.git(["push", "origin", `refs/heads/${branch}:refs/heads/${branch}`]);
+
+	const report = await reconcile(store, { probes: registry, fencingGeneration: 1, at: AT });
+
+	assert.equal(report.settled, 1);
+	assert.deepEqual(unresolvedEffects(store), []);
+});
+
+test("a push that never reached the remote leaves the intent standing", async (t) => {
+	const { store, run, attempt, branch, head } = await workedAttempt(t);
+	const registry = createProbeRegistry();
+	registerGitProbes(registry);
+	const effect = requestEffect(store, {
+		run,
+		ticket: 42,
+		phase: "integrate",
+		attempt,
+		operation: "push",
+		operand: branch,
+		actor: "controller",
+		fencingGeneration: 1,
+		payload: { branch, head },
+		at: FIXED_NOW,
+	});
+
+	const report = await reconcile(store, { probes: registry, fencingGeneration: 1, at: AT });
+
+	assert.equal(report.settled, 0);
+	assert.equal(unresolvedEffects(store)[0].effect_key, effect.key);
 });
 
 test("with no clone on disk the probe fails, and the effect is reported rather than guessed", async (t) => {

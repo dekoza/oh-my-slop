@@ -33,6 +33,20 @@ const WORKTREES_SEGMENT = "worktrees";
 const BASELINES_SEGMENT = "baselines";
 
 /**
+ * §7.5's **controller-owned integration worktree**, which hangs off a root of
+ * its own for the same reason the baselines do: its lifetime is not an attempt
+ * worktree's.
+ *
+ * An attempt worktree is the worker's and, when an attempt fails, **the only
+ * copy of that work** (§7.7). This one is a detached checkout of commits that
+ * already exist on a branch, plus whatever the required set left beside them —
+ * derived, disposable state, replaceable at any moment (§7.1). Telling them
+ * apart by path is what keeps that difference from having to be re-derived by
+ * whoever reclaims one.
+ */
+const INTEGRATION_SEGMENT = "integration";
+
+/**
  * §7.3: the `factory/` branch namespace and `refs/factory/*` belong to the
  * factory alone; it never writes any ref outside them (§14.11).
  */
@@ -52,6 +66,47 @@ export function worktreesRoot(storeDir) {
 /** The directory every throwaway baseline worktree hangs under (§10.5, §12.7). */
 export function baselinesRoot(storeDir) {
 	return join(storeDir, BASELINES_SEGMENT);
+}
+
+/** The directory every controller-owned integration worktree hangs under (§7.5). */
+export function integrationsRoot(storeDir) {
+	return join(storeDir, INTEGRATION_SEGMENT);
+}
+
+/**
+ * One attempt's integration worktree, contained exactly as its attempt worktree
+ * is — the containment belongs to every derived path, not to the first one that
+ * asked for it.
+ *
+ * Keyed by the attempt rather than by "the integration", though §7.7's lease
+ * means only one exists at a time: a path an operator finds on disk says whose
+ * publication it belongs to, and §14.23's "two attempts never share a worktree"
+ * stays true of this kind by construction rather than by the lease alone.
+ *
+ * @param {string} storeDir the repository's store directory
+ * @param {string} attempt the attempt being integrated
+ * @returns {string}
+ * @throws {FactoryGitError} `identity-charset` · `identity-path-escape`
+ */
+export function integrationWorktreePath(storeDir, attempt) {
+	return containedPath(integrationsRoot(storeDir), attempt, "attempt");
+}
+
+/**
+ * §7.5's evidence ref: where an attempt's **pre-rebase head** is preserved
+ * before the rebase rewrites it.
+ *
+ * "Evidence survives by contract, not by reflog" is what this name buys. A
+ * reflog entry is per-worktree, expires on a schedule nobody set deliberately,
+ * and is gone the moment the worktree is reclaimed; a ref under the factory's
+ * own namespace is an object nothing collects and every probe can read.
+ *
+ * @param {string} attempt
+ * @returns {string} a full ref under `refs/factory/`
+ */
+export function evidenceRef(attempt) {
+	requireIdentitySegment(attempt, "attempt");
+	return assertFactoryRef(`${FACTORY_REF_PREFIX}evidence/${attempt}`);
 }
 
 /**
