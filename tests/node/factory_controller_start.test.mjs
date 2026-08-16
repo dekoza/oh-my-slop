@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { readArtifact } from "../../factory/lib/artifacts/ledger.mjs";
@@ -173,14 +174,20 @@ test("a start drains, ends with a reason, and exits with that reason's code", as
 	assert.equal(value.report.lifecycle, "ended");
 	assert.equal(value.report.execution.claimed, 0);
 	// §9.7's green-looking run that did nothing has to be impossible to mistake
-	// for a run that did the work. #100's reader can answer what is claimable and
-	// #101's loop can schedule it, but the two are composed only by #102's claim:
-	// a frontier read without one would hand the loop a ticket it could then only
-	// refuse to execute. So the sentence names that half, and a member list this
-	// run never looked at stays empty rather than being borrowed from a verb that
-	// did.
-	assert.match(value.report.execution.missing, /#102/);
+	// for a run that did the work. The reader can answer what is claimable and the
+	// claim can take it, but §3.3 forbids claiming work that cannot start — so a
+	// run with no pipeline above the claim reads no frontier at all, and the
+	// sentence names that half rather than reporting a scope that drained.
+	assert.match(value.report.execution.missing, /#107/);
 	assert.deepEqual(value.report.execution.members, []);
+	assert.deepEqual(value.report.execution.counts, {
+		closed: 0,
+		"needs-human": 0,
+		"awaiting-merge-dependency": 0,
+		"blocked-external": 0,
+		"human-owned": 0,
+		failed: 0,
+	});
 });
 
 test("the lifecycle is preflight, running, draining, ended — in that order", async (t) => {
@@ -287,11 +294,18 @@ test("a repo with submodules or LFS ends the run baseline-red at git-isolation (
 
 	assert.equal(exitCode, 2);
 	assert.equal(value.report.end_reason, "baseline-red");
-	assert.deepEqual(value.report.preflight.red, ["git-isolation"]);
 	assert.match(
 		value.report.preflight.checks.find((check) => check.check === "git-isolation").message,
 		/\.gitmodules/,
 	);
+
+	// The baseline is red too, and not as an echo: with no base pinned there was
+	// nothing to run the required set *at*, and §14.14 is a never — a run must
+	// not start on a baseline nobody ran. It names the check that owes it.
+	assert.deepEqual(value.report.preflight.red, ["git-isolation", "baseline"]);
+	const baseline = value.report.preflight.checks.find((check) => check.check === "baseline");
+	assert.equal(baseline.result, "failed");
+	assert.deepEqual(baseline.detail, { reason: "base-unavailable", because: "git-isolation" });
 });
 
 test("an unanchorable package is a recorded red check, not an unhandled exception", async (t) => {
@@ -375,10 +389,113 @@ test("an unbuilt check is neither passed nor failed, and names the ticket that o
 
 	const { value } = await runCli(["start", "--foreground", "42"], context);
 
-	const baseline = value.report.preflight.checks.find((check) => check.check === "baseline");
-	assert.equal(baseline.result, "unbuilt");
-	assert.match(baseline.detail.missing, /#104/);
+	const probe = value.report.preflight.checks.find((check) => check.check === "runtime-probe");
+	assert.equal(probe.result, "unbuilt");
+	assert.match(probe.detail.missing, /#105/);
 	assert.equal(value.report.end_reason, "drained", "an unbuilt check coloured the phase");
+});
+
+// ── The baseline gate (§8.3, §14.14) ─────────────────────────────────────────
+
+test("the baseline runs the declared required set at the pinned base, output referenced by digest", async (t) => {
+	const context = invocation(t);
+
+	const { value } = await runCli(["start", "--foreground", "42"], context);
+
+	const baseline = value.report.preflight.checks.find((check) => check.check === "baseline");
+	assert.equal(baseline.result, "passed");
+	assert.equal(baseline.detail.base_commit.length, 40);
+	assert.deepEqual(
+		baseline.detail.checks.map((check) => [check.name, check.result, check.exit_code]),
+		[["unit", "passed", 0]],
+	);
+	assert.equal(baseline.detail.differential.implemented, false, "v1 never grew a no-new-failures diff (§8.3)");
+
+	// §8.7, §12.1: the record names the output by digest and never carries it.
+	const store = await storeOf(t, context);
+	const [output] = baseline.detail.checks.map((check) => check.output);
+	assert.match(output.digest, /^[0-9a-f]{64}$/);
+	assert.equal(output.media_type, "text/plain");
+	assert.match(readArtifact(store, output).toString("utf8"), new RegExp(baseline.detail.base_commit));
+});
+
+test("a red required check at the base ends the run baseline-red, naming that check, exiting 2", async (t) => {
+	const config = cloneValidConfig();
+	config.checks = [
+		{ name: "unit", command: "exit 0", timeout: 30, severity: "required", expectedFailureExitCodes: [1] },
+		{ name: "lint", command: "exit 1", timeout: 30, severity: "required", expectedFailureExitCodes: [1] },
+	];
+	const context = invocation(t, { config });
+
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
+
+	assert.equal(exitCode, 2);
+	assert.equal(value.report.end_reason, "baseline-red");
+	// §8.3 asks for the specific red check, and "baseline" is not it.
+	assert.deepEqual(value.report.preflight.red, ["lint"]);
+	assert.match(value.message, /lint/);
+
+	const store = await storeOf(t, context);
+	assert.deepEqual(
+		store.readEvents({ stream: runStream(value.report.run) }).find((e) => e.kind === "run.ended").payload,
+		{ end_reason: "baseline-red", red_checks: ["lint"] },
+	);
+});
+
+test("a required check nobody could run is unrunnable — an automation failure, and still no run (§8.2)", async (t) => {
+	const config = cloneValidConfig();
+	config.checks = [
+		{
+			name: "unit",
+			command: "definitely-not-a-command",
+			timeout: 30,
+			severity: "required",
+			expectedFailureExitCodes: [1],
+		},
+	];
+	const context = invocation(t, { config });
+
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
+
+	assert.equal(exitCode, 2);
+	const baseline = value.report.preflight.checks.find((check) => check.check === "baseline");
+	assert.equal(baseline.detail.checks[0].result, "unrunnable");
+	assert.equal(baseline.detail.checks[0].reason, "exec-not-found");
+});
+
+test("an advisory check never gates the baseline, and is not run at the base at all (§8.3)", async (t) => {
+	const config = cloneValidConfig();
+	config.checks.push({
+		name: "e2e",
+		command: "exit 1",
+		timeout: 30,
+		severity: "advisory",
+		expectedFailureExitCodes: [1],
+	});
+	const context = invocation(t, { config });
+
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
+
+	assert.equal(exitCode, EXIT_OK);
+	const baseline = value.report.preflight.checks.find((check) => check.check === "baseline");
+	assert.deepEqual(baseline.detail.skipped, ["e2e"]);
+});
+
+test("a green baseline leaves no worktree behind, and a red one is kept to cd into (§12.7)", async (t) => {
+	const greenReport = (await runCli(["start", "--foreground", "42"], invocation(t))).value;
+
+	const config = cloneValidConfig();
+	config.checks = [{ name: "unit", command: "exit 1", timeout: 30, severity: "required", expectedFailureExitCodes: [1] }];
+	const red = invocation(t, { config });
+	const redReport = (await runCli(["start", "--foreground", "42"], red)).value;
+
+	const worktreeOf = (report) =>
+		report.report.preflight.checks.find((check) => check.check === "baseline").detail.worktree;
+
+	assert.equal(worktreeOf(greenReport).retained, false);
+	assert.equal(existsSync(worktreeOf(greenReport).path), false);
+	assert.equal(worktreeOf(redReport).retained, true);
+	assert.equal(existsSync(worktreeOf(redReport).path), true);
 });
 
 // ── Liveness (§4.8, §5.1) ────────────────────────────────────────────────────

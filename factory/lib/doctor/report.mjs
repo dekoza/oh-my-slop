@@ -3,12 +3,15 @@ import { join } from "node:path";
 
 import { artifactBytesByClass } from "../artifacts/ledger.mjs";
 import { capacityFor } from "../capacity/report.mjs";
+import { baselineForRepo } from "../checks/baseline.mjs";
+import { checkRecord } from "../checks/run.mjs";
 import { describeScope, PARENT_FLAG } from "../controller/scope.mjs";
 import { unresolvedEffects } from "../effects/records.mjs";
 import { FactoryPackageError } from "../package/errors.mjs";
 import { packageHandshake } from "../package/handshake.mjs";
 import { reconcile, RECONCILE_MODES } from "../reconcile/engine.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
+import { resolveStorePaths } from "../state/location.mjs";
 import { FactoryTrackerError } from "../tracker/errors.mjs";
 import { readScope } from "../tracker/frontier.mjs";
 import { isDue, readCursor } from "../tracker/observation.mjs";
@@ -54,6 +57,8 @@ const MONITOR_CONFIG = join(".pi", "factory-monitor.json");
  * @param {object} [context.probes] the §5.3 probe registry
  * @param {object | null} [context.scope] §3.1's selector, when the operator named one
  * @param {object | null} [context.tracker] the §5.1 read client, or null when there is none
+ * @param {boolean} [context.baseline] §10.5's `--baseline`: **execute** the declared
+ *   checks rather than reporting the last recorded result
  * @param {number} [context.at]
  * @returns {Promise<Readonly<object>>} the one structured value both renderings come from
  */
@@ -70,6 +75,7 @@ export async function doctorReport(
 		probes = PROBES,
 		scope = null,
 		tracker = null,
+		baseline = false,
 		at = Date.now(),
 	},
 ) {
@@ -100,7 +106,7 @@ export async function doctorReport(
 			run: store?.readUnendedRuns()[0]?.run_id ?? null,
 			at,
 		}),
-		baseline: baselineSection(),
+		baseline: await baselineSection(store, { repoRoot, agentDir, config, rerun: baseline, at }),
 		counters: countersSection(store, unresolved),
 		package: packageSection(handshake),
 		monitor: monitorSection(repoRoot),
@@ -166,6 +172,17 @@ function alarmsOf(value) {
 				`${value.scope.described} could not be resolved: ${value.scope.error.message}`,
 				value.scope.error,
 			),
+		);
+	}
+
+	// A red baseline **this invocation just observed** is an alarm for the same
+	// reason an unreadable tracker is: no run can start against it (§8.3, §14.14).
+	// A *recorded* red is deliberately not one — the section says outright that it
+	// was not re-run, and raising an alarm on a result that may predate the fix
+	// would teach the operator to ignore the list.
+	if (value.baseline.rerun && value.baseline.ok === false) {
+		alarms.push(
+			alarm("baseline-red", value.baseline.message, value.baseline.detail ?? { red: value.baseline.red }),
 		);
 	}
 
@@ -381,22 +398,149 @@ function pinsSection(unresolved, reconciled) {
 }
 
 /**
- * §10.5: **by default doctor reports the last baseline result**, with its
- * `as-of` and the base commit it ran at, stating plainly that it was **not**
- * re-run. `--baseline` executes it, in a throwaway worktree inside the
- * factory-private clone — and both the record and the execution arrive with the
- * check runner.
+ * §10.5's two modes.
+ *
+ * **By default doctor reports the last baseline result**, with its `as-of` and
+ * the base commit it ran at, **stating plainly that it was not re-run** — a
+ * stale green presented as current is the plausible zero this whole report
+ * refuses everywhere else. **`--baseline` executes** the declared checks, inside
+ * §7.1's factory-private clone in a throwaway worktree, never the operator's
+ * checkout.
+ *
+ * Under both modes doctor **appends nothing and writes no projection** (§14.24).
+ * Running a declared check in a disposable worktree is explicitly not that
+ * mutation, but recording its output as an artifact would be — an artifact write
+ * is an effect and a ledger row. So the re-run answers from the value it hands
+ * back, and that is also why a red check's output appears here as a bounded tail
+ * rather than as §6.6's reference: there is no reference to give, and the bytes
+ * are gone with the process. The whole of a red run's evidence stays on disk in
+ * the retained worktree (§12.7), which is what the section names.
  */
-function baselineSection() {
+async function baselineSection(store, { repoRoot, agentDir, config, rerun, at }) {
+	return rerun
+		? await executedBaseline({ store, repoRoot, agentDir, config, at })
+		: recordedBaseline(store);
+}
+
+/** How much of a red check's output a diagnosis carries: enough to read, not a transcript. */
+const DIAGNOSTIC_TAIL_BYTES = 4000;
+
+/**
+ * The last baseline this repository recorded, read off the journal.
+ *
+ * It is a journal read rather than a projection because a baseline result is a
+ * fact about one moment, not current state, and §4.4's projections are the
+ * monitor's read contract — a table nothing else needs would be a projector
+ * version to keep in step for one line of a diagnosis.
+ *
+ * The scan is bounded by retention rather than by a limit: `preflight.checked`
+ * lives on a `run:<ULID>` stream, and §12.2 deletes those whole at the horizon,
+ * so this reads the preflight stages of the runs still in full detail — not of
+ * every run this repository has ever had.
+ */
+function recordedBaseline(store) {
+	// The last baseline **result**, whatever it said — including the one that went
+	// red because the base could not be pinned, which is a baseline result and not
+	// an absent one. Skipping those would answer "the last baseline" with an older,
+	// greener run, which is the stale green this section exists to refuse.
+	// `unbuilt` is the one record that is not a result: it is what a package
+	// without this subsystem wrote, and it says nothing about the base.
+	const recorded = store === null
+		? null
+		: store
+				.readEvents({ kind: "preflight.checked" })
+				.filter((event) => event.payload.check === "baseline" && event.payload.result !== "unbuilt")
+				.at(-1);
+
+	if (recorded === undefined || recorded === null) {
+		return Object.freeze({
+			recorded: false,
+			rerun: false,
+			as_of: null,
+			base_commit: null,
+			message:
+				"No baseline result is recorded for this repository, and this invocation did not run one — " +
+				"`doctor --baseline` executes the declared checks (§10.5).",
+			spec: "§8.3, §10.5",
+		});
+	}
+
+	// A baseline that never got to run carries no base and no checks, and says so
+	// with nulls rather than with an empty list that reads as "nothing failed".
+	const detail = recorded.payload.detail;
+	return Object.freeze({
+		recorded: true,
+		rerun: false,
+		ok: recorded.payload.result === "passed",
+		as_of: recorded.occurred_at,
+		run: recorded.run,
+		base_branch: detail.base_branch ?? null,
+		base_commit: detail.base_commit ?? null,
+		checks: detail.checks ?? null,
+		worktree: detail.worktree ?? null,
+		message: `${recorded.payload.message} It was **not** re-run: this is what run ${recorded.run} recorded (§10.5).`,
+		spec: "§8.3, §10.5",
+	});
+}
+
+/**
+ * `--baseline`, executed. The clone and the pinned base come from the same check
+ * a run's preflight uses, so `doctor --baseline` and `factory start` cannot
+ * disagree about which commit the base is — and a repository with no state yet
+ * is diagnosed too: the clone is derived, disposable state (§7.1), and creating
+ * it is not the durable state §14.24 is about.
+ */
+async function executedBaseline({ store, repoRoot, agentDir, config, at }) {
+	const answered = await baselineForRepo(
+		{
+			canonicalPath: store?.canonicalPath ?? repoRoot,
+			storeDir: store?.storeDir ?? resolveStorePaths({ repoRoot, agentDir: agentDir.path }).primary.dir,
+		},
+		config,
+		{ at },
+	);
+
+	if (!answered.ran) {
+		return Object.freeze({
+			recorded: false,
+			rerun: true,
+			ok: false,
+			as_of: at,
+			base_commit: answered.detail.base_commit ?? null,
+			red: null,
+			message: answered.message,
+			detail: answered.detail,
+			spec: "§7.1, §8.3, §10.5",
+		});
+	}
+
+	const baseline = answered.baseline;
 	return Object.freeze({
 		recorded: false,
-		as_of: null,
-		base_commit: null,
-		rerun: false,
-		message:
-			"No baseline result is recorded, and this run did not re-run one — `doctor --baseline` is what executes the checks (§10.5).",
-		missing: "the check runner and the baseline gate (#104)",
+		rerun: true,
+		ok: baseline.ok,
+		as_of: at,
+		base_branch: baseline.base_branch,
+		base_commit: baseline.base_commit,
+		// The red names, kept beside the checks: an alarm that has to reconstruct
+		// them from the list would be one more place to get the filter wrong.
+		red: baseline.red,
+		checks: Object.freeze(baseline.results.map(diagnosed)),
+		skipped: baseline.skipped,
+		worktree: baseline.worktree,
+		message: baseline.message,
 		spec: "§8.3, §10.5",
+	});
+}
+
+/** A check as a diagnosis reads it: the record, plus the tail of a red one's output. */
+function diagnosed(result) {
+	const record = checkRecord(result);
+	if (result.result === "passed") return Object.freeze(record);
+
+	return Object.freeze({
+		...record,
+		output_tail: result.output.subarray(-DIAGNOSTIC_TAIL_BYTES).toString("utf8"),
 	});
 }
 

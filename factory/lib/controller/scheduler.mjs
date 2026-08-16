@@ -74,6 +74,21 @@ export async function schedule({
 	const settled = [];
 	const refused = [];
 	const released = [];
+	/**
+	 * The frontier as of the last scheduling decision this loop made. §3.5's drain
+	 * report is a statement about *that* instant, and re-reading the tracker after
+	 * the loop to build it would report a different one.
+	 *
+	 * It is deliberately **not** "the frontier at the moment nothing was
+	 * claimable": the loop also stops with work still on it — a stop or abandon
+	 * request at the `while` head, and capacity exhausted with no lane left to wait
+	 * on. Whether the scope is drained is `drain.mjs`'s to decide from this answer,
+	 * and it decides differently in those cases.
+	 *
+	 * `null` when no decision was ever made, which is the truthful answer for a run
+	 * stopped before it looked — and the one `drain.mjs` refuses to read as drained.
+	 */
+	let frontierAtDecision = null;
 
 	/** Wait for **a** ticket execution to terminate — §9.6's `otherwise`. */
 	async function awaitOne() {
@@ -106,6 +121,7 @@ export async function schedule({
 		// decision, and direct-ticket sets are pinned by definition but their
 		// states are still read live.
 		const view = await frontier();
+		frontierAtDecision = view;
 		const candidate = nextClaimable(view, {
 			running: lanes.keys(),
 			// §2.1: a run has **one** ticket execution per ticket, so a ticket this
@@ -168,12 +184,21 @@ export async function schedule({
 	const lanesRun = [...settled, ...released].sort((left, right) => left.ticket - right.ticket);
 
 	return Object.freeze({
-		claimed: settled.length + released.length,
+		/**
+		 * Lanes this loop **ran** — not tickets claimed. The distinction is not
+		 * pedantry: whether a ticket was claimed is decided inside `execute`, where
+		 * §3.3 can find a human's assignee or a lower claim-comment id and decline,
+		 * and a loop that counted those as claims would report work it did not do
+		 * (§9.7). §3.5's report derives the claim count from what the lanes answered.
+		 */
+		lanes_run: settled.length + released.length,
 		lanes: Object.freeze(lanesRun),
 		refused: Object.freeze(refused),
 		released: released.length,
 		/** Slots a previous controller left held; §9.4 settles them by probe. */
 		blocked: capacity.blocked(),
+		/** §3.5's drain report is built from this, not from a fresh read. */
+		frontier: frontierAtDecision,
 	});
 }
 

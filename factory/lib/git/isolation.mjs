@@ -21,6 +21,18 @@ const CLONE_SEGMENT = "clone.git";
 const WORKTREES_SEGMENT = "worktrees";
 
 /**
+ * §8.3's baseline and `doctor --baseline` run in a **throwaway** worktree, and
+ * it hangs off its own root rather than sharing the attempt worktrees'.
+ *
+ * The two have opposite lifetimes and §12.8 lists them as two of its six target
+ * kinds: a failed attempt's worktree is **the only copy of that work** and is
+ * pinned (§12.7), while a baseline worktree holds a checkout of an
+ * already-published commit and whatever the suite left beside it. Telling them
+ * apart by path is what keeps a cleanup plan from having to ask which is which.
+ */
+const BASELINES_SEGMENT = "baselines";
+
+/**
  * §7.3: the `factory/` branch namespace and `refs/factory/*` belong to the
  * factory alone; it never writes any ref outside them (§14.11).
  */
@@ -37,6 +49,11 @@ export function worktreesRoot(storeDir) {
 	return join(storeDir, WORKTREES_SEGMENT);
 }
 
+/** The directory every throwaway baseline worktree hangs under (§10.5, §12.7). */
+export function baselinesRoot(storeDir) {
+	return join(storeDir, BASELINES_SEGMENT);
+}
+
 /**
  * One attempt's worktree path, contained twice over (§2.1): the attempt id is
  * charset-validated, **and** the joined path is canonicalized and asserted to
@@ -48,16 +65,38 @@ export function worktreesRoot(storeDir) {
  * @throws {FactoryGitError} `identity-charset` · `identity-path-escape`
  */
 export function attemptWorktreePath(storeDir, attempt) {
-	requireIdentitySegment(attempt, "attempt");
+	return containedPath(worktreesRoot(storeDir), attempt, "attempt");
+}
 
-	const root = worktreesRoot(storeDir);
-	const path = join(root, attempt);
+/**
+ * One baseline run's throwaway worktree path, contained exactly as an attempt's
+ * is — the containment is a property of every derived path, not a courtesy this
+ * one is granted because a baseline id happens to be minted here.
+ *
+ * @param {string} storeDir the repository's store directory
+ * @param {string} baseline the baseline run's id
+ * @returns {string}
+ * @throws {FactoryGitError} `identity-charset` · `identity-path-escape`
+ */
+export function baselineWorktreePath(storeDir, baseline) {
+	return containedPath(baselinesRoot(storeDir), baseline, "baseline");
+}
+
+/**
+ * §2.1's containment, twice over: the identity segment is charset-validated,
+ * **and** the joined path is canonicalized and asserted to sit under its root —
+ * both, not either.
+ */
+function containedPath(root, segment, field) {
+	requireIdentitySegment(segment, field);
+
+	const path = join(root, segment);
 	const canonical = canonicalize(path);
 	if (!canonical.startsWith(canonicalize(root) + "/")) {
 		throw new FactoryGitError(
 			"identity-path-escape",
-			`Attempt ${attempt} derives a worktree outside ${root} (§2.1); refusing ${canonical}.`,
-			{ at: "attempt", found: canonical, expected: root },
+			`${field} ${segment} derives a worktree outside ${root} (§2.1); refusing ${canonical}.`,
+			{ at: field, found: canonical, expected: root },
 		);
 	}
 	return path;

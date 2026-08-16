@@ -112,7 +112,8 @@ export function edgeSatisfied(blocker) {
  * member per decision would be exactly the cost that clause exists to prevent.
  * A caller already maintaining the graph from the observation poll passes it
  * here; a caller with nothing to pass — an operator typing `doctor #42` once —
- * omits it and the edges are read.
+ * omits it, and then only the members an edge could actually reclassify are
+ * asked.
  *
  * @param {object} reader a `createGiteaReader` client
  * @param {object} scope §3.1's selector, from `controller/scope.mjs`
@@ -137,10 +138,22 @@ export async function readScope(reader, scope, { at = Date.now(), edges = null }
 	const members = await resolveMembers(reader, scope);
 	const inScope = new Set(members.map((member) => member.number));
 
+	// **Only the members whose class an edge could change.** `decide` below reaches
+	// for blockers exactly once — after the state and label checks have all passed —
+	// so a closed, failed, paused, awaiting-merge, human-owned or ineligible member
+	// is classified without them, and reading its edges buys nothing.
+	//
+	// This is the honest half of §5.1's "only on an `add_dependency`" that a caller
+	// with no observation poll can keep. It cannot know *when* the graph changed,
+	// so it re-reads rather than caching a graph that would silently freeze; what
+	// it can do is not ask about tickets whose answer it will not use. On a scope
+	// that is mostly settled — which is what a scope looks like by the time it
+	// drains — that is most of the reads.
+	const needEdges = edges === null ? members.filter((member) => isEligible(member)) : [];
 	const blockers =
 		edges ??
 		new Map(
-			await readEach(members, async (member) => [member.number, await reader.dependencies(member.number)]),
+			await readEach(needEdges, async (member) => [member.number, await reader.dependencies(member.number)]),
 		);
 
 	const classified = awaitingExternal(

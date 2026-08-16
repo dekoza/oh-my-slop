@@ -2,7 +2,7 @@ import { FOREGROUND_FLAG } from "../controller/launch.mjs";
 import { PARENT_FLAG } from "../controller/scope.mjs";
 import { NEW_RUN_FLAG, runStart } from "../controller/start.mjs";
 import { runStop } from "../controller/stop.mjs";
-import { runDoctor } from "../doctor/verb.mjs";
+import { BASELINE_FLAG, runDoctor } from "../doctor/verb.mjs";
 import { runReconcile } from "../reconcile/verb.mjs";
 import { runStatus } from "../status/verb.mjs";
 
@@ -52,15 +52,12 @@ export const VERB_TABLE = Object.freeze({
 		requiresConfig: true,
 		handler: runDoctor,
 		summary: "diagnose the factory without mutating it, and classify a scope's members",
-		// §10.5's `--baseline` executes the declared checks in a throwaway
-		// worktree. It is accepted here and refused with the ticket that owes it,
-		// because an operator reading §10.5 will type it — and "unknown flag"
-		// would be a worse answer than "that subsystem has not landed".
+		// §10.5's `--baseline` executes the declared required set in a throwaway
+		// worktree inside the factory-private clone. Without it, `doctor` reports
+		// the last recorded result and re-runs nothing — the expensive mode is
+		// asked for, never inferred from how stale the record looks.
 		flags: {
-			"--baseline": {
-				missing: "the check runner and the throwaway-worktree baseline (#104)",
-				spec: "§8.3, §10.5",
-			},
+			[BASELINE_FLAG]: { spec: "§8.3, §10.5" },
 			// The same discriminator `start` uses, for the same reason: `<ticket>`
 			// and `<parent>` are both issue numbers, and one flag tells them apart.
 			// `doctor` reads what `start` would claim, so the two must be asked the

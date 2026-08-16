@@ -306,3 +306,38 @@ test("a caller maintaining the graph passes it in rather than paying for it agai
 	assert.equal(gitea.pathsFor("issue.dependencies").length, reads, "no dependency read was made");
 	assert.deepEqual(supplied.claimable, withReads.claimable);
 });
+
+test("a caller with no graph pays only for the members an edge could reclassify", async () => {
+	// `decide` reaches for blockers exactly once, after every state and label check
+	// has passed — so a closed, failed, paused, awaiting-merge or human-owned
+	// member is classified without them, and asking is buying an answer nothing
+	// reads. On a scope that is mostly settled, which is what a scope looks like by
+	// the time it drains, that is most of the reads.
+	const { gitea, reader } = world({
+		issues: [
+			giteaIssue({ number: 10, state: "closed" }),
+			giteaIssue({ number: 11, labels: ["workflow:implement", FACTORY_LABELS.needsHuman] }),
+			giteaIssue({ number: 12, labels: ["workflow:implement", FACTORY_LABELS.readyForHuman] }),
+			giteaIssue({ number: 13, labels: ["workflow:implement"] }),
+			giteaIssue({ number: 14 }),
+		],
+		dependencies: { 14: [10] },
+	});
+
+	const resolved = await readScope(reader, parseScope(["10", "11", "12", "13", "14"]));
+
+	assert.deepEqual(gitea.pathsFor("issue.dependencies"), [
+		"/repos/acme/widgets/issues/14/dependencies?page=1&limit=50",
+	]);
+	// And the classification is unchanged by not having asked.
+	assert.deepEqual(
+		resolved.members.map((member) => [member.ticket, member.class]),
+		[
+			[10, MEMBER_CLASSES.closed],
+			[11, MEMBER_CLASSES.needsHuman],
+			[12, MEMBER_CLASSES.humanOwned],
+			[13, MEMBER_CLASSES.ineligible],
+			[14, MEMBER_CLASSES.claimable],
+		],
+	);
+});

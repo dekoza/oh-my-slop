@@ -312,16 +312,81 @@ is the authority; cite the section a change answers to.
   hide. The run manifest and the package handshake are **effects keyed by the run**, so a
   re-entry whose declared inputs changed is a typed conflict — §3.1's immutable membership and
   §11.7's single pin arriving as a refusal rather than as a rule anyone follows.
+- The **checks are declared, never discovered** (`factory/lib/checks/`). `run.mjs` executes
+  the validated `checks` block and nothing else — no manifest, no Makefile, and `AGENTS.md`
+  prose is never parsed at runtime (§14.34) — and its selector is the closed pair
+  `required | all`, so **per-surface targeting is not a question the API can be asked**.
+  Classification is §8.2's fault attribution and lives in one function: a required check
+  exiting **inside its declared expected-failure codes** is the worker's failure, and a
+  timeout, a signal, an exec that is not there, or any other code is `unrunnable` — an
+  automation failure. A timed-out check is killed as a **process group**, because a suite
+  that survives the check that gave up on it holds the port the next one needs. §14.23's
+  "two lanes never run mechanical checks concurrently" is one in-process chain, not a lease:
+  §11.6 declares no parallel-safety, and `checks[].parallelSafe` is the recorded v2 upgrade.
+  **Running a check is not an effect** — there is nothing for a probe to ask the world — but
+  recording its output is, so `artifacts.mjs` is what writes, keyed by the *execution* and
+  not by the check alone: a re-entered run preflights again, and two executions' bytes under
+  one key would make an ordinary re-entry a §4.5 conflict. `baseline.mjs` is §8.3's gate in a
+  **detached throwaway worktree** under `baselines/` — deleted eagerly when green, retained
+  when red (§12.7) — and it writes nothing durable, which is exactly what lets
+  `doctor --baseline` share it verbatim under §14.24 — both verbs reach it through the one
+  `baselineForRepo`, so they cannot answer differently about what the base is or what the
+  checks said, and a caller that already pinned a base passes it rather than fetching a
+  second one. Differential no-new-failures verification is **deliberately absent**; §8.3
+  records it as the v2 answer, and the comment saying so is load-bearing.
 - **The tracker is read through `tea`, and holds no credential of its own.**
   `.pi/factory.json` carries `tracker.repo`, `tracker.remote`, and `tracker.login` — no
   base URL and no token, which is not an omission: §6.8 states that `tea` credentials are
   ambient on this host and §11.2 forbids env overrides, so `tracker.login` names a `tea`
   login and `tea` resolves the instance and the secret. It is also why §6.8's deny floor
   lists `Bash(tea *)` — the scheduler's credentials are exactly what a worker must not
-  reach. `factory/lib/tracker/gitea.mjs` is the only module that shells out to it, every
-  entry point is a `GET`, and **status comes from `--include` rather than the exit code**:
-  `tea api` exits `0` on a 404 and prints the error body, so a client trusting the exit
-  code would parse `{"message":"not found"}` as an answer.
+  reach. `factory/lib/tracker/gitea.mjs` and `writer.mjs` are the only modules that shell
+  out to it — the reader hardcodes `--method GET` and takes no method argument, so a write
+  is not something it can be *told* to do — and **status comes from `--include` rather than
+  the exit code**: `tea api` exits `0` on a 404 and prints the error body, so a client
+  trusting the exit code would parse `{"message":"not found"}` as an answer. The writer's
+  surface is §4.5's three tracker mutations and no fourth, each keyed by the effect kind
+  that names it; it performs them and records nothing, because §4.5 has exactly one place
+  effects are written and `claims.mjs` is the caller that owns the pair.
+- **A claim is an assignee plus a structured comment plus a re-read** (`tracker/claims.mjs`,
+  §3.3), and the slots are already held when it runs (§14.21) — claiming work that cannot
+  start puts a falsehood on the tracker for humans and other tooling to read. Whose claim an
+  existing assignee is, is answered from **durable state and never from a comment**: an
+  assignee the factory did not set is an absolute human claim with no clock consulted at all;
+  a live same-factory claim is never contested; a proven-dead one is taken over with the
+  takeover comment posted first and **no waiting period**, because nothing a clock could add
+  to a fact already proven; and only a claim this store cannot account for waits §3.3's 24h
+  without ticket trace — and a claim this factory made **and released** is not proof of the
+  claim standing now, so the last thing the store recorded about each run's hold is what
+  decides. Comment **ids** arbitrate simultaneous claims, never comment text (§5.2) — and only
+  between factories, since within one the durable state already decided, so every comment this
+  store's effect rows account for is excluded or a taking-over run would lose to the run it
+  just buried. The contest window opens at the pre-claim read, or a concluded claim's lower id
+  would make its ticket permanently unclaimable; **every timestamp in it is the tracker's**,
+  and a tracker that will not state its clock refuses the claim rather than substituting ours.
+  The loser of a contest **writes nothing** — id arbitration is only reachable between installs
+  sharing one tracker identity, so "un-assign myself" would clear the winner's assignee and
+  §3.3's *a live claim is never contested* outranks its *the loser un-assigns itself* where the
+  two collide. The claim's effects carry **no attempt**: §9.4 mints one before the claim but
+  none has *launched*, and the claim belongs to the ticket execution.
+- §3.5's drain is `factory/lib/controller/drain.mjs`, and it owns **both** clauses: nothing
+  claimable now, and nothing that can become claimable without external change — the second
+  read off `awaits_external`, which `frontier.mjs` computes per member. The report's classes
+  are §3.5's six exactly. Mapping the frontier's nine onto them is not a rename:
+  `awaiting-merge-dependency` and `blocked-external` name a *dependency* rather than a ticket
+  state, which is why a member blocked by an in-scope blocker takes its blocker's class and
+  carries `blocked_by` — at drain every open in-scope blocker is itself settled, so the
+  inherited class is the reason a human has to act. Cycles are reported, not walked.
+  §7.6's unmergeable flag is a field nothing reads back, which is the whole of "no automation
+  acts on it in v1". **A scope nobody read is `drained: null`, never `true`** — the plausible
+  zero a red preflight or an abandon already pending would otherwise produce. **A lane that ran
+  is not a ticket claimed**, so the loop counts `lanes_run` and the report derives `claimed`
+  from what the lanes answered; §3.3 has four ways to decline, each writing nothing.
+  **The frontier and the claim are wired together or not at all**: a run with no pipeline above
+  the claim reads no frontier, and the report names that half rather than reporting a scope
+  that drained. `readScope` with no supplied graph reads edges only for members an edge could
+  reclassify — `decide` consults blockers exactly once, after every state and label check has
+  passed, so a settled member's edges buy an answer nothing reads.
 - §5.2's authority table is **code** (`factory/lib/tracker/authority.mjs`), and every
   observation passes `requireAuthority` before it is written — a global source ranking
   always ends up asserting something the winning source does not know. **Comment text is

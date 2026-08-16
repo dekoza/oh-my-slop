@@ -1,5 +1,14 @@
 import { FactoryConfigError } from "./errors.mjs";
-import { requireArray, requireDeclared, requireInteger, requireNoUnknownKeys, requireNonEmptyString, requireObject, requireOneOf } from "./shape.mjs";
+import {
+	IDENTIFIER_PATTERN,
+	requireArray,
+	requireDeclared,
+	requireInteger,
+	requireNoUnknownKeys,
+	requireNonEmptyString,
+	requireObject,
+	requireOneOf,
+} from "./shape.mjs";
 
 /**
  * The mechanical checks (§8.2, §11.6). An ordered list of named commands the
@@ -66,14 +75,38 @@ function validateCheck(check, at, configPath) {
 	}
 
 	return Object.freeze({
-		name: requireNonEmptyString(check.name, `${at}.name`, configPath),
+		name: requireCheckName(check.name, `${at}.name`, configPath),
 		command: requireNonEmptyString(check.command, `${at}.command`, configPath),
+		// **Seconds.** A check's timeout is read by a human beside a test suite's
+		// runtime, and a positive integer is the floor: zero would make the runner
+		// give up before the process started.
 		timeout: requireInteger(check.timeout, `${at}.timeout`, configPath, {
-			because: "A check without a mandatory timeout is a run that can hang forever.",
+			because: "A check without a mandatory timeout is a run that can hang forever. It is a whole number of seconds.",
 		}),
 		severity: requireOneOf(check.severity, CHECK_SEVERITIES, `${at}.severity`, configPath),
 		expectedFailureExitCodes: Object.freeze([...check.expectedFailureExitCodes]),
 	});
+}
+
+/**
+ * A check's name is an identifier, held to the same shape profiles and routing
+ * sets are — one identifier rule for the file.
+ *
+ * It is not cosmetic here: the name reaches an **effect key** and an artifact's
+ * discriminator when the runner records that check's output (§4.5, §8.7), and it
+ * is what an attestation and every `--json` consumer identify the check by. A
+ * name the key grammar cannot carry would be a load-time typo discovered
+ * mid-run, on the expensive check nobody thought about.
+ */
+function requireCheckName(name, path, configPath) {
+	if (typeof name === "string" && IDENTIFIER_PATTERN.test(name)) return name;
+
+	throw new FactoryConfigError(
+		"invalid-value",
+		`${configPath}: ${path} must match ${IDENTIFIER_PATTERN}; found ${JSON.stringify(name ?? null)}. ` +
+			"A check's name identifies it in every attestation and in the effect key of its recorded output.",
+		{ file: configPath, at: path, found: name ?? null, expected: String(IDENTIFIER_PATTERN) },
+	);
 }
 
 /**
