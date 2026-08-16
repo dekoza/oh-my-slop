@@ -1,3 +1,4 @@
+import { FactoryConfigError } from "../config/errors.mjs";
 import { BUDGET_KINDS } from "../domain/vocabulary.mjs";
 import { EVENT_KINDS, runStream } from "../state/events.mjs";
 
@@ -21,22 +22,6 @@ import { EVENT_KINDS, runStream } from "../state/events.mjs";
  */
 
 /**
- * §8.6's N.
- *
- * **A code constant rather than a knob**, and deliberately: §11.3's block
- * inventory and §11.6's list of defaults are both closed, both locked, and
- * neither names a breaker key — while §14.33 makes an undeclared key a load
- * failure. Widening the config surface is not this slice's to do. It is also the
- * reversible direction: promoting this to a declared number later breaks no
- * config on disk, while retiring a knob breaks every file that set it.
- *
- * It lives here, once, for the same reason the ticket-concurrency ceiling lives
- * in `config/concurrency.mjs` and nowhere else: a policy with two homes has
- * already started to drift.
- */
-export const CIRCUIT_BREAKER_THRESHOLD = 2;
-
-/**
  * Whether this run has reached §8.6's threshold, and the longest run of
  * automation failures it got to.
  *
@@ -50,17 +35,36 @@ export const CIRCUIT_BREAKER_THRESHOLD = 2;
  * this one function, so they cannot come to different conclusions about why the
  * run ended.
  *
+ * **N is `budgets.circuitBreaker`, and it is required here with no default.**
+ * The value has one home, §11.6's block, and a fallback in this module would be
+ * a second — one that answers whenever a caller forgets to thread the config
+ * through, which is exactly the call site where the operator's declared
+ * tolerance has gone missing and the last thing that should happen quietly.
+ *
  * @param {object} store an open store, controller or read-only
  * @param {object} where
  * @param {string} where.run
- * @param {number} [where.threshold] §8.6's N
+ * @param {number} where.threshold §8.6's N, from `config.budgets.circuitBreaker`
  * @returns {Readonly<{ tripped: boolean, consecutive: number, threshold: number,
  *   ticket: number | null, unclassifiable: number }>} `consecutive` is the
  *   longest streak reached, `ticket` the execution whose commit completed it —
  *   the one an operator opens first — and `unclassifiable` the terminal commits
  *   written before the fault was recorded, which this cannot read
+ * @throws {FactoryConfigError} `invalid-value` — a threshold that is not a
+ *   positive integer
  */
-export function circuitBreaker(store, { run, threshold = CIRCUIT_BREAKER_THRESHOLD }) {
+export function circuitBreaker(store, { run, threshold }) {
+	if (!Number.isInteger(threshold) || threshold < 1) {
+		throw new FactoryConfigError(
+			"invalid-value",
+			`§8.6's circuit breaker trips on N consecutive automation failures, and this caller passed ` +
+				`${JSON.stringify(threshold ?? null)} for N. It is \`budgets.circuitBreaker\` (§11.6), which the loader ` +
+				"validates — so a bad value here means the config never reached this call rather than that the operator " +
+				"declared one.",
+			{ at: "budgets.circuitBreaker", found: threshold ?? null },
+		);
+	}
+
 	let streak = 0;
 	let longest = 0;
 	let ticket = null;

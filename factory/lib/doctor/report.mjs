@@ -5,7 +5,7 @@ import { artifactBytesByClass } from "../artifacts/ledger.mjs";
 import { capacityFor } from "../capacity/report.mjs";
 import { baselineForRepo } from "../checks/baseline.mjs";
 import { checkRecord } from "../checks/run.mjs";
-import { CIRCUIT_BREAKER_THRESHOLD, circuitBreaker } from "../controller/breaker.mjs";
+import { circuitBreaker } from "../controller/breaker.mjs";
 import { describeScope, PARENT_FLAG } from "../controller/scope.mjs";
 import { unresolvedEffects } from "../effects/records.mjs";
 import { FactoryPackageError } from "../package/errors.mjs";
@@ -109,7 +109,7 @@ export async function doctorReport(
 			at,
 		}),
 		baseline: await baselineSection(store, { repoRoot, agentDir, config, rerun: baseline, at }),
-		counters: countersSection(store, unresolved),
+		counters: countersSection(store, unresolved, config),
 		package: packageSection(handshake),
 		monitor: monitorSection(repoRoot),
 		legacy: legacySection(repoRoot, agentDir.path),
@@ -565,11 +565,15 @@ function diagnosed(result) {
  * The scope is the runs doctor is already talking about: those still open, plus
  * any run holding an unresolved effect.
  */
-function countersSection(store, unresolved) {
+function countersSection(store, unresolved, config) {
+	const threshold = config.budgets.circuitBreaker;
 	if (store === null) {
+		// The threshold is still reported: it comes from the config rather than the
+		// journal, so a repository with no store yet can still tell the operator
+		// what tolerance a run there would have.
 		return Object.freeze({
 			tickets: Object.freeze([]),
-			circuit_breaker: null,
+			circuit_breaker: Object.freeze({ threshold, runs: Object.freeze([]) }),
 			missing: null,
 			spec: "§8.5, §8.6",
 		});
@@ -606,10 +610,10 @@ function countersSection(store, unresolved) {
 			// one policy for every run, and repeating it per row would invite a
 			// reader to wonder which row's copy was authoritative — as well as being
 			// the answer when there are no rows at all.
-			threshold: CIRCUIT_BREAKER_THRESHOLD,
+			threshold,
 			runs: Object.freeze(
 				[...runs].map((run) => {
-					const { tripped, consecutive, ticket, unclassifiable } = circuitBreaker(store, { run });
+					const { tripped, consecutive, ticket, unclassifiable } = circuitBreaker(store, { run, threshold });
 					return Object.freeze({ run, tripped, consecutive, ticket, unclassifiable });
 				}),
 			),

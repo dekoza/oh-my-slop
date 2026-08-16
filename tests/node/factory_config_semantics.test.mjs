@@ -126,18 +126,56 @@ test("an empty checks list refuses — a run with no declared checks verifies no
 
 // ── Budgets: 1/1/1, ceiling 2 + 2 (§8.6, §11.6) ──────────────────────────────
 
-test("an omitted budgets block loads as 1 repair, 1 fresh-retry, 1 automation", (t) => {
+test("an omitted budgets block loads as 1 repair, 1 fresh-retry, 1 automation, breaker at 2", (t) => {
 	const config = clone();
 	delete config.budgets;
 
-	assert.deepEqual(loaded(t, config).config.budgets, { repair: 1, freshRetry: 1, automation: 1 });
+	assert.deepEqual(loaded(t, config).config.budgets, {
+		repair: 1,
+		freshRetry: 1,
+		automation: 1,
+		circuitBreaker: 2,
+	});
 });
 
-test("a budget declared alone leaves the other two at their upstream-fixed default", (t) => {
+test("a budget declared alone leaves the others at their upstream-fixed default", (t) => {
 	const config = clone();
 	config.budgets = { automation: 2 };
 
-	assert.deepEqual(loaded(t, config).config.budgets, { repair: 1, freshRetry: 1, automation: 2 });
+	assert.deepEqual(loaded(t, config).config.budgets, {
+		repair: 1,
+		freshRetry: 1,
+		automation: 2,
+		circuitBreaker: 2,
+	});
+});
+
+test("§8.6's N is declared: the breaker's threshold is the operator's to set", (t) => {
+	const config = clone();
+	config.budgets.circuitBreaker = 5;
+
+	assert.equal(loaded(t, config).config.budgets.circuitBreaker, 5);
+});
+
+test("a breaker threshold of zero refuses — a breaker that trips on nothing is not a breaker", (t) => {
+	const config = clone();
+	config.budgets.circuitBreaker = 0;
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "invalid-value");
+	assert.equal(error.details.at, "budgets.circuitBreaker");
+});
+
+test("the breaker threshold is not capped at the retry ceiling — it counts tickets, not retries", (t) => {
+	// §8.6's "2 + 2" bounds the retries a *ticket* may spend. N is a count of
+	// ticket executions, so the ceiling that keeps a repair chain finite has
+	// nothing to say about it, and borrowing it would cap a run's tolerance at
+	// the same number for a reason that does not apply.
+	const config = clone();
+	config.budgets.circuitBreaker = 3;
+
+	assert.equal(loaded(t, config).config.budgets.circuitBreaker, 3);
 });
 
 test("a budget above the hard ceiling of 2 + 2 refuses and names the ceiling", (t) => {

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { CIRCUIT_BREAKER_THRESHOLD, circuitBreaker } from "../../factory/lib/controller/breaker.mjs";
+import { circuitBreaker as breakerVerdict } from "../../factory/lib/controller/breaker.mjs";
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import {
@@ -70,8 +70,23 @@ const AUTOMATION = Object.freeze({ reasonClass: "automation-budget-exhausted", f
 /** §8.6's counter-example: the product budget ran out, which is a verdict about the work. */
 const PRODUCT = Object.freeze({ reasonClass: "repair-budget-exhausted", fault: "repair" });
 
-test("the default threshold is §8.6's two", () => {
-	assert.equal(CIRCUIT_BREAKER_THRESHOLD, 2);
+/**
+ * §11.6's `budgets.circuitBreaker` at the default the loader supplies, so a test
+ * about *which failures count* does not have to restate the threshold. The tests
+ * that are about N declare it.
+ *
+ * The module itself takes no default — the value has one home, §11.6's block —
+ * which is why this stands in for the config rather than for a fallback.
+ */
+const circuitBreaker = (store, { run, threshold = 2 }) => breakerVerdict(store, { run, threshold });
+
+test("N has no default here: a threshold that never came from the config refuses", async (t) => {
+	const { store, run } = await running(t);
+
+	assert.throws(
+		() => breakerVerdict(store, { run }),
+		(error) => error.reason === "invalid-value" && error.details.at === "budgets.circuitBreaker",
+	);
 });
 
 test("a run that has settled nothing has not tripped the breaker", async (t) => {
