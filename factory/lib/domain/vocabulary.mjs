@@ -84,6 +84,20 @@ export const CONTROLLER_EXIT_LEASE_LOST = "lease-lost";
 /** §8.8. */
 export const TICKET_DISPOSITIONS = Object.freeze(["published", "paused", "failed", "released"]);
 
+/**
+ * §8.8's `verify` phase results, which are also what one mechanical check
+ * answers (§8.2) — the phase result is the set's, and it is the strongest of
+ * the checks' own.
+ *
+ * The split between the last two is §8.2's **fault attribution**, and it is the
+ * whole reason this is three words rather than a boolean: a required check
+ * exiting **inside its declared expected-failure codes** is the worker's failure
+ * and routes to repair, while a timeout, a signal, or an exec that is not there
+ * is `unrunnable` — an automation failure, never a worker failure. Both legacy
+ * systems conflated them, and blamed a worker for a broken host.
+ */
+export const CHECK_RESULTS = Object.freeze({ passed: "passed", failed: "failed", unrunnable: "unrunnable" });
+
 /** §8.8 — worker-writable first, then controller-derived. */
 export const ATTEMPT_OUTCOMES = Object.freeze([
 	"completed",

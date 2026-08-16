@@ -1,4 +1,7 @@
+import { runBaseline } from "../checks/baseline.mjs";
+import { recordCheckOutputs } from "../checks/artifacts.mjs";
 import { FactoryEffectError } from "../effects/errors.mjs";
+import { FactoryGitError } from "../git/errors.mjs";
 import { gitIsolationCheck } from "../git/preflight.mjs";
 import { FactoryPackageError } from "../package/errors.mjs";
 import { assertPackageIntact, packageHandshake, recordPackageHandshake } from "../package/handshake.mjs";
@@ -110,7 +113,7 @@ export async function preflight(
 
 	// §7.1's clone, §7.2's fetchable base, §7.8's plain-repo refusal — the
 	// factory-private clone is created here if the run is the repo's first.
-	record(await gitIsolationCheck(store, config));
+	const isolation = record(await gitIsolationCheck(store, config));
 
 	record(
 		unbuilt("runtime-probe", PREFLIGHT_CLASSES.probe, {
@@ -120,20 +123,17 @@ export async function preflight(
 	);
 
 	// ── The expensive one, last (§9.7) ───────────────────────────────────────
-	record(
-		unbuilt("baseline", PREFLIGHT_CLASSES.static, {
-			missing: "the check runner and the baseline gate (#104)",
-			spec: "§8.3",
-		}),
-	);
+	record(await baselineCheck(store, { run, isolation, config, hold, actor, at }));
 
 	const red = checks.filter((check) => check.result === PREFLIGHT_RESULTS.failed);
 
 	return Object.freeze({
 		ok: red.length === 0,
 		// Named rather than counted: §10.3 asks `baseline-red` to name the
-		// specific red check, and a count cannot.
-		red: Object.freeze(red.map((check) => check.check)),
+		// specific red check, and a count cannot. A check that is red *for* named
+		// things says which — §8.3 wants the baseline's red **declared** check,
+		// not the word "baseline" — and every other check names itself.
+		red: Object.freeze(red.flatMap((check) => check.red ?? [check.check])),
 		checks: Object.freeze(checks.map(reported)),
 		manifest: manifest.reference ?? null,
 	});
@@ -241,6 +241,81 @@ function repinned(error, { check, what, spec }) {
 			`(${spec}). Start a fresh run with \`--new-run\` rather than re-entering this one: ${error.message}`,
 		detail: { reason: error.reason, ...error.details },
 	});
+}
+
+/**
+ * §8.3's gate: **the required set, at the pinned base, before the first claim.**
+ *
+ * It is last because it is the expensive one (§9.7) and it runs **only** when
+ * the base was pinned: a baseline with nothing to check out is reported red
+ * rather than skipped, because §14.14 is a *never* — a run must not start on a
+ * baseline nobody ran, and "the git check already went red" is a reason to
+ * explain it, not a reason to call this one green.
+ *
+ * The output of every check is written to the artifact store here and referenced
+ * by digest (§8.7, §12.1); what reaches the journal is the record, never the
+ * bytes.
+ */
+async function baselineCheck(store, { run, isolation, config, hold, actor, at }) {
+	if (isolation.clone === undefined) {
+		return failed("baseline", PREFLIGHT_CLASSES.probe, {
+			message:
+				"The required set was not run: the base commit could not be pinned, so there is nothing to run it at. " +
+				"A run never starts on a baseline nobody ran (§8.3, §14.14).",
+			detail: { reason: "base-unavailable", because: isolation.check },
+		});
+	}
+
+	let baseline;
+	try {
+		baseline = await runBaseline(isolation.clone, {
+			storeDir: store.storeDir,
+			checks: config.checks,
+			baseCommit: isolation.base.commit,
+			baseBranch: config.git.baseBranch,
+			at,
+		});
+	} catch (error) {
+		// A worktree the clone refuses to create is an automation failure, and a
+		// red check is how preflight reports one: the run ends `baseline-red`
+		// naming this, rather than the controller dying with a stack trace.
+		if (!(error instanceof FactoryGitError)) throw error;
+		return failed("baseline", PREFLIGHT_CLASSES.probe, {
+			message: `The baseline could not be set up: ${error.message}`,
+			detail: { reason: error.reason, ...error.details },
+		});
+	}
+
+	const checks = recordCheckOutputs(store, baseline.results, {
+		execution: baseline.baseline,
+		run,
+		phase: "preflight",
+		actor,
+		// The hold's gate rather than its generation, for the reason the handshake
+		// gives above: §14.6's "stop issuing effects" is a latch on the hold.
+		fencingGeneration: hold.fence().generation,
+		at,
+	});
+
+	const detail = {
+		baseline: baseline.baseline,
+		base_branch: baseline.base_branch,
+		base_commit: baseline.base_commit,
+		checks,
+		skipped: baseline.skipped,
+		worktree: baseline.worktree,
+		// §8.3's v2 upgrade, stated where an operator meets its absence rather than
+		// only in the module that does not implement it.
+		differential: {
+			implemented: false,
+			why: "Per-test identity would have to be parsed out of three unrelated runners, and a wrong diff silently passes a real regression (§8.3).",
+			spec: "§8.3",
+		},
+	};
+
+	return baseline.ok
+		? passed("baseline", PREFLIGHT_CLASSES.probe, { message: baseline.message, detail })
+		: { ...failed("baseline", PREFLIGHT_CLASSES.probe, { message: baseline.message, detail }), red: baseline.red };
 }
 
 /** §10.3's named check: the factory checks the multiplexer, it does not manage it. */

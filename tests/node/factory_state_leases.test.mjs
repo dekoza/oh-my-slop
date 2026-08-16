@@ -340,6 +340,14 @@ test("no lease leaves the database without its token compared, and no source tes
 		for (const statement of source.match(/DELETE FROM lease[^"'`]*/g) ?? []) {
 			assert.match(statement, /holder_token = \?/, `${path} deletes a lease without comparing the token`);
 		}
-		assert.doesNotMatch(source, /process\.kill\(/, `${path} tests a pid; §4.6's identity blob is advisory`);
+		// Signalling a pid is banned as a **liveness test** — §4.6's identity blob
+		// is advisory, and both legacy systems decided ownership from a pid they
+		// found in a file — not as the way a process stops a child it started
+		// itself. What tells the two apart is what is being signalled: a pid read
+		// out of a record, or the `child.pid` a spawn in the same scope returned.
+		for (const call of source.match(/process\.kill\([^)]*\)/g) ?? []) {
+			assert.doesNotMatch(call, /,\s*0\s*\)/, `${path} tests a pid for liveness; §4.6's identity blob is advisory`);
+			assert.match(call, /-?child\.pid/, `${path} signals a process it did not spawn`);
+		}
 	}
 });

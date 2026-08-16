@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { runCli } from "../../factory/lib/cli/main.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { doctorReport } from "../../factory/lib/doctor/report.mjs";
 import { requestEffect } from "../../factory/lib/effects/records.mjs";
@@ -10,11 +11,12 @@ import { newUlid } from "../../factory/lib/identity/ulid.mjs";
 import { createProbeRegistry } from "../../factory/lib/reconcile/probes.mjs";
 import { openRepoStoreReadOnly, openStore, openStoreReadOnly } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
-import { makeRepo } from "./helpers/factory-repo.mjs";
+import { cloneValidConfig, makeRepo } from "./helpers/factory-repo.mjs";
 import {
 	attemptLaunched,
 	corruptDatabaseFile,
 	FIXED_NOW,
+	herdrAnswering,
 	makeAgentDir,
 	refusalOfAsync,
 	runStarted,
@@ -32,9 +34,9 @@ import {
 const AT = FIXED_NOW + 200_000;
 
 /** A repository with a store, a live run, and a package to hand the handshake. */
-async function diagnosable(t, { effects = true } = {}) {
+async function diagnosable(t, { effects = true, config: declared } = {}) {
 	const agentDir = makeAgentDir(t);
-	const repoRoot = makeRepo(t);
+	const repoRoot = makeRepo(t, declared === undefined ? {} : { config: declared });
 	const store = await openStore({ repoRoot, agentDir });
 	const run = newUlid();
 	store.append(runStarted(run));
@@ -109,14 +111,121 @@ test("doctor computes the reconciliation and appends nothing to the journal (§1
 	assert.equal(existsSync(join(agentDir, "software-factory")), true);
 });
 
-test("the baseline is reported as of when it last ran, saying plainly it was not re-run", async (t) => {
+// ── The baseline, reported and executed (§8.3, §10.5) ────────────────────────
+
+test("a repository with no recorded baseline says so, and names the flag that runs one", async (t) => {
 	const { reader, context } = await diagnosable(t);
 
 	const report = await doctorReport(reader, context);
 
+	assert.equal(report.baseline.recorded, false);
 	assert.equal(report.baseline.rerun, false);
-	assert.match(report.baseline.message, /not re-run/i);
+	assert.match(report.baseline.message, /--baseline/);
 	assert.ok("as_of" in report.baseline && "base_commit" in report.baseline);
+});
+
+test("the last baseline is reported as of when it ran, saying plainly it was not re-run", async (t) => {
+	const agentDir = makeAgentDir(t);
+	const repoRoot = makeRepo(t);
+	const root = makePackage(t);
+	const executable = join(root, "factory", "bin", "factory.mjs");
+	const env = { PATH: onPath(t, executable) };
+	const { config, activeRouting } = loadFactoryConfig({ cwd: repoRoot });
+
+	// A real run, because the record doctor reports is the one a run's preflight
+	// wrote: a hand-forged event would prove the reader and nothing else.
+	const started = await runCli(["start", "--foreground", "42"], {
+		cwd: repoRoot,
+		agentDir,
+		executable,
+		env,
+		herdr: herdrAnswering(),
+	});
+	assert.equal(started.value.report.end_reason, "drained");
+
+	const reader = await openReader(t, { repoRoot, agentDir });
+	const report = await doctorReport(reader, {
+		repoRoot,
+		agentDir: { path: agentDir, source: "caller" },
+		config,
+		activeRouting,
+		executable,
+		env,
+		at: AT,
+	});
+
+	assert.equal(report.baseline.recorded, true);
+	assert.equal(report.baseline.rerun, false);
+	assert.equal(report.baseline.ok, true);
+	assert.match(report.baseline.message, /not.{0,3} re-run/i);
+	assert.equal(report.baseline.base_commit.length, 40);
+	assert.equal(report.baseline.run, started.value.report.run);
+	assert.ok(report.baseline.as_of <= Date.now());
+	assert.deepEqual(
+		report.baseline.checks.map((check) => check.name),
+		["unit"],
+	);
+});
+
+test("--baseline executes the checks in the private clone and re-runs nothing else (§10.5, §14.24)", async (t) => {
+	const { reader, context, agentDir } = await diagnosable(t);
+	const headBefore = reader.head();
+
+	const report = await doctorReport(reader, { ...context, baseline: true });
+
+	assert.equal(report.baseline.rerun, true);
+	assert.equal(report.baseline.ok, true);
+	assert.equal(report.baseline.checks[0].result, "passed");
+	// It ran inside the factory-private clone, under this repository's state root.
+	assert.equal(report.baseline.worktree.path.startsWith(join(agentDir, "software-factory")), true);
+	assert.equal(report.baseline.worktree.retained, false, "a green baseline kept its throwaway worktree");
+	assert.equal(existsSync(report.baseline.worktree.path), false);
+
+	// §14.24 holds in the expensive mode too: the checks ran, the journal did not
+	// move, and no artifact row was written for their output.
+	assert.deepEqual(reader.head(), headBefore);
+	assert.deepEqual(reader.readEvents({ kind: "preflight.checked" }), []);
+});
+
+test("a red --baseline is an alarm, keeps its worktree, and carries the tail of what failed", async (t) => {
+	const config = cloneValidConfig();
+	config.checks = [
+		{ name: "unit", command: "echo boom; exit 1", timeout: 30, severity: "required", expectedFailureExitCodes: [1] },
+	];
+	const { reader, context } = await diagnosable(t, { config });
+
+	const report = await doctorReport(reader, { ...context, baseline: true });
+
+	assert.equal(report.baseline.ok, false);
+	assert.equal(report.baseline.checks[0].result, "failed");
+	assert.match(report.baseline.checks[0].output_tail, /boom/);
+	// §12.7: a failing baseline is precisely when an operator wants to cd in.
+	assert.equal(report.baseline.worktree.retained, true);
+	assert.equal(existsSync(report.baseline.worktree.path), true);
+	assert.ok(report.alarms.some((alarm) => alarm.reason === "baseline-red"));
+	assert.equal(report.ok, false);
+});
+
+test("a repository the factory has never run in can still have its baseline executed", async (t) => {
+	const agentDir = makeAgentDir(t);
+	const repoRoot = makeRepo(t);
+	const root = makePackage(t);
+	const { config, activeRouting } = loadFactoryConfig({ cwd: repoRoot });
+
+	const report = await doctorReport(null, {
+		repoRoot,
+		agentDir: { path: agentDir, source: "caller" },
+		config,
+		activeRouting,
+		executable: join(root, "factory", "bin", "factory.mjs"),
+		env: { PATH: onPath(t, join(root, "factory", "bin", "factory.mjs")) },
+		baseline: true,
+		at: AT,
+	});
+
+	assert.equal(report.store.present, false, "the diagnosis created a store");
+	assert.equal(report.baseline.rerun, true);
+	assert.equal(report.baseline.ok, true);
 });
 
 test("per-ticket budget counters are reported, naming the subsystem that will fill them", async (t) => {

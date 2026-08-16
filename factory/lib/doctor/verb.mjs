@@ -7,6 +7,13 @@ import { createGiteaReader } from "../tracker/gitea.mjs";
 import { doctorReport } from "./report.mjs";
 
 /**
+ * §10.5's flag that turns the reported baseline into an executed one. It lives
+ * here rather than in the verb table because the table declares what the CLI
+ * accepts and this module is what acts on it.
+ */
+export const BASELINE_FLAG = "--baseline";
+
+/**
  * `factory doctor` (§10.5), from the operator's side.
  *
  * It takes the **read-only** handle and nothing else, so §14.24 is settled
@@ -88,6 +95,9 @@ export async function runDoctor({
 			// Built only when there is a scope to spend it on: a `doctor` with no
 			// scope makes no tracker read, so it needs no credentials either.
 			tracker: scope === null ? null : (tracker ?? trackerFor(config)),
+			// §10.5's expensive mode, asked for explicitly. Without the flag the last
+			// recorded result is reported and nothing is executed.
+			baseline: flags.has(BASELINE_FLAG),
 			at,
 		});
 		return { message: headline(report), report };
