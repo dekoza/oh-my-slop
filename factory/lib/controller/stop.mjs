@@ -1,9 +1,8 @@
 import { EXIT_OK, EXIT_REFUSED } from "../cli/exit-codes.mjs";
-import { CONTROLLER_LEASE } from "../domain/vocabulary.mjs";
+import { CONTROLLER_LEASE, RUN_LIFECYCLE } from "../domain/vocabulary.mjs";
 import { runStream } from "../state/events.mjs";
 import { hasLapsed, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
-import { RUN_LIFECYCLE } from "../domain/vocabulary.mjs";
 
 /**
  * `factory stop` (§10.5).
@@ -114,7 +113,7 @@ export async function runStop({ repoRoot, agentDir = null, now = Date.now }) {
 
 		const { runId, run, pane } = target;
 		const requests = operatorRequests(store, runId);
-		const latest = requests.length === 0 ? null : requests[requests.length - 1];
+		const latest = latestRequest(requests);
 		const decision = requestLadder(latest, "stop");
 
 		let action;
@@ -133,28 +132,29 @@ export async function runStop({ repoRoot, agentDir = null, now = Date.now }) {
 				`(record ${latest.seq}); it ends "abandoned" when its controller reaches the next ` +
 				`ticket boundary. Nothing more to record.`;
 		} else if (decision.kind === "run.abandon-requested") {
+			const at = now();
 			store.append({
 				kind: decision.kind,
 				source: "operator",
 				run: runId,
-				occurredAt: now(),
-				observedAt: now(),
+				occurredAt: at,
+				observedAt: at,
 				payload: { actor: ACTOR, supersedes: decision.supersedes },
 			});
 			action = "abandon-escalated";
 			record = { kind: decision.kind };
 			message =
 				`Escalated to abandon for run ${runId}: in-flight ticket executions are marked ` +
-				`released, their slots are released, and worker panes are left alive for the next ` +
-				`reconcile. It ends "abandoned" at the next ticket boundary — the controller never ` +
-				"closes a pane (§13.B).";
+				`released, and worker panes are left alive for the next reconcile. It ends ` +
+				`"abandoned" at the next ticket boundary — the controller never closes a pane (§13.B).`;
 		} else {
+			const at = now();
 			store.append({
 				kind: decision.kind,
 				source: "operator",
 				run: runId,
-				occurredAt: now(),
-				observedAt: now(),
+				occurredAt: at,
+				observedAt: at,
 				payload: { actor: ACTOR },
 			});
 			action = "stop-requested";
@@ -270,6 +270,11 @@ export function operatorRequests(store, runId) {
 	return store
 		.readEvents({ stream: runStream(runId) })
 		.filter((event) => event.kind === "run.stop-requested" || event.kind === "run.abandon-requested");
+}
+
+/** The latest of a run's operator requests — the one §10.5's ladder counts — or null. */
+export function latestRequest(requests) {
+	return requests.length === 0 ? null : requests[requests.length - 1];
 }
 
 /** A request as both the journal and the operator read it: never the internals. */

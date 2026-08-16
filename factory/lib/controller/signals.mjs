@@ -1,4 +1,5 @@
-import { operatorRequests, requestLadder, requestReport } from "./stop.mjs";
+import { FactoryStateError } from "../state/errors.mjs";
+import { latestRequest, operatorRequests, requestLadder, requestReport } from "./stop.mjs";
 
 /**
  * §10.5's signal path, in the shape the spec wants it to be.
@@ -63,21 +64,17 @@ export function installSignalRequests({ signal, store, hold, now }) {
 	// durable existed to lose it against.
 	let pending = null;
 
-	const latest = (candidateRun) => {
-		const requests = operatorRequests(store, candidateRun);
-		return requests.length === 0 ? null : requests[requests.length - 1];
-	};
-
 	const record = (candidateRun, base) => {
-		const decision = requestLadder(latest(candidateRun), base);
+		const decision = requestLadder(latestRequest(operatorRequests(store, candidateRun)), base);
 		if (decision === null) return;
 
+		const at = now();
 		hold.append({
 			kind: decision.kind,
 			source: "operator",
 			run: candidateRun,
-			occurredAt: now(),
-			observedAt: now(),
+			occurredAt: at,
+			observedAt: at,
 			payload: decision.supersedes === null
 				? { actor: SIGNAL_ACTOR }
 				: { actor: SIGNAL_ACTOR, supersedes: decision.supersedes },
@@ -95,7 +92,7 @@ export function installSignalRequests({ signal, store, hold, now }) {
 			}
 			record(run, base);
 		} catch (error) {
-			if (error?.name === "FactoryStateError" && MOOT.has(error.reason)) return;
+			if (error instanceof FactoryStateError && MOOT.has(error.reason)) return;
 			throw error;
 		}
 	};
@@ -108,8 +105,8 @@ export function installSignalRequests({ signal, store, hold, now }) {
 		 * The run this controller drives, once its `run.started` has committed —
 		 * after which a signal writes to the run's stream directly. A pending
 		 * intent resolves against the stream through the same ladder: an
-			* adopted run may already hold a request, and the spec's "second stop
-			* escalates" counts the sequence, not the invocation.
+		 * adopted run may already hold a request, and the spec's "second stop
+		 * escalates" counts the sequence, not the invocation.
 		 */
 		attach(candidateRun) {
 			if (run !== null) return;

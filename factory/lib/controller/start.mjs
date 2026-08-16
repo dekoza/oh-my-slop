@@ -1,6 +1,5 @@
 import {
 	EXIT_LEASE_LOST,
-	EXIT_OK,
 	EXIT_REFUSED,
 	EXIT_USAGE,
 	exitCodeForEndReason,
@@ -14,7 +13,7 @@ import {
 	END_REASON_STOPPED_BY_OPERATOR,
 	RUN_LIFECYCLE,
 } from "../domain/vocabulary.mjs";
-import { operatorRequests, requestReport } from "./stop.mjs";
+import { latestRequest, operatorRequests, requestReport } from "./stop.mjs";
 import { installSignalRequests } from "./signals.mjs";
 import { reconcile } from "../reconcile/engine.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
@@ -367,7 +366,7 @@ function endReasonOf(checked, requests) {
 	// The latest request decides: an abandon supersedes the stop that preceded
 	// it (§13.A), and a request an earlier incarnation already honoured cannot
 	// still be outstanding — honouring a stop ends the run.
-	const latest = requests.length === 0 ? null : requests[requests.length - 1];
+	const latest = latestRequest(requests);
 	if (latest !== null && latest.kind === "run.abandon-requested") return END_REASON_ABANDONED;
 	if (latest !== null && latest.kind === "run.stop-requested") return END_REASON_STOPPED_BY_OPERATOR;
 	return END_REASON_DRAINED;
