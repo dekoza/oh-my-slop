@@ -1,4 +1,6 @@
-import { CLAIM_ANNOUNCING_OPERANDS, commentIsEffect } from "../tracker/claims.mjs";
+import { commentIsEffect } from "../tracker/claims.mjs";
+import { DISPOSITION_LABELS } from "../tracker/disposition.mjs";
+import { CLAIM_ANNOUNCING_OPERANDS } from "../tracker/mutations.mjs";
 import { createProbeRegistry } from "./probes.mjs";
 
 /**
@@ -50,6 +52,31 @@ export function trackerProbes({ reader, assignee }) {
 		},
 
 		/**
+		 * §8.9's label half of a disposition. `present` settles the add; the
+		 * `absent` match is declared for a removal this factory never performs
+		 * (§14.20), and one read answers both.
+		 *
+		 * **Served from the issue rather than from `/labels`**, exactly as
+		 * `issue.assignees` is: the read is declared by what it asks about, and one
+		 * fetch of the issue answers labels and assignees alike. A second endpoint
+		 * would be a second round trip for a field the first one already carried.
+		 */
+		"issue.labels": async ({ effect, probe }) => {
+			const issue = await reader.readIssue(effect.ticket);
+			// The operand of a label effect **is** the label it named, so a probe of
+			// an older record still asks about the right label.
+			const present = issue.labels.includes(effect.operand);
+
+			return {
+				matched: probe.match === "absent" ? !present : present,
+				result: { labels: [...issue.labels] },
+				foreignSourceId: issue.foreign_id,
+				occurredAtRaw: issue.updated_at_raw,
+				detail: { ticket: effect.ticket, labels: [...issue.labels], looked_for: effect.operand },
+			};
+		},
+
+		/**
 		 * §4.5's `embedded-key` match: **exact on the key carried in an HTML
 		 * comment, never a prefix** — and then §5.2's corroboration when the comment
 		 * is not there.
@@ -73,18 +100,26 @@ export function trackerProbes({ reader, assignee }) {
 			// no trace in `/comments` or `/timeline`. So the absence is not evidence —
 			// the corroborators are, and they are named rather than assumed.
 			//
-			// **The corroborator is the assignee state the comment announced**, which
+			// **The corroborator is the durable state the comment announced**, which
 			// is why it is not simply "an assignee is present": a claim comment says
 			// this factory took the ticket, so a standing assignee agrees with it; a
-			// disposition comment says it gave the ticket up, so an *absent* assignee
-			// agrees with that one exactly as strongly. Granting the reading to claims
-			// alone would leave every deleted release comment unresolved forever,
-			// pinning its run's artifacts under §12.4 with no verb able to discharge
-			// it — §5.2's sentence is about comments, not about claims.
+			// disposition comment says the ticket execution ended, so what agrees with
+			// *that* is the state its disposition left behind. Granting the reading to
+			// claims alone would leave every deleted disposition comment unresolved
+			// forever, pinning its run's artifacts under §12.4 with no verb able to
+			// discharge it — §5.2's sentence is about comments, not about claims.
+			//
+			// §8.9 leaves exactly two shapes, and the probe accepts either because the
+			// effect row names the operand and not the disposition: `released` drops
+			// the claim, and the other three add one of `DISPOSITION_LABELS` while
+			// **retaining** the assignee. Requiring an absent assignee for all four
+			// would call every deleted pause and failure comment uncorroborated —
+			// which is the same error as reading a missing comment as never posted.
 			const issue = await reader.readIssue(effect.ticket);
 			const announcesClaim = CLAIM_ANNOUNCING_OPERANDS.includes(effect.operand);
 			const holdsClaim = issue.assignees.includes(assignee);
-			const corroborated = announcesClaim ? holdsClaim : !holdsClaim;
+			const disposed = issue.labels.some((label) => DISPOSITION_LABELS.includes(label));
+			const corroborated = announcesClaim ? holdsClaim : !holdsClaim || disposed;
 
 			return {
 				matched: corroborated,
@@ -99,9 +134,12 @@ export function trackerProbes({ reader, assignee }) {
 					corroborated_by: corroborated
 						? announcesClaim
 							? `the durable assignee ${assignee}, which the claim this comment announced would have set`
-							: `no durable assignee, which the release this comment announced would have left`
+							: disposed
+								? `the ${issue.labels.filter((label) => DISPOSITION_LABELS.includes(label)).join(", ")} label, which the disposition this comment announced would have added`
+								: "no durable assignee, which the release this comment announced would have left"
 						: null,
 					assignees: issue.assignees,
+					labels: issue.labels,
 					spec: "§5.2",
 				},
 			};

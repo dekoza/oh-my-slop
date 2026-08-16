@@ -192,6 +192,7 @@ export async function walkStages(store, { hold, run, ticket, attempt, phases, ac
 				run,
 				ticket,
 				reasonClass: resolved.detail?.reason_class ?? null,
+				question: resolved.detail?.question ?? null,
 			});
 		}
 
@@ -206,13 +207,17 @@ export async function walkStages(store, { hold, run, ticket, attempt, phases, ac
  * The chain rides along because §8.9's pause and failure comments are required
  * to carry it (#109) and the walk is the last place it is cheap to read — the
  * caller would otherwise re-derive from the journal a list this function has
- * just finished writing.
+ * just finished writing. **The question rides along for the same reason and off
+ * the same detail**: §3.4's pause is the exact question a worker asked, and a
+ * disposition that had to go back for it would be reading a record this walk
+ * just resolved.
  */
-function settle(phase, outcome, { store, run, ticket, reasonClass = null, conflict = null }) {
+function settle(phase, outcome, { store, run, ticket, reasonClass = null, question = null, conflict = null }) {
 	const row = routeOutcome(phase, outcome);
 
 	return Object.freeze({
 		...dispositionOf(row, { reasonClass }),
+		question,
 		phase,
 		outcome,
 		conflict,

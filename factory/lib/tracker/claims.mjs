@@ -1,7 +1,6 @@
-import { DISPOSITION_RELEASED, PHASE_IMPLEMENT } from "../domain/vocabulary.mjs";
-import { commentCarriesEffectKey, embedEffectKey } from "../effects/keys.mjs";
-import { requestEffect, resolveEffect } from "../effects/records.mjs";
+import { commentCarriesEffectKey } from "../effects/keys.mjs";
 import { FactoryTrackerError } from "./errors.mjs";
+import { COMMENT_OPERANDS, performEffect, postComment } from "./mutations.mjs";
 
 /**
  * §3.3's claim, whole: **assignee plus a structured claim comment, then a
@@ -75,21 +74,6 @@ export const FOREIGN_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
  */
 const CLAIM_MARKER = "<!-- factory-claim -->";
 
-/** The three comment bodies this module posts, distinguished in the effect key. */
-const COMMENT_OPERANDS = Object.freeze({
-	claim: "claim",
-	takeover: "takeover",
-	disposition: "disposition",
-});
-
-/**
- * The two of them that **announce a claim**, and therefore the two whose absence
- * the durable assignee corroborates (§5.2). Exported because the `comment-post`
- * probe is what asks: a disposition comment announces the *end* of a claim, so
- * an assignee still standing corroborates nothing about it.
- */
-export const CLAIM_ANNOUNCING_OPERANDS = Object.freeze([COMMENT_OPERANDS.claim, COMMENT_OPERANDS.takeover]);
-
 /**
  * Claim a ticket for this run (§3.3).
  *
@@ -150,7 +134,17 @@ export async function claimTicket(
 					ticket,
 					at,
 					operand: COMMENT_OPERANDS.takeover,
-					body: takeoverBody({ run, ticket, attempt, at, standing }),
+					body: takeoverBody({ run, ticket, attempt, at, takeover: standing.takeover }),
+					// What is being taken over, and from whom. The prose around it is
+					// dated and says how long the displaced claim had been idle — both
+					// clock readings, and neither one part of the intent.
+					payload: {
+						run,
+						ticket,
+						attempt,
+						taken_over_from: standing.takeover.claimed_by,
+						tier: standing.takeover.tier,
+					},
 				});
 
 	const assigned = await performEffect(store, {
@@ -173,6 +167,13 @@ export async function claimTicket(
 		at,
 		operand: COMMENT_OPERANDS.claim,
 		body: claimBody({ run, ticket, attempt, at }),
+		// **§3.3's three identities, and not its timestamp.** The comment carries the
+		// stamp because §3.3 asks for it; the *intent* is which run claims which
+		// ticket under which attempt, and digesting the rendered body instead would
+		// make a re-entered claim a §4.5 payload conflict for no reason but the hour
+		// it happened at — the one failure that leaves a ticket permanently
+		// unclaimable by the run that already holds it.
+		payload: { run, ticket, attempt },
 	});
 
 	// §3.3's re-read. Two things can have happened while the two writes above were
@@ -190,49 +191,6 @@ export async function claimTicket(
 		assigned,
 		takeover: standing.takeover === null ? null : { ...standing.takeover, comment: takeoverComment.id },
 	});
-}
-
-/**
- * §8.9's `released`: **claim dropped, no label, the ticket returns to the
- * frontier untouched** — an honest state rather than a lock nobody holds.
- *
- * The un-assign goes first and the comment second, because the two failures are
- * not symmetric: a crash after the un-assign leaves a free ticket with a thin
- * trail, while a crash after the comment would leave a ticket announcing a
- * release it is still holding the lock for. Both effects are re-probeable either
- * way, so the ordering only decides which half-state an operator would meet.
- *
- * The comment is §8.9's "every disposition gets the same machine-parseable
- * comment block". *Untouched* in that row contrasts with the three rows above it,
- * every one of which adds a label; it is about eligibility, and a comment changes
- * none.
- *
- * @returns {Promise<Readonly<object>>}
- */
-export async function releaseClaim(store, { writer, hold, run, ticket, attempt, assignee, at, reason }) {
-	const unassigned = await performEffect(store, {
-		hold,
-		run,
-		ticket,
-		at,
-		operation: "issue-unassign",
-		operand: assignee,
-		payload: { assignees: [] },
-		perform: () => writer.unassign(ticket),
-		result: (answer) => ({ assignees: answer.assignees, updated_at_raw: answer.updated_at_raw }),
-	});
-
-	const comment = await postComment(store, {
-		writer,
-		hold,
-		run,
-		ticket,
-		at,
-		operand: COMMENT_OPERANDS.disposition,
-		body: dispositionBody({ run, ticket, attempt, at, disposition: DISPOSITION_RELEASED, reason }),
-	});
-
-	return Object.freeze({ disposition: DISPOSITION_RELEASED, reason, ticket, run, attempt, unassigned, comment });
 }
 
 /**
@@ -413,102 +371,6 @@ async function arbitrate(store, { reader, run, ticket, attempt, assignee, since,
 }
 
 /**
- * One tracker mutation as §4.5's pair: intent recorded, mutation performed,
- * outcome recorded.
- *
- * The `already-resolved` short-circuit is what makes a re-entered run idempotent
- * without a second bookkeeping scheme — the key is the same, so the committed
- * result comes back and Gitea is never asked twice.
- */
-async function performEffect(store, { hold, run, ticket, at, operation, operand, payload, perform, result }) {
-	const fence = hold.fence();
-	const requested = requestEffect(store, {
-		operation,
-		operand,
-		run,
-		ticket,
-		// §2.2's enum is closed and has no claim phase, deliberately: the claim is
-		// what opens a ticket execution's first phase rather than a phase of its
-		// own, and widening the enum for it would put a non-phase in the list §13.C
-		// widened exactly once, for mutations with nowhere else to go.
-		phase: PHASE_IMPLEMENT,
-		// **The claim belongs to the ticket execution, not to an attempt.** §9.4
-		// acquires the implement attempt's model slot before the claim, so an
-		// attempt id exists by now — but no attempt has *launched*, and an effect
-		// naming one that has not is a record about something that does not yet
-		// exist. §4.5's key has a nullable attempt slot for exactly this, and the
-		// claim comment carries the attempt id §3.3 asks for in its body.
-		attempt: null,
-		actor: "controller",
-		fencingGeneration: fence.generation,
-		payload,
-		at,
-	});
-
-	if (requested.outcome === "already-resolved") {
-		return Object.freeze({ key: requested.key, outcome: requested.outcome, ...requested.result });
-	}
-
-	const answer = await perform();
-	const resolved = resolveEffect(store, {
-		key: requested.key,
-		actor: "controller",
-		fencingGeneration: fence.generation,
-		result: result(answer),
-		at,
-	});
-
-	return Object.freeze({ key: requested.key, outcome: resolved.outcome, ...resolved.result });
-}
-
-/**
- * A comment, with §4.5's effect key embedded in the body it posts.
- *
- * The key rides invisibly so the probe can find *this* comment exactly, rather
- * than a comment that merely looks like it — §4.5 is explicit that the match is
- * on the embedded key and never a prefix, because a body an operator edited must
- * still be recognisable and a neighbour's must not be mistaken for ours.
- */
-async function postComment(store, { writer, hold, run, ticket, at, operand, body }) {
-	const fence = hold.fence();
-	const requested = requestEffect(store, {
-		operation: "comment-post",
-		operand,
-		run,
-		ticket,
-		phase: PHASE_IMPLEMENT,
-		attempt: null,
-		actor: "controller",
-		fencingGeneration: fence.generation,
-		payload: { body },
-		at,
-	});
-
-	if (requested.outcome === "already-resolved") {
-		// The committed result is what a re-entered run reads its own comment id
-		// back out of — same field name as the fresh path, so no caller has to know
-		// which door it came through.
-		return Object.freeze({
-			key: requested.key,
-			outcome: requested.outcome,
-			id: requested.result?.comment_id ?? null,
-			...requested.result,
-		});
-	}
-
-	const posted = await writer.comment(ticket, embedEffectKey(body, requested.key));
-	const resolved = resolveEffect(store, {
-		key: requested.key,
-		actor: "controller",
-		fencingGeneration: fence.generation,
-		result: { comment_id: posted.id, created_at_raw: posted.created_at_raw, html_url: posted.html_url },
-		at,
-	});
-
-	return Object.freeze({ key: requested.key, outcome: resolved.outcome, id: posted.id, ...resolved.result });
-}
-
-/**
  * The claims this factory's own state says are **still standing** on a ticket,
  * oldest first — §5.2's "our own effect record corroborates", as the query it is.
  *
@@ -610,41 +472,29 @@ function claimBody({ run, ticket, attempt, at }) {
 	].join("\n");
 }
 
-/** §3.3's takeover comment. It carries the claim block, plus what it displaced. */
-function takeoverBody({ run, ticket, attempt, at, standing }) {
+/**
+ * §3.3's takeover comment. It carries the claim block, plus what it displaced.
+ *
+ * `takeover` is `assessClaim`'s **inner** verdict — the tier, the displaced run,
+ * and why it is displaceable — not the wrapper that carries it. Reading the
+ * wrapper's absent fields rendered `undefined` into a comment a human is meant to
+ * read, silently, because nothing that reads a comment body could catch it: §5.2
+ * makes comment text authoritative for nothing, so no probe ever compares it.
+ */
+function takeoverBody({ run, ticket, attempt, at, takeover }) {
 	return [
 		CLAIM_MARKER,
 		"🤖 **factory — claim taken over**",
 		"",
-		`The previous claim is ${standing.tier === "same-factory" ? "this factory's" : "not provably this factory's"}: ${standing.reason}.`,
+		`The previous claim is ${takeover.tier === "same-factory" ? "this factory's" : "not provably this factory's"}: ${takeover.reason}.`,
 		"",
 		"```yaml",
 		`run: ${run}`,
 		`ticket: ${ticket}`,
 		`attempt: ${attempt}`,
 		`at: ${new Date(at).toISOString()}`,
-		`taken_over_from: ${standing.claimed_by ?? "unknown"}`,
-		`tier: ${standing.tier}`,
-		"```",
-	].join("\n");
-}
-
-/**
- * §8.9's machine-parseable disposition block. It carries no claim marker: a
- * released ticket has no claim, and a comment announcing that must not read as a
- * contender to the next run's arbitration.
- */
-function dispositionBody({ run, ticket, attempt, at, disposition, reason }) {
-	return [
-		`🤖 **factory — ${disposition}**`,
-		"",
-		"```yaml",
-		`run: ${run}`,
-		`ticket: ${ticket}`,
-		`attempt: ${attempt}`,
-		`disposition: ${disposition}`,
-		`reason: ${reason ?? "none recorded"}`,
-		`at: ${new Date(at).toISOString()}`,
+		`taken_over_from: ${takeover.claimed_by ?? "unknown"}`,
+		`tier: ${takeover.tier}`,
 		"```",
 	].join("\n");
 }

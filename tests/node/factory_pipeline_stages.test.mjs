@@ -191,6 +191,10 @@ test("a needs-human attempt pauses under the worker's own reason class (§8.10, 
 
 	assert.equal(settled.disposition, "paused");
 	assert.equal(settled.reason_class, "spec-contradiction");
+	// §8.9's pause comment carries **the exact question**, so it rides out of the
+	// walk beside the class it came in with: the tracker action would otherwise
+	// have to re-read a detail this function has just finished reading (#109).
+	assert.equal(settled.question, "which one?");
 	assert.deepEqual(calls, ["implement"]);
 });
 
@@ -223,6 +227,7 @@ test("a cancelled attempt releases the ticket, an honest state rather than a fai
 		disposition: "released",
 		reason_class: null,
 		fault: null,
+		question: null,
 		phase: "implement",
 		outcome: "cancelled",
 		conflict: null,

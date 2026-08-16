@@ -26,7 +26,8 @@ import { createHerdrControl } from "./herdr-control.mjs";
 import { FactoryStateError } from "../state/errors.mjs";
 import { LEASE_RENEWAL_MS, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
-import { CLAIM_OUTCOMES, claimTicket, releaseClaim } from "../tracker/claims.mjs";
+import { CLAIM_OUTCOMES, claimTicket } from "../tracker/claims.mjs";
+import { applyDisposition } from "../tracker/disposition.mjs";
 import { readScope } from "../tracker/frontier.mjs";
 import { createGiteaReader } from "../tracker/gitea.mjs";
 import { createGiteaWriter } from "../tracker/writer.mjs";
@@ -539,13 +540,13 @@ function liveFrontier(entry, context) {
  * answers, and the ticket simply stays where it was. The lane ends with no
  * disposition, carrying why.
  *
- * A pipeline that throws leaves the claim standing on purpose. §8.9 gives
- * `released` to operator stop and controller shutdown, and §8's failure policy —
- * which is where the `factory:failed` label lives — is #109's; dropping the
- * assignee here would put the ticket back in the frontier for the next run to die
- * on identically, which is §8.9's `failAutomation` mistake. §3.3's same-factory
- * staleness is what settles a claim whose run died: proven from durable state,
- * with no waiting period.
+ * A pipeline that throws leaves the claim standing on purpose. A disposition is
+ * what settles a ticket execution, and a throw is not one: dropping the assignee
+ * here would put the ticket back in the frontier for the next run to die on
+ * identically, which is §8.9's `failAutomation` mistake, while labelling it
+ * `factory:failed` would assert a disposition the walk never reached. §3.3's
+ * same-factory staleness is what settles a claim whose run died: proven from
+ * durable state, with no waiting period.
  *
  * **The disposition is recorded before it is acted on.** A crash in between
  * leaves a `released` record beside a claim still standing, which §3.3 settles;
@@ -588,12 +589,13 @@ function ticketExecution(store, entry, hold, context) {
 			});
 		}
 
-		// §8.9's tracker action for the one disposition this slice owns. The other
-		// three add a label, and the label vocabulary of §8's failure policy lands
-		// with the tracker actions beside it (#109); #108's stage machine produces
-		// the disposition values and writes nothing to the tracker itself.
-		if (disposition === "released") {
-			await releaseClaim(store, {
+		// §8.9's tracker action, whichever of the four it is. The stage machine
+		// produces the disposition and writes nothing to the tracker itself
+		// (#108); `disposition.mjs` is the one place a disposition becomes a fact
+		// on Gitea, so a lane cannot settle a ticket a different way than a report
+		// of it says.
+		if (disposition !== null) {
+			await applyDisposition(store, {
 				writer: context.trackerWriter,
 				hold,
 				run: entry.run,
@@ -601,6 +603,11 @@ function ticketExecution(store, entry, hold, context) {
 				attempt,
 				assignee: context.config.tracker.assignee,
 				at: context.now(),
+				disposition,
+				reasonClass: outcome?.reason_class ?? null,
+				fault: outcome?.fault ?? null,
+				question: outcome?.question ?? null,
+				pr: outcome?.pr ?? null,
 				reason: outcome?.reason ?? null,
 			});
 		}

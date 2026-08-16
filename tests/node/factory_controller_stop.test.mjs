@@ -524,21 +524,24 @@ test("a signal before the run is opened is recorded on open and honoured, not lo
 		run: runId,
 		ticket: null,
 		phase: "preflight",
-		operation: "label-add",
-		operand: "factory:preflight",
+		// A read no subsystem implements yet, so the stand-in below is the only
+		// implementation of it: `issue.labels` and `issue.assignees` are the
+		// tracker's own (§8.9, §3.3), and one read has exactly one implementation.
+		operation: "issue-close",
+		operand: null,
 		actor: "controller",
 		fencingGeneration: 1,
-		payload: { label: "factory:preflight" },
+		payload: { state: "closed" },
 		at: FIXED_NOW + 5,
 	});
 	store.close();
 
 	const probes = createProbeRegistry();
-	probes.register("issue.labels", () => {
+	probes.register("issue.state", () => {
 		signals.fire("SIGINT");
 		return {
 			matched: true,
-			result: { labels: ["factory:preflight"] },
+			result: { state: "closed" },
 			foreignSourceId: "gitea:98",
 			occurredAtRaw: "2026-08-15T09:00:00+02:00",
 		};

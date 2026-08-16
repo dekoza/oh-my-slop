@@ -45,6 +45,15 @@ const OPERATION_BY_ROLE = Object.freeze({ attestation: "attestation-write" });
 const DEFAULT_OPERATION = "artifact-write";
 
 /**
+ * Every effect kind an artifact write can be recorded under, derived from the
+ * two constants above rather than restated. §8.9's disposition comment reads it:
+ * "evidence references by digest" is a query over the effect rows this ticket
+ * execution wrote, and a hand-kept second list would quietly stop naming a kind
+ * the day a third role gets its own operation.
+ */
+export const ARTIFACT_WRITE_OPERATIONS = Object.freeze([DEFAULT_OPERATION, ...Object.values(OPERATION_BY_ROLE)]);
+
+/**
  * A short natural discriminator for two artifacts of the same role in one
  * attempt — a check's name, a review axis. It reaches the effect key and nothing
  * else, and it is still held to a shape: the operator reads these keys.
