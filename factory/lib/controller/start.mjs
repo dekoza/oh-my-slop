@@ -507,6 +507,13 @@ function applyExpiry() {
  * because the run genuinely drained; what stops that from being a lie is this
  * section naming the two subsystems that would have found and claimed work.
  *
+ * The loop runs, and #100's reader can answer what is claimable — but this run
+ * composes neither into the other, because **the two halves land together or not
+ * at all**: a frontier read without #102's claim would hand the loop a ticket it
+ * could then only refuse to execute, which is a lane claimed for work that
+ * cannot move. So the frontier stays empty here and the sentence names the half
+ * that is missing.
+ *
  * `refused` and `blocked` are the loop's own answers rather than absences:
  * §11.5's ticket-scoped routing conflict, and slots a previous controller left
  * held that §9.4 settles by probe. `in_flight` is what durable state says: the
@@ -526,8 +533,8 @@ function executionReport(store, run, executed) {
 		refused: executed?.refused ?? [],
 		blocked: executed?.blocked ?? [],
 		missing:
-			"the tracker scope and eligibility reader that fills the frontier (#100), and claiming, " +
-			"release, and the classified drain report (#102)",
+			"claiming, release, and the classified drain report, which is what lets this run's loop " +
+			"read the frontier #100 already answers (#102)",
 		spec: "§3.2, §3.5, §9",
 	};
 }
