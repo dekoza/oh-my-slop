@@ -53,6 +53,50 @@ export function cloneValidConfig() {
 }
 
 /**
+ * A legacy `version: 1` file, modelled on the one this repository shipped: every
+ * key §11.8 tabulates is present exactly once, so a migration test can assert
+ * the whole disposition list rather than the rows a fixture happened to carry.
+ */
+export const LEGACY_CONFIG = Object.freeze({
+	version: 1,
+	tracker: {
+		kind: "gitea",
+		repo: "acme/widgets",
+		remote: "gitea",
+		login: "gitea",
+		assignee: "factory-bot",
+		labels: { implementation: "workflow:implement", readyForAgent: "ready-for-agent" },
+	},
+	git: { baseBranch: "main", remote: "gitea" },
+	herdr: { maxWorkers: 1 },
+	workers: {
+		profiles: {
+			builder: { kind: "pi", model: "local/qwen3", thinking: "high", permissionMode: "auto" },
+			reviewer: { kind: "claude", model: "opus", effort: "high", permissionMode: "dontAsk" },
+		},
+		routing: {
+			defaults: { implement: "builder", freshRetry: "builder", review: "reviewer", finalReview: "reviewer" },
+			rules: [{ labelsAny: ["factory:claude"], phases: ["implement", "freshRetry"], profile: "reviewer" }],
+		},
+	},
+	_postSubscription: {
+		comment: "Migration metadata only; the factory loader ignores this top-level key.",
+		workers: {
+			routing: {
+				defaults: { implement: "builder", freshRetry: "builder", review: "builder", finalReview: "builder" },
+				rules: [],
+			},
+		},
+	},
+	retry: { repairAttempts: 2, freshAgentRetries: 3 },
+	completion: { closeAfterIntegration: true, finalMerge: "manual", createPullRequest: true, deploy: false },
+});
+
+export function cloneLegacyConfig() {
+	return structuredClone(LEGACY_CONFIG);
+}
+
+/**
  * A real bare repository standing in for the Gitea remote, reachable as a local
  * path. The path ends in `acme/widgets.git` so `VALID_CONFIG`'s remote
  * cross-check still holds, and the seed commit is what §7.2's fetch pins.
