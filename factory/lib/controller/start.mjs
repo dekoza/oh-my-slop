@@ -40,6 +40,7 @@ import { FactoryRunError, isUsageRefusal } from "./errors.mjs";
 import { HEARTBEAT_INTERVAL_MS, startHeartbeat } from "./heartbeat.mjs";
 import { holdControllerLease } from "./lease-guard.mjs";
 import { preflight } from "./preflight.mjs";
+import { createProductionPipeline } from "../pipeline/production.mjs";
 import { schedule } from "./scheduler.mjs";
 import { describeScope, PARENT_FLAG, parseScope } from "./scope.mjs";
 
@@ -97,10 +98,9 @@ export const NEW_RUN_FLAG = "--new-run";
  *   resolves §3.2's live frontier itself and reconcile can settle tracker effects
  * @param {object | null} [invocation.trackerWriter] §3.3's write client; built from
  *   the same config when a tracker is present, injectable for the same reason
- * @param {(lane: object) => Promise<object>} [invocation.pipeline] the phases above
- *   the claim (#108's stage machine) — implement, harvest, verify, review,
- *   integrate. **The claim is composed onto it here**, so a package without it
- *   claims nothing
+ * @param {(lane: object) => Promise<object> | null} [invocation.pipeline] an
+ *   override for the phases above the claim. Omitted selects #147's production
+ *   composition; explicit `null` keeps the no-pipeline seam for focused tests
  * @param {() => Promise<object>} [invocation.frontier] §3.2's live frontier reader,
  *   overriding the one composed from `tracker`
  * @param {(lane: object) => Promise<object>} [invocation.execute] one whole ticket
@@ -128,7 +128,7 @@ export async function runStart({
 	runHerdr,
 	tracker = null,
 	trackerWriter = null,
-	pipeline = null,
+	pipeline,
 	frontier,
 	execute,
 }) {
@@ -387,9 +387,30 @@ async function driveRun(store, hold, context, signals) {
 		// Only a green run reaches `running`: a red required preflight ends the run
 		// with `baseline-red` without a lane ever being offered a slot.
 		let executed = null;
+		let executionContext = context;
 		if (checked.ok) {
 			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.running, { at: context.now() });
-			executed = await runScheduler(store, capacity, entry, hold, context);
+			const scheduling =
+				context.pipeline === undefined
+					? {
+							...context,
+							pipeline: createProductionPipeline(store, {
+								hold,
+								leases: context.leases,
+								config: context.config,
+								activeRouting: context.activeRouting,
+								tracker: context.tracker,
+								trackerWriter: context.trackerWriter,
+								herdr: context.herdrControl,
+								preflight: checked.production,
+								executable: context.executable,
+								env: context.env,
+								now: context.now,
+							}),
+						}
+					: context;
+			executionContext = scheduling;
+			executed = await runScheduler(store, capacity, entry, hold, scheduling);
 			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.draining, { at: context.now() });
 		}
 
@@ -405,13 +426,13 @@ async function driveRun(store, hold, context, signals) {
 		// that disagrees.
 		const breaker = circuitBreaker(store, { run: entry.run, threshold: context.config.budgets.circuitBreaker });
 		const endReason = endReasonOf(checked, requests, breaker);
-		let execution = executionReport(store, entry.run, executed, context);
+		let execution = executionReport(store, entry.run, executed, executionContext);
 		if (endReason !== END_REASON_BASELINE_RED) {
 			execution = settleAtBoundary(store, hold, entry.run, {
 				endReason,
 				at: context.now(),
 				executed,
-				context,
+				context: executionContext,
 			});
 		}
 
@@ -575,7 +596,7 @@ function liveFrontier(entry, context) {
  * report a lane it finished as still in flight.
  */
 function ticketExecution(store, entry, hold, context) {
-	return async ({ ticket, member, slots }) => {
+	return async ({ ticket, member, slots, capacity }) => {
 		// §7.3's deterministic identity, so a re-entered run rebuilds the same one
 		// and §4.5's duplicate check returns the claim already committed.
 		const attempt = `${entry.run}-t${ticket}-a1`;
@@ -606,6 +627,7 @@ function ticketExecution(store, entry, hold, context) {
 			slots,
 			attempt,
 			claim,
+			capacity,
 			budgets: context.config.budgets,
 		});
 		const disposition = outcome?.disposition ?? null;

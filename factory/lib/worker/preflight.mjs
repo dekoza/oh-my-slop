@@ -58,11 +58,13 @@ import { claudeTrustDecision, piTrustDecision, readClaudeConfigState, readPiTrus
  * @param {{ pi?: object, claude?: object }} [input.transports] per-runtime IO
  *   overrides, so a test drives every verdict without a harness on the machine
  * @returns {{ isolationCheck: () => object, permissionsCheck: () => object,
- *   trustCheck: () => object, closureCheck: () => object, runtimeCheck: () => Promise<object> }}
+ *   trustCheck: () => object, closureCheck: () => object, runtimeCheck: () => Promise<object>,
+ *   productionContext: () => object | null }}
  */
 export function createWorkerPreflight({ handshake, config, activeRouting, cacheRoot, repoRoot, env = {}, transports = {} }) {
 	let computed = null;
 	let isolation = null;
+	let runtimeResults = null;
 
 	/**
 	 * The §6.8 environment, built once. Its failure is data rather than a throw
@@ -319,6 +321,7 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 				}
 			}
 
+			runtimeResults = Object.freeze(results);
 			const findings = dedupe(results.flatMap((result) => result.findings));
 			const runtimes = reportedRuntimes(results);
 
@@ -335,6 +338,27 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 					results.map((result) => `${result.role} (${result.kind})`).join(", ") +
 					`; capacity observed: ${describeCapacity(runtimes)}.`,
 				detail: { revision: packageRev, runtimes, roles: reportedResults(results) },
+			});
+		},
+
+		/**
+		 * The already-proven values the production ticket pipeline executes with.
+		 * They remain off the report shape: these handles are process-local seams,
+		 * while the checks above are the durable evidence an operator reads.
+		 */
+		productionContext() {
+			const state = closure();
+			const built = environment();
+			if (state.unresolved || state.findings.length > 0 || !built.ok || runtimeResults === null) return null;
+			if (runtimeResults.some((result) => !result.ok)) return null;
+
+			return Object.freeze({
+				environment: built.handle,
+				roles: state.roles,
+				packageRev: handshake.tree.digest,
+				runtimes: Object.freeze(
+					Object.fromEntries(runtimeResults.map((result) => [result.kind, result.runtime])),
+				),
 			});
 		},
 	};

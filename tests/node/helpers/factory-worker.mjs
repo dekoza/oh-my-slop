@@ -83,12 +83,16 @@ export function piTransport({
  *   commands that fail, keyed by their first two argv words
  * @param {boolean} [options.ignoresQuitKeys] a harness that takes the keys and
  *   stays — §13.B's wedged pane, which is accepted and recorded, never escalated
+ * @param {(input: { pane: object, text: string }) => Promise<void> | void} [options.onPrompt]
+ *   the worker turn a production-path test drives after the real launch submits
+ *   its prompt; the callback writes the outbox and, for builders, commits work
  */
 export function fakeHerdr({
 	agentStatus = "working",
 	session = { agent: "pi", kind: "path", value: "/t/s.jsonl" },
 	refuse = {},
 	ignoresQuitKeys = false,
+	onPrompt = null,
 } = {}) {
 	const calls = [];
 	const panes = [];
@@ -102,7 +106,14 @@ export function fakeHerdr({
 
 		if (command === "workspace create") {
 			const id = `w${nextPane}`;
-			const pane = { pane_id: `${id}:p1`, workspace_id: id, tab_id: `${id}:t1`, agent_status: "unknown", tokens: {} };
+			const pane = {
+				pane_id: `${id}:p1`,
+				workspace_id: id,
+				tab_id: `${id}:t1`,
+				cwd: args[args.indexOf("--cwd") + 1],
+				agent_status: "unknown",
+				tokens: {},
+			};
 			panes.push(pane);
 			nextPane += 1;
 			return json({ workspace: { workspace_id: id }, tab: { tab_id: pane.tab_id }, root_pane: { pane_id: pane.pane_id } });
@@ -137,7 +148,12 @@ export function fakeHerdr({
 			}
 			return json({ sent: true });
 		}
-		if (command === "agent prompt") return json({ submitted: true });
+		if (command === "agent prompt") {
+			const pane = panes.find((entry) => entry.agent !== undefined);
+			await onPrompt?.({ pane, text: args[3] });
+			if (pane !== undefined) pane.agent_status = "idle";
+			return json({ submitted: true });
+		}
 		if (command === "pane list") return json({ panes: [...panes] });
 		return { exitCode: 2, stdout: "", stderr: `fake herdr does not know \`${command}\`` };
 	};
@@ -145,6 +161,7 @@ export function fakeHerdr({
 	return {
 		calls,
 		panes,
+		run,
 		/** The argv words of every command issued, joined — for order assertions. */
 		commands: () => calls.map((args) => args.slice(0, 2).join(" ")),
 		control: createHerdrControl({ run }),

@@ -74,6 +74,10 @@ function invocation(t, { config, herdr = AVAILABLE } = {}) {
 		// they are injected exactly as the Herdr probe is; the worker suites
 		// drive every verdict through the same seam.
 		workerTransports: workerTransportsAnswering(root),
+		// This suite isolates the controller lifecycle. Explicit null preserves the
+		// focused no-pipeline seam now that an omitted override selects #147's
+		// production composition.
+		pipeline: null,
 	};
 }
 

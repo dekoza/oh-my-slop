@@ -131,7 +131,7 @@ export async function preflight(
 	record(worker.closureCheck());
 
 	// ── Runtime probes (§9.7) ────────────────────────────────────────────────
-	record(await herdrCheck({ env, herdr }));
+	const herdrAvailable = record(await herdrCheck({ env, herdr }));
 
 	// §7.1's clone, §7.2's fetchable base, §7.8's plain-repo refusal — the
 	// factory-private clone is created here if the run is the repo's first. The
@@ -146,6 +146,17 @@ export async function preflight(
 	record(await baselineCheck(store, { run, isolation, config, hold, actor, at }));
 
 	const red = checks.filter((check) => check.result === PREFLIGHT_RESULTS.failed);
+	const workerContext = worker.productionContext();
+	const production =
+		red.length === 0 && isolation.clone !== undefined && isolation.base !== undefined && workerContext !== null
+			? Object.freeze({
+					clone: isolation.clone,
+					base: isolation.base,
+					handshake: handshake.handshake,
+					socket: herdrAvailable.detail.socket,
+					worker: workerContext,
+				})
+			: null;
 
 	return Object.freeze({
 		ok: red.length === 0,
@@ -156,6 +167,9 @@ export async function preflight(
 		red: Object.freeze(red.flatMap((check) => check.red ?? [check.check])),
 		checks: Object.freeze(checks.map(reported)),
 		manifest: manifest.reference ?? null,
+		// Process-local handles for #147's production composition. The report above
+		// remains JSON-only evidence; clone and environment handles never leak into it.
+		production,
 	});
 }
 

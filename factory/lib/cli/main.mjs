@@ -166,6 +166,13 @@ async function run(parsed, verb, loaded, context) {
 		// are: a suite drives real tracker answer shapes without a Gitea, and the
 		// default is built from the config the verb was handed.
 		tracker: context.tracker,
+		trackerWriter: context.trackerWriter,
+		// Focused controller tests may override or explicitly disable the ticket
+		// pipeline; ordinary CLI contexts omit these and select #147's production
+		// composition in `runStart`.
+		pipeline: context.pipeline,
+		frontier: context.frontier,
+		execute: context.execute,
 		expect: loaded?.config.package?.expect ?? null,
 		args: parsed.args,
 		flags: new Set(parsed.flags),
