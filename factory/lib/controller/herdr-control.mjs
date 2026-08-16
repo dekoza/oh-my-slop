@@ -164,16 +164,19 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 		 * early can never make an unstarted agent look started.
 		 */
 		async stamp(pane, { attempt, title }) {
+			// Herdr's report-metadata parser requires the positional pane before its
+			// options, despite rendering the positional last in `--help`. With the
+			// pane last it consumes the source value as an option and exits 2.
 			const stamped = await call([
 				"pane",
 				"report-metadata",
+				pane,
 				"--source",
 				METADATA_SOURCE,
 				"--token",
 				`${FACTORY_ATTEMPT_TOKEN}=${attempt}`,
 				"--title",
 				title,
-				pane,
 			]);
 			return stamped.exitCode === 0 ? Object.freeze({ ok: true, pane }) : failed("pane report-metadata", stamped);
 		},

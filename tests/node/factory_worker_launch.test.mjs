@@ -142,9 +142,10 @@ test("the pane is stamped with FACTORY_ATTEMPT before the agent starts (§5.5)",
 	const stamp = context.herdr.calls.find((args) => args[1] === "report-metadata");
 	const start = context.herdr.calls.findIndex((args) => args[1] === "start");
 	assert.ok(context.herdr.calls.indexOf(stamp) < start, "a crash in between must leave a recognisable pane");
-	assert.deepEqual(stamp.slice(0, 6), [
+	assert.deepEqual(stamp.slice(0, 7), [
 		"pane",
 		"report-metadata",
+		context.herdr.panes[0].pane_id,
 		"--source",
 		METADATA_SOURCE,
 		"--token",

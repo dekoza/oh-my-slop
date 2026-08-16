@@ -119,7 +119,7 @@ export function fakeHerdr({
 			return json({ workspace: { workspace_id: id }, tab: { tab_id: pane.tab_id }, root_pane: { pane_id: pane.pane_id } });
 		}
 		if (command === "pane report-metadata") {
-			const pane = panes.find((entry) => entry.pane_id === args.at(-1));
+			const pane = panes.find((entry) => entry.pane_id === args[2]);
 			const token = args[args.indexOf("--token") + 1].split("=");
 			pane.tokens[token[0]] = token[1];
 			pane.title = args[args.indexOf("--title") + 1];

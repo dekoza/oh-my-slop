@@ -95,13 +95,13 @@ test("the stamp is one metadata call carrying the token and the derived title", 
 	assert.deepEqual(io.calls[0], [
 		"pane",
 		"report-metadata",
+		"w1:p1",
 		"--source",
 		"software-factory",
 		"--token",
 		`${FACTORY_ATTEMPT_TOKEN}=R-t42-a1`,
 		"--title",
 		"factory R-t42-a1",
-		"w1:p1",
 	]);
 });
 
