@@ -71,6 +71,11 @@ export const READ_OPERATIONS = Object.freeze([
 	"issue.timeline",
 	"issue.dependencies",
 	"issue.list",
+	// #100: one issue by number. The list read cannot express it — §3.1's
+	// direct-ticket scope is an explicit set of numbers, and no label filter
+	// selects them — and a read the factory performs that this list omits would
+	// make the list a lie about what the factory asks the world.
+	"issue.get",
 	"git.fetch",
 	"herdr.events-subscribe",
 ]);

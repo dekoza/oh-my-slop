@@ -166,8 +166,12 @@ test("a start drains, ends with a reason, and exits with that reason's code", as
 	assert.equal(value.report.lifecycle, "ended");
 	assert.equal(value.report.execution.claimed, 0);
 	// §9.7's green-looking run that did nothing has to be impossible to mistake
-	// for a run that did the work.
-	assert.match(value.report.execution.missing, /#100/);
+	// for a run that did the work. #100's tracker reader has landed and `doctor`
+	// answers from it, but nothing calls it from here until #101's loop does —
+	// so the sentence names the loop, and a member list this run never looked at
+	// stays empty rather than being borrowed from a verb that did.
+	assert.match(value.report.execution.missing, /#101/);
+	assert.deepEqual(value.report.execution.members, []);
 });
 
 test("the lifecycle is preflight, running, draining, ended — in that order", async (t) => {

@@ -34,6 +34,12 @@ there, and prints human output by default and `--json` on request. The verbs
 themselves are landing slice by slice; until one does, it says so and names what is
 missing rather than going quiet.
 
+`factory doctor` also answers the question a run would ask: given a scope —
+`doctor 100 101` for an explicit set, `doctor --parent 75` for everything whose body
+opens `Part of #75` — it resolves membership over the live tracker graph and prints
+every member with the class it is in and the reason, claiming nothing and moving no
+label.
+
 The `software-factory` extension was **retired** in `fe80c5d` and archived under
 `extensions/.legacy/`. Its replacement is the **`factory`** extension and the **`factory`
 binary**, specified in
