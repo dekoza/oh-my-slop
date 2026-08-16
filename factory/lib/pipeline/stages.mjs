@@ -1,4 +1,4 @@
-import { PHASE_IMPLEMENT, PHASE_INTEGRATE, PHASE_REVIEW, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
+import { PHASE_IMPLEMENT, PHASE_INTEGRATE, PHASE_REVIEW, RETRY_TIERS, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
 import { canonicalJson, digest, runStream } from "../state/events.mjs";
 import { dispositionOf } from "./dispositions.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
@@ -128,8 +128,8 @@ export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome
  * **A row this package does not yet wire raises rather than falling through.**
  * The plausible fallthrough is "carry on to the next phase", which is precisely
  * how an unbuilt repair tier turns a failing attempt into a publication. What is
- * wired here is §8.1's first three phases and §8.9's dispositions; the repair
- * tiers (#110), the budgets (#111), the review fan-out (#112) and integration
+ * wired here is §8.1's first three phases, §8.5's two repair tiers and §8.9's
+ * dispositions; the budgets (#111), the review fan-out (#112) and integration
  * (#113) each replace one refusal with behaviour, and the stages already
  * recorded stay on the chain either way.
  *
@@ -142,12 +142,19 @@ export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome
  * @param {Record<string, (where: object) => Promise<{ outcome: string, detail?: object | null }>>} context.phases
  *   the phase executors: `implement` is agent-borne and the caller's (§8.1),
  *   `harvest` and `verify` are `phases.mjs`'s controller phases
+ * @param {((request: object) => Promise<{ attempt: string }>) | null} [context.nextAttempt]
+ *   §8.5's tier seam: given the tier, the budget it consumes and the failure's
+ *   own evidence, it mints and launches the next attempt and answers with its
+ *   id. It is the caller's because a tier both plans (`pipeline/repair.mjs`) and
+ *   *spends* — §8.6's budget is counted there, and a seam that stops declining is
+ *   what ends a repair chain
  * @param {string} context.actor
  * @param {() => number} context.now
  * @returns {Promise<Readonly<object>>} the ticket execution's disposition
- * @throws {FactoryPipelineError} `not-yet-implemented` · `stage-result-conflict`
+ * @throws {FactoryPipelineError} `not-yet-implemented` · `retry-unplannable` ·
+ *   `stage-result-conflict`
  */
-export async function walkStages(store, { hold, run, ticket, attempt, phases, actor, now }) {
+export async function walkStages(store, { hold, run, ticket, attempt, phases, nextAttempt = null, actor, now }) {
 	let phase = PHASE_IMPLEMENT;
 
 	for (;;) {
@@ -196,8 +203,67 @@ export async function walkStages(store, { hold, run, ticket, attempt, phases, ac
 			});
 		}
 
+		if (RETRY_TIERS.includes(resolved.row.action)) {
+			// §8.5: **every resume is a fresh attempt**, so the walk continues from
+			// `implement` under a *new* attempt rather than re-running the phase that
+			// failed. The phase this failure came from is evidence for the seam's
+			// prompt and never a destination — a repair for a rejected review still
+			// starts by building, and its work is verified and reviewed again from
+			// the top.
+			attempt = await retried(nextAttempt, {
+				attempt,
+				phase,
+				outcome: resolved.outcome,
+				detail: resolved.detail,
+				row: resolved.row,
+			});
+			phase = PHASE_IMPLEMENT;
+			continue;
+		}
+
 		throw unbuilt({ row: resolved.row, phase });
 	}
+}
+
+/**
+ * Ask the seam for the next attempt, and hold its answer to §8.5's one rule:
+ * **a retry is a fresh attempt.**
+ *
+ * The guard is not defensive tidiness. A seam answering with the attempt it was
+ * handed would send the walk back to a phase whose result is already recorded
+ * for that attempt, read the same outcome back, and route to the same tier
+ * forever — a repair loop that looks from outside like a hung controller and
+ * writes nothing to say otherwise.
+ */
+async function retried(nextAttempt, request) {
+	if (typeof nextAttempt !== "function") {
+		throw new FactoryPipelineError(
+			"retry-unplannable",
+			`§8.10 routes ${request.phase} × ${request.row.outcome} to ${request.row.action}, and this caller wired no ` +
+				"seam to mint the next attempt (§8.5). Carrying on to the next phase instead is how a failing attempt " +
+				"becomes a publication, so the walk stops here with the chain it has written.",
+			{
+				at: "seam",
+				phase: request.phase,
+				outcome: request.row.outcome,
+				action: request.row.action,
+				budget: request.row.budget,
+			},
+		);
+	}
+
+	const answer = await nextAttempt({ tier: request.row.action, budget: request.row.budget, ...request });
+	if (typeof answer?.attempt !== "string" || answer.attempt === request.attempt) {
+		throw new FactoryPipelineError(
+			"retry-unplannable",
+			`A ${request.row.action} is a fresh attempt with a fresh worktree (§8.5), and this seam answered with ` +
+				`${JSON.stringify(answer?.attempt ?? null)} for attempt ${request.attempt}. Re-entering the phase under the ` +
+				"same attempt would read its recorded result back and route here again, without end.",
+			{ at: "seam", action: request.row.action, attempt: request.attempt, found: answer?.attempt ?? null },
+		);
+	}
+
+	return answer.attempt;
 }
 
 /**
@@ -251,8 +317,6 @@ async function answerFor(store, { run, ticket, phase, attempt, phases }) {
  * operator meeting one reads the ticket number rather than a stack trace.
  */
 const UNBUILT = Object.freeze({
-	[STAGE_ACTIONS.repair]: { missing: "the two repair tiers (#110)", spec: "§8.5" },
-	[STAGE_ACTIONS.freshRetry]: { missing: "the two repair tiers (#110)", spec: "§8.5" },
 	[STAGE_ACTIONS.retry]: { missing: "the budgets and the circuit breaker (#111)", spec: "§8.6" },
 	[STAGE_ACTIONS.verdict]: { missing: "review fan-out and the mutation attestation (#112)", spec: "§8.4" },
 	[PHASE_REVIEW]: { missing: "review fan-out and the mutation attestation (#112)", spec: "§8.4" },

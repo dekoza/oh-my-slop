@@ -28,6 +28,8 @@ import { assessHarvest } from "../git/harvest.mjs";
  *
  * @param {object} clone the private clone's handle (`git/clone.mjs`)
  * @param {{ worktreePath: string, branch: string, baseCommit: string }} attempt
+ *   `baseCommit` is the attempt's own base, which for a repair is the prior
+ *   attempt's tip rather than the run's pin (§7.3, §8.5)
  * @returns {Promise<Readonly<{ outcome: string, detail: Readonly<object> }>>}
  */
 export async function harvestPhase(clone, { worktreePath, branch, baseCommit }) {

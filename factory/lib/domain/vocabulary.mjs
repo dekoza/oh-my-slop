@@ -292,6 +292,26 @@ export const STAGE_ACTIONS = Object.freeze({
 });
 
 /**
+ * §8.5's two tiers, by the base each one branches from — and the word rides the
+ * `attempt.launched` payload of every attempt a tier produced, which is this
+ * file's criterion for holding it.
+ *
+ * The keys are `STAGE_ACTIONS`' own, so the tiers are enumerated once: the
+ * question "is this row a retry tier" and the question "what does this tier
+ * branch from" are answered from one table rather than from two that can come to
+ * disagree about how many tiers there are.
+ */
+export const RETRY_BASES = Object.freeze({
+	/** Tier 1 — the prior attempt's tip, so its work is preserved. */
+	[STAGE_ACTIONS.repair]: "prior-tip",
+	/** Tier 2 — §7.2's freshly fetched pin, so its work is discarded. */
+	[STAGE_ACTIONS.freshRetry]: "pinned-base",
+});
+
+/** The two actions above, as a list — `RETRY_BASES`' own keys and never a copy. */
+export const RETRY_TIERS = Object.freeze(Object.keys(RETRY_BASES));
+
+/**
  * §8.6's two counters, and §8.10's fourth column. They are two rather than one
  * because **an automation failure never consumes the product budget** — the
  * worker did not cause it, and charging the builder would eventually discard

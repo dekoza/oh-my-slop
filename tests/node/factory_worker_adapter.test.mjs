@@ -4,7 +4,7 @@ import test from "node:test";
 import { createWorkerAdapter, validateRole, WORKER_OPERATIONS } from "../../factory/lib/worker/adapter.mjs";
 import { FactoryWorkerError } from "../../factory/lib/worker/errors.mjs";
 import { lifecycleOperations } from "../../factory/lib/worker/lifecycle.mjs";
-import { PIPELINE_ROLES, rolesInPlay } from "../../factory/lib/worker/roles.mjs";
+import { PIPELINE_ROLES, profileForRole, rolesInPlay } from "../../factory/lib/worker/roles.mjs";
 
 /**
  * §6.1: one runtime-neutral adapter with four operations, role-parametric, and
@@ -144,6 +144,75 @@ test("rolesInPlay resolves each role to the profiles its routing role reaches", 
 			["review-standards", ["reader"]],
 			["review-spec", ["reader"]],
 		],
+	);
+});
+
+// ── Dispatch: `labelsAny × role → profile` (§11.5) ───────────────────────────
+
+/** A routing whose three roles are declared, as §11.5 requires all of them to be. */
+function routing(overrides = {}) {
+	return {
+		roles: { implement: "builder", freshRetry: "big-builder", review: ["reader", "reader"] },
+		rules: [],
+		...overrides,
+	};
+}
+
+test("a role with no matching rule takes its declared profile (§11.5)", () => {
+	assert.equal(profileForRole(routing(), { role: "freshRetry", labels: ["area:db"] }), "big-builder");
+	// The declared value is answered as declared, whatever shape it is — §11.5's
+	// `review` pair passes through rather than being unwrapped or expanded here.
+	assert.deepEqual(profileForRole(routing(), { role: "review", labels: [] }), ["reader", "reader"]);
+});
+
+test("a rule matching any one of its labels wins over the declared profile (§11.5)", () => {
+	const active = routing({ rules: [{ labelsAny: ["risk:high", "risk:critical"], role: "freshRetry", profile: "opus" }] });
+
+	assert.equal(profileForRole(active, { role: "freshRetry", labels: ["area:db", "risk:critical"] }), "opus");
+	assert.equal(
+		profileForRole(active, { role: "implement", labels: ["risk:critical"] }),
+		"builder",
+		"a rule routes the role it names and no other",
+	);
+});
+
+test("a ticket matching two rules for one role is a ticket-scoped automation failure (§11.5)", () => {
+	// Not a load error: the two label sets are disjoint, so the loader's static
+	// overlap check passes and only a ticket carrying both can reach this.
+	const active = routing({
+		rules: [
+			{ labelsAny: ["risk:high"], role: "freshRetry", profile: "opus" },
+			{ labelsAny: ["area:db"], role: "freshRetry", profile: "sonnet" },
+		],
+	});
+
+	assert.throws(
+		() => profileForRole(active, { role: "freshRetry", labels: ["risk:high", "area:db"] }),
+		(error) => {
+			assert.ok(error instanceof FactoryWorkerError);
+			assert.equal(error.reason, "routing-ambiguous");
+			assert.deepEqual(error.details.profiles, ["opus", "sonnet"]);
+			return true;
+		},
+	);
+});
+
+test("an undeclared role is refused, never filled in from another role (§11.5)", () => {
+	const active = routing();
+	delete active.roles.freshRetry;
+
+	assert.throws(
+		() => profileForRole(active, { role: "freshRetry", labels: [] }),
+		(error) => {
+			assert.equal(error.reason, "routing-ambiguous");
+			assert.match(error.message, /freshRetry/);
+			assert.doesNotMatch(
+				error.message,
+				/"builder"/,
+				"an implicit freshRetry = implement is the silent runtime-policy guess §11.5 refuses",
+			);
+			return true;
+		},
 	);
 });
 

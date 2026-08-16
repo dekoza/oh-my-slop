@@ -127,6 +127,12 @@ const GONE_STATUSES = Object.freeze(["released", "exited"]);
  * @param {string} context.worktreePath §7.3's attempt worktree
  * @param {string} context.branch the attempt branch
  * @param {Readonly<object>} context.ticketSnapshot §14.17's claim-time snapshot
+ * @param {Readonly<object> | null} [context.repair] §8.5's brief, when a repair
+ *   tier produced this attempt (`pipeline/repair.mjs`). It rides the prompt, so
+ *   the attempt manifest's prompt digest attests exactly what the worker was
+ *   told — on disk. For an attempt somebody else minted, that digest does not
+ *   reach the journal: the projector inserts one `attempt` row per
+ *   `attempt.launched`, so the mint below cannot be appended twice
  * @param {ReadonlyArray<string>} [context.sessionArgs] §6.8's binding for this posture
  * @param {ReadonlyArray<object>} [context.closureFindings] layer-1/2 findings, if any
  * @param {object} context.herdr the Herdr control surface (`controller/herdr-control.mjs`)
@@ -152,6 +158,7 @@ export async function launchWorker(
 		worktreePath,
 		branch,
 		ticketSnapshot,
+		repair = null,
 		sessionArgs = [],
 		closureFindings = [],
 		herdr,
@@ -196,6 +203,7 @@ export async function launchWorker(
 		outboxPath,
 		ticket: ticketSnapshot,
 		packageRev,
+		repair,
 	});
 
 	const manifest = writeAttemptManifest(store.storeDir, {

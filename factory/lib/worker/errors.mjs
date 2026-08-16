@@ -75,6 +75,15 @@ export const WORKER_ERROR_REASONS = Object.freeze([
 	 * refusal exists to prevent.
 	 */
 	"config-environment-invalid",
+	/**
+	 * §11.5's *ticket-scoped* half of the two-level conflict rule: a ticket
+	 * matching more than one rule for a role, or a role a routing never declared.
+	 * It is a worker refusal rather than a config-load one because the loader's
+	 * static check has already passed — two rules whose `labelsAny` sets are
+	 * disjoint are legal until a ticket carries a label from each — so this fails
+	 * one ticket's dispatch at claim time and never the run.
+	 */
+	"routing-ambiguous",
 	// §6.8's trust misses are **not** here: an unproven pre-trust is observed by
 	// the live probe, so it belongs to `probe.mjs`'s finding vocabulary, exactly
 	// as the shadowing predicate's live half does. One reason, one home.
