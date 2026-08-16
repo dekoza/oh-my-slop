@@ -4,7 +4,14 @@ import assert from "node:assert/strict";
 import { CIRCUIT_BREAKER_THRESHOLD, circuitBreaker } from "../../factory/lib/controller/breaker.mjs";
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
-import { FIXED_NOW, attemptLaunched, manualTimers, openTestStore, runStarted } from "./helpers/factory-store.mjs";
+import {
+	FIXED_NOW,
+	appendLegacyEvent,
+	attemptLaunched,
+	manualTimers,
+	openTestStore,
+	runStarted,
+} from "./helpers/factory-store.mjs";
 
 /**
  * §8.6's run-level circuit breaker: **N consecutive automation failures in
@@ -39,6 +46,7 @@ async function running(t) {
 	return {
 		store,
 		run,
+		hold,
 		/** One ticket execution committing its disposition, in the order called. */
 		commit: (disposition, { reasonClass = null, fault = null, at = FIXED_NOW } = {}) => {
 			const on = (ticket += 1);
@@ -69,7 +77,13 @@ test("the default threshold is §8.6's two", () => {
 test("a run that has settled nothing has not tripped the breaker", async (t) => {
 	const { store, run } = await running(t);
 
-	assert.deepEqual({ ...circuitBreaker(store, { run }) }, { tripped: false, consecutive: 0, threshold: 2, ticket: null });
+	assert.deepEqual({ ...circuitBreaker(store, { run }) }, {
+		tripped: false,
+		consecutive: 0,
+		threshold: 2,
+		ticket: null,
+		unclassifiable: 0,
+	});
 });
 
 test("one automation failure is not two", async (t) => {
@@ -93,6 +107,7 @@ test("§8.6: two consecutive automation failures trip it, and name the ticket th
 		consecutive: 2,
 		threshold: 2,
 		ticket: second,
+		unclassifiable: 0,
 	});
 });
 
@@ -190,6 +205,28 @@ test("§14.37: the order is the journal's sequence, never the clock", async (t) 
 	assert.deepEqual(byClock, ["automation", "automation", "repair"], "the clock tells the other story");
 
 	assert.equal(circuitBreaker(store, { run }).tripped, false);
+});
+
+test("§4.3: a disposition written before the fault was recorded is counted, never guessed at", async (t) => {
+	const { store, run, hold, commit } = await running(t);
+
+	commit("failed", AUTOMATION);
+	// What a store written by a build before #111 holds: the disposition alone.
+	// Reading its missing fault as "not the automation's" is the silent wrong
+	// answer the version bump exists to make visible. The current write path
+	// cannot produce one, which is why this is a forgery.
+	appendLegacyEvent(store, {
+		kind: "ticket.disposition-changed",
+		run,
+		ticket: 999,
+		payload: { disposition: "failed" },
+	});
+	commit("failed", AUTOMATION);
+
+	const verdict = circuitBreaker(store, { run });
+	assert.equal(verdict.tripped, false, "a record it cannot read breaks the streak rather than joining it");
+	assert.equal(verdict.consecutive, 1);
+	assert.equal(verdict.unclassifiable, 1, "and the verdict says it could not read one, rather than reading as complete");
 });
 
 test("a threshold of one trips on the first automation failure", async (t) => {

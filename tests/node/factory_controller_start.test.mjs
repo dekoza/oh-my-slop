@@ -1246,6 +1246,7 @@ test("§8.6: two consecutive automation failures stop new claims and end the run
 		consecutive: 2,
 		threshold: 2,
 		ticket: 91,
+		unclassifiable: 0,
 	});
 	assert.equal(answer.report.lifecycle, "ended");
 	assert.deepEqual(answer.report.capacity.holders, [], "§15 case 5 holds through a breaker exit too");

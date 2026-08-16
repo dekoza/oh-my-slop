@@ -1,5 +1,5 @@
 import { BUDGET_KINDS } from "../domain/vocabulary.mjs";
-import { runStream } from "../state/events.mjs";
+import { EVENT_KINDS, runStream } from "../state/events.mjs";
 
 /**
  * §8.6's run-level circuit breaker: **N consecutive automation failures stop new
@@ -54,19 +54,32 @@ export const CIRCUIT_BREAKER_THRESHOLD = 2;
  * @param {object} where
  * @param {string} where.run
  * @param {number} [where.threshold] §8.6's N
- * @returns {Readonly<{ tripped: boolean, consecutive: number, threshold: number, ticket: number | null }>}
- *   `consecutive` is the longest streak reached, and `ticket` the execution
- *   whose commit completed it — the one an operator opens first
+ * @returns {Readonly<{ tripped: boolean, consecutive: number, threshold: number,
+ *   ticket: number | null, unclassifiable: number }>} `consecutive` is the
+ *   longest streak reached, `ticket` the execution whose commit completed it —
+ *   the one an operator opens first — and `unclassifiable` the terminal commits
+ *   written before the fault was recorded, which this cannot read
  */
 export function circuitBreaker(store, { run, threshold = CIRCUIT_BREAKER_THRESHOLD }) {
 	let streak = 0;
 	let longest = 0;
 	let ticket = null;
+	let unclassifiable = 0;
 
 	// `readEvents` orders by the journal's global sequence, which **is** §8.6's
 	// terminal-commit order: one record per ticket execution's disposition, in
 	// the durable order they committed (§4.2, §14.37).
 	for (const record of store.readEvents({ stream: runStream(run), kind: "ticket.disposition-changed" })) {
+		if (isPreFaultEra(record)) {
+			// A record from before the fault was written down says nothing about
+			// whose failure it was, so it breaks the streak rather than joining it —
+			// and it is **counted**, because a verdict derived partly from records it
+			// could not read is not a verdict anyone should read as complete (§4.4).
+			unclassifiable += 1;
+			streak = 0;
+			continue;
+		}
+
 		streak = automationFailure(record.payload) ? streak + 1 : 0;
 		if (streak > longest) {
 			longest = streak;
@@ -74,7 +87,25 @@ export function circuitBreaker(store, { run, threshold = CIRCUIT_BREAKER_THRESHO
 		}
 	}
 
-	return Object.freeze({ tripped: longest >= threshold, consecutive: longest, threshold, ticket });
+	return Object.freeze({ tripped: longest >= threshold, consecutive: longest, threshold, ticket, unclassifiable });
+}
+
+/**
+ * Is this record from before the disposition payload carried a fault?
+ *
+ * v1 `ticket.disposition-changed` recorded the disposition alone, which was the
+ * whole contract its version names — so a replay that refused it would classify
+ * compatibility as corruption. What it cannot do is answer §8.6's question:
+ * reading its missing fault as "not the automation's" would count a broken
+ * host's failure as a product verdict, silently, which is exactly the wrong
+ * answer per-kind versioning exists to make visible. The branch is what makes it
+ * visible rather than the bump alone.
+ *
+ * The live write path cannot produce one — `buildEnvelope` stamps every kind
+ * with the version this binary declares — which is what keeps this history-only.
+ */
+function isPreFaultEra(record) {
+	return record.payload_version < EVENT_KINDS["ticket.disposition-changed"].payloadVersion;
 }
 
 /**

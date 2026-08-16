@@ -183,7 +183,7 @@ export function exhaustionOf(row) {
  * @param {{ run: string, ticket: number, budgets: Readonly<object> }} context
  * @returns {(request: { outcome: string }) => Promise<void>}
  */
-export function automationRetryFor(store, { run, ticket, budgets }) {
+export function reviewAutomationRetry(store, { run, ticket, budgets }) {
 	return async ({ outcome }) => {
 		// §8.10's row, re-read from the outcome rather than taken off the request:
 		// the seam is handed a budget *kind*, and the exhaustion a refusal has to

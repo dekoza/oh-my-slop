@@ -8,9 +8,9 @@ import { checkRecord } from "../checks/run.mjs";
 import { CIRCUIT_BREAKER_THRESHOLD, circuitBreaker } from "../controller/breaker.mjs";
 import { describeScope, PARENT_FLAG } from "../controller/scope.mjs";
 import { unresolvedEffects } from "../effects/records.mjs";
-import { budgetSpend } from "../pipeline/budgets.mjs";
 import { FactoryPackageError } from "../package/errors.mjs";
 import { packageHandshake } from "../package/handshake.mjs";
+import { budgetSpend } from "../pipeline/budgets.mjs";
 import { reconcile, RECONCILE_MODES } from "../reconcile/engine.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
 import { resolveStorePaths } from "../state/location.mjs";
@@ -602,8 +602,17 @@ function countersSection(store, unresolved) {
 		// automation failure short of the threshold is exactly what an operator
 		// wants to see before it stops claiming rather than after.
 		circuit_breaker: Object.freeze({
+			// The threshold sits above the rows rather than on each of them: it is
+			// one policy for every run, and repeating it per row would invite a
+			// reader to wonder which row's copy was authoritative — as well as being
+			// the answer when there are no rows at all.
 			threshold: CIRCUIT_BREAKER_THRESHOLD,
-			runs: Object.freeze([...runs].map((run) => Object.freeze({ run, ...circuitBreaker(store, { run }) }))),
+			runs: Object.freeze(
+				[...runs].map((run) => {
+					const { tripped, consecutive, ticket, unclassifiable } = circuitBreaker(store, { run });
+					return Object.freeze({ run, tripped, consecutive, ticket, unclassifiable });
+				}),
+			),
 		}),
 		missing: null,
 		spec: "§8.5, §8.6",

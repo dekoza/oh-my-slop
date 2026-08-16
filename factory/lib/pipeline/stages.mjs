@@ -173,8 +173,9 @@ export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome
  * @param {string} context.actor
  * @param {() => number} context.now
  * @returns {Promise<Readonly<object>>} the ticket execution's disposition
- * @throws {FactoryPipelineError} `not-yet-implemented` · `retry-unplannable` ·
- *   `stage-result-conflict`
+ * @throws {FactoryPipelineError} `not-yet-implemented` · `phase-unwired` ·
+ *   `retry-unplannable`. **Not** `stage-result-conflict` or `budget-exhausted`:
+ *   both are §8.10 dispositions this walk returns rather than raises
  */
 export async function walkStages(
 	store,
@@ -315,8 +316,8 @@ async function retried(nextAttempt, request) {
 }
 
 /**
- * The ticket execution's terminal answer: §14.18's disposition, and the chain
- * that produced it.
+ * The ticket execution's terminal answer: §14.18's verdict, and the chain that
+ * produced it.
  *
  * The chain rides along because §8.9's pause and failure comments are required
  * to carry it (#109) and the walk is the last place it is cheap to read — the
@@ -325,41 +326,61 @@ async function retried(nextAttempt, request) {
  * the same detail**: §3.4's pause is the exact question a worker asked, and a
  * disposition that had to go back for it would be reading a record this walk
  * just resolved.
- */
-/**
- * §8.6's exhaustion, as the disposition it settles into.
  *
- * It is the same record `settle` builds and deliberately not a call to it: the
- * outcome is §8.10's phase-less exhaustion row, while the **phase** is the one
- * whose retry was refused — and `settle` derives the disposition from a row it
- * looks up by that pair, which would be the wrong row. The reason class may also
- * be the failing row's own (§8.10's `check-unrunnable` and `rebase-conflict`),
- * and that is a fact about where the budget ran out rather than about the
- * phase-less row.
+ * The `verdict` — §14.18's `{disposition, reason_class, fault}` — is the
+ * caller's, because the two ways of settling read it from different places: a
+ * `dispose` row derives it from the row, and §8.6's exhaustion carries it on the
+ * refusal. Everything else about a terminal answer is the same either way, and
+ * is therefore spelled once here.
  */
-function exhausted(store, { run, ticket, phase, details }) {
+function disposed({ store, run, ticket, phase, outcome, verdict, question = null, conflict = null }) {
 	return Object.freeze({
-		disposition: details.disposition,
-		reason_class: details.reason_class,
-		fault: details.fault,
-		question: null,
-		phase,
-		outcome: details.outcome,
-		conflict: null,
-		chain: outcomeChain(store, { run, ticket }),
-	});
-}
-
-function settle(phase, outcome, { store, run, ticket, reasonClass = null, question = null, conflict = null }) {
-	const row = routeOutcome(phase, outcome);
-
-	return Object.freeze({
-		...dispositionOf(row, { reasonClass }),
+		...verdict,
 		question,
 		phase,
 		outcome,
 		conflict,
 		chain: outcomeChain(store, { run, ticket }),
+	});
+}
+
+/**
+ * §8.6's exhaustion, as the disposition it settles into.
+ *
+ * The verdict comes off the refusal rather than from a row lookup, and that is
+ * the whole difference from `settle`: the **outcome** is §8.10's phase-less
+ * exhaustion row while the **phase** is the one whose retry was refused, so the
+ * `(phase, outcome)` pair `settle` would look up names no row at all. The reason
+ * class may also be the failing row's own (§8.10's `check-unrunnable` and
+ * `rebase-conflict`), which is a fact about where the budget ran out rather than
+ * about the phase-less row.
+ */
+function exhausted(store, { run, ticket, phase, details }) {
+	return disposed({
+		store,
+		run,
+		ticket,
+		phase,
+		outcome: details.outcome,
+		verdict: {
+			disposition: details.disposition,
+			reason_class: details.reason_class,
+			fault: details.fault,
+		},
+	});
+}
+
+/** A `dispose` row's own settlement (§8.9), with §14.18 applied to it. */
+function settle(phase, outcome, { store, run, ticket, reasonClass = null, question = null, conflict = null }) {
+	return disposed({
+		store,
+		run,
+		ticket,
+		phase,
+		outcome,
+		verdict: dispositionOf(routeOutcome(phase, outcome), { reasonClass }),
+		question,
+		conflict,
 	});
 }
 
@@ -384,9 +405,13 @@ async function answerFor(store, { run, ticket, phase, attempt, phases }) {
 }
 
 /**
- * What each unbuilt row and phase is waiting for. Named here, once: the same
+ * What each unbuilt **phase** is waiting for. Named here, once: the same
  * `{missing, spec}` pair every other unbuilt seam in this package carries, so an
  * operator meeting one reads the ticket number rather than a stack trace.
+ *
+ * It is keyed by phase alone now that §8.6's budgets are built — every action
+ * §8.10 routes to has behaviour behind it, so an action reaching `unbuilt` is a
+ * composition defect rather than a slice nobody wrote.
  */
 const UNBUILT = Object.freeze({
 	[PHASE_INTEGRATE]: { missing: "integration and publication — the first pull request (#113)", spec: "§7.5" },
@@ -408,13 +433,16 @@ function unbuilt({ row, phase }) {
 		);
 	}
 
-	const waiting = UNBUILT[row.action] ?? { missing: null, spec: "§8.10" };
+	// Every action §8.10 declares now advances, disposes, or spends a budget, so
+	// the walk reaching here means the table grew an action nothing routes. It is
+	// a refusal rather than a fallthrough for the reason the whole file is: the
+	// plausible fallthrough is "carry on to the next phase", which is how a
+	// failing attempt becomes a publication.
 	return new FactoryPipelineError(
 		"not-yet-implemented",
-		`§8.10 routes ${phase} × ${row.outcome} to ${row.action}, which is not built in this package: ${
-			waiting.missing ?? "no slice claims it"
-		} (${waiting.spec}).`,
-		{ at: "action", phase, outcome: row.outcome, action: row.action, budget: row.budget, ...waiting },
+		`§8.10 routes ${phase} × ${row.outcome} to ${row.action}, which no slice claims: the walk advances, disposes, ` +
+			"and spends the three budgets, and this is none of them (§8.10).",
+		{ at: "action", phase, outcome: row.outcome, action: row.action, budget: row.budget, missing: null, spec: "§8.10" },
 	);
 }
 

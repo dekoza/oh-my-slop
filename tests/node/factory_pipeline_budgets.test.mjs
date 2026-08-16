@@ -7,10 +7,10 @@ import { CONTROLLER_DERIVED_REASON_CLASSES } from "../../factory/lib/domain/voca
 import {
 	BUDGET_KEYS,
 	BUDGET_KEY_FOR_ACTION,
-	automationRetryFor,
 	budgetSpend,
 	exhaustionOf,
 	requireBudget,
+	reviewAutomationRetry,
 } from "../../factory/lib/pipeline/budgets.mjs";
 import { dispositionForReasonClass } from "../../factory/lib/pipeline/dispositions.mjs";
 import { resolveStage } from "../../factory/lib/pipeline/stages.mjs";
@@ -282,7 +282,7 @@ test("§8.8: every class an exhaustion can file under is controller-derived, and
 
 test("the review fan-out's retries and the builder's are one ticket execution's automation spend", async (t) => {
 	const { store, run, ticket, charge } = await executing(t);
-	const seam = automationRetryFor(store, { run, ticket, budgets: { ...DEFAULTS, automation: 2 } });
+	const seam = reviewAutomationRetry(store, { run, ticket, budgets: { ...DEFAULTS, automation: 2 } });
 
 	// A dead builder, then a dead reviewer. Two places counting would have let
 	// the axis retry twice more on a budget the builder had already halved.
