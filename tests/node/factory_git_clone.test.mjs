@@ -59,3 +59,110 @@ test("fetchBase pins the remote's tip under refs/factory/, and writes no other r
 	// refs, no tags followed in.
 	assert.deepEqual(refsOf(clone.dir), ["refs/factory/base/main"]);
 });
+
+test("a corrupt clone is replaced wholesale, never repaired in place", async (t) => {
+	const remote = makeRemote(t);
+	const storeDir = makeStoreDir(t);
+	await openPrivateClone({ storeDir, remoteUrl: remote });
+
+	// Damage the repository structurally and leave a marker: §7.1's "re-clone,
+	// never in-place repair" means the marker must not survive the reopening.
+	writeFileSync(join(privateClonePath(storeDir), "HEAD"), "this is not a ref\n");
+	writeFileSync(join(privateClonePath(storeDir), "marker"), "left by the damaged clone\n");
+
+	const clone = await openPrivateClone({ storeDir, remoteUrl: remote });
+	const base = await clone.fetchBase({ baseBranch: "main" });
+
+	assert.ok(!existsSync(join(clone.dir, "marker")), "the damaged clone was repaired in place");
+	assert.match(base.commit, /^[0-9a-f]{40}$/);
+});
+
+test("a healthy clone whose remote URL drifted converges by set-url, keeping its branches", async (t) => {
+	const remote = makeRemote(t);
+	const storeDir = makeStoreDir(t);
+	const first = await openPrivateClone({ storeDir, remoteUrl: remote });
+	const base = await first.fetchBase({ baseBranch: "main" });
+	await first.createBranch({ branch: "factory/t42/aRUN-t42-a1", at: base.commit });
+
+	// The remote moved hosts. A rebuild here would discard the attempt branch —
+	// the only copy of unpushed work (§7.7) — so drift converges in place.
+	const moved = makeRemote(t);
+	const clone = await openPrivateClone({ storeDir, remoteUrl: moved });
+
+	assert.equal(
+		execFileSync("git", ["-C", clone.dir, "remote", "get-url", "origin"], { encoding: "utf8" }).trim(),
+		moved,
+	);
+	assert.ok(refsOf(clone.dir).includes("refs/heads/factory/t42/aRUN-t42-a1"), "the attempt branch was lost");
+});
+
+test("fetches into the private clone are serialized, however many callers ask (§7.7)", async (t) => {
+	const remote = makeRemote(t);
+	const storeDir = makeStoreDir(t);
+
+	let inFlight = 0;
+	let peak = 0;
+	const { runGit } = await import("../../factory/lib/git/clone.mjs");
+	const watching = async (args, options) => {
+		if (args[0] === "fetch") {
+			inFlight += 1;
+			peak = Math.max(peak, inFlight);
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		try {
+			return await runGit(args, options);
+		} finally {
+			if (args[0] === "fetch") inFlight -= 1;
+		}
+	};
+
+	const clone = await openPrivateClone({ storeDir, remoteUrl: remote, git: watching });
+	const results = await Promise.all([
+		clone.fetchBase({ baseBranch: "main" }),
+		clone.fetchBase({ baseBranch: "main" }),
+		clone.fetchBase({ baseBranch: "main" }),
+	]);
+
+	assert.equal(peak, 1, "two fetches ran into the clone at once");
+	assert.equal(new Set(results.map((result) => result.commit)).size, 1);
+});
+
+test("a branch collision is a typed refusal, never a force", async (t) => {
+	const remote = makeRemote(t);
+	const storeDir = makeStoreDir(t);
+	const clone = await openPrivateClone({ storeDir, remoteUrl: remote });
+	const base = await clone.fetchBase({ baseBranch: "main" });
+
+	const first = await clone.createBranch({ branch: "factory/t42/aRUN-t42-a1", at: base.commit });
+	assert.deepEqual(first, { sha: base.commit, created: true });
+
+	// The same request again is the same branch, not an error (§7.7's re-runnable
+	// integration needs exactly this).
+	const again = await clone.createBranch({ branch: "factory/t42/aRUN-t42-a1", at: base.commit });
+	assert.deepEqual(again, { sha: base.commit, created: false });
+
+	// A different commit under the deterministic name is a mutation.
+	const other = execFileSync("git", ["-C", clone.dir, "commit-tree", `${base.commit}^{tree}`, "-m", "impostor"], {
+		encoding: "utf8",
+	}).trim();
+	await assert.rejects(
+		clone.createBranch({ branch: "factory/t42/aRUN-t42-a1", at: other }),
+		(error) => error.name === "FactoryGitError" && error.reason === "branch-collision",
+	);
+});
+
+test("no handle operation can write a ref outside the factory namespaces", async (t) => {
+	const remote = makeRemote(t);
+	const storeDir = makeStoreDir(t);
+	const clone = await openPrivateClone({ storeDir, remoteUrl: remote });
+	const base = await clone.fetchBase({ baseBranch: "main" });
+
+	await assert.rejects(
+		clone.createBranch({ branch: "main", at: base.commit }),
+		(error) => error.name === "FactoryGitError" && error.reason === "ref-outside-namespace",
+	);
+	await assert.rejects(
+		clone.addWorktree({ path: join(storeDir, "worktrees", "x"), branch: "refs/heads/main" }),
+		(error) => error.name === "FactoryGitError" && error.reason === "ref-outside-namespace",
+	);
+});
