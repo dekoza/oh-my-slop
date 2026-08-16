@@ -9,8 +9,8 @@ import {
 	claimTicket,
 	FOREIGN_STALE_AFTER_MS,
 	isClaimComment,
-	releaseClaim,
 } from "../../factory/lib/tracker/claims.mjs";
+import { applyDisposition } from "../../factory/lib/tracker/disposition.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { createGiteaWriter, TRACKER_WRITES } from "../../factory/lib/tracker/writer.mjs";
 import { fakeGitea, giteaComment, giteaIssue, TRACKER_NOW } from "./helpers/factory-tracker.mjs";
@@ -193,7 +193,7 @@ test("a claim this factory released is not proof of a later one, so the foreign 
 	// record describing a claim this factory already gave up.
 	const { store, run, hold, reader, writer, gitea } = await claiming(t, { issues: [giteaIssue({ number: 10 })] });
 	await claim(store, { reader, writer, hold, run, ticket: 10 });
-	await releaseClaim(store, {
+	await applyDisposition(store, {
 		writer,
 		hold,
 		run,
@@ -201,6 +201,7 @@ test("a claim this factory released is not proof of a later one, so the foreign 
 		attempt: `${run}-t10-a1`,
 		assignee: ASSIGNEE,
 		at: TRACKER_NOW,
+		disposition: "released",
 		reason: "done with it",
 	});
 	gitea.issues[0].assignees = [{ id: 9, login: ASSIGNEE, username: ASSIGNEE }];
@@ -348,37 +349,6 @@ test("an assignment that did not survive the re-read is a lost collision, not a 
 	assert.match(answered.reason, /someone-else/);
 });
 
-test("released drops the claim with no label, and says so in a machine-parseable block", async (t) => {
-	const { store, run, hold, reader, writer, gitea } = await claiming(t, { issues: [giteaIssue({ number: 10 })] });
-	await claim(store, { reader, writer, hold, run, ticket: 10 });
-
-	const released = await releaseClaim(store, {
-		writer,
-		hold,
-		run,
-		ticket: 10,
-		attempt: `${run}-t10-a1`,
-		assignee: ASSIGNEE,
-		at: TRACKER_NOW,
-		reason: "the operator stopped the run",
-	});
-
-	assert.equal(released.disposition, "released");
-	assert.deepEqual(gitea.issues[0].assignees, []);
-	// §8.9: no label. The labels are exactly as the fixture created them.
-	assert.deepEqual(
-		gitea.issues[0].labels.map((label) => label.name),
-		["workflow:implement", "ready-for-agent"],
-	);
-
-	const block = gitea.comments.at(-1).body;
-	assert.match(block, /disposition: released/);
-	assert.match(block, /reason: the operator stopped the run/);
-	// It carries no claim marker: a release announcement must not read as a
-	// contender to the next run's arbitration.
-	assert.equal(isClaimComment(block), false);
-});
-
 test("a tracker that refuses the write leaves the intent standing for §5.3 to settle", async (t) => {
 	const { store, run, hold, reader, writer } = await claiming(t, {
 		issues: [giteaIssue({ number: 10 })],
@@ -405,13 +375,18 @@ test("a tracker that will not state its own clock refuses the claim rather than 
 	assert.deepEqual(gitea.writes, [], "a claim went ahead without knowing the tracker's clock");
 });
 
-test("the write surface is §4.5's three mutations, each a registered effect kind", async () => {
+test("the write surface is §4.5's tracker mutations, each a registered effect kind", async () => {
 	const { gitea, writer } = tracker({ issues: [] });
 
 	// There is no method argument and no path argument, so a mutation outside the
 	// table is not something this module can be *told* to perform.
-	assert.deepEqual(Object.keys(writer).sort(), ["assign", "comment", "login", "repo", "unassign"]);
-	assert.deepEqual(Object.keys(TRACKER_WRITES), ["issue-assign", "issue-unassign", "comment-post"]);
+	assert.deepEqual(Object.keys(writer).sort(), ["addLabels", "assign", "comment", "login", "repo", "unassign"]);
+	assert.deepEqual(Object.keys(TRACKER_WRITES), ["issue-assign", "issue-unassign", "label-add", "comment-post"]);
+
+	// §14.20: **no label removal.** A `factory:failed` label is cleared by a human
+	// or not at all, so the removal legacy's `failAutomation` used to re-arm a
+	// ticket is not a mutation this factory can perform.
+	assert.equal(Object.keys(TRACKER_WRITES).includes("label-remove"), false);
 	for (const operation of Object.keys(TRACKER_WRITES)) {
 		// §14.3: a kind with no probe cannot be registered, so this is also the
 		// proof that every write here is re-probeable.

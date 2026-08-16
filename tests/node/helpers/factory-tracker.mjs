@@ -220,6 +220,25 @@ export function fakeGitea({
 			return { status: 201, body: created };
 		}
 
+		// Gitea's label endpoint is **additive** — `POST` appends to whatever the
+		// issue already carries, and only `PUT` replaces the set. The fixture keeps
+		// that difference, because §8.9's dispositions rely on it: a label added
+		// without a read-modify-write is what stops a disposition from silently
+		// discarding a label a human put there.
+		const labelMatch = /\/issues\/([0-9]+)\/labels$/.exec(path);
+		if (method === "POST" && labelMatch !== null) {
+			const issue = issues.find((candidate) => candidate.number === Number(labelMatch[1]));
+			if (issue === undefined) return { status: 404, body: { message: "not found" } };
+
+			for (const name of body.labels) {
+				if (issue.labels.some((label) => label.name === name)) continue;
+				issue.labels.push({ id: 200 + issue.labels.length, name, color: "b60205" });
+			}
+			issue.updated_at = new Date(serverTime).toISOString();
+			onWrite?.({ operation, ticket: issue.number, body }, world);
+			return { status: 200, body: issue.labels };
+		}
+
 		const issueMatch = /\/issues\/([0-9]+)$/.exec(path);
 		if (method === "PATCH" && issueMatch !== null) {
 			const issue = issues.find((candidate) => candidate.number === Number(issueMatch[1]));

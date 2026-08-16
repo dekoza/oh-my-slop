@@ -69,12 +69,19 @@ async function runOver(t, { world, tickets, pipeline, lanes = [] }) {
 			pipeline ??
 			(async (lane) => {
 				lanes.push(lane);
-				return { disposition: "published" };
+				// §8.9's `published` links the PR the work is on, so a lane that
+				// answers `published` without one is a disposition the tracker action
+				// cannot carry out — the applier refuses it rather than posting a
+				// block naming no pull request.
+				return { disposition: "published", pr: PUBLISHED_PR };
 			}),
 	});
 
 	return { answer, gitea, context, lanes };
 }
+
+/** The pull request a published lane hands over (§7.5, §8.9). */
+const PUBLISHED_PR = Object.freeze({ number: 7, url: "http://gitea.example/acme/widgets/pulls/7" });
 
 async function eventsOf(t, context) {
 	const store = await openStore({ repoRoot: context.repoRoot, agentDir: context.agentDir });
@@ -111,9 +118,11 @@ test("a ticket is never claimed before its ticket slot and its model slot are he
 		Math.max(...granted.map((event) => event.seq)) < claimed[0],
 		"the claim was recorded before both slots were held",
 	);
+	// The claim's two writes, then §8.9's tracker action for the disposition the
+	// lane came back with: the label first, the block second.
 	assert.deepEqual(
 		gitea.writes.map((write) => write.operation),
-		["issue-assign", "comment-post"],
+		["issue-assign", "comment-post", "label-add", "comment-post"],
 	);
 });
 
@@ -146,7 +155,7 @@ test("§3.5: nothing claimable and nothing movable is drained, and the run exits
 		tickets: [40, 41, 42],
 		pipeline: async (lane) => {
 			reads.push(lane.ticket);
-			return { disposition: "published" };
+			return { disposition: "published", pr: PUBLISHED_PR };
 		},
 	});
 
@@ -221,19 +230,18 @@ test("§8.9: released drops the claim with no label, so the ticket returns to th
 
 	assert.equal(answer.report.execution.members[0].disposition, "released");
 	// The claim is dropped by the run itself: §8.9's row is the tracker action for
-	// the disposition, and this is the one of the four this slice owns.
+	// the disposition, and `released` is the one row of the four that drops it.
 	assert.deepEqual(gitea.issues[0].assignees, []);
 	assert.deepEqual(
 		gitea.issues[0].labels.map((label) => label.name),
 		labelsBefore,
 		"§8.9's released touches no label",
 	);
+	assert.match(gitea.comments.at(-1).body, /"reason": "the pipeline gave the work up"/);
 	assert.deepEqual(
 		gitea.writes.map((write) => write.operation),
 		["issue-assign", "comment-post", "issue-unassign", "comment-post"],
 	);
-	assert.match(gitea.comments.at(-1).body, /reason: the pipeline gave the work up/);
-
 	// And it is durable: a run that reported a finished lane as still in flight
 	// would be telling the next controller there is something to reconcile.
 	const store = await eventsOf(t, context);
@@ -257,11 +265,14 @@ test("a run reads the frontier again at every scheduling decision, and caches no
 	// membership at every one of them, and `frontier.mjs` caches nothing — so the
 	// scope is read five times, not once with four answers served from memory.
 	//
-	// It counts #43's dependency read rather than #42's issue read because the
-	// claim has reads of its own on the ticket it is claiming: the pre-claim look
-	// and §3.3's re-read. Nothing but a frontier resolution asks #43 for its edges.
+	// It counts the member read rather than the edge read: a member is read on
+	// every resolution, while its edges are read only when an edge could still
+	// reclassify it — so once #43 carries `factory:awaiting-merge` from its own
+	// publication, the label check settles it and the edges are never asked for.
+	// §3.3 adds two reads of its own on the ticket it claims, the pre-claim look
+	// and the re-read, so five decisions over #43 read it seven times.
 	const decisions = gitea.calls.filter(
-		(entry) => entry.call === "issue.dependencies" && entry.path.includes("/issues/43/dependencies"),
+		(entry) => entry.call === "issue.get" && entry.path.endsWith("/issues/43"),
 	);
-	assert.equal(decisions.length, 5, "the frontier was not re-read at every scheduling decision");
+	assert.equal(decisions.length, 7, "the frontier was not re-read at every scheduling decision");
 });

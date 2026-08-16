@@ -2,11 +2,11 @@ import { execFile } from "node:child_process";
 
 import { EFFECT_REGISTRY } from "../effects/registry.mjs";
 import { FactoryTrackerError } from "./errors.mjs";
-import { normaliseComment, normaliseIssue, TEA_BINARY } from "./gitea.mjs";
+import { normaliseComment, normaliseIssue, normaliseLabelNames, TEA_BINARY } from "./gitea.mjs";
 
 /**
- * The Gitea **write** path (§3.3, §4.5) — the three mutations claiming needs, and
- * no fourth.
+ * The Gitea **write** path (§3.3, §8.9, §4.5) — the mutations a claim and a
+ * disposition need, and no others.
  *
  * It is a separate module from the reader rather than a section of it, and that
  * is the point: `gitea.mjs` hardcodes `--method GET` and takes no method
@@ -49,10 +49,24 @@ export const WRITE_TIMEOUT_MS = 30_000;
  * read-modify-write here — §3.3 only ever claims a ticket **nobody** is assigned
  * to, so the desired set is `[us]` or `[]`, and computing it from a set we just
  * read would open a window in which a human's assignment is silently discarded.
+ *
+ * **Labels are the opposite case, and the verb is what makes it so.** `POST` on
+ * an issue's labels *appends*; `PUT` replaces the set. §8.9 adds one label to a
+ * ticket a human may have labelled themselves, so the appending verb is the only
+ * correct one — replacing would let a disposition silently drop a triage label
+ * nobody asked it to touch.
+ *
+ * **There is no label removal**, and its absence is §14.20: a `factory:failed`
+ * or `factory:needs-human` label is cleared by a human or not at all, so the
+ * factory has no path to remove one. §4.5's catalogue declares the `label-remove`
+ * *probe* because removal is a mutation somebody could perform — but the writer
+ * is the inventory of what this factory can change about a tracker, and adding an
+ * unreachable removal here is how the automatic requeue comes back.
  */
 export const TRACKER_WRITES = Object.freeze({
 	"issue-assign": Object.freeze({ method: "PATCH", path: (ticket) => `/issues/${ticket}` }),
 	"issue-unassign": Object.freeze({ method: "PATCH", path: (ticket) => `/issues/${ticket}` }),
+	"label-add": Object.freeze({ method: "POST", path: (ticket) => `/issues/${ticket}/labels` }),
 	"comment-post": Object.freeze({ method: "POST", path: (ticket) => `/issues/${ticket}/comments` }),
 });
 
@@ -109,6 +123,14 @@ export function createGiteaWriter({ repo, login, request = teaWrite }) {
 		 * which is the honest state rather than a lock nobody holds.
 		 */
 		unassign: async (ticket) => normaliseIssue(await write("issue-unassign", ticket, { assignees: [] })),
+
+		/**
+		 * §8.9's label half of a disposition. The endpoint answers with the issue's
+		 * labels rather than the issue, so the names are what comes back — and the
+		 * names are what the `issue.labels` probe compares, so nothing here has to
+		 * carry a label id the factory never chose.
+		 */
+		addLabels: async (ticket, labels) => normaliseLabelNames(await write("label-add", ticket, { labels })),
 
 		/**
 		 * §3.3's structured claim comment, §8.9's disposition block, §3.3's takeover

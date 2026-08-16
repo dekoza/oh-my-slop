@@ -341,6 +341,30 @@ export function normaliseComment(raw) {
 }
 
 /**
+ * The label **names** on an issue, as the labels endpoint answers them.
+ *
+ * Names rather than the records: the factory's label vocabulary is fixed
+ * constants (`labels.mjs`) and a label id is this instance's own number, so
+ * nothing the factory writes or probes has a use for one. `normaliseIssue`
+ * projects the same field the same way, which is what lets the `issue.labels`
+ * probe be served from either read.
+ *
+ * @param {unknown} raw the endpoint's answer — an array of label records
+ * @returns {ReadonlyArray<string>}
+ */
+export function normaliseLabelNames(raw) {
+	if (!Array.isArray(raw)) {
+		throw new FactoryTrackerError(
+			"tracker-answer-invalid",
+			`An issue's labels come back as a list; found ${JSON.stringify(raw ?? null)}.`,
+			{ at: "labels", found: raw ?? null },
+		);
+	}
+
+	return Object.freeze(raw.map((label) => label?.name).filter((name) => typeof name === "string"));
+}
+
+/**
  * A timeline entry. `type` is Gitea's own vocabulary and is passed through
  * rather than mapped: §5.1 keys one behaviour off exactly one member
  * (`add_dependency`), and a translation table would be a second vocabulary that
