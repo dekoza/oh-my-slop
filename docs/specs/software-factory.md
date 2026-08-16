@@ -237,7 +237,7 @@ Fields: `seq` · `event_id` (ULID) · `envelope_version` · `kind` + `payload_ve
 - **Kinds are dotted `<entity>.<verb>`** from one closed, additive-only enumeration:
   `run.started` · `run.lifecycle-changed` · `run.ended` · `run.stop-requested` ·
   `run.abandon-requested` · `preflight.checked` · `attempt.launched` ·
-  `attempt.rechecked` · `attempt.correlated` · `attempt.ended` ·
+  `attempt.rechecked` · `attempt.correlated` · `attempt.ended` · `stage.resolved` ·
   `ticket.disposition-changed` · `effect.requested` · `effect.resolved` ·
   `observation.recorded` · `observation.degraded` · `reconcile.concluded` ·
   `controller.heartbeat` · `controller.lease-lost` · `projection.rebuilt` ·
@@ -889,6 +889,14 @@ exit-code contract** (§11.6).
 - **The controller reruns the full required set itself**, in a controller-owned verification
   worktree, **at the exact post-rebase commit that will be pushed**. One rule, no conditional
   re-check paths. Worker-reported test evidence remains **context only**.
+- **`verify` runs the advisory checks alongside the required ones**, and judges on the required
+  set alone. That is the one place "advisory checks record evidence and never block" can happen:
+  §8.3's baseline runs the required set by itself, and §8.7's attestation carries *every* check
+  with its required flag.
+- **A required set in which one check was `unrunnable` is `unrunnable`, even beside a genuine
+  failure.** §14.16 makes the controller's rerun the only attestation boundary, so an incomplete
+  rerun attests nothing; calling the phase `failed` would charge the worker's repair budget for a
+  broken host, and a real failure that survives the retry reports itself one phase later.
 
 Neither legacy implementation ever executed the project's own checks; both trusted
 agent-reported evidence, and `software-factory` merely demanded a `"tests":["command: result"]`
@@ -1047,7 +1055,8 @@ Controller-derived, never worker-writable: `repair-budget-exhausted` ·
 Run-scoped, not a ticket disposition: `baseline-red`.
 
 > **The invariant:** *every worker-writable reason class ⇒ `paused`; every controller-derived
-> reason class ⇒ `failed`.*
+> reason class ⇒ `failed`.* §8.10's two "`failed` / automation" rows name no class at all, and the
+> same rule answers them: an automation fault is controller-derived by definition, so it fails.
 
 A worker asking a question needs an answer; the controller giving up needs an investigation.
 Stated as a rule rather than as a table property, so a class added later cannot be filed to the
@@ -1095,10 +1104,14 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | verify | `passed` | → review | — |
 | verify | `failed` | repair, check output presented as fact | repair |
 | verify | `unrunnable` | retry; exhausted ⇒ `failed` / `check-unrunnable` | automation |
+| review | reviewer attempt `completed` | take its verdict | — |
 | review | both axes `approved` | → integrate | — |
 | review | either axis `rejected` | repair, findings in the untrusted block | repair |
 | review | `mutation-detected` | `failed` / `review-mutation`, **no retry** | — |
-| review | reviewer attempt died / timed out / invalid | retry | automation |
+| review | reviewer attempt `needs-human` | `paused` (worker reason class) | — |
+| review | reviewer attempt `wrote-but-hung` | take its verdict, record the anomaly | — |
+| review | reviewer attempt `cancelled` | `released` | — |
+| review | reviewer attempt `worker-failed` · `invalid-result` · `no-result` · `dead-worker` · `timeout` · `automation-failure` | retry | automation |
 | integrate | `integrated` | `published` | — |
 | integrate | `rebase-conflict` | fresh-retry from the new base tip | repair |
 | integrate | `predicate-failed` | `failed` / automation | — |
@@ -1121,6 +1134,13 @@ human removing the label is what makes the label mean "someone has acknowledged 
 - **The whole table is re-enterable.** Reconcile replays it from durable state after a crash
   between an external effect and its recorded resolution, which §7.7's end-to-end idempotent
   integration makes safe.
+- **A stage result's semantic key is `(run, ticket, phase, attempt)`** — §2.1's stage identity
+  plus the attempt it was resolved under. §8.5's repair re-enters a phase, so a key without the
+  attempt slot would read every repair as the conflicting duplicate two rows above, and a working
+  pipeline would fail itself.
+- **The last two rows are dispositions, not crashes.** A conflicting duplicate is a *typed*
+  conflict precisely so the ticket execution still reaches `failed`; letting it escape the walk
+  would leave it at no disposition, which is the one state §8.9 has no word for.
 
 ---
 
@@ -2222,3 +2242,4 @@ touching everything twice.
 | 2026-08-16 | #106 implementation corrections, all three found by running the real harnesses. §11.3 gains an optional **`worker`** block — §6.8 requires per-run overrides to be *declared in config* and recorded in the manifest, and no block held them; singular, so §11.8's migration cannot confuse it with legacy v1's `workers`. §6.8 gains a **third channel, capability promotion**, with an enforced limit: config isolation silently deletes the `local` resource class (its models come from an operator *extension*, verified live — 5 models and the router's `max_instances` with it, zero without) and §6.5's transcript pointer, so declared extensions are promoted, digest-recorded, and held to "no skills" by the probe requiring **every** `skill:<name>` record — not only the closure's — to resolve inside the pinned root. §6.8's Claude reviewer gains broad allows for the tools it keeps: plan mode with an empty allow list leaves a prompt path in the one posture that was not given them. | #106 |
 | 2026-08-15 | #97 second reverse-verification corrections. §4.6: a loss conceded before `run.started` commits names no run — the loss event carries `run: null` and the exit-6 report names no phantom id. §10.3 and §13.A: the published table is restated as **six run end reasons plus one controller exit outcome**, ending the contradiction of a mandatory "end-reason enum" containing a member never recorded as one. §4.3: `run.ended` and `run.lifecycle-changed` move to payload v2, whose contract refuses `lease-lost`, duplicate endings, and post-terminal movement, while v1 journals replay with the tolerance they were written under; the `run` and `run_digest` projectors bump to v3, so a store the previous contract wrote refuses at open and is repaired by a recorded rebuild rather than opened silently or classified as corruption. §4.3's kind enumeration gains the `run.lifecycle-changed` and `preflight.checked` records the implementation already emits. §14.6 invariant 6 qualified accordingly. | #97 |
 | 2026-08-16 | #107 implementation corrections, both found by running the installed Herdr (protocol 19). **Herdr exposes no `agent stop`** — not in the CLI, whose whole agent surface is list/get/read/send-keys/prompt/rename/focus/wait/attach/start/explain, and not in the socket API, which has no `agent.stop` method. §6.6 and §13.B's "the controller stops the **agent**, never the pane" therefore lands as the harness's own quit sequence through `agent send-keys`, leaving the pane at its shell prompt; §13.B's accepted cost is unchanged, and a harness that ignores its quit keys is the wedged pane it already describes. **Herdr also dates nothing**: no answer or event frame in its API carries a timestamp, so §4.3's "a foreign fact retains that system's raw timestamp string verbatim" gains an explicit source-level exception — a source that states no time declares it (`statesTime: false`), the `occurred_at_raw` key is *refused* on it rather than filled with our clock under its name, and `observed_at` dates the record. Herdr's frames carry no id either, so §5.1's foreign id is constructed and — exactly as the tracker's is — **names the fact rather than the object**, or the partial unique index would let the first sighting of a pane suppress every later one. Two further clarifications of what was already implied: §6.6's worker liveness is *still working*, not *the process exists* (neither harness exits when a turn ends, so the latter reading makes every normal completion `wrote-but-hung`), and §6.5's mint is recorded before any attempt-scoped effect, with the harness session identifiers and the transcript pointer following in an `attempt.correlated` record once Herdr can state them. §4.3's kind enumeration is brought back into step with what the implementation emits: it had fallen behind #98's two operator requests, #98's `ticket.disposition-changed`, and #105's `attempt.rechecked`, and now also carries this slice's `attempt.correlated` and `attempt.ended`. | #107 |
+| 2026-08-16 | #108 implementation corrections, all five found while making §8.10's table total. **A stage result's semantic key is `(run, ticket, phase, attempt)`**, not §2.1's bare stage identity: §8.5's repair re-enters a phase, so a key without the attempt slot would make every repair §8.10's *conflicting duplicate* and a working pipeline would fail itself. **§8.10's two "`failed` / automation" cells name no reason class**, and §8.8 has none that fits — so §14.18's rule is stated over the fault as well: a controller-derived reason class ⇒ `failed`, and an automation fault with no class ⇒ `failed` too, since an automation fault is controller-derived by definition. **`unrunnable` outranks `failed`** when a required set mixes them: §14.16 makes the controller's rerun the only attestation boundary, so a set one required check never ran attests nothing, and calling the phase `failed` would charge the worker's repair budget for a broken host. **Verify runs the advisory checks too** — §8.2's "the full required set runs every time" and its "advisory checks record evidence and never block" have only one place they both hold, since §8.3's baseline runs the required set alone and §8.7's attestation carries *every* check with its required flag. **§8.10's review rows are expanded per attempt outcome**: the published row lumps "reviewer attempt died / timed out / invalid", but a reviewer's `needs-human` is §14.18's pause, its `cancelled` is `released`, and its `wrote-but-hung` is a valid verdict — so the phase is routed over its attempt outcomes *and* its three verdict results, which is what makes it total. §4.3's kind enumeration gains this slice's `stage.resolved`. | #108 |

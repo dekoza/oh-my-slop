@@ -178,7 +178,7 @@ test("a start drains, ends with a reason, and exits with that reason's code", as
 	// claim can take it, but §3.3 forbids claiming work that cannot start — so a
 	// run with no pipeline above the claim reads no frontier at all, and the
 	// sentence names that half rather than reporting a scope that drained.
-	assert.match(value.report.execution.missing, /#107/);
+	assert.match(value.report.execution.missing, /#108/);
 	assert.deepEqual(value.report.execution.members, []);
 	assert.deepEqual(value.report.execution.counts, {
 		closed: 0,

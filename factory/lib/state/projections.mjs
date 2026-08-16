@@ -2,6 +2,7 @@ import {
 	ATTEMPT_OUTCOMES,
 	CONTROLLER_EXIT_LEASE_LOST,
 	NO_TRANSCRIPT_POINTER,
+	PHASE_OUTCOME_DOMAINS,
 	RUN_LIFECYCLE,
 	RUN_LIFECYCLES,
 	RUN_TERMINAL_REASONS,
@@ -24,9 +25,8 @@ import { FactoryStateError } from "./errors.mjs";
  *
  * The kinds a projector does not name still advance its rows' `last_seq`. The
  * `disposition` column's writer is #98's abandon (the one member of §8.8's set
- * this package reaches), and the disposition subsystem (#108, #109) writes it
- * additively for the rest; `outcome_chains` is still waiting for the slice that
- * owns its vocabulary.
+ * this package reaches), and the tracker actions beside it (#109) write the rest
+ * additively; `outcome_chains` is #108's, filled from `stage.resolved`.
  */
 
 /** §10.3's first lifecycle value: preflight runs *after* the run exists. */
@@ -252,8 +252,15 @@ const runDigest = {
 	 * Herdr drops the reference when the pane goes away, and integration deletes the
 	 * worktree pi's path is keyed on, so a pointer not written into the digest
 	 * when it arrives is a transcript nobody can find again (§12.9).
+	 *
+	 * v5 records §8.10's **outcome chains** (#108), which are tier-2 permanent for
+	 * the reason the transcripts are: the chain's *shape* is what an operator
+	 * reads a finished run by, and the run stream it could otherwise be recomputed
+	 * from expires at the tier-1 horizon. A v4 digest renders every ticket
+	 * execution as having no history at all, which is indistinguishable from one
+	 * that never ran a phase.
 	 */
-	version: 4,
+	version: 5,
 	retention: PROJECTION_CLASSES.permanent,
 	apply(db, event) {
 		if (event.run === null) return;
@@ -266,7 +273,7 @@ const runDigest = {
 		}
 
 		const row = db
-			.prepare("SELECT dispositions, attempt_count, transcripts FROM run_digest WHERE run_id = ?")
+			.prepare("SELECT dispositions, outcome_chains, attempt_count, transcripts FROM run_digest WHERE run_id = ?")
 			.get(event.run);
 		if (row === undefined) {
 			throw refusal("run", `No run ${event.run} was ever started in this store.`, event);
@@ -296,9 +303,10 @@ const runDigest = {
 		}
 
 		db.prepare(
-			"UPDATE run_digest SET dispositions = ?, ticket_count = ?, attempt_count = ?, transcripts = ?, last_seq = ? WHERE run_id = ?",
+			"UPDATE run_digest SET dispositions = ?, outcome_chains = ?, ticket_count = ?, attempt_count = ?, transcripts = ?, last_seq = ? WHERE run_id = ?",
 		).run(
 			canonicalJson(dispositions),
+			canonicalJson(withStage(JSON.parse(row.outcome_chains), event)),
 			Object.keys(dispositions).length,
 			row.attempt_count + (event.kind === "attempt.launched" ? 1 : 0),
 			canonicalJson(withTranscript(JSON.parse(row.transcripts), event)),
@@ -331,6 +339,43 @@ function withTranscript(transcripts, event) {
 					captured_at: pointer.captured_at ?? null,
 				};
 	return transcripts;
+}
+
+/**
+ * §8.10's outcome chain, per ticket, in the tier-2 digest (§12.3).
+ *
+ * The **shape** is what survives tier-1 expiry, and the shape is the whole
+ * point: an operator's next action depends on how a ticket execution got where
+ * it is, not on where it ended. A ticket that failed verify twice and one that
+ * was rejected once both end at `paused`, and they need different things.
+ *
+ * The outcome is held to the phase's declared domain **here**, on the write
+ * path, for the same reason `requireAttemptOutcome` holds `attempt.ended` to
+ * §8.8's set: a projector that accepted an outcome §8.10 cannot route would put
+ * a step in a permanent chain that the machine reading it back can never act on.
+ * The domain is read from the vocabulary rather than from the table, so the
+ * state layer stays below the pipeline that walks it — and §8.10's own totality
+ * test is what keeps the two in step.
+ */
+function withStage(chains, event) {
+	if (event.kind !== "stage.resolved") return chains;
+
+	const domain = PHASE_OUTCOME_DOMAINS[event.phase];
+	if (domain === undefined || !domain.includes(event.payload.outcome)) {
+		throw refusal(
+			"payload.outcome",
+			`§8.10 maps no outcome ${JSON.stringify(event.payload.outcome ?? null)} for phase ` +
+				`${JSON.stringify(event.phase)}; a stage resolves to one of ${domain === undefined ? "a pipeline phase's outcomes" : domain.join(", ")}.`,
+			event,
+		);
+	}
+
+	const key = String(event.ticket);
+	chains[key] = [
+		...(chains[key] ?? []),
+		{ phase: event.phase, outcome: event.payload.outcome, attempt: event.attempt },
+	];
+	return chains;
 }
 
 /** Application order is the order they are declared here. */
