@@ -3,7 +3,7 @@ import { isAbsolute, normalize } from "node:path";
 import { FactoryWorkerError } from "../worker/errors.mjs";
 import { mergeDenies } from "../worker/permissions.mjs";
 import { FactoryConfigError } from "./errors.mjs";
-import { requireArray, requireNoUnknownKeys, requireNonEmptyString } from "./shape.mjs";
+import { requireArray, requireNoUnknownKeys, requireNonEmptyString, requireObject } from "./shape.mjs";
 
 /**
  * §6.8's per-run override channels, as configuration: **declared at run start,
@@ -50,7 +50,8 @@ const NO_OVERRIDES = Object.freeze({
 /**
  * @param {object | undefined} block the `worker` block as written
  * @param {string} configPath
- * @returns {Readonly<{ denies: ReadonlyArray<string>, contextFile: string | null, piExtensions: ReadonlyArray<string> }>}
+ * @returns {Readonly<{ denies: ReadonlyArray<string>, contextFile: string | null,
+ *   piExtensions: ReadonlyArray<{ path: string, env: Readonly<Record<string, string>> }> }>}
  * @throws {FactoryConfigError}
  */
 export function validateWorker(block, configPath) {
@@ -87,33 +88,110 @@ function validateDenies(denies, configPath) {
 }
 
 /**
- * Each declared extension, anchored.
+ * Each declared extension, anchored and normalized to `{ path, env }`.
  *
- * Absolute, or `~/`-relative to the operator's home — never plain-relative.
- * These paths live outside the repository by nature, so they cannot be
- * repo-relative like `contextFile`; what they must not be is **cwd-relative**,
- * which would make the same config load a different extension depending on
- * where the binary was invoked from. Config is repo-bound and takes no ambient
- * input (§11.1), and the working directory is ambient input.
+ * A bare string is shorthand for an extension with no declared environment;
+ * one validated shape leaves consumers nothing to branch on.
+ *
+ * Paths: absolute, or `~/`-relative to the operator's home — never
+ * plain-relative. These paths live outside the repository by nature, so they
+ * cannot be repo-relative like `contextFile`; what they must not be is
+ * **cwd-relative**, which would make the same config load a different extension
+ * depending on where the binary was invoked from. Config is repo-bound and
+ * takes no ambient input (§11.1), and the working directory is ambient input.
+ *
+ * Environment: the values a promoted capability needs — a provider's endpoint,
+ * typically — declared here rather than inherited from whatever the operator's
+ * shell happens to export, so the run manifest can account for them (§6.8).
  */
-function validateExtensions(paths, configPath) {
-	if (paths === undefined) return NO_OVERRIDES.piExtensions;
+function validateExtensions(entries, configPath) {
+	if (entries === undefined) return NO_OVERRIDES.piExtensions;
 
-	requireArray(paths, "worker.piExtensions", configPath, "worker.piExtensions");
+	requireArray(entries, "worker.piExtensions", configPath, "worker.piExtensions");
 	return Object.freeze(
-		paths.map((value, index) => {
+		entries.map((value, index) => {
 			const at = `worker.piExtensions[${index}]`;
-			const path = requireNonEmptyString(value, at, configPath);
-			if (isAbsolute(path) || path.startsWith("~/")) return path;
+			if (typeof value === "string") {
+				return Object.freeze({ path: anchoredPath(value, at, configPath), env: Object.freeze({}) });
+			}
 
-			throw new FactoryConfigError(
-				"invalid-value",
-				`${configPath}: ${at} must be an absolute path or start with "~/"; found "${path}". A cwd-relative path ` +
-					`would load a different extension depending on where the binary was invoked from (§11.1).`,
-				{ file: configPath, at, found: path, expected: "an absolute or ~/-anchored path" },
-			);
+			requireObject(value, at, configPath, at);
+			requireNoUnknownKeys(value, ["path", "env"], at, configPath);
+			return Object.freeze({
+				path: anchoredPath(requireNonEmptyString(value.path, `${at}.path`, configPath), `${at}.path`, configPath),
+				env: validateExtensionEnv(value.env, at, configPath),
+			});
 		}),
 	);
+}
+
+function anchoredPath(path, at, configPath) {
+	requireNonEmptyString(path, at, configPath);
+	if (isAbsolute(path) || path.startsWith("~/")) return path;
+
+	throw new FactoryConfigError(
+		"invalid-value",
+		`${configPath}: ${at} must be an absolute path or start with "~/"; found "${path}". A cwd-relative path ` +
+			`would load a different extension depending on where the binary was invoked from (§11.1).`,
+		{ file: configPath, at, found: path, expected: "an absolute or ~/-anchored path" },
+	);
+}
+
+/** The variables the launch types into a worker pane's shell (§6.5's channel). */
+const RESERVED_ENV_NAMES = Object.freeze(["PI_CODING_AGENT_DIR", "CLAUDE_CONFIG_DIR", "HOME", "PATH"]);
+const ENV_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+const SECRET_SHAPED = /TOKEN|SECRET|PASSWORD|CREDENTIAL|API_?KEY/;
+
+/**
+ * A declared environment a shell export can carry faithfully and a pane can
+ * show without leaking: the values land in the worker pane's scrollback, so a
+ * name that announces a secret is refused here rather than displayed there.
+ * The isolation and identity variables are refused too — the binding would win
+ * anyway (it spreads them last), but a declaration that silently loses is
+ * worse than one that is refused with the reason.
+ */
+function validateExtensionEnv(env, at, configPath) {
+	if (env === undefined) return Object.freeze({});
+
+	requireObject(env, `${at}.env`, configPath, `${at}.env`);
+	for (const [name, value] of Object.entries(env)) {
+		const envAt = `${at}.env.${name}`;
+		const refuse = (sentence, expected) => {
+			throw new FactoryConfigError("invalid-value", `${configPath}: ${envAt} ${sentence}`, {
+				file: configPath,
+				at: envAt,
+				found: name,
+				expected,
+			});
+		};
+
+		if (!ENV_NAME_PATTERN.test(name)) {
+			refuse(`is not a portable environment variable name (${ENV_NAME_PATTERN}).`, "an UPPER_SNAKE_CASE name");
+		}
+		if (RESERVED_ENV_NAMES.includes(name) || name.startsWith("FACTORY_")) {
+			refuse(
+				`names a variable the controller owns: the isolation and identity channels are not declarable (§6.5, §6.8).`,
+				"a name outside the controller-owned set",
+			);
+		}
+		if (SECRET_SHAPED.test(name)) {
+			refuse(
+				`looks like a credential, and declared values are typed into the worker pane's shell, so they land in ` +
+					`scrollback anyone attached can read. Credentials cross only as §6.8's promoted capability artifacts.`,
+				"a non-secret capability value, such as an endpoint URL",
+			);
+		}
+		if (typeof value !== "string" || value === "" || /[\p{Cc}]/u.test(value)) {
+			throw new FactoryConfigError(
+				"invalid-value",
+				`${configPath}: ${envAt} must be a non-empty single-line string; a shell export cannot carry anything else ` +
+					`faithfully.`,
+				{ file: configPath, at: envAt, found: typeof value, expected: "a non-empty string without control characters" },
+			);
+		}
+	}
+
+	return Object.freeze({ ...env });
 }
 
 /**

@@ -155,7 +155,10 @@ test("declared pi extensions are promoted onto the session, and a missing one re
 	mkdirSync(join(context.home, ".pi", "agent", "extensions", "local-router"), { recursive: true });
 	writeFileSync(extension, "export default {};\n");
 
-	const environment = prepare(context, { ...NO_OVERRIDES, piExtensions: ["~/.pi/agent/extensions/local-router/index.ts"] });
+	const environment = prepare(context, {
+		...NO_OVERRIDES,
+		piExtensions: [{ path: "~/.pi/agent/extensions/local-router/index.ts", env: {} }],
+	});
 	assert.deepEqual([...environment.binding({ kind: "pi", posture: "builder" }).args], ["--extension", extension]);
 
 	// The digest, not just the path: a path is a claim about intent, and an
@@ -165,13 +168,64 @@ test("declared pi extensions are promoted onto the session, and a missing one re
 	assert.match(recorded.digest, /^[0-9a-f]{64}$/);
 
 	assert.throws(
-		() => prepare(context, { ...NO_OVERRIDES, piExtensions: ["/nowhere/at/all.ts"] }),
+		() => prepare(context, { ...NO_OVERRIDES, piExtensions: [{ path: "/nowhere/at/all.ts", env: {} }] }),
 		(error) => {
 			assert.equal(error.reason, "config-environment-invalid");
 			assert.match(error.message, /capability the run believes it has and does not/);
 			return true;
 		},
 	);
+});
+
+test("a declared extension's environment reaches the pi session, its pane exports, and the manifest — deliberately, never ambiently (§6.8)", (t) => {
+	const context = lab(t);
+	mkdirSync(join(context.home, ".pi", "agent", "extensions", "local-router"), { recursive: true });
+	writeFileSync(join(context.home, ".pi", "agent", "extensions", "local-router", "index.ts"), "export default {};\n");
+
+	const environment = prepare(context, {
+		...NO_OVERRIDES,
+		piExtensions: [
+			{
+				path: "~/.pi/agent/extensions/local-router/index.ts",
+				env: { PI_LOCAL_ROUTER_BASE_URL: "http://router.lab:11545" },
+			},
+		],
+	});
+
+	// The probe's spawn environment and the pane's export set carry the same
+	// declared value, so the session the probe proves is the session a worker gets.
+	const pi = environment.binding({ kind: "pi", posture: "builder" });
+	assert.equal(pi.env.PI_LOCAL_ROUTER_BASE_URL, "http://router.lab:11545");
+	assert.equal(pi.exports.PI_LOCAL_ROUTER_BASE_URL, "http://router.lab:11545");
+
+	// Claude sessions never load the extension, so its variable does not ride them.
+	const claude = environment.binding({ kind: "claude", posture: "builder" });
+	assert.equal("PI_LOCAL_ROUTER_BASE_URL" in claude.exports, false);
+	assert.equal("PI_LOCAL_ROUTER_BASE_URL" in claude.env, false);
+
+	// Recorded as evidence beside the digest: which values a run handed its workers.
+	const [recorded] = environment.manifestFacts().pi_extensions.declared;
+	assert.deepEqual(recorded.env, { PI_LOCAL_ROUTER_BASE_URL: "http://router.lab:11545" });
+});
+
+test("a declared extension environment cannot displace the isolation variables (§6.8)", (t) => {
+	const context = lab(t);
+	mkdirSync(join(context.home, ".pi", "agent", "extensions", "rogue"), { recursive: true });
+	writeFileSync(join(context.home, ".pi", "agent", "extensions", "rogue", "index.ts"), "export default {};\n");
+
+	// Config validation refuses these names; the binding still wins structurally
+	// when handed an unvalidated block, because the isolation variables are
+	// spread last.
+	const environment = prepare(context, {
+		...NO_OVERRIDES,
+		piExtensions: [
+			{ path: "~/.pi/agent/extensions/rogue/index.ts", env: { PI_CODING_AGENT_DIR: "/tmp/operator-config" } },
+		],
+	});
+
+	const pi = environment.binding({ kind: "pi", posture: "builder" });
+	assert.equal(pi.env.PI_CODING_AGENT_DIR, environment.roots.pi);
+	assert.equal(pi.exports.PI_CODING_AGENT_DIR, environment.roots.pi);
 });
 
 test("pre-trusting a worktree writes both stores, keyed the way each runtime resolves them", (t) => {

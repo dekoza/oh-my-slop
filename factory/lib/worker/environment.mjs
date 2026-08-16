@@ -179,9 +179,13 @@ export function prepareWorkerEnvironment({
 			const isolated = { ...env, ...configDirs };
 
 			if (kind === "pi") {
+				// The declared extension environment rides only the sessions that load
+				// the extensions, and the isolation variables are spread after it, so
+				// no declared value can displace them even in an unvalidated block.
+				const extensionEnv = Object.assign({}, ...extensions.map((extension) => extension.env));
 				return Object.freeze({
-					env: Object.freeze(isolated),
-					exports: Object.freeze({ ...configDirs }),
+					env: Object.freeze({ ...env, ...extensionEnv, ...configDirs }),
+					exports: Object.freeze({ ...extensionEnv, ...configDirs }),
 					args: Object.freeze([
 						...piSessionArguments({ posture }),
 						...extensions.flatMap((extension) => ["--extension", extension.path]),
@@ -232,7 +236,11 @@ export function prepareWorkerEnvironment({
 			return {
 				extra_denies: { declared: [...worker.denies] },
 				pi_extensions: {
-					declared: extensions.map((extension) => ({ declared: extension.declared, digest: extension.digest })),
+					declared: extensions.map((extension) => ({
+						declared: extension.declared,
+						digest: extension.digest,
+						env: { ...extension.env },
+					})),
 				},
 				worker_context_file: {
 					declared: context.declared,
@@ -332,10 +340,15 @@ function installContextFile({ roots, repoRoot, declared }) {
  * edited between runs is visible rather than inferred from a path that did not
  * change. A missing one is a refusal, never a skip — an extension the
  * environment cannot load is a capability the run believes it has and does not.
+ *
+ * An extension's declared `env` travels with it: a promoted provider whose
+ * endpoint arrives from the operator's ambient shell is a capability the run
+ * cannot account for, so the values a session needs are declared beside the
+ * path and recorded beside the digest.
  */
 function resolveExtensions(declared, home) {
 	return Object.freeze(
-		declared.map((path) => {
+		declared.map(({ path, env: extensionEnv }) => {
 			const absolute = path.startsWith("~/") ? join(home, path.slice(2)) : path;
 			try {
 				// A directory is a legitimate extension source for pi, so the digest is
@@ -345,6 +358,7 @@ function resolveExtensions(declared, home) {
 				return Object.freeze({
 					declared: path,
 					path: absolute,
+					env: Object.freeze({ ...extensionEnv }),
 					digest: stat.isFile() ? digestOf(readFileSync(absolute)) : null,
 				});
 			} catch {

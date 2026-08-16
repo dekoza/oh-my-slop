@@ -782,7 +782,9 @@ test("declared overrides survive the load exactly as written", (t) => {
 
 	assert.deepEqual(loadedConfig.config.worker.denies, ["Bash(curl:*)"]);
 	assert.equal(loadedConfig.config.worker.contextFile, "docs/worker-context.md");
-	assert.deepEqual(loadedConfig.config.worker.piExtensions, ["/ext/index.ts"]);
+	// A bare path is shorthand for an extension with no declared environment;
+	// one validated shape, so no consumer branches on the spelling.
+	assert.deepEqual(loadedConfig.config.worker.piExtensions, [{ path: "/ext/index.ts", env: {} }]);
 	// Unlike `budgets`, these need no declared-key list: the absent form of each
 	// is empty, so the validated value already says whether anything was declared.
 	assert.equal(loadedConfig.declared.worker, undefined);
@@ -797,6 +799,57 @@ test("a cwd-relative extension path is refused: config takes no ambient input", 
 	assert.equal(error.reason, "invalid-value");
 	assert.equal(error.details.at, "worker.piExtensions[0]");
 	assert.match(error.message, /where the binary was invoked from/);
+});
+
+test("an extension may declare the environment its capability needs, and it survives the load (§6.8)", (t) => {
+	const config = clone();
+	config.worker = {
+		piExtensions: [{ path: "/ext/local-router/index.ts", env: { PI_LOCAL_ROUTER_BASE_URL: "http://router.lab:11545" } }],
+	};
+
+	const { config: validated } = loaded(t, config);
+
+	assert.deepEqual(validated.worker.piExtensions, [
+		{ path: "/ext/local-router/index.ts", env: { PI_LOCAL_ROUTER_BASE_URL: "http://router.lab:11545" } },
+	]);
+});
+
+test("a declared extension environment may not name the isolation or identity variables (§6.8)", (t) => {
+	for (const name of ["PI_CODING_AGENT_DIR", "CLAUDE_CONFIG_DIR", "FACTORY_ATTEMPT"]) {
+		const config = clone();
+		config.worker = { piExtensions: [{ path: "/ext/index.ts", env: { [name]: "/elsewhere" } }] };
+
+		const error = loadFailure(t, config);
+
+		assert.equal(error.reason, "invalid-value");
+		assert.equal(error.details.at, `worker.piExtensions[0].env.${name}`);
+	}
+});
+
+test("a declared extension environment refuses secret-shaped names: pane exports land in scrollback (§6.8)", (t) => {
+	const config = clone();
+	config.worker = { piExtensions: [{ path: "/ext/index.ts", env: { ROUTER_API_TOKEN: "hunter2" } }] };
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "invalid-value");
+	assert.equal(error.details.at, "worker.piExtensions[0].env.ROUTER_API_TOKEN");
+	assert.match(error.message, /scrollback/);
+});
+
+test("a declared extension environment refuses names and values a shell export cannot carry faithfully", (t) => {
+	for (const [env, at] of [
+		[{ "lower-case": "x" }, "worker.piExtensions[0].env.lower-case"],
+		[{ GOOD_NAME: "with\nnewline" }, "worker.piExtensions[0].env.GOOD_NAME"],
+	]) {
+		const config = clone();
+		config.worker = { piExtensions: [{ path: "/ext/index.ts", env }] };
+
+		const error = loadFailure(t, config);
+
+		assert.equal(error.reason, "invalid-value");
+		assert.equal(error.details.at, at);
+	}
 });
 
 test("a per-run override that is really a subtraction is refused at load, in the deny floor's own words", (t) => {
