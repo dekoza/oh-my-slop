@@ -109,6 +109,7 @@ export function renderAttemptPrompt({
 		ticketBlock(ticket),
 		...(review === null ? [] : ["", ...reviewSection(review)]),
 		...(repair === null ? [] : ["", ...repairSection(repair)]),
+		...(role.resultExpectations.verdicts === undefined ? ["", ...commitObligations(identity)] : []),
 		"",
 		"### Prohibitions",
 		"",
@@ -263,6 +264,35 @@ function tierSentences({ tier, prior, phase, outcome }) {
 		"",
 		"Your branch starts from the base branch with none of that attempt's work on it. Nothing it",
 		"wrote was kept, and nothing it wrote is yours to recover. Solve the ticket from the beginning.",
+	];
+}
+
+/**
+ * §7.3's correlation trailer, stated to the one role that commits.
+ *
+ * The spec calls it "a prompt obligation, verified at integration", and both
+ * halves are load-bearing: integration's trailer predicate refuses a branch
+ * whose commits lack it, and — proven live in run 01M068R8ND… — a repair tier
+ * cannot add a trailer to an existing commit without the rewrite it is
+ * forbidden, so an obligation the builder was never told becomes an
+ * unrepairable rejection. The exact line is rendered, values filled in,
+ * because a worker transcribing a template placeholder is one more way to
+ * fail the predicate.
+ */
+function commitObligations(identity) {
+	return [
+		"### Commit obligations",
+		"",
+		"End **every commit message** you write in this worktree with this exact trailer line,",
+		"as its own line at the end of the message:",
+		"",
+		"```",
+		`Factory-Attempt: ${identity.run}/${identity.ticket}/${identity.attempt}`,
+		"```",
+		"",
+		"Integration verifies the trailer on every commit and refuses the branch when any commit",
+		"lacks it — and a missing trailer cannot be repaired afterwards, because history is never",
+		"rewritten here.",
 	];
 }
 

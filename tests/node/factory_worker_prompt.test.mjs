@@ -132,6 +132,24 @@ test("an empty ticket body says so rather than rendering as nothing", () => {
 
 // ── The prohibitions (§6.4, §6.8) ────────────────────────────────────────────
 
+test("a committing role is told the §7.3 trailer obligation, with its exact tuple; a reviewer is not", () => {
+	// Proven live (run 01M068R8ND…): the builder committed exactly as prompted,
+	// the standards reviewer rejected the commit for the missing trailer, and
+	// the repair tier is structurally unable to add a trailer to an existing
+	// commit — so the obligation must reach the builder before it commits.
+	const trailer = `Factory-Attempt: ${IDENTITY.run}/${IDENTITY.ticket}/${IDENTITY.attempt}`;
+
+	const builder = render();
+	assert.ok(builder.includes(trailer), "the builder prompt does not spell out the exact trailer line");
+	assert.match(builder, /every commit/i);
+
+	const reviewer = render({
+		role: validateRole({ ...PIPELINE_ROLES.find((role) => role.resultExpectations.verdicts !== undefined), closure: ["review-standards"] }),
+		review: REVIEW,
+	});
+	assert.equal(reviewer.includes("Factory-Attempt:"), false, "a reviewer commits nothing and owes no trailer");
+});
+
 test("the prompt states every prohibition and the no-approvals contract", () => {
 	const prompt = render();
 
