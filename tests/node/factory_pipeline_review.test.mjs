@@ -631,14 +631,17 @@ test("a rejected review routes to a repair whose attempt is past both reviewers'
 						at: FIXED_NOW,
 					});
 					planned.push(opened);
-					// One repair is enough to show where the ordinal landed; §8.6's
-					// budget is what stops the chain for real (#111).
-					throw new Error("budget spent");
+					// One repair is enough to show where the ordinal landed. §8.6's
+					// budget granted it — this throw is only how the test stops, and
+					// `factory_pipeline_stages.test.mjs` is where the budget's own
+					// refusal is exercised.
+					throw new Error("far enough");
 				},
+				budgets: { repair: 1, freshRetry: 1, automation: 1 },
 				actor: "controller",
 				now: () => FIXED_NOW,
 			}),
-		/budget spent/,
+		/far enough/,
 	);
 
 	assert.equal(planned[0].tier, "repair");

@@ -1,12 +1,12 @@
 import {
 	PHASE_IMPLEMENT,
-	PHASE_INTEGRATE,
 	PHASE_RESULTS,
 	PHASE_REVIEW,
 	RETRY_TIERS,
 	STAGE_ACTIONS,
 } from "../domain/vocabulary.mjs";
 import { canonicalJson, digest, runStream } from "../state/events.mjs";
+import { BUDGET_KEY_FOR_ACTION, requireBudget } from "./budgets.mjs";
 import { dispositionOf } from "./dispositions.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 import { TABLE_WIDE, routeOutcome } from "./table.mjs";
@@ -135,9 +135,18 @@ export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome
  * **A row this package does not yet wire raises rather than falling through.**
  * The plausible fallthrough is "carry on to the next phase", which is precisely
  * how an unbuilt repair tier turns a failing attempt into a publication. What is
- * wired here is §8.1's whole pipeline, §8.5's two repair tiers and §8.9's
- * dispositions; the budgets (#111) replace the one refusal that is left, and the
- * stages already recorded stay on the chain either way.
+ * wired here is §8.1's pipeline whole, §8.5's two repair tiers, §8.6's budgets
+ * and §8.9's dispositions — every action §8.10 declares now has behaviour behind
+ * it, so what is left of this refusal is the *phase* case: a caller that wired
+ * no executor. The stages already recorded stay on the chain either way.
+ *
+ * **The walk terminates because every retry is bounded** (§8.6). The three
+ * actions that spend charge a declared number that is never reset within a run,
+ * and the count is a read over the resolutions already on the chain — so a walk
+ * that re-entered after a crash reaches the same bound rather than a fresh one.
+ * There is no iteration cap here, and there is deliberately no need for one:
+ * a cap would be a second bound, and the first one it disagreed with would be
+ * the one that mattered.
  *
  * @param {object} store an open store
  * @param {object} context
@@ -153,28 +162,39 @@ export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome
  * @param {((request: object) => Promise<{ attempt: string }>) | null} [context.nextAttempt]
  *   §8.5's tier seam: given the tier, the budget it consumes and the failure's
  *   own evidence, it mints and launches the next attempt and answers with its
- *   id. It is the caller's because a tier both plans (`pipeline/repair.mjs`) and
- *   *spends* — §8.6's budget is counted there, and a seam that stops declining is
- *   what ends a repair chain
+ *   id. It is the caller's because a tier *plans* (`pipeline/repair.mjs`), which
+ *   needs the clone, the routing and the run's pinned base — none of which the
+ *   walk has. **It does not decide whether the retry is affordable**: the budget
+ *   is asked here, before the seam, so §8.6 is answered once for every caller
+ *   rather than once per caller
+ * @param {Readonly<{ repair: number, freshRetry: number, automation: number }> | null} [context.budgets]
+ *   §11.6's validated block. Required the moment the table routes to an action
+ *   that spends; a walk that never fails never reads it
  * @param {string} context.actor
  * @param {() => number} context.now
  * @returns {Promise<Readonly<object>>} the ticket execution's disposition
- * @throws {FactoryPipelineError} `not-yet-implemented` · `retry-unplannable` ·
- *   `stage-result-conflict`
+ * @throws {FactoryPipelineError} `not-yet-implemented` · `phase-unwired` ·
+ *   `retry-unplannable`. **Not** `stage-result-conflict` or `budget-exhausted`:
+ *   both are §8.10 dispositions this walk returns rather than raises
  */
-export async function walkStages(store, { hold, run, ticket, attempt, phases, nextAttempt = null, actor, now }) {
+export async function walkStages(
+	store,
+	{ hold, run, ticket, attempt, phases, nextAttempt = null, budgets = null, actor, now },
+) {
 	let phase = PHASE_IMPLEMENT;
 
 	for (;;) {
-		let resolved;
 		try {
 			// The executor is inside the try because §8.4's review resolves the
 			// stages of its own axis attempts before answering for the phase: a
 			// conflict met in there is the same race met here, and it is §8.10's
 			// disposition either way rather than an exception in one case and a
-			// filing in the other.
+			// filing in the other. §8.6's exhaustion arrives the same way and for
+			// the same reason — the fan-out spends the automation budget on the
+			// axes' behalf, and a budget that ran out in there settles the ticket
+			// execution exactly as one that ran out here does.
 			const answer = await answerFor(store, { run, ticket, phase, attempt, phases });
-			resolved = resolveStage(store, {
+			const resolved = resolveStage(store, {
 				hold,
 				run,
 				ticket,
@@ -185,58 +205,75 @@ export async function walkStages(store, { hold, run, ticket, attempt, phases, ne
 				actor,
 				at: now(),
 			});
+
+			if (resolved.row.action === STAGE_ACTIONS.advance) {
+				phase = resolved.row.to;
+				continue;
+			}
+
+			if (resolved.row.action === STAGE_ACTIONS.dispose) {
+				return settle(phase, resolved.outcome, {
+					store,
+					run,
+					ticket,
+					reasonClass: resolved.detail?.reason_class ?? null,
+					question: resolved.detail?.question ?? null,
+					pr: resolved.detail?.pr ?? null,
+					summary: resolved.detail?.summary ?? null,
+					advisory: resolved.detail?.advisory ?? null,
+				});
+			}
+
+			if (Object.hasOwn(BUDGET_KEY_FOR_ACTION, resolved.row.action)) {
+				// §8.6, **before the seam is asked**: the resolution that routed here
+				// is itself the charge, so the count this reads already includes it.
+				// Asking after the mint would spend on a chain the budget had already
+				// ended, and asking the seam to count would put §8.6 in as many places
+				// as there are callers.
+				requireBudget(store, { run, ticket, budgets, row: resolved.row });
+
+				attempt = await retried(nextAttempt, {
+					attempt,
+					phase,
+					outcome: resolved.outcome,
+					detail: resolved.detail,
+					row: resolved.row,
+				});
+
+				// §8.5: a **tier** re-enters `implement` under a new attempt, because
+				// its subject is the work — a repair for a rejected review still starts
+				// by building, and is verified and reviewed again from the top. An
+				// **automation retry** re-enters the phase it left: the automation
+				// failed, not the work, and rebuilding good work because a pane died
+				// is the flake charged to the builder that §8.6 forbids.
+				phase = RETRY_TIERS.includes(resolved.row.action) ? PHASE_IMPLEMENT : phase;
+				continue;
+			}
+
+			throw unbuilt({ row: resolved.row, phase });
 		} catch (error) {
 			// §8.10's last row, and the reason the conflict is typed rather than
 			// merely thrown: **two results disagreeing under one semantic key is a
 			// disposition, not a crash.** A walk that let it escape would leave the
 			// ticket execution at no disposition at all — the one state §8.9 has no
 			// word for, and the state a human cannot act on.
-			if (error.reason !== "stage-result-conflict") throw error;
-			return settle(TABLE_WIDE, "duplicate-conflicting", {
-				store,
-				run,
-				ticket,
-				conflict: Object.freeze({ ...error.details }),
-			});
-		}
+			if (error.reason === "stage-result-conflict") {
+				return settle(TABLE_WIDE, "duplicate-conflicting", {
+					store,
+					run,
+					ticket,
+					conflict: Object.freeze({ ...error.details }),
+				});
+			}
 
-		if (resolved.row.action === STAGE_ACTIONS.advance) {
-			phase = resolved.row.to;
-			continue;
-		}
+			// §8.6's exhaustion, for the same reason: **retries stop, and so does the
+			// ticket execution.** The settlement is read off the refusal rather than
+			// re-derived, so the class the operator sees and the class the budget
+			// refused under are one value.
+			if (error.reason === "budget-exhausted") return exhausted(store, { run, ticket, phase, details: error.details });
 
-		if (resolved.row.action === STAGE_ACTIONS.dispose) {
-			return settle(phase, resolved.outcome, {
-				store,
-				run,
-				ticket,
-				reasonClass: resolved.detail?.reason_class ?? null,
-				question: resolved.detail?.question ?? null,
-				pr: resolved.detail?.pr ?? null,
-				summary: resolved.detail?.summary ?? null,
-				advisory: resolved.detail?.advisory ?? null,
-			});
+			throw error;
 		}
-
-		if (RETRY_TIERS.includes(resolved.row.action)) {
-			// §8.5: **every resume is a fresh attempt**, so the walk continues from
-			// `implement` under a *new* attempt rather than re-running the phase that
-			// failed. The phase this failure came from is evidence for the seam's
-			// prompt and never a destination — a repair for a rejected review still
-			// starts by building, and its work is verified and reviewed again from
-			// the top.
-			attempt = await retried(nextAttempt, {
-				attempt,
-				phase,
-				outcome: resolved.outcome,
-				detail: resolved.detail,
-				row: resolved.row,
-			});
-			phase = PHASE_IMPLEMENT;
-			continue;
-		}
-
-		throw unbuilt({ row: resolved.row, phase });
 	}
 }
 
@@ -282,8 +319,8 @@ async function retried(nextAttempt, request) {
 }
 
 /**
- * The ticket execution's terminal answer: §14.18's disposition, and the chain
- * that produced it.
+ * The ticket execution's terminal answer: §14.18's verdict, and the chain that
+ * produced it.
  *
  * The chain rides along because §8.9's pause and failure comments are required
  * to carry it (#109) and the walk is the last place it is cheap to read — the
@@ -298,16 +335,28 @@ async function retried(nextAttempt, request) {
  * and §8.7 puts the summary and the advisory findings in the ticket comment as
  * well as in the PR body. All three come off the disposing phase's own detail,
  * so there is one place they are produced and one place they are read.
+ *
+ * The `verdict` — §14.18's `{disposition, reason_class, fault}` — is the
+ * caller's, because the two ways of settling read it from different places: a
+ * `dispose` row derives it from the row, and §8.6's exhaustion carries it on the
+ * refusal. Everything else about a terminal answer is the same either way, and
+ * is therefore spelled once here.
  */
-function settle(
+function disposed({
+	store,
+	run,
+	ticket,
 	phase,
 	outcome,
-	{ store, run, ticket, reasonClass = null, question = null, conflict = null, pr = null, summary = null, advisory = null },
-) {
-	const row = routeOutcome(phase, outcome);
-
+	verdict,
+	question = null,
+	conflict = null,
+	pr = null,
+	summary = null,
+	advisory = null,
+}) {
 	return Object.freeze({
-		...dispositionOf(row, { reasonClass }),
+		...verdict,
 		question,
 		pr,
 		reason: summary,
@@ -316,6 +365,53 @@ function settle(
 		outcome,
 		conflict,
 		chain: outcomeChain(store, { run, ticket }),
+	});
+}
+
+/**
+ * §8.6's exhaustion, as the disposition it settles into.
+ *
+ * The verdict comes off the refusal rather than from a row lookup, and that is
+ * the whole difference from `settle`: the **outcome** is §8.10's phase-less
+ * exhaustion row while the **phase** is the one whose retry was refused, so the
+ * `(phase, outcome)` pair `settle` would look up names no row at all. The reason
+ * class may also be the failing row's own (§8.10's `check-unrunnable` and
+ * `rebase-conflict`), which is a fact about where the budget ran out rather than
+ * about the phase-less row.
+ */
+function exhausted(store, { run, ticket, phase, details }) {
+	return disposed({
+		store,
+		run,
+		ticket,
+		phase,
+		outcome: details.outcome,
+		verdict: {
+			disposition: details.disposition,
+			reason_class: details.reason_class,
+			fault: details.fault,
+		},
+	});
+}
+
+/** A `dispose` row's own settlement (§8.9), with §14.18 applied to it. */
+function settle(
+	phase,
+	outcome,
+	{ store, run, ticket, reasonClass = null, question = null, conflict = null, pr = null, summary = null, advisory = null },
+) {
+	return disposed({
+		store,
+		run,
+		ticket,
+		phase,
+		outcome,
+		verdict: dispositionOf(routeOutcome(phase, outcome), { reasonClass }),
+		question,
+		conflict,
+		pr,
+		summary,
+		advisory,
 	});
 }
 
@@ -334,19 +430,28 @@ async function answerFor(store, { run, ticket, phase, attempt, phases }) {
 	}
 
 	const executor = phases[phase];
-	if (executor === undefined) throw unbuiltPhase(phase);
+	if (executor === undefined) throw unwiredPhase(phase);
 
 	return executor({ run, ticket, phase, attempt });
 }
 
 /**
- * What each unbuilt row and phase is waiting for. Named here, once: the same
- * `{missing, spec}` pair every other unbuilt seam in this package carries, so an
- * operator meeting one reads the ticket number rather than a stack trace.
+ * **Every phase of §8.1's pipeline is built**, so a phase with no executor is a
+ * caller that left one out rather than a slice nobody wrote.
+ *
+ * The `{missing, spec}` pair this used to carry is gone with the last unbuilt
+ * seam (#111's budgets, #113's integration). A table of what is waiting on which
+ * ticket, with nothing in it, is a table that only says something the day
+ * somebody adds a row to it by hand.
  */
-const UNBUILT = Object.freeze({
-	[STAGE_ACTIONS.retry]: { missing: "the budgets and the circuit breaker (#111)", spec: "§8.6" },
-});
+function unwiredPhase(phase) {
+	return new FactoryPipelineError(
+		"phase-unwired",
+		`The walk reached ${phase}, and this caller wired no executor for it. §8.1's pipeline is walked whole; a ` +
+			"phase the caller left out cannot be inferred, and carrying on past it would skip the phase silently.",
+		{ at: "phase", phase },
+	);
+}
 
 function unbuilt({ row, phase }) {
 	// §8.4's `verdict` is not on the list and never will be: it is taken inside
@@ -364,31 +469,16 @@ function unbuilt({ row, phase }) {
 		);
 	}
 
-	const waiting = UNBUILT[row.action] ?? { missing: null, spec: "§8.10" };
+	// Every action §8.10 declares now advances, disposes, or spends a budget, so
+	// the walk reaching here means the table grew an action nothing routes. It is
+	// a refusal rather than a fallthrough for the reason the whole file is: the
+	// plausible fallthrough is "carry on to the next phase", which is how a
+	// failing attempt becomes a publication.
 	return new FactoryPipelineError(
 		"not-yet-implemented",
-		`§8.10 routes ${phase} × ${row.outcome} to ${row.action}, which is not built in this package: ${
-			waiting.missing ?? "no slice claims it"
-		} (${waiting.spec}).`,
-		{ at: "action", phase, outcome: row.outcome, action: row.action, budget: row.budget, ...waiting },
-	);
-}
-
-function unbuiltPhase(phase) {
-	const waiting = UNBUILT[phase];
-	if (waiting === undefined) {
-		return new FactoryPipelineError(
-			"phase-unwired",
-			`The walk reached ${phase}, and this caller wired no executor for it. §8.1's pipeline is walked whole; a ` +
-				"phase the caller left out cannot be inferred, and carrying on past it would skip the phase silently.",
-			{ at: "phase", phase },
-		);
-	}
-
-	return new FactoryPipelineError(
-		"not-yet-implemented",
-		`The walk reached ${phase}, which is not built in this package: ${waiting.missing} (${waiting.spec}).`,
-		{ at: "phase", phase, ...waiting },
+		`§8.10 routes ${phase} × ${row.outcome} to ${row.action}, which no slice claims: the walk advances, disposes, ` +
+			"and spends the three budgets, and this is none of them (§8.10).",
+		{ at: "action", phase, outcome: row.outcome, action: row.action, budget: row.budget, missing: null, spec: "§8.10" },
 	);
 }
 

@@ -65,6 +65,21 @@ export const PIPELINE_ERROR_REASONS = Object.freeze([
 	 */
 	"retry-unplannable",
 	/**
+	 * §8.6: the retry §8.10's row calls for would spend a budget this ticket
+	 * execution has already spent.
+	 *
+	 * **It is the one refusal in this list that is an answer**, and the walk turns
+	 * it straight back into one: `failed` with the controller-derived reason class
+	 * §8.8 names, carried on the details so the settlement is read off the refusal
+	 * rather than re-derived. It is a throw and not a returned verdict because it
+	 * has to cross a seam that has no return channel for it — §8.4's fan-out
+	 * decides an axis's retries *inside* the phase executor, and an executor's only
+	 * ways out are a phase result and a throw. Making it a result would mean
+	 * inventing a `review` outcome for "the automation budget ran out", which is a
+	 * budget fact wearing a phase result's clothes.
+	 */
+	"budget-exhausted",
+	/**
 	 * §8.4: the fan-out cannot run the review it was asked for — a routing that
 	 * names a number of profiles other than one per axis, or an axis attempt whose
 	 * §8.10 row is neither a verdict, a disposition, nor a retry. Both are the

@@ -54,6 +54,10 @@ async function executing(t, { ticket = 42 } = {}) {
 				phases,
 				actor: "controller",
 				now: () => FIXED_NOW,
+				// Generous by default, so a test that is about the seam is stopped by
+				// the seam. §8.6's own numbers are the subject of the budget tests
+				// below, which declare them.
+				budgets: { repair: 9, freshRetry: 9, automation: 9 },
 				...overrides,
 			}),
 		resolve: (phase, outcome, overrides = {}) =>
@@ -572,5 +576,134 @@ test("the same phase resolved under a later attempt is a new result, not a contr
 		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).map((step) => step.outcome),
 		["worker-failed", "completed"],
 		"a repair re-enters the phase; the chain is a list, and its shape is what an operator reads (§8.10)",
+	);
+});
+
+// ── §8.6's budgets, as the walk spends them ──────────────────────────────────
+
+/** A seam that always mints, so the budget is the only thing that can stop the walk. */
+function minting(context) {
+	const asked = [];
+
+	return {
+		asked,
+		nextAttempt: async (request) => {
+			asked.push(request);
+			const ordinal = Number.parseInt(request.attempt.split("-a").at(-1), 10) + 1;
+			const attempt = `${context.run}-t${context.ticket}-a${ordinal}`;
+			if (context.store.readAttempts({ runId: context.run }).every((row) => row.attempt_id !== attempt)) {
+				context.store.append(attemptLaunched(context.run, context.ticket, ordinal));
+			}
+			return { attempt };
+		},
+	};
+}
+
+test("§8.10: an automation failure retries **the same phase**, never a fresh implement", async (t) => {
+	const context = await executing(t);
+	const seam = minting(context);
+	let implementations = 0;
+	const phases = {
+		implement: async () => ({ outcome: (implementations += 1) === 1 ? "completed" : "completed" }),
+		harvest: async () => ({ outcome: "passed" }),
+		// The first verify never ran; the second is a real green.
+		verify: async ({ attempt }) => ({ outcome: attempt.endsWith("-a1") ? "unrunnable" : "passed" }),
+		review: async () => ({ outcome: "approved" }),
+		integrate: async () => ({ outcome: "integrated" }),
+	};
+
+	const settled = await context.walk(phases, { nextAttempt: seam.nextAttempt });
+
+	assert.equal(settled.disposition, "published");
+	assert.equal(seam.asked[0].tier, "retry");
+	assert.equal(seam.asked[0].budget, "automation");
+	assert.equal(implementations, 1, "the builder was not re-run: the automation failed, not the work");
+	assert.deepEqual(
+		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).map((step) => `${step.phase}:${step.outcome}`),
+		["implement:completed", "harvest:passed", "verify:unrunnable", "verify:passed", "review:approved", "integrate:integrated"],
+	);
+});
+
+test("§8.6: an exhausted automation budget fails with a class no worker can write (§8.8)", async (t) => {
+	const context = await executing(t);
+	const seam = minting(context);
+	const { phases } = answering({ implement: "dead-worker" });
+
+	const settled = await context.walk(phases, {
+		nextAttempt: seam.nextAttempt,
+		budgets: { repair: 1, freshRetry: 1, automation: 1 },
+	});
+
+	assert.equal(settled.disposition, "failed");
+	assert.equal(settled.reason_class, "automation-budget-exhausted");
+	assert.equal(settled.fault, "automation");
+	assert.equal(seam.asked.length, 1, "one retry granted, the second refused");
+});
+
+test("§8.10: a row naming its own exhausted class fails with that class, not the budget's", async (t) => {
+	const context = await executing(t);
+	const seam = minting(context);
+	const { phases } = answering({ implement: "completed", harvest: "passed", verify: "unrunnable" });
+
+	const settled = await context.walk(phases, {
+		nextAttempt: seam.nextAttempt,
+		budgets: { repair: 1, freshRetry: 1, automation: 1 },
+	});
+
+	assert.equal(settled.disposition, "failed");
+	assert.equal(settled.reason_class, "check-unrunnable", "§8.10: verify unrunnable, exhausted ⇒ failed / check-unrunnable");
+	assert.equal(settled.fault, "automation");
+});
+
+test("§8.6: an exhausted repair budget fails with `repair-budget-exhausted`", async (t) => {
+	const context = await executing(t);
+	const seam = minting(context);
+	const { phases } = answering({ implement: "completed", harvest: "passed", verify: "failed" });
+
+	const settled = await context.walk(phases, {
+		nextAttempt: seam.nextAttempt,
+		budgets: { repair: 1, freshRetry: 1, automation: 1 },
+	});
+
+	assert.equal(settled.disposition, "failed");
+	assert.equal(settled.reason_class, "repair-budget-exhausted");
+	assert.equal(settled.fault, "repair", "a product verdict, so §8.6's breaker never sees it");
+	assert.equal(seam.asked.length, 1);
+});
+
+test("§8.6: automation failures never consume the product budget, however many are interleaved", async (t) => {
+	const context = await executing(t);
+	const seam = minting(context);
+	// a1 dies on the automation; a2 fails verify; a3 dies again; a4 passes.
+	const verdicts = new Map([
+		["a1", { implement: "dead-worker" }],
+		["a2", { implement: "completed", harvest: "passed", verify: "failed" }],
+		["a3", { implement: "dead-worker" }],
+		["a4", { implement: "completed", harvest: "passed", verify: "passed", review: "approved", integrate: "integrated" }],
+	]);
+	const phases = Object.fromEntries(
+		["implement", "harvest", "verify", "review", "integrate"].map((phase) => [
+			phase,
+			async ({ attempt }) => ({ outcome: verdicts.get(attempt.split("-").at(-1))[phase] }),
+		]),
+	);
+
+	const settled = await context.walk(phases, {
+		nextAttempt: seam.nextAttempt,
+		budgets: { repair: 1, freshRetry: 1, automation: 2 },
+	});
+
+	assert.equal(settled.disposition, "published", "the one repair was still available after two automation failures");
+	assert.deepEqual(seam.asked.map((request) => request.budget), ["automation", "repair", "automation"]);
+});
+
+test("a walk that reaches a retry with no declared budgets refuses rather than granting one", async (t) => {
+	const context = await executing(t);
+	const seam = minting(context);
+	const { phases } = answering({ implement: "worker-failed" });
+
+	await assert.rejects(
+		() => context.walk(phases, { nextAttempt: seam.nextAttempt, budgets: null }),
+		(error) => error.reason === "retry-unplannable" && /budgets\.repair/.test(error.message),
 	);
 });

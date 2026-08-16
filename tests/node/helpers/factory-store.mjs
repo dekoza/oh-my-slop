@@ -207,7 +207,10 @@ export function attemptLaunched(
  * were, because what an old journal needs from the current binary is a
  * **recorded rebuild**, and that is the path under test.
  */
-export function appendLegacyEvent(store, { kind, source = "controller", run = null, at = FIXED_NOW, payload, payloadVersion = 1 }) {
+export function appendLegacyEvent(
+	store,
+	{ kind, source = "controller", run = null, ticket = null, at = FIXED_NOW, payload, payloadVersion = 1 },
+) {
 	// Through the store's write-side escape, not `read`: the row and the head
 	// move together or not at all, exactly as the old binary would have left them.
 	return store.transaction(({ db }) => {
@@ -224,7 +227,7 @@ export function appendLegacyEvent(store, { kind, source = "controller", run = nu
 			visibility: "operator",
 			stream,
 			run,
-			ticket: null,
+			ticket,
 			phase: null,
 			attempt: null,
 			causal_command_id: null,

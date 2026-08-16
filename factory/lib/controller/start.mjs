@@ -10,11 +10,13 @@ import {
 	CONTROLLER_EXIT_LEASE_LOST,
 	END_REASON_ABANDONED,
 	END_REASON_BASELINE_RED,
+	END_REASON_CIRCUIT_BREAKER,
 	END_REASON_CONTROLLER_LOST,
 	END_REASON_DRAINED,
 	END_REASON_STOPPED_BY_OPERATOR,
 	RUN_LIFECYCLE,
 } from "../domain/vocabulary.mjs";
+import { circuitBreaker } from "./breaker.mjs";
 import { FactoryEffectError } from "../effects/errors.mjs";
 import { latestRequest, operatorRequests, requestReport } from "./stop.mjs";
 import { installSignalRequests } from "./signals.mjs";
@@ -397,7 +399,12 @@ async function driveRun(store, hold, context, signals) {
 		// mid-run was honoured at a ticket boundary, and the record of it is what
 		// says so.
 		const requests = operatorRequests(store, entry.run);
-		const endReason = endReasonOf(checked, requests);
+		// §8.6, read once and used twice: the reason this run ended and the number
+		// the report shows the operator come from the same call, so the report
+		// cannot say "two consecutive automation failures" beside an end reason
+		// that disagrees.
+		const breaker = circuitBreaker(store, { run: entry.run });
+		const endReason = endReasonOf(checked, requests, breaker);
 		let execution = executionReport(store, entry.run, executed, context);
 		if (endReason !== END_REASON_BASELINE_RED) {
 			execution = settleAtBoundary(store, hold, entry.run, {
@@ -432,6 +439,11 @@ async function driveRun(store, hold, context, signals) {
 			reconcile: reconcileReport(reconciled),
 			expiry,
 			preflight: { ok: checked.ok, red: checked.red, checks: checked.checks },
+			// §8.6, on every run and not only the ones it stopped: a run that got to
+			// one automation failure short of the threshold is the operator's early
+			// warning, and a number only printed when it is already too late is not
+			// a number anybody can act on.
+			circuit_breaker: breaker,
 			operator: requests.map(requestReport),
 			manifest: checked.manifest,
 			liveness: {
@@ -499,7 +511,15 @@ function runScheduler(store, capacity, entry, hold, context) {
 		// exactly where the loop asks. §13.A's abandon supersedes a pending stop
 		// rather than being one, so the two predicates read the same record and
 		// differ only in which kind they stop for.
-		claiming: () => latestRequest(operatorRequests(store, run)) === null,
+		//
+		// §8.6's breaker is the second way to stop claiming, and it is the same
+		// stop: **draining covers an operator's stop and the circuit breaker
+		// identically** (§10.3), and only the end reason carries the difference.
+		// A ticket boundary is also exactly where the breaker's own order is
+		// observable — a lane's disposition is committed by the time the loop asks
+		// again.
+		claiming: () =>
+			latestRequest(operatorRequests(store, run)) === null && !circuitBreaker(store, { run }).tripped,
 		abandoning: () => latestRequest(operatorRequests(store, run))?.kind === "run.abandon-requested",
 		at: context.now,
 	});
@@ -574,7 +594,19 @@ function ticketExecution(store, entry, hold, context) {
 		// run that touched no ticket must not report one (§9.7).
 		if (!HELD_BY_THIS_RUN.has(claim.outcome)) return { disposition: null, claimed: false, claim };
 
-		const outcome = await context.pipeline({ ticket, member, slots, attempt, claim });
+		// §11.6's declared numbers travel with the lane rather than being fetched
+		// by whoever composes the walk: the budgets a ticket execution spends and
+		// the ones its run was started under are the same numbers, and a composer
+		// reaching for the config itself would be a second place they could be read
+		// from — including, on a re-entry, a file that has since changed.
+		const outcome = await context.pipeline({
+			ticket,
+			member,
+			slots,
+			attempt,
+			claim,
+			budgets: context.config.budgets,
+		});
 		const disposition = outcome?.disposition ?? null;
 
 		if (disposition !== null) {
@@ -585,7 +617,17 @@ function ticketExecution(store, entry, hold, context) {
 				ticket,
 				occurredAt: context.now(),
 				observedAt: context.now(),
-				payload: { disposition },
+				// §8.6: the fault rides the record because the circuit breaker counts
+				// **automation** failures in terminal-commit order, and this is the
+				// record that establishes that order. Deriving it afterwards would
+				// mean re-walking the chain to ask a question the settlement already
+				// answered — and the reason class rides along for the same reason the
+				// tracker comment carries it: it is what the operator opens first.
+				payload: {
+					disposition,
+					reason_class: outcome?.reason_class ?? null,
+					fault: outcome?.fault ?? null,
+				},
 			});
 		}
 
@@ -642,12 +684,24 @@ function refuseExecution({ ticket }) {
 
 /**
  * §10.3's mandatory reason for a run this controller still owns, from the
- * controller loop's own inputs only: the preflight verdict and the operator's
- * request. §9.6's **"one report, one end reason", never derived from the lanes**,
- * holds structurally here — no execution row reaches this function, so however
- * differently the lanes ended, the reason cannot follow them.
+ * controller loop's own inputs only: the preflight verdict, the operator's
+ * request, and §8.6's breaker verdict.
+ *
+ * §9.6's **"one report, one end reason", never derived from the lanes**, holds:
+ * no execution row and no lane outcome reaches this function. The breaker is not
+ * an exception to that — it is a read over the *durable* record of what ticket
+ * executions committed, in the journal's own order, so a controller that
+ * re-entered this run after a crash computes the same reason from the same
+ * facts. A lane's in-memory answer would not survive that, which is exactly why
+ * it is not what is read.
+ *
+ * **The operator's request outranks the breaker.** Both drain identically
+ * (§10.3), and if a human asked for the stop the run should say so: the exit
+ * code they read is the answer to what they typed. The breaker's own verdict is
+ * on the report either way, so nothing about the machine's state is hidden by
+ * the ordering.
  */
-function endReasonOf(checked, requests) {
+function endReasonOf(checked, requests, breaker) {
 	if (!checked.ok) return END_REASON_BASELINE_RED;
 
 	// The latest request decides: an abandon supersedes the stop that preceded
@@ -656,6 +710,7 @@ function endReasonOf(checked, requests) {
 	const latest = latestRequest(requests);
 	if (latest !== null && latest.kind === "run.abandon-requested") return END_REASON_ABANDONED;
 	if (latest !== null && latest.kind === "run.stop-requested") return END_REASON_STOPPED_BY_OPERATOR;
+	if (breaker.tripped) return END_REASON_CIRCUIT_BREAKER;
 	return END_REASON_DRAINED;
 }
 
@@ -769,7 +824,11 @@ function settleAtBoundary(store, hold, run, { endReason, at, executed, context }
 			ticket: execution.ticket,
 			occurredAt: at,
 			observedAt: at,
-			payload: { disposition: "released" },
+			// §8.9's `released` carries no reason class and no fault: the operator
+			// gave up on the work, and nothing about the ticket or the host failed.
+			// Spelling both nulls rather than omitting them is what keeps a v2
+			// reader from having to tell "no fault" from "an older writer".
+			payload: { disposition: "released", reason_class: null, fault: null },
 		}),
 	);
 

@@ -432,6 +432,38 @@ is the authority; cite the section a change answers to.
   checks said, and a caller that already pinned a base passes it rather than fetching a
   second one. Differential no-new-failures verification is **deliberately absent**; §8.3
   records it as the v2 answer, and the comment saying so is load-bearing.
+- **§8.6's budgets are counted, never incremented** (`factory/lib/pipeline/budgets.mjs`). A
+  spend is a *count* of the `stage.resolved` records that charged that budget, read back from
+  the journal — so the bound and the count are one expression, and `job-pipeline`'s
+  `replanCount`, incremented forever and compared to nothing, is not a shape this module can
+  express. Deriving rather than carrying is also what settles re-entry: a controller that died
+  between a failing stage and the attempt its tier called for reads the same count back, grants
+  the same retry, and finds the attempt already minted. `BUDGET_KEY_FOR_ACTION` is the whole
+  relationship between §8.10's Action column and §11.6's three numbers, so a retry action that
+  named no budget would have nowhere to be declared; the test suite asserts the spending rows
+  and the budget-column rows are the **same set, both directions**, and greps the shipped tree
+  for the legacy counter names with comments stripped. The budget is asked in `walkStages`
+  **before** the seam and never inside it: the seam plans a tier, which needs the clone, the
+  routing and the pinned base, while affordability is one question with one answer for every
+  caller. Exhaustion is a *disposition* rather than a crash, and it is the one member of the
+  pipeline's closed reason set that is an answer — a throw only because §8.4's fan-out spends
+  the automation budget inside a phase executor, whose only ways out are a phase result and a
+  throw.
+- **The circuit breaker reads terminal-commit order, and its verdict is monotone**
+  (`factory/lib/controller/breaker.mjs`). The order is the journal's own sequence over
+  `ticket.disposition-changed` — never a clock, because two lanes finishing in one order and
+  being recorded in another would give two answers to one question and only one of them
+  reproduces. It asks *has this run ever reached N in a row*, not *are the last N*: §3.5 lets
+  in-flight lanes finish, and a lane settling `published` must not erase the reason the run
+  stopped claiming. The scheduler's `claiming` predicate and `endReasonOf` call the one
+  function, so the loop and the report cannot disagree about why the run ended, and the verdict
+  is on **every** run's report rather than only the ones it stopped. Automation-versus-product
+  is the disposition's own `fault` and never a list of reason classes matched a second time —
+  which is why `ticket.disposition-changed` carries the fault on payload v2, and why an
+  operator's explicit stop outranks the breaker in `endReasonOf` while the breaker's number
+  stays on the report either way. `CIRCUIT_BREAKER_THRESHOLD` is code and not config: §11.3's
+  block inventory and §11.6's default list are closed and name no breaker key, §14.33 makes an
+  undeclared key a load failure, and promoting a constant later breaks nothing on disk.
 - **The tracker is read through `tea`, and holds no credential of its own.**
   `.pi/factory.json` carries `tracker.repo`, `tracker.remote`, and `tracker.login` — no
   base URL and no token, which is not an omission: §6.8 states that `tea` credentials are

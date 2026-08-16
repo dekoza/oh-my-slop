@@ -156,7 +156,20 @@ export function originatingAttempt(store, { run, ticket, attempt }) {
 export function planRetry({ prior, failure, priorResult = null, routing = null, labels = [] }) {
 	const tier = failure?.row?.action;
 	if (!Object.hasOwn(RETRY_BASES, tier)) {
-		throw unplannable("tier", `${JSON.stringify(tier ?? null)} is not one of §8.5's two tiers.`, {
+		// §8.10's `retry` is the near miss worth naming, because it *is* a retry and
+		// a caller will reasonably bring one here. It is not a §8.5 tier: the
+		// automation failed rather than the work, so it re-enters the phase it left
+		// rather than rebuilding, and what a new attempt has to carry differs by
+		// phase — a relaunched builder for `implement`, nothing new for a controller
+		// phase. That belongs to whoever composes the seam (#113, #114), and
+		// guessing "same as a repair" here would put a plan behind a decision
+		// nobody made.
+		const aboutRetry =
+			tier === STAGE_ACTIONS.retry
+				? " §8.6's automation retry is not a tier: it re-enters the phase it left, and minting for it belongs to" +
+					" the seam that knows what that phase needs (§8.10)."
+				: "";
+		throw unplannable("tier", `${JSON.stringify(tier ?? null)} is not one of §8.5's two tiers.${aboutRetry}`, {
 			tier: tier ?? null,
 			expected: Object.keys(RETRY_BASES).join("|"),
 		});
