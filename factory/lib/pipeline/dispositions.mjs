@@ -1,8 +1,9 @@
 import {
+	BUDGET_KINDS,
 	CONTROLLER_DERIVED_REASON_CLASSES,
+	STAGE_ACTIONS,
 	WORKER_WRITABLE_REASON_CLASSES,
 } from "../domain/vocabulary.mjs";
-import { ACTIONS, BUDGETS } from "./table.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 
 /**
@@ -67,7 +68,7 @@ export function dispositionForReasonClass(reasonClass, allowed = null) {
  * @returns {Readonly<{ disposition: string, reason_class: string | null, fault: string | null }>}
  */
 export function dispositionOf(row, { reasonClass = null } = {}) {
-	if (row.action !== ACTIONS.dispose) {
+	if (row.action !== STAGE_ACTIONS.dispose) {
 		throw new FactoryPipelineError(
 			"outcome-unmapped",
 			`Phase ${row.phase} × ${row.outcome} is ${row.action}, not a disposition; only a dispose row settles a ticket execution (§8.9).`,
@@ -87,8 +88,8 @@ export function dispositionOf(row, { reasonClass = null } = {}) {
 		});
 	}
 
-	if (row.fault === BUDGETS.automation) {
-		return Object.freeze({ disposition: "failed", reason_class: null, fault: BUDGETS.automation });
+	if (row.fault === BUDGET_KINDS.automation) {
+		return Object.freeze({ disposition: "failed", reason_class: null, fault: BUDGET_KINDS.automation });
 	}
 
 	// The row defers to the worker: §8.10's `needs-human` rows, where the class is

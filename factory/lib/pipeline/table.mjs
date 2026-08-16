@@ -1,10 +1,14 @@
 import {
+	ANOMALY_WROTE_BUT_HUNG,
+	BUDGET_KINDS,
+	EVIDENCE_TRUST,
 	PHASE_HARVEST,
 	PHASE_IMPLEMENT,
 	PHASE_INTEGRATE,
 	PHASE_OUTCOME_DOMAINS,
 	PHASE_REVIEW,
 	PHASE_VERIFY,
+	STAGE_ACTIONS,
 } from "../domain/vocabulary.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 
@@ -31,57 +35,15 @@ import { FactoryPipelineError } from "./errors.mjs";
  * no reason class at all, `published` and `released`, are the row's own.
  */
 
-/** What the controller does with a resolved (phase, outcome) pair. */
-export const ACTIONS = Object.freeze({
-	/** On to the next phase (§8.1's order). */
-	advance: "advance",
-	/**
-	 * An agent-borne phase whose attempt came back `completed`: the phase result
-	 * is the verdict the worker wrote, which is a different level from the
-	 * attempt outcome that carried it (§8.8).
-	 */
-	verdict: "verdict",
-	/** §8.5 tier 1 — a fresh attempt from the prior attempt's tip. */
-	repair: "repair",
-	/** §8.5 tier 2 — a fresh attempt from the pinned base, work discarded. */
-	freshRetry: "fresh-retry",
-	/** The same phase again: the automation failed, not the work. */
-	retry: "retry",
-	/** The ticket execution settles here (§8.9). */
-	dispose: "dispose",
-	/** §8.10's duplicate-identical row: return the committed result unchanged. */
-	idempotentReturn: "idempotent-return",
-});
-
-/** §8.6's two counters, and §8.10's fourth column. */
-export const BUDGETS = Object.freeze({ repair: "repair", automation: "automation" });
-
-/**
- * §8.5's repair-prompt trust framing, carried on the rows that produce a repair
- * prompt: controller-produced evidence is presented **as fact**, worker-authored
- * text goes in a clearly delimited **untrusted block**. A reviewer whose findings
- * contain an injected directive must not have it promoted into an instruction to
- * a write-capable builder.
- */
-export const EVIDENCE_TRUST = Object.freeze({ fact: "fact", untrusted: "untrusted" });
-
 /**
  * §8.10's last four rows, which name no phase. They are in the same table
  * because they are answers to the same question — *given this outcome, what
  * happens* — and a second structure for them is a second place to forget.
+ *
+ * It lives here rather than in the vocabulary because it is the table's own
+ * shape — the absence of a phase — and never a word any record carries.
  */
 export const TABLE_WIDE = null;
-
-/**
- * §8.10: **`wrote-but-hung` is not a failure**, and that is why it is a field
- * rather than an action of its own. The outbox is valid, the harvest and the
- * routine agent stop already happened at §6.6's settle, and what is left is to
- * take the *ordinary* action for a worker that answered — while recording that
- * it never ended its turn. An action named for the anomaly would have to say
- * where to go next as well, and would then be the ordinary action with a second
- * name.
- */
-export const ANOMALY_WROTE_BUT_HUNG = "wrote-but-hung";
 
 const row = ({
 	phase,
@@ -114,13 +76,13 @@ const row = ({
 
 export const OUTCOME_TABLE = Object.freeze([
 	// ── implement: no phase result of its own — its result is its attempt's (§8.1)
-	row({ phase: PHASE_IMPLEMENT, outcome: "completed", action: ACTIONS.advance, to: PHASE_HARVEST }),
-	row({ phase: PHASE_IMPLEMENT, outcome: "needs-human", action: ACTIONS.dispose }),
+	row({ phase: PHASE_IMPLEMENT, outcome: "completed", action: STAGE_ACTIONS.advance, to: PHASE_HARVEST }),
+	row({ phase: PHASE_IMPLEMENT, outcome: "needs-human", action: STAGE_ACTIONS.dispose }),
 	row({
 		phase: PHASE_IMPLEMENT,
 		outcome: "worker-failed",
-		action: ACTIONS.repair,
-		budget: BUDGETS.repair,
+		action: STAGE_ACTIONS.repair,
+		budget: BUDGET_KINDS.repair,
 		evidence: EVIDENCE_TRUST.untrusted,
 	}),
 	// The three fresh-retry rows below consume the **repair** budget though every
@@ -128,27 +90,27 @@ export const OUTCOME_TABLE = Object.freeze([
 	// for a worker that failed at its own job, and a worker that wrote nothing
 	// readable by the end of its turn did exactly that. Only a pane that died
 	// under it, or the automation refusing to run, is the automation's failure.
-	row({ phase: PHASE_IMPLEMENT, outcome: "invalid-result", action: ACTIONS.freshRetry, budget: BUDGETS.repair }),
-	row({ phase: PHASE_IMPLEMENT, outcome: "no-result", action: ACTIONS.freshRetry, budget: BUDGETS.repair }),
-	row({ phase: PHASE_IMPLEMENT, outcome: "timeout", action: ACTIONS.freshRetry, budget: BUDGETS.repair }),
+	row({ phase: PHASE_IMPLEMENT, outcome: "invalid-result", action: STAGE_ACTIONS.freshRetry, budget: BUDGET_KINDS.repair }),
+	row({ phase: PHASE_IMPLEMENT, outcome: "no-result", action: STAGE_ACTIONS.freshRetry, budget: BUDGET_KINDS.repair }),
+	row({ phase: PHASE_IMPLEMENT, outcome: "timeout", action: STAGE_ACTIONS.freshRetry, budget: BUDGET_KINDS.repair }),
 	row({
 		phase: PHASE_IMPLEMENT,
 		outcome: "wrote-but-hung",
-		action: ACTIONS.advance,
+		action: STAGE_ACTIONS.advance,
 		to: PHASE_HARVEST,
 		anomaly: ANOMALY_WROTE_BUT_HUNG,
 	}),
-	row({ phase: PHASE_IMPLEMENT, outcome: "dead-worker", action: ACTIONS.retry, budget: BUDGETS.automation }),
-	row({ phase: PHASE_IMPLEMENT, outcome: "automation-failure", action: ACTIONS.retry, budget: BUDGETS.automation }),
-	row({ phase: PHASE_IMPLEMENT, outcome: "cancelled", action: ACTIONS.dispose, disposition: "released" }),
+	row({ phase: PHASE_IMPLEMENT, outcome: "dead-worker", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
+	row({ phase: PHASE_IMPLEMENT, outcome: "automation-failure", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
+	row({ phase: PHASE_IMPLEMENT, outcome: "cancelled", action: STAGE_ACTIONS.dispose, disposition: "released" }),
 
 	// ── harvest (§7.4's builder-fault predicates) ────────────────────────────
-	row({ phase: PHASE_HARVEST, outcome: "passed", action: ACTIONS.advance, to: PHASE_VERIFY }),
+	row({ phase: PHASE_HARVEST, outcome: "passed", action: STAGE_ACTIONS.advance, to: PHASE_VERIFY }),
 	row({
 		phase: PHASE_HARVEST,
 		outcome: "predicate-failed",
-		action: ACTIONS.repair,
-		budget: BUDGETS.repair,
+		action: STAGE_ACTIONS.repair,
+		budget: BUDGET_KINDS.repair,
 		evidence: EVIDENCE_TRUST.fact,
 	}),
 
@@ -157,32 +119,32 @@ export const OUTCOME_TABLE = Object.freeze([
 	// ever sees mechanically-passing code. `passed` is the one row that reaches
 	// review, and that is what makes the invariant structural rather than a rule
 	// the walk is trusted to follow.
-	row({ phase: PHASE_VERIFY, outcome: "passed", action: ACTIONS.advance, to: PHASE_REVIEW }),
+	row({ phase: PHASE_VERIFY, outcome: "passed", action: STAGE_ACTIONS.advance, to: PHASE_REVIEW }),
 	row({
 		phase: PHASE_VERIFY,
 		outcome: "failed",
-		action: ACTIONS.repair,
-		budget: BUDGETS.repair,
+		action: STAGE_ACTIONS.repair,
+		budget: BUDGET_KINDS.repair,
 		evidence: EVIDENCE_TRUST.fact,
 	}),
 	row({
 		phase: PHASE_VERIFY,
 		outcome: "unrunnable",
-		action: ACTIONS.retry,
-		budget: BUDGETS.automation,
+		action: STAGE_ACTIONS.retry,
+		budget: BUDGET_KINDS.automation,
 		exhausted: Object.freeze({ reasonClass: "check-unrunnable" }),
 	}),
 
 	// ── review (§8.4): the three verdict-shaped results, then the attempt-level
 	// outcomes a reviewer attempt can end with instead of a verdict. Both levels
 	// are here because §8.10 routes both, and they are different levels (§8.8).
-	row({ phase: PHASE_REVIEW, outcome: "completed", action: ACTIONS.verdict }),
-	row({ phase: PHASE_REVIEW, outcome: "approved", action: ACTIONS.advance, to: PHASE_INTEGRATE }),
+	row({ phase: PHASE_REVIEW, outcome: "completed", action: STAGE_ACTIONS.verdict }),
+	row({ phase: PHASE_REVIEW, outcome: "approved", action: STAGE_ACTIONS.advance, to: PHASE_INTEGRATE }),
 	row({
 		phase: PHASE_REVIEW,
 		outcome: "rejected",
-		action: ACTIONS.repair,
-		budget: BUDGETS.repair,
+		action: STAGE_ACTIONS.repair,
+		budget: BUDGET_KINDS.repair,
 		evidence: EVIDENCE_TRUST.untrusted,
 	}),
 	/**
@@ -193,25 +155,25 @@ export const OUTCOME_TABLE = Object.freeze([
 	row({
 		phase: PHASE_REVIEW,
 		outcome: "mutation-detected",
-		action: ACTIONS.dispose,
+		action: STAGE_ACTIONS.dispose,
 		reasonClass: "review-mutation",
 		retryable: false,
 	}),
-	row({ phase: PHASE_REVIEW, outcome: "needs-human", action: ACTIONS.dispose }),
+	row({ phase: PHASE_REVIEW, outcome: "needs-human", action: STAGE_ACTIONS.dispose }),
 	// §8.6: a reviewer attempt that died says nothing about the work, so it
 	// charges the **automation** budget — charging the builder would eventually
 	// discard good work on an infra flake.
-	row({ phase: PHASE_REVIEW, outcome: "worker-failed", action: ACTIONS.retry, budget: BUDGETS.automation }),
-	row({ phase: PHASE_REVIEW, outcome: "invalid-result", action: ACTIONS.retry, budget: BUDGETS.automation }),
-	row({ phase: PHASE_REVIEW, outcome: "no-result", action: ACTIONS.retry, budget: BUDGETS.automation }),
-	row({ phase: PHASE_REVIEW, outcome: "dead-worker", action: ACTIONS.retry, budget: BUDGETS.automation }),
-	row({ phase: PHASE_REVIEW, outcome: "timeout", action: ACTIONS.retry, budget: BUDGETS.automation }),
-	row({ phase: PHASE_REVIEW, outcome: "automation-failure", action: ACTIONS.retry, budget: BUDGETS.automation }),
-	row({ phase: PHASE_REVIEW, outcome: "wrote-but-hung", action: ACTIONS.verdict, anomaly: ANOMALY_WROTE_BUT_HUNG }),
-	row({ phase: PHASE_REVIEW, outcome: "cancelled", action: ACTIONS.dispose, disposition: "released" }),
+	row({ phase: PHASE_REVIEW, outcome: "worker-failed", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
+	row({ phase: PHASE_REVIEW, outcome: "invalid-result", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
+	row({ phase: PHASE_REVIEW, outcome: "no-result", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
+	row({ phase: PHASE_REVIEW, outcome: "dead-worker", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
+	row({ phase: PHASE_REVIEW, outcome: "timeout", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
+	row({ phase: PHASE_REVIEW, outcome: "automation-failure", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
+	row({ phase: PHASE_REVIEW, outcome: "wrote-but-hung", action: STAGE_ACTIONS.verdict, anomaly: ANOMALY_WROTE_BUT_HUNG }),
+	row({ phase: PHASE_REVIEW, outcome: "cancelled", action: STAGE_ACTIONS.dispose, disposition: "released" }),
 
 	// ── integrate (§7.5) ─────────────────────────────────────────────────────
-	row({ phase: PHASE_INTEGRATE, outcome: "integrated", action: ACTIONS.dispose, disposition: "published" }),
+	row({ phase: PHASE_INTEGRATE, outcome: "integrated", action: STAGE_ACTIONS.dispose, disposition: "published" }),
 	/**
 	 * §8.10: a rebase conflict consumes a **fresh-retry, not a repair**, because
 	 * the prior tip is precisely what conflicts. A second conflict is `failed` /
@@ -221,23 +183,23 @@ export const OUTCOME_TABLE = Object.freeze([
 	row({
 		phase: PHASE_INTEGRATE,
 		outcome: "rebase-conflict",
-		action: ACTIONS.freshRetry,
-		budget: BUDGETS.repair,
+		action: STAGE_ACTIONS.freshRetry,
+		budget: BUDGET_KINDS.repair,
 		exhausted: Object.freeze({ reasonClass: "rebase-conflict" }),
 	}),
-	row({ phase: PHASE_INTEGRATE, outcome: "predicate-failed", action: ACTIONS.dispose, fault: BUDGETS.automation }),
-	row({ phase: PHASE_INTEGRATE, outcome: "push-failed", action: ACTIONS.retry, budget: BUDGETS.automation }),
+	row({ phase: PHASE_INTEGRATE, outcome: "predicate-failed", action: STAGE_ACTIONS.dispose, fault: BUDGET_KINDS.automation }),
+	row({ phase: PHASE_INTEGRATE, outcome: "push-failed", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 
 	// ── The four rows that name no phase ─────────────────────────────────────
-	row({ phase: TABLE_WIDE, outcome: "repair-budget-exhausted", action: ACTIONS.dispose, reasonClass: "repair-budget-exhausted" }),
+	row({ phase: TABLE_WIDE, outcome: "repair-budget-exhausted", action: STAGE_ACTIONS.dispose, reasonClass: "repair-budget-exhausted" }),
 	row({
 		phase: TABLE_WIDE,
 		outcome: "automation-budget-exhausted",
-		action: ACTIONS.dispose,
+		action: STAGE_ACTIONS.dispose,
 		reasonClass: "automation-budget-exhausted",
 	}),
-	row({ phase: TABLE_WIDE, outcome: "duplicate-identical", action: ACTIONS.idempotentReturn }),
-	row({ phase: TABLE_WIDE, outcome: "duplicate-conflicting", action: ACTIONS.dispose, fault: BUDGETS.automation }),
+	row({ phase: TABLE_WIDE, outcome: "duplicate-identical", action: STAGE_ACTIONS.idempotentReturn }),
+	row({ phase: TABLE_WIDE, outcome: "duplicate-conflicting", action: STAGE_ACTIONS.dispose, fault: BUDGET_KINDS.automation }),
 ]);
 
 /** §8.10's four phase-less rows, by name. */

@@ -263,6 +263,63 @@ export const PHASE_OUTCOME_DOMAINS = Object.freeze({
 });
 
 /**
+ * §8.10's Action column: what the controller does with a resolved
+ * `(phase, outcome)` pair.
+ *
+ * Here rather than beside the table because every one of these words rides a
+ * `stage.resolved` payload and reaches the operator's screen and the monitor's
+ * read contract unchanged — which is this file's whole criterion.
+ */
+export const STAGE_ACTIONS = Object.freeze({
+	/** On to the next phase (§8.1's order). */
+	advance: "advance",
+	/**
+	 * An agent-borne phase whose attempt came back `completed`: the phase result
+	 * is the verdict the worker wrote, which is a different level from the attempt
+	 * outcome that carried it (§8.8).
+	 */
+	verdict: "verdict",
+	/** §8.5 tier 1 — a fresh attempt from the prior attempt's tip. */
+	repair: "repair",
+	/** §8.5 tier 2 — a fresh attempt from the pinned base, work discarded. */
+	freshRetry: "fresh-retry",
+	/** The same phase again: the automation failed, not the work. */
+	retry: "retry",
+	/** The ticket execution settles here (§8.9). */
+	dispose: "dispose",
+	/** §8.10's duplicate-identical row: return the committed result unchanged. */
+	idempotentReturn: "idempotent-return",
+});
+
+/**
+ * §8.6's two counters, and §8.10's fourth column. They are two rather than one
+ * because **an automation failure never consumes the product budget** — the
+ * worker did not cause it, and charging the builder would eventually discard
+ * good work on an infra flake.
+ */
+export const BUDGET_KINDS = Object.freeze({ repair: "repair", automation: "automation" });
+
+/**
+ * §8.5's repair-prompt trust framing, carried on the rows that produce a repair
+ * prompt: controller-produced evidence is presented **as fact**, worker-authored
+ * text goes in a clearly delimited **untrusted block**. A reviewer whose findings
+ * contain an injected directive must not have it promoted into an instruction to
+ * a write-capable builder.
+ */
+export const EVIDENCE_TRUST = Object.freeze({ fact: "fact", untrusted: "untrusted" });
+
+/**
+ * §8.10: **`wrote-but-hung` is not a failure**, which is why it is an anomaly on
+ * an ordinary row rather than an action of its own. The outbox is valid, the
+ * harvest and the routine agent stop already happened at §6.6's settle, and what
+ * is left is to take the *ordinary* action for a worker that answered — while
+ * recording that it never ended its turn. An action named for the anomaly would
+ * have to say where to go next as well, and would then be the ordinary action
+ * under a second name.
+ */
+export const ANOMALY_WROTE_BUT_HUNG = "wrote-but-hung";
+
+/**
  * §4.6's repo-scoped exclusive lease. Named here rather than in the lease
  * primitive because it is read from two sides: the holder renews it, and an
  * effect resolution compares its generation against the holder's (§14.5). The

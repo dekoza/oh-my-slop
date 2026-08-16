@@ -1,8 +1,8 @@
-import { PHASE_IMPLEMENT, PHASE_INTEGRATE, PHASE_REVIEW } from "../domain/vocabulary.mjs";
+import { PHASE_IMPLEMENT, PHASE_INTEGRATE, PHASE_REVIEW, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
 import { canonicalJson, digest, runStream } from "../state/events.mjs";
 import { dispositionOf } from "./dispositions.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
-import { ACTIONS, TABLE_WIDE, routeOutcome } from "./table.mjs";
+import { TABLE_WIDE, routeOutcome } from "./table.mjs";
 
 /**
  * A stage result, as a durable record.
@@ -181,12 +181,12 @@ export async function walkStages(store, { hold, run, ticket, attempt, phases, ac
 			});
 		}
 
-		if (resolved.row.action === ACTIONS.advance) {
+		if (resolved.row.action === STAGE_ACTIONS.advance) {
 			phase = resolved.row.to;
 			continue;
 		}
 
-		if (resolved.row.action === ACTIONS.dispose) {
+		if (resolved.row.action === STAGE_ACTIONS.dispose) {
 			return settle(phase, resolved.outcome, {
 				store,
 				run,
@@ -246,10 +246,10 @@ async function answerFor(store, { run, ticket, phase, attempt, phases }) {
  * operator meeting one reads the ticket number rather than a stack trace.
  */
 const UNBUILT = Object.freeze({
-	[ACTIONS.repair]: { missing: "the two repair tiers (#110)", spec: "§8.5" },
-	[ACTIONS.freshRetry]: { missing: "the two repair tiers (#110)", spec: "§8.5" },
-	[ACTIONS.retry]: { missing: "the budgets and the circuit breaker (#111)", spec: "§8.6" },
-	[ACTIONS.verdict]: { missing: "review fan-out and the mutation attestation (#112)", spec: "§8.4" },
+	[STAGE_ACTIONS.repair]: { missing: "the two repair tiers (#110)", spec: "§8.5" },
+	[STAGE_ACTIONS.freshRetry]: { missing: "the two repair tiers (#110)", spec: "§8.5" },
+	[STAGE_ACTIONS.retry]: { missing: "the budgets and the circuit breaker (#111)", spec: "§8.6" },
+	[STAGE_ACTIONS.verdict]: { missing: "review fan-out and the mutation attestation (#112)", spec: "§8.4" },
 	[PHASE_REVIEW]: { missing: "review fan-out and the mutation attestation (#112)", spec: "§8.4" },
 	[PHASE_INTEGRATE]: { missing: "integration and publication — the first pull request (#113)", spec: "§7.5" },
 });
