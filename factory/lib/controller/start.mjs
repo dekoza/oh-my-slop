@@ -19,9 +19,15 @@ import { latestRequest, operatorRequests, requestReport } from "./stop.mjs";
 import { installSignalRequests } from "./signals.mjs";
 import { reconcile } from "../reconcile/engine.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
+import { withTrackerProbes } from "../reconcile/tracker-probes.mjs";
 import { FactoryStateError } from "../state/errors.mjs";
 import { LEASE_RENEWAL_MS, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
+import { CLAIM_OUTCOMES, claimTicket, releaseClaim } from "../tracker/claims.mjs";
+import { readScope } from "../tracker/frontier.mjs";
+import { createGiteaReader } from "../tracker/gitea.mjs";
+import { createGiteaWriter } from "../tracker/writer.mjs";
+import { drainReport } from "./drain.mjs";
 import { decideEntry, ENTRY_MODES, liveRunAnswer } from "./entry.mjs";
 import { FOREGROUND_FLAG, launch } from "./launch.mjs";
 import { FactoryRunError, isUsageRefusal } from "./errors.mjs";
@@ -79,12 +85,17 @@ export const NEW_RUN_FLAG = "--new-run";
  * @param {(args: string[], options: object) => Promise<object>} [invocation.runHerdr]
  *   §10.1's Herdr command runner for the detached launch, injectable for the same
  *   reason `herdr` is: a test drives both answers without a multiplexer on the machine
+ * @param {object | null} [invocation.tracker] §5.1's read client. With one, the run
+ *   resolves §3.2's live frontier itself and reconcile can settle tracker effects
+ * @param {object | null} [invocation.trackerWriter] §3.3's write client; built from
+ *   the same config when a tracker is present, injectable for the same reason
+ * @param {(lane: object) => Promise<object>} [invocation.pipeline] the phases above
+ *   the claim (#107) — implement, harvest, verify, review, integrate. **The claim
+ *   is composed onto it here**, so a package without it claims nothing
  * @param {() => Promise<object>} [invocation.frontier] §3.2's live frontier reader,
- *   which #100's tracker slice supplies. Empty by default, and the drain report
- *   says which subsystem is missing rather than reporting a drained scope
- * @param {(lane: object) => Promise<object>} [invocation.execute] one ticket
- *   execution from the claim to its terminal disposition (#102 and the pipeline
- *   above it)
+ *   overriding the one composed from `tracker`
+ * @param {(lane: object) => Promise<object>} [invocation.execute] one whole ticket
+ *   execution, overriding the claim-plus-pipeline composition
  * @returns {Promise<{ message: string, report: object, exitCode: number } | { error: object, exitCode: number }>}
  */
 export async function runStart({
@@ -105,6 +116,9 @@ export async function runStart({
 	watching = () => 0,
 	signal = globalThis.process,
 	runHerdr,
+	tracker = null,
+	trackerWriter = null,
+	pipeline = null,
 	frontier,
 	execute,
 }) {
@@ -134,6 +148,7 @@ export async function runStart({
 		});
 	}
 
+	const reader = tracker ?? createGiteaReader({ repo: config.tracker.repo, login: config.tracker.login });
 	const store = await openStore({ repoRoot, agentDir });
 	try {
 		return await start(store, {
@@ -151,6 +166,15 @@ export async function runStart({
 			herdr,
 			watching,
 			signal,
+			// The clients this repository's config describes. Neither holds a
+			// credential: `tracker.login` names a `tea` login and `tea` resolves the
+			// instance and the token (§6.8), which is also why the deny floor lists
+			// `Bash(tea *)`. Injectable so a suite drives real answer shapes without
+			// a Gitea, exactly as `probes` and `herdr` are.
+			tracker: reader,
+			trackerWriter:
+				trackerWriter ?? createGiteaWriter({ repo: config.tracker.repo, login: config.tracker.login }),
+			pipeline,
 			frontier,
 			execute,
 			pane: env?.HERDR_PANE_ID ?? null,
@@ -240,7 +264,14 @@ async function driveRun(store, hold, context, signals) {
 	// hold keeps that as a latch rather than as an order of calls anyone can get
 	// wrong, so nothing below could have run first.
 	const reconciled = await reconcile(store, {
-		probes: context.probes,
+		// §5.3's probes for the tracker's own mutations ship with the subsystem that
+		// introduces them, and they close over this invocation's reader — so they
+		// join the registry here rather than at import, where there is no reader and
+		// a second invocation in one process would refuse a duplicate registration.
+		probes: withTrackerProbes(context.probes, {
+			reader: context.tracker,
+			assignee: context.config.tracker.assignee,
+		}),
 		fencingGeneration: hold.fencingGeneration,
 		hold,
 		actor: "controller",
@@ -334,7 +365,7 @@ async function driveRun(store, hold, context, signals) {
 		let executed = null;
 		if (checked.ok) {
 			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.running, { at: context.now() });
-			executed = await runScheduler(store, capacity, entry.run, context);
+			executed = await runScheduler(store, capacity, entry, hold, context);
 			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.draining, { at: context.now() });
 		}
 
@@ -345,12 +376,13 @@ async function driveRun(store, hold, context, signals) {
 		// says so.
 		const requests = operatorRequests(store, entry.run);
 		const endReason = endReasonOf(checked, requests);
-		let execution = executionReport(store, entry.run, executed);
+		let execution = executionReport(store, entry.run, executed, context);
 		if (endReason !== END_REASON_BASELINE_RED) {
 			execution = settleAtBoundary(store, hold, entry.run, {
 				endReason,
 				at: context.now(),
 				executed,
+				context,
 			});
 		}
 
@@ -412,26 +444,35 @@ async function driveRun(store, hold, context, signals) {
 /**
  * §9.6's loop, driven for this run.
  *
- * The two seams it is parametric in are the two subsystems that have not landed:
- * **the frontier** — §3.2's live answer, which #100's tracker reader gives — and
- * **the execution** of one claimed ticket, which is #102's claim plus the
- * pipeline above it. Neither is stubbed with a plausible value: the default
- * frontier is empty *because nothing here can read one*, and the drain report
- * says so rather than reporting a scope that drained.
+ * **The frontier and the execution are wired together or not at all**, and that
+ * is a §3.3 rule rather than tidiness: *claiming work that cannot start puts an
+ * assignee and a claim comment on the tracker for work that is not moving —
+ * visible to humans and other tooling as a falsehood.* So a run that can read a
+ * frontier but has no pipeline to run reads no frontier: it would otherwise offer
+ * the loop a ticket it could only refuse, having already taken a slot for it.
  *
- * Everything between them is this package's: the slots, the order, the
- * backpressure, and the waiting.
+ * With both present the composition is this package's whole job — slots, order,
+ * backpressure, waiting, the claim, and the disposition — and #107's pipeline is
+ * what sits between the claim and that disposition.
+ *
+ * `executor` is asked once and both seams read the same answer. Deciding "is
+ * there anything to run" twice, once here and once where the report names what is
+ * missing, is how a run ends up reading a live frontier with nothing able to
+ * execute against it.
  */
-function runScheduler(store, capacity, run, context) {
+function runScheduler(store, capacity, entry, hold, context) {
+	const run = entry.run;
+	const executor = executorFor(store, entry, hold, context);
+
 	return schedule({
 		capacity,
-		frontier: context.frontier ?? emptyFrontier,
+		frontier: executor === null ? emptyFrontier : (context.frontier ?? liveFrontier(entry, context)),
 		resourceClassOf: (member) =>
 			implementResourceClass(
 				{ profiles: context.config.profiles, activeRouting: context.activeRouting },
 				member,
 			),
-		execute: context.execute ?? refuseExecution,
+		execute: executor ?? refuseExecution,
 		// §10.5: the stop request is **polled at ticket boundaries**, which is
 		// exactly where the loop asks. §13.A's abandon supersedes a pending stop
 		// rather than being one, so the two predicates read the same record and
@@ -443,9 +484,120 @@ function runScheduler(store, capacity, run, context) {
 }
 
 /**
- * The frontier a package with no tracker reader has: empty, and empty for a
- * reason the report names (#100). Answering anything else here would be §9.7's
- * green-looking run that did nothing.
+ * What this run can do with a claimable ticket, or `null` if nothing.
+ *
+ * **One predicate, read by both the loop and the report.** An injected `execute`
+ * is a whole ticket execution and answers for itself; otherwise the claim is
+ * composed onto a pipeline, and with no pipeline there is nothing to compose.
+ */
+function executorFor(store, entry, hold, context) {
+	if (context.execute !== undefined) return context.execute;
+	if (context.pipeline === null || context.pipeline === undefined) return null;
+	return ticketExecution(store, entry, hold, context);
+}
+
+/**
+ * §3.2's live answer, re-read at every scheduling decision (§3.1).
+ *
+ * The edge map is deliberately not passed: `readScope` then reads
+ * `dependencies` per member, which §5.1 reserves for an `add_dependency`
+ * observation. The maintained map belongs to the observation poll, and this run
+ * does not open one — §5.1's cursor is a run's to keep, and wiring a poll that
+ * nothing consumes would be a cost with no reader. It is the honest cost of not
+ * having the poll rather than a stale graph pretending to be one (#109).
+ */
+function liveFrontier(entry, context) {
+	return () => readScope(context.tracker, entry.scope, { at: context.now() });
+}
+
+/**
+ * One ticket execution: **the claim, then the pipeline above it** (§3.3, §8.10).
+ *
+ * A claim that does not come back this run's is **not** a lane failure: a
+ * human-claimed ticket, a live claim, and a lost collision are §3.3's ordinary
+ * answers, and the ticket simply stays where it was. The lane ends with no
+ * disposition, carrying why.
+ *
+ * A pipeline that throws leaves the claim standing on purpose. §8.9 gives
+ * `released` to operator stop and controller shutdown, and §8's failure policy —
+ * which is where the `factory:failed` label lives — is #107's; dropping the
+ * assignee here would put the ticket back in the frontier for the next run to die
+ * on identically, which is §8.9's `failAutomation` mistake. §3.3's same-factory
+ * staleness is what settles a claim whose run died: proven from durable state,
+ * with no waiting period.
+ *
+ * **The disposition is recorded before it is acted on.** A crash in between
+ * leaves a `released` record beside a claim still standing, which §3.3 settles;
+ * the other order would leave a dropped claim with no record, and the run would
+ * report a lane it finished as still in flight.
+ */
+function ticketExecution(store, entry, hold, context) {
+	return async ({ ticket, member, slots }) => {
+		// §7.3's deterministic identity, so a re-entered run rebuilds the same one
+		// and §4.5's duplicate check returns the claim already committed.
+		const attempt = `${entry.run}-t${ticket}-a1`;
+		const claim = await claimTicket(store, {
+			reader: context.tracker,
+			writer: context.trackerWriter,
+			hold,
+			run: entry.run,
+			ticket,
+			attempt,
+			assignee: context.config.tracker.assignee,
+			at: context.now(),
+		});
+
+		// §3.3's four refusing outcomes each end the lane having written nothing.
+		// `claimed: false` is what keeps them out of the report's claim count — a
+		// run that touched no ticket must not report one (§9.7).
+		if (!HELD_BY_THIS_RUN.has(claim.outcome)) return { disposition: null, claimed: false, claim };
+
+		const outcome = await context.pipeline({ ticket, member, slots, attempt, claim });
+		const disposition = outcome?.disposition ?? null;
+
+		if (disposition !== null) {
+			hold.append({
+				kind: "ticket.disposition-changed",
+				source: "controller",
+				run: entry.run,
+				ticket,
+				occurredAt: context.now(),
+				observedAt: context.now(),
+				payload: { disposition },
+			});
+		}
+
+		// §8.9's tracker action for the one disposition this slice owns. The other
+		// three add a label, and the label vocabulary of §8's failure policy lands
+		// with the pipeline that produces those dispositions (#107).
+		if (disposition === "released") {
+			await releaseClaim(store, {
+				writer: context.trackerWriter,
+				hold,
+				run: entry.run,
+				ticket,
+				attempt,
+				assignee: context.config.tracker.assignee,
+				at: context.now(),
+				reason: outcome?.reason ?? null,
+			});
+		}
+
+		return { disposition, claimed: true, claim, outcome };
+	};
+}
+
+/** The two claim outcomes that leave the ticket this run's to work on (§3.3). */
+const HELD_BY_THIS_RUN = new Set([
+	CLAIM_OUTCOMES.claimed,
+	CLAIM_OUTCOMES.alreadyClaimed,
+	CLAIM_OUTCOMES.takenOver,
+]);
+
+/**
+ * The frontier a run with nothing to execute has: empty, and empty for a reason
+ * the report names. Answering anything else here would be §9.7's green-looking
+ * run that did nothing.
  */
 async function emptyFrontier() {
 	return { claimable: [], members: [] };
@@ -454,7 +606,7 @@ async function emptyFrontier() {
 /** Unreachable while the frontier is empty, and explicit rather than a silent no-op. */
 function refuseExecution({ ticket }) {
 	throw new Error(
-		`Ticket ${ticket} was claimable, but claiming and the pipeline above it are not built in this package (#102, #107).`,
+		`Ticket ${ticket} was claimable, but the pipeline above the claim is not built in this package (#107).`,
 	);
 }
 
@@ -497,22 +649,19 @@ function applyExpiry() {
 }
 
 /**
- * §3.5's drain, as far as this package can take it: the loop ran, and it found
- * nothing claimable **because nothing here can read a frontier**.
+ * §3.5's classified per-member report, over the frontier as of the loop's last
+ * scheduling decision.
  *
- * **It says so in the report rather than reporting an empty member list.** §9.7
- * names the failure this avoids outright — a run that starts, claims nothing,
- * and drains as though the work were done is a green-looking run that did
- * nothing, "the worst outcome available here". The exit code is still `0`,
- * because the run genuinely drained; what stops that from being a lie is this
- * section naming the two subsystems that would have found and claimed work.
+ * The mapping and the drain verdict live in `drain.mjs`; what this function adds
+ * is the run's own two facts — the durable in-flight executions, and the sentence
+ * naming a subsystem that would have found work when there is one.
  *
- * The loop runs, and #100's reader can answer what is claimable — but this run
- * composes neither into the other, because **the two halves land together or not
- * at all**: a frontier read without #102's claim would hand the loop a ticket it
- * could then only refuse to execute, which is a lane claimed for work that
- * cannot move. So the frontier stays empty here and the sentence names the half
- * that is missing.
+ * **That sentence is what keeps a quiet run honest.** §9.7 names the failure
+ * outright: a run that starts, claims nothing, and drains as though the work were
+ * done is a green-looking run that did nothing, "the worst outcome available
+ * here". A run with a tracker and a pipeline drains against a real frontier and
+ * needs no such sentence; a run without a pipeline reads no frontier at all
+ * (§3.3), and says which half is missing rather than reporting an empty scope.
  *
  * `refused` and `blocked` are the loop's own answers rather than absences:
  * §11.5's ticket-scoped routing conflict, and slots a previous controller left
@@ -520,34 +669,33 @@ function applyExpiry() {
  * ticket executions the projection holds without a terminal disposition. A run
  * ending beside a lane it is leaving behind says so in the same breath.
  */
-function executionReport(store, run, executed) {
+function executionReport(store, run, executed, context) {
 	const inFlight = store
 		.readTicketExecutions(run)
 		.filter((execution) => execution.disposition === null);
 
-	return {
-		claimed: executed?.claimed ?? 0,
-		members: executed === null || executed === undefined ? [] : executed.lanes.map(laneReport),
-		in_flight: inFlight.length,
-		released: executed?.released ?? 0,
-		refused: executed?.refused ?? [],
-		blocked: executed?.blocked ?? [],
-		missing:
-			"claiming, release, and the classified drain report, which is what lets this run's loop " +
-			"read the frontier #100 already answers (#102)",
-		spec: "§3.2, §3.5, §9",
-	};
+	return drainReport({
+		view: executed?.frontier ?? null,
+		executed,
+		inFlight,
+		missing: missingSubsystem(context),
+	});
 }
 
-/** A lane as the operator reads it: what it was, and how it ended. */
-function laneReport(lane) {
-	return {
-		ticket: lane.ticket,
-		disposition: lane.disposition,
-		...(lane.error === undefined || lane.error === null
-			? {}
-			: { failure: { reason: lane.error.reason ?? null, message: lane.error.message } }),
-	};
+/**
+ * What this package could not do, named — or `null` when it could do all of it.
+ *
+ * There is one such absence left. The tracker client is always built (§6.8 makes
+ * it credential-free), the claim is this slice's, and the drain report is real —
+ * so the only reason a run reads no frontier is that it has nothing to run
+ * against one, and §3.3 forbids claiming in that state.
+ */
+function missingSubsystem(context) {
+	if (context.execute !== undefined) return null;
+	if (context.pipeline === null || context.pipeline === undefined) {
+		return "the pipeline above the claim — implement, harvest, verify, review, integrate (#107)";
+	}
+	return null;
 }
 
 /**
@@ -561,12 +709,18 @@ function laneReport(lane) {
  * durable disposition beside them, which is what the next reconcile reads to
  * tell a stopped run from an abandoned one (§13.A).
  *
- * **It touches no pane.** A wedged pane is evidence (§13.B, §14.27), and pane
+ * **It touches no pane, and it touches no tracker.** §9.6's abandon *stops
+ * issuing new effects*, so the assignee stays exactly where it is: dropping it
+ * here would be a mutation issued by a run that has just declared it is issuing
+ * none. The claim a dead run leaves behind is not stranded — §3.3's same-factory
+ * staleness proves it from this same durable disposition and takes it over with
+ * no waiting period, which is why the record below is the whole obligation. A
+ * wedged pane is evidence for the same reason (§13.B, §14.27), and pane
  * reclamation is cleanup-plan's exclusively.
  */
-function settleAtBoundary(store, hold, run, { endReason, at, executed }) {
+function settleAtBoundary(store, hold, run, { endReason, at, executed, context }) {
 	if (endReason !== END_REASON_ABANDONED) {
-		return executionReport(store, run, executed);
+		return executionReport(store, run, executed, context);
 	}
 
 	// `released` is §8.8's word for an execution whose work the run gives up on
@@ -590,15 +744,19 @@ function settleAtBoundary(store, hold, run, { endReason, at, executed }) {
 	);
 
 	// Counted by ticket rather than added up: the loop already released the lanes
-	// it was running, and once #102 writes a `ticket_execution` row per claim the
-	// same lane would appear in both lists. A run that abandoned one lane must not
+	// it was running, and the claim writes a `ticket_execution` row per ticket, so
+	// the same lane appears in both lists. A run that abandoned one lane must not
 	// report two.
 	const released = new Set([
 		...inFlight.map((execution) => execution.ticket),
 		...(executed?.lanes ?? []).filter((lane) => lane.abandoned === true).map((lane) => lane.ticket),
 	]);
 
-	return { ...executionReport(store, run, executed), in_flight: inFlight.length, released: released.size };
+	return Object.freeze({
+		...executionReport(store, run, executed, context),
+		in_flight: inFlight.length,
+		released: released.size,
+	});
 }
 
 /**
@@ -757,8 +915,26 @@ function headline(report) {
 		return `run ${report.run} ended ${ended}, red at: ${report.preflight.red.join(", ")}.`;
 	}
 
+	// §3.5's verdict belongs in the first sentence: "drained" and "stopped with
+	// three still claimable" are different answers to the operator's question, and
+	// only one of them means the work is done.
+	//
+	// It is a different question from the end reason beside it. §10.3's reason is
+	// the **controller loop's** — it stopped claiming — and §3.5's is the
+	// **scope's**. A run can honestly end `drained` over a scope that is not, when
+	// every remaining claimable ticket turned out to belong to somebody else, and
+	// the two halves of this sentence are what keep that from reading as a
+	// contradiction.
+	const members = report.execution.members.length;
+	const scope =
+		members === 0
+			? ""
+			: report.execution.drained
+				? ` and drained all ${members} member(s) of its scope`
+				: ` with ${report.execution.drain.claimable_now} of ${members} member(s) still claimable`;
+
 	return (
 		`run ${report.run} over ${report.scope.described} ended ${ended}, ` +
-		`having claimed ${report.execution.claimed} tickets.`
+		`having claimed ${report.execution.claimed} tickets${scope}.`
 	);
 }

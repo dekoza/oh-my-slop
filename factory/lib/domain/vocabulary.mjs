@@ -11,9 +11,17 @@
  * and event envelopes carry a phase slot and a cleanup deletion or an expiry
  * stream drop is a mutation like any other (§13.C).
  */
+/**
+ * The phase a ticket execution opens in, named because the claim's effects carry
+ * it: §2.2's enum has no claim phase, deliberately — the claim is what *opens*
+ * the first phase rather than a phase of its own, and widening the enum for it
+ * would put a non-phase in the list §13.C widened exactly once.
+ */
+export const PHASE_IMPLEMENT = "implement";
+
 export const PHASES = Object.freeze([
 	"preflight",
-	"implement",
+	PHASE_IMPLEMENT,
 	"harvest",
 	"verify",
 	"review",
@@ -81,8 +89,15 @@ export const RUN_TERMINAL_REASONS = Object.freeze([
  */
 export const CONTROLLER_EXIT_LEASE_LOST = "lease-lost";
 
+/**
+ * §8.9's one disposition whose tracker action is **dropping the claim** rather
+ * than adding a label, named because two subsystems reach for it: the claim path
+ * acts on it, and the abandon path records it.
+ */
+export const DISPOSITION_RELEASED = "released";
+
 /** §8.8. */
-export const TICKET_DISPOSITIONS = Object.freeze(["published", "paused", "failed", "released"]);
+export const TICKET_DISPOSITIONS = Object.freeze(["published", "paused", "failed", DISPOSITION_RELEASED]);
 
 /** §8.8 — worker-writable first, then controller-derived. */
 export const ATTEMPT_OUTCOMES = Object.freeze([

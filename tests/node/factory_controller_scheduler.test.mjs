@@ -68,7 +68,7 @@ test("the lowest-numbered claimable ticket is taken first, with no priority mech
 	});
 
 	assert.deepEqual(started, [7, 42, 91]);
-	assert.equal(result.claimed, 3);
+	assert.equal(result.lanes_run, 3);
 });
 
 test("at capacity 1, a second ticket is never claimed while the first holds the slot", async (t) => {
@@ -119,7 +119,7 @@ test("at capacity 2 with a two-slot class, two lanes run at once", async (t) => 
 	gate.settle();
 	const result = await loop;
 	assert.deepEqual(live, [7, 42, 91]);
-	assert.equal(result.claimed, 3);
+	assert.equal(result.lanes_run, 3);
 });
 
 test("a size-1 class holds the run to one lane whatever the declared ceiling says", async (t) => {
@@ -365,7 +365,7 @@ test("a slot pool blocked by a previous controller's rows ends the loop rather t
 		execute: () => assert.fail("nothing may run on a slot this controller does not hold"),
 	});
 
-	assert.equal(result.claimed, 0);
+	assert.equal(result.lanes_run, 0);
 	assert.deepEqual(
 		result.blocked.map((entry) => entry.slot),
 		["capacity:ticket:0"],
