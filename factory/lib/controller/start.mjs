@@ -1,23 +1,27 @@
 import {
 	EXIT_LEASE_LOST,
-	EXIT_OK,
 	EXIT_REFUSED,
 	EXIT_USAGE,
 	exitCodeForEndReason,
 } from "../cli/exit-codes.mjs";
 import {
 	CONTROLLER_EXIT_LEASE_LOST,
+	END_REASON_ABANDONED,
 	END_REASON_BASELINE_RED,
 	END_REASON_CONTROLLER_LOST,
 	END_REASON_DRAINED,
+	END_REASON_STOPPED_BY_OPERATOR,
 	RUN_LIFECYCLE,
 } from "../domain/vocabulary.mjs";
+import { latestRequest, operatorRequests, requestReport } from "./stop.mjs";
+import { installSignalRequests } from "./signals.mjs";
 import { reconcile } from "../reconcile/engine.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
 import { FactoryStateError } from "../state/errors.mjs";
 import { LEASE_RENEWAL_MS, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
-import { decideEntry, ENTRY_MODES, resolveAgainstLiveRun } from "./entry.mjs";
+import { decideEntry, ENTRY_MODES, liveRunAnswer } from "./entry.mjs";
+import { FOREGROUND_FLAG, launch } from "./launch.mjs";
 import { FactoryRunError, isUsageRefusal } from "./errors.mjs";
 import { HEARTBEAT_INTERVAL_MS, startHeartbeat } from "./heartbeat.mjs";
 import { holdControllerLease } from "./lease-guard.mjs";
@@ -67,6 +71,11 @@ export const NEW_RUN_FLAG = "--new-run";
  * @param {(options: object) => Promise<object>} [invocation.herdr] §10.3's availability probe
  * @param {() => number} [invocation.watching] actual live Herdr subscriptions; #99 wires
  *   the observer, so zero is the truthful default rather than an attempt-derived guess
+ * @param {object} [invocation.signal] the event target §10.5's signals listen on —
+ *   `process` by default, injectable so a test fires a signal at a chosen moment
+ * @param {(args: string[], options: object) => Promise<object>} [invocation.runHerdr]
+ *   §10.1's Herdr command runner for the detached launch, injectable for the same
+ *   reason `herdr` is: a test drives both answers without a multiplexer on the machine
  * @returns {Promise<{ message: string, report: object, exitCode: number } | { error: object, exitCode: number }>}
  */
 export async function runStart({
@@ -85,12 +94,33 @@ export async function runStart({
 	timers = { setInterval, clearInterval },
 	herdr,
 	watching = () => 0,
+	signal = globalThis.process,
+	runHerdr,
 }) {
 	let requested;
 	try {
 		requested = parseScope(args, { parent: flags.has(PARENT_FLAG) });
 	} catch (error) {
 		return refusal(error);
+	}
+
+	// §10.1's process shape: the **default launch is detached into a Herdr pane**,
+	// and `--foreground` is the invocation running as the controller in this
+	// terminal. They are one verb because they are one job with one decision
+	// between them; the branch is the decision, and the two shapes share the
+	// scope parse and §10.4's live-run answer above it.
+	if (!flags.has(FOREGROUND_FLAG)) {
+		return launch({
+			repoRoot,
+			requested,
+			rawArgs: args,
+			agentDir,
+			executable,
+			env,
+			herdr,
+			runHerdr,
+			now,
+		});
 	}
 
 	const store = await openStore({ repoRoot, agentDir });
@@ -109,6 +139,7 @@ export async function runStart({
 			timers,
 			herdr,
 			watching,
+			signal,
 			pane: env?.HERDR_PANE_ID ?? null,
 		});
 	} finally {
@@ -128,7 +159,7 @@ async function start(store, context) {
 	} catch (error) {
 		// §10.4: a live holder is resolved against, never queued behind.
 		if (!(error instanceof FactoryStateError) || error.reason !== "lease-held") throw error;
-		return liveRun(store, error.details, context.requested);
+		return liveRunAnswer(store, error.details, context.requested);
 	}
 
 	let answered = null;
@@ -165,6 +196,26 @@ async function start(store, context) {
  * "after the run exists" for preflight.
  */
 async function drive(store, hold, context) {
+	// §10.5: the signal path is live from the moment this controller holds the
+	// lease. A signal that arrives before the run has a record has no stream to
+	// write to, so its intent rides in the installer's memory and lands on
+	// attach; the run's `finally` removes the listener, so a signal the run can
+	// no longer be asked about goes nowhere rather than reaching a released hold.
+	const signals = installSignalRequests({
+		signal: context.signal,
+		store,
+		hold,
+		now: context.now,
+	});
+
+	try {
+		return await driveRun(store, hold, context, signals);
+	} finally {
+		signals.remove();
+	}
+}
+
+async function driveRun(store, hold, context, signals) {
 	const startedAt = context.now();
 
 	// §5.4, and the reason it is first: reconcile settles what the last
@@ -201,7 +252,8 @@ async function drive(store, hold, context) {
 	}
 
 	const expiry = applyExpiry();
-	openLifecycle(hold, entry, { at: startedAt });
+	openLifecycle(hold, entry, { at: startedAt, pane: context.pane });
+	signals.attach(entry.run);
 
 	let lifecycle = RUN_LIFECYCLE.preflight;
 	const heartbeat = startHeartbeat({
@@ -240,10 +292,19 @@ async function drive(store, hold, context) {
 
 		// The run's reason is decided before execution: a red required preflight
 		// ends here, while only a green run reaches `running`.
-		const endReason = endReasonOf(checked);
-		if (endReason === END_REASON_DRAINED) {
+		const requests = operatorRequests(store, entry.run);
+		const endReason = endReasonOf(checked, requests);
+		let execution = executionReport(store, entry.run);
+		if (endReason !== END_REASON_BASELINE_RED) {
 			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.running, { at: context.now() });
 			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.draining, { at: context.now() });
+			// §9.6's ticket boundary. Nothing here claims yet (#100-#102), so the
+			// run's first boundary is its drain and the poll is one read; the
+			// scheduler loop makes it per-boundary without moving this decision.
+			execution = settleAtBoundary(store, hold, entry.run, {
+				endReason,
+				at: context.now(),
+			});
 		}
 
 		const endedAt = context.now();
@@ -261,6 +322,7 @@ async function drive(store, hold, context) {
 			run: entry.run,
 			lifecycle,
 			end_reason: endReason,
+			detached: false,
 			exit_code: exitCodeForEndReason(endReason),
 			started_at: startedAt,
 			ended_at: endedAt,
@@ -269,6 +331,7 @@ async function drive(store, hold, context) {
 			reconcile: reconcileReport(reconciled),
 			expiry,
 			preflight: { ok: checked.ok, red: checked.red, checks: checked.checks },
+			operator: requests.map(requestReport),
 			manifest: checked.manifest,
 			liveness: {
 				heartbeats: heartbeat.emitted,
@@ -276,7 +339,7 @@ async function drive(store, hold, context) {
 				lease_renewal_ms: LEASE_RENEWAL_MS,
 				fencing_generation: hold.fencingGeneration,
 			},
-			execution: executionReport(),
+			execution,
 			monitor: {
 				requested: false,
 				missing: "the typed pi.events run-start trigger (#99)",
@@ -290,9 +353,22 @@ async function drive(store, hold, context) {
 	}
 }
 
-/** §10.3's mandatory reason for a run this controller still owns. */
-function endReasonOf(checked) {
+/**
+ * §10.3's mandatory reason for a run this controller still owns, decided
+ * **before** the run executes — and from the loop's own inputs only: the
+ * preflight verdict and the operator's request. §9.6's "never derived from the
+ * lanes" holds structurally here: no execution row reaches this function, so
+ * however differently the lanes end, the reason cannot follow them.
+ */
+function endReasonOf(checked, requests) {
 	if (!checked.ok) return END_REASON_BASELINE_RED;
+
+	// The latest request decides: an abandon supersedes the stop that preceded
+	// it (§13.A), and a request an earlier incarnation already honoured cannot
+	// still be outstanding — honouring a stop ends the run.
+	const latest = latestRequest(requests);
+	if (latest !== null && latest.kind === "run.abandon-requested") return END_REASON_ABANDONED;
+	if (latest !== null && latest.kind === "run.stop-requested") return END_REASON_STOPPED_BY_OPERATOR;
 	return END_REASON_DRAINED;
 }
 
@@ -325,16 +401,70 @@ function applyExpiry() {
  * nothing, "the worst outcome available here". The exit code is still `0`,
  * because the run genuinely drained; what stops that from being a lie is this
  * section naming the three subsystems that would have found work.
+ *
+ * `in_flight` is the one number this slice can already answer from durable
+ * state: the ticket executions the projection holds without a terminal
+ * disposition. A run ending beside a lane it is leaving behind says so in the
+ * same breath rather than reporting a member list of nothing.
  */
-function executionReport() {
+function executionReport(store, run) {
+	const inFlight = store
+		.readTicketExecutions(run)
+		.filter((execution) => execution.disposition === null);
+
 	return {
 		claimed: 0,
 		members: [],
+		in_flight: inFlight.length,
+		released: 0,
 		missing:
-			"the tracker scope and eligibility reader (#100), capacity slots and the scheduler loop (#101), " +
-			"and claiming, release, and the classified drain report (#102)",
+			"the tracker scope and eligibility reader (#100), capacity slots and the scheduler loop that " +
+			"lets every in-flight execution reach its terminal disposition (#101), and claiming, release, " +
+			"and the classified drain report (#102)",
 		spec: "§3.2, §3.5, §9",
 	};
+}
+
+/**
+ * §9.6 at the ticket boundary: what a drain does, split by the reason that
+ * asked for it.
+ *
+ * `drained` and `stopped-by-operator` let every in-flight execution reach its
+ * terminal disposition, integration included — the waiting is the scheduler
+ * loop's, and #101's, so this slice only reports what it is not yet able to
+ * wait for. `abandoned` is the one reason that acts now: it marks the in-flight
+ * executions **`released`** and releases their slots, the durable fact the next
+ * reconcile needs to tell a stopped run from an abandoned one (§13.A).
+ *
+ * **It touches no pane.** A wedged pane is evidence (§13.B, §14.27), and pane
+ * reclamation is cleanup-plan's exclusively.
+ */
+function settleAtBoundary(store, hold, run, { endReason, at }) {
+	if (endReason !== END_REASON_ABANDONED) {
+		return executionReport(store, run);
+	}
+
+	// `released` is §8.8's word for an execution whose work the run gives up on
+	// rather than finishes, and the record carries it: the journal is the next
+	// reconcile's source, and a release that lived only in a dead process's
+	// memory is a release the next controller cannot see.
+	const inFlight = store
+		.readTicketExecutions(run)
+		.filter((execution) => execution.disposition === null);
+
+	inFlight.forEach((execution) =>
+		hold.append({
+			kind: "ticket.disposition-changed",
+			source: "controller",
+			run,
+			ticket: execution.ticket,
+			occurredAt: at,
+			observedAt: at,
+			payload: { disposition: "released" },
+		}),
+	);
+
+	return { ...executionReport(store, run), in_flight: inFlight.length, released: inFlight.length };
 }
 
 /**
@@ -344,19 +474,23 @@ function executionReport() {
  * because a re-entered run preflights again — the world it checked may have
  * changed while nobody was driving.
  */
-function openLifecycle(hold, entry, { at }) {
+function openLifecycle(hold, entry, { at, pane }) {
 	if (entry.mode === ENTRY_MODES.adopted) {
 		move(hold, entry.run, RUN_LIFECYCLE.preflight, { at });
 		return;
 	}
 
+	// The pane is the controller's own: Herdr injects it into the pane it
+	// manages, and the record is where #118's cleanup finds the pane of a
+	// finished run. It is recorded, never acted on — this run and every later
+	// one leave the pane exactly as found (§13.B).
 	hold.append({
 		kind: "run.started",
 		source: "controller",
 		run: entry.run,
 		occurredAt: at,
 		observedAt: at,
-		payload: { scope: entry.scope, mode: entry.mode },
+		payload: { scope: entry.scope, mode: entry.mode, pane },
 	});
 	// The append above committed under the token, so the run now durably exists
 	// and a later loss names it rather than reporting no run.
@@ -441,32 +575,6 @@ function leaseLostAnswer(store, hold) {
 
 function isLeaseLoss(error) {
 	return error instanceof FactoryStateError && error.reason === "lease-lost";
-}
-
-/** §10.4's answer against a live holder: a message and exit 0, or a refusal. */
-function liveRun(store, live, requested) {
-	try {
-		const resolved = resolveAgainstLiveRun(store, live, requested);
-		return {
-			message: resolved.message,
-			report: {
-				run: resolved.run,
-				live: true,
-				claimed: 0,
-				pane: resolved.pane,
-				lifecycle: resolved.lifecycle,
-				scope: { ...resolved.scope, described: describeScope(resolved.scope) },
-				queued: false,
-			},
-			// `EXIT_OK`, not `drained`'s code: **no run ran here**. Reaching for the
-			// end-reason table would say this invocation drained a scope, and the
-			// whole point of the table is that a caller can read a run's outcome
-			// off it.
-			exitCode: EXIT_OK,
-		};
-	} catch (error) {
-		return refusal(error);
-	}
 }
 
 /**

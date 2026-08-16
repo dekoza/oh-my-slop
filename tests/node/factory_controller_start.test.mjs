@@ -15,6 +15,7 @@ import { runCli } from "../../factory/lib/cli/main.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { ENTRY_MODES } from "../../factory/lib/controller/entry.mjs";
 import { HERDR_REMEDIES } from "../../factory/lib/controller/herdr.mjs";
+import { FOREGROUND_FLAG } from "../../factory/lib/controller/launch.mjs";
 import { writeRunManifest } from "../../factory/lib/controller/manifest.mjs";
 import { runStart } from "../../factory/lib/controller/start.mjs";
 import {
@@ -146,7 +147,7 @@ test("a config naming the published contract is an unknown key, never an overrid
 	const config = cloneValidConfig();
 	config.exitCodes = { drained: 9 };
 
-	const { exitCode, value } = await runCli(["start", "42"], invocation(t, { config }));
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], invocation(t, { config }));
 
 	assert.equal(exitCode, EXIT_USAGE);
 	assert.equal(value.error.reason, "unknown-key");
@@ -157,7 +158,7 @@ test("a config naming the published contract is an unknown key, never an overrid
 test("a start drains, ends with a reason, and exits with that reason's code", async (t) => {
 	const context = invocation(t);
 
-	const { exitCode, value } = await runCli(["start", "42"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
 
 	assert.equal(exitCode, EXIT_OK);
 	assert.equal(value.report.end_reason, "drained");
@@ -172,7 +173,7 @@ test("a start drains, ends with a reason, and exits with that reason's code", as
 test("the lifecycle is preflight, running, draining, ended — in that order", async (t) => {
 	const context = invocation(t);
 
-	const { value } = await runCli(["start", "42"], context);
+	const { value } = await runCli(["start", "--foreground", "42"], context);
 
 	const store = await storeOf(t, context);
 	const lifecycles = store
@@ -189,8 +190,8 @@ test("the run id is a ULID, and two runs sort by the time they started", async (
 	const first = invocation(t);
 	const second = invocation(t);
 
-	const one = (await runCli(["start", "42"], first)).value.report.run;
-	const two = (await runCli(["start", "42"], second)).value.report.run;
+	const one = (await runCli(["start", "--foreground", "42"], first)).value.report.run;
+	const two = (await runCli(["start", "--foreground", "42"], second)).value.report.run;
 
 	assert.ok(isUlid(one), one);
 	assert.ok(isUlid(two), two);
@@ -200,7 +201,7 @@ test("the run id is a ULID, and two runs sort by the time they started", async (
 test("a run that ends is durable across a controller restart, id and all", async (t) => {
 	const context = invocation(t);
 
-	const { value } = await runCli(["start", "42"], context);
+	const { value } = await runCli(["start", "--foreground", "42"], context);
 	const store = await storeOf(t, context);
 
 	assert.equal(store.readRunDigest(value.report.run).end_reason, "drained");
@@ -212,7 +213,7 @@ test("a run that ends is durable across a controller restart, id and all", async
 test("preflight is observable per check and per probe, and runs after the run exists", async (t) => {
 	const context = invocation(t);
 
-	const { value } = await runCli(["start", "42"], context);
+	const { value } = await runCli(["start", "--foreground", "42"], context);
 
 	const names = value.report.preflight.checks.map((check) => check.check);
 	assert.deepEqual(names, [
@@ -240,7 +241,7 @@ test("preflight is observable per check and per probe, and runs after the run ex
 test("preflight stages hang off no tracker ticket", async (t) => {
 	const context = invocation(t);
 
-	const { value } = await runCli(["start", "42"], context);
+	const { value } = await runCli(["start", "--foreground", "42"], context);
 
 	const store = await storeOf(t, context);
 	const checks = store.readEvents({ stream: runStream(value.report.run) }).filter((e) => e.kind === "preflight.checked");
@@ -253,7 +254,7 @@ test("an unanchorable package is a recorded red check, not an unhandled exceptio
 	const context = invocation(t);
 	context.executable = "/definitely/not/a/package/factory.mjs";
 
-	const { exitCode, value } = await runCli(["start", "42"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
 
 	assert.equal(exitCode, 2);
 	assert.equal(value.report.end_reason, "baseline-red");
@@ -265,7 +266,7 @@ test("an unanchorable package is a recorded red check, not an unhandled exceptio
 test("a red preflight check ends the run baseline-red, naming the check, exiting 2", async (t) => {
 	const context = invocation(t, { herdr: UNAVAILABLE });
 
-	const { exitCode, value } = await runCli(["start", "42"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
 
 	assert.equal(exitCode, 2);
 	assert.equal(value.report.end_reason, "baseline-red");
@@ -280,8 +281,8 @@ test("a red preflight check ends the run baseline-red, naming the check, exiting
 });
 
 test("a --json consumer cannot read a non-zero run as success", async (t) => {
-	const red = await runCli(["start", "42"], invocation(t, { herdr: UNAVAILABLE }));
-	const green = await runCli(["start", "42"], invocation(t));
+	const red = await runCli(["start", "--foreground", "42"], invocation(t, { herdr: UNAVAILABLE }));
+	const green = await runCli(["start", "--foreground", "42"], invocation(t));
 
 	// §10.3's warning is about `factory start && next-thing`; the same misreading
 	// is available to anything branching on `ok`, so `ok` tracks the exit code.
@@ -294,7 +295,7 @@ test("a --json consumer cannot read a non-zero run as success", async (t) => {
 test("a run that fails preflight never reaches running", async (t) => {
 	const context = invocation(t, { herdr: UNAVAILABLE });
 
-	const { value } = await runCli(["start", "42"], context);
+	const { value } = await runCli(["start", "--foreground", "42"], context);
 
 	const store = await storeOf(t, context);
 	const moved = store
@@ -307,7 +308,7 @@ test("a run that fails preflight never reaches running", async (t) => {
 test("Herdr availability is a named check that fails closed with the exact command", async (t) => {
 	const context = invocation(t, { herdr: UNAVAILABLE });
 
-	const { value } = await runCli(["start", "42"], context);
+	const { value } = await runCli(["start", "--foreground", "42"], context);
 
 	const check = value.report.preflight.checks.find((candidate) => candidate.check === "herdr-available");
 	assert.equal(check.class, "probe");
@@ -319,7 +320,7 @@ test("Herdr availability is a named check that fails closed with the exact comma
 test("an unbuilt check is neither passed nor failed, and names the ticket that owes it", async (t) => {
 	const context = invocation(t);
 
-	const { value } = await runCli(["start", "42"], context);
+	const { value } = await runCli(["start", "--foreground", "42"], context);
 
 	const baseline = value.report.preflight.checks.find((check) => check.check === "baseline");
 	assert.equal(baseline.result, "unbuilt");
@@ -332,7 +333,7 @@ test("an unbuilt check is neither passed nor failed, and names the ticket that o
 test("the heartbeat is diagnostic, on its own front-truncatable stream, naming its run", async (t) => {
 	const context = invocation(t);
 
-	const { value } = await runCli(["start", "42"], context);
+	const { value } = await runCli(["start", "--foreground", "42"], context);
 
 	const store = await storeOf(t, context);
 	const beats = store.readEvents({ stream: HEARTBEAT_STREAM });
@@ -368,7 +369,7 @@ test("the heartbeat counts observer subscriptions, not unfinished attempts", asy
 			}),
 	});
 
-	await runCli(["start"], context);
+	await runCli(["start", "--foreground"], context);
 
 	const store = await storeOf(t, context);
 	const [beat] = store.readEvents({ stream: HEARTBEAT_STREAM });
@@ -382,7 +383,7 @@ test("the heartbeat counts observer subscriptions, not unfinished attempts", asy
 test("the report publishes the two §4.8 intervals it is renewing and beating at", async (t) => {
 	const context = invocation(t);
 
-	const { value } = await runCli(["start", "42"], context);
+	const { value } = await runCli(["start", "--foreground", "42"], context);
 
 	assert.equal(value.report.liveness.lease_renewal_ms, 10_000);
 	assert.equal(value.report.liveness.heartbeat_interval_ms, 60_000);
@@ -391,7 +392,7 @@ test("the report publishes the two §4.8 intervals it is renewing and beating at
 test("the controller lease is released when the run ends", async (t) => {
 	const context = invocation(t);
 
-	await runCli(["start", "42"], context);
+	await runCli(["start", "--foreground", "42"], context);
 
 	const store = await storeOf(t, context);
 	assert.equal(openLeases(store).inspect("controller"), null);
@@ -408,7 +409,7 @@ test("a controller that loses its lease exits 6 without closing the run its succ
 		executable: context.executable,
 		env: context.env,
 		args: ["42"],
-		flags: new Set(),
+		flags: new Set([FOREGROUND_FLAG]),
 		timers: timers.api,
 		now: () => FIXED_NOW,
 		// The probe is where this run is standing when the lease goes: this
@@ -455,7 +456,7 @@ test("a controller that has not yet noticed the theft still moves no run its suc
 		executable: context.executable,
 		env: context.env,
 		args: ["42"],
-		flags: new Set(),
+		flags: new Set([FOREGROUND_FLAG]),
 		timers: timers.api,
 		now: () => FIXED_NOW,
 		// The same theft as above, with the renewal deliberately **not** fired:
@@ -513,7 +514,7 @@ test("a lease stolen before the run exists reports no phantom run and still exit
 		executable: context.executable,
 		env: context.env,
 		args: ["42"],
-		flags: new Set(),
+		flags: new Set([FOREGROUND_FLAG]),
 		timers: timers.api,
 		now: () => {
 			calls += 1;
@@ -546,7 +547,7 @@ test("a restart re-enters an orphaned run, keeping its run id and its scope", as
 	const context = invocation(t);
 	const orphan = await orphanRun(context, { tickets: [42] });
 
-	const { exitCode, value } = await runCli(["start"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground"], context);
 
 	assert.equal(exitCode, EXIT_OK);
 	assert.equal(value.report.run, orphan, "re-entry minted a second run id for one delivery");
@@ -558,7 +559,7 @@ test("a re-entered run preflights again before it runs", async (t) => {
 	const context = invocation(t);
 	const orphan = await orphanRun(context);
 
-	await runCli(["start"], context);
+	await runCli(["start", "--foreground"], context);
 
 	const store = await storeOf(t, context);
 	const [first] = store.readEvents({ stream: runStream(orphan) }).filter((e) => e.kind === "run.lifecycle-changed");
@@ -569,7 +570,7 @@ test("--new-run opens a fresh run and ends the abandoned one as controller-lost"
 	const context = invocation(t);
 	const orphan = await orphanRun(context);
 
-	const { exitCode, value } = await runCli(["start", "--new-run", "43"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "--new-run", "43"], context);
 
 	assert.equal(exitCode, EXIT_OK);
 	assert.notEqual(value.report.run, orphan);
@@ -586,7 +587,7 @@ test("controller-lost is written by the observing controller, and never as an ex
 	const context = invocation(t);
 	const orphan = await orphanRun(context);
 
-	const { exitCode, value } = await runCli(["start", "--new-run", "43"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "--new-run", "43"], context);
 
 	// §14.36: the run that asserted it exited on its own reason, not on the one
 	// it observed about somebody else.
@@ -601,7 +602,7 @@ test("re-entry restating a different scope refuses: membership is immutable", as
 	const context = invocation(t);
 	const orphan = await orphanRun(context, { tickets: [42] });
 
-	const { exitCode, value } = await runCli(["start", "43"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "43"], context);
 
 	assert.equal(exitCode, EXIT_REFUSED);
 	assert.equal(value.error.kind, "scope-immutable");
@@ -612,7 +613,7 @@ test("re-entry restating a different scope refuses: membership is immutable", as
 test("a start with no scope and nothing to re-enter refuses as usage", async (t) => {
 	const context = invocation(t);
 
-	const { exitCode, value } = await runCli(["start"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground"], context);
 
 	assert.equal(exitCode, EXIT_USAGE);
 	assert.equal(value.error.kind, "scope-required");
@@ -621,7 +622,7 @@ test("a start with no scope and nothing to re-enter refuses as usage", async (t)
 test("a scope argument that is not an issue number refuses before anything opens", async (t) => {
 	const context = invocation(t);
 
-	const { exitCode, value } = await runCli(["start", "the-auth-work"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "the-auth-work"], context);
 
 	assert.equal(exitCode, EXIT_USAGE);
 	assert.equal(value.error.kind, "scope-invalid");
@@ -655,7 +656,7 @@ test("a ticket already in the live run's scope prints where it will be claimed, 
 	const context = invocation(t);
 	const live = await liveRun(t, context, { scope: { kind: "direct-ticket", tickets: [40, 42] } });
 
-	const { exitCode, value } = await runCli(["start", "42"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
 
 	assert.equal(exitCode, EXIT_OK);
 	assert.equal(value.report.run, live);
@@ -668,7 +669,7 @@ test("a ticket outside the live run's scope refuses, naming the live run and its
 	const context = invocation(t);
 	const live = await liveRun(t, context, { scope: { kind: "direct-ticket", tickets: [40] } });
 
-	const { exitCode, value } = await runCli(["start", "42"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
 
 	assert.equal(exitCode, EXIT_REFUSED);
 	assert.equal(value.error.kind, "run-out-of-scope");
@@ -680,8 +681,8 @@ test("a live run does not open a second one, whatever the answer was", async (t)
 	const context = invocation(t);
 	await liveRun(t, context, { scope: { kind: "direct-ticket", tickets: [40] } });
 
-	await runCli(["start", "42"], context);
-	await runCli(["start", "40"], context);
+	await runCli(["start", "--foreground", "42"], context);
+	await runCli(["start", "--foreground", "40"], context);
 
 	const store = await storeOf(t, context);
 	assert.equal(store.readUnendedRuns().length, 1);
@@ -691,7 +692,7 @@ test("membership the tracker alone could decide refuses rather than promising a 
 	const context = invocation(t);
 	const runId = await liveRun(t, context, { scope: { kind: "parent-scoped", parent: 75 } });
 
-	const { exitCode, value } = await runCli(["start", "42"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
 
 	assert.equal(exitCode, EXIT_REFUSED);
 	assert.equal(value.error.kind, "scope-unresolvable");
@@ -702,7 +703,7 @@ test("a parent-scoped start against the same live parent is in scope", async (t)
 	const context = invocation(t);
 	const runId = await liveRun(t, context, { scope: { kind: "parent-scoped", parent: 75 } });
 
-	const { exitCode, value } = await runCli(["start", "--parent", "75"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground", "--parent", "75"], context);
 
 	assert.equal(exitCode, EXIT_OK);
 	assert.equal(value.report.run, runId);
@@ -715,7 +716,7 @@ test("the run manifest records the declared per-run overrides as evidence", asyn
 	config.budgets = { repair: 2 };
 	const context = invocation(t, { config });
 
-	const { value } = await runCli(["start", "42"], context);
+	const { value } = await runCli(["start", "--foreground", "42"], context);
 
 	const store = await storeOf(t, context);
 	const manifest = JSON.parse(readArtifact(store, value.report.manifest).toString("utf8"));
@@ -739,7 +740,7 @@ test("a config that declares no budgets records no budget override", async (t) =
 	delete config.budgets;
 	const context = invocation(t, { config });
 
-	const { value } = await runCli(["start", "42"], context);
+	const { value } = await runCli(["start", "--foreground", "42"], context);
 
 	const store = await storeOf(t, context);
 	const manifest = JSON.parse(readArtifact(store, value.report.manifest).toString("utf8"));
@@ -750,7 +751,7 @@ test("a config that declares no budgets records no budget override", async (t) =
 test("the manifest is keyed by the run, so one run has exactly one set of declared inputs", async (t) => {
 	const context = invocation(t);
 
-	const { value } = await runCli(["start", "42"], context);
+	const { value } = await runCli(["start", "--foreground", "42"], context);
 
 	const store = await storeOf(t, context);
 	const keys = store.read((db) =>
@@ -827,7 +828,7 @@ test("re-entering a run whose declared inputs changed is a red check, not a sile
 			}),
 	});
 
-	const { exitCode, value } = await runCli(["start"], context);
+	const { exitCode, value } = await runCli(["start", "--foreground"], context);
 
 	assert.equal(value.report.run, orphan, "the run was not re-entered at all");
 	assert.equal(exitCode, 2);

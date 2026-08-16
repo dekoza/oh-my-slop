@@ -39,6 +39,13 @@ export const VISIBILITY_CLASSES = Object.freeze(["operator", "detail", "diagnost
  */
 export const EVENT_KINDS = Object.freeze({
 	"run.started": { payloadVersion: 1, visibility: "operator" },
+	// #98: §10.5's stop and its escalation. Operator facts on the run's stream:
+	// the request is durable, carries the actor slot, and is polled by the
+	// controller at ticket boundaries. `abandon-requested` supersedes a pending
+	// stop rather than being one — the two leave the world in different states
+	// (§13.A).
+	"run.stop-requested": { payloadVersion: 1, visibility: "operator" },
+	"run.abandon-requested": { payloadVersion: 1, visibility: "operator" },
 	// v2 for both run terminal kinds (#97): v1 `run.ended` could carry
 	// `lease-lost`, end a run twice, and be followed by lifecycle moves. Those
 	// journals were valid when written, so the projectors replay v1 with the
@@ -48,6 +55,11 @@ export const EVENT_KINDS = Object.freeze({
 	"run.ended": { payloadVersion: 2, visibility: "operator" },
 	"preflight.checked": { payloadVersion: 1, visibility: "operator" },
 	"attempt.launched": { payloadVersion: 1, visibility: "operator" },
+	// #98: §8.8's disposition as a durable ticket-execution fact. The value is
+	// held to the closed set at the projector; `released` is the one member
+	// this package's writer reaches (abandon, §9.6), and the column speaks the
+	// whole set so the slice that owns the rest writes it additively.
+	"ticket.disposition-changed": { payloadVersion: 1, visibility: "operator" },
 	"effect.requested": { payloadVersion: 1, visibility: "detail" },
 	"effect.resolved": { payloadVersion: 1, visibility: "detail" },
 	"observation.recorded": { payloadVersion: 1, visibility: "detail" },

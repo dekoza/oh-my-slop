@@ -1,5 +1,6 @@
+import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "../cli/exit-codes.mjs";
 import { newUlid } from "../identity/ulid.mjs";
-import { FactoryRunError } from "./errors.mjs";
+import { FactoryRunError, isUsageRefusal } from "./errors.mjs";
 import { describeScope, isScope, sameScope, scopeCovers } from "./scope.mjs";
 
 /**
@@ -169,6 +170,48 @@ export function resolveAgainstLiveRun(store, live, requested) {
 			`${run} to drain, or widen the scope on a later run.`,
 		{ run, pane: live.pane ?? null, live_scope: row.scope, requested },
 	);
+}
+
+/**
+ * §10.4's answer against a live holder, shared by the two process shapes: the
+ * foreground controller that met one acquiring the lease, and the launcher that
+ * read the row lock-free before any Herdr contact. Both get the same message,
+ * the same report, and the same refusal when the selector cannot be resolved —
+ * one computation, so the detached and foreground starts cannot answer
+ * differently about the run they both refused to duplicate.
+ *
+ * @param {object} store an open store
+ * @param {{ run: string | null, pane: string | null, fencing_generation: number | null }} live
+ * @param {object | null} requested §3.1's selector, or null
+ */
+export function liveRunAnswer(store, live, requested) {
+	try {
+		const resolved = resolveAgainstLiveRun(store, live, requested);
+		return {
+			message: resolved.message,
+			report: {
+				run: resolved.run,
+				live: true,
+				claimed: 0,
+				pane: resolved.pane,
+				lifecycle: resolved.lifecycle,
+				scope: { ...resolved.scope, described: describeScope(resolved.scope) },
+				queued: false,
+				detached: false,
+			},
+			// `EXIT_OK`, not `drained`'s code: **no run ran here**. Reaching for the
+			// end-reason table would say this invocation drained a scope, and the
+			// whole point of the table is that a caller can read a run's outcome off it.
+			exitCode: EXIT_OK,
+		};
+	} catch (error) {
+		if (!(error instanceof FactoryRunError)) throw error;
+
+		return {
+			error: { kind: error.reason, message: error.message, ...error.details },
+			exitCode: isUsageRefusal(error.reason) ? EXIT_USAGE : EXIT_REFUSED,
+		};
+	}
 }
 
 function requireScope(requested, because) {

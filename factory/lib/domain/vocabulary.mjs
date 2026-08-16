@@ -44,6 +44,8 @@ export const RUN_LIFECYCLES = Object.freeze(Object.values(RUN_LIFECYCLE));
  */
 export const END_REASON_DRAINED = "drained";
 export const END_REASON_BASELINE_RED = "baseline-red";
+export const END_REASON_STOPPED_BY_OPERATOR = "stopped-by-operator";
+export const END_REASON_ABANDONED = "abandoned";
 export const END_REASON_CONTROLLER_LOST = "controller-lost";
 
 /**
@@ -61,8 +63,8 @@ export const END_REASON_CONTROLLER_LOST = "controller-lost";
 export const RUN_TERMINAL_REASONS = Object.freeze([
 	END_REASON_DRAINED,
 	END_REASON_BASELINE_RED,
-	"stopped-by-operator",
-	"abandoned",
+	END_REASON_STOPPED_BY_OPERATOR,
+	END_REASON_ABANDONED,
 	"circuit-breaker",
 	END_REASON_CONTROLLER_LOST,
 ]);
