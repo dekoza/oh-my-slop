@@ -38,12 +38,43 @@ export const DISPOSITION_BLOCK_SCHEMA_VERSION = 1;
  * §8.9's table. `label: null` is `released`'s "no label" — the ticket returns to
  * the frontier untouched, which is about eligibility and is why a comment is not
  * a contradiction of it.
+ *
+ * `guidance` is on the row rather than in a cascade of its own, because **what
+ * the human owes is per row exactly as the label is**. For the two that resume by
+ * label removal it says both halves — answer *and* remove — since the factory
+ * never guesses whether a comment is an answer (§3.4).
  */
 export const DISPOSITION_ACTIONS = Object.freeze({
-	published: Object.freeze({ label: FACTORY_LABELS.awaitingMerge, dropsClaim: false }),
-	paused: Object.freeze({ label: FACTORY_LABELS.needsHuman, dropsClaim: false }),
-	failed: Object.freeze({ label: FACTORY_LABELS.failed, dropsClaim: false }),
-	[DISPOSITION_RELEASED]: Object.freeze({ label: null, dropsClaim: true }),
+	published: Object.freeze({
+		label: FACTORY_LABELS.awaitingMerge,
+		dropsClaim: false,
+		guidance: (block) =>
+			`The work is on a pull request: ${block.pr.url}. It stays assigned and carries \`${FACTORY_LABELS.awaitingMerge}\` ` +
+			"until a human merges it, and the merge is what closes this ticket (§7.5, §8.9).",
+	}),
+	paused: Object.freeze({
+		label: FACTORY_LABELS.needsHuman,
+		dropsClaim: false,
+		guidance: () =>
+			`A worker stopped and needs an answer. **Answer in a comment and remove the \`${FACTORY_LABELS.needsHuman}\` ` +
+			"label** — the factory never guesses whether a comment is an answer, and it never requeues a ticket by itself " +
+			"(§3.4). The next run then claims this ticket as a fresh ticket execution.",
+	}),
+	failed: Object.freeze({
+		label: FACTORY_LABELS.failed,
+		dropsClaim: false,
+		guidance: () =>
+			`This ticket execution failed and needs an investigation. **Remove the \`${FACTORY_LABELS.failed}\` label** when ` +
+			"it has been dealt with; the label stays until a human clears it, and the next run then claims this ticket as a " +
+			"fresh ticket execution (§8.9, §14.20).",
+	}),
+	[DISPOSITION_RELEASED]: Object.freeze({
+		label: null,
+		dropsClaim: true,
+		guidance: () =>
+			"The claim is dropped and the ticket returns to the frontier untouched — an honest state rather than a lock " +
+			"nobody holds (§8.9).",
+	}),
 });
 
 /**
@@ -87,6 +118,10 @@ export const DISPOSITION_LABELS = Object.freeze(
  * @param {string | null} [settlement.reason] one line of prose for a human
  * @returns {Promise<Readonly<object>>}
  * @throws {FactoryTrackerError} `disposition-unknown` · `disposition-incomplete`
+ * @throws {FactoryPipelineError} `reason-class-unknown` — a class in neither of
+ *   §8.8's lists. It comes from `pipeline/dispositions.mjs` rather than being
+ *   re-raised here, because §14.18's rule has exactly one home and a second
+ *   spelling of "that is not a reason class" would be a second vocabulary.
  */
 export async function applyDisposition(
 	store,
@@ -160,7 +195,7 @@ export async function applyDisposition(
 		ticket,
 		at,
 		operand: COMMENT_OPERANDS.disposition,
-		body: renderDisposition(block),
+		body: renderDisposition(row, block),
 		// **The block is the intent, and the prose is this factory's rendering of
 		// it.** Digesting the rendering instead would make a re-entry that
 		// re-rendered the same facts a §4.5 payload conflict the moment a word of
@@ -253,55 +288,20 @@ function evidenceFor(store, { run, ticket }) {
  * fenced code block would otherwise close the block early, and the machine half
  * of the comment would end mid-object.
  */
-function renderDisposition(block) {
+function renderDisposition(row, block) {
 	const machine = JSON.stringify(block, null, 2);
 	const fence = "`".repeat(Math.max(3, longestBacktickRun(machine) + 1, longestBacktickRun(block.question ?? "") + 1));
 
 	return [
 		`🤖 **factory — ${block.disposition}**${block.reason_class === null ? "" : ` · \`${block.reason_class}\``}`,
 		"",
-		humanReadingOf(block),
+		row.guidance(block),
 		...(block.question === null ? [] : ["", quote(block.question)]),
 		"",
 		`${fence}json`,
 		machine,
 		fence,
 	].join("\n");
-}
-
-/**
- * What the human owes, per disposition — and for the two that need one, **how to
- * resume**: answer in a comment *and remove the label*. The factory never guesses
- * whether a comment is an answer (§3.4), so the sentence says both halves.
- */
-function humanReadingOf(block) {
-	if (block.disposition === "paused") {
-		return (
-			`A worker stopped and needs an answer. **Answer in a comment and remove the \`${FACTORY_LABELS.needsHuman}\` ` +
-			"label** — the factory never guesses whether a comment is an answer, and it never requeues a ticket by itself (§3.4). " +
-			"The next run then claims this ticket as a fresh ticket execution."
-		);
-	}
-
-	if (block.disposition === "failed") {
-		return (
-			`This ticket execution failed and needs an investigation. **Remove the \`${FACTORY_LABELS.failed}\` label** when ` +
-			"it has been dealt with; the label stays until a human clears it, and the next run then claims this ticket as a " +
-			"fresh ticket execution (§8.9, §14.20)."
-		);
-	}
-
-	if (block.disposition === "published") {
-		return (
-			`The work is on a pull request: ${block.pr.url}. It stays assigned and carries \`${FACTORY_LABELS.awaitingMerge}\` ` +
-			"until a human merges it, and the merge is what closes this ticket (§7.5, §8.9)."
-		);
-	}
-
-	return (
-		"The claim is dropped and the ticket returns to the frontier untouched — an honest state rather than a lock nobody " +
-		"holds (§8.9)."
-	);
 }
 
 /** §8.8's four, and the refusal that keeps a fifth from being invented at a call site. */

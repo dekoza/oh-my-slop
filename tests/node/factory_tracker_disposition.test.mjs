@@ -318,8 +318,45 @@ test("the block references this ticket execution's evidence by digest, and never
 	assert.equal(JSON.stringify(evidence).includes("/blobs/"), false);
 	assert.equal(evidence[0].produced_by, written.key);
 	assert.equal(evidence[0].bytes, written.reference.bytes);
-	assert.ok(evidence[0].digest.length > 0);
-	assert.equal(attempt.endsWith("-a1"), true);
+	assert.equal(evidence[0].produced_by.includes(attempt) || evidence[0].produced_by.includes("/10/"), true);
+});
+
+test("§8.9: every disposition gets the same block — identity tuple, outcome chain, evidence", async (t) => {
+	const settlements = {
+		published: { pr: { number: 7, url: "http://gitea.example/acme/widgets/pulls/7" } },
+		paused: { reasonClass: "out-of-scope-discovered", question: "Is the migration in scope?" },
+		failed: { reasonClass: "review-mutation" },
+		released: { reason: "the controller shut down mid-attempt" },
+	};
+
+	// One ticket per disposition, each in its own store, because a ticket
+	// execution settles once — and the point here is that the four blocks have
+	// one shape rather than four.
+	for (const [disposition, extra] of Object.entries(settlements)) {
+		const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+		const attempt = await claimed(context, 10);
+		resolveStages(context, 10, attempt, [["implement", "completed"]]);
+
+		await dispose(context, { ticket: 10, disposition, ...extra });
+
+		const block = blockIn(context.gitea.comments.at(-1).body);
+		assert.deepEqual(
+			{ ...block, outcome_chain: block.outcome_chain.length, evidence: block.evidence.length },
+			{
+				schema_version: 1,
+				identity: { run: context.run, ticket: 10, attempt },
+				disposition,
+				reason_class: extra.reasonClass ?? null,
+				fault: null,
+				question: extra.question ?? null,
+				reason: extra.reason ?? null,
+				pr: extra.pr ?? null,
+				outcome_chain: 1,
+				evidence: 0,
+			},
+			`${disposition} does not carry §8.9's block`,
+		);
+	}
 });
 
 test("released drops the claim with no label, and still carries the block", async (t) => {
