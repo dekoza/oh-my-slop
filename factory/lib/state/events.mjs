@@ -55,6 +55,11 @@ export const EVENT_KINDS = Object.freeze({
 	"run.ended": { payloadVersion: 2, visibility: "operator" },
 	"preflight.checked": { payloadVersion: 1, visibility: "operator" },
 	"attempt.launched": { payloadVersion: 1, visibility: "operator" },
+	// #105: §6.2's layer 3 — the per-attempt static recheck. It cites the run's
+	// pinned handshake digest rather than re-embedding the payload (§11.7), and
+	// carries the observed resolved model id whose within-run stability the
+	// recheck enforces.
+	"attempt.rechecked": { payloadVersion: 1, visibility: "detail" },
 	// #98: §8.8's disposition as a durable ticket-execution fact. The value is
 	// held to the closed set at the projector; `released` is the one member
 	// this package's writer reaches (abandon, §9.6), and the column speaks the

@@ -8,6 +8,7 @@ import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { cloneValidConfig, makeRepo } from "./helpers/factory-repo.mjs";
 import { herdrAnswering, makeAgentDir } from "./helpers/factory-store.mjs";
+import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 /**
  * `factory status` (§10.2), and §9.7's saturation numbers on it: **the declared
@@ -28,6 +29,7 @@ function invocation(t, { config } = {}) {
 		executable,
 		env: { PATH: onPath(t, executable), HERDR_PANE_ID: "w1:p7" },
 		herdr: herdrAnswering(),
+		workerTransports: workerTransportsAnswering(root),
 	};
 }
 
@@ -85,6 +87,7 @@ test("status reports the run a start left behind, and the slots it no longer hol
 		executable: context.executable,
 		env: context.env,
 		herdr: context.herdr,
+		workerTransports: context.workerTransports,
 		args: ["42"],
 		flags: new Set(["--foreground"]),
 	});

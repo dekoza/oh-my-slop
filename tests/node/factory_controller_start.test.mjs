@@ -32,6 +32,7 @@ import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { cloneValidConfig, factorySources, makeRemote, makeRepo } from "./helpers/factory-repo.mjs";
 import { FIXED_NOW, herdrAnswering, leaseIdentity, makeAgentDir, manualTimers } from "./helpers/factory-store.mjs";
+import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 /**
  * §10.1, §10.3, §10.4: **one invocation, one run.**
@@ -60,6 +61,10 @@ function invocation(t, { config, herdr = AVAILABLE } = {}) {
 		executable,
 		env: { PATH: onPath(t, executable), HERDR_PANE_ID: "w1:p7" },
 		herdr,
+		// §6.2's runtime probes are live reads of the operator's harnesses, so
+		// they are injected exactly as the Herdr probe is; the worker suites
+		// drive every verdict through the same seam.
+		workerTransports: workerTransportsAnswering(root),
 	};
 }
 
@@ -297,8 +302,17 @@ test("an unanchorable package is a recorded red check, not an unhandled exceptio
 
 	assert.equal(exitCode, 2);
 	assert.equal(value.report.end_reason, "baseline-red");
-	assert.deepEqual(value.report.preflight.red, ["package-handshake"]);
+	// The two §6.2 checks answer from the handshake's pin, so a package nothing
+	// could anchor fails them too — each citing the handshake as the cause
+	// rather than inventing a second diagnosis.
+	assert.deepEqual(value.report.preflight.red, ["package-handshake", "skill-closure", "runtime-probe"]);
 	assert.equal(value.report.preflight.checks.find((check) => check.check === "package-handshake").result, "failed");
+	for (const dependent of ["skill-closure", "runtime-probe"]) {
+		assert.equal(
+			value.report.preflight.checks.find((check) => check.check === dependent).detail.cause,
+			"package-handshake",
+		);
+	}
 	assert.ok(value.report.manifest, "the failed handshake prevented the remaining static evidence from being recorded");
 });
 
@@ -447,6 +461,7 @@ test("a controller that loses its lease exits 6 without closing the run its succ
 		agentDir: context.agentDir,
 		executable: context.executable,
 		env: context.env,
+		workerTransports: context.workerTransports,
 		args: ["42"],
 		flags: new Set([FOREGROUND_FLAG]),
 		timers: timers.api,
@@ -494,6 +509,7 @@ test("a controller that has not yet noticed the theft still moves no run its suc
 		agentDir: context.agentDir,
 		executable: context.executable,
 		env: context.env,
+		workerTransports: context.workerTransports,
 		args: ["42"],
 		flags: new Set([FOREGROUND_FLAG]),
 		timers: timers.api,
@@ -552,6 +568,7 @@ test("a lease stolen before the run exists reports no phantom run and still exit
 		agentDir: context.agentDir,
 		executable: context.executable,
 		env: context.env,
+		workerTransports: context.workerTransports,
 		args: ["42"],
 		flags: new Set([FOREGROUND_FLAG]),
 		timers: timers.api,
@@ -904,6 +921,7 @@ test("a run claims its frontier in ascending order and leaves no slot held", asy
 		agentDir: context.agentDir,
 		executable: context.executable,
 		env: context.env,
+		workerTransports: context.workerTransports,
 		herdr: context.herdr,
 		args: ["42"],
 		flags: new Set([FOREGROUND_FLAG]),
@@ -951,6 +969,7 @@ test("a stop honoured at a ticket boundary stops the loop claiming, and the run 
 		agentDir: context.agentDir,
 		executable: context.executable,
 		env: context.env,
+		workerTransports: context.workerTransports,
 		herdr: context.herdr,
 		args: ["42"],
 		flags: new Set([FOREGROUND_FLAG]),

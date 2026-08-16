@@ -94,6 +94,7 @@ test("the kind enumeration is §4.3's closed, dotted list", () => {
 		Object.keys(EVENT_KINDS).sort(),
 		[
 			"attempt.launched",
+			"attempt.rechecked",
 			"capacity.granted",
 			"capacity.released",
 			"capacity.waiting",

@@ -72,6 +72,8 @@ export const NEW_RUN_FLAG = "--new-run";
  * @param {() => number} [invocation.now]
  * @param {object} [invocation.timers] injectable renewal and heartbeat clocks
  * @param {(options: object) => Promise<object>} [invocation.herdr] §10.3's availability probe
+ * @param {{ pi?: object, claude?: object }} [invocation.workerTransports] the §6.2
+ *   runtime probes' IO, injectable for the same reason `herdr` is
  * @param {() => number} [invocation.watching] actual live Herdr subscriptions; #99 wires
  *   the observer, so zero is the truthful default rather than an attempt-derived guess
  * @param {object} [invocation.signal] the event target §10.5's signals listen on —
@@ -102,6 +104,7 @@ export async function runStart({
 	now = Date.now,
 	timers = { setInterval, clearInterval },
 	herdr,
+	workerTransports,
 	watching = () => 0,
 	signal = globalThis.process,
 	runHerdr,
@@ -149,6 +152,7 @@ export async function runStart({
 			now,
 			timers,
 			herdr,
+			workerTransports,
 			watching,
 			signal,
 			frontier,
@@ -299,6 +303,7 @@ async function driveRun(store, hold, context, signals) {
 			executable: context.executable,
 			env: context.env,
 			herdr: context.herdr,
+			workerTransports: context.workerTransports ?? {},
 			actor: "controller",
 			at: startedAt,
 		});

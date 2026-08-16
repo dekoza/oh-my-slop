@@ -48,6 +48,8 @@ const KNOWN_FLAGS = new Set(["--json", "--help", "-h"]);
  * @param {(options: object) => Promise<object>} [context.herdr] §10.3's Herdr
  *   availability probe, injectable for the same reason `probes` is: a test drives
  *   both answers without a terminal multiplexer on the machine
+ * @param {{ pi?: object, claude?: object }} [context.workerTransports] the §6.2
+ *   runtime probes' IO, injectable for the same reason `herdr` is
  * @param {object} [context.signal] the event target §10.5's signals listen on —
  *   `process` by default, injectable so a test fires a signal at a chosen moment
  *   instead of racing a real delivery against a run that lasts milliseconds
@@ -152,6 +154,7 @@ async function run(parsed, verb, loaded, context) {
 		env: context.env,
 		probes: context.probes,
 		herdr: context.herdr,
+		workerTransports: context.workerTransports,
 		signal: context.signal,
 		runHerdr: context.runHerdr,
 		// §5.1's read client, injectable for the same reason `probes` and `herdr`

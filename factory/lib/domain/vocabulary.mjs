@@ -99,6 +99,13 @@ export const ATTEMPT_OUTCOMES = Object.freeze([
 ]);
 
 /**
+ * §6.6's closed worker-writable subset, named so a role's result expectations
+ * and the outbox validator read one list. Everything after these three is
+ * controller-derived and never worker-writable.
+ */
+export const WORKER_WRITABLE_OUTCOMES = Object.freeze(ATTEMPT_OUTCOMES.slice(0, 3));
+
+/**
  * §4.6's repo-scoped exclusive lease. Named here rather than in the lease
  * primitive because it is read from two sides: the holder renews it, and an
  * effect resolution compares its generation against the holder's (§14.5). The
