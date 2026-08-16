@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { artifactBytesByClass } from "../artifacts/ledger.mjs";
+import { capacityFor } from "../capacity/report.mjs";
 import { unresolvedEffects } from "../effects/records.mjs";
 import { FactoryPackageError } from "../package/errors.mjs";
 import { packageHandshake } from "../package/handshake.mjs";
@@ -41,6 +42,8 @@ const MONITOR_CONFIG = join(".pi", "factory-monitor.json");
  * @param {{ path: string, source: string }} context.agentDir where §4.1's state
  *   root is, and how it was resolved — reported rather than swallowed, because a
  *   run that fell back to the documented default is a fact doctor should state
+ * @param {object} context.config the validated configuration
+ * @param {object} context.activeRouting the routing this invocation selected
  * @param {string} [context.executable] the running binary, anchoring §11.7's handshake
  * @param {object | null} [context.expect] `package.expect` from config
  * @param {Record<string, string | undefined>} [context.env]
@@ -53,6 +56,8 @@ export async function doctorReport(
 	{
 		repoRoot,
 		agentDir,
+		config,
+		activeRouting,
 		executable = process.argv[1],
 		expect = null,
 		env = process.env,
@@ -74,6 +79,18 @@ export async function doctorReport(
 		integrity: store === null ? null : integritySection(store),
 		reconcile: reconciled,
 		pins: pinsSection(unresolved, reconciled),
+		/**
+		 * §9.7's saturation numbers. They belong in a diagnosis for the same reason
+		 * they belong in `status`: "why did this stop" and "why is this slow" have
+		 * the same wrong answer — a run whose lanes are all queued behind one slot
+		 * looks exactly like a run that is working.
+		 */
+		capacity: capacityFor(store, {
+			config,
+			activeRouting,
+			run: store?.readUnendedRuns()[0]?.run_id ?? null,
+			at,
+		}),
 		baseline: baselineSection(),
 		counters: countersSection(store, unresolved),
 		package: packageSection(handshake),
