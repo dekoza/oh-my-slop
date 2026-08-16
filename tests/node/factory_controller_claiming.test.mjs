@@ -14,6 +14,7 @@ import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
 import { herdrAnswering, makeAgentDir } from "./helpers/factory-store.mjs";
+import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 import { fakeGitea, giteaIssue } from "./helpers/factory-tracker.mjs";
 
 /**
@@ -37,6 +38,9 @@ function invocation(t) {
 		executable,
 		env: { PATH: onPath(t, executable), HERDR_PANE_ID: "w1:p7" },
 		herdr: herdrAnswering(true),
+		// The §6.2 runtime probes are live reads of the operator's harnesses,
+		// injected for the same reason the Herdr probe is.
+		workerTransports: workerTransportsAnswering(root),
 	};
 }
 
@@ -56,6 +60,7 @@ async function runOver(t, { world, tickets, pipeline, lanes = [] }) {
 		executable: context.executable,
 		env: context.env,
 		herdr: context.herdr,
+		workerTransports: context.workerTransports,
 		args: tickets.map(String),
 		flags: new Set([FOREGROUND_FLAG]),
 		tracker: createGiteaReader({ ...where, request: gitea.request }),

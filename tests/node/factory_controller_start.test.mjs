@@ -384,15 +384,19 @@ test("Herdr availability is a named check that fails closed with the exact comma
 	assert.match(check.message, /herdr/);
 });
 
-test("an unbuilt check is neither passed nor failed, and names the ticket that owes it", async (t) => {
+test("every preflight check is built: a green run reports no unbuilt result anywhere", async (t) => {
+	// `unbuilt` stays in PREFLIGHT_RESULTS — it is a published value old
+	// journals carry and doctor filters on — but with #104's baseline and
+	// #105's worker checks landed, nothing in this package can produce it.
 	const context = invocation(t);
 
 	const { value } = await runCli(["start", "--foreground", "42"], context);
 
-	const probe = value.report.preflight.checks.find((check) => check.check === "runtime-probe");
-	assert.equal(probe.result, "unbuilt");
-	assert.match(probe.detail.missing, /#105/);
-	assert.equal(value.report.end_reason, "drained", "an unbuilt check coloured the phase");
+	assert.deepEqual(
+		value.report.preflight.checks.map((check) => check.result),
+		value.report.preflight.checks.map(() => "passed"),
+	);
+	assert.equal(value.report.end_reason, "drained");
 });
 
 // ── The baseline gate (§8.3, §14.14) ─────────────────────────────────────────

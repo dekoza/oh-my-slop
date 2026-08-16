@@ -328,16 +328,6 @@ function failed(check, className, { message, detail }) {
 	return { check, class: className, result: PREFLIGHT_RESULTS.failed, message, detail };
 }
 
-function unbuilt(check, className, { missing, spec }) {
-	return {
-		check,
-		class: className,
-		result: PREFLIGHT_RESULTS.unbuilt,
-		message: `${check} is specified but not built in this package, so this run observed nothing about it.`,
-		detail: { missing, spec },
-	};
-}
-
 /**
  * One stage record per check, on the run's stream and carrying **no ticket**:
  * §10.3's preflight stages hang off no tracker ticket, and a ticket slot here

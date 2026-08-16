@@ -11,6 +11,7 @@ import { newUlid } from "../../factory/lib/identity/ulid.mjs";
 import { createProbeRegistry } from "../../factory/lib/reconcile/probes.mjs";
 import { openRepoStoreReadOnly, openStore, openStoreReadOnly } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
+import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 import { cloneValidConfig, makeRemote, makeRepo } from "./helpers/factory-repo.mjs";
 import {
 	attemptLaunched,
@@ -140,6 +141,7 @@ test("the last baseline is reported as of when it ran, saying plainly it was not
 		executable,
 		env,
 		herdr: herdrAnswering(),
+		workerTransports: workerTransportsAnswering(root),
 	});
 	assert.equal(started.value.report.end_reason, "drained");
 
@@ -175,7 +177,14 @@ test("a baseline that went red without running is the last result, not an older 
 	const executable = join(root, "factory", "bin", "factory.mjs");
 	const env = { PATH: onPath(t, executable) };
 	const start = () =>
-		runCli(["start", "--foreground", "42"], { cwd: repoRoot, agentDir, executable, env, herdr: herdrAnswering() });
+		runCli(["start", "--foreground", "42"], {
+			cwd: repoRoot,
+			agentDir,
+			executable,
+			env,
+			herdr: herdrAnswering(),
+			workerTransports: workerTransportsAnswering(root),
+		});
 	const { config, activeRouting } = loadFactoryConfig({ cwd: repoRoot });
 
 	const green = await start();
