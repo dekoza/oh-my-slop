@@ -284,7 +284,12 @@
   },
   "worker": {
     "piExtensions": [
-      "~/.pi/agent/git/github.com/dekoza/oh-my-slop/extensions/local-router"
+      {
+        "path": "~/.pi/agent/git/github.com/dekoza/oh-my-slop/extensions/local-router",
+        "env": {
+          "PI_LOCAL_ROUTER_BASE_URL": "http://192.168.129.7:11545"
+        }
+      }
     ]
   },
   "budgets": {
