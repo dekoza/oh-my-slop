@@ -134,7 +134,17 @@ export async function claimTicket(
 					ticket,
 					at,
 					operand: COMMENT_OPERANDS.takeover,
-					body: takeoverBody({ run, ticket, attempt, at, standing }),
+					body: takeoverBody({ run, ticket, attempt, at, takeover: standing.takeover }),
+					// What is being taken over, and from whom. The prose around it is
+					// dated and says how long the displaced claim had been idle — both
+					// clock readings, and neither one part of the intent.
+					payload: {
+						run,
+						ticket,
+						attempt,
+						taken_over_from: standing.takeover.claimed_by,
+						tier: standing.takeover.tier,
+					},
 				});
 
 	const assigned = await performEffect(store, {
@@ -157,6 +167,13 @@ export async function claimTicket(
 		at,
 		operand: COMMENT_OPERANDS.claim,
 		body: claimBody({ run, ticket, attempt, at }),
+		// **§3.3's three identities, and not its timestamp.** The comment carries the
+		// stamp because §3.3 asks for it; the *intent* is which run claims which
+		// ticket under which attempt, and digesting the rendered body instead would
+		// make a re-entered claim a §4.5 payload conflict for no reason but the hour
+		// it happened at — the one failure that leaves a ticket permanently
+		// unclaimable by the run that already holds it.
+		payload: { run, ticket, attempt },
 	});
 
 	// §3.3's re-read. Two things can have happened while the two writes above were
@@ -455,21 +472,29 @@ function claimBody({ run, ticket, attempt, at }) {
 	].join("\n");
 }
 
-/** §3.3's takeover comment. It carries the claim block, plus what it displaced. */
-function takeoverBody({ run, ticket, attempt, at, standing }) {
+/**
+ * §3.3's takeover comment. It carries the claim block, plus what it displaced.
+ *
+ * `takeover` is `assessClaim`'s **inner** verdict — the tier, the displaced run,
+ * and why it is displaceable — not the wrapper that carries it. Reading the
+ * wrapper's absent fields rendered `undefined` into a comment a human is meant to
+ * read, silently, because nothing that reads a comment body could catch it: §5.2
+ * makes comment text authoritative for nothing, so no probe ever compares it.
+ */
+function takeoverBody({ run, ticket, attempt, at, takeover }) {
 	return [
 		CLAIM_MARKER,
 		"🤖 **factory — claim taken over**",
 		"",
-		`The previous claim is ${standing.tier === "same-factory" ? "this factory's" : "not provably this factory's"}: ${standing.reason}.`,
+		`The previous claim is ${takeover.tier === "same-factory" ? "this factory's" : "not provably this factory's"}: ${takeover.reason}.`,
 		"",
 		"```yaml",
 		`run: ${run}`,
 		`ticket: ${ticket}`,
 		`attempt: ${attempt}`,
 		`at: ${new Date(at).toISOString()}`,
-		`taken_over_from: ${standing.claimed_by ?? "unknown"}`,
-		`tier: ${standing.tier}`,
+		`taken_over_from: ${takeover.claimed_by ?? "unknown"}`,
+		`tier: ${takeover.tier}`,
 		"```",
 	].join("\n");
 }

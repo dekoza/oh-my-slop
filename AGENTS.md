@@ -437,7 +437,11 @@ is the authority; cite the section a change answers to.
   becomes unexpressible rather than checked. It performs them and records nothing, because
   §4.5 has exactly one place effects are written; `mutations.mjs` owns that pair for both
   callers, so "record the intent, perform, record the outcome" has one home rather than one
-  per subsystem that writes to a ticket.
+  per subsystem that writes to a ticket. **A comment effect digests the intent, never the
+  prose rendered from it**: §3.3's claim comment carries a timestamp and §8.9's block carries
+  the chain, and digesting the rendering would make a re-entry a §4.5 payload conflict for no
+  reason but the hour it happened at — leaving a ticket permanently unclaimable by the run
+  that already holds it.
 - **A claim is an assignee plus a structured comment plus a re-read** (`tracker/claims.mjs`,
   §3.3), and the slots are already held when it runs (§14.21) — claiming work that cannot
   start puts a falsehood on the tracker for humans and other tooling to read. Whose claim an

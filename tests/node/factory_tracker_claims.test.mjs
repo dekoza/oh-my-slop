@@ -183,7 +183,63 @@ test("same-factory staleness is proven from durable state, with no waiting perio
 		gitea.writes.slice(2).map((write) => write.operation),
 		["comment-post", "issue-assign", "comment-post"],
 	);
-	assert.match(gitea.writes[2].body.body, /claim taken over/);
+	// The comment says **what it displaced**, and the fields come from the verdict
+	// rather than from the wrapper carrying it: §5.2 makes comment text
+	// authoritative for nothing, so nothing downstream would ever catch an
+	// `undefined` rendered into the one artefact a human reads here.
+	const posted = gitea.writes[2].body.body;
+	assert.match(posted, /claim taken over/);
+	assert.match(posted, /The previous claim is this factory's: run \w+ ended abandoned\./);
+	assert.match(posted, new RegExp(`taken_over_from: ${run}`));
+	assert.match(posted, /tier: same-factory/);
+	assert.equal(posted.includes("undefined"), false);
+});
+
+test("a re-entered takeover rebuilds its comment under a later clock and posts nothing twice", async (t) => {
+	// §10.4's re-entry, at the one point it is reachable: a crash between the
+	// assignment's intent and its resolution leaves the takeover comment recorded
+	// and the claim unproven, so the next pass takes the ticket over again. The
+	// comment body carries §3.3's timestamp, which is a different value on that
+	// pass — and the effect is idempotent only if what the key compares is the
+	// claim's *intent* rather than the prose rendered from it.
+	const { store, run, hold, reader, writer, gitea } = await claiming(t, { issues: [giteaIssue({ number: 10 })] });
+	await claim(store, { reader, writer, hold, run, ticket: 10 });
+	store.append(runMoved(run, "draining", { at: TRACKER_NOW }));
+	store.append(runEnded(run, { at: TRACKER_NOW, endReason: "abandoned" }));
+
+	const other = "01JRUNOTHER0000000000000B";
+	store.append({
+		kind: "run.started",
+		source: "controller",
+		run: other,
+		occurredAt: TRACKER_NOW,
+		observedAt: TRACKER_NOW,
+		payload: { scope: { kind: "direct-ticket", tickets: [10] } },
+	});
+	await claim(store, { reader, writer, hold, run: other, ticket: 10 });
+
+	// The crash: the assignment's record never reached `resolved`, so nothing in
+	// durable state proves this run holds the ticket.
+	store.transaction(({ db }) => {
+		db.prepare(
+			`UPDATE effect SET state = 'requested', resolved_at = NULL, resolved_seq = NULL, result = NULL
+			 WHERE run_id = ? AND operation = 'issue-assign'`,
+		).run(other);
+	});
+	const writesBefore = gitea.writes.length;
+	const commentsBefore = gitea.comments.length;
+
+	const again = await claim(store, { reader, writer, hold, run: other, ticket: 10, at: TRACKER_NOW + 3_600_000 });
+
+	assert.equal(again.outcome, CLAIM_OUTCOMES.takenOver);
+	assert.equal(gitea.comments.length, commentsBefore, "the re-entered claim posted its comments a second time");
+	// Only the assignment is performed again: it is the one mutation this run
+	// cannot prove landed.
+	assert.deepEqual(
+		gitea.writes.slice(writesBefore).map((write) => write.operation),
+		["issue-assign"],
+	);
+	assert.deepEqual(unresolvedEffects(store), []);
 });
 
 test("a claim this factory released is not proof of a later one, so the foreign tier applies", async (t) => {
