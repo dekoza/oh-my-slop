@@ -17,7 +17,7 @@ import { publishPullRequest, pullTitle, renderPullBody } from "../tracker/pulls.
 import { writeAttestation } from "./attestation.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 import { verifyPhase } from "./phases.mjs";
-import { recordedStage } from "./stages.mjs";
+import { recordedStage, stageResults } from "./stages.mjs";
 
 /**
  * §7.5's integration and §9.5's serialization, composed — **the two phase
@@ -444,16 +444,30 @@ function evidenceOf(reference) {
  * on a caller's word about what was checked is the one thing §14.16 forbids.
  */
 function attestedByVerify(store, { run, ticket, attempt }) {
-	const recorded = recordedStage(store, { run, ticket, phase: PHASE_VERIFY, attempt });
-	const detail = recorded?.payload.detail ?? null;
+	const own = recordedStage(store, { run, ticket, phase: PHASE_VERIFY, attempt });
+	// **This attempt's own record, or the ticket execution's most recent passing
+	// verify.** §8.10 routes `integrate × push-failed` to an *automation* retry,
+	// which §8.5 re-enters under a fresh attempt id without rebuilding anything —
+	// the automation failed, not the work — so the commit that retry publishes was
+	// verified under the attempt before it. Reading only this attempt's record
+	// would refuse the retry as if no verification had happened, which is the
+	// opposite of what did.
+	const recorded =
+		own ??
+		stageResults(store, { run, ticket, phase: PHASE_VERIFY })
+			.filter((record) => record.outcome === CHECK_RESULTS.passed)
+			.at(-1) ??
+		null;
+	const detail = (own === null ? recorded?.detail : recorded.payload.detail) ?? null;
+	const outcome = own === null ? (recorded?.outcome ?? null) : recorded.payload.outcome;
 
-	if (recorded === null || recorded.payload.outcome !== CHECK_RESULTS.passed || typeof detail?.head !== "string") {
+	if (recorded === null || outcome !== CHECK_RESULTS.passed || typeof detail?.head !== "string") {
 		throw new FactoryPipelineError(
 			"phase-unwired",
-			`Attempt ${attempt} has no passing verify stage to publish from (§14.15). The integrate phase is reachable ` +
-				"only through one, and taking the commit or the check results on a caller's word instead is exactly what " +
-				"§14.16 makes the controller's own rerun the boundary against.",
-			{ at: "phase", phase: PHASE_INTEGRATE, run, ticket, attempt, verify: recorded?.payload.outcome ?? null },
+			`Ticket execution ${run}/${ticket} has no passing verify stage to publish from (§14.15). The integrate phase ` +
+				"is reachable only through one, and taking the commit or the check results on a caller's word instead is " +
+				"exactly what §14.16 makes the controller's own rerun the boundary against.",
+			{ at: "phase", phase: PHASE_INTEGRATE, run, ticket, attempt, verify: outcome },
 		);
 	}
 

@@ -380,6 +380,35 @@ test("a crash mid-integration is repaired by reconcile settling what the world a
 	assert.equal(fixture.gitea.pulls.length, 1);
 });
 
+test("an automation retry publishes what the attempt before it verified (§8.5, §8.10)", async (t) => {
+	const fixture = await integrating(t);
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+
+	// §8.10 routes `integrate × push-failed` to an automation retry, which §8.5
+	// re-enters under a fresh attempt id and rebuilds nothing: the automation
+	// failed, not the work. The commit it publishes is the one verified before.
+	const retried = `${fixture.run}-t${fixture.ticket}-a4`;
+	// §6.5: the mint precedes every attempt-scoped effect, and the seam that
+	// plans the retry is what performs it.
+	fixture.store.append({
+		kind: "attempt.launched",
+		source: "controller",
+		run: fixture.run,
+		ticket: fixture.ticket,
+		phase: "integrate",
+		attempt: retried,
+		occurredAt: FIXED_NOW,
+		observedAt: FIXED_NOW,
+		payload: { role: "implement", profile: "builder" },
+	});
+
+	const integrated = await integratePublish(fixture.store, fixture.clone, { ...fixture.context, attempt: retried });
+
+	assert.equal(integrated.outcome, "integrated");
+	assert.equal(git(fixture.remote, ["rev-parse", `refs/heads/${fixture.branch}`]), integrated.detail.head);
+});
+
 test("integrate refuses to publish from an attempt no verify attested (§14.15, §14.16)", async (t) => {
 	const fixture = await integrating(t);
 	recordReview(fixture);
