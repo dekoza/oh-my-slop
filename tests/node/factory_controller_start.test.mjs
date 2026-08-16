@@ -221,6 +221,7 @@ test("preflight is observable per check and per probe, and runs after the run ex
 		"run-manifest",
 		"skill-closure",
 		"herdr-available",
+		"git-isolation",
 		"runtime-probe",
 		"baseline",
 	]);

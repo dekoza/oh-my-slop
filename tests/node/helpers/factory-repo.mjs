@@ -84,18 +84,16 @@ export function makeRemote(t, { files = { "README.md": "seed\n" }, branch = "mai
  * @param {import("node:test").TestContext} t owner of the temp directory's lifetime
  * @param {{ config?: object | string | null, remotes?: Record<string, string> }} [options]
  *   `config: null` writes no policy file; a string is written verbatim, so a test
- *   can hand over unparseable JSON.
+ *   can hand over unparseable JSON. The default remote is a **real** local bare
+ *   repository (`makeRemote`), so a fixture that reaches §7.2's fetch fetches.
  * @returns {string} the repository root
  */
-export function makeRepo(
-	t,
-	{ config = VALID_CONFIG, remotes = { gitea: "git@gitea.example:acme/widgets.git" } } = {},
-) {
+export function makeRepo(t, { config = VALID_CONFIG, remotes } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "factory-repo-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 
 	execFileSync("git", ["init", "--quiet", root]);
-	for (const [name, url] of Object.entries(remotes)) {
+	for (const [name, url] of Object.entries(remotes ?? { gitea: makeRemote(t) })) {
 		execFileSync("git", ["-C", root, "remote", "add", name, url]);
 	}
 
