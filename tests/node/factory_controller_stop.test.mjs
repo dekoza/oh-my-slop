@@ -396,7 +396,7 @@ test("the end reason is a property of the controller loop, never derived from th
 	assert.equal(value.report.execution.in_flight, 1, "the run did not report the lane it is leaving behind");
 	assert.match(
 		value.report.execution.missing,
-		/#107/,
+		/#108/,
 		"the subsystem that would have found this run more work is not named",
 	);
 });

@@ -230,12 +230,19 @@ function unbuilt({ row, phase }) {
 }
 
 function unbuiltPhase(phase) {
-	const waiting = UNBUILT[phase] ?? { missing: null, spec: "§8.1" };
+	const waiting = UNBUILT[phase];
+	if (waiting === undefined) {
+		return new FactoryPipelineError(
+			"phase-unwired",
+			`The walk reached ${phase}, and this caller wired no executor for it. §8.1's pipeline is walked whole; a ` +
+				"phase the caller left out cannot be inferred, and carrying on past it would skip the phase silently.",
+			{ at: "phase", phase },
+		);
+	}
+
 	return new FactoryPipelineError(
 		"not-yet-implemented",
-		`The walk reached ${phase}, which is not built in this package: ${waiting.missing ?? "no slice claims it"} (${
-			waiting.spec
-		}).`,
+		`The walk reached ${phase}, which is not built in this package: ${waiting.missing} (${waiting.spec}).`,
 		{ at: "phase", phase, ...waiting },
 	);
 }

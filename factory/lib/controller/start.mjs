@@ -95,8 +95,9 @@ export const NEW_RUN_FLAG = "--new-run";
  * @param {object | null} [invocation.trackerWriter] §3.3's write client; built from
  *   the same config when a tracker is present, injectable for the same reason
  * @param {(lane: object) => Promise<object>} [invocation.pipeline] the phases above
- *   the claim (#107) — implement, harvest, verify, review, integrate. **The claim
- *   is composed onto it here**, so a package without it claims nothing
+ *   the claim (#108's stage machine) — implement, harvest, verify, review,
+ *   integrate. **The claim is composed onto it here**, so a package without it
+ *   claims nothing
  * @param {() => Promise<object>} [invocation.frontier] §3.2's live frontier reader,
  *   overriding the one composed from `tracker`
  * @param {(lane: object) => Promise<object>} [invocation.execute] one whole ticket
@@ -472,8 +473,8 @@ async function driveRun(store, hold, context, signals) {
  * the loop a ticket it could only refuse, having already taken a slot for it.
  *
  * With both present the composition is this package's whole job — slots, order,
- * backpressure, waiting, the claim, and the disposition — and #107's pipeline is
- * what sits between the claim and that disposition.
+ * backpressure, waiting, the claim, and the disposition — and #108's stage
+ * machine is what sits between the claim and that disposition.
  *
  * `executor` is asked once and both seams read the same answer. Deciding "is
  * there anything to run" twice, once here and once where the report names what is
@@ -540,7 +541,7 @@ function liveFrontier(entry, context) {
  *
  * A pipeline that throws leaves the claim standing on purpose. §8.9 gives
  * `released` to operator stop and controller shutdown, and §8's failure policy —
- * which is where the `factory:failed` label lives — is #107's; dropping the
+ * which is where the `factory:failed` label lives — is #109's; dropping the
  * assignee here would put the ticket back in the frontier for the next run to die
  * on identically, which is §8.9's `failAutomation` mistake. §3.3's same-factory
  * staleness is what settles a claim whose run died: proven from durable state,
@@ -589,7 +590,8 @@ function ticketExecution(store, entry, hold, context) {
 
 		// §8.9's tracker action for the one disposition this slice owns. The other
 		// three add a label, and the label vocabulary of §8's failure policy lands
-		// with the pipeline that produces those dispositions (#107).
+		// with the tracker actions beside it (#109); #108's stage machine produces
+		// the disposition values and writes nothing to the tracker itself.
 		if (disposition === "released") {
 			await releaseClaim(store, {
 				writer: context.trackerWriter,
@@ -626,7 +628,7 @@ async function emptyFrontier() {
 /** Unreachable while the frontier is empty, and explicit rather than a silent no-op. */
 function refuseExecution({ ticket }) {
 	throw new Error(
-		`Ticket ${ticket} was claimable, but the pipeline above the claim is not built in this package (#107).`,
+		`Ticket ${ticket} was claimable, but nothing composes the implement attempt this package can walk (#108).`,
 	);
 }
 
@@ -713,7 +715,7 @@ function executionReport(store, run, executed, context) {
 function missingSubsystem(context) {
 	if (context.execute !== undefined) return null;
 	if (context.pipeline === null || context.pipeline === undefined) {
-		return "the pipeline above the claim — implement, harvest, verify, review, integrate (#107)";
+		return "an implement attempt for §8.10's stage machine to walk — the launch exists (#107) and nothing composes it into a phase (#108)";
 	}
 	return null;
 }

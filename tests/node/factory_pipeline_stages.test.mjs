@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
+import { requestEffect, resolveEffect } from "../../factory/lib/effects/records.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { dispositionOf } from "../../factory/lib/pipeline/dispositions.mjs";
 import { outcomeChain, resolveStage, walkStages } from "../../factory/lib/pipeline/stages.mjs";
@@ -285,6 +286,57 @@ test("a re-entered walk replays the chain from durable state and re-runs nothing
 		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).length,
 		3,
 		"and the chain does not grow a duplicate step",
+	);
+});
+
+test("a crash between an external effect and its recorded resolution replays clean (§8.10)", async (t) => {
+	const context = await executing(t);
+	const identity = {
+		run: context.run,
+		ticket: context.ticket,
+		phase: "implement",
+		attempt: context.attempt,
+		operation: "agent-start",
+		operand: null,
+		actor: "controller",
+		fencingGeneration: context.hold.fence().generation,
+		payload: { agent: "worker" },
+		at: FIXED_NOW,
+	};
+	let died = false;
+	const implement = async () => {
+		const requested = requestEffect(context.store, identity);
+		if (requested.state !== "resolved") {
+			resolveEffect(context.store, {
+				key: requested.key,
+				actor: "controller",
+				fencingGeneration: identity.fencingGeneration,
+				result: { started: true },
+				at: FIXED_NOW,
+			});
+		}
+		// The controller dies here the first time: the pane is up and the journal
+		// knows it, and nothing has said what the attempt came back with.
+		if (!died) {
+			died = true;
+			throw new Error("controller died mid-attempt");
+		}
+		return { outcome: "completed", detail: null };
+	};
+
+	const rest = { harvest: async () => ({ outcome: "passed" }), verify: async () => ({ outcome: "passed" }) };
+	await assert.rejects(() => context.walk({ implement, ...rest }), /controller died/);
+	await assert.rejects(() => context.walk({ implement, ...rest }), /not built/);
+
+	assert.deepEqual(
+		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).map((step) => step.phase),
+		["implement", "harvest", "verify"],
+		"one implement step, from the replay that finished it",
+	);
+	assert.equal(
+		context.store.readEvents({ kind: "effect.requested" }).length,
+		1,
+		"and the effect was requested once: §4.5's key is what makes the replay idempotent",
 	);
 });
 
