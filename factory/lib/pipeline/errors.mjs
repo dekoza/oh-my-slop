@@ -51,6 +51,16 @@ export const PIPELINE_ERROR_REASONS = Object.freeze([
 	 * automation rather than picking a winner.
 	 */
 	"stage-result-conflict",
+	/**
+	 * §8.5: a retry tier asked for without the fact that tier depends on — a
+	 * fresh-retry with no routing to consult or no freshly pinned base to branch
+	 * from — or a tier that is not one of the two. It is a refusal rather than a
+	 * default because every plausible default here is a guess with a defence:
+	 * §11.5 makes declaring `freshRetry` mandatory precisely so nothing falls back
+	 * to `implement`, and §7.2 pins the base by fetching immediately before the
+	 * branch is created rather than by reusing the last one anybody saw.
+	 */
+	"retry-unplannable",
 ]);
 
 export class FactoryPipelineError extends Error {
