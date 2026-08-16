@@ -52,15 +52,22 @@ export function giteaIssue({
 }
 
 /** A repository-wide comment record, as `/issues/comments?since=` returns it. */
-export function giteaComment({ id, ticket, author = "minder", updatedAt = "2026-08-15T13:57:24+02:00" }) {
+export function giteaComment({
+	id,
+	ticket,
+	author = "minder",
+	body = "the text of a comment, which is authoritative for nothing (§5.2)",
+	createdAt = "2026-08-15T13:57:24+02:00",
+	updatedAt = "2026-08-15T13:57:24+02:00",
+}) {
 	return {
 		id,
 		html_url: `http://gitea.example/acme/widgets/issues/${ticket}#issuecomment-${id}`,
 		pull_request_url: "",
 		issue_url: `http://gitea.example/acme/widgets/issues/${ticket}`,
 		user: { id: 1, login: author, username: author },
-		body: "the text of a comment, which is authoritative for nothing (§5.2)",
-		created_at: "2026-08-15T13:57:24+02:00",
+		body,
+		created_at: createdAt,
 		updated_at: updatedAt,
 	};
 }
@@ -97,7 +104,12 @@ export function giteaTimelineEntry({
  * @param {number | null} [world.serverTime] what the tracker's own clock says, as its
  *   `Date` response header would — the instant a fresh cursor anchors to when the
  *   first poll sees nothing
- * @returns {{ request: Function, calls: Array<{ call: string, path: string }>, pathsFor: Function }}
+ * @param {(write: object, world: object) => void} [world.onWrite] fired after each
+ *   mutation lands, so a test can stage what a *second* factory did in between —
+ *   §3.3's collision has no other seam, since both claims are simultaneous by
+ *   definition
+ * @returns {{ request: Function, write: Function, calls: Array<{ call: string, path: string }>,
+ *             writes: object[], issues: object[], comments: object[], pathsFor: Function }}
  */
 export function fakeGitea({
 	issues = [],
@@ -106,8 +118,12 @@ export function fakeGitea({
 	dependencies = {},
 	status = {},
 	serverTime = TRACKER_NOW,
+	onWrite = null,
 } = {}) {
 	const calls = [];
+	const writes = [];
+	const world = { issues, comments };
+	let nextCommentId = 9000;
 
 	const answer = async ({ call, path }) => {
 		calls.push({ call, path });
@@ -122,6 +138,15 @@ export function fakeGitea({
 
 		if (route.endsWith("/issues/comments")) {
 			return page(sinceFilter(comments, parameters), parameters);
+		}
+
+		const perIssueComments = /\/issues\/([0-9]+)\/comments$/.exec(route);
+		if (perIssueComments !== null) {
+			const ticket = Number(perIssueComments[1]);
+			return page(
+				comments.filter((comment) => comment.issue_url.endsWith(`/issues/${ticket}`)),
+				parameters,
+			);
 		}
 
 		const timelineMatch = /\/issues\/([0-9]+)\/timeline$/.exec(route);
@@ -160,10 +185,65 @@ export function fakeGitea({
 	};
 
 	// Every answer carries the tracker's clock, exactly as a real `Date` response
-	// header does — attached once here so no route can forget it.
+	// header does — attached once here so no route can forget it. `serverTime:
+	// null` is the proxy that strips the header, which the reader tolerates and
+	// the claim refuses.
 	const request = async (read) => ({ ...(await answer(read)), date: serverTime });
 
-	return { request, calls, pathsFor: (call) => calls.filter((entry) => entry.call === call).map((e) => e.path) };
+	/**
+	 * The write transport. It mutates the same world the reads answer from, which
+	 * is the whole point: §3.3's re-read has to be able to see what the claim just
+	 * did, and a fixture whose writes went nowhere would prove only that the code
+	 * calls a function.
+	 */
+	const write = async ({ operation, method, path, body }) => {
+		writes.push({ operation, method, path, body });
+
+		const override = Object.entries(status).find(([prefix]) => path.includes(prefix));
+		if (override !== undefined) {
+			return { status: override[1], body: { message: "refused by the fixture" } };
+		}
+
+		const commentMatch = /\/issues\/([0-9]+)\/comments$/.exec(path);
+		if (method === "POST" && commentMatch !== null) {
+			const ticket = Number(commentMatch[1]);
+			const created = giteaComment({
+				id: (nextCommentId += 1),
+				ticket,
+				author: "kuferek",
+				body: body.body,
+				createdAt: new Date(serverTime).toISOString(),
+				updatedAt: new Date(serverTime).toISOString(),
+			});
+			comments.push(created);
+			onWrite?.({ operation, ticket, body }, world);
+			return { status: 201, body: created };
+		}
+
+		const issueMatch = /\/issues\/([0-9]+)$/.exec(path);
+		if (method === "PATCH" && issueMatch !== null) {
+			const issue = issues.find((candidate) => candidate.number === Number(issueMatch[1]));
+			if (issue === undefined) return { status: 404, body: { message: "not found" } };
+			if (body.assignees !== undefined) {
+				issue.assignees = body.assignees.map((login) => ({ id: 1, login, username: login }));
+			}
+			issue.updated_at = new Date(serverTime).toISOString();
+			onWrite?.({ operation, ticket: issue.number, body }, world);
+			return { status: 200, body: issue };
+		}
+
+		return { status: 405, body: { message: `the fixture serves no ${method} ${path}` } };
+	};
+
+	return {
+		request,
+		write,
+		calls,
+		writes,
+		issues,
+		comments,
+		pathsFor: (call) => calls.filter((entry) => entry.call === call).map((e) => e.path),
+	};
 }
 
 function split(path) {

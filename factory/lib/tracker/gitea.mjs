@@ -235,6 +235,18 @@ export function createGiteaReader({ repo, login, request = teaRequest }) {
 		},
 
 		/**
+		 * One issue's comments — the same declared read, narrowed to a ticket.
+		 *
+		 * It exists for §4.5's `embedded-key` match and §3.3's arbitration, both of
+		 * which ask a question about *one* ticket: does a comment carrying this
+		 * effect key exist, and which claim comment has the lowest id. Answering
+		 * either from the repository-wide `?since=` walk would mean paging every
+		 * comment in the repository to look at one issue's.
+		 */
+		comments: async (number) =>
+			(await readAll("issue.comments", `${base}/issues/${number}/comments`)).map(normaliseComment),
+
+		/**
 		 * §5.1: **only for issues the cheap pass flagged.** The per-issue timeline
 		 * is the expensive read, and running it across a scope every 15 seconds is
 		 * the polling cost the cursor exists to avoid.
@@ -294,7 +306,16 @@ export function normaliseIssue(raw) {
 	});
 }
 
-/** A comment, as evidence of *existence* only — never of its text (§5.2). */
+/**
+ * A comment, as evidence of *existence* only — never of its text (§5.2).
+ *
+ * `body` rides along for exactly one purpose: §4.5's `embedded-key` match, which
+ * is a **string search for a key the factory itself wrote** and not a reading of
+ * what the comment says. §5.2 excludes comment text from every authority row, and
+ * `authority.mjs` refuses `comment.text` from any source at all — so a caller
+ * that classified a ticket from this field would be refused at the write. What
+ * the field supports is recognising our own record, and nothing beyond it.
+ */
 export function normaliseComment(raw) {
 	requireRecord(raw, "comment");
 	requireNumber(raw.id, "comment.id", raw);
@@ -304,11 +325,16 @@ export function normaliseComment(raw) {
 		kind: FOREIGN_ID_KINDS.comment,
 		foreign_id: foreignId(FOREIGN_ID_KINDS.comment, raw.id, raw.updated_at),
 		id: raw.id,
+		body: typeof raw.body === "string" ? raw.body : "",
 		// The repository-wide comments endpoint identifies the issue by URL only.
 		ticket: issueNumberFromUrl(raw.issue_url),
 		author: raw.user?.login ?? null,
 		updated_at: epochMillis(raw.updated_at, "comment.updated_at", raw),
 		updated_at_raw: raw.updated_at,
+		// §3.3's contest window is about when a claim was *made*, so an edited
+		// comment must not slide out of it: `updated_at` moves on an edit and
+		// `created_at` does not.
+		created_at: epochMillis(raw.created_at ?? raw.updated_at, "comment.created_at", raw),
 		created_at_raw: raw.created_at ?? raw.updated_at,
 		html_url: raw.html_url ?? null,
 	});

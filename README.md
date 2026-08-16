@@ -40,6 +40,15 @@ opens `Part of #75` — it resolves membership over the live tracker graph and p
 every member with the class it is in and the reason, claiming nothing and moving no
 label.
 
+A run answers the same question and then acts on it. `factory start 100 101` resolves
+that frontier at every scheduling decision, takes the lowest-numbered claimable ticket,
+and claims it — an assignee plus a structured comment, then a re-read to confirm nobody
+else got there first. It stops when nothing is claimable and nothing can become
+claimable without a human: a merge, an answer, a closure outside the scope. It never
+waits for one. What it exits with is the classified per-member report — closed,
+needs-human, awaiting-merge-dependency, blocked-external, human-owned, failed — and each
+member says which ticket it is waiting on.
+
 The checks a run verifies against are **declared, never discovered**: the `checks`
 block in `.pi/factory.json` names each command, its timeout, whether it is required or
 advisory, and which exit codes count as a genuine failure. Nothing is inferred from a
