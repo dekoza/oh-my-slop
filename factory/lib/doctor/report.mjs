@@ -2,11 +2,15 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { artifactBytesByClass } from "../artifacts/ledger.mjs";
+import { describeScope, PARENT_FLAG } from "../controller/scope.mjs";
 import { unresolvedEffects } from "../effects/records.mjs";
 import { FactoryPackageError } from "../package/errors.mjs";
 import { packageHandshake } from "../package/handshake.mjs";
 import { reconcile, RECONCILE_MODES } from "../reconcile/engine.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
+import { FactoryTrackerError } from "../tracker/errors.mjs";
+import { readScope } from "../tracker/frontier.mjs";
+import { isDue, readCursor } from "../tracker/observation.mjs";
 
 /**
  * §10.5's `doctor`: **the reconciliation engine with a read-only flag**, plus
@@ -45,6 +49,8 @@ const MONITOR_CONFIG = join(".pi", "factory-monitor.json");
  * @param {object | null} [context.expect] `package.expect` from config
  * @param {Record<string, string | undefined>} [context.env]
  * @param {object} [context.probes] the §5.3 probe registry
+ * @param {object | null} [context.scope] §3.1's selector, when the operator named one
+ * @param {object | null} [context.tracker] the §5.1 read client, or null when there is none
  * @param {number} [context.at]
  * @returns {Promise<Readonly<object>>} the one structured value both renderings come from
  */
@@ -57,6 +63,8 @@ export async function doctorReport(
 		expect = null,
 		env = process.env,
 		probes = PROBES,
+		scope = null,
+		tracker = null,
 		at = Date.now(),
 	},
 ) {
@@ -71,6 +79,7 @@ export async function doctorReport(
 		schema_version: 1,
 		at,
 		store: storeSection(store, agentDir),
+		scope: await scopeSection(store, { scope, tracker, at }),
 		integrity: store === null ? null : integritySection(store),
 		reconcile: reconciled,
 		pins: pinsSection(unresolved, reconciled),
@@ -130,6 +139,19 @@ function alarmsOf(value) {
 		);
 	}
 
+	// A scope the operator asked about and the factory could not read: no run
+	// over it can claim anything, and the reason is a fact rather than a
+	// diagnosis the operator has to reconstruct from a stack trace.
+	if (value.scope.requested && value.scope.ok === false) {
+		alarms.push(
+			alarm(
+				"tracker-unreadable",
+				`${value.scope.described} could not be resolved: ${value.scope.error.message}`,
+				value.scope.error,
+			),
+		);
+	}
+
 	if (value.package.error !== null && value.package.error !== undefined) {
 		alarms.push(alarm("package-unanchored", value.package.error.message, value.package.error));
 	}
@@ -158,6 +180,112 @@ function alarm(reason, message, detail) {
 
 function describeRun(run) {
 	return run === null ? "The repository" : `Run ${run}`;
+}
+
+/**
+ * §3.1's scope, resolved over the **live** tracker graph and classified per
+ * member (§3.2, §3.5) — **and nothing is claimed to produce it.**
+ *
+ * This is the read path's operator surface: `doctor #42` or `doctor --parent 75`
+ * answers "what would a run over this scope find, and why is each member where
+ * it is" without an assignee, a comment, or a label moving. Every read it makes
+ * is a `GET`, and §14.24 still holds because the answer never touches the
+ * journal either — the durable cursor is *read* here, never opened or advanced.
+ *
+ * A scope is optional. `doctor` with none is the diagnosis an operator runs when
+ * the controller is dead, and refusing to answer any of it because they did not
+ * name a ticket would be the Babysitter failure again.
+ */
+async function scopeSection(store, { scope, tracker, at }) {
+	if (scope === null) {
+		return Object.freeze({
+			requested: false,
+			message: `No scope was given, so no tracker read was made. \`doctor <ticket…>\` or \`doctor ${PARENT_FLAG} <parent>\` classifies a scope's members (§3.1).`,
+			members: Object.freeze([]),
+		});
+	}
+
+	if (tracker === null) {
+		return Object.freeze({
+			requested: true,
+			selector: scope,
+			described: describeScope(scope),
+			ok: false,
+			error: Object.freeze({
+				reason: "tracker-unconfigured",
+				message: "No tracker client is available to this invocation, so the scope was not resolved.",
+			}),
+			members: Object.freeze([]),
+		});
+	}
+
+	try {
+		const resolved = await readScope(tracker, scope, { at });
+
+		return Object.freeze({
+			requested: true,
+			selector: scope,
+			described: describeScope(scope),
+			ok: true,
+			error: null,
+			counts: resolved.counts,
+			// §3.2's order, so the operator reads the frontier in the order a run
+			// would take it.
+			claimable: resolved.claimable,
+			// The frontier's own records, passed through rather than re-shaped. A
+			// second projection of them here would be a second place to remember
+			// whenever a member grows a field — and the one it forgot would be the
+			// field the operator needed.
+			members: resolved.members,
+			cursor: cursorReport(store, scope, at),
+			claimed: false,
+			// Said outright, because "doctor listed my frontier" and "a run claimed
+			// my frontier" must never be confusable at a glance.
+			note: "Read-only: this listing claims nothing, assigns nobody, and moves no label (§10.5).",
+		});
+	} catch (error) {
+		if (!(error instanceof FactoryTrackerError)) throw error;
+
+		// A tracker that cannot be read is a real alarm — no run can claim
+		// anything — but it must not take the journal, the pins, and the
+		// reconciliation down with it, so it becomes a section like any other.
+		return Object.freeze({
+			requested: true,
+			selector: scope,
+			described: describeScope(scope),
+			ok: false,
+			error: Object.freeze({ reason: error.reason, message: error.message, ...error.details }),
+			members: Object.freeze([]),
+		});
+	}
+}
+
+/**
+ * §5.1's cursor for this scope, **read and never opened**. A `doctor` that
+ * created a cursor would be writing durable state from the one verb that
+ * promises not to (§14.24), and it would do it precisely when the operator is
+ * trying to find out what state already exists.
+ */
+function cursorReport(store, scope, at) {
+	if (store === null) return Object.freeze({ present: false, message: "There is no store to hold one yet." });
+
+	const cursor = readCursor(store, scope);
+	if (cursor === null) {
+		return Object.freeze({
+			present: false,
+			message: "This scope has never been observed; a cursor is opened by a run, never by doctor (§5.1).",
+		});
+	}
+
+	return Object.freeze({
+		present: true,
+		last_updated_at: cursor.last_updated_at,
+		last_updated_at_raw: cursor.last_updated_at_raw,
+		last_foreign_id: cursor.last_foreign_id,
+		polled_at: cursor.polled_at,
+		polls: cursor.polls,
+		due: isDue(cursor, at),
+	});
 }
 
 function storeSection(store, agentDir) {

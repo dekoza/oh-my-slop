@@ -410,6 +410,12 @@ function applyExpiry() {
  * state: the ticket executions the projection holds without a terminal
  * disposition. A run ending beside a lane it is leaving behind says so in the
  * same breath rather than reporting a member list of nothing.
+ *
+ * The tracker reader landed with #100 and `doctor` answers from it, but nothing
+ * calls it from here yet: the scheduler loop that would is #101's. So the member
+ * list stays empty and the sentence names the loop rather than the reader — a
+ * report that listed members a run never looked at would be a worse lie than one
+ * that lists none.
  */
 function executionReport(store, run) {
 	const inFlight = store
@@ -422,9 +428,9 @@ function executionReport(store, run) {
 		in_flight: inFlight.length,
 		released: 0,
 		missing:
-			"the tracker scope and eligibility reader (#100), capacity slots and the scheduler loop that " +
-			"lets every in-flight execution reach its terminal disposition (#101), and claiming, release, " +
-			"and the classified drain report (#102)",
+			"capacity slots and the scheduler loop that reads the frontier and lets every in-flight " +
+			"execution reach its terminal disposition (#101), and claiming, release, and the classified " +
+			"drain report (#102)",
 		spec: "§3.2, §3.5, §9",
 	};
 }

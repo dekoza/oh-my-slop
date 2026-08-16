@@ -7,13 +7,15 @@
  * - **projections** — derived from the journal, committed in the same
  *   transaction as the event that changes them, and therefore rebuildable
  *   (§4.4);
- * - **canonical rows** — `effect`, `lease`, and `artifact`, which are *not*
- *   projections. The effect table needs a real `UNIQUE` constraint for the
- *   database itself to enforce idempotency, a lease needs compare-and-swap
- *   against a real row, and the artifact ledger outlives the journal records
- *   that produced it — §12.5's tombstone is permanent while the run stream that
- *   wrote the blob is tier 1. Their semantics belong to §4.5, §4.6, and §12.1;
- *   this file owns only their shape.
+ * - **canonical rows** — `effect`, `lease`, `artifact`, and §5.1's two
+ *   observation tables, which are *not* projections. The effect table needs a
+ *   real `UNIQUE` constraint for the database itself to enforce idempotency, a
+ *   lease needs compare-and-swap against a real row, the artifact ledger
+ *   outlives the journal records that produced it — §12.5's tombstone is
+ *   permanent while the run stream that wrote the blob is tier 1 — and an
+ *   observation cursor is a watermark rather than a derived view. Their
+ *   semantics belong to §4.5, §4.6, §12.1, and §5.1; this file owns only their
+ *   shape.
  */
 
 /**
@@ -25,8 +27,11 @@
  * the confusion this version guard exists to prevent.
  *
  * v3 added the §12.1 `artifact` ledger.
+ *
+ * v4 added §5.1's `observation_cursor` and `observed_issue`, and the partial
+ * unique index that makes an observation's foreign id enforce its own dedup.
  */
-export const STORE_SCHEMA_VERSION = 3;
+export const STORE_SCHEMA_VERSION = 4;
 
 export const SCHEMA_STATEMENTS = Object.freeze([
 	// ── Identity (§4.1) ─────────────────────────────────────────────────────
@@ -62,6 +67,25 @@ export const SCHEMA_STATEMENTS = Object.freeze([
 	)`,
 	"CREATE INDEX IF NOT EXISTS event_by_stream ON event (stream, seq)",
 	"CREATE INDEX IF NOT EXISTS event_by_run ON event (run, seq)",
+	/**
+	 * §5.1's dedup, enforced by the database rather than by the poll behaving
+	 * itself — the same reasoning the `effect` table's primary key rests on: a
+	 * duplicate must not be able to become a second row however many times a
+	 * crashed poll re-runs.
+	 *
+	 * **Partial**, because uniqueness is a property of observations and not of
+	 * the journal. A `reconcile.concluded` and an `effect.resolved` may both
+	 * carry the foreign id of the same probe answer, and they are different
+	 * records of it; two `observation.recorded` rows for one foreign fact are the
+	 * same record twice.
+	 *
+	 * It doubles as the lookup that makes deduping cheap. A 15-second poll with a
+	 * 60-second overlap asks "have I already recorded this?" about every record
+	 * it sees, four times over, so the alternative is a table scan that grows
+	 * with the repository for the life of the store.
+	 */
+	`CREATE UNIQUE INDEX IF NOT EXISTS event_by_foreign_source ON event (foreign_source_id)
+	 WHERE kind = 'observation.recorded' AND foreign_source_id IS NOT NULL`,
 
 	/**
 	 * The journal's head, kept as a row rather than derived from `MAX(seq)`.
@@ -222,6 +246,49 @@ export const SCHEMA_STATEMENTS = Object.freeze([
 		PRIMARY KEY (algorithm, digest)
 	)`,
 	"CREATE INDEX IF NOT EXISTS artifact_by_run ON artifact (run_id, created_at)",
+
+	/**
+	 * §5.1's durable observation cursor, `(scope, last_updated_at,
+	 * last_foreign_id)` — the tuple the specification names, as the row it is.
+	 *
+	 * Canonical rather than a projection, for the same reason a lease is: it is
+	 * a **watermark**, not a view of the journal. Rebuilding it from events
+	 * would answer "how far did we get" with "as far as the records we kept",
+	 * and §12.2 expires run streams — so the first expiry would silently re-poll
+	 * a repository's whole history.
+	 *
+	 * Keyed by the scope because §5.1 keys it by the scope: two runs watching
+	 * different selectors have different watermarks, and reading one against the
+	 * other's poll would skip whatever the two do not share.
+	 */
+	`CREATE TABLE IF NOT EXISTS observation_cursor (
+		scope TEXT PRIMARY KEY,
+		source TEXT NOT NULL,
+		last_updated_at INTEGER NOT NULL,
+		last_updated_at_raw TEXT,
+		last_foreign_id TEXT,
+		opened_at INTEGER NOT NULL,
+		polled_at INTEGER,
+		polls INTEGER NOT NULL DEFAULT 0
+	)`,
+
+	/**
+	 * §5.1's `content_version` per issue: **the cheap body-edit detector.**
+	 *
+	 * A body edit moves `updated_at` like everything else does, so the counter
+	 * is what separates "somebody rewrote the acceptance criteria" from "a label
+	 * was added" without fetching and diffing the body. Keeping the last value
+	 * seen is the whole mechanism, and it lives beside the cursor because it is
+	 * the same kind of thing: how far observation has got, not a view of it.
+	 */
+	`CREATE TABLE IF NOT EXISTS observed_issue (
+		ticket INTEGER PRIMARY KEY,
+		content_version INTEGER,
+		state TEXT,
+		updated_at INTEGER NOT NULL,
+		observed_at INTEGER NOT NULL,
+		last_seq INTEGER NOT NULL
+	)`,
 
 	/**
 	 * One DB-wide monotonic counter, so fencing generations are totally ordered
