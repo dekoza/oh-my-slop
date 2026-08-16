@@ -245,6 +245,39 @@ function completedOutbox(identity) {
 	};
 }
 
+test("an idle seed is a state, not a transition: the just-prompted worker gets its turn before silence counts (§6.6)", async (t) => {
+	// Proven live (run 01M068G2…): a freshly prompted pi agent still reads
+	// "idle" before its model begins the turn, and a seed that starts the
+	// settle clock harvested both attempts as no-result 2052ms after
+	// correlation. Only an observed transition into a settled status may
+	// start the clock; the seed is a state with no history.
+	const context = await waiting(t, { herdr: fakeHerdr({ agentStatus: "idle" }) });
+	let clock = FIXED_NOW;
+	let polls = 0;
+	let push;
+
+	const result = await context.wait({
+		now: () => clock,
+		watch: ({ onTransition }) => {
+			push = onTransition;
+			return { close: () => {}, degraded: () => false };
+		},
+		sleep: async () => {
+			clock += 1_000;
+			polls += 1;
+			// The model starts long after the settle grace has elapsed since the
+			// seed, works, settles, and writes — the ordinary slow first token.
+			if (polls === 5) push({ status: "working", alive: true, agent: "pi", source: "subscribe", event: null, from: "idle" });
+			if (polls === 6) {
+				context.writeOutbox(completedOutbox(context.identity));
+				push({ status: "idle", alive: false, agent: "pi", source: "subscribe", event: null, from: "working" });
+			}
+		},
+	});
+
+	assert.equal(result.outcome, "completed");
+});
+
 test("a valid outbox from a settled worker is harvested, and the agent stopped (§6.6)", async (t) => {
 	const context = await waiting(t);
 	context.writeOutbox(completedOutbox(context.identity));

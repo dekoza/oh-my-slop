@@ -414,8 +414,21 @@ export async function awaitCompletion(
 	// **Seeded from a read, never assumed.** A worker that finished before the
 	// subscription opened produces no transition at all, and starting from
 	// "alive" would then read its perfectly good outbox as `wrote-but-hung`.
+	//
+	// The seed keeps the *status* and not the *clock*: `settledAt` stays null,
+	// because a seed is a state with no history. A live agent reading "idle"
+	// here may equally be one that finished long ago (its valid outbox decides
+	// on the first loop, settle clock unneeded) or one whose model has not
+	// begun the turn the launch just submitted — measured live, pi took longer
+	// than the settle grace to leave "idle", and a seed-started clock harvested
+	// the attempt as `no-result` before the worker ever worked. Silence starts
+	// counting only from an observed transition into a settled status; a pane
+	// already gone still decides immediately through the `dead-worker` row.
 	const seen = await herdr.paneForAttempt(identity.attempt);
-	let liveness = readLiveness(fromPane(seen.ok ? seen.pane : null, "seed"), { settledAt: null }, now());
+	let liveness = {
+		...readLiveness(fromPane(seen.ok ? seen.pane : null, "seed"), { settledAt: null }, now()),
+		settledAt: null,
+	};
 
 	// Transitions are queued rather than journalled from the socket callback:
 	// every append then happens on this function's own path, in order, where a
