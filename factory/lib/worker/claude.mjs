@@ -1,6 +1,7 @@
 import { CLAUDE_RESOURCE_CLASS } from "../config/profiles.mjs";
-import { createWorkerAdapter, unbuiltLifecycleOperations } from "./adapter.mjs";
+import { createWorkerAdapter } from "./adapter.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
+import { lifecycleOperations } from "./lifecycle.mjs";
 import { ensureClaudePlugin } from "./plugin.mjs";
 import { harnessVersion, memoizedPreflight, parseJson, probeFinding, runIn, unreachableRuntime } from "./probe.mjs";
 import * as realTransport from "./transports.mjs";
@@ -160,7 +161,13 @@ export function proveClaudeClosure(probed, closure) {
 }
 
 /**
- * §6.1's adapter for the Claude runtime; the lifecycle operations are #107's.
+ * §6.1's adapter for the Claude runtime.
+ *
+ * The one thing the lifecycle needs from *this* runtime is the agent kind Herdr
+ * starts. The §6.3 plugin's manifest name — which `prompt.mjs` turns into
+ * `/oh-my-slop:<skill>` — is deliberately **not** bound here: it is observed by
+ * the probe, so it travels with the attempt from whoever holds the preflight
+ * result, rather than being a second copy of a name the generator owns.
  *
  * @param {object} context everything `probeClaudeRuntime` takes except the revision,
  *   which arrives per call as §6.1's `package_rev`
@@ -175,7 +182,7 @@ export function createClaudeAdapter(context) {
 				probe: (packageRev) => probeClaudeRuntime({ ...context, packageRev }),
 				prove: proveClaudeClosure,
 			}),
-			...unbuiltLifecycleOperations("claude"),
+			...lifecycleOperations({ runtime: "claude", agentKind: "claude" }, context.launch ?? {}),
 		},
 	});
 }

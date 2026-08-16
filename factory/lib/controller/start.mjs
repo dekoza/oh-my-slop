@@ -21,6 +21,8 @@ import { installSignalRequests } from "./signals.mjs";
 import { reconcile } from "../reconcile/engine.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
 import { withTrackerProbes } from "../reconcile/tracker-probes.mjs";
+import { withHerdrProbes } from "../worker/probes.mjs";
+import { createHerdrControl } from "./herdr-control.mjs";
 import { FactoryStateError } from "../state/errors.mjs";
 import { LEASE_RENEWAL_MS, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
@@ -169,6 +171,11 @@ export async function runStart({
 			now,
 			timers,
 			herdr,
+			// §10.3's availability probe and the commands are two different things
+			// and two different modules: the probe answers "is there a multiplexer",
+			// and this issues pane and agent operations against it. Both are
+			// injectable for the same reason.
+			herdrControl: createHerdrControl({ env, ...(runHerdr === undefined ? {} : { run: runHerdr }) }),
 			workerTransports,
 			watching,
 			signal,
@@ -274,10 +281,15 @@ async function driveRun(store, hold, context, signals) {
 		// introduces them, and they close over this invocation's reader — so they
 		// join the registry here rather than at import, where there is no reader and
 		// a second invocation in one process would refuse a duplicate registration.
-		probes: withTrackerProbes(context.probes, {
-			reader: context.tracker,
-			assignee: context.config.tracker.assignee,
-		}),
+		// The attempt path's `agent-start` and `agent-stop` join the same way, and
+		// for the same reason: their read closes over one multiplexer client.
+		probes: withHerdrProbes(
+			withTrackerProbes(context.probes, {
+				reader: context.tracker,
+				assignee: context.config.tracker.assignee,
+			}),
+			{ herdr: context.herdrControl },
+		),
 		fencingGeneration: hold.fencingGeneration,
 		hold,
 		actor: "controller",

@@ -1,4 +1,5 @@
 import { WORKER_WRITABLE_OUTCOMES } from "../domain/vocabulary.mjs";
+import { renderAttemptPrompt } from "./prompt.mjs";
 
 /**
  * The pipeline's role inventory — **the caller's knowledge, never the
@@ -7,9 +8,14 @@ import { WORKER_WRITABLE_OUTCOMES } from "../domain/vocabulary.mjs";
  * A role here is a *declaration*: the §6.1 tuple minus what only the pinned
  * package can answer. The closure slot is null until `closure.mjs` computes it
  * from `requires:` frontmatter — hardcoding it would be exactly the role
- * knowledge §6.2 forbids — and the prompt template is null until #107's
- * per-role templates land; the adapter's lifecycle operations refuse before a
- * missing template could matter.
+ * knowledge §6.2 forbids.
+ *
+ * **§6.4's "deterministic per-role template" is one renderer, not four
+ * strings.** Every role carries the same `renderAttemptPrompt`, and what makes
+ * the rendering per-role is the tuple it reads: the entry skill becomes the
+ * native invocation and the result expectations become the completion protocol
+ * the worker is held to. Four hand-maintained templates would drift from the
+ * one validator that reads those same expectations back.
  *
  * The names are code constants for the same reason §3.2's labels are. The
  * entry-skill bindings are the specification's own: `implement` is the builder
@@ -37,7 +43,7 @@ function declare(name, { entrySkill, routingRole, expectations }) {
 		entrySkill,
 		routingRole,
 		closure: null,
-		promptTemplate: null,
+		promptTemplate: renderAttemptPrompt,
 		resultExpectations: expectations,
 	});
 }

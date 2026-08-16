@@ -120,6 +120,16 @@ export const CHECK_RESULTS = Object.freeze({ passed: "passed", failed: "failed",
  */
 export const WORKER_WRITABLE_OUTCOMES = Object.freeze(["completed", "needs-human", "worker-failed"]);
 
+/**
+ * §6.5's recorded absence, and it is **final**: Herdr drops its reference to a
+ * session when the pane goes away and integration deletes the worktree pi keys
+ * its own on, so an attempt whose pointer never arrived has no later heuristic
+ * that could recover one. It is a code constant rather than a literal because
+ * two places write it — the launch that observes the absence and the tier-2
+ * digest that keeps it permanently (§12.3).
+ */
+export const NO_TRANSCRIPT_POINTER = "no-transcript-pointer";
+
 /** §8.8 — the worker-writable three, then the controller-derived rest. */
 export const ATTEMPT_OUTCOMES = Object.freeze([
 	...WORKER_WRITABLE_OUTCOMES,

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import { createHerdrControl } from "../../../factory/lib/controller/herdr-control.mjs";
 import { readSkillInventory } from "../../../factory/lib/worker/closure.mjs";
 
 /**
@@ -65,6 +66,101 @@ export function piTransport({
 			},
 		},
 	};
+}
+
+/**
+ * A Herdr the tests drive: the **real** control surface over a fake command
+ * runner, so every argv the factory builds is exercised and asserted rather
+ * than stubbed away. The pane list is state — `agent start` puts an agent in
+ * the pane, `agent send-keys` takes it out again — because §6.6's state table
+ * is read off exactly that.
+ *
+ * @param {object} [options]
+ * @param {string} [options.agentStatus] what the started agent reports
+ * @param {object | null} [options.session] the `AgentSessionInfo` Herdr persists,
+ *   or null for the attempt that records `no-transcript-pointer`
+ * @param {Record<string, {exitCode: number, stderr?: string}>} [options.refuse]
+ *   commands that fail, keyed by their first two argv words
+ * @param {boolean} [options.ignoresQuitKeys] a harness that takes the keys and
+ *   stays — §13.B's wedged pane, which is accepted and recorded, never escalated
+ */
+export function fakeHerdr({
+	agentStatus = "working",
+	session = { agent: "pi", kind: "path", value: "/t/s.jsonl" },
+	refuse = {},
+	ignoresQuitKeys = false,
+} = {}) {
+	const calls = [];
+	const panes = [];
+	let nextPane = 1;
+
+	const run = async (args) => {
+		calls.push(args);
+		const command = args.slice(0, 2).join(" ");
+		const refused = refuse[command];
+		if (refused !== undefined) return { exitCode: refused.exitCode, stdout: "", stderr: refused.stderr ?? "" };
+
+		if (command === "workspace create") {
+			const id = `w${nextPane}`;
+			const pane = { pane_id: `${id}:p1`, workspace_id: id, tab_id: `${id}:t1`, agent_status: "unknown", tokens: {} };
+			panes.push(pane);
+			nextPane += 1;
+			return json({ workspace: { workspace_id: id }, tab: { tab_id: pane.tab_id }, root_pane: { pane_id: pane.pane_id } });
+		}
+		if (command === "pane report-metadata") {
+			const pane = panes.find((entry) => entry.pane_id === args.at(-1));
+			const token = args[args.indexOf("--token") + 1].split("=");
+			pane.tokens[token[0]] = token[1];
+			pane.title = args[args.indexOf("--title") + 1];
+			return json({ pane_id: pane.pane_id });
+		}
+		if (command === "pane run") {
+			// The pane's own shell takes the exports, so the fixture keeps them
+			// where a test can read what a worker's environment would carry.
+			const pane = panes.find((entry) => entry.pane_id === args[2]);
+			pane.exported = args[3];
+			return json({ ran: true });
+		}
+		if (command === "agent start") {
+			const pane = panes.find((entry) => entry.pane_id === args[args.indexOf("--pane") + 1]);
+			pane.agent = args[args.indexOf("--kind") + 1];
+			pane.agent_status = agentStatus;
+			if (session !== null) pane.agent_session = session;
+			return json({ agent: { name: args[2] } });
+		}
+		if (command === "agent send-keys") {
+			if (ignoresQuitKeys) return json({ sent: true });
+			for (const pane of panes) {
+				if (pane.agent === undefined) continue;
+				delete pane.agent;
+				pane.agent_status = "unknown";
+			}
+			return json({ sent: true });
+		}
+		if (command === "agent prompt") return json({ submitted: true });
+		if (command === "pane list") return json({ panes: [...panes] });
+		return { exitCode: 2, stdout: "", stderr: `fake herdr does not know \`${command}\`` };
+	};
+
+	return {
+		calls,
+		panes,
+		/** The argv words of every command issued, joined — for order assertions. */
+		commands: () => calls.map((args) => args.slice(0, 2).join(" ")),
+		control: createHerdrControl({ run }),
+		/** Move the started agent to another status, as a transition would. */
+		settle(status) {
+			for (const pane of panes) if (pane.agent !== undefined) pane.agent_status = status;
+		},
+		/** The pane's process ends: Herdr drops the pane from its list. */
+		vanish() {
+			panes.length = 0;
+		},
+	};
+}
+
+function json(result) {
+	return { exitCode: 0, stdout: JSON.stringify({ id: "cli:test", result }), stderr: "" };
 }
 
 /**

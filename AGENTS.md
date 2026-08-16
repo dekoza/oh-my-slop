@@ -239,9 +239,60 @@ is the authority; cite the section a change answers to.
   quiet capacity 0. Layer 3 (`recheck.mjs`) re-records the run-keyed handshake per attempt, so
   package drift arrives as §4.5's typed payload conflict — **a failure, never a new pin** —
   and persists the observed resolved model id per attempt (`attempt.rechecked`), refusing a
-  declared model that resolves to two ids within one run (§11.7). The three lifecycle
-  operations refuse as `worker-lifecycle-unbuilt` until #107 lands them; the probes' IO lives
+  declared model that resolves to two ids within one run (§11.7). The probes' IO lives
   behind `transports.mjs` and is injected in tests exactly as the Herdr probe is.
+- **The attempt path is one order, and every step of it is where a crash puts it**
+  (`worker/lifecycle.mjs`, §6.4–§6.6). The manifest and the rendered prompt are written
+  first, into the controller-owned `attempts/<attempt_id>/` beside `state.db` — factory
+  infrastructure like the bare clone, never an effect, and **outside the worktree by
+  topology** so §12.7's eager deletion cannot take a result with it. Then `attempt.launched`,
+  the **mint**, because the projections refuse an attempt-scoped record for a tuple nothing
+  minted; then one `agent-start` effect covering pane, stamp, identity variables, and agent,
+  with the `FACTORY_ATTEMPT` token stamped **before** the agent so a crash in between leaves a
+  pane reconcile can still recognise — the probe asks for the token *and* a live agent, so an
+  early stamp cannot fake a start. §6.5's identity travels on **two channels**: the prompt, and
+  `FACTORY_*` exports typed into the pane's shell before the agent occupies it (neither
+  `workspace create` nor `agent start` takes an environment), so the tuple is reachable from
+  everything the worker starts. Then the transcript pointer, polled out of Herdr with backoff and
+  never computed; then §6.2's layer-3 recheck, which is why the pin is compared **before** the
+  prompt — the prompt is the first thing that spends; then the prompt; then
+  `attempt.correlated`, whose presence is what makes a launch *finished*. A re-entry finishes
+  an uncorrelated attempt and refuses a correlated one (#114 adopts a live worker). Every
+  runtime difference is two values: the Herdr agent kind, and the name `prompt.mjs` turns into
+  `/skill:<name>` or `/<plugin>:<name>`.
+- The first prompt is **one renderer parameterised by the role**, not four templates
+  (`worker/prompt.mjs`), and it is **deterministic**: nothing in it reads a clock or a
+  directory, which is what lets its digest ride `attempt.launched` as evidence of exactly what
+  the worker saw. §6.4's completion-protocol obligation lives **only** there — a package skill
+  stating it would be a factory dependency inside a product the factory does not own, and
+  `factory_worker_prompt.test.mjs` walks the shipped tree to hold that. Workers get no tracker
+  credential, so the ticket arrives as `tracker/snapshot.mjs`'s claim-time snapshot, dated by
+  the tracker's own clock.
+- §6.6's wait is **first-signal-wins over two sources answering different questions**, and the
+  asymmetry in how they are read is §5.1's: Herdr is *subscribed* to, because a poll cannot see
+  `working → blocked → working` between samples, while the outbox is a file that appears once
+  and is re-read on an interval. **Liveness means "still working", not "the process exists"** —
+  neither harness exits when a turn ends, so reading process-existence as liveness would make
+  every normal completion `wrote-but-hung`. The state table is one function (`decideOutcome`),
+  the two silences split by fault (`no-result` is the worker's, `dead-worker` is the
+  automation's, §8.10), and a settled worker gets a grace before its silence is called
+  silent-completion. **An attempt ends once**: the projector refuses a second `attempt.ended`,
+  which is how "late outboxes are ignored for state" gets teeth instead of staying a rule the
+  harvest path has to remember.
+- **Herdr has no `agent stop`** — verified against protocol 19, where the whole agent surface is
+  list/get/read/send-keys/prompt/rename/focus/wait/attach/start/explain and the socket API has
+  no `agent.stop` either. §13.B's "the controller stops agents and never closes panes" is
+  therefore `agent send-keys` with the harness's own quit sequence, and a harness that ignores
+  it leaves a wedged pane **recorded as an anomaly and never escalated**. The availability probe
+  (`controller/herdr.mjs`) and the commands (`controller/herdr-control.mjs`) are two modules
+  because "the factory checks the multiplexer, it does not manage one" is checkable only as
+  *the probe imports nothing that can start a process*.
+- **Herdr dates nothing.** No answer or frame in its API carries a timestamp, so `EVENT_SOURCES`
+  declares `statesTime: false` for it and §4.3's `occurred_at_raw` is **refused** on that source
+  rather than filled with our clock under Herdr's name; `observed_at` dates the record. The
+  foreign id is constructed instead, and it names the *fact* — a transition's ordinal within the
+  attempt, a reading's own liveness — because keying on the pane would let §5.1's dedup index
+  suppress every sighting after the first.
 - **A worker's environment is built, never inherited** (§6.8). `worker/environment.mjs`
   materialises one controller-owned config root per runtime beside `state.db`
   (`CLAUDE_CONFIG_DIR`, `PI_CODING_AGENT_DIR` — each runtime's own variable), and a session's

@@ -19,10 +19,20 @@ import { delimiter, join } from "node:path";
  * answers a version query happily and cannot host a single pane.
  */
 
+/**
+ * **This module runs nothing.** It imports nothing that can start a process, so
+ * there is no path along which a probe becomes a decision about the operator's
+ * session; the commands the attempt path issues live in `herdr-control.mjs`,
+ * and `tests/node/factory_controller_scope.test.mjs` holds the separation by
+ * reading this file's own text.
+ */
+
 /** What Herdr publishes as the running server's socket, when it is running. */
 const SOCKET_ENV = "HERDR_SOCKET_PATH";
 const SOCKET_LEAF = join("herdr", "herdr.sock");
-const BINARY = "herdr";
+
+/** The executable, named here because the probe looks for it and the remedies quote it. */
+export const BINARY = "herdr";
 
 /** Short: a socket that exists and does not answer promptly is not available. */
 const CONNECT_TIMEOUT_MS = 2_000;

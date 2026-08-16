@@ -1,5 +1,7 @@
 import {
+	ATTEMPT_OUTCOMES,
 	CONTROLLER_EXIT_LEASE_LOST,
+	NO_TRANSCRIPT_POINTER,
 	RUN_LIFECYCLE,
 	RUN_LIFECYCLES,
 	RUN_TERMINAL_REASONS,
@@ -23,8 +25,8 @@ import { FactoryStateError } from "./errors.mjs";
  * The kinds a projector does not name still advance its rows' `last_seq`. The
  * `disposition` column's writer is #98's abandon (the one member of §8.8's set
  * this package reaches), and the disposition subsystem (#108, #109) writes it
- * additively for the rest; the columns still waiting for their vocabulary
- * (`outcome`, `outcome_chains`) are written by the slice that owns it.
+ * additively for the rest; `outcome_chains` is still waiting for the slice that
+ * owns its vocabulary.
  */
 
 /** §10.3's first lifecycle value: preflight runs *after* the run exists. */
@@ -167,7 +169,11 @@ const ticketExecution = {
 
 const attempt = {
 	name: "attempt",
-	version: 1,
+	// v2 reads §6.6's `attempt.ended` (#107): the `outcome` and `ended_at`
+	// columns were unwritten under v1, so a v1 reader renders every harvested
+	// attempt as still running — the state an operator most needs to be able to
+	// tell apart from a live one.
+	version: 2,
 	retention: PROJECTION_CLASSES.derived,
 	apply(db, event) {
 		if (event.attempt === null) return;
@@ -179,6 +185,21 @@ const attempt = {
 			db.prepare(
 				"INSERT INTO attempt(attempt_id, run_id, ticket, ordinal, phase, outcome, launched_at, ended_at, last_seq) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, ?)",
 			).run(event.attempt, event.run, event.ticket, attemptOrdinal(event), event.phase, event.occurred_at, event.seq);
+			return;
+		}
+
+		if (event.kind === "attempt.ended") {
+			// **An attempt ends once.** §6.6's "late outboxes are ignored for state"
+			// is this refusal and not a rule the harvest path follows: a worker that
+			// keeps writing after the controller decided, or a cancellation racing a
+			// harvest, cannot move an attempt that already settled.
+			refuseIfAttemptEnded(db, event);
+			db.prepare("UPDATE attempt SET outcome = ?, ended_at = ?, last_seq = ? WHERE attempt_id = ?").run(
+				requireAttemptOutcome(event),
+				event.occurred_at,
+				event.seq,
+				event.attempt,
+			);
 			return;
 		}
 
@@ -221,8 +242,18 @@ const ticketIndex = {
  */
 const runDigest = {
 	name: "run_digest",
-	/** v3 for the same reasons the `run` projector is: it renders the same terminal state. */
-	version: 3,
+	/**
+	 * v3 for the same reasons the `run` projector is: it renders the same
+	 * terminal state.
+	 *
+	 * v4 records §12.3's **transcript pointers**, which are tier-2 permanent and
+	 * therefore have to be captured here rather than read back from a run stream
+	 * that expires. §6.5 is explicit that no later heuristic can recover one:
+	 * Herdr drops the reference when the pane goes away, and integration deletes the
+	 * worktree pi's path is keyed on, so a pointer not written into the digest
+	 * when it arrives is a transcript nobody can find again (§12.9).
+	 */
+	version: 4,
 	retention: PROJECTION_CLASSES.permanent,
 	apply(db, event) {
 		if (event.run === null) return;
@@ -234,7 +265,9 @@ const runDigest = {
 			return;
 		}
 
-		const row = db.prepare("SELECT dispositions, attempt_count FROM run_digest WHERE run_id = ?").get(event.run);
+		const row = db
+			.prepare("SELECT dispositions, attempt_count, transcripts FROM run_digest WHERE run_id = ?")
+			.get(event.run);
 		if (row === undefined) {
 			throw refusal("run", `No run ${event.run} was ever started in this store.`, event);
 		}
@@ -263,16 +296,42 @@ const runDigest = {
 		}
 
 		db.prepare(
-			"UPDATE run_digest SET dispositions = ?, ticket_count = ?, attempt_count = ?, last_seq = ? WHERE run_id = ?",
+			"UPDATE run_digest SET dispositions = ?, ticket_count = ?, attempt_count = ?, transcripts = ?, last_seq = ? WHERE run_id = ?",
 		).run(
 			canonicalJson(dispositions),
 			Object.keys(dispositions).length,
 			row.attempt_count + (event.kind === "attempt.launched" ? 1 : 0),
+			canonicalJson(withTranscript(JSON.parse(row.transcripts), event)),
 			event.seq,
 			event.run,
 		);
 	},
 };
+
+/**
+ * §6.5's `{worker_kind, transcript_kind, transcript_value, captured_at}`, keyed
+ * by attempt, kept permanently (§12.3).
+ *
+ * A launch that captured nothing records the **absence** rather than nothing at
+ * all: §6.5's `no-transcript-pointer` is a fact about that attempt — nobody can
+ * ever recover the pointer — and a missing key would read as "this run predates
+ * the field", which is a different thing entirely.
+ */
+function withTranscript(transcripts, event) {
+	if (event.kind !== "attempt.correlated" || event.attempt === null) return transcripts;
+
+	const pointer = event.payload.transcript ?? null;
+	transcripts[event.attempt] =
+		pointer === null
+			? { worker_kind: event.payload.runtime ?? null, missing: NO_TRANSCRIPT_POINTER }
+			: {
+					worker_kind: event.payload.runtime ?? null,
+					transcript_kind: pointer.kind ?? null,
+					transcript_value: pointer.value ?? null,
+					captured_at: pointer.captured_at ?? null,
+				};
+	return transcripts;
+}
 
 /** Application order is the order they are declared here. */
 export const PROJECTIONS = Object.freeze([run, ticketExecution, attempt, ticketIndex, runDigest]);
@@ -374,6 +433,42 @@ function requireEndReason(event) {
 		);
 	}
 	return endReason;
+}
+
+/**
+ * §8.8's attempt outcome, held to the closed set — worker-writable three plus
+ * controller-derived seven. The enforcement is on the write path rather than at
+ * the one call site that harvests, because that is the difference between an
+ * invariant and a habit.
+ */
+function requireAttemptOutcome(event) {
+	const outcome = event.payload.outcome;
+	if (ATTEMPT_OUTCOMES.includes(outcome)) return outcome;
+
+	throw new FactoryStateError(
+		"invalid-event",
+		`An attempt ends at one of §8.8's outcomes; found ${JSON.stringify(outcome ?? null)}.`,
+		{
+			at: "payload.outcome",
+			found: outcome ?? null,
+			expected: ATTEMPT_OUTCOMES.join("|"),
+			event_id: event.event_id,
+		},
+	);
+}
+
+function refuseIfAttemptEnded(db, event) {
+	const row = db.prepare("SELECT outcome FROM attempt WHERE attempt_id = ?").get(event.attempt);
+	if (row === undefined) {
+		throw refusal("attempt", `No attempt ${event.attempt} was ever launched in this store.`, event);
+	}
+	if (row.outcome !== null) {
+		throw refusal(
+			"attempt",
+			`Attempt ${event.attempt} already ended as ${row.outcome}; the first result wins and later writes are evidence (§6.6).`,
+			event,
+		);
+	}
 }
 
 function requireRun(db, event) {

@@ -241,6 +241,108 @@ test("attempts carry their ordinal, phase, and identity tuple", async (t) => {
 	);
 });
 
+test("an attempt settles at one of §8.8's outcomes, and settles once (§6.6)", async (t) => {
+	const { store, runId } = await storeWithRun(t);
+	store.append(attemptLaunched(runId, 90, 1));
+	const ended = (outcome, at = 1_770_000_200_000) => ({
+		kind: "attempt.ended",
+		source: "controller",
+		run: runId,
+		ticket: 90,
+		phase: "implement",
+		attempt: `${runId}-t90-a1`,
+		occurredAt: at,
+		observedAt: at,
+		payload: { outcome },
+	});
+
+	store.append(ended("wrote-but-hung"));
+
+	const [attempt] = store.readAttempts({ runId, ticket: 90 });
+	assert.equal(attempt.outcome, "wrote-but-hung");
+	assert.equal(attempt.ended_at, 1_770_000_200_000);
+
+	// **First result wins, and later writes are evidence** — the projector is
+	// where "late outboxes are ignored for state" gets its teeth.
+	assert.throws(() => store.append(ended("completed", 1_770_000_300_000)), /already ended as wrote-but-hung/);
+	assert.equal(store.readAttempts({ runId, ticket: 90 })[0].outcome, "wrote-but-hung");
+});
+
+test("an outcome outside §8.8's set, or for an attempt nothing launched, is refused", async (t) => {
+	const { store, runId } = await storeWithRun(t);
+	store.append(attemptLaunched(runId, 90, 1));
+
+	assert.throws(
+		() =>
+			store.append({
+				kind: "attempt.ended",
+				source: "controller",
+				run: runId,
+				ticket: 90,
+				phase: "implement",
+				attempt: `${runId}-t90-a1`,
+				occurredAt: 1_770_000_200_000,
+				observedAt: 1_770_000_200_000,
+				payload: { outcome: "mostly-fine" },
+			}),
+		/one of §8.8's outcomes/,
+	);
+
+	assert.throws(
+		() =>
+			store.append({
+				kind: "attempt.ended",
+				source: "controller",
+				run: runId,
+				ticket: 90,
+				phase: "implement",
+				attempt: `${runId}-t90-a7`,
+				occurredAt: 1_770_000_200_000,
+				observedAt: 1_770_000_200_000,
+				payload: { outcome: "completed" },
+			}),
+		/was ever launched/,
+	);
+});
+
+test("the run digest keeps §12.3's transcript pointers, including their absence", async (t) => {
+	const { store, runId } = await storeWithRun(t);
+	store.append(attemptLaunched(runId, 90, 1));
+	const correlated = (attempt, transcript) => ({
+		kind: "attempt.correlated",
+		source: "controller",
+		run: runId,
+		ticket: 90,
+		phase: "implement",
+		attempt,
+		occurredAt: 1_770_000_150_000,
+		observedAt: 1_770_000_150_000,
+		payload: { runtime: "pi", herdr: { pane: "w1:p1" }, transcript },
+	});
+
+	store.append(correlated(`${runId}-t90-a1`, { kind: "path", value: "/s.jsonl", captured_at: 1_770_000_150_000 }));
+
+	// Permanent, in the tier-2 digest: the run stream expires and §6.5 says no
+	// later heuristic recovers a pointer.
+	assert.deepEqual(store.readRunDigest(runId).transcripts, {
+		[`${runId}-t90-a1`]: {
+			worker_kind: "pi",
+			transcript_kind: "path",
+			transcript_value: "/s.jsonl",
+			captured_at: 1_770_000_150_000,
+		},
+	});
+
+	store.append(attemptLaunched(runId, 90, 2));
+	store.append(correlated(`${runId}-t90-a2`, null));
+	assert.deepEqual(store.readRunDigest(runId).transcripts[`${runId}-t90-a2`], {
+		worker_kind: "pi",
+		// A recorded absence, not a missing key: "nobody can ever find this one"
+		// and "this run predates the field" are different facts.
+		missing: "no-transcript-pointer",
+	});
+});
+
 test("the ticket index answers cross-run history as a list, never a merge (§2.3)", async (t) => {
 	const agentDir = makeAgentDir(t);
 	const repoRoot = makeRepo(t);

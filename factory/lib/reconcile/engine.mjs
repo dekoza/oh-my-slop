@@ -405,7 +405,14 @@ function observationOf(effect, probe, answer, { at, causalCommandId }) {
 		matched: answer.matched,
 		detail: answer.detail ?? {},
 	};
-	if (EVENT_SOURCES[source].foreign) payload[FOREIGN_TIMESTAMP_KEY] = answer.occurredAtRaw;
+	// A foreign fact keeps that system's raw timestamp string verbatim (§4.3) —
+	// unless the system states no time at all. Herdr is the one that does not:
+	// nothing in its API dates an answer, so the slot stays empty rather than
+	// being filled with our clock under Herdr's name, and `observed_at` is what
+	// dates the reading.
+	if (EVENT_SOURCES[source].foreign && EVENT_SOURCES[source].statesTime !== false) {
+		payload[FOREIGN_TIMESTAMP_KEY] = answer.occurredAtRaw;
+	}
 
 	return {
 		kind: "observation.recorded",
@@ -456,10 +463,13 @@ function requireAnswer(answer, effect, probe) {
 	// timestamp string verbatim. The probe is the only place that still has
 	// both, so an answer without them is refused here rather than normalised
 	// into evidence that no longer proves anything.
-	if (EVENT_SOURCES[OBSERVATION_SOURCES[probe.source]].foreign) {
+	const declaration = EVENT_SOURCES[OBSERVATION_SOURCES[probe.source]];
+	if (declaration.foreign) {
 		for (const [field, value] of [
 			["foreignSourceId", answer.foreignSourceId],
-			["occurredAtRaw", answer.occurredAtRaw],
+			// A source that states no time has no raw timestamp to hand over, and
+			// requiring one would force its probes to invent our clock in its name.
+			...(declaration.statesTime === false ? [] : [["occurredAtRaw", answer.occurredAtRaw]]),
 		]) {
 			if (typeof value !== "string" || value.length === 0) {
 				throw new FactoryReconcileError(

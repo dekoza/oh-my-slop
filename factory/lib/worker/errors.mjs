@@ -34,10 +34,29 @@ export const WORKER_ERROR_REASONS = Object.freeze([
 	 */
 	"model-drift",
 	/**
-	 * §6.4–§6.6's launch, wait, and cancel are #107's slice. The seam exists and
-	 * refuses loudly rather than half-running a worker nothing can harvest.
+	 * §2.1/§6.5: a tuple whose parts disagree, or an identity segment that would
+	 * derive a path outside the controller-owned root. Minted once and read off
+	 * every derived name, so a mismatch is refused where it is first noticed.
 	 */
-	"worker-lifecycle-unbuilt",
+	"attempt-identity-invalid",
+	/**
+	 * §5.5: an attempt that already has an `attempt.launched` record. A failed or
+	 * abandoned attempt is never continued and a live one is *adopted* (#114), so
+	 * a second launch would put two workers on one worktree (§14.23).
+	 */
+	"attempt-already-launched",
+	/**
+	 * §6.4: the multiplexer refused a step of the launch — no pane, no agent, or
+	 * a command that failed. The worker never ran, which makes it an automation
+	 * failure rather than anything the attempt could be blamed for.
+	 */
+	"worker-launch-failed",
+	/**
+	 * §6.6: a wait or a cancel asked of an attempt this store never launched.
+	 * There is no worker to harvest or stop, and inventing one would be the
+	 * controller reasoning about an external fact (§14.1).
+	 */
+	"worker-not-launched",
 	/**
 	 * §6.8: a posture nothing dispatches to, or a per-run deny that is not a
 	 * permission rule at all. Both are refusals rather than defaults, because the
