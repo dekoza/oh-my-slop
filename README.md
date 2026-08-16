@@ -35,10 +35,12 @@ themselves are landing slice by slice; until one does, it says so and names what
 missing rather than going quiet.
 
 The `software-factory` extension was **retired** in `fe80c5d` and archived under
-`extensions/.legacy/`. Its replacement is specified in
+`extensions/.legacy/`. Its replacement is the **`factory`** extension and the **`factory`
+binary**, specified in
 [`docs/specs/software-factory.md`](docs/specs/software-factory.md), with its companion
 [`docs/specs/software-factory-monitor.md`](docs/specs/software-factory-monitor.md), and
-is being built against it.
+is being built against it. The extension fronts the binary as `/factory` from a pi
+session; the binary carries every verb for the shell.
 
 The bundled agent definitions in `./agents` are only seeded if you opt into
 `subagent-bundled-agents`.
@@ -103,10 +105,11 @@ Case in point: the agent messed up twice while creating this repo (deleting an u
 These ship in the repo and load automatically through the root `pi install` manifest.
 
 <details>
-<summary><strong>Extensions (2)</strong></summary>
+<summary><strong>Extensions (3)</strong></summary>
 
 | Extension | Loading | What it does |
 |---|---|---|
+| **[factory](extensions/factory/)** | Automatic | The `/factory` command: the `factory` binary's code run from a pi session — the same verbs, the same answer — plus the one-way monitor trigger (§10.2, §10.6). |
 | **[workflow-watchdog](extensions/workflow-watchdog/)** | Automatic | Monitors pi's workflow for failure patterns: loop detection, consecutive tool errors, and optional supervisor-model escalation. |
 | **[local-router](extensions/local-router/)** | Opt-in | Registers a `local` provider backed by an OpenAI-compatible router (default `http://127.0.0.1:8080`): models are discovered at load time and on refresh. Enable it in your pi settings only when a router is reachable — without one, its discovery fails. |
 

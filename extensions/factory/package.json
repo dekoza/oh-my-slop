@@ -1,0 +1,14 @@
+{
+  "name": "pi-extension-factory",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.56.1"
+  }
+}
