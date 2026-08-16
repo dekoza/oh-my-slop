@@ -301,6 +301,22 @@ test("a pi profile carries thinking and a Claude profile carries effort, never t
 	}
 });
 
+test("either kind of profile may declare an attempt deadline, and a nonsense one refuses (§6.6)", (t) => {
+	const config = clone();
+	config.profiles.builder.attemptTimeoutMs = 2_700_000;
+	config.profiles.reviewer = { kind: "claude", model: "opus", attemptTimeoutMs: 600_000 };
+
+	const { config: validated } = loaded(t, config);
+	assert.equal(validated.profiles.builder.attemptTimeoutMs, 2_700_000);
+	assert.equal(validated.profiles.reviewer.attemptTimeoutMs, 600_000);
+
+	const broken = clone();
+	broken.profiles.builder.attemptTimeoutMs = 0;
+	const error = loadFailure(t, broken);
+	assert.equal(error.reason, "invalid-value");
+	assert.equal(error.details.at, "profiles.builder.attemptTimeoutMs");
+});
+
 test("a pi profile's model must be an exact provider/model selector", (t) => {
 	const config = clone();
 	config.profiles.builder.model = "qwen3";

@@ -242,6 +242,10 @@ async function runWorker(context, { identity, opened, repair, review }) {
 		review,
 		sessionArgs: binding.args,
 		sessionEnv: binding.exports,
+		// §6.6's deadline: the profile's declared ceiling, or the lifecycle's
+		// default when none is — never absent, because an absent deadline made
+		// the timeout row unreachable and a hung worker was waited on forever.
+		timeoutMs: profile.attemptTimeoutMs,
 		recheckContext: {
 			executable: context.executable,
 			expect: context.config.package?.expect ?? null,

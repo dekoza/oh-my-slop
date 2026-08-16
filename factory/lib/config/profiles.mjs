@@ -18,8 +18,8 @@ const PROFILE_KINDS = Object.freeze(["pi", "claude"]);
 
 /** Per kind, because a flag the other harness cannot take is dormant config. */
 const PROFILE_KEYS = Object.freeze({
-	pi: Object.freeze(["kind", "model", "thinking", "startupTimeoutMs"]),
-	claude: Object.freeze(["kind", "model", "effort", "startupTimeoutMs"]),
+	pi: Object.freeze(["kind", "model", "thinking", "startupTimeoutMs", "attemptTimeoutMs"]),
+	claude: Object.freeze(["kind", "model", "effort", "startupTimeoutMs", "attemptTimeoutMs"]),
 });
 
 const THINKING_LEVELS = Object.freeze(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
@@ -131,6 +131,12 @@ function validateProfile(name, profile, configPath) {
 
 	if (profile.startupTimeoutMs !== undefined) {
 		validated.startupTimeoutMs = requireInteger(profile.startupTimeoutMs, `${at}.startupTimeoutMs`, configPath);
+	}
+
+	// §6.6's attempt deadline. Declared per profile because the honest ceiling
+	// differs by model and role; absent, the lifecycle's default applies.
+	if (profile.attemptTimeoutMs !== undefined) {
+		validated.attemptTimeoutMs = requireInteger(profile.attemptTimeoutMs, `${at}.attemptTimeoutMs`, configPath);
 	}
 
 	return Object.freeze(validated);

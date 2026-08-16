@@ -12,6 +12,7 @@ import {
 	awaitCompletion,
 	cancelAttempt,
 	decideOutcome,
+	DEFAULT_ATTEMPT_TIMEOUT_MS,
 	readLiveness,
 	SETTLE_GRACE_MS,
 } from "../../factory/lib/worker/lifecycle.mjs";
@@ -244,6 +245,28 @@ function completedOutbox(identity) {
 		commits: ["a1b2c3d"],
 	};
 }
+
+test("an omitted deadline is the default attempt timeout, never an unreachable one (§6.6)", async (t) => {
+	// Proven live: production composed the wait without a timeoutMs, the
+	// deadline computed as NaN, and §6.6's timeout row was unreachable — a
+	// worker that hung mid-turn would have been waited on forever.
+	const context = await waiting(t);
+	let clock = FIXED_NOW;
+
+	const result = await context.wait({
+		timeoutMs: undefined,
+		now: () => clock,
+		sleep: async () => {
+			clock += 300_000;
+			if (clock - FIXED_NOW > 3 * DEFAULT_ATTEMPT_TIMEOUT_MS) {
+				throw new Error("the wait sailed past three default deadlines without timing out");
+			}
+		},
+	});
+
+	assert.equal(result.outcome, "timeout");
+	assert.ok(clock - FIXED_NOW >= DEFAULT_ATTEMPT_TIMEOUT_MS, "the default deadline was not honoured");
+});
 
 test("an idle seed is a state, not a transition: the just-prompted worker gets its turn before silence counts (§6.6)", async (t) => {
 	// Proven live (run 01M068G2…): a freshly prompted pi agent still reads

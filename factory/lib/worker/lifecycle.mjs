@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 import { agentAlive, FACTORY_ATTEMPT_TOKEN, transcriptPointerOf } from "../controller/herdr-control.mjs";
 import { fromPane, watchPane } from "../controller/herdr-events.mjs";
@@ -73,6 +73,18 @@ export function lifecycleOperations({ runtime, agentKind = runtime }, defaults =
 /** How long to keep asking Herdr for a transcript pointer after launch (§6.5). */
 const TRANSCRIPT_BACKOFF_MS = Object.freeze([250, 500, 1_000, 2_000, 4_000]);
 
+/**
+ * How long one prompt submission gets to be visibly taken up before it is
+ * re-sent, and how many submissions are made before the launch is a typed
+ * failure. Measured live: Herdr's `agent prompt` answered exit 0 while Claude
+ * was still initializing, the text went nowhere, and the pane sat at an empty
+ * prompt with nobody watching (§6.4). "Taken up" is the worker leaving its
+ * resting state or the outbox already existing — the same two signals §6.6
+ * trusts, read earlier.
+ */
+const PROMPT_ACCEPT_BACKOFF_MS = Object.freeze([250, 500, 1_000, 2_000, 3_000, 4_000]);
+const PROMPT_SUBMISSIONS = 3;
+
 /** How often the wait re-reads the outbox. The Herdr half is subscribed, not sampled. */
 const OUTBOX_POLL_INTERVAL_MS = 1_000;
 
@@ -91,6 +103,14 @@ const SETTLED_STATUSES = Object.freeze(["idle", "done", "released", "exited"]);
 
 /** The two that mean the worker is gone rather than waiting for input. */
 const GONE_STATUSES = Object.freeze(["released", "exited"]);
+
+/**
+ * §6.6's deadline when nobody declared one. Thirty minutes: an order of
+ * magnitude over the longest attempt observed live (~3 minutes), and short
+ * enough that a worker hung mid-turn surrenders its lane the same night
+ * rather than never. A profile declares `attemptTimeoutMs` to move it.
+ */
+export const DEFAULT_ATTEMPT_TIMEOUT_MS = 1_800_000;
 
 /**
  * Launch one attempt (§6.4, §6.5).
@@ -308,8 +328,7 @@ export async function launchWorker(
 		...recheckContext,
 	});
 
-	const prompted = await herdr.prompt({ target: agent, text: prompt });
-	if (!prompted.ok) throw launchFailure(prompted, identity);
+	const submissions = await submitFirstPrompt({ herdr, agent, identity, prompt, outboxPath, sleep });
 
 	// §6.5's correlation record, last: it is the marker that the launch
 	// completed, so a controller that died anywhere above leaves an attempt a
@@ -336,6 +355,9 @@ export async function launchWorker(
 			resolved_model: observedModel,
 			package_rev: packageRev,
 			skill_source: role.entrySkill,
+			// Evidence of delivery, not just of submission: how many times the
+			// deterministic prompt had to be sent before the worker took it up.
+			prompt_submissions: submissions,
 		},
 	});
 
@@ -395,7 +417,7 @@ export async function awaitCompletion(
 		agent,
 		socket,
 		herdr,
-		timeoutMs,
+		timeoutMs = DEFAULT_ATTEMPT_TIMEOUT_MS,
 		actor,
 		now,
 		sleep = delay,
@@ -697,6 +719,51 @@ function attemptEnvironment({ identity, payload }) {
 		FACTORY_OUTBOX: payload.outbox,
 		FACTORY_WORKTREE: payload.worktree,
 	};
+}
+
+/**
+ * §6.4's first prompt, **delivered rather than merely submitted**.
+ *
+ * Herdr's `agent prompt` reports that the text was written into the pane, not
+ * that the harness took it: an agent still initializing answers exit 0 and
+ * swallows the submission whole — observed live, and the pane then sits idle
+ * with nobody watching while §6.6's wait sees only a worker that never
+ * starts. So each submission is followed by a short watch for the prompt
+ * being *taken up* — the worker leaving its resting state, or the outbox
+ * already existing (a turn can finish between two reads) — and the same
+ * deterministic prompt is re-sent a bounded number of times, which is exactly
+ * what a controller re-entry after a crash already does. A prompt never taken
+ * up is a typed launch failure: the worker never worked, so the attempt is
+ * the automation's to answer for, not the attempt's.
+ *
+ * @returns {Promise<number>} how many submissions delivery took
+ */
+async function submitFirstPrompt({ herdr, agent, identity, prompt, outboxPath, sleep }) {
+	let last = null;
+
+	for (let submission = 1; submission <= PROMPT_SUBMISSIONS; submission += 1) {
+		const sent = await herdr.prompt({ target: agent, text: prompt });
+		if (!sent.ok) throw launchFailure(sent, identity);
+
+		for (const wait of PROMPT_ACCEPT_BACKOFF_MS) {
+			if (existsSync(outboxPath)) return submission;
+
+			const found = await herdr.paneForAttempt(identity.attempt);
+			last = found.ok ? (found.pane?.agent_status ?? "no-pane") : "unanswerable";
+			if (found.ok && found.pane !== null && !SETTLED_STATUSES.includes(found.pane.agent_status)) {
+				return submission;
+			}
+			await sleep(wait);
+		}
+	}
+
+	throw new FactoryWorkerError(
+		"worker-launch-failed",
+		`The first prompt was submitted ${PROMPT_SUBMISSIONS} times and never taken up: the pane still reads ` +
+			`"${last}" and no outbox exists. The worker never worked, so attempt ${identity.attempt} is an automation ` +
+			`failure rather than anything the attempt can be blamed for (§6.4). Nothing was closed (§13.B).`,
+		{ ...identity, submissions: PROMPT_SUBMISSIONS, last_status: last },
+	);
 }
 
 /**

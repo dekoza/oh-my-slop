@@ -86,6 +86,9 @@ export function piTransport({
  * @param {(input: { pane: object, text: string }) => Promise<void> | void} [options.onPrompt]
  *   the worker turn a production-path test drives after the real launch submits
  *   its prompt; the callback writes the outbox and, for builders, commits work
+ * @param {number} [options.swallowPrompts] how many `agent prompt` submissions
+ *   the harness swallows whole — exit 0, nothing changes in the pane — the
+ *   failure shape observed live when Claude was still initializing
  */
 export function fakeHerdr({
 	agentStatus = "working",
@@ -93,10 +96,12 @@ export function fakeHerdr({
 	refuse = {},
 	ignoresQuitKeys = false,
 	onPrompt = null,
+	swallowPrompts = 0,
 } = {}) {
 	const calls = [];
 	const panes = [];
 	let nextPane = 1;
+	let prompts = 0;
 
 	const run = async (args) => {
 		calls.push(args);
@@ -150,8 +155,12 @@ export function fakeHerdr({
 		}
 		if (command === "agent prompt") {
 			const pane = panes.find((entry) => entry.agent !== undefined);
+			prompts += 1;
+			if (prompts <= swallowPrompts) return json({ submitted: true });
 			await onPrompt?.({ pane, text: args[3] });
-			if (pane !== undefined) pane.agent_status = "idle";
+			// With a driven turn the agent has already finished it (idle); without
+			// one the prompt was merely taken up and the agent is now busy.
+			if (pane !== undefined) pane.agent_status = onPrompt === null ? "working" : "idle";
 			return json({ submitted: true });
 		}
 		if (command === "pane list") return json({ panes: [...panes] });

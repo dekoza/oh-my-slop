@@ -613,6 +613,13 @@ invocation (`/skill:<name>` for pi, `/oh-my-slop:<name>` for Claude) plus a type
 carrying the ticket snapshot, attempt identity, worktree path, outbox path, and prohibitions
 (no push, merge, close, or relabel).
 
+**The first prompt is delivered, not merely submitted.** A harness still initializing can
+acknowledge the submission and swallow it whole (observed live), leaving an idle pane nobody is
+watching. The launch therefore confirms the prompt was *taken up* — the worker left its resting
+state, or the outbox already exists — and re-sends the same deterministic prompt a bounded
+number of times before correlation; resubmissions are recorded on `attempt.correlated` as
+evidence, and a prompt never taken up is a typed `worker-launch-failed` automation failure.
+
 **Workers get no tracker credentials.** The Gitea instance rejects all unauthenticated API
 calls, so the controller **snapshots ticket body plus relevant comments into the attempt
 context at claim time** — deterministic evidence of exactly what the worker saw, zero
@@ -660,6 +667,10 @@ wrote-but-hung, and invalid-result **distinct typed outcomes**.
 
 **Controller-derived outcomes are never worker-writable:** `automation-failure` · `timeout` ·
 `invalid-result` · `no-result` · `dead-worker` · `wrote-but-hung` · `cancelled`.
+
+**Every attempt has a finite deadline.** A profile may declare `attemptTimeoutMs`; absent one,
+a code-owned default applies — an unset deadline would make the `timeout` row unreachable and a
+worker hung mid-turn would hold its lane forever (observed live as an unbounded wait).
 
 **Every outbox status carries the full `{run, ticket, phase, attempt}` tuple and the schema
 version.** Correlation and idempotency identity are mandatory, never optional.

@@ -10,6 +10,7 @@ import { runStream } from "../../factory/lib/state/events.mjs";
 import { validateRole } from "../../factory/lib/worker/adapter.mjs";
 import { attemptManifestPath, attemptOutboxPath, attemptPromptPath, herdrAgentName } from "../../factory/lib/worker/attempt.mjs";
 import { closureFinding } from "../../factory/lib/worker/closure.mjs";
+import { FactoryWorkerError } from "../../factory/lib/worker/errors.mjs";
 import { launchWorker } from "../../factory/lib/worker/lifecycle.mjs";
 import { PIPELINE_ROLES } from "../../factory/lib/worker/roles.mjs";
 import { fakeHerdr } from "./helpers/factory-worker.mjs";
@@ -103,6 +104,9 @@ test("a launch opens an interactive pane, stamps it, starts the agent, then prom
 		"agent start",
 		"pane list",
 		"agent prompt",
+		// Delivery confirmation (§6.4): the prompt is not called delivered until
+		// the pane shows the worker took it up.
+		"pane list",
 	]);
 	assert.equal(launched.pane, "w1:p1");
 	assert.equal(launched.agent, herdrAgentName(context.attempt));
@@ -184,6 +188,33 @@ test("the first prompt is the rendered template, and the pane cwd is the worktre
 });
 
 // ── The record (§6.5) ────────────────────────────────────────────────────────
+
+test("a submission the harness swallowed is re-sent, and the resubmission is recorded (§6.4)", async (t) => {
+	// Proven live (run 01M068R8ND…): Claude answered `agent prompt` with exit 0
+	// while still initializing, took nothing, and sat at an empty prompt with
+	// nobody watching. The launch now confirms the worker left its resting
+	// state — or already wrote — before calling the prompt delivered.
+	const context = await launchable(t, { herdr: fakeHerdr({ agentStatus: "idle", swallowPrompts: 1 }) });
+
+	const launched = await context.launch();
+
+	assert.equal(context.herdr.calls.filter((args) => args.slice(0, 2).join(" ") === "agent prompt").length, 2);
+	assert.equal(launched.agent, herdrAgentName(context.attempt));
+	const [event] = context.store.readEvents({ kind: "attempt.correlated" });
+	assert.equal(event.payload.prompt_submissions, 2, "the resubmission is evidence, recorded where the launch is");
+});
+
+test("a prompt never taken up is a typed launch failure, not a forever-idle pane (§6.4)", async (t) => {
+	const context = await launchable(t, { herdr: fakeHerdr({ agentStatus: "idle", swallowPrompts: Infinity }) });
+
+	await assert.rejects(context.launch(), (error) => {
+		assert.ok(error instanceof FactoryWorkerError);
+		assert.equal(error.reason, "worker-launch-failed");
+		assert.match(error.message, /prompt/i);
+		return true;
+	});
+	assert.deepEqual(context.store.readEvents({ kind: "attempt.correlated" }), [], "a launch that never delivered is not correlated");
+});
 
 test("the mint is recorded before any attempt-scoped effect (§6.5)", async (t) => {
 	const context = await launchable(t);
