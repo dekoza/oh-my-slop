@@ -282,6 +282,11 @@
       }
     }
   },
+  "worker": {
+    "piExtensions": [
+      "~/.pi/agent/git/github.com/dekoza/oh-my-slop/extensions/local-router"
+    ]
+  },
   "budgets": {
     "repair": 1,
     "freshRetry": 1,
