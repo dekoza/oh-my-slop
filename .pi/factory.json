@@ -44,8 +44,8 @@
     },
     "local": {
       "kind": "pi",
-      "model": "local/thinkingcap-qwen3.6-27b",
-      "thinking": "high",
+      "model": "local/qwen3.8-27b",
+      "thinking": "medium",
       "startupTimeoutMs": 180000
     }
   },
