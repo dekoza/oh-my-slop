@@ -45,7 +45,7 @@ async function executing(t, { ticket = 42 } = {}) {
 		run,
 		ticket,
 		attempt: `${run}-t${ticket}-a1`,
-		walk: (phases) =>
+		walk: (phases, overrides = {}) =>
 			walkStages(store, {
 				hold,
 				run,
@@ -54,6 +54,7 @@ async function executing(t, { ticket = 42 } = {}) {
 				phases,
 				actor: "controller",
 				now: () => FIXED_NOW,
+				...overrides,
 			}),
 		resolve: (phase, outcome, overrides = {}) =>
 			resolveStage(store, {
@@ -171,7 +172,7 @@ test("a failed verify goes straight to repair: the reviewer never sees failing c
 	await assert.rejects(
 		() => context.walk(phases),
 		(error) => {
-			assert.equal(error.reason, "not-yet-implemented");
+			assert.equal(error.reason, "retry-unplannable");
 			assert.equal(error.details.action, "repair");
 			assert.equal(error.details.budget, "repair");
 			return true;
@@ -179,6 +180,167 @@ test("a failed verify goes straight to repair: the reviewer never sees failing c
 	);
 
 	assert.deepEqual(calls, ["implement", "harvest", "verify"], "review was never entered");
+});
+
+// ── §8.5's two tiers, as the walk reaches them ───────────────────────────────
+
+/**
+ * A retry seam that mints the next attempt, as `pipeline/repair.mjs` plans it —
+ * and records what the walk handed it, because §8.5's tier, §8.10's budget and
+ * the failure's own evidence are the whole of what a repair is planned from.
+ */
+function retrying(context, { attempts = 2 } = {}) {
+	const asked = [];
+
+	return {
+		asked,
+		nextAttempt: async (request) => {
+			asked.push(request);
+			// Deterministic, as `planRetry` is: one ordinal past the attempt being
+			// answered, so a replay of the same failure plans the same attempt.
+			const ordinal = Number.parseInt(request.attempt.split("-a").at(-1), 10) + 1;
+			if (ordinal > attempts) {
+				// §8.6's budget lives in the seam, and this stands in for its refusal
+				// until #111 counts: what the walk needs is for the seam to stop.
+				throw new Error("budget spent");
+			}
+			const attempt = `${context.run}-t${context.ticket}-a${ordinal}`;
+			if (context.store.readAttempts({ runId: context.run }).every((row) => row.attempt_id !== attempt)) {
+				context.store.append(attemptLaunched(context.run, context.ticket, ordinal));
+			}
+			return { attempt };
+		},
+	};
+}
+
+test("a repair re-enters implement under a new attempt, never the one that failed (§8.5)", async (t) => {
+	const context = await executing(t);
+	const seam = retrying(context);
+	const seen = [];
+	const phases = {
+		implement: async ({ attempt }) => {
+			seen.push(attempt);
+			return { outcome: "completed" };
+		},
+		harvest: async () => ({ outcome: "passed" }),
+		verify: async () => ({ outcome: seen.length === 1 ? "failed" : "passed" }),
+	};
+
+	await assert.rejects(
+		() => context.walk(phases, { nextAttempt: seam.nextAttempt }),
+		(error) => {
+			// The repaired attempt walked clean through to review, which is #112's.
+			assert.equal(error.reason, "not-yet-implemented");
+			assert.equal(error.details.phase, "review");
+			return true;
+		},
+	);
+
+	assert.deepEqual(seen, [context.attempt, `${context.run}-t${context.ticket}-a2`]);
+	assert.deepEqual(
+		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).map((step) => [
+			step.phase,
+			step.outcome,
+			step.attempt,
+		]),
+		[
+			["implement", "completed", context.attempt],
+			["harvest", "passed", context.attempt],
+			["verify", "failed", context.attempt],
+			["implement", "completed", `${context.run}-t${context.ticket}-a2`],
+			["harvest", "passed", `${context.run}-t${context.ticket}-a2`],
+			["verify", "passed", `${context.run}-t${context.ticket}-a2`],
+		],
+		"the chain is a list across attempts: the repair is on it, and the failure it answers still is",
+	);
+});
+
+test("the walk hands the seam the tier, the budget, and the failure's own evidence (§8.5, §8.10)", async (t) => {
+	const context = await executing(t);
+	const seam = retrying(context, { attempts: 1 });
+	const { phases } = answering({
+		implement: "completed",
+		harvest: "passed",
+		verify: { outcome: "failed", detail: { red: ["pytest"] } },
+	});
+
+	await assert.rejects(() => context.walk(phases, { nextAttempt: seam.nextAttempt }), /budget spent/);
+
+	assert.deepEqual(seam.asked, [
+		{
+			tier: "repair",
+			budget: "repair",
+			phase: "verify",
+			outcome: "failed",
+			detail: { red: ["pytest"] },
+			attempt: context.attempt,
+			row: routeOutcome("verify", "failed"),
+		},
+	]);
+});
+
+test("an invalid result is a fresh-retry, and it is the seam that is told which tier (§8.10)", async (t) => {
+	const context = await executing(t);
+	const seam = retrying(context, { attempts: 1 });
+	const { phases } = answering({ implement: "invalid-result" });
+
+	await assert.rejects(() => context.walk(phases, { nextAttempt: seam.nextAttempt }), /budget spent/);
+
+	assert.equal(seam.asked[0].tier, "fresh-retry");
+	assert.equal(seam.asked[0].budget, "repair", "§8.6 charges the product budget for a worker that wrote nothing readable");
+});
+
+test("a re-entered walk asks the seam again, and the seam answers with the same attempt (§8.10)", async (t) => {
+	const context = await executing(t);
+	const seam = retrying(context);
+	const first = answering({ implement: "completed", harvest: "passed", verify: "failed" });
+	await assert.rejects(() => context.walk(first.phases, { nextAttempt: seam.nextAttempt }), /budget spent/);
+	const asked = seam.asked.length;
+
+	// The controller died after the second attempt's failed verify. Every stage is
+	// recorded, so the replay re-runs no phase — and reaches the same tier
+	// decisions again, in the same order.
+	const second = answering({ implement: "completed", harvest: "passed", verify: "failed" });
+	await assert.rejects(() => context.walk(second.phases, { nextAttempt: seam.nextAttempt }), /budget spent/);
+
+	assert.deepEqual(second.calls, [], "a recorded stage is not run again");
+	assert.deepEqual(
+		seam.asked.slice(asked),
+		seam.asked.slice(0, asked),
+		"the seam is asked again on every replay and asked the same question, so it is what must be idempotent",
+	);
+});
+
+test("a walk with no retry seam refuses rather than carrying on (§8.10)", async (t) => {
+	const context = await executing(t);
+	const { phases } = answering({ implement: "worker-failed" });
+
+	await assert.rejects(
+		() => context.walk(phases),
+		(error) => {
+			assert.equal(error.reason, "retry-unplannable");
+			assert.equal(error.details.at, "seam");
+			// The plausible fallthrough — carry on to harvest — is how a failing
+			// attempt becomes a publication.
+			assert.equal(error.details.action, "repair");
+			return true;
+		},
+	);
+});
+
+test("a seam that hands back the attempt it was given is refused (§8.5)", async (t) => {
+	const context = await executing(t);
+	const { phases } = answering({ implement: "worker-failed" });
+
+	await assert.rejects(
+		() => context.walk(phases, { nextAttempt: async ({ attempt }) => ({ attempt }) }),
+		(error) => {
+			assert.equal(error.reason, "retry-unplannable");
+			assert.equal(error.details.at, "seam");
+			assert.match(error.message, /fresh attempt/);
+			return true;
+		},
+	);
 });
 
 test("a needs-human attempt pauses under the worker's own reason class (§8.10, §14.18)", async (t) => {

@@ -586,8 +586,10 @@ function countersSection(store, unresolved) {
 
 	return Object.freeze({
 		tickets: Object.freeze(tickets),
-		missing: "the two repair tiers (#110) and the budgets and circuit breaker (#111)",
-		spec: "§8.5, §8.6",
+		// §8.5's two tiers are built (#110), so what is missing from *this* section is
+		// only the counting: the three budgets and the circuit breaker that spend them.
+		missing: "the budgets and the circuit breaker (#111)",
+		spec: "§8.6",
 	});
 }
 
