@@ -208,6 +208,15 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
  * `push-failed`, which §8.10 retries on the automation budget: the publication
  * did not happen and nothing about the work is implicated.
  *
+ * **`branch` is the *builder* attempt's branch, and `attempt` may not be its
+ * attempt.** §7.3 derives the branch from the attempt that built the work, while
+ * §8.10's `push-failed` retry re-enters this phase under a fresh attempt id
+ * having rebuilt nothing — so a caller planning that retry passes the branch it
+ * is publishing and the attempt it is walking, and they differ. The contract is
+ * stated here because nothing enforces it: a caller that derived the branch from
+ * the walking attempt would publish a branch that does not exist. What an
+ * automation retry of a workerless phase *should* mint is #146's.
+ *
  * @param {object} store an open store
  * @param {object} clone the private clone's handle
  * @param {object} context everything `integrationVerify` takes, plus:
@@ -223,19 +232,28 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
 export async function integratePublish(store, clone, context) {
 	const { hold, leases, run, ticket, attempt, branch, maxRebases = 3 } = context;
 
-	// **Asked before anything else, and before the lease.** §14.12: a published
-	// branch is never touched again. A re-entry that went straight into the loop
-	// would find the base had moved since publication — a human merging the PR
-	// moves it — and would rebase and re-verify a branch that is already out
-	// there, meeting §4.5's refusal only after the rewrite. Asking the record what
-	// already happened is what makes the invariant structural.
-	const already = alreadyPublished(store, { run, ticket, attempt, branch });
-	if (already !== null) return already;
-
 	// What the verify phase attested, read from the record rather than passed in:
 	// §14.13 makes the attested commit a fact of durable state, and a caller's
 	// copy of it is a second opinion about which commit was measured.
 	let verified = attestedByVerify(store, { run, ticket, attempt });
+
+	// **§9.5's loop is skipped whole when the publication already landed**, and
+	// the phase goes straight to the steps that follow the push (§14.12: a
+	// published branch is never touched again). A re-entry that went into the loop
+	// would find the base had moved — a human *merging this very PR* moves it —
+	// and would rebase and re-verify a branch that is already out there, meeting
+	// §4.5's refusal only after the rewrite.
+	//
+	// It skips the loop and **not** the publication: the sweep §7.5 owes and
+	// §12.7's reclamation both come after the PR is created, so a crash between
+	// them and the resolution is exactly what a re-entry exists to finish. Nothing
+	// in `publish` fetches, rebases, or moves a ref; every mutation in it is an
+	// effect that has already resolved or has not happened yet.
+	if (publicationLanded(store, { run, ticket, attempt, branch })) {
+		return underIntegrationLease(leases, { hold, run, ticket, attempt, span: "integrate+publish" }, () =>
+			publish(store, clone, { ...context, verified }),
+		);
+	}
 
 	for (let pass = 1; ; pass += 1) {
 		const settled = await underIntegrationLease(leases, { hold, run, ticket, attempt, span: "integrate+publish" }, async () => {
@@ -475,20 +493,19 @@ function attestedByVerify(store, { run, ticket, attempt }) {
 }
 
 /**
- * The publication this attempt already made, or `null` for one that has not.
+ * Whether this attempt's branch is already out there under an open pull request.
  *
  * Read off the two effects that *are* the publication — the push and the pull
  * request — rather than off a stage record, because those are the mutations
  * outside the database and they are what a crash between the world and the
- * journal leaves half-done. Both resolved means the branch is out there and the
- * PR is open, and there is nothing left for this phase to do but say so again.
+ * journal leaves half-done.
  *
- * A push resolved with no PR behind it is **not** a publication: §7.5's step 6
- * has not happened, so the loop below runs and its check-then-create adopts the
- * branch that is already pushed. That asymmetry is the right way round — the
- * expensive, destructive half is the one being skipped.
+ * **Both**, not either. A push resolved with no PR behind it has not published
+ * anything a human can act on: §7.5's step 6 has not happened, and the loop's
+ * check-then-create adopts the branch that is already pushed. The asymmetry is
+ * the right way round — what the answer skips is the destructive half.
  */
-function alreadyPublished(store, { run, ticket, attempt, branch }) {
+function publicationLanded(store, { run, ticket, attempt, branch }) {
 	const pushed = effectByKey(store, effectKey({ run, ticket, phase: PHASE_INTEGRATE, attempt, operation: "push", operand: branch }));
 	const opened = effectByKey(
 		store,
@@ -496,27 +513,8 @@ function alreadyPublished(store, { run, ticket, attempt, branch }) {
 		// attempt (`tracker/mutations.mjs`), so the PR's key names no attempt.
 		effectKey({ run, ticket, phase: PHASE_IMPLEMENT, attempt: null, operation: "pr-create", operand: branch }),
 	);
-	if (pushed?.state !== "resolved" || opened?.state !== "resolved") return null;
 
-	const attested = effectByKey(
-		store,
-		effectKey({ run, ticket, phase: PHASE_INTEGRATE, attempt, operation: "attestation-write", operand: null }),
-	);
-
-	return answer("integrated", {
-		pr: { number: opened.result.number, url: opened.result.html_url },
-		superseded: [],
-		head: pushed.result.sha,
-		branch,
-		attestation:
-			attested?.state === "resolved"
-				? { algorithm: attested.result.algorithm, digest: attested.result.digest }
-				: null,
-		branch_cleanup_eligible: true,
-		// Named, so an operator reading a lane's second answer knows why it is
-		// identical to the first rather than wondering whether it published twice.
-		state: "already-published",
-	});
+	return pushed?.state === "resolved" && opened?.state === "resolved";
 }
 
 /** One reading of a verify detail, shared by the record and the loop's re-verify. */

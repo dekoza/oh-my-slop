@@ -11,13 +11,13 @@ import { createProbeRegistry } from "../../factory/lib/reconcile/probes.mjs";
 import { withTrackerProbes } from "../../factory/lib/reconcile/tracker-probes.mjs";
 import { evidenceRef, integrationWorktreePath } from "../../factory/lib/git/isolation.mjs";
 import { integratePublish, integrationVerify } from "../../factory/lib/pipeline/integration.mjs";
-import { parsePullBody } from "../../factory/lib/tracker/pulls.mjs";
+import { parsePullBody, renderPullBody } from "../../factory/lib/tracker/pulls.mjs";
 import { resolveStage } from "../../factory/lib/pipeline/stages.mjs";
 import { LEASE_NAMES, openLeases } from "../../factory/lib/state/leases.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
 import { commitInto, moveRemoteBase, workedAttempt } from "./helpers/factory-git.mjs";
-import { fakeGitea, giteaIssue } from "./helpers/factory-tracker.mjs";
+import { fakeGitea, giteaIssue, giteaPull } from "./helpers/factory-tracker.mjs";
 import { FIXED_NOW, manualTimers } from "./helpers/factory-store.mjs";
 
 /**
@@ -33,7 +33,7 @@ const git = (dir, args) => execFileSync("git", ["-C", dir, ...args], { encoding:
 const GREEN = [{ name: "unit", command: "git rev-parse HEAD", timeout: 60, severity: "required", expectedFailureExitCodes: [1] }];
 const RED = [{ name: "unit", command: "exit 1", timeout: 60, severity: "required", expectedFailureExitCodes: [1] }];
 
-async function integrating(t, options = {}) {
+async function integrating(t, { status = {}, ...options } = {}) {
 	const fixture = await workedAttempt(t, options);
 	const { store } = fixture;
 	const leases = openLeases(store, { now: () => FIXED_NOW });
@@ -41,7 +41,9 @@ async function integrating(t, options = {}) {
 	hold.recordStartupReconcile();
 	hold.adopt(fixture.run);
 
-	const gitea = fakeGitea({ issues: [giteaIssue({ number: fixture.ticket, title: "feat: the work" })], pulls: [] });
+	// `status` is kept by reference, so a test can refuse one write, let the phase
+	// die on it, and then lift the refusal for the re-entry.
+	const gitea = fakeGitea({ issues: [giteaIssue({ number: fixture.ticket, title: "feat: the work" })], pulls: [], status });
 
 	const context = {
 		hold,
@@ -347,6 +349,83 @@ test("a published branch is never touched again: a second head under the same ke
 	assert.equal(
 		fixture.store.read((db) => db.prepare("SELECT count(*) AS n FROM effect WHERE operation = 'push'").get()).n,
 		1,
+	);
+});
+
+test("a crash between the PR and the sweep leaves one live PR once the re-entry finishes (§7.5)", async (t) => {
+	const refusing = {};
+	const fixture = await integrating(t, { status: refusing });
+	const staleNumber = 7050;
+	// A pull request a previous run opened from a previous attempt's branch, with
+	// a body that parses as ours — which is what makes it the sweep's to close.
+	const staleAttempt = `${fixture.run}-t${fixture.ticket}-a9`;
+	fixture.gitea.pulls.push(
+		giteaPull({
+			number: staleNumber,
+			headBranch: `factory/t${fixture.ticket}/a${staleAttempt}`,
+			body: renderPullBody({
+				identity: { run: fixture.run, ticket: fixture.ticket, attempt: staleAttempt },
+				base_commit: fixture.base.commit,
+				package_revision: null,
+				branch: `factory/t${fixture.ticket}/a${staleAttempt}`,
+				head: fixture.head,
+				evidence: [],
+				attestation: { algorithm: "sha256", digest: "0".repeat(64), bytes: 1 },
+				summary: "an earlier attempt that did not finish",
+				advisory: [],
+			}),
+		}),
+	);
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+
+	// The crash: the pull request is created and the sweep's first write is
+	// refused, so the phase throws with two open PRs on one ticket.
+	refusing[`/issues/${staleNumber}/comments`] = 500;
+	await assert.rejects(integratePublish(fixture.store, fixture.clone, fixture.context));
+	assert.equal(fixture.gitea.pulls.filter((pull) => pull.state === "open").length, 2);
+
+	// The re-entry finishes the sweep rather than answering `integrated` over it.
+	delete refusing[`/issues/${staleNumber}/comments`];
+	const integrated = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(integrated.outcome, "integrated");
+	assert.deepEqual(integrated.detail.superseded.map((entry) => entry.number), [staleNumber]);
+	assert.equal(fixture.gitea.pulls.find((pull) => pull.number === staleNumber).state, "closed");
+	assert.equal(fixture.gitea.pulls.filter((pull) => pull.state === "open").length, 1);
+	assert.equal(fixture.gitea.pulls.length, 2, "the re-entry opened a second pull request");
+});
+
+test("a crash before §12.7's reclamation is finished by the re-entry, not answered over", async (t) => {
+	const fixture = await integrating(t);
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+
+	// The crash: everything through the pull request lands, and the process dies
+	// on the first worktree removal.
+	let crashed = false;
+	const dying = {
+		...fixture.clone,
+		removeWorktree: async (what) => {
+			if (crashed) return fixture.clone.removeWorktree(what);
+			crashed = true;
+			throw new Error("the controller died reclaiming a worktree");
+		},
+	};
+	await assert.rejects(integratePublish(fixture.store, dying, fixture.context));
+	assert.equal(existsSync(fixture.worktreePath), true);
+	assert.equal(existsSync(integrationWorktreePath(fixture.store.storeDir, fixture.attempt)), true);
+
+	const integrated = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(integrated.outcome, "integrated");
+	assert.equal(existsSync(fixture.worktreePath), false, "the attempt worktree survived an integrated success");
+	assert.equal(existsSync(integrationWorktreePath(fixture.store.storeDir, fixture.attempt)), false);
+	assert.equal(
+		fixture.store.read((db) =>
+			db.prepare("SELECT state FROM effect WHERE operation = 'worktree-delete'").get(),
+		).state,
+		"resolved",
 	);
 });
 

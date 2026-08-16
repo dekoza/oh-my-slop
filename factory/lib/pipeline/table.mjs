@@ -207,13 +207,22 @@ export const OUTCOME_TABLE = Object.freeze([
 	 * §9.5's loop re-rebased onto a base that moved, and the required set came
 	 * back red on the result (§20, #113).
 	 *
-	 * **Dispose, not retry, and no budget:** the same base conflicts the same way,
-	 * so a retry buys a second identical answer — which is also what keeps §15's
-	 * case 10 intact, since the loop that re-rebases spends nothing and this is
-	 * the exit from it rather than another lap. It carries a **reason class and no
-	 * fault**, so §14.18 settles it `failed` while §8.6's "product-level outcomes
-	 * never trip the breaker" holds by construction rather than by a rule anyone
-	 * has to remember.
+	 * **Why this disposes where `verify × failed` repairs**, since the two are the
+	 * same function reporting the same fact about the same kind of commit: what
+	 * differs is what has already been spent and what the red result is *about*. A
+	 * red verify is the worker's own work failing at its own base, and §8.5's
+	 * repair is scoped to exactly that. Here the work passed its verify and **both
+	 * review axes** at the base it was built on, and what changed is not the work
+	 * but the world it lands in — a repair would restart the whole pipeline, two
+	 * model calls included, to answer a question nobody asked the worker. §8.9's
+	 * `failed` is "the controller giving up needs an investigation", and deciding
+	 * between adapting to the new base and redoing the ticket is one.
+	 *
+	 * **No budget**, which is what keeps §15's case 10 intact: the loop that
+	 * re-rebases spends nothing, and this is the exit from it rather than another
+	 * lap. And a **reason class with no fault**, so §14.18 settles it `failed`
+	 * while §8.6's "product-level outcomes never trip the breaker" holds by
+	 * construction rather than by a rule anyone has to remember.
 	 */
 	row({ phase: PHASE_INTEGRATE, outcome: "integration-red", action: STAGE_ACTIONS.dispose, reasonClass: "integration-red" }),
 

@@ -59,7 +59,7 @@ const BLOCK_MARKER = "factory-pull";
  */
 export function pullTitle({ ticket, title }) {
 	const trimmed = (title ?? "").trim();
-    const suffix = `(#${ticket})`;
+	const suffix = `(#${ticket})`;
 	if (trimmed === "") return `Ticket ${ticket} ${suffix}`;
 	return trimmed.endsWith(suffix) ? trimmed : `${trimmed} ${suffix}`;
 }
@@ -201,6 +201,15 @@ export async function publishPullRequest(
  * The sweep is over `factory/t<ticket>/`, which §7.3 makes derivable from the
  * ticket alone — so it finds a PR opened by a *previous run* whose state this
  * one never saw, which is the case that motivates the sweep at all.
+ *
+ * **"Dead" is structural rather than probed.** §7.5 scopes the sweep to a stale
+ * PR from a *dead earlier attempt*, and every candidate here is one by
+ * construction: a ticket execution holds §9.4's ticket slot for its whole life,
+ * so an attempt of this ticket that is not the one publishing has already ended.
+ * There is nothing left to ask the world. This is also why the sweep is not
+ * §14.12's forbidden "auto-closing drifted PRs" — that names a *published* PR
+ * that turned conflicted, which stays the human's call and which nothing here
+ * touches, since the PR being published is excluded by number.
  *
  * A PR whose body is not ours is left alone. A human may open a pull request
  * from a factory branch — to fix it up by hand, which §7.6's redo path

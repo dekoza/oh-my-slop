@@ -817,6 +817,13 @@ Controller-enforced, and deliberately split by fault attribution:
 
 Only the controller integrates, in a controller-owned integration worktree.
 
+> **Steps 1–4 execute at §8.1's `verify` phase, and steps 5–6 at its `integrate` phase.**
+> §9.5 splits this sequence across the review and takes the integration lease twice, which is
+> what puts the rebase *before* the checks — so §8.2's "at the exact post-rebase commit that will
+> be pushed" needs no conditional re-check path. The steps are numbered together because they are
+> one job; a rebase conflict at step 3 is therefore a `verify` result, and the same conflict met
+> again by §9.5's compare-and-publish loop is an `integrate` one (§8.10 carries both rows).
+
 1. **Fetch.** If the base moved, **rebase** the attempt branch onto the fresh tip — safe,
    because the branch is unpublished.
 2. Before a destructive rebase, **the pre-rebase head is preserved under a local evidence ref**
@@ -1198,12 +1205,27 @@ human removing the label is what makes the label mean "someone has acknowledged 
 
 - **`mutation-detected` is the only outcome with no retry at all.** A read-only role that wrote
   has broken its own contract, and retrying it buys a second violation.
-- **`integration-red` disposes and consumes nothing**, because the same base conflicts the same
-  way and a retry buys a second identical answer. It is §8.3's `baseline-red` one phase later —
-  the required set red at a commit no worker chose — and it carries a **reason class and no
-  automation fault**, so §8.6's "product-level outcomes never trip the breaker" holds by
+- **`integration-red` disposes where `verify × failed` repairs**, though both are the same rerun
+  reporting the same fact about the same kind of commit. What differs is what has been spent and
+  what the red result is *about*: a red verify is the worker's own work failing at its own base,
+  which is exactly what §8.5's repair is scoped to, while this work passed its verify **and both
+  review axes** at that base and what changed is the world it lands in. A repair would restart
+  the whole pipeline, two model calls included, to answer a question nobody asked the worker.
+  It is §8.3's `baseline-red` one phase later — the required set red at a commit no worker chose
+  — and it **consumes no budget**, which is what keeps §15's case 10 intact: the loop spends
+  nothing and this is the exit from it rather than another lap. It carries a **reason class and
+  no automation fault**, so §8.6's "product-level outcomes never trip the breaker" holds by
   construction: two changes that each pass alone and do not compose is not a broken host, and
   stopping the run over it would point an operator at infrastructure that is working.
+- **The compare-and-publish loop is bounded, and hitting the bound is `push-failed`.** A base
+  that moves on every pass is a repository under continuous merge, and an unbounded loop there
+  holds the integration lease indefinitely while reporting nothing — which is the throughput
+  failure §9.5 exists to prevent, arriving from the other direction. The bound is a small
+  constant rather than configuration: it is not a policy anyone tunes, it is the point at which
+  "the base keeps moving" stops being a race and starts being a fact about the repository.
+  `push-failed` is the honest row for it because no push was attempted and nothing about the
+  work is implicated, and §8.10 retries it on the automation budget — a later pass may well
+  find a quiet moment.
 - **A `rebase-conflict` consumes a fresh-retry, not a repair**, because the prior tip is
   precisely what conflicts. A second conflict is `failed` / `rebase-conflict`, and **the
   controller never attempts automatic resolution**, which would put a model inside a controller
