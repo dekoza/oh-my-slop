@@ -1,10 +1,17 @@
 import { FactoryConfigError } from "../config/errors.mjs";
 import { loadFactoryConfig } from "../config/load.mjs";
+import { registerGitProbes } from "../git/probes.mjs";
+import { PROBES } from "../reconcile/probes.mjs";
 import { EXIT_NOT_IMPLEMENTED, EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "./exit-codes.mjs";
 import { renderReport } from "./render.mjs";
 import { VERB_TABLE, VERBS } from "./verbs.mjs";
 
 export { VERBS } from "./verbs.mjs";
+
+// §5.3: each subsystem's probes join the shipped registry as the subsystem
+// lands, and the binary's composition root is where they meet — once per
+// process, however many invocations a test drives through `runCli`.
+registerGitProbes(PROBES);
 
 /**
  * The operator surface: one deterministic binary, one structured value per
