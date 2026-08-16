@@ -230,6 +230,27 @@ export function unresolvedEffects(store, { run = null } = {}) {
 }
 
 /**
+ * One effect by key, with its `result` decoded — or `null` for a key nobody has
+ * requested.
+ *
+ * It exists because **re-entry sometimes has to ask what the world already did
+ * before deciding whether to do anything at all**, which is a different question
+ * from the one `requestEffect` answers. §7.5's publication is the case: a
+ * re-entered integration that simply re-issued its effects would first rebase and
+ * re-verify a branch that is already pushed, which §14.12 forbids — and would
+ * only meet the refusal after the rewrite. Asking first makes "a published branch
+ * is never touched again" structural rather than a refusal met late.
+ *
+ * @param {object} store an open store, controller or read-only
+ * @param {string} key a §4.5 effect key
+ * @returns {object | null}
+ */
+export function effectByKey(store, key) {
+	const row = store.read((db) => db.prepare("SELECT * FROM effect WHERE effect_key = ?").get(key));
+	return row === undefined ? null : { ...row, result: decodeResult(row.result) };
+}
+
+/**
  * §4.5: "older than the current holder's" is the comparison, and the current
  * holder is the `controller` lease's — not the DB-wide counter's latest value,
  * which also advances when the *same* controller acquires an integration or

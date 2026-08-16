@@ -1,4 +1,6 @@
-import { CHECK_RESULTS, PHASE_INTEGRATE, PHASE_VERIFY } from "../domain/vocabulary.mjs";
+import { CHECK_RESULTS, PHASE_IMPLEMENT, PHASE_INTEGRATE, PHASE_VERIFY } from "../domain/vocabulary.mjs";
+import { effectKey } from "../effects/keys.mjs";
+import { effectByKey } from "../effects/records.mjs";
 import {
 	adoptRebasedHead,
 	assessIntegration,
@@ -219,7 +221,16 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
  *   · `push-failed` · `integration-red`
  */
 export async function integratePublish(store, clone, context) {
-	const { hold, leases, run, ticket, attempt, maxRebases = 3 } = context;
+	const { hold, leases, run, ticket, attempt, branch, maxRebases = 3 } = context;
+
+	// **Asked before anything else, and before the lease.** §14.12: a published
+	// branch is never touched again. A re-entry that went straight into the loop
+	// would find the base had moved since publication — a human merging the PR
+	// moves it — and would rebase and re-verify a branch that is already out
+	// there, meeting §4.5's refusal only after the rewrite. Asking the record what
+	// already happened is what makes the invariant structural.
+	const already = alreadyPublished(store, { run, ticket, attempt, branch });
+	if (already !== null) return already;
 
 	// What the verify phase attested, read from the record rather than passed in:
 	// §14.13 makes the attested commit a fact of durable state, and a caller's
@@ -447,6 +458,51 @@ function attestedByVerify(store, { run, ticket, attempt }) {
 	}
 
 	return attestedBy(detail);
+}
+
+/**
+ * The publication this attempt already made, or `null` for one that has not.
+ *
+ * Read off the two effects that *are* the publication — the push and the pull
+ * request — rather than off a stage record, because those are the mutations
+ * outside the database and they are what a crash between the world and the
+ * journal leaves half-done. Both resolved means the branch is out there and the
+ * PR is open, and there is nothing left for this phase to do but say so again.
+ *
+ * A push resolved with no PR behind it is **not** a publication: §7.5's step 6
+ * has not happened, so the loop below runs and its check-then-create adopts the
+ * branch that is already pushed. That asymmetry is the right way round — the
+ * expensive, destructive half is the one being skipped.
+ */
+function alreadyPublished(store, { run, ticket, attempt, branch }) {
+	const pushed = effectByKey(store, effectKey({ run, ticket, phase: PHASE_INTEGRATE, attempt, operation: "push", operand: branch }));
+	const opened = effectByKey(
+		store,
+		// §4.5 keys a tracker mutation to the ticket execution rather than to an
+		// attempt (`tracker/mutations.mjs`), so the PR's key names no attempt.
+		effectKey({ run, ticket, phase: PHASE_IMPLEMENT, attempt: null, operation: "pr-create", operand: branch }),
+	);
+	if (pushed?.state !== "resolved" || opened?.state !== "resolved") return null;
+
+	const attested = effectByKey(
+		store,
+		effectKey({ run, ticket, phase: PHASE_INTEGRATE, attempt, operation: "attestation-write", operand: null }),
+	);
+
+	return answer("integrated", {
+		pr: { number: opened.result.number, url: opened.result.html_url },
+		superseded: [],
+		head: pushed.result.sha,
+		branch,
+		attestation:
+			attested?.state === "resolved"
+				? { algorithm: attested.result.algorithm, digest: attested.result.digest }
+				: null,
+		branch_cleanup_eligible: true,
+		// Named, so an operator reading a lane's second answer knows why it is
+		// identical to the first rather than wondering whether it published twice.
+		state: "already-published",
+	});
 }
 
 /** One reading of a verify detail, shared by the record and the loop's re-verify. */

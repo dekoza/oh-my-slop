@@ -4,6 +4,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
+import { unresolvedEffects } from "../../factory/lib/effects/records.mjs";
+import { registerGitProbes } from "../../factory/lib/git/probes.mjs";
+import { reconcile } from "../../factory/lib/reconcile/engine.mjs";
+import { createProbeRegistry } from "../../factory/lib/reconcile/probes.mjs";
+import { withTrackerProbes } from "../../factory/lib/reconcile/tracker-probes.mjs";
 import { evidenceRef, integrationWorktreePath } from "../../factory/lib/git/isolation.mjs";
 import { integratePublish, integrationVerify } from "../../factory/lib/pipeline/integration.mjs";
 import { parsePullBody } from "../../factory/lib/tracker/pulls.mjs";
@@ -318,6 +323,61 @@ test("publishing twice is the committed publication, not a second PR or a second
 		fixture.store.read((db) => db.prepare("SELECT count(*) AS n FROM effect WHERE operation = 'push'").get()).n,
 		1,
 	);
+});
+
+test("a published branch is never touched again: a second head under the same key refuses (§14.12)", async (t) => {
+	const fixture = await integrating(t);
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+	const published = await integratePublish(fixture.store, fixture.clone, fixture.context);
+	const remoteHead = git(fixture.remote, ["rev-parse", `refs/heads/${fixture.branch}`]);
+
+	// A human merges something, and a second pass comes back to a branch that is
+	// already out there. §14.12 has nothing refresh it — the compare-and-publish
+	// loop is between verify and publish, and this one is published.
+	moveRemoteBase(t, fixture.remote);
+	const again = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(again.detail.pr.number, published.detail.pr.number);
+	assert.equal(git(fixture.remote, ["rev-parse", `refs/heads/${fixture.branch}`]), remoteHead);
+	assert.equal(fixture.gitea.pulls.length, 1);
+	assert.equal(fixture.gitea.pulls[0].state, "open", "a drifted PR was auto-closed");
+	// One push effect, and it is the one that landed: a second head offered under
+	// the same key would be §4.5's typed payload conflict rather than a force.
+	assert.equal(
+		fixture.store.read((db) => db.prepare("SELECT count(*) AS n FROM effect WHERE operation = 'push'").get()).n,
+		1,
+	);
+});
+
+test("a crash mid-integration is repaired by reconcile settling what the world already did (§7.7)", async (t) => {
+	const fixture = await integrating(t);
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+	await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	// The crash: the push and the PR happened, and the controller died before
+	// either resolution committed. §14.1 forbids settling them by reasoning.
+	fixture.store.transaction(({ db }) => {
+		db.prepare(
+			"UPDATE effect SET state = 'requested', resolved_at = NULL, resolved_seq = NULL, result = NULL " +
+				"WHERE operation IN ('push', 'pr-create')",
+		).run();
+	});
+	assert.equal(unresolvedEffects(fixture.store).length, 2);
+
+	const probes = withTrackerProbes(createProbeRegistry(), { reader: fixture.context.reader, assignee: "factory-bot" });
+	registerGitProbes(probes);
+	const report = await reconcile(fixture.store, { probes, fencingGeneration: 1, at: FIXED_NOW + 1000 });
+
+	assert.equal(report.settled, 2);
+	assert.deepEqual(unresolvedEffects(fixture.store), []);
+
+	// And integration re-runs end to end over the settled state, publishing
+	// nothing twice.
+	const again = await integratePublish(fixture.store, fixture.clone, fixture.context);
+	assert.equal(again.outcome, "integrated");
+	assert.equal(fixture.gitea.pulls.length, 1);
 });
 
 test("integrate refuses to publish from an attempt no verify attested (§14.15, §14.16)", async (t) => {
