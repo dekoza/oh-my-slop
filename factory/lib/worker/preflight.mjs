@@ -1,4 +1,4 @@
-import { resourceClassOf } from "../config/profiles.mjs";
+import { CLAUDE_RESOURCE_CLASS, resourceClassOf } from "../config/profiles.mjs";
 import { createClaudeAdapter } from "./claude.mjs";
 import { readSkillInventory, skillClosure, validateClosureReferences } from "./closure.mjs";
 import { createPiAdapter } from "./pi.mjs";
@@ -33,19 +33,9 @@ import { rolesInPlay } from "./roles.mjs";
  * @param {string} input.cacheRoot the store directory (plugin cache lives beside `state.db`)
  * @param {{ pi?: object, claude?: object }} [input.transports] per-runtime IO
  *   overrides, so a test drives every verdict without a harness on the machine
- * @param {{ pi?: string, claude?: string }} [input.binaries]
- * @param {number} [input.timeoutMs]
  * @returns {{ closureCheck: () => object, runtimeCheck: () => Promise<object> }}
  */
-export function createWorkerPreflight({
-	handshake,
-	config,
-	activeRouting,
-	cacheRoot,
-	transports = {},
-	binaries = {},
-	timeoutMs,
-}) {
+export function createWorkerPreflight({ handshake, config, activeRouting, cacheRoot, transports = {} }) {
 	let computed = null;
 
 	const closure = () => {
@@ -115,8 +105,6 @@ export function createWorkerPreflight({
 					config,
 					cacheRoot,
 					transport: transports[kind],
-					binary: binaries[kind],
-					timeoutMs,
 				});
 				for (const role of kinds.get(kind)) {
 					results.push(await adapter.preflight(role, packageRev));
@@ -157,7 +145,7 @@ function runtimeKinds(roles, profiles) {
 	return kinds;
 }
 
-function adapterFor(kind, { state, handshake, config, cacheRoot, transport, binary, timeoutMs }) {
+function adapterFor(kind, { state, handshake, config, cacheRoot, transport }) {
 	const declaredResources = config.concurrency.resources;
 
 	if (kind === "pi") {
@@ -172,8 +160,6 @@ function adapterFor(kind, { state, handshake, config, cacheRoot, transport, bina
 			declaredResources,
 			requiredClasses: [...new Set(piProfiles.map((profile) => resourceClassOf({ kind: "pi", model: profile.model })))],
 			...(transport === undefined ? {} : { transport }),
-			...(binary === undefined ? {} : { binary }),
-			...(timeoutMs === undefined ? {} : { timeoutMs }),
 		});
 	}
 
@@ -181,10 +167,8 @@ function adapterFor(kind, { state, handshake, config, cacheRoot, transport, bina
 		packageRoot: handshake.package.root,
 		cacheRoot,
 		expectedSkills: [...state.inventory.skills.keys()].sort(),
-		declaredSize: declaredResources[resourceClassOf({ kind: "claude", model: "" })] ?? null,
+		declaredSize: declaredResources[CLAUDE_RESOURCE_CLASS] ?? null,
 		...(transport === undefined ? {} : { transport }),
-		...(binary === undefined ? {} : { binary }),
-		...(timeoutMs === undefined ? {} : { timeoutMs }),
 	});
 }
 

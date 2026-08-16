@@ -1,7 +1,8 @@
+import { CLAUDE_RESOURCE_CLASS } from "../config/profiles.mjs";
 import { createWorkerAdapter, unbuiltLifecycleOperations } from "./adapter.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
 import { ensureClaudePlugin } from "./plugin.mjs";
-import { probeFinding } from "./probe.mjs";
+import { harnessVersion, memoizedPreflight, parseJson, probeFinding, unreachableRuntime } from "./probe.mjs";
 import * as realTransport from "./transports.mjs";
 
 /**
@@ -27,9 +28,6 @@ import * as realTransport from "./transports.mjs";
  */
 
 const DEFAULT_TIMEOUT_MS = 120_000;
-
-/** §9.1's constant class every Claude profile shares — one harness, one pool. */
-const CLAUDE_RESOURCE_CLASS = "claude-code";
 
 /**
  * The production flag set for the initialize probe, per §6.2. #106's config
@@ -81,7 +79,7 @@ export async function probeClaudeRuntime({
 	const io = { ...realTransport, ...transport };
 	const failures = [];
 
-	const version = await harnessVersion(io, binary, timeoutMs, failures);
+	const version = await harnessVersion(io, { label: "Claude", binary, timeoutMs }, failures);
 	if (version === null) return observation({ ok: false, version, failures, declaredSize, binary });
 
 	// §6.3: built by the package's generator, cached per revision, immutable.
@@ -152,50 +150,20 @@ export function proveClaudeClosure(probed, closure) {
  * @returns {Readonly<object>} the adapter
  */
 export function createClaudeAdapter(context) {
-	let probed = null;
-
-	const probeOnce = (packageRev) => {
-		if (probed === null || probed.packageRev !== packageRev) {
-			probed = { packageRev, answer: probeClaudeRuntime({ ...context, packageRev }) };
-		}
-		return probed.answer;
-	};
-
 	return createWorkerAdapter({
 		kind: "claude",
 		operations: {
-			preflight: async (role, packageRev) => {
-				const runtime = await probeOnce(packageRev);
-				const findings = runtime.ok
-					? [...runtime.failures, ...proveClaudeClosure(runtime, role.closure ?? [])]
-					: [...runtime.failures];
-
-				return Object.freeze({
-					kind: "claude",
-					role: role.name,
-					packageRev,
-					ok: findings.length === 0,
-					findings: Object.freeze(findings),
-					runtime,
-				});
-			},
+			preflight: memoizedPreflight({
+				kind: "claude",
+				probe: (packageRev) => probeClaudeRuntime({ ...context, packageRev }),
+				prove: proveClaudeClosure,
+			}),
 			...unbuiltLifecycleOperations("claude"),
 		},
 	});
 }
 
 // ── The probe's three steps ──────────────────────────────────────────────────
-
-async function harnessVersion(io, binary, timeoutMs, failures) {
-	try {
-		const answer = await io.runCommand(binary, ["--version"], { timeout: timeoutMs });
-		if (answer.status === 0) return answer.stdout.trim();
-		failures.push(unreachableRuntime(binary, `\`${binary} --version\` exited ${answer.status}`));
-	} catch (error) {
-		failures.push(unreachableRuntime(binary, error.message));
-	}
-	return null;
-}
 
 async function strictValidation(io, { binary, plugin, timeoutMs }, failures) {
 	const answer = await io.runCommand(binary, ["plugin", "validate", "--strict", plugin.dir], { timeout: timeoutMs });
@@ -265,7 +233,7 @@ async function initializeProbe(io, { binary, plugin, timeoutMs }, failures) {
 			timeoutMs,
 		});
 	} catch (error) {
-		failures.push(unreachableRuntime(binary, error.message));
+		failures.push(unreachableRuntime("Claude", binary, error.message));
 		return null;
 	}
 
@@ -290,6 +258,7 @@ async function initializeProbe(io, { binary, plugin, timeoutMs }, failures) {
 
 	failures.push(
 		unreachableRuntime(
+			"Claude",
 			binary,
 			session.timedOut
 				? `the initialize control-request over stream-json got no control_response within ${timeoutMs}ms`
@@ -348,19 +317,3 @@ function observation({
 	});
 }
 
-function unreachableRuntime(binary, sentence) {
-	return probeFinding(
-		"runtime-unreachable",
-		`The Claude runtime could not be probed: ${sentence}. §11.7 makes an unprobeable runtime an automation ` +
-			`failure before first claim; the fix is a working \`${binary}\` on PATH.`,
-		{ binary },
-	);
-}
-
-function parseJson(text) {
-	try {
-		return JSON.parse(text);
-	} catch {
-		return null;
-	}
-}

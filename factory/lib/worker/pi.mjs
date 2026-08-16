@@ -1,8 +1,6 @@
-import { realpathSync } from "node:fs";
-import { sep } from "node:path";
-
 import { createWorkerAdapter, unbuiltLifecycleOperations } from "./adapter.mjs";
-import { probeFinding } from "./probe.mjs";
+import { containsPath, realpathOrNull } from "./closure.mjs";
+import { harnessVersion, memoizedPreflight, parseJson, probeFinding, unreachableRuntime } from "./probe.mjs";
 import * as realTransport from "./transports.mjs";
 
 /**
@@ -68,7 +66,7 @@ export async function probePiRuntime({
 	const io = { ...realTransport, ...transport };
 	const failures = [];
 
-	const version = await harnessVersion(io, binary, timeoutMs, failures);
+	const version = await harnessVersion(io, { label: "pi", binary, timeoutMs }, failures);
 	if (version === null) return observation({ ok: false, version, failures });
 
 	const session = await rpcAnswers(io, { binary, skillsRoots, timeoutMs }, failures);
@@ -118,7 +116,7 @@ export async function probePiRuntime({
  * @returns {ReadonlyArray<object>} findings
  */
 export function provePiClosure(probed, closure, { skillsRoots }) {
-	const roots = skillsRoots.map((root) => realpathOr(root));
+	const roots = skillsRoots.map((root) => realpathOrNull(root));
 	const findings = [];
 
 	for (const name of closure) {
@@ -135,8 +133,8 @@ export function provePiClosure(probed, closure, { skillsRoots }) {
 			continue;
 		}
 
-		const resolved = source === null ? null : realpathOr(source);
-		if (resolved === null || !roots.some((root) => contains(root, resolved))) {
+		const resolved = source === null ? null : realpathOrNull(source);
+		if (resolved === null || !roots.some((root) => root !== null && containsPath(root, resolved))) {
 			findings.push(
 				probeFinding(
 					"skill-shadowed",
@@ -160,50 +158,20 @@ export function provePiClosure(probed, closure, { skillsRoots }) {
  * @returns {Readonly<object>} the adapter
  */
 export function createPiAdapter(context) {
-	let probed = null;
-
-	const probeOnce = (packageRev) => {
-		if (probed === null || probed.packageRev !== packageRev) {
-			probed = { packageRev, answer: probePiRuntime(context) };
-		}
-		return probed.answer;
-	};
-
 	return createWorkerAdapter({
 		kind: "pi",
 		operations: {
-			preflight: async (role, packageRev) => {
-				const runtime = await probeOnce(packageRev);
-				const findings = runtime.ok
-					? [...runtime.failures, ...provePiClosure(runtime, role.closure ?? [], context)]
-					: [...runtime.failures];
-
-				return Object.freeze({
-					kind: "pi",
-					role: role.name,
-					packageRev,
-					ok: findings.length === 0,
-					findings: Object.freeze(findings),
-					runtime,
-				});
-			},
+			preflight: memoizedPreflight({
+				kind: "pi",
+				probe: () => probePiRuntime(context),
+				prove: (runtime, closure) => provePiClosure(runtime, closure, context),
+			}),
 			...unbuiltLifecycleOperations("pi"),
 		},
 	});
 }
 
 // ── The probe's pieces ───────────────────────────────────────────────────────
-
-async function harnessVersion(io, binary, timeoutMs, failures) {
-	try {
-		const answer = await io.runCommand(binary, ["--version"], { timeout: timeoutMs });
-		if (answer.status === 0) return answer.stdout.trim();
-		failures.push(unreachableRuntime(binary, `\`${binary} --version\` exited ${answer.status}`));
-	} catch (error) {
-		failures.push(unreachableRuntime(binary, error.message));
-	}
-	return null;
-}
 
 async function rpcAnswers(io, { binary, skillsRoots, timeoutMs }, failures) {
 	let session;
@@ -215,7 +183,7 @@ async function rpcAnswers(io, { binary, skillsRoots, timeoutMs }, failures) {
 			timeoutMs,
 		});
 	} catch (error) {
-		failures.push(unreachableRuntime(binary, error.message));
+		failures.push(unreachableRuntime("pi", binary, error.message));
 		return null;
 	}
 
@@ -229,6 +197,7 @@ async function rpcAnswers(io, { binary, skillsRoots, timeoutMs }, failures) {
 		if (answers.has(request.type)) continue;
 		failures.push(
 			unreachableRuntime(
+				"pi",
 				binary,
 				session.timedOut
 					? `the disposable RPC session did not answer ${request.type} within ${timeoutMs}ms`
@@ -354,31 +323,3 @@ function observation({ ok, version, failures, skillCommands = {}, models = [], c
 	});
 }
 
-function unreachableRuntime(binary, sentence) {
-	return probeFinding(
-		"runtime-unreachable",
-		`The pi runtime could not be probed: ${sentence}. §11.7 makes an unprobeable runtime an automation failure ` +
-			`before first claim; the fix is a working \`${binary}\` on PATH.`,
-		{ binary },
-	);
-}
-
-function parseJson(text) {
-	try {
-		return JSON.parse(text);
-	} catch {
-		return null;
-	}
-}
-
-function contains(root, path) {
-	return path === root || path.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
-}
-
-function realpathOr(path) {
-	try {
-		return realpathSync(path);
-	} catch {
-		return null;
-	}
-}

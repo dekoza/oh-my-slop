@@ -14,17 +14,11 @@ export const WORKER_ERROR_REASONS = Object.freeze([
 	/**
 	 * §6.8's one predicate, fail closed: a required skill that is shadowed,
 	 * duplicated, disabled, or missing. One typed failure for all four, and the
-	 * diagnostic names the offending source.
+	 * diagnostic names the offending source. (Live-probe misses are findings on
+	 * the `runtime-probe` check — `probe.mjs`'s vocabulary — until #107's
+	 * attempt path turns them into attempt outcomes.)
 	 */
 	"skill-conflict",
-	/**
-	 * §6.2's rule that unprovable native invocation fails the attempt: the live
-	 * probe could not prove the closure is invocable on the production path.
-	 * There is no degraded prose-loading mode to fall back to.
-	 */
-	"skill-unprovable",
-	/** The runtime itself could not be probed — §11.7's automation failure. */
-	"runtime-unprobeable",
 	/** §6.3's generator refused, or produced a tree strict validation rejects. */
 	"plugin-build-failed",
 	/**

@@ -84,11 +84,16 @@ export const CONTROLLER_EXIT_LEASE_LOST = "lease-lost";
 /** §8.8. */
 export const TICKET_DISPOSITIONS = Object.freeze(["published", "paused", "failed", "released"]);
 
-/** §8.8 — worker-writable first, then controller-derived. */
+/**
+ * §6.6's closed worker-writable statuses, named so a role's result
+ * expectations and the outbox validator read one list. Everything else in
+ * `ATTEMPT_OUTCOMES` is controller-derived and never worker-writable.
+ */
+export const WORKER_WRITABLE_OUTCOMES = Object.freeze(["completed", "needs-human", "worker-failed"]);
+
+/** §8.8 — the worker-writable three, then the controller-derived rest. */
 export const ATTEMPT_OUTCOMES = Object.freeze([
-	"completed",
-	"needs-human",
-	"worker-failed",
+	...WORKER_WRITABLE_OUTCOMES,
 	"invalid-result",
 	"no-result",
 	"dead-worker",
@@ -97,13 +102,6 @@ export const ATTEMPT_OUTCOMES = Object.freeze([
 	"cancelled",
 	"automation-failure",
 ]);
-
-/**
- * §6.6's closed worker-writable subset, named so a role's result expectations
- * and the outbox validator read one list. Everything after these three is
- * controller-derived and never worker-writable.
- */
-export const WORKER_WRITABLE_OUTCOMES = Object.freeze(ATTEMPT_OUTCOMES.slice(0, 3));
 
 /**
  * §4.6's repo-scoped exclusive lease. Named here rather than in the lease

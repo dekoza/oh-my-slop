@@ -2,11 +2,10 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
 
 import { ensureClaudePlugin, pluginCachePath, readPluginManifest } from "../../factory/lib/worker/plugin.mjs";
 import { FactoryWorkerError } from "../../factory/lib/worker/errors.mjs";
-import { makeTree } from "./helpers/factory-package.mjs";
+import { makeTree, realGeneratorFiles } from "./helpers/factory-package.mjs";
 
 /**
  * §6.3: the plugin is built from the pinned revision **by the package's own
@@ -15,17 +14,6 @@ import { makeTree } from "./helpers/factory-package.mjs";
  * packages, because the flattening it performs is load-bearing — the Claude
  * loader registers skills at depth 1 only, silently.
  */
-
-const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
-
-/** The real generator, carried into the fixture the way an install carries it. */
-function generatorFiles() {
-	return {
-		"scripts/__init__.py": "",
-		"scripts/validate_refs.py": readFileSync(join(REPO_ROOT, "scripts", "validate_refs.py"), "utf8"),
-		"scripts/build_claude_plugin.py": readFileSync(join(REPO_ROOT, "scripts", "build_claude_plugin.py"), "utf8"),
-	};
-}
 
 function fixturePackage(t, { manifest = {} } = {}) {
 	return makeTree(t, {
@@ -39,7 +27,7 @@ function fixturePackage(t, { manifest = {} } = {}) {
 		"skills/practice/tdd/SKILL.md": "---\nname: tdd\ndescription: d\n---\n",
 		"skills/workflow/implement/SKILL.md": "---\nname: implement\ndescription: d\n---\n",
 		"skills/workflow/implement/references/notes.md": "kept beside its skill\n",
-		...generatorFiles(),
+		...realGeneratorFiles(),
 	});
 }
 

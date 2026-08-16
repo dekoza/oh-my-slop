@@ -1,8 +1,8 @@
-import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { FactoryWorkerError } from "./errors.mjs";
+import { runCommand as runCommandForReal } from "./transports.mjs";
 
 /**
  * §6.3's Claude plugin artifact: **the package's own tested generator**
@@ -53,7 +53,7 @@ export async function ensureClaudePlugin({
 	packageRoot,
 	treeDigest,
 	cacheRoot,
-	runCommand = execute,
+	runCommand = runCommandForReal,
 	python = "python3",
 }) {
 	const dir = pluginCachePath({ cacheRoot, treeDigest });
@@ -136,17 +136,4 @@ export function readPluginManifest(dir) {
 			at: path,
 		});
 	}
-}
-
-/** The real interpreter call. Exit codes are answers here, not exceptions. */
-function execute(command, args, options) {
-	return new Promise((resolvePromise, rejectPromise) => {
-		execFile(command, args, { ...options, encoding: "utf8" }, (error, stdout, stderr) => {
-			if (error !== null && typeof error.code !== "number") {
-				rejectPromise(error); // ENOENT and friends: the command could not run at all.
-				return;
-			}
-			resolvePromise({ status: error === null ? 0 : error.code, stdout, stderr });
-		});
-	});
 }

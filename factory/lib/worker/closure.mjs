@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 
 import { FactoryWorkerError } from "./errors.mjs";
@@ -106,7 +106,7 @@ function register(directory, skillMd, { root, skills, findings }) {
 
 	const realDir = realpathOr(directory, null);
 	const realMd = realpathOr(skillMd, null);
-	if (realDir === null || realMd === null || !contains(root, realDir) || !contains(root, realMd)) {
+	if (realDir === null || realMd === null || !containsPath(root, realDir) || !containsPath(root, realMd)) {
 		findings.push(
 			closureFinding(
 				"skill-escapes-package",
@@ -263,7 +263,7 @@ export function validateClosureReferences(inventory, closure, { packageRoot }) {
 		for (const target of referenceTargets(entry.body)) {
 			const candidate = resolve(entry.dir, target);
 			const real = realpathOr(candidate, null);
-			if (real !== null && contains(root, real)) continue;
+			if (real !== null && containsPath(root, real)) continue;
 
 			findings.push(
 				closureFinding(
@@ -391,9 +391,15 @@ function stripFences(body) {
 }
 
 // ── Path containment (§2.1's canonicalize-and-assert-prefix) ─────────────────
+// Exported for the worker layer's other §2.1 call site (the pi probe's shadow
+// check), so the predicate has one spelling here rather than one per module.
 
-function contains(root, path) {
+export function containsPath(root, path) {
 	return path === root || path.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
+}
+
+export function realpathOrNull(path) {
+	return realpathOr(path, null);
 }
 
 function realpathOr(path, fallback) {
@@ -406,7 +412,7 @@ function realpathOr(path, fallback) {
 
 function isDirectory(path) {
 	try {
-		return readdirSync(path) !== null;
+		return statSync(path).isDirectory();
 	} catch {
 		return false;
 	}

@@ -27,6 +27,9 @@ export const WORKER_OPERATIONS = Object.freeze(["preflight", "launch", "awaitCom
 
 const NAME_SHAPE = /^[a-z][a-z0-9-]*$/;
 
+/** A skill's name, exactly as `closure.mjs` shapes it: a digit may lead. */
+const SKILL_NAME_SHAPE = /^[a-z0-9][a-z0-9-]*$/;
+
 /**
  * §6.1's tuple: `(name, entry skill, closure, prompt template, result
  * expectations)`. The closure slot may be null on a *declaration* — it is
@@ -53,7 +56,7 @@ export function validateRole(role) {
 	if (typeof name !== "string" || !NAME_SHAPE.test(name)) {
 		throw refuseRole(`role name ${JSON.stringify(name ?? null)} is not a usable identifier`, { at: "name" });
 	}
-	if (typeof entrySkill !== "string" || !NAME_SHAPE.test(entrySkill)) {
+	if (typeof entrySkill !== "string" || !SKILL_NAME_SHAPE.test(entrySkill)) {
 		throw refuseRole(`role "${name}" names no entry skill`, { at: "entrySkill", role: name });
 	}
 	if (closure !== null && (!Array.isArray(closure) || closure.some((skill) => typeof skill !== "string"))) {
