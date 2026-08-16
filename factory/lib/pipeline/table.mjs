@@ -41,12 +41,6 @@ export const ACTIONS = Object.freeze({
 	 * attempt outcome that carried it (§8.8).
 	 */
 	verdict: "verdict",
-	/**
-	 * §8.10: **`wrote-but-hung` is not a failure.** The outbox is valid, so it is
-	 * harvested, the agent is stopped as routine shutdown, and the anomaly is
-	 * what gets recorded.
-	 */
-	harvestAnomaly: "harvest-anomaly",
 	/** §8.5 tier 1 — a fresh attempt from the prior attempt's tip. */
 	repair: "repair",
 	/** §8.5 tier 2 — a fresh attempt from the pinned base, work discarded. */
@@ -78,6 +72,17 @@ export const EVIDENCE_TRUST = Object.freeze({ fact: "fact", untrusted: "untruste
  */
 export const TABLE_WIDE = null;
 
+/**
+ * §8.10: **`wrote-but-hung` is not a failure**, and that is why it is a field
+ * rather than an action of its own. The outbox is valid, the harvest and the
+ * routine agent stop already happened at §6.6's settle, and what is left is to
+ * take the *ordinary* action for a worker that answered — while recording that
+ * it never ended its turn. An action named for the anomaly would have to say
+ * where to go next as well, and would then be the ordinary action with a second
+ * name.
+ */
+export const ANOMALY_WROTE_BUT_HUNG = "wrote-but-hung";
+
 const row = ({
 	phase,
 	outcome,
@@ -89,9 +94,23 @@ const row = ({
 	fault = null,
 	exhausted = null,
 	evidence = null,
+	anomaly = null,
 	retryable = true,
 }) =>
-	Object.freeze({ phase, outcome, action, to, budget, disposition, reasonClass, fault, exhausted, evidence, retryable });
+	Object.freeze({
+		phase,
+		outcome,
+		action,
+		to,
+		budget,
+		disposition,
+		reasonClass,
+		fault,
+		exhausted,
+		evidence,
+		anomaly,
+		retryable,
+	});
 
 export const OUTCOME_TABLE = Object.freeze([
 	// ── implement: no phase result of its own — its result is its attempt's (§8.1)
@@ -112,7 +131,13 @@ export const OUTCOME_TABLE = Object.freeze([
 	row({ phase: PHASE_IMPLEMENT, outcome: "invalid-result", action: ACTIONS.freshRetry, budget: BUDGETS.repair }),
 	row({ phase: PHASE_IMPLEMENT, outcome: "no-result", action: ACTIONS.freshRetry, budget: BUDGETS.repair }),
 	row({ phase: PHASE_IMPLEMENT, outcome: "timeout", action: ACTIONS.freshRetry, budget: BUDGETS.repair }),
-	row({ phase: PHASE_IMPLEMENT, outcome: "wrote-but-hung", action: ACTIONS.harvestAnomaly, to: PHASE_HARVEST }),
+	row({
+		phase: PHASE_IMPLEMENT,
+		outcome: "wrote-but-hung",
+		action: ACTIONS.advance,
+		to: PHASE_HARVEST,
+		anomaly: ANOMALY_WROTE_BUT_HUNG,
+	}),
 	row({ phase: PHASE_IMPLEMENT, outcome: "dead-worker", action: ACTIONS.retry, budget: BUDGETS.automation }),
 	row({ phase: PHASE_IMPLEMENT, outcome: "automation-failure", action: ACTIONS.retry, budget: BUDGETS.automation }),
 	row({ phase: PHASE_IMPLEMENT, outcome: "cancelled", action: ACTIONS.dispose, disposition: "released" }),
@@ -182,7 +207,7 @@ export const OUTCOME_TABLE = Object.freeze([
 	row({ phase: PHASE_REVIEW, outcome: "dead-worker", action: ACTIONS.retry, budget: BUDGETS.automation }),
 	row({ phase: PHASE_REVIEW, outcome: "timeout", action: ACTIONS.retry, budget: BUDGETS.automation }),
 	row({ phase: PHASE_REVIEW, outcome: "automation-failure", action: ACTIONS.retry, budget: BUDGETS.automation }),
-	row({ phase: PHASE_REVIEW, outcome: "wrote-but-hung", action: ACTIONS.harvestAnomaly, to: PHASE_REVIEW }),
+	row({ phase: PHASE_REVIEW, outcome: "wrote-but-hung", action: ACTIONS.verdict, anomaly: ANOMALY_WROTE_BUT_HUNG }),
 	row({ phase: PHASE_REVIEW, outcome: "cancelled", action: ACTIONS.dispose, disposition: "released" }),
 
 	// ── integrate (§7.5) ─────────────────────────────────────────────────────

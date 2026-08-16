@@ -1,6 +1,8 @@
+import { PHASE_IMPLEMENT } from "../domain/vocabulary.mjs";
 import { canonicalJson, digest, runStream } from "../state/events.mjs";
+import { dispositionOf } from "./dispositions.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
-import { routeOutcome } from "./table.mjs";
+import { ACTIONS, routeOutcome } from "./table.mjs";
 
 /**
  * A stage result, as a durable record.
@@ -103,12 +105,139 @@ export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome
 			action: row.action,
 			budget: row.budget,
 			detail,
+			// §8.10: `wrote-but-hung` is not a failure, so the anomaly rides on the
+			// record of an ordinary action rather than becoming an outcome of its own.
+			anomaly: row.anomaly,
 			result_digest: committedDigest,
 			actor,
 		},
 	});
 
 	return Object.freeze({ state: "resolved", outcome, detail, row });
+}
+
+/**
+ * §8.1's pipeline, walked: `implement → harvest → verify → review → integrate`,
+ * one phase at a time, each result resolved into durable state before the table
+ * decides what happens next.
+ *
+ * **The walk resumes from the record, never from memory** (§8.10's re-entry). A
+ * phase whose result is already recorded for this attempt is not run again — a
+ * controller that died after `pytest` finished and before the resolution
+ * committed re-runs it, and one that died after the resolution reads it back.
+ * Both directions are safe, and neither needs a rule about which crash happened.
+ *
+ * **A row this package does not yet wire raises rather than falling through.**
+ * The plausible fallthrough is "carry on to the next phase", which is precisely
+ * how an unbuilt repair tier turns a failing attempt into a publication. What is
+ * wired here is §8.1's first three phases and §8.9's dispositions; the repair
+ * tiers (#110), the budgets (#111), the review fan-out (#112) and integration
+ * (#113) each replace one refusal with behaviour, and the stages already
+ * recorded stay on the chain either way.
+ *
+ * @param {object} store an open store
+ * @param {object} context
+ * @param {object} context.hold the controller's hold (`lease-guard.mjs`)
+ * @param {string} context.run
+ * @param {number} context.ticket
+ * @param {string} context.attempt the attempt this walk is running
+ * @param {Record<string, (where: object) => Promise<{ outcome: string, detail?: object | null }>>} context.phases
+ *   the phase executors: `implement` is agent-borne and the caller's (§8.1),
+ *   `harvest` and `verify` are `phases.mjs`'s controller phases
+ * @param {string} context.actor
+ * @param {() => number} context.now
+ * @returns {Promise<Readonly<object>>} the ticket execution's disposition
+ * @throws {FactoryPipelineError} `not-yet-implemented` · `stage-result-conflict`
+ */
+export async function walkStages(store, { hold, run, ticket, attempt, phases, actor, now }) {
+	let phase = PHASE_IMPLEMENT;
+
+	for (;;) {
+		const answer = await answerFor(store, { run, ticket, phase, attempt, phases });
+		const resolved = resolveStage(store, {
+			hold,
+			run,
+			ticket,
+			phase,
+			attempt,
+			outcome: answer.outcome,
+			detail: answer.detail ?? null,
+			actor,
+			at: now(),
+		});
+		const row = resolved.row;
+
+		if (row.action === ACTIONS.advance) {
+			phase = row.to;
+			continue;
+		}
+
+		if (row.action === ACTIONS.dispose) {
+			const settled = dispositionOf(row, { reasonClass: resolved.detail?.reason_class ?? null });
+			return Object.freeze({ ...settled, phase, outcome: resolved.outcome });
+		}
+
+		throw unbuilt({ row, phase });
+	}
+}
+
+/**
+ * This phase's result: the one already recorded for this attempt, or a fresh run
+ * of its executor.
+ *
+ * A phase with no executor is the walk arriving somewhere this package cannot
+ * go, and it refuses **before** running anything — the refusal names the phase
+ * rather than the row, because there is no outcome yet to route.
+ */
+async function answerFor(store, { run, ticket, phase, attempt, phases }) {
+	const recorded = stageRecords(store, { run, ticket }).find(
+		(record) => record.phase === phase && record.attempt === attempt,
+	);
+	if (recorded !== undefined) {
+		return { outcome: recorded.payload.outcome, detail: recorded.payload.detail };
+	}
+
+	const executor = phases[phase];
+	if (executor === undefined) throw unbuiltPhase(phase);
+
+	return executor({ run, ticket, phase, attempt });
+}
+
+/**
+ * What each unbuilt row and phase is waiting for. Named here, once: the same
+ * `{missing, spec}` pair every other unbuilt seam in this package carries, so an
+ * operator meeting one reads the ticket number rather than a stack trace.
+ */
+const UNBUILT = Object.freeze({
+	[ACTIONS.repair]: { missing: "the two repair tiers (#110)", spec: "§8.5" },
+	[ACTIONS.freshRetry]: { missing: "the two repair tiers (#110)", spec: "§8.5" },
+	[ACTIONS.retry]: { missing: "the budgets and the circuit breaker (#111)", spec: "§8.6" },
+	[ACTIONS.verdict]: { missing: "review fan-out and the mutation attestation (#112)", spec: "§8.4" },
+	[ACTIONS.idempotentReturn]: { missing: "the two repair tiers (#110)", spec: "§8.5" },
+	review: { missing: "review fan-out and the mutation attestation (#112)", spec: "§8.4" },
+	integrate: { missing: "integration and publication — the first pull request (#113)", spec: "§7.5" },
+});
+
+function unbuilt({ row, phase }) {
+	const waiting = UNBUILT[row.action] ?? { missing: null, spec: "§8.10" };
+	return new FactoryPipelineError(
+		"not-yet-implemented",
+		`§8.10 routes ${phase} × ${row.outcome} to ${row.action}, which is not built in this package: ${
+			waiting.missing ?? "no slice claims it"
+		} (${waiting.spec}).`,
+		{ at: "action", phase, outcome: row.outcome, action: row.action, budget: row.budget, ...waiting },
+	);
+}
+
+function unbuiltPhase(phase) {
+	const waiting = UNBUILT[phase] ?? { missing: null, spec: "§8.1" };
+	return new FactoryPipelineError(
+		"not-yet-implemented",
+		`The walk reached ${phase}, which is not built in this package: ${waiting.missing ?? "no slice claims it"} (${
+			waiting.spec
+		}).`,
+		{ at: "phase", phase, ...waiting },
+	);
 }
 
 /**

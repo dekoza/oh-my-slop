@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { dispositionOf } from "../../factory/lib/pipeline/dispositions.mjs";
-import { outcomeChain, resolveStage } from "../../factory/lib/pipeline/stages.mjs";
+import { outcomeChain, resolveStage, walkStages } from "../../factory/lib/pipeline/stages.mjs";
 import { TABLE_WIDE, routeOutcome } from "../../factory/lib/pipeline/table.mjs";
 import {
 	FIXED_NOW,
@@ -44,6 +44,16 @@ async function executing(t, { ticket = 42 } = {}) {
 		run,
 		ticket,
 		attempt: `${run}-t${ticket}-a1`,
+		walk: (phases) =>
+			walkStages(store, {
+				hold,
+				run,
+				ticket,
+				attempt: `${run}-t${ticket}-a1`,
+				phases,
+				actor: "controller",
+				now: () => FIXED_NOW,
+			}),
 		resolve: (phase, outcome, overrides = {}) =>
 			resolveStage(store, {
 				hold,
@@ -110,6 +120,128 @@ test("a typed conflict is filed as failed under an automation fault (§8.10)", (
 		reason_class: null,
 		fault: "automation",
 	});
+});
+
+// ── The walk (§8.1's order, §8.10's routing) ─────────────────────────────────
+
+/** Phase executors that answer with what each test is about, and count calls. */
+function answering(outcomes) {
+	const calls = [];
+	const phases = {};
+	for (const [phase, answer] of Object.entries(outcomes)) {
+		phases[phase] = async () => {
+			calls.push(phase);
+			return typeof answer === "string" ? { outcome: answer, detail: null } : answer;
+		};
+	}
+	return { phases, calls };
+}
+
+test("a green attempt walks implement → harvest → verify, and stops where review is unbuilt", async (t) => {
+	const context = await executing(t);
+	const { phases, calls } = answering({ implement: "completed", harvest: "passed", verify: "passed" });
+
+	await assert.rejects(
+		() => context.walk(phases),
+		(error) => {
+			assert.equal(error.reason, "not-yet-implemented");
+			assert.equal(error.details.phase, "review");
+			assert.match(error.details.missing, /#112/);
+			return true;
+		},
+	);
+
+	assert.deepEqual(calls, ["implement", "harvest", "verify"]);
+	assert.deepEqual(
+		outcomeChain(context.store, { run: context.run, ticket: context.ticket }),
+		[
+			{ phase: "implement", outcome: "completed", attempt: context.attempt },
+			{ phase: "harvest", outcome: "passed", attempt: context.attempt },
+			{ phase: "verify", outcome: "passed", attempt: context.attempt },
+		],
+		"the chain a stopped walk leaves behind is the chain `factory status` reads",
+	);
+});
+
+test("a failed verify goes straight to repair: the reviewer never sees failing code (§14.15)", async (t) => {
+	const context = await executing(t);
+	const { phases, calls } = answering({ implement: "completed", harvest: "passed", verify: "failed" });
+
+	await assert.rejects(
+		() => context.walk(phases),
+		(error) => {
+			assert.equal(error.reason, "not-yet-implemented");
+			assert.equal(error.details.action, "repair");
+			assert.equal(error.details.budget, "repair");
+			return true;
+		},
+	);
+
+	assert.deepEqual(calls, ["implement", "harvest", "verify"], "review was never entered");
+});
+
+test("a needs-human attempt pauses under the worker's own reason class (§8.10, §14.18)", async (t) => {
+	const context = await executing(t);
+	const { phases, calls } = answering({
+		implement: { outcome: "needs-human", detail: { reason_class: "spec-contradiction", question: "which one?" } },
+	});
+
+	const settled = await context.walk(phases);
+
+	assert.equal(settled.disposition, "paused");
+	assert.equal(settled.reason_class, "spec-contradiction");
+	assert.deepEqual(calls, ["implement"]);
+});
+
+test("wrote-but-hung is harvested rather than failed, and consumes no budget (§8.10)", async (t) => {
+	const context = await executing(t);
+	const { phases, calls } = answering({ implement: "wrote-but-hung", harvest: "passed", verify: "unrunnable" });
+
+	await assert.rejects(
+		() => context.walk(phases),
+		(error) => {
+			assert.equal(error.details.phase, "verify", "the hang did not end the walk");
+			return true;
+		},
+	);
+
+	assert.deepEqual(calls, ["implement", "harvest", "verify"]);
+	assert.equal(
+		outcomeChain(context.store, { run: context.run, ticket: context.ticket })[0].outcome,
+		"wrote-but-hung",
+	);
+});
+
+test("a cancelled attempt releases the ticket, an honest state rather than a failure (§8.9)", async (t) => {
+	const context = await executing(t);
+	const { phases } = answering({ implement: "cancelled" });
+
+	const settled = await context.walk(phases);
+
+	assert.deepEqual(settled, {
+		disposition: "released",
+		reason_class: null,
+		fault: null,
+		phase: "implement",
+		outcome: "cancelled",
+	});
+});
+
+test("a re-entered walk replays the chain from durable state and re-runs nothing (§8.10)", async (t) => {
+	const context = await executing(t);
+	const first = answering({ implement: "completed", harvest: "passed", verify: "failed" });
+	await assert.rejects(() => context.walk(first.phases), /repair/);
+
+	// The controller died and came back: same run, same attempt, same table.
+	const second = answering({ implement: "completed", harvest: "passed", verify: "failed" });
+	await assert.rejects(() => context.walk(second.phases), /repair/);
+
+	assert.deepEqual(second.calls, [], "a recorded stage is not run again — the record is the resume point");
+	assert.equal(
+		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).length,
+		3,
+		"and the chain does not grow a duplicate step",
+	);
 });
 
 test("the same phase resolved under a later attempt is a new result, not a contradiction (§8.5)", async (t) => {
