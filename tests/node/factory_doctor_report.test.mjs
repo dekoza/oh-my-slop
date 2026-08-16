@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { runCli } from "../../factory/lib/cli/main.mjs";
@@ -11,7 +11,7 @@ import { newUlid } from "../../factory/lib/identity/ulid.mjs";
 import { createProbeRegistry } from "../../factory/lib/reconcile/probes.mjs";
 import { openRepoStoreReadOnly, openStore, openStoreReadOnly } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
-import { cloneValidConfig, makeRepo } from "./helpers/factory-repo.mjs";
+import { cloneValidConfig, makeRemote, makeRepo } from "./helpers/factory-repo.mjs";
 import {
 	attemptLaunched,
 	corruptDatabaseFile,
@@ -165,6 +165,44 @@ test("the last baseline is reported as of when it ran, saying plainly it was not
 		report.baseline.checks.map((check) => check.name),
 		["unit"],
 	);
+});
+
+test("a baseline that went red without running is the last result, not an older green one", async (t) => {
+	const agentDir = makeAgentDir(t);
+	const remote = makeRemote(t);
+	const repoRoot = makeRepo(t, { remotes: { gitea: remote } });
+	const root = makePackage(t);
+	const executable = join(root, "factory", "bin", "factory.mjs");
+	const env = { PATH: onPath(t, executable) };
+	const start = () =>
+		runCli(["start", "--foreground", "42"], { cwd: repoRoot, agentDir, executable, env, herdr: herdrAnswering() });
+	const { config, activeRouting } = loadFactoryConfig({ cwd: repoRoot });
+
+	const green = await start();
+	assert.equal(green.value.report.end_reason, "drained");
+
+	// The remote goes away between the two runs, so the second baseline never gets
+	// a base to run at. Reporting the first run's green as "the last baseline"
+	// would be the stale green the whole section exists to refuse.
+	rmSync(remote, { recursive: true, force: true });
+	const red = await start();
+	assert.equal(red.value.report.end_reason, "baseline-red");
+
+	const reader = await openReader(t, { repoRoot, agentDir });
+	const report = await doctorReport(reader, {
+		repoRoot,
+		agentDir: { path: agentDir, source: "caller" },
+		config,
+		activeRouting,
+		executable,
+		env,
+		at: AT,
+	});
+
+	assert.equal(report.baseline.recorded, true);
+	assert.equal(report.baseline.ok, false);
+	assert.equal(report.baseline.run, red.value.report.run);
+	assert.equal(report.baseline.base_commit, null, "a baseline that never ran reported a base it never pinned");
 });
 
 test("--baseline executes the checks in the private clone and re-runs nothing else (§10.5, §14.24)", async (t) => {

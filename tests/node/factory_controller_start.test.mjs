@@ -478,7 +478,6 @@ test("a green baseline leaves no worktree behind, and a red one is kept to cd in
 	assert.equal(existsSync(worktreeOf(redReport).path), true);
 });
 
-
 // ── Liveness (§4.8, §5.1) ────────────────────────────────────────────────────
 
 test("the heartbeat is diagnostic, on its own front-truncatable stream, naming its run", async (t) => {

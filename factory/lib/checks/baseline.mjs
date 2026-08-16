@@ -1,5 +1,6 @@
 import { FactoryGitError } from "../git/errors.mjs";
 import { baselineWorktreePath, privateClonePath } from "../git/isolation.mjs";
+import { gitIsolationCheck } from "../git/preflight.mjs";
 import { newUlid } from "../identity/ulid.mjs";
 import { CHECK_SELECTIONS, runChecks } from "./run.mjs";
 
@@ -53,8 +54,11 @@ import { CHECK_SELECTIONS, runChecks } from "./run.mjs";
 export async function runBaseline(clone, { storeDir, checks, baseCommit, baseBranch, env, at = Date.now() }) {
 	requireOwnClone(clone, storeDir);
 
-	const baseline = newUlid(at);
-	const path = baselineWorktreePath(storeDir, baseline);
+	// The **execution**'s id: it names this one run of the set, and it is what the
+	// output artifacts are keyed by, so two runs of one check are two mutations
+	// rather than one key offered two answers (§4.5).
+	const execution = newUlid(at);
+	const path = baselineWorktreePath(storeDir, execution);
 	await clone.addDetachedWorktree({ path, at: baseCommit });
 
 	// Removal is on the success path alone, so a throw out of the set leaves the
@@ -63,12 +67,12 @@ export async function runBaseline(clone, { storeDir, checks, baseCommit, baseBra
 	const answer = await runChecks(checks, { select: CHECK_SELECTIONS.required, cwd: path, env });
 	if (answer.ok) await clone.removeWorktree({ path });
 
-	return frozen({ baseline, path, retained: !answer.ok, baseCommit, baseBranch, at, answer });
+	return frozen({ execution, path, retained: !answer.ok, baseCommit, baseBranch, at, answer });
 }
 
-function frozen({ baseline, path, retained, baseCommit, baseBranch, at, answer }) {
+function frozen({ execution, path, retained, baseCommit, baseBranch, at, answer }) {
 	return Object.freeze({
-		baseline,
+		execution,
 		at,
 		base_commit: baseCommit,
 		base_branch: baseBranch,
@@ -79,6 +83,69 @@ function frozen({ baseline, path, retained, baseCommit, baseBranch, at, answer }
 		worktree: Object.freeze({ path, retained }),
 		message: message(answer, { baseCommit, baseBranch, path, retained }),
 	});
+}
+
+/**
+ * §8.3's baseline **for a repository**: pin the base, then run the set at it.
+ *
+ * Both callers go through this one function — a run's preflight and
+ * `doctor --baseline` — for the reason §10.5 gives about the package handshake:
+ * one code path, so the two verbs cannot answer differently about what the base
+ * is or what the checks said. What differs between them is what they do with the
+ * answer, and that is all that is left outside.
+ *
+ * The three ways it can end are a **discriminated answer rather than three
+ * exception types**, because a base nobody could pin is a *result* a report has
+ * to carry (§14.14 makes it red, never skipped) and not a crash.
+ *
+ * @param {{ canonicalPath: string, storeDir: string }} where the repository — a
+ *   store satisfies this shape, and so does a `doctor` that has none yet
+ * @param {object} config the validated configuration
+ * @param {{ at?: number, env?: Record<string, string | undefined>, isolation?: object | null }} [options]
+ *   a caller that has **already** run §7's isolation check passes its verdict:
+ *   pinning the base again would fetch a second time and could run the set at a
+ *   commit the recorded check never saw (§7.2). A caller with none — `doctor` —
+ *   lets this pin one.
+ * @returns {Promise<Readonly<{ ran: true, baseline: object } |
+ *   { ran: false, reason: string, message: string, detail: object }>>}
+ */
+export async function baselineForRepo({ canonicalPath, storeDir }, config, { at = Date.now(), env, isolation = null } = {}) {
+	const pinned = isolation ?? (await gitIsolationCheck({ canonicalPath, storeDir }, config));
+
+	if (pinned.clone === undefined) {
+		return Object.freeze({
+			ran: false,
+			reason: "base-unavailable",
+			message:
+				`The required set was not run: the base commit could not be pinned, so there is nothing to run it at. ` +
+				`A run never starts on a baseline nobody ran (§8.3, §14.14). ${pinned.message}`,
+			detail: Object.freeze({ reason: "base-unavailable", because: pinned.check }),
+		});
+	}
+
+	try {
+		return Object.freeze({
+			ran: true,
+			baseline: await runBaseline(pinned.clone, {
+				storeDir,
+				checks: config.checks,
+				baseCommit: pinned.base.commit,
+				baseBranch: config.git.baseBranch,
+				env,
+				at,
+			}),
+		});
+	} catch (error) {
+		// A worktree the clone refuses to create is an automation failure, and both
+		// callers report one rather than dying with a stack trace.
+		if (!(error instanceof FactoryGitError)) throw error;
+		return Object.freeze({
+			ran: false,
+			reason: error.reason,
+			message: `The baseline could not be set up: ${error.message}`,
+			detail: Object.freeze({ reason: error.reason, base_commit: pinned.base.commit, ...error.details }),
+		});
+	}
 }
 
 /**

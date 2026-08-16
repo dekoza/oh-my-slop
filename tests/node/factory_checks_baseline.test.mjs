@@ -167,7 +167,7 @@ test("two baselines never share a worktree (§14.23)", async (t) => {
 	const [first, second] = await Promise.all([run(), run()]);
 
 	assert.notEqual(first.worktree.path, second.worktree.path);
-	assert.notEqual(first.baseline, second.baseline);
+	assert.notEqual(first.execution, second.execution);
 });
 
 // ── Recording the output (§8.7, §12.1, §4.5) ─────────────────────────────────

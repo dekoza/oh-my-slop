@@ -46,18 +46,18 @@ export const CHECK_SELECTIONS = Object.freeze({ required: "required", all: "all"
  * each of these is a distinct thing an operator fixes, and "it did not work" is
  * the answer that sends them to read a log the factory already read.
  */
-export const UNRUNNABLE_REASONS = Object.freeze([
+export const UNRUNNABLE_REASONS = Object.freeze({
 	/** The check outran §11.6's mandatory timeout and its process group was killed. */
-	"timeout",
+	timeout: "timeout",
 	/** The process died on a signal nobody here sent. */
-	"signal",
+	signal: "signal",
 	/** The shell could not find the command (exit 127). */
-	"exec-not-found",
+	execNotFound: "exec-not-found",
 	/** A non-zero exit outside the declared expected-failure contract. */
-	"unexpected-exit-code",
+	unexpectedExitCode: "unexpected-exit-code",
 	/** The process could not be started at all. */
-	"spawn-failed",
-]);
+	spawnFailed: "spawn-failed",
+});
 
 /** What a shell answers for a command it cannot find. */
 const COMMAND_NOT_FOUND = 127;
@@ -86,6 +86,14 @@ export const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
  * §9.5's `integration` lease serializes rebase → verify → publish for a reason
  * one indirection up, and holding it is the caller's business, not this
  * module's.
+ *
+ * **What this does not cover, stated rather than left to be discovered:**
+ * `doctor --baseline` is a second process, and §10.5 makes `doctor` lock-free on
+ * purpose so it answers while a run is live. An operator who runs one during a
+ * run's baseline gets the collision §9.5 describes. That is the operator's own
+ * doing rather than two lanes racing, and the alternative — a lock — is what
+ * §10.5 refuses, because a diagnostic that blocks on a live controller is a
+ * diagnostic nobody can use when it matters.
  */
 let lane = Promise.resolve();
 
@@ -187,10 +195,13 @@ function runCheck(check, { cwd, env, maxOutputBytes, now }) {
 			if (truncated) return;
 
 			const room = maxOutputBytes - kept;
-			const taken = chunk.length >= room ? chunk.subarray(0, room) : chunk;
+			const taken = chunk.length > room ? chunk.subarray(0, room) : chunk;
 			captured.push(taken);
 			kept += taken.length;
-			truncated = chunk.length >= room;
+			// Only when bytes were actually dropped: a chunk that exactly fills the
+			// remaining room lost nothing, and reporting it truncated would put a
+			// caveat on complete evidence. The next chunk finds no room and sets it.
+			truncated = chunk.length > room;
 		};
 		child.stdout.on("data", capture);
 		child.stderr.on("data", capture);
@@ -220,33 +231,37 @@ function runCheck(check, { cwd, env, maxOutputBytes, now }) {
 			);
 		};
 
-		child.on("error", (error) =>
-			answer({
-				result: CHECK_RESULTS.unrunnable,
-				reason: "spawn-failed",
-				exit_code: null,
-				signal: null,
-				message: `${check.name} could not be started: ${error.message}`,
-			}),
-		);
+		child.on("error", (error) => answer(classify(check, { spawnError: error })));
 
 		child.on("close", (code, signal) => answer(classify(check, { code, signal, timedOut })));
 	});
 }
 
 /**
- * §8.2's fault attribution, and the one place it is decided.
+ * §8.2's fault attribution, and **the one place it is decided** — every way a
+ * check can end, including never having started, so there is no second site to
+ * keep in step with this one.
  *
  * The **declared contract wins over every other reading of an exit code**: a
  * repo that lists 127 has said what 127 means for its check, and second-guessing
  * that here would be the runner overriding the only field §11.6 refuses to
  * default.
  */
-function classify(check, { code, signal, timedOut }) {
+function classify(check, { code = null, signal = null, timedOut = false, spawnError = null }) {
+	if (spawnError !== null) {
+		return {
+			result: CHECK_RESULTS.unrunnable,
+			reason: UNRUNNABLE_REASONS.spawnFailed,
+			exit_code: null,
+			signal: null,
+			message: `${check.name} could not be started: ${spawnError.message}`,
+		};
+	}
+
 	if (timedOut) {
 		return {
 			result: CHECK_RESULTS.unrunnable,
-			reason: "timeout",
+			reason: UNRUNNABLE_REASONS.timeout,
 			exit_code: null,
 			signal: signal ?? null,
 			message: `${check.name} outran its declared timeout of ${check.timeout}s and its process group was killed.`,
@@ -260,7 +275,7 @@ function classify(check, { code, signal, timedOut }) {
 	if (code === null) {
 		return {
 			result: CHECK_RESULTS.unrunnable,
-			reason: "signal",
+			reason: UNRUNNABLE_REASONS.signal,
 			exit_code: null,
 			signal,
 			message: `${check.name} was killed by ${signal}, which says nothing about the code under test.`,
@@ -280,7 +295,7 @@ function classify(check, { code, signal, timedOut }) {
 	if (code === COMMAND_NOT_FOUND) {
 		return {
 			result: CHECK_RESULTS.unrunnable,
-			reason: "exec-not-found",
+			reason: UNRUNNABLE_REASONS.execNotFound,
 			exit_code: code,
 			signal: null,
 			message: `${check.name} exited ${code}: the shell could not find \`${check.command}\`. This check is broken, not the code under test.`,
@@ -289,7 +304,7 @@ function classify(check, { code, signal, timedOut }) {
 
 	return {
 		result: CHECK_RESULTS.unrunnable,
-		reason: "unexpected-exit-code",
+		reason: UNRUNNABLE_REASONS.unexpectedExitCode,
 		exit_code: code,
 		signal: null,
 		message:

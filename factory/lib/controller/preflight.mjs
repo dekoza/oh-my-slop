@@ -1,7 +1,6 @@
-import { runBaseline } from "../checks/baseline.mjs";
 import { recordCheckOutputs } from "../checks/artifacts.mjs";
+import { baselineForRepo } from "../checks/baseline.mjs";
 import { FactoryEffectError } from "../effects/errors.mjs";
-import { FactoryGitError } from "../git/errors.mjs";
 import { gitIsolationCheck } from "../git/preflight.mjs";
 import { FactoryPackageError } from "../package/errors.mjs";
 import { assertPackageIntact, packageHandshake, recordPackageHandshake } from "../package/handshake.mjs";
@@ -112,7 +111,9 @@ export async function preflight(
 	record(await herdrCheck({ env, herdr }));
 
 	// §7.1's clone, §7.2's fetchable base, §7.8's plain-repo refusal — the
-	// factory-private clone is created here if the run is the repo's first.
+	// factory-private clone is created here if the run is the repo's first. The
+	// baseline below runs at the commit **this** check pinned rather than fetching
+	// a second one, so the recorded base and the verified base are one fact.
 	const isolation = record(await gitIsolationCheck(store, config));
 
 	record(
@@ -257,37 +258,14 @@ function repinned(error, { check, what, spec }) {
  * bytes.
  */
 async function baselineCheck(store, { run, isolation, config, hold, actor, at }) {
-	if (isolation.clone === undefined) {
-		return failed("baseline", PREFLIGHT_CLASSES.probe, {
-			message:
-				"The required set was not run: the base commit could not be pinned, so there is nothing to run it at. " +
-				"A run never starts on a baseline nobody ran (§8.3, §14.14).",
-			detail: { reason: "base-unavailable", because: isolation.check },
-		});
+	const answered = await baselineForRepo(store, config, { at, isolation });
+	if (!answered.ran) {
+		return failed("baseline", PREFLIGHT_CLASSES.probe, { message: answered.message, detail: answered.detail });
 	}
 
-	let baseline;
-	try {
-		baseline = await runBaseline(isolation.clone, {
-			storeDir: store.storeDir,
-			checks: config.checks,
-			baseCommit: isolation.base.commit,
-			baseBranch: config.git.baseBranch,
-			at,
-		});
-	} catch (error) {
-		// A worktree the clone refuses to create is an automation failure, and a
-		// red check is how preflight reports one: the run ends `baseline-red`
-		// naming this, rather than the controller dying with a stack trace.
-		if (!(error instanceof FactoryGitError)) throw error;
-		return failed("baseline", PREFLIGHT_CLASSES.probe, {
-			message: `The baseline could not be set up: ${error.message}`,
-			detail: { reason: error.reason, ...error.details },
-		});
-	}
-
+	const baseline = answered.baseline;
 	const checks = recordCheckOutputs(store, baseline.results, {
-		execution: baseline.baseline,
+		execution: baseline.execution,
 		run,
 		phase: "preflight",
 		actor,
@@ -298,7 +276,7 @@ async function baselineCheck(store, { run, isolation, config, hold, actor, at })
 	});
 
 	const detail = {
-		baseline: baseline.baseline,
+		baseline: baseline.execution,
 		base_branch: baseline.base_branch,
 		base_commit: baseline.base_commit,
 		checks,

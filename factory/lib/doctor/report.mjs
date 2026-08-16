@@ -3,17 +3,15 @@ import { join } from "node:path";
 
 import { artifactBytesByClass } from "../artifacts/ledger.mjs";
 import { capacityFor } from "../capacity/report.mjs";
-import { runBaseline } from "../checks/baseline.mjs";
+import { baselineForRepo } from "../checks/baseline.mjs";
 import { checkRecord } from "../checks/run.mjs";
 import { describeScope, PARENT_FLAG } from "../controller/scope.mjs";
 import { unresolvedEffects } from "../effects/records.mjs";
-import { FactoryGitError } from "../git/errors.mjs";
-import { gitIsolationCheck } from "../git/preflight.mjs";
 import { FactoryPackageError } from "../package/errors.mjs";
 import { packageHandshake } from "../package/handshake.mjs";
-import { resolveStorePaths } from "../state/location.mjs";
 import { reconcile, RECONCILE_MODES } from "../reconcile/engine.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
+import { resolveStorePaths } from "../state/location.mjs";
 import { FactoryTrackerError } from "../tracker/errors.mjs";
 import { readScope } from "../tracker/frontier.mjs";
 import { isDue, readCursor } from "../tracker/observation.mjs";
@@ -183,7 +181,9 @@ function alarmsOf(value) {
 	// was not re-run, and raising an alarm on a result that may predate the fix
 	// would teach the operator to ignore the list.
 	if (value.baseline.rerun && value.baseline.ok === false) {
-		alarms.push(alarm("baseline-red", value.baseline.message, value.baseline.detail ?? { red: value.baseline.checks }));
+		alarms.push(
+			alarm("baseline-red", value.baseline.message, value.baseline.detail ?? { red: value.baseline.red }),
+		);
 	}
 
 	if (value.package.error !== null && value.package.error !== undefined) {
@@ -432,13 +432,24 @@ const DIAGNOSTIC_TAIL_BYTES = 4000;
  * fact about one moment, not current state, and §4.4's projections are the
  * monitor's read contract — a table nothing else needs would be a projector
  * version to keep in step for one line of a diagnosis.
+ *
+ * The scan is bounded by retention rather than by a limit: `preflight.checked`
+ * lives on a `run:<ULID>` stream, and §12.2 deletes those whole at the horizon,
+ * so this reads the preflight stages of the runs still in full detail — not of
+ * every run this repository has ever had.
  */
 function recordedBaseline(store) {
+	// The last baseline **result**, whatever it said — including the one that went
+	// red because the base could not be pinned, which is a baseline result and not
+	// an absent one. Skipping those would answer "the last baseline" with an older,
+	// greener run, which is the stale green this section exists to refuse.
+	// `unbuilt` is the one record that is not a result: it is what a package
+	// without this subsystem wrote, and it says nothing about the base.
 	const recorded = store === null
 		? null
 		: store
 				.readEvents({ kind: "preflight.checked" })
-				.filter((event) => event.payload.check === "baseline" && event.payload.detail?.baseline !== undefined)
+				.filter((event) => event.payload.check === "baseline" && event.payload.result !== "unbuilt")
 				.at(-1);
 
 	if (recorded === undefined || recorded === null) {
@@ -454,16 +465,19 @@ function recordedBaseline(store) {
 		});
 	}
 
+	// A baseline that never got to run carries no base and no checks, and says so
+	// with nulls rather than with an empty list that reads as "nothing failed".
+	const detail = recorded.payload.detail;
 	return Object.freeze({
 		recorded: true,
 		rerun: false,
 		ok: recorded.payload.result === "passed",
 		as_of: recorded.occurred_at,
 		run: recorded.run,
-		base_branch: recorded.payload.detail.base_branch,
-		base_commit: recorded.payload.detail.base_commit,
-		checks: recorded.payload.detail.checks,
-		worktree: recorded.payload.detail.worktree,
+		base_branch: detail.base_branch ?? null,
+		base_commit: detail.base_commit ?? null,
+		checks: detail.checks ?? null,
+		worktree: detail.worktree ?? null,
 		message: `${recorded.payload.message} It was **not** re-run: this is what run ${recorded.run} recorded (§10.5).`,
 		spec: "§8.3, §10.5",
 	});
@@ -477,48 +491,30 @@ function recordedBaseline(store) {
  * it is not the durable state §14.24 is about.
  */
 async function executedBaseline({ store, repoRoot, agentDir, config, at }) {
-	const storeDir = store?.storeDir ?? resolveStorePaths({ repoRoot, agentDir: agentDir.path }).primary.dir;
-	const isolation = await gitIsolationCheck(
-		{ canonicalPath: store?.canonicalPath ?? repoRoot, storeDir },
+	const answered = await baselineForRepo(
+		{
+			canonicalPath: store?.canonicalPath ?? repoRoot,
+			storeDir: store?.storeDir ?? resolveStorePaths({ repoRoot, agentDir: agentDir.path }).primary.dir,
+		},
 		config,
+		{ at },
 	);
 
-	if (isolation.clone === undefined) {
+	if (!answered.ran) {
 		return Object.freeze({
 			recorded: false,
 			rerun: true,
 			ok: false,
 			as_of: at,
-			base_commit: null,
-			message: `The baseline could not be run: ${isolation.message}`,
-			detail: isolation.detail,
+			base_commit: answered.detail.base_commit ?? null,
+			red: null,
+			message: answered.message,
+			detail: answered.detail,
 			spec: "§7.1, §8.3, §10.5",
 		});
 	}
 
-	let baseline;
-	try {
-		baseline = await runBaseline(isolation.clone, {
-			storeDir,
-			checks: config.checks,
-			baseCommit: isolation.base.commit,
-			baseBranch: config.git.baseBranch,
-			at,
-		});
-	} catch (error) {
-		if (!(error instanceof FactoryGitError)) throw error;
-		return Object.freeze({
-			recorded: false,
-			rerun: true,
-			ok: false,
-			as_of: at,
-			base_commit: isolation.base.commit,
-			message: `The baseline could not be set up: ${error.message}`,
-			detail: Object.freeze({ reason: error.reason, ...error.details }),
-			spec: "§7.1, §10.5",
-		});
-	}
-
+	const baseline = answered.baseline;
 	return Object.freeze({
 		recorded: false,
 		rerun: true,
@@ -526,6 +522,9 @@ async function executedBaseline({ store, repoRoot, agentDir, config, at }) {
 		as_of: at,
 		base_branch: baseline.base_branch,
 		base_commit: baseline.base_commit,
+		// The red names, kept beside the checks: an alarm that has to reconstruct
+		// them from the list would be one more place to get the filter wrong.
+		red: baseline.red,
 		checks: Object.freeze(baseline.results.map(diagnosed)),
 		skipped: baseline.skipped,
 		worktree: baseline.worktree,

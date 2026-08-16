@@ -306,9 +306,11 @@ is the authority; cite the section a change answers to.
   one key would make an ordinary re-entry a §4.5 conflict. `baseline.mjs` is §8.3's gate in a
   **detached throwaway worktree** under `baselines/` — deleted eagerly when green, retained
   when red (§12.7) — and it writes nothing durable, which is exactly what lets
-  `doctor --baseline` share it verbatim under §14.24. Differential no-new-failures
-  verification is **deliberately absent**; §8.3 records it as the v2 answer, and the comment
-  saying so is load-bearing.
+  `doctor --baseline` share it verbatim under §14.24 — both verbs reach it through the one
+  `baselineForRepo`, so they cannot answer differently about what the base is or what the
+  checks said, and a caller that already pinned a base passes it rather than fetching a
+  second one. Differential no-new-failures verification is **deliberately absent**; §8.3
+  records it as the v2 answer, and the comment saying so is load-bearing.
 - **The tracker is read through `tea`, and holds no credential of its own.**
   `.pi/factory.json` carries `tracker.repo`, `tracker.remote`, and `tracker.login` — no
   base URL and no token, which is not an omission: §6.8 states that `tea` credentials are

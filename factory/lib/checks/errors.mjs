@@ -1,11 +1,12 @@
 /**
  * The check runner's refusals (§8.2, §8.3).
  *
- * There are deliberately few, because **a check's own outcome is never one of
+ * There is deliberately one, because **a check's own outcome is never one of
  * them**: a red suite, a suite that will not start, and a suite that hangs are
- * all *results* the runner classifies and hands back (§8.2's fault attribution).
- * What throws here is a caller asking for something the specification does not
- * offer — a narrowed check set, a baseline with no base to run at.
+ * all *results* the runner classifies and hands back (§8.2's fault attribution),
+ * and so is a baseline with no base to run at — §14.14 needs that reported red,
+ * not thrown. What is left is a caller asking for something the specification
+ * does not offer.
  *
  * The reason reaches the operator's `--json` output, so it is a closed set the
  * constructor enforces rather than a free string each throw site invents.
@@ -17,8 +18,6 @@ export const CHECK_ERROR_REASONS = Object.freeze([
 	 * silently — so the selector is closed and a third value is a refusal.
 	 */
 	"check-selection-unknown",
-	/** A baseline asked for at a base commit nothing could pin (§8.3). */
-	"baseline-base-unavailable",
 ]);
 
 export class FactoryCheckError extends Error {
