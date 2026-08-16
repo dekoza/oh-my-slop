@@ -7,7 +7,7 @@ import { runStart } from "../../factory/lib/controller/start.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { cloneValidConfig, makeRepo } from "./helpers/factory-repo.mjs";
-import { herdrAnswering, makeAgentDir } from "./helpers/factory-store.mjs";
+import { herdrAnswering, makeAgentDir, makeHome } from "./helpers/factory-store.mjs";
 import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 /**
@@ -27,7 +27,7 @@ function invocation(t, { config } = {}) {
 		cwd: makeRepo(t, config === undefined ? {} : { config }),
 		agentDir: makeAgentDir(t),
 		executable,
-		env: { PATH: onPath(t, executable), HERDR_PANE_ID: "w1:p7" },
+		env: { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" },
 		herdr: herdrAnswering(),
 		workerTransports: workerTransportsAnswering(root),
 	};

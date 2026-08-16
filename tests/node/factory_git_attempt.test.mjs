@@ -8,6 +8,12 @@ import {
 	FACTORY_GIT_IDENTITY,
 	factoryAttemptTrailer,
 } from "../../factory/lib/git/attempt.mjs";
+import {
+	claudeTrustDecision,
+	piTrustDecision,
+	readClaudeConfigState,
+	readPiTrust,
+} from "../../factory/lib/worker/trust.mjs";
 import { mintedAttempt, TEST_HOLD as HOLD } from "./helpers/factory-git.mjs";
 import { FIXED_NOW } from "./helpers/factory-store.mjs";
 
@@ -24,7 +30,7 @@ function effectRows(store) {
 }
 
 test("an attempt gets a fresh worktree on its own branch at the pinned base, as resolved effects", async (t) => {
-	const { store, clone, base, run, attempt } = await mintedAttempt(t);
+	const { store, clone, base, run, attempt, workerConfig } = await mintedAttempt(t);
 
 	const created = await createAttemptWorktree(store, clone, {
 		hold: HOLD,
@@ -33,6 +39,7 @@ test("an attempt gets a fresh worktree on its own branch at the pinned base, as 
 		attempt,
 		phase: "implement",
 		baseCommit: base.commit,
+		workerConfig,
 		actor: "controller",
 		at: FIXED_NOW,
 	});
@@ -67,7 +74,7 @@ test("an attempt gets a fresh worktree on its own branch at the pinned base, as 
 });
 
 test("factory commits are authored as the factory identity, never as the operator (§7.3)", async (t) => {
-	const { store, clone, base, run, attempt } = await mintedAttempt(t);
+	const { store, clone, base, run, attempt, workerConfig } = await mintedAttempt(t);
 	const { worktreePath } = await createAttemptWorktree(store, clone, {
 		hold: HOLD,
 		run,
@@ -75,6 +82,7 @@ test("factory commits are authored as the factory identity, never as the operato
 		attempt,
 		phase: "implement",
 		baseCommit: base.commit,
+		workerConfig,
 		actor: "controller",
 		at: FIXED_NOW,
 	});
@@ -89,8 +97,76 @@ test("factory commits are authored as the factory identity, never as the operato
 	assert.equal(author, `${FACTORY_GIT_IDENTITY.name} <${FACTORY_GIT_IDENTITY.email}>`);
 });
 
-test("re-entering the same attempt is the committed result, not a second mutation", async (t) => {
+test("§6.8's deny floor rides the worktree itself: a worker's push has nowhere to go", async (t) => {
+	const { remote, store, clone, base, run, attempt, workerConfig } = await mintedAttempt(t);
+	const { worktreePath, branch } = await createAttemptWorktree(store, clone, {
+		hold: HOLD,
+		run,
+		ticket: 42,
+		attempt,
+		phase: "implement",
+		baseCommit: base.commit,
+		workerConfig,
+		actor: "controller",
+		at: FIXED_NOW,
+	});
+
+	execFileSync("git", ["-C", worktreePath, "commit", "--quiet", "--allow-empty", "-m", "feat: a wave"]);
+	assert.throws(
+		() => execFileSync("git", ["-C", worktreePath, "push", "origin", branch], { stdio: "pipe", encoding: "utf8" }),
+		// git names the disabled URL's scheme, so the refusal a worker reads says
+		// why it was refused rather than looking like a broken remote.
+		(error) => /factory-deny-floor/.test(String(error.stderr)),
+	);
+
+	// The clone's own push URL is untouched: §7.5's integration is the one push
+	// the pipeline exists to make, and it runs from the clone, not the worktree.
+	assert.equal(
+		execFileSync("git", ["-C", clone.dir, "remote", "get-url", "--push", "origin"], { encoding: "utf8" }).trim(),
+		remote,
+	);
+});
+
+test("an attempt worktree is pre-trusted for both runtimes before any worker sees it", async (t) => {
+	const { store, clone, base, run, attempt, workerConfig } = await mintedAttempt(t);
+
+	const { worktreePath } = await createAttemptWorktree(store, clone, {
+		hold: HOLD,
+		run,
+		ticket: 42,
+		attempt,
+		phase: "implement",
+		baseCommit: base.commit,
+		workerConfig,
+		actor: "controller",
+		at: FIXED_NOW,
+	});
+
+	assert.equal(piTrustDecision(readPiTrust(workerConfig.roots.pi), worktreePath), true);
+	assert.equal(claudeTrustDecision(readClaudeConfigState(workerConfig.roots.claude), clone.dir), true);
+});
+
+test("a worktree asked for without the worker config environment is refused, not created half-safe", async (t) => {
 	const { store, clone, base, run, attempt } = await mintedAttempt(t);
+
+	await assert.rejects(
+		createAttemptWorktree(store, clone, {
+			hold: HOLD,
+			run,
+			ticket: 42,
+			attempt,
+			phase: "implement",
+			baseCommit: base.commit,
+			workerConfig: null,
+			actor: "controller",
+			at: FIXED_NOW,
+		}),
+		(error) => error.name === "FactoryGitError" && error.reason === "worktree-unusable",
+	);
+});
+
+test("re-entering the same attempt is the committed result, not a second mutation", async (t) => {
+	const { store, clone, base, run, attempt, workerConfig } = await mintedAttempt(t);
 	const context = {
 		hold: HOLD,
 		run,
@@ -98,6 +174,7 @@ test("re-entering the same attempt is the committed result, not a second mutatio
 		attempt,
 		phase: "implement",
 		baseCommit: base.commit,
+		workerConfig,
 		actor: "controller",
 		at: FIXED_NOW,
 	};
@@ -110,13 +187,14 @@ test("re-entering the same attempt is the committed result, not a second mutatio
 });
 
 test("the base is never chased mid-attempt: a moved base on re-entry is a typed conflict (§7.2)", async (t) => {
-	const { store, clone, base, run, attempt } = await mintedAttempt(t);
+	const { store, clone, base, run, attempt, workerConfig } = await mintedAttempt(t);
 	const context = {
 		hold: HOLD,
 		run,
 		ticket: 42,
 		attempt,
 		phase: "implement",
+		workerConfig,
 		actor: "controller",
 		at: FIXED_NOW,
 	};

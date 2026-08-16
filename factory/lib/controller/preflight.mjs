@@ -48,6 +48,8 @@ export const PREFLIGHT_CLASSES = Object.freeze({ static: "static", probe: "probe
  * @param {object} context.scope §3.1's selector
  * @param {object} context.config the validated configuration
  * @param {string} context.configPath
+ * @param {string} context.repoRoot the repository the run is about — §6.8's declared
+ *   worker-context file is read from it
  * @param {object} context.activeRouting
  * @param {Record<string, ReadonlyArray<string>>} context.declared
  * @param {string} [context.executable] §11.7's anchor
@@ -69,6 +71,7 @@ export async function preflight(
 		scope,
 		config,
 		configPath,
+		repoRoot,
 		activeRouting,
 		declared,
 		executable,
@@ -90,6 +93,23 @@ export async function preflight(
 		handshakeCheck(store, { run, executable, env, expect: config.package?.expect ?? null, hold, actor, at }),
 	);
 
+	// §6.2's layers 1 and 2 and §6.8's three obligations, over the handshake's own
+	// pin: one computation behind the closure, the environment, and the probe.
+	const worker = createWorkerPreflight({
+		handshake: handshake.handshake ?? null,
+		config,
+		activeRouting,
+		cacheRoot: store.storeDir,
+		repoRoot,
+		env,
+		transports: workerTransports,
+	});
+
+	// §6.8's environment is built before the manifest, because the manifest
+	// records what it promoted: the declared context file's digest is evidence,
+	// and evidence of a file nobody had read yet would be a claim.
+	const workerIsolation = record(worker.isolationCheck());
+
 	const manifest = record(
 		manifestCheck(store, {
 			run,
@@ -99,22 +119,15 @@ export async function preflight(
 			activeRouting,
 			declared,
 			handshake: handshake.handshake ?? null,
+			worker: workerIsolation.facts ?? null,
 			hold,
 			actor,
 			at,
 		}),
 	);
 
-	// §6.2's layers 1 and 2, over the handshake's own pin: the closure with the
-	// artifacts, the live probe with the probes, one computation behind both.
-	const worker = createWorkerPreflight({
-		handshake: handshake.handshake ?? null,
-		config,
-		activeRouting,
-		cacheRoot: store.storeDir,
-		transports: workerTransports,
-	});
-
+	record(worker.permissionsCheck());
+	record(worker.trustCheck());
 	record(worker.closureCheck());
 
 	// ── Runtime probes (§9.7) ────────────────────────────────────────────────

@@ -19,6 +19,7 @@ import {
 	FIXED_NOW,
 	herdrAnswering,
 	makeAgentDir,
+	makeHome,
 	refusalOfAsync,
 	runStarted,
 } from "./helpers/factory-store.mjs";
@@ -130,7 +131,7 @@ test("the last baseline is reported as of when it ran, saying plainly it was not
 	const repoRoot = makeRepo(t);
 	const root = makePackage(t);
 	const executable = join(root, "factory", "bin", "factory.mjs");
-	const env = { PATH: onPath(t, executable) };
+	const env = { PATH: onPath(t, executable), HOME: makeHome(t) };
 	const { config, activeRouting } = loadFactoryConfig({ cwd: repoRoot });
 
 	// A real run, because the record doctor reports is the one a run's preflight
@@ -175,7 +176,7 @@ test("a baseline that went red without running is the last result, not an older 
 	const repoRoot = makeRepo(t, { remotes: { gitea: remote } });
 	const root = makePackage(t);
 	const executable = join(root, "factory", "bin", "factory.mjs");
-	const env = { PATH: onPath(t, executable) };
+	const env = { PATH: onPath(t, executable), HOME: makeHome(t) };
 	const start = () =>
 		runCli(["start", "--foreground", "42"], {
 			cwd: repoRoot,

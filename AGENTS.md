@@ -90,7 +90,11 @@ is the authority; cite the section a change answers to.
   belong to the run end-reason table.
 - Defaults exist only in `factory/lib/config/defaults.mjs` (`budgets`, `retention`),
   where an upstream decision already fixed the value. Everywhere else absence refuses —
-  a policy the loader fills in is a policy nobody can read on disk.
+  a policy the loader fills in is a policy nobody can read on disk. The one thing that
+  is not a default and reads like one: §6.8's `worker` block holds *additions* to floors
+  that live in code, so its absent form is the empty addition — the channel's identity,
+  not a value anyone chose — spelled once in `config/worker.mjs` so no consumer branches
+  on `undefined`.
 - Policy that is not configuration lives in code, and each piece is read from exactly
   one place: the label vocabulary in `factory/lib/tracker/labels.mjs`;
   `MAX_SUPPORTED_TICKET_CONCURRENCY` in `factory/lib/config/concurrency.mjs`;
@@ -238,6 +242,36 @@ is the authority; cite the section a change answers to.
   declared model that resolves to two ids within one run (§11.7). The three lifecycle
   operations refuse as `worker-lifecycle-unbuilt` until #107 lands them; the probes' IO lives
   behind `transports.mjs` and is injected in tests exactly as the Herdr probe is.
+- **A worker's environment is built, never inherited** (§6.8). `worker/environment.mjs`
+  materialises one controller-owned config root per runtime beside `state.db`
+  (`CLAUDE_CONFIG_DIR`, `PI_CODING_AGENT_DIR` — each runtime's own variable), and a session's
+  whole binding — env, flags, settings file — comes from it, including the preflight probes':
+  a probe run under the operator's config proves a world no worker will ever see. Three closed
+  lists cross in and nothing else: **capability artifacts** (credentials, the model
+  catalogue), the **declared worker-context file** (§6.8's second migration channel, installed
+  as each runtime's user-memory file and hash-recorded in the run manifest), and **declared pi
+  extensions**. Isolation is what makes that last one necessary and is worth knowing before
+  you delete it: the `local` resource class's models come from an operator extension, so an
+  empty agent directory silently removes the class — and §6.5's transcript pointer with it.
+  Promotion is declared and recorded; live inheritance is never a channel.
+- **Permissions derive from the role's posture, never from a profile** (§6.8, §11.4).
+  `worker/permissions.mjs` is the one home for the deny floor (`git push`, `tea`, `gh`, in
+  every spelling the matcher accepts), the builder binding (`dontAsk` + broad tool-family
+  allows — never a per-command allowlist, never `acceptEdits`, which still prompts for Bash),
+  and the reviewer binding (plan mode, edit tools withheld). **Overrides may only add
+  denies**: the config surface has no allow channel and no remove channel, so subtraction is
+  unexpressible rather than checked, and an inverted rule spelling fails to parse. The floor's
+  non-permission half lives in `git/attempt.mjs` — a **disabled `pushurl` in every attempt
+  worktree**, worktree-scoped so §7.5's integration push from the clone still works.
+- **Pre-trust is per runtime's own resolution rule, not per path** (`worker/trust.mjs`). pi
+  walks *up* to the nearest `trust.json` entry, so one entry on the worktrees root covers
+  every attempt; Claude keys `.claude.json`'s `projects` map exactly, and for a linked
+  worktree the key it writes is the **repository's git common directory** — verified live, and
+  pre-trusting the worktree path alone would leave every pane facing the dialog. A `--print`
+  probe never meets the dialog at all, so the guarantee is the state predicate that preflight
+  asserts, not a green probe. `createAttemptWorktree` therefore **requires** the environment
+  handle and applies both the pushurl and the pre-trust outside the effect, so a re-entered
+  attempt converges rather than skipping them.
 - Git isolation (`factory/lib/git/`) operates **exclusively on a factory-private bare
   clone** beside `state.db`; the operator's checkout is never read or written — the
   protection is topological, and `factory_controller_start.test.mjs` snapshots the

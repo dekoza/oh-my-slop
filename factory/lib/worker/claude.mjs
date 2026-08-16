@@ -2,8 +2,9 @@ import { CLAUDE_RESOURCE_CLASS } from "../config/profiles.mjs";
 import { createWorkerAdapter, unbuiltLifecycleOperations } from "./adapter.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
 import { ensureClaudePlugin } from "./plugin.mjs";
-import { harnessVersion, memoizedPreflight, parseJson, probeFinding, unreachableRuntime } from "./probe.mjs";
+import { harnessVersion, memoizedPreflight, parseJson, probeFinding, runIn, unreachableRuntime } from "./probe.mjs";
 import * as realTransport from "./transports.mjs";
+import { readClaudeConfigState, untrustedProjects } from "./trust.mjs";
 
 /**
  * The Claude half of §6.1's adapter: plugin directory, strict validation, and
@@ -30,14 +31,19 @@ import * as realTransport from "./transports.mjs";
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 /**
- * The production flag set for the initialize probe, per §6.2. #106's config
- * isolation adds the controller-owned `--settings`/`CLAUDE_CONFIG_DIR` pair on
- * top when it lands; the plugin and protocol flags are fixed here.
+ * The production flag set for the initialize probe, per §6.2.
+ *
+ * `sessionArgs` is §6.8's binding — the controller-owned `--settings` file and
+ * the posture's `--permission-mode` — and it rides the probe deliberately: the
+ * mode is also written into the settings file, and passing it here is what
+ * makes the installed binary *accept or reject* the spelling before a pane
+ * depends on it.
  *
  * @param {string} pluginDir
+ * @param {ReadonlyArray<string>} [sessionArgs]
  * @returns {string[]}
  */
-export function claudeProbeArguments(pluginDir) {
+export function claudeProbeArguments(pluginDir, sessionArgs = []) {
 	return [
 		"--plugin-dir",
 		pluginDir,
@@ -47,6 +53,7 @@ export function claudeProbeArguments(pluginDir) {
 		"stream-json",
 		"--print",
 		"--verbose",
+		...sessionArgs,
 	];
 }
 
@@ -61,6 +68,9 @@ export function claudeProbeArguments(pluginDir) {
  * @param {number | null} input.declaredSize `concurrency.resources["claude-code"]`
  * @param {string} input.cacheRoot the store directory holding the plugin cache
  * @param {string} input.packageRev the pinned tree digest — the plugin cache key
+ * @param {{ env?: object, sessionArgs?: ReadonlyArray<string>, cwd?: string, configDir?: string }} [input.session]
+ *   §6.8's controller-owned binding: `CLAUDE_CONFIG_DIR`, the posture's flags, and
+ *   the directory a worker pane runs in
  * @param {object} [input.transport]
  * @param {string} [input.binary]
  * @param {number} [input.timeoutMs]
@@ -72,14 +82,16 @@ export async function probeClaudeRuntime({
 	cacheRoot,
 	expectedSkills,
 	declaredSize = null,
+	session: binding = {},
 	transport = {},
 	binary = "claude",
 	timeoutMs = DEFAULT_TIMEOUT_MS,
 }) {
 	const io = { ...realTransport, ...transport };
 	const failures = [];
+	const where = { env: binding.env, cwd: binding.cwd };
 
-	const version = await harnessVersion(io, { label: "Claude", binary, timeoutMs }, failures);
+	const version = await harnessVersion(io, { label: "Claude", binary, timeoutMs, where }, failures);
 	if (version === null) return observation({ ok: false, version, failures, declaredSize, binary });
 
 	// §6.3: built by the package's generator, cached per revision, immutable.
@@ -92,10 +104,15 @@ export async function probeClaudeRuntime({
 		return observation({ ok: false, version, failures, declaredSize, binary });
 	}
 
-	await strictValidation(io, { binary, plugin, timeoutMs }, failures);
-	await componentDiff(io, { binary, plugin, expectedSkills, timeoutMs }, failures);
+	await strictValidation(io, { binary, plugin, where, timeoutMs }, failures);
+	await componentDiff(io, { binary, plugin, expectedSkills, where, timeoutMs }, failures);
 
-	const initialized = await initializeProbe(io, { binary, plugin, timeoutMs }, failures);
+	const initialized = await initializeProbe(
+		io,
+		{ binary, plugin, sessionArgs: binding.sessionArgs ?? [], where, timeoutMs },
+		failures,
+	);
+	assertNothingUntrusted(binding.configDir, failures);
 	const commands = initialized?.commands ?? Object.freeze([]);
 	const models = initialized?.models ?? Object.freeze([]);
 
@@ -165,8 +182,11 @@ export function createClaudeAdapter(context) {
 
 // ── The probe's three steps ──────────────────────────────────────────────────
 
-async function strictValidation(io, { binary, plugin, timeoutMs }, failures) {
-	const answer = await io.runCommand(binary, ["plugin", "validate", "--strict", plugin.dir], { timeout: timeoutMs });
+async function strictValidation(io, { binary, plugin, where, timeoutMs }, failures) {
+	const answer = await io.runCommand(binary, ["plugin", "validate", "--strict", plugin.dir], {
+		timeout: timeoutMs,
+		...runIn(where),
+	});
 	if (answer.status === 0) return;
 
 	failures.push(
@@ -185,10 +205,11 @@ async function strictValidation(io, { binary, plugin, timeoutMs }, failures) {
  * the loader's failure mode is a silently smaller inventory, and only a count
  * compared against the shipped count betrays it (§6.3).
  */
-async function componentDiff(io, { binary, plugin, expectedSkills, timeoutMs }, failures) {
+async function componentDiff(io, { binary, plugin, expectedSkills, where, timeoutMs }, failures) {
 	const name = plugin.manifest.name;
 	const answer = await io.runCommand(binary, ["--plugin-dir", plugin.dir, "plugin", "details", name], {
 		timeout: timeoutMs,
+		...runIn(where),
 	});
 
 	const inventory = answer.status === 0 ? parseSkillInventory(answer.stdout) : null;
@@ -222,14 +243,16 @@ async function componentDiff(io, { binary, plugin, expectedSkills, timeoutMs }, 
 	);
 }
 
-async function initializeProbe(io, { binary, plugin, timeoutMs }, failures) {
+async function initializeProbe(io, { binary, plugin, sessionArgs, where, timeoutMs }, failures) {
 	const requestId = `factory-preflight-${Date.now().toString(36)}`;
 	let session;
 	try {
 		session = await io.lineSession({
 			binary,
-			args: claudeProbeArguments(plugin.dir),
+			args: claudeProbeArguments(plugin.dir, sessionArgs),
 			input: [JSON.stringify({ type: "control_request", request_id: requestId, request: { subtype: "initialize" } })],
+			env: where.env,
+			cwd: where.cwd,
 			timeoutMs,
 		});
 	} catch (error) {
@@ -267,6 +290,42 @@ async function initializeProbe(io, { binary, plugin, timeoutMs }, failures) {
 		),
 	);
 	return null;
+}
+
+/**
+ * §6.8's standing assertion over the controller-owned config state: **no
+ * project recorded in it is one nobody trusted.**
+ *
+ * The trust check pre-trusted the keys the controller derived; this catches a
+ * key the derivation did not anticipate — Claude keys a linked worktree by the
+ * *repository*, which is not the obvious answer — before a pane wedges on a
+ * dialog nobody is watching.
+ *
+ * Two honest limits, both measured rather than assumed:
+ *
+ * - A `--print` probe never meets the dialog (the help text: it is skipped in
+ *   non-interactive mode), so this is a state assertion, never an observation
+ *   of the dialog's absence. The interactive pane's safety rests on the state.
+ * - A session whose cwd is a bare repository or a plain directory records **no**
+ *   project at all, so on a given run this may have nothing to judge. What it
+ *   then guards is the accumulated state: an unexpected key a *previous*
+ *   session left is caught by the next run's preflight rather than never.
+ */
+function assertNothingUntrusted(configDir, failures) {
+	if (configDir === undefined) return;
+
+	const untrusted = untrustedProjects(readClaudeConfigState(configDir));
+	if (untrusted.length === 0) return;
+
+	failures.push(
+		probeFinding(
+			"trust-not-established",
+			`The probed session recorded ${untrusted.join(", ")} as a project with no accepted trust dialog, and the ` +
+				`controller had pre-trusted a different key. An interactive worker pane in that project would sit on the ` +
+				`trust dialog until it timed out, so this is an automation failure now rather than a hang later (§6.8).`,
+			{ untrusted: [...untrusted], config_dir: configDir },
+		),
+	);
 }
 
 /** The one line of `plugin details` this probe reads: `Skills (N)  a, b, c`. */

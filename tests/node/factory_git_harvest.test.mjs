@@ -17,7 +17,7 @@ import { FIXED_NOW } from "./helpers/factory-store.mjs";
  */
 
 async function attemptFixture(t) {
-	const { store, clone, base, run, attempt } = await mintedAttempt(t);
+	const { store, clone, base, run, attempt, workerConfig } = await mintedAttempt(t);
 
 	const created = await createAttemptWorktree(store, clone, {
 		hold: TEST_HOLD,
@@ -26,6 +26,7 @@ async function attemptFixture(t) {
 		attempt,
 		phase: "implement",
 		baseCommit: base.commit,
+		workerConfig,
 		actor: "controller",
 		at: FIXED_NOW,
 	});

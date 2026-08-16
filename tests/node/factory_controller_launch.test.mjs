@@ -11,7 +11,7 @@ import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
-import { herdrAnswering, leaseIdentity, makeAgentDir } from "./helpers/factory-store.mjs";
+import { herdrAnswering, leaseIdentity, makeAgentDir, makeHome } from "./helpers/factory-store.mjs";
 import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 /**
@@ -36,7 +36,7 @@ function invocation(t, { herdr = AVAILABLE, runHerdr = null } = {}) {
 		cwd: makeRepo(t),
 		agentDir: makeAgentDir(t),
 		executable,
-		env: { PATH: onPath(t, executable), HERDR_PANE_ID: "w1:p7" },
+		env: { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" },
 		herdr,
 		workerTransports: workerTransportsAnswering(root),
 	};

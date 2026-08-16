@@ -727,3 +727,68 @@ test("a package block with no expectation refuses — it declares nothing", (t) 
 	assert.equal(error.reason, "missing-key");
 	assert.equal(error.details.at, "package.expect");
 });
+
+// ── The worker block: §6.8's declared per-run overrides ──────────────────────
+
+test("an absent worker block is no overrides, spelled once so no caller branches on undefined", (t) => {
+	const { config } = loaded(t, clone());
+
+	assert.deepEqual(config.worker, { denies: [], contextFile: null, piExtensions: [] });
+});
+
+test("declared overrides survive the load exactly as written", (t) => {
+	const config = clone();
+	config.worker = { denies: ["Bash(curl:*)"], contextFile: "docs/worker-context.md", piExtensions: ["/ext/index.ts"] };
+
+	const loadedConfig = loaded(t, config);
+
+	assert.deepEqual(loadedConfig.config.worker.denies, ["Bash(curl:*)"]);
+	assert.equal(loadedConfig.config.worker.contextFile, "docs/worker-context.md");
+	assert.deepEqual(loadedConfig.config.worker.piExtensions, ["/ext/index.ts"]);
+	// Unlike `budgets`, these need no declared-key list: the absent form of each
+	// is empty, so the validated value already says whether anything was declared.
+	assert.equal(loadedConfig.declared.worker, undefined);
+});
+
+test("a cwd-relative extension path is refused: config takes no ambient input", (t) => {
+	const config = clone();
+	config.worker = { piExtensions: ["extensions/local-router/index.ts"] };
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "invalid-value");
+	assert.equal(error.details.at, "worker.piExtensions[0]");
+	assert.match(error.message, /where the binary was invoked from/);
+});
+
+test("a per-run override that is really a subtraction is refused at load, in the deny floor's own words", (t) => {
+	const config = clone();
+	config.worker = { denies: ["!Bash(git push:*)"] };
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "invalid-value");
+	assert.equal(error.details.at, "worker.denies");
+	assert.match(error.message, /there is no channel for one/);
+});
+
+test("a context file pointing outside the repository is refused: evidence has to be part of the repository", (t) => {
+	for (const path of ["/etc/passwd", "../elsewhere/rules.md"]) {
+		const config = clone();
+		config.worker = { contextFile: path };
+
+		const error = loadFailure(t, config);
+
+		assert.equal(error.details.at, "worker.contextFile", path);
+	}
+});
+
+test("an unknown key in the worker block refuses, like every other block", (t) => {
+	const config = clone();
+	config.worker = { permissionMode: "bypassPermissions" };
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "unknown-key");
+	assert.equal(error.details.at, "worker.permissionMode");
+});

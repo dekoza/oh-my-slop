@@ -12,7 +12,7 @@ import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { makeRepo, VALID_CONFIG } from "./helpers/factory-repo.mjs";
-import { herdrAnswering, leaseIdentity, makeAgentDir } from "./helpers/factory-store.mjs";
+import { herdrAnswering, leaseIdentity, makeAgentDir, makeHome } from "./helpers/factory-store.mjs";
 import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -251,7 +251,7 @@ function invocation(t) {
 		cwd: makeRepo(t),
 		agentDir: makeAgentDir(t),
 		executable,
-		env: { PATH: onPath(t, executable) },
+		env: { PATH: onPath(t, executable), HOME: makeHome(t) },
 		// §10.3's availability check is a live read of the operator's terminal
 		// multiplexer; a suite that only passed on a machine running one would be
 		// testing the machine. The run lifecycle's own suite drives both answers.

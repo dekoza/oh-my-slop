@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -407,4 +408,68 @@ test("the Claude adapter memoizes per revision, and a fresh revision rebuilds no
 
 	assert.equal(first.ok, true);
 	assert.equal(fake.calls.lineSession.length, 1, "one revision, one initialize probe");
+});
+
+// ── §6.8's binding rides the probe (§6.2's production path) ──────────────────
+
+test("the pi probe runs under the controller-owned binding, flags and all", async (t) => {
+	const root = fixturePackage(t);
+	const fake = piTransport({ commands: skillCommandsOf(root) });
+
+	await probePiRuntime(
+		piContext(root, fake.transport, {
+			session: {
+				env: { PI_CODING_AGENT_DIR: "/state/worker-config/pi" },
+				sessionArgs: ["--extension", "/ext/index.ts"],
+				cwd: "/state/worktrees",
+			},
+		}),
+	);
+
+	const [session] = fake.calls.lineSession;
+	assert.equal(session.env.PI_CODING_AGENT_DIR, "/state/worker-config/pi");
+	assert.equal(session.cwd, "/state/worktrees");
+	assert.deepEqual(session.args.slice(-2), ["--extension", "/ext/index.ts"]);
+	// The production flags stay first: the binding adds, it does not replace.
+	assert.deepEqual(session.args.slice(0, 4), ["--mode", "rpc", "--no-session", "--no-skills"]);
+});
+
+test("the Claude probe runs the posture's own flags, so the installed binary is what accepts them", async (t) => {
+	const fake = claudeTransport({ skills: ["implement", "tdd"] });
+	const context = claudeContext(t, fake.transport);
+
+	await probeClaudeRuntime({
+		...context,
+		session: {
+			env: { CLAUDE_CONFIG_DIR: context.cacheRoot },
+			sessionArgs: ["--settings", "/state/settings-builder.json", "--permission-mode", "dontAsk"],
+			cwd: context.cacheRoot,
+			configDir: context.cacheRoot,
+		},
+	});
+
+	const [session] = fake.calls.lineSession;
+	assert.deepEqual(session.args.slice(-4), [
+		"--settings",
+		"/state/settings-builder.json",
+		"--permission-mode",
+		"dontAsk",
+	]);
+	assert.equal(session.env.CLAUDE_CONFIG_DIR, context.cacheRoot);
+});
+
+test("a project the probed session recorded but nobody pre-trusted is a typed finding, not a later hang", async (t) => {
+	const fake = claudeTransport({ skills: ["implement", "tdd"] });
+	const context = claudeContext(t, fake.transport);
+	writeFileSync(
+		join(context.cacheRoot, ".claude.json"),
+		JSON.stringify({ projects: { "/home/operator/elsewhere": { hasTrustDialogAccepted: false } } }),
+	);
+
+	const probed = await probeClaudeRuntime({ ...context, session: { configDir: context.cacheRoot } });
+
+	assert.equal(probed.ok, false);
+	const [finding] = probed.failures.filter((entry) => entry.reason === "trust-not-established");
+	assert.deepEqual(finding.untrusted, ["/home/operator/elsewhere"]);
+	assert.match(finding.message, /would sit on the trust dialog/);
 });
