@@ -229,7 +229,11 @@ Fields: `seq` · `event_id` (ULID) · `envelope_version` · `kind` + `payload_ve
   writer's mistake: `run.ended` and `run.lifecycle-changed` are on **payload v2**, whose
   contract refuses `lease-lost` as an ending, a second ending, and movement after the end;
   v1 records were valid under the contract their version names and replay with v1's
-  tolerance, rendered as written.
+  tolerance, rendered as written. **`ticket.disposition-changed` is on payload v2** for the
+  same kind of reason: it now carries the reason class and the **fault** the execution settled
+  under, without which §8.6's terminal-commit order is an order of dispositions nobody can
+  classify — and reading a v1 record's missing fault as "not the automation's" would count
+  every historical failure as a product verdict.
 - **Visibility is a three-value class**, not a boolean: `operator` (default feed) · `detail`
   (shown when a node is expanded) · `diagnostic` (filtered by default). Two values cannot
   express "real, but only when you are looking at this node", and the requirement is that
@@ -1020,10 +1024,27 @@ write-capable builder.
 budget), plus an **independent automation budget** (default 1) that automation failures alone
 consume. Declared configuration with a **hard ceiling of 2 + 2**.
 
+**Three declared numbers, not two counters.** §8.10's fourth column is coarse on purpose — it
+says *product* or *automation*, which is what "automation failures never consume the product
+budget" is about — but the product budget is granted as *1 repair **+** 1 fresh-retry*, and
+§11.6 declares the two separately. Each tier therefore spends its own number, and exhausting
+either files `repair-budget-exhausted`. One pool of 2 would let a ticket take two repairs and
+never the fresh-retry that discarding the work was for.
+
+**Nothing increments.** A spend is a *count* of the stage resolutions that charged that budget,
+read back from the journal, so the bound and the count are one expression and there is no
+counter to keep in step. That is also what makes the walk re-enterable: a controller that died
+between resolving a failing stage and minting the attempt its tier called for reads the same
+count back and grants the same retry.
+
 - **Automation failures never consume the product budget** — the worker did not cause them.
 - **Reviewer-attempt failures consume the automation budget**, because a reviewer that crashed
   says nothing about the work; charging the builder would eventually discard good work on an
   infra flake.
+- **An automation retry re-enters the phase it left**, while both tiers re-enter `implement`.
+  §8.5's "every resume is a fresh attempt" governs the tiers; a `retry` is a third action, and
+  rebuilding good work because a pane died is the flake charged to the builder this section
+  forbids.
 
 Legacy pinned `repairAttempts` / `freshAgentRetries` at exactly 1 by *throwing in config
 validation* — the right instinct expressed as a refusal to have a knob. A declared ceiling gets
@@ -1036,9 +1057,25 @@ terminal-commit order** — the total, durable order in which ticket executions 
 disposition, reconstructible from the journal. Wall-clock interleaving would otherwise make it
 depend on scheduling accidents; at capacity 1 this degrades to exactly the serial semantics.
 
+**N is a code constant, not a knob.** §11.3's block inventory and §11.6's list of defaults are
+both closed and neither names a breaker key, while §14.33 makes an undeclared key a load
+failure — so the value lives in code, read from one place, beside the ticket-concurrency
+ceiling it most resembles. This is also the reversible direction: promoting it to a declared
+number later breaks no file on disk, while retiring a knob breaks every file that set it.
+
+**The verdict is monotone**: *has this run ever reached N in a row*, not *are the last N*. The
+two agree at the instant a breaker trips, because the predicate is read at every scheduling
+decision — and they must disagree afterwards, because §3.5 lets the lanes that were already
+running finish, and one of them settling `published` cannot be allowed to erase the reason the
+run stopped claiming. The `claiming` predicate and the recorded `end_reason` read the one
+verdict, so they cannot conclude differently about why the run ended.
+
 **Product-level outcomes never trip it.** Five tickets each needing a human is a productive
 run; five tickets each dying in preflight is a broken host burning tokens on a verdict it has
-already reached.
+already reached. **Which is which is the disposition's own `fault`** — the budget kind that ran
+out, recorded on the terminal-commit record beside the disposition — and never a list of reason
+classes matched here. A class added to §8.8 later would otherwise be a silent vote on whether
+runs should stop, cast by whoever happened to add it.
 
 ### 8.7 Attestation
 
@@ -2269,3 +2306,4 @@ touching everything twice.
 | 2026-08-16 | #110 implementation corrections, all three found while wiring §8.5's two tiers. **§7.3's worktree is created at the attempt's own base commit**, not at the pinned base unconditionally: §8.5 branches a repair from the prior attempt's tip, so the unqualified wording described a tier the section forbids. **§7.4's harvest predicate is read against that same base** — against the run's base a repair that committed nothing is still "ahead" by the previous attempt's commits, and a worker that did nothing would harvest as `completed`. **A retry mints its own attempt**, following #107's ordering correction: the mint precedes every attempt-scoped effect and both git mutations are effects, so it belongs to whoever creates the worktree. That splits §6.5's minter from its launcher, with a consequence worth recording rather than rediscovering: the `attempt` projector inserts one row per `attempt.launched`, so `launchWorker` **cannot** append a second one and skips its own — and the facts only a launch knows (the runtime, the declared model, the manifest and prompt digests) stay in the attempt manifest on disk and never reach the journal. The mint therefore carries everything knowable at mint time, including the three derived paths; closing the residue belongs to the claim → launch composition and is not a property of the tiers, since a first attempt's claim has the identical split. One property worth recording rather than rediscovering: **no fresh-retry row carries untrusted evidence** — §8.10 marks evidence `fact` or `untrusted` per row, and every row routing to fresh-retry has none at all, so §8.5's "a worker that flailed should not have its flailing inherited" holds for the prompt as well as for the branch, without a second rule saying so. | #110 |
 | 2026-08-16 | #116 implementation corrections, all five found while migrating this repository's own v1 file. **§11.8's mapped column is not exhaustive**: the three surviving `routing.defaults` roles are mapped too — naming `routing.defaults.finalReview` as *reported and dropped* says nothing unless the block around it survives — and `version` → `schemaVersion` with them. **§11.5's review pair is written twice by the migration**, from the one legacy reviewer, and reported as a duplication to confirm: a sixth hole would contradict §11.8's closed hole list, and picking a different second reviewer is the guess §11.2 forbids. **§11.6's generated `checks` block and §11.8's `checks` hole are one artifact**: name and command come from the matrix, and the three fields no matrix can answer — `timeout`, severity, `expectedFailureExitCodes` — are left as sentinels, so "generated once, for human review" and "the loader hard-fails until a human resolves it" describe the same file. **Migration preserves the file it replaces** as `.pi/factory.v1.json`, written before the rewrite and never overwritten: two of the five holes are re-authored *from* the legacy rules, so consuming them would make those holes unresolvable, and §11.8 named no such copy. **A legacy key the table does not name refuses the migration** rather than being dropped by omission — §11.2's rule applied at the moment the legacy file stops being the one that runs. | #116 |
 | 2026-08-16 | #112 implementation corrections, all four found while fanning §8.4's review out. **§2.1's ordinal is allocated against the record, not derived from the attempt being answered**: §8.5's tiers and §8.4's two axes mint into one ticket execution's ordinal space, so "one past the prior attempt" lands a repair on a reviewer's id, finds its branch and worktree effects already resolved, and re-enters a phase whose result is recorded under that id — which §8.10 reads as its own conflicting duplicate, failing a working pipeline. Idempotency moves to the minter's *purpose* (the tier and the attempt it answers, or the axis, the work, and the try), which is what lets `planRetry` stay pure by naming no attempt at all. **An axis resolves its own stage under its own attempt**, and the phase's result is resolved under the builder attempt — so §8.10's `verdict` action is taken inside the fan-out and is never the walk's; the walk reaching it means an executor answered a phase with an attempt outcome, which is §8.8's two levels crossed. **The verdict's shape and whether one is owed are two different judgements with two homes**: §6.6's schema judge holds a written verdict to the closed pair, a findings list, a mandatory citation per finding, and agreement between the word and its own blocking set — while "a `completed` reviewer owes a verdict" is role knowledge and lives in the fan-out, because §6.1's adapter has never known which roles exist. The controller never classifies a citation, so §8.4's "a baseline smell can never be blocking" is stated in the prompt template and enforced by the skill: recognising a smell by name would be a second copy of the skill's baseline living in the factory, and downgrading a finding would be the reranking §8.4 forbids. **An opening capture that is already dirty is a mutation, not a third answer** — the controller made that worktree out of a commit and handed it to one read-only role, so reading a leftover as an automation problem would hand back the second go §14.19 refuses, to the attempt that earned the refusal. **The commit under review is read off the recorded harvest rather than taken from the caller** — §14.13 measures the commit being published, and a supplied one is a second opinion about which that is — and the fixed point is *required* on a review role's prompt and refused on a builder's, because a reviewer rendered without one gets a prompt naming no diff, which reads as a complete instruction in a pane nobody is watching. §2.1, §6.8 and §8.4 are corrected in place. | #112 |
+| 2026-08-16 | #111 implementation corrections, all six found while counting §8.6's budgets. **The product budget is two declared numbers, not one pool of 2**: §11.6 declares `repair` and `freshRetry` separately because §8.6 grants them separately, and one pool would let a ticket take two repairs and never the fresh-retry that discarding the work was for. **Nothing increments** — a spend is a count of the stage resolutions that charged that budget, so the bound and the count are one expression, and a controller that died between resolving a failing stage and minting its retry reads the same count back. **An automation retry re-enters the phase it left**, while the two tiers re-enter `implement`: §8.5 governs the tiers, and rebuilding good work because a pane died is exactly the infra flake §8.6 refuses to charge the builder. **§8.6's N is a code constant, not a knob** — §11.3's block inventory and §11.6's default list are both closed and neither names a breaker key, while §14.33 makes an undeclared key a load failure; promoting it later breaks no file on disk, retiring a knob breaks every file that set it. **The breaker's verdict is monotone** rather than trailing, because §3.5 lets in-flight lanes finish and one settling `published` must not erase the reason the run stopped claiming. **Automation-versus-product is the disposition's own `fault`**, recorded on the terminal-commit record — matching a list of reason classes instead would make every class added to §8.8 later a silent vote on whether runs stop, which is also why `ticket.disposition-changed` moves to payload v2 (§4.3). | #111 |
