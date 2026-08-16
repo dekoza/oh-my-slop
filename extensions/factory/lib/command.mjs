@@ -56,15 +56,23 @@ export async function runFactoryCommand(argv, context) {
 		runHerdr: context.runHerdr,
 	});
 
-	let text = result.json ? renderJson(result.value) : renderHuman(result.value);
-	const isError = result.exitCode !== 0;
-
-	if (argv[0] === "start" && startProducedRun(result.value)) {
-		const url = await monitorUrl({ events: context.events, repo: context.cwd, argv, report: result.value.report });
-		if (url !== null) text += `monitor: ${url}\n`;
+	// The verb comes from the answer, not from argv[0]: the binary's own parse
+	// lets flags precede the verb, and a second parse here would drift from it.
+	const url =
+		result.value.command === "start" && startProducedRun(result.value)
+			? await requestMonitorUrl({ events: context.events, repo: context.cwd, argv, report: result.value.report })
+			: null;
+	// One structured value carries the URL on both renderings (§10.2): the
+	// `--json` document stays one parseable answer, and the human suffix line is
+	// derived from the same fact rather than glued past the machine contract.
+	if (url !== null) {
+		result.value.report.monitor = { ...result.value.report.monitor, url };
 	}
 
-	display(text, { isError });
+	let text = result.json ? renderJson(result.value) : renderHuman(result.value);
+	if (url !== null && !result.json) text += `monitor: ${url}\n`;
+
+	display(text, { isError: result.exitCode !== 0 });
 	return result.exitCode;
 }
 
@@ -77,7 +85,7 @@ export async function runFactoryCommand(argv, context) {
  * @returns {Promise<string | null>} the monitor URL, or `null` when nobody
  *   answers within the deadline (the common case: no monitor in the session)
  */
-async function monitorUrl({ events, repo, argv, report }) {
+async function requestMonitorUrl({ events, repo, argv, report }) {
 	if (typeof events?.emit !== "function") return null;
 
 	let resolveAnswer = null;

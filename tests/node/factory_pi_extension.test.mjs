@@ -212,6 +212,30 @@ test("/factory start prints no monitor line when nothing listens", async (t) => 
 	assert.doesNotMatch(display.calls[0].text, /^monitor: /m);
 });
 
+test("/factory --json start answers one parseable document carrying the monitor URL, never a glued line", async (t) => {
+	const context = invocation(t);
+	const events = makeBus();
+	attachMonitor(events, "http://127.0.0.1:48080/");
+	const display = makeDisplay();
+
+	const code = await runFactoryCommand(["--json", "start", "42"], {
+		...context,
+		runHerdr: fakeRunHerdr().fn,
+		events,
+		display: display.fn,
+	});
+
+	assert.equal(code, 0);
+	// The verb is the answer's, not argv[0]'s: a flag-first start still publishes.
+	const requests = events.emitted.filter((entry) => entry.channel === FACTORY_RUN_START);
+	assert.equal(requests.length, 1);
+	// One structured value on both renderings (§10.2): the whole answer parses,
+	// and the URL is a field of it rather than text past the document's end.
+	const value = JSON.parse(display.calls[0].text);
+	assert.equal(value.report.monitor.url, "http://127.0.0.1:48080/");
+	assert.doesNotMatch(display.calls[0].text, /^monitor: /m);
+});
+
 test("a broken event bus never fails the command (never fatal)", async (t) => {
 	const context = invocation(t);
 	const events = makeBus({ throwOnEmit: true });
