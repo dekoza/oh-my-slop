@@ -81,7 +81,12 @@ test("the prompt opens with the native invocation for the role's entry skill", (
 	);
 
 	for (const role of PIPELINE_ROLES) {
-		const prompt = render({ role: validateRole({ ...role, closure: [role.entrySkill] }) });
+		const prompt = render({
+			role: validateRole({ ...role, closure: [role.entrySkill] }),
+			// A review role is refused without one: it would otherwise be handed a
+			// prompt naming no diff, which reads as a complete instruction (§8.4).
+			...(role.resultExpectations.verdicts === undefined ? {} : { review: REVIEW }),
+		});
 		assert.equal(prompt.split("\n")[0], `/skill:${role.entrySkill}`, `${role.name} invokes the wrong skill`);
 	}
 });
@@ -284,6 +289,18 @@ test("a reviewer role is told about its verdict; a builder is not", () => {
 	assert.match(prompt, /`verdict`/);
 	assert.match(prompt, /`approve` or `reject`/);
 	assert.doesNotMatch(render(), /`verdict`/, "a builder has no verdict to write");
+});
+
+test("a role and its fixed point must agree, so the mismatch is unconstructible (§8.4)", () => {
+	const role = PIPELINE_ROLES.find((entry) => entry.name === "review-standards");
+
+	// A reviewer with no fixed point gets a prompt naming no diff, which reads as
+	// a complete instruction — and there is nobody in that pane to ask.
+	assert.throws(
+		() => render({ role: validateRole({ ...role, closure: [role.entrySkill] }) }),
+		/no fixed point/,
+	);
+	assert.throws(() => render({ review: REVIEW }), /wrong level/);
 });
 
 test("the axis is told its fixed point, because there is nobody in the pane to ask (§8.4)", () => {

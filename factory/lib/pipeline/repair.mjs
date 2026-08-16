@@ -8,12 +8,11 @@ import {
 	STAGE_ACTIONS,
 } from "../domain/vocabulary.mjs";
 import { createAttemptWorktree } from "../git/attempt.mjs";
-import { attemptBranch, attemptWorktreePath } from "../git/isolation.mjs";
+import { attemptBranch } from "../git/isolation.mjs";
 import { runStream } from "../state/events.mjs";
 import {
 	allocateAttempt,
-	attemptOutboxPath,
-	launchedAttempt,
+	mintAttempt,
 	ordinalOf,
 	requireAttemptIdentity,
 	runOf,
@@ -251,21 +250,18 @@ export async function openRetryAttempt(
 	clone,
 	{ hold, plan, run, ticket, base = null, workerConfig, actor, at },
 ) {
-	// §2.1's ordinal, allocated against the record. The purpose is the tier and
-	// the attempt it answers: a re-entry after a crash finds the record it already
-	// wrote and comes back with the same id, and a first pass takes the next free
-	// ordinal — which is one past whatever a review fan-out has already minted.
-	const allocated = allocateAttempt(store, {
-		run,
-		ticket,
-		mintedFor: (payload) => payload.tier === plan.tier && payload.prior_attempt === plan.priorAttempt,
-	});
+	// §2.1's ordinal, allocated against the record: a re-entry after a crash finds
+	// the record it already wrote and comes back with the same id, and a first pass
+	// takes the next free ordinal — which is one past whatever a review fan-out has
+	// already minted.
+	const purpose = retryPurpose(plan);
+	const allocated = allocateAttempt(store, { run, ticket, purpose });
 	// A retry always re-enters `implement`: both tiers produce a builder attempt,
 	// and the phase the failure came from is evidence rather than a destination.
 	const identity = requireAttemptIdentity({ run, ticket, phase: PHASE_IMPLEMENT, attempt: allocated.attempt });
 	const baseCommit = await retryBaseCommit(clone, { plan, base });
 
-	mintRetryAttempt(store, { hold, identity, plan, baseCommit, at });
+	mintAttempt(store, { hold, identity, role: plan.role, profile: plan.profile, baseCommit, purpose, at });
 
 	const created = await createAttemptWorktree(store, clone, {
 		hold,
@@ -283,50 +279,19 @@ export async function openRetryAttempt(
 }
 
 /**
- * §6.5's mint, for the attempt a tier just decided to run.
+ * §8.5's purpose for a retry attempt: **which tier produced it, which attempt it
+ * answers, and what its branch starts from.**
  *
- * It comes **before** the branch and the worktree because the projections refuse
- * an attempt-scoped record — and both git mutations are effects — for a tuple
- * nothing minted. That is the same order a first attempt's claim follows, and
- * `launchWorker` finds this record exactly as it finds the claim's.
- *
- * **The minter is not the launcher, and the projector inserts one row per
- * attempt**, so `launchWorker` cannot append a second `attempt.launched` and
- * does not try. Everything knowable at mint time is therefore written here —
- * including the three derived paths, which cost nothing to compute and are what
- * an operator greps for. What is knowable only at launch — the runtime, the
- * declared model, the manifest and prompt digests — stays in the attempt
- * manifest on disk and does **not** reach this record. That is a property of
- * §6.5's split rather than of this tier, and it holds for a first attempt's
- * claim exactly as much; closing it belongs to whoever composes claim → launch.
+ * It is one function because it is read from two directions — written into the
+ * mint by `mintAttempt`, and matched against it by `allocateAttempt` — and two
+ * spellings of a key are two ways for a re-entry to allocate a second attempt for
+ * work that is already open. It is also the journal's answer to *why does this
+ * attempt exist*, rather than leaving an operator to infer a repair from two
+ * attempts and a gap. Every field is a pure function of the plan, which is what
+ * makes matching on all three deterministic.
  */
-function mintRetryAttempt(store, { hold, identity, plan, baseCommit, at }) {
-	if (launchedAttempt(store, identity.attempt) !== null) return;
-
-	hold.append({
-		kind: "attempt.launched",
-		source: "controller",
-		run: identity.run,
-		ticket: identity.ticket,
-		phase: identity.phase,
-		attempt: identity.attempt,
-		occurredAt: at,
-		observedAt: at,
-		payload: {
-			role: plan.role,
-			profile: plan.profile,
-			// Which tier produced this attempt, and which one it answers — so the
-			// journal says *why* an attempt exists rather than leaving an operator to
-			// infer a repair from two attempts and a gap.
-			tier: plan.tier,
-			prior_attempt: plan.priorAttempt,
-			base_kind: plan.from.kind,
-			base_commit: baseCommit,
-			branch: attemptBranch({ ticket: identity.ticket, attempt: identity.attempt }),
-			worktree: attemptWorktreePath(store.storeDir, identity.attempt),
-			outbox: attemptOutboxPath(store.storeDir, identity.attempt),
-		},
-	});
+function retryPurpose(plan) {
+	return { tier: plan.tier, prior_attempt: plan.priorAttempt, base_kind: plan.from.kind };
 }
 
 /**

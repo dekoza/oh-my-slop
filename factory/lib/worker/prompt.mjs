@@ -89,6 +89,8 @@ export function renderAttemptPrompt({
 	repair = null,
 	review = null,
 }) {
+	requireFixedPoint({ role, review });
+
 	return [
 		nativeInvocation({ kind, skill: role.entrySkill, plugin }),
 		"",
@@ -141,6 +143,28 @@ function contextBlock({ role, identity, worktreePath, branch, outboxPath, packag
 		`package_rev     ${packageRev}`,
 		"```",
 	].join("\n");
+}
+
+/**
+ * A review role owes a fixed point, and a builder role has none — **checked, so
+ * the mismatch is unconstructible rather than silent.**
+ *
+ * The silence is what makes it worth a refusal. A reviewer rendered without one
+ * gets a prompt with no diff named in it, which reads as a complete instruction:
+ * the skill asks the caller for a fixed point and says "if none was given, ask",
+ * and there is nobody in that pane to ask. The attempt would then spend a model
+ * on whatever it decided to look at. Which side of the check a role falls on is
+ * its own result expectations (§6.1), never a name matched against a list.
+ */
+function requireFixedPoint({ role, review }) {
+	const reviewing = role.resultExpectations.verdicts !== undefined;
+	if (reviewing === (review !== null)) return;
+
+	throw new TypeError(
+		reviewing
+			? `role "${role.name}" reviews a change and was given no fixed point to review it against (§8.4)`
+			: `role "${role.name}" builds and was given a fixed point to review (§8.4); it is the wrong level`,
+	);
 }
 
 /**

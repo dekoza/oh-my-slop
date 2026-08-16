@@ -133,6 +133,11 @@ const GONE_STATUSES = Object.freeze(["released", "exited"]);
  *   told — on disk. For an attempt somebody else minted, that digest does not
  *   reach the journal: the projector inserts one `attempt` row per
  *   `attempt.launched`, so the mint below cannot be appended twice
+ * @param {Readonly<{ baseCommit: string, reviewedCommit: string }> | null} [context.review]
+ *   §8.4's fixed point, when a review axis attempt is being launched
+ *   (`pipeline/review.mjs`). It rides the prompt for the same reason the repair
+ *   brief does, and it is not optional in practice: both axis skills open by
+ *   asking the caller for a fixed point and there is nobody in the pane to ask
  * @param {ReadonlyArray<string>} [context.sessionArgs] §6.8's binding for this posture
  * @param {ReadonlyArray<object>} [context.closureFindings] layer-1/2 findings, if any
  * @param {object} context.herdr the Herdr control surface (`controller/herdr-control.mjs`)
@@ -159,6 +164,7 @@ export async function launchWorker(
 		branch,
 		ticketSnapshot,
 		repair = null,
+		review = null,
 		sessionArgs = [],
 		closureFindings = [],
 		herdr,
@@ -204,6 +210,7 @@ export async function launchWorker(
 		ticket: ticketSnapshot,
 		packageRev,
 		repair,
+		review,
 	});
 
 	const manifest = writeAttemptManifest(store.storeDir, {

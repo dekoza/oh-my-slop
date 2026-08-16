@@ -9,7 +9,7 @@ import { createAttemptWorktree } from "../../factory/lib/git/attempt.mjs";
 import { dispositionOf } from "../../factory/lib/pipeline/dispositions.mjs";
 import { openRetryAttempt, originatingAttempt, planRetry } from "../../factory/lib/pipeline/repair.mjs";
 import { reviewPhase } from "../../factory/lib/pipeline/review.mjs";
-import { outcomeChain, walkStages } from "../../factory/lib/pipeline/stages.mjs";
+import { outcomeChain, resolveStage, walkStages } from "../../factory/lib/pipeline/stages.mjs";
 import { routeOutcome } from "../../factory/lib/pipeline/table.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { REVIEW_ROLES } from "../../factory/lib/worker/roles.mjs";
@@ -76,11 +76,26 @@ async function reviewable(t) {
 	execFileSync("git", ["-C", built.worktreePath, "add", "-A"]);
 	execFileSync("git", ["-C", built.worktreePath, "commit", "-m", "the work"]);
 
-	return {
-		...context,
+	// §7.4's harvest, resolved as the walk would resolve it. The fan-out reads the
+	// commit under review off this record rather than taking one from its caller
+	// (§14.13), so a fixture without it is a ticket execution that never measured
+	// anything — which is exactly what the phase refuses.
+	const reviewedCommit = execFileSync("git", ["-C", built.worktreePath, "rev-parse", "HEAD"], {
+		encoding: "utf8",
+	}).trim();
+	resolveStage(context.store, {
 		hold,
-		reviewedCommit: execFileSync("git", ["-C", built.worktreePath, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
-	};
+		run: context.run,
+		ticket: context.ticket,
+		phase: "harvest",
+		attempt: context.attempt,
+		outcome: "passed",
+		detail: { head: reviewedCommit, commits_ahead: 1 },
+		actor: "controller",
+		at: FIXED_NOW,
+	});
+
+	return { ...context, hold, reviewedCommit };
 }
 
 /**
@@ -125,7 +140,6 @@ function review(context, { answers, routing: active = routing(), ...overrides } 
 				ticket: context.ticket,
 				attempt: context.attempt,
 				baseCommit: context.base.commit,
-				reviewedCommit: context.reviewedCommit,
 				routing: active,
 				labels: [],
 				workerConfig: context.workerConfig,
@@ -431,9 +445,10 @@ test("the attestation rides every axis result, not only the mutations (§8.7)", 
 
 	await run();
 
-	const axes = outcomeChain(context.store, { run: context.run, ticket: context.ticket });
-	assert.equal(axes.length, 2, "each axis resolved its own stage, under its own attempt");
-	for (const record of context.store.readEvents({ kind: "stage.resolved" })) {
+	const reviewed = context.store.readEvents({ kind: "stage.resolved" }).filter((record) => record.phase === "review");
+	assert.equal(reviewed.length, 2, "each axis resolved its own stage, under its own attempt");
+	assert.equal(new Set(reviewed.map((record) => record.attempt)).size, 2);
+	for (const record of reviewed) {
 		assert.equal(record.payload.detail.attestation.mutated, false);
 		assert.equal(record.payload.detail.attestation.before_head, context.reviewedCommit);
 	}
@@ -633,16 +648,15 @@ test("a rejected review routes to a repair whose attempt is past both reviewers'
 		"a1 built it, a2 and a3 reviewed it, and the repair takes the next free ordinal rather than a reviewer's",
 	);
 	assert.deepEqual(
-		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).map((step) => [step.phase, step.outcome]),
+		outcomeChain(context.store, { run: context.run, ticket: context.ticket })
+			.filter((step) => step.phase === "review")
+			.map((step) => [step.outcome, step.attempt]),
 		[
-			["implement", "completed"],
-			["harvest", "passed"],
-			["verify", "passed"],
-			["review", "completed"],
-			["review", "completed"],
-			["review", "rejected"],
+			["completed", `${context.run}-t${context.ticket}-a2`],
+			["completed", `${context.run}-t${context.ticket}-a3`],
+			["rejected", context.attempt],
 		],
-		"both axis results are on the chain beside the phase's own, which is what an operator reads",
+		"both axis results are on the chain under their own attempts, beside the phase's own under the builder's",
 	);
 	assert.deepEqual(
 		planned[0].brief.untrusted.map((entry) => entry.source),

@@ -494,7 +494,13 @@ is the authority; cite the section a change answers to.
   finding tagged with the axis that wrote it — nothing merged, deduplicated, or reranked — and
   one or more blocking findings on either axis is the rejection. §11.5's `review` pair maps
   onto the axes **positionally**, which is the whole of "model diversity is available as
-  per-run configuration but is not mandated".
+  per-run configuration but is not mandated". **The commit under review is read off the
+  recorded harvest**, never taken from the caller: §14.13 measures the commit being published,
+  and a `reviewedCommit` parameter would be a second opinion about which one that is. The fixed
+  point then reaches the worker through `renderAttemptPrompt`'s `review` block, which is
+  **required** for a role whose expectations name verdicts and refused for one that does not —
+  a reviewer rendered without it gets a prompt naming no diff, which reads as a complete
+  instruction to a pane nobody is watching.
 - **The authoritative read-only guard is the attestation, not the permissions**
   (`git/attestation.mjs`, §6.8): clean worktree **and** HEAD captured before the review and
   verified unchanged after — both halves, because a reviewer that committed leaves a clean
@@ -517,7 +523,11 @@ is the authority; cite the section a change answers to.
   §8.10 then reads as its own conflicting duplicate. **Idempotency is the minter's purpose,
   not the counter's**: a caller says what it is minting *for* — the tier and the attempt it
   answers, or the axis, the work, and the try — and a record already naming that purpose hands
-  back the same id, so `planRetry` stays pure by no longer naming an attempt at all.
+  back the same id, so `planRetry` stays pure by no longer naming an attempt at all. The purpose
+  is one object, written by `mintAttempt` and matched by `allocateAttempt`, so the key that is
+  matched and the key that was written cannot come to be spelled differently — and `mintAttempt`
+  is the one home for a mint whose minter is not its launcher, which both §8.5's tiers and
+  §8.4's axes are.
 - §3.5's drain is `factory/lib/controller/drain.mjs`, and it owns **both** clauses: nothing
   claimable now, and nothing that can become claimable without external change — the second
   read off `awaits_external`, which `frontier.mjs` computes per member. The report's classes

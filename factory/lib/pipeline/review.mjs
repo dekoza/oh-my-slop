@@ -1,13 +1,7 @@
-import { FINDING_SEVERITIES, PHASE_REVIEW, REVIEW_VERDICTS, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
+import { FINDING_SEVERITIES, PHASE_HARVEST, PHASE_REVIEW, REVIEW_VERDICTS, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
 import { createAttemptWorktree } from "../git/attempt.mjs";
 import { assessMutation, captureWorktreeState } from "../git/attestation.mjs";
-import { attemptBranch, attemptWorktreePath } from "../git/isolation.mjs";
-import {
-	allocateAttempt,
-	attemptOutboxPath,
-	launchedAttempt,
-	requireAttemptIdentity,
-} from "../worker/attempt.mjs";
+import { allocateAttempt, mintAttempt, requireAttemptIdentity } from "../worker/attempt.mjs";
 import { postureOf, profileForRole, REVIEW_ROLES, REVIEW_ROUTING_ROLE } from "../worker/roles.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 import { recordedStage, resolveStage } from "./stages.mjs";
@@ -74,7 +68,6 @@ import { routeOutcome } from "./table.mjs";
  * @param {string} context.baseCommit §7.2's pinned base — what the change is
  *   measured against, which for a repair chain is still the run's pin and never
  *   the repairing attempt's own tip
- * @param {string} context.reviewedCommit the tip §8.2's checks passed on (§14.13)
  * @param {{ roles: object, rules: ReadonlyArray<object> }} context.routing the active routing
  * @param {ReadonlyArray<string>} [context.labels] the ticket's labels, as the
  *   claim-time snapshot has them
@@ -101,7 +94,6 @@ export async function reviewPhase(
 		ticket,
 		attempt: builderAttempt,
 		baseCommit,
-		reviewedCommit,
 		routing,
 		labels = [],
 		workerConfig,
@@ -111,6 +103,7 @@ export async function reviewPhase(
 		now,
 	},
 ) {
+	const reviewedCommit = harvestedCommit(store, { run, ticket, attempt: builderAttempt });
 	const profiles = reviewProfiles(routing, { labels });
 	const axes = [];
 
@@ -135,6 +128,34 @@ export async function reviewPhase(
 	}
 
 	return decideReview(axes);
+}
+
+/**
+ * The commit under review, **read off the harvest that measured it** (§14.13).
+ *
+ * It is not a parameter, and that is the finding it answers: §14.13 says
+ * verification never attests a commit other than the one being published, and a
+ * `reviewedCommit` the caller supplied is a second opinion about which commit
+ * that is. §7.4's harvest already resolved the branch's head under this attempt,
+ * and §14.15 makes review reachable only through a passing verify of that same
+ * head — so the record is the answer, and a lane cannot hand the axes a commit
+ * the pipeline never measured.
+ */
+function harvestedCommit(store, { run, ticket, attempt }) {
+	const harvested = recordedStage(store, { run, ticket, phase: PHASE_HARVEST, attempt });
+	const head = harvested?.payload.detail?.head;
+
+	if (typeof head !== "string" || head.length === 0) {
+		throw unroutable(
+			"reviewed-commit",
+			`Attempt ${attempt} has no recorded harvest head, so there is nothing §8.2's checks passed on to review. ` +
+				`§14.13 measures the commit being published and §14.15 puts a passing verify of that same commit before ` +
+				`this phase; taking a commit on a caller's word instead would be a second opinion about which one it is.`,
+			{ attempt, phase: PHASE_HARVEST },
+		);
+	}
+
+	return head;
 }
 
 /**
@@ -241,14 +262,11 @@ async function openAxisAttempt(
 	clone,
 	{ hold, run, ticket, builderAttempt, axis, profile, reviewedCommit, workerConfig, tryNumber, actor, now },
 ) {
-	const allocated = allocateAttempt(store, {
-		run,
-		ticket,
-		mintedFor: (payload) => mintsAxis(payload, { axis, builderAttempt, tryNumber }),
-	});
+	const purpose = axisPurpose({ axis, builderAttempt, tryNumber });
+	const allocated = allocateAttempt(store, { run, ticket, purpose });
 	const identity = requireAttemptIdentity({ run, ticket, phase: PHASE_REVIEW, attempt: allocated.attempt });
 
-	mintAxisAttempt(store, { hold, identity, axis, profile, builderAttempt, tryNumber, reviewedCommit, at: now() });
+	mintAttempt(store, { hold, identity, role: axis.name, profile, baseCommit: reviewedCommit, purpose, at: now() });
 
 	const created = await createAttemptWorktree(store, clone, {
 		hold,
@@ -274,42 +292,18 @@ async function openAxisAttempt(
 	});
 }
 
-/** The purpose one axis attempt was minted for, read back off its record. */
-function mintsAxis(payload, { axis, builderAttempt, tryNumber }) {
-	const review = payload.review;
-	return review?.axis === axis.name && review?.of === builderAttempt && review?.try === tryNumber;
-}
-
 /**
- * §6.5's mint for an axis attempt.
+ * §8.4's purpose for one axis attempt: **which axis, whose work, and which try.**
  *
- * The `review` block is the allocation's key and the journal's answer to *why
- * does this attempt exist* — which axis, whose work, and which try. Without it an
- * operator reading two extra attempts beside a builder's would have to infer the
- * fan-out from the role names and a gap.
+ * It is one function because it is read from two directions — written into the
+ * mint, and matched against it by `allocateAttempt` — and two spellings of a key
+ * are two ways for a re-entry to miss the attempt it already opened. It is also
+ * the journal's answer to *why does this attempt exist*: without it an operator
+ * reading two extra attempts beside a builder's would infer the fan-out from the
+ * role names and a gap.
  */
-function mintAxisAttempt(store, { hold, identity, axis, profile, builderAttempt, tryNumber, reviewedCommit, at }) {
-	if (launchedAttempt(store, identity.attempt) !== null) return;
-
-	hold.append({
-		kind: "attempt.launched",
-		source: "controller",
-		run: identity.run,
-		ticket: identity.ticket,
-		phase: identity.phase,
-		attempt: identity.attempt,
-		occurredAt: at,
-		observedAt: at,
-		payload: {
-			role: axis.name,
-			profile,
-			review: { axis: axis.name, of: builderAttempt, try: tryNumber },
-			base_commit: reviewedCommit,
-			branch: attemptBranch({ ticket: identity.ticket, attempt: identity.attempt }),
-			worktree: attemptWorktreePath(store.storeDir, identity.attempt),
-			outbox: attemptOutboxPath(store.storeDir, identity.attempt),
-		},
-	});
+function axisPurpose({ axis, builderAttempt, tryNumber }) {
+	return { review: { axis: axis.name, of: builderAttempt, try: tryNumber } };
 }
 
 /**
@@ -324,7 +318,7 @@ function mintAxisAttempt(store, { hold, identity, axis, profile, builderAttempt,
 async function attemptAxis(clone, { axis, profile, identity, worktreePath, branch, baseCommit, reviewedCommit, runAxis, tryNumber }) {
 	const before = await captureWorktreeState(clone, { worktreePath, branch });
 	if (!before.clean) {
-		return mutation({ axis, profile, tryNumber, guard: assessMutation({ before, after: before }), ran: null });
+		return mutationAnswer({ axis, profile, tryNumber, guard: assessMutation({ before, after: before }), ran: null });
 	}
 
 	const ran = await runAxis({
@@ -343,7 +337,7 @@ async function attemptAxis(clone, { axis, profile, identity, worktreePath, branc
 	});
 
 	const guard = assessMutation({ before, after: await captureWorktreeState(clone, { worktreePath, branch }) });
-	if (guard.mutated) return mutation({ axis, profile, tryNumber, guard, ran });
+	if (guard.mutated) return mutationAnswer({ axis, profile, tryNumber, guard, ran });
 
 	// §8.4's verdict is what a `completed` reviewer owes, and that obligation is
 	// **role** knowledge — which is why it is asserted here and not in §6.6's
@@ -368,7 +362,7 @@ async function attemptAxis(clone, { axis, profile, identity, worktreePath, branc
 	return Object.freeze({ outcome: ran.outcome, detail: axisDetail({ axis, profile, tryNumber, guard, ran }) });
 }
 
-function mutation({ axis, profile, tryNumber, guard, ran }) {
+function mutationAnswer({ axis, profile, tryNumber, guard, ran }) {
 	return Object.freeze({
 		outcome: "mutation-detected",
 		detail: axisDetail({
@@ -431,7 +425,7 @@ async function grantedRetry(store, { run, ticket, axis, builderAttempt, attempt,
 	const already = allocateAttempt(store, {
 		run,
 		ticket,
-		mintedFor: (payload) => mintsAxis(payload, { axis, builderAttempt, tryNumber: nextTry }),
+		purpose: axisPurpose({ axis, builderAttempt, tryNumber: nextTry }),
 	});
 	if (already.state === "already-minted") return nextTry;
 
@@ -478,7 +472,7 @@ async function grantedRetry(store, { run, ticket, axis, builderAttempt, attempt,
 function decideReview(axes) {
 	const mutated = axes.find((axis) => axis.outcome === "mutation-detected");
 	if (mutated !== undefined) {
-		return phase("mutation-detected", {
+		return phaseAnswer("mutation-detected", {
 			axis: mutated.axis,
 			attempt: mutated.attempt,
 			attestation: mutated.detail.attestation,
@@ -488,7 +482,7 @@ function decideReview(axes) {
 
 	const disposing = axes.find((axis) => axis.action === STAGE_ACTIONS.dispose);
 	if (disposing !== undefined) {
-		return phase(disposing.outcome, {
+		return phaseAnswer(disposing.outcome, {
 			axis: disposing.axis,
 			attempt: disposing.attempt,
 			reason_class: disposing.detail.reason_class,
@@ -512,10 +506,10 @@ function decideReview(axes) {
 		// §8.10 marks this row's evidence untrusted, and the repair prompt renders
 		// every field of this detail inside its delimited block. So it carries the
 		// reviewers' words and nothing the controller wants read as its own.
-		return phase("rejected", { blocking: Object.freeze(blocking), advisory: Object.freeze(advisory) });
+		return phaseAnswer("rejected", { blocking: Object.freeze(blocking), advisory: Object.freeze(advisory) });
 	}
 
-	return phase("approved", {
+	return phaseAnswer("approved", {
 		axes: Object.freeze(
 			axes.map((axis) => Object.freeze({ axis: axis.axis, attempt: axis.attempt, verdict: axis.detail.verdict })),
 		),
@@ -523,7 +517,7 @@ function decideReview(axes) {
 	});
 }
 
-function phase(outcome, detail) {
+function phaseAnswer(outcome, detail) {
 	return Object.freeze({ outcome, detail: Object.freeze(detail) });
 }
 

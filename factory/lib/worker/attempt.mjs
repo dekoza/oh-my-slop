@@ -1,8 +1,9 @@
 import { join } from "node:path";
 
 import { PHASES } from "../domain/vocabulary.mjs";
+import { attemptBranch, attemptWorktreePath } from "../git/isolation.mjs";
 import { containPath, PATH_REFUSALS } from "../identity/paths.mjs";
-import { runStream } from "../state/events.mjs";
+import { canonicalJson, runStream } from "../state/events.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
 
 /**
@@ -190,36 +191,105 @@ export function launchedAttempt(store, attempt) {
  * record: **one past the highest ordinal this ticket execution has ever minted.**
  *
  * **Idempotency is the minter's purpose, not the counter's.** A caller says what
- * it is minting *for*; if a record already names that purpose the same id comes
- * back, so a controller that died between the mint and the work it opened
- * re-enters onto the attempt it already has rather than allocating a second one.
+ * it is minting *for* — §8.5's tier and the attempt it answers, §8.4's axis, work
+ * and try — and if a record already names that purpose the same id comes back, so
+ * a controller that died between the mint and the work it opened re-enters onto
+ * the attempt it already has rather than allocating a second one. The purpose is
+ * the same object `mintAttempt` writes into the record, so the key that is
+ * matched and the key that was written cannot come to be spelled differently.
  *
  * @param {object} store an open store
  * @param {object} where
  * @param {string} where.run
  * @param {number} where.ticket
- * @param {(payload: object, record: object) => boolean} where.mintedFor the
- *   purpose predicate, read against each `attempt.launched` payload of this
- *   ticket execution
+ * @param {object} where.purpose why this attempt is being minted, as `mintAttempt`
+ *   records it
  * @returns {Readonly<{ attempt: string, ordinal: number, state: string }>}
  *   `state` is `already-minted` or `allocated`
  */
-export function allocateAttempt(store, { run, ticket, mintedFor }) {
+export function allocateAttempt(store, { run, ticket, purpose }) {
 	const minted = store
 		.readEvents({ stream: runStream(run), kind: "attempt.launched" })
 		.filter((record) => record.ticket === ticket);
 
 	// The last rather than the first: a purpose that can repeat — a review axis
 	// retried on the automation budget — names its own try, so at most one record
-	// matches. Where a caller's predicate is looser, the most recent mint is the
-	// one its work is open under.
-	const existing = minted.findLast((record) => mintedFor(record.payload, record));
+	// matches, and the most recent is the one whose work is open.
+	const existing = minted.findLast((record) => mintsPurpose(record.payload, purpose));
 	if (existing !== undefined) {
 		return Object.freeze({ attempt: existing.attempt, ordinal: ordinalOf(existing.attempt), state: "already-minted" });
 	}
 
 	const ordinal = minted.reduce((highest, record) => Math.max(highest, ordinalOf(record.attempt) ?? 0), 0) + 1;
 	return Object.freeze({ attempt: attemptIdOf({ run, ticket, ordinal }), ordinal, state: "allocated" });
+}
+
+/**
+ * Whether one `attempt.launched` payload was minted for a purpose.
+ *
+ * Compared field by field against the purpose's **own** keys, canonically, so a
+ * payload carrying more than the purpose still matches and a nested block — the
+ * review one — is compared whole rather than by reference.
+ */
+function mintsPurpose(payload, purpose) {
+	return Object.entries(purpose).every(([key, value]) => canonicalJson(payload[key] ?? null) === canonicalJson(value));
+}
+
+/**
+ * §6.5's mint, for an attempt whose minter is not its launcher.
+ *
+ * **The mint comes before the work, and everything knowable at mint time is
+ * written here.** The projections refuse an attempt-scoped record — and a branch
+ * and a worktree are both effects — for a tuple nothing minted, so §8.5's tiers
+ * and §8.4's axes both write this before they open anything. What is knowable
+ * only at launch (the runtime, the declared model, the manifest and prompt
+ * digests) stays in the attempt manifest on disk: the `attempt` projector inserts
+ * one row per `attempt.launched`, so `launchWorker` cannot append a second and
+ * does not try.
+ *
+ * A record already there is left exactly as it is, which is what makes a
+ * re-entered mint free rather than a duplicate.
+ *
+ * @param {object} store an open store
+ * @param {object} context
+ * @param {object} context.hold the controller's hold (`controller/lease-guard.mjs`)
+ * @param {Readonly<object>} context.identity the minted tuple (`requireAttemptIdentity`)
+ * @param {string} context.role the role this attempt runs
+ * @param {string} context.profile the dispatched profile
+ * @param {string} context.baseCommit the commit its branch starts at
+ * @param {object} context.purpose **why this attempt exists**, in the minter's own
+ *   words — §8.5's tier and the attempt it answers, or §8.4's axis, work and try.
+ *   It is also the allocation key `allocateAttempt` reads back, so a journal an
+ *   operator can explain and a re-entry that converges are the same field
+ * @param {number} context.at
+ * @returns {boolean} whether this call wrote the record
+ */
+export function mintAttempt(store, { hold, identity, role, profile, baseCommit, purpose, at }) {
+	if (launchedAttempt(store, identity.attempt) !== null) return false;
+
+	hold.append({
+		kind: "attempt.launched",
+		source: "controller",
+		run: identity.run,
+		ticket: identity.ticket,
+		phase: identity.phase,
+		attempt: identity.attempt,
+		occurredAt: at,
+		observedAt: at,
+		payload: {
+			role,
+			profile,
+			...purpose,
+			base_commit: baseCommit,
+			// The three derived paths cost nothing to compute and are what an
+			// operator greps for during an incident (§2.1, §6.6, §7.3).
+			branch: attemptBranch({ ticket: identity.ticket, attempt: identity.attempt }),
+			worktree: attemptWorktreePath(store.storeDir, identity.attempt),
+			outbox: attemptOutboxPath(store.storeDir, identity.attempt),
+		},
+	});
+
+	return true;
 }
 
 /**

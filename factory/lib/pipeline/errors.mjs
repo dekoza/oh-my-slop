@@ -30,11 +30,14 @@ export const PIPELINE_ERROR_REASONS = Object.freeze([
 	 */
 	"not-yet-implemented",
 	/**
-	 * §8.1's pipeline is walked whole, and a phase whose executor the caller did
-	 * not supply is a composition bug rather than an unbuilt slice. It is a
-	 * separate reason from `not-yet-implemented` because the two need opposite
-	 * things: one waits for a ticket, the other for a line at the call site — and
-	 * a slice landing moves a phase from the first to the second.
+	 * §8.1's pipeline is walked whole, and an executor that cannot answer for its
+	 * phase is a composition bug rather than an unbuilt slice. Two shapes of the
+	 * same bug: **no executor supplied at all**, and one supplied that answered at
+	 * the wrong level — §8.4's review resolving its axes' *attempt* outcomes is
+	 * the fan-out's, so an executor handing one back to the walk has crossed §8.8's
+	 * two levels. It is a separate reason from `not-yet-implemented` because the
+	 * two need opposite things: one waits for a ticket, the other for a line at the
+	 * call site — and a slice landing moves a phase from the first to the second.
 	 */
 	"phase-unwired",
 	/**
