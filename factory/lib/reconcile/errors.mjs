@@ -29,6 +29,13 @@ export const RECONCILE_ERROR_REASONS = Object.freeze([
 	/** A probe answer the engine cannot read as an answer about the world. */
 	"probe-answer-invalid",
 	/**
+	 * A read §4.5 declares under more matches than the shipped implementation
+	 * answers. It is a refusal rather than a `false`, because "the mutation did
+	 * not land" and "nobody asked" are different facts, and only one of them is
+	 * §12.4's alarm.
+	 */
+	"probe-unimplemented",
+	/**
 	 * A settle-mode reconcile handed a store with no write path. `doctor` opens
 	 * the read-only handle, and this is what stops a caller from asking that
 	 * handle to settle anything (§14.24).

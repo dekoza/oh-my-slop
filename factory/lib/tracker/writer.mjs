@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 
 import { EFFECT_REGISTRY } from "../effects/registry.mjs";
 import { FactoryTrackerError } from "./errors.mjs";
-import { normaliseComment, normaliseIssue, normaliseLabelNames, TEA_BINARY } from "./gitea.mjs";
+import { normaliseComment, normaliseIssue, normaliseLabelNames, normalisePull, TEA_BINARY } from "./gitea.mjs";
 
 /**
  * The Gitea **write** path (§3.3, §8.9, §4.5) — the mutations a claim and a
@@ -68,6 +68,12 @@ export const TRACKER_WRITES = Object.freeze({
 	"issue-unassign": Object.freeze({ method: "PATCH", path: (ticket) => `/issues/${ticket}` }),
 	"label-add": Object.freeze({ method: "POST", path: (ticket) => `/issues/${ticket}/labels` }),
 	"comment-post": Object.freeze({ method: "POST", path: (ticket) => `/issues/${ticket}/comments` }),
+	// §7.5's publication, and the sweep that keeps **one live PR per ticket**.
+	// Gitea numbers pull requests in the issue sequence, so closing one is the
+	// issue mutation — which is also why §4.5 needs no `pr-close` kind: the thing
+	// being mutated is an issue's state, and the key's operand says which one.
+	"pr-create": Object.freeze({ method: "POST", path: () => "/pulls" }),
+	"issue-close": Object.freeze({ method: "PATCH", path: (number) => `/issues/${number}` }),
 });
 
 /**
@@ -138,6 +144,26 @@ export function createGiteaWriter({ repo, login, request = teaWrite }) {
 		 * carries in an HTML comment (§4.5).
 		 */
 		comment: async (ticket, body) => normaliseComment(await write("comment-post", ticket, { body })),
+
+		/**
+		 * §7.5's pull request: **one per ticket, against the default branch**, from
+		 * the attempt branch alone.
+		 *
+		 * The base is passed rather than defaulted, because a PR opened against the
+		 * wrong branch is the one mistake here that looks like success — Gitea takes
+		 * whatever it is given and the operator finds out at merge time.
+		 */
+		createPull: async ({ head, base: baseBranch, title, body }) =>
+			normalisePull(await write("pr-create", null, { head, base: baseBranch, title, body })),
+
+		/**
+		 * Close an issue or, in the same numbering, a pull request (§7.5's stale-PR
+		 * sweep). It is **never** reachable for a ticket: §14.20 has a human clearing
+		 * a label, and §7.5 has the manual merge closing the ticket through
+		 * `Closes #N`. What it closes is a PR this factory itself opened and has
+		 * since superseded.
+		 */
+		closePull: async (number) => normalisePull(await write("issue-close", number, { state: "closed" })),
 	});
 }
 

@@ -72,6 +72,41 @@ export function giteaComment({
 	};
 }
 
+/**
+ * A pull request record, as `/pulls` returns it. Gitea numbers pull requests in
+ * the issue sequence, which is why the fixture keeps them in the same `issues`
+ * world: closing one and commenting on one both go through the issue endpoints,
+ * and a fixture that kept two universes would prove nothing about that.
+ */
+export function giteaPull({
+	number,
+	id = 5000 + number,
+	state = "open",
+	title = `a pull request (#${number})`,
+	body = "",
+	headBranch,
+	headSha = "0".repeat(40),
+	baseBranch = "main",
+	updatedAt = "2026-08-15T14:10:00+02:00",
+}) {
+	return {
+		id,
+		number,
+		state,
+		title,
+		body,
+		labels: [],
+		assignees: null,
+		comments: 0,
+		merged: false,
+		created_at: "2026-08-15T14:00:00+02:00",
+		updated_at: updatedAt,
+		html_url: `http://gitea.example/acme/widgets/pulls/${number}`,
+		head: { ref: headBranch, sha: headSha, label: headBranch },
+		base: { ref: baseBranch, sha: "1".repeat(40), label: baseBranch },
+	};
+}
+
 /** A timeline entry. `type` is Gitea's own vocabulary — `add_dependency` included. */
 export function giteaTimelineEntry({
 	id,
@@ -114,6 +149,7 @@ export function giteaTimelineEntry({
 export function fakeGitea({
 	issues = [],
 	comments = [],
+	pulls = [],
 	timeline = {},
 	dependencies = {},
 	status = {},
@@ -122,8 +158,9 @@ export function fakeGitea({
 } = {}) {
 	const calls = [];
 	const writes = [];
-	const world = { issues, comments };
+	const world = { issues, comments, pulls };
 	let nextCommentId = 9000;
+	let nextPullNumber = 7000;
 
 	const answer = async ({ call, path }) => {
 		calls.push({ call, path });
@@ -169,9 +206,17 @@ export function fakeGitea({
 			);
 		}
 
+		if (route.endsWith("/pulls")) {
+			return page(stateFilter(pulls, parameters), parameters);
+		}
+
 		const issueMatch = /\/issues\/([0-9]+)$/.exec(route);
 		if (issueMatch !== null) {
-			const issue = issues.find((candidate) => candidate.number === Number(issueMatch[1]));
+			// One numbering: a pull request answers the issue endpoints too, exactly
+			// as Gitea does — which is what §7.5's stale-PR close relies on.
+			const issue =
+				issues.find((candidate) => candidate.number === Number(issueMatch[1])) ??
+				pulls.find((candidate) => candidate.number === Number(issueMatch[1]));
 			return issue === undefined
 				? { status: 404, body: { message: "not found" } }
 				: { status: 200, body: issue };
@@ -239,13 +284,30 @@ export function fakeGitea({
 			return { status: 200, body: issue.labels };
 		}
 
+		if (method === "POST" && path.endsWith("/pulls")) {
+			const created = giteaPull({
+				number: (nextPullNumber += 1),
+				title: body.title,
+				body: body.body,
+				headBranch: body.head,
+				baseBranch: body.base,
+				updatedAt: new Date(serverTime).toISOString(),
+			});
+			pulls.push(created);
+			onWrite?.({ operation, body }, world);
+			return { status: 201, body: created };
+		}
+
 		const issueMatch = /\/issues\/([0-9]+)$/.exec(path);
 		if (method === "PATCH" && issueMatch !== null) {
-			const issue = issues.find((candidate) => candidate.number === Number(issueMatch[1]));
+			const issue =
+				issues.find((candidate) => candidate.number === Number(issueMatch[1])) ??
+				pulls.find((candidate) => candidate.number === Number(issueMatch[1]));
 			if (issue === undefined) return { status: 404, body: { message: "not found" } };
 			if (body.assignees !== undefined) {
 				issue.assignees = body.assignees.map((login) => ({ id: 1, login, username: login }));
 			}
+			if (body.state !== undefined) issue.state = body.state;
 			issue.updated_at = new Date(serverTime).toISOString();
 			onWrite?.({ operation, ticket: issue.number, body }, world);
 			return { status: 200, body: issue };
@@ -261,6 +323,7 @@ export function fakeGitea({
 		writes,
 		issues,
 		comments,
+		pulls,
 		pathsFor: (call) => calls.filter((entry) => entry.call === call).map((e) => e.path),
 	};
 }

@@ -80,6 +80,8 @@ test("every tracker write has a probe, and every probe has an implementation", (
 			["issue-unassign", "issue.assignees", "absent"],
 			["label-add", "issue.labels", "present"],
 			["comment-post", "issue.comments", "embedded-key"],
+			["pr-create", "pulls.by-head-branch", "present"],
+			["issue-close", "issue.state", "state-equals"],
 		],
 	);
 
@@ -90,7 +92,10 @@ test("every tracker write has a probe, and every probe has an implementation", (
 		const call = EFFECT_REGISTRY.probeFor(operation).call;
 		assert.notEqual(probes.implementationFor(call), null, `${operation} reads ${call}, which nothing implements`);
 	}
-	assert.deepEqual([...probes.calls].sort(), ["issue.assignees", "issue.comments", "issue.labels"]);
+	assert.deepEqual(
+		[...probes.calls].sort(),
+		["issue.assignees", "issue.comments", "issue.labels", "issue.state", "pulls.by-head-branch"],
+	);
 });
 
 test("one read has one implementation — a base that already claims it refuses", () => {

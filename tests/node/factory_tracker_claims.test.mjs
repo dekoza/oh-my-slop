@@ -436,8 +436,24 @@ test("the write surface is §4.5's tracker mutations, each a registered effect k
 
 	// There is no method argument and no path argument, so a mutation outside the
 	// table is not something this module can be *told* to perform.
-	assert.deepEqual(Object.keys(writer).sort(), ["addLabels", "assign", "comment", "login", "repo", "unassign"]);
-	assert.deepEqual(Object.keys(TRACKER_WRITES), ["issue-assign", "issue-unassign", "label-add", "comment-post"]);
+	assert.deepEqual(Object.keys(writer).sort(), [
+		"addLabels",
+		"assign",
+		"closePull",
+		"comment",
+		"createPull",
+		"login",
+		"repo",
+		"unassign",
+	]);
+	assert.deepEqual(Object.keys(TRACKER_WRITES), [
+		"issue-assign",
+		"issue-unassign",
+		"label-add",
+		"comment-post",
+		"pr-create",
+		"issue-close",
+	]);
 
 	// §14.20: **no label removal.** A `factory:failed` label is cleared by a human
 	// or not at all, so the removal legacy's `failAutomation` used to re-arm a

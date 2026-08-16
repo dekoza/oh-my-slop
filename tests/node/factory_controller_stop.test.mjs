@@ -525,24 +525,24 @@ test("a signal before the run is opened is recorded on open and honoured, not lo
 		ticket: null,
 		phase: "preflight",
 		// A read no subsystem implements yet, so the stand-in below is the only
-		// implementation of it: `issue.labels` and `issue.assignees` are the
-		// tracker's own (§8.9, §3.3), and one read has exactly one implementation.
-		operation: "issue-close",
+		// implementation of it: the tracker's own reads and git's are registered by
+		// the subsystems that introduce them, and one read has exactly one
+		// implementation — so a read anybody ships would refuse this registration.
+		operation: "artifact-delete",
 		operand: null,
 		actor: "controller",
 		fencingGeneration: 1,
-		payload: { state: "closed" },
+		payload: { digest: "f".repeat(64) },
 		at: FIXED_NOW + 5,
 	});
 	store.close();
 
 	const probes = createProbeRegistry();
-	probes.register("issue.state", () => {
+	probes.register("artifact.blob", () => {
 		signals.fire("SIGINT");
 		return {
 			matched: true,
-			result: { state: "closed" },
-			foreignSourceId: "gitea:98",
+			result: { present: false },
 			occurredAtRaw: "2026-08-15T09:00:00+02:00",
 		};
 	});

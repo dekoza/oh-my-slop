@@ -25,7 +25,39 @@ export const COMMENT_OPERANDS = Object.freeze({
 	claim: "claim",
 	takeover: "takeover",
 	disposition: "disposition",
+	/**
+	 * §7.5's stale-PR sweep: the comment left on a dead earlier attempt's pull
+	 * request, linking the one that replaced it.
+	 *
+	 * It is the one comment the factory posts somewhere other than the ticket, so
+	 * it carries its target in the operand — `superseded/<pr number>` — and
+	 * `commentTarget` is what reads it back. The effect still belongs to the
+	 * ticket execution, because that is what asked for it.
+	 */
+	superseded: "superseded",
 });
+
+/**
+ * Which issue a `comment-post` effect's comment was posted on.
+ *
+ * The ticket, for every comment but one. §7.5's superseding comment goes on the
+ * pull request being closed, and the probe that settles it has to read that
+ * issue's comments rather than the ticket's — a probe looking in the wrong place
+ * would report a posted comment as absent and fall through to §5.2's
+ * corroboration, which answers a question nobody asked here.
+ *
+ * @param {{ ticket: number | null, operand: string | null }} effect
+ * @returns {number | null}
+ */
+export function commentTarget({ ticket, operand }) {
+	const matched = typeof operand === "string" ? /^superseded\/([1-9][0-9]*)$/.exec(operand) : null;
+	return matched === null ? ticket : Number.parseInt(matched[1], 10);
+}
+
+/** The operand a superseding comment carries, so one spelling serves both sides. */
+export function supersededOperand(pullNumber) {
+	return `${COMMENT_OPERANDS.superseded}/${pullNumber}`;
+}
 
 /**
  * The two that **announce a claim**, and therefore the two whose absence the

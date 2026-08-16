@@ -83,6 +83,13 @@ export const TRACKER_ERROR_REASONS = Object.freeze([
 	 * shape nobody recognises would otherwise be read as a direct-ticket set.
 	 */
 	"scope-unrecognised",
+	/**
+	 * A pull request asked for from something other than this ticket's own attempt
+	 * branch (§7.3, §14.11). §7.5 publishes one branch and one only, and a factory
+	 * that opened a PR from a branch it did not build would be publishing work it
+	 * never verified.
+	 */
+	"pull-unpublishable",
 ]);
 
 export class FactoryTrackerError extends Error {

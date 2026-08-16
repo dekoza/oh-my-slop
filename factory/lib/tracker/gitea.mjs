@@ -258,6 +258,38 @@ export function createGiteaReader({ repo, login, request = teaRequest }) {
 			);
 		},
 
+		/**
+		 * §7.5's **one live PR per ticket**, found by the branch it is built from.
+		 *
+		 * Gitea's pulls endpoint has no `head=` filter — that is GitHub's — so the
+		 * selection happens here, over the open list. It is still one declared read
+		 * (`pulls.by-head-branch`), because what the factory asks for is "the pull
+		 * request whose head is this branch" and the paging is how this instance
+		 * answers it.
+		 *
+		 * **Open only.** §7.6's redo path is a human closing a PR unmerged, and
+		 * §7.5 says the factory never resurrects a closed one; a closed PR found
+		 * here would be exactly the resurrection.
+		 *
+		 * @param {string} branch the attempt branch
+		 * @returns {Promise<object | null>}
+		 */
+		pullByHeadBranch: async (branch) =>
+			(await readAll("pulls.by-head-branch", `${base}/pulls?state=open`))
+				.map(normalisePull)
+				.find((pull) => pull.head_branch === branch) ?? null,
+
+		/**
+		 * Every open PR built from a branch under `prefix` — §7.5's stale-PR sweep,
+		 * whose whole question is "which other attempt branches of this ticket still
+		 * have a PR open". The prefix is `factory/t<ticket>/`, which §7.3 makes
+		 * derivable from the ticket alone.
+		 */
+		pullsByHeadPrefix: async (prefix) =>
+			(await readAll("pulls.by-head-branch", `${base}/pulls?state=open`))
+				.map(normalisePull)
+				.filter((pull) => pull.head_branch !== null && pull.head_branch.startsWith(prefix)),
+
 		/** What this issue is blocked by (§3.2). Read on resolve, and on `add_dependency`. */
 		dependencies: async (number) =>
 			(await readAll("issue.dependencies", `${base}/issues/${number}/dependencies`)).map(normaliseIssue),
@@ -336,6 +368,42 @@ export function normaliseComment(raw) {
 		// `created_at` does not.
 		created_at: epochMillis(raw.created_at ?? raw.updated_at, "comment.created_at", raw),
 		created_at_raw: raw.created_at ?? raw.updated_at,
+		html_url: raw.html_url ?? null,
+	});
+}
+
+/**
+ * A pull request as the factory reads it (§7.5).
+ *
+ * The head **branch** rather than the head repository or sha: §7.3 derives the
+ * branch deterministically from the identity tuple, so the branch is what makes
+ * a PR findable from a ticket and an attempt without the factory keeping a map.
+ * The sha rides along as evidence of what is open, never as the handle.
+ *
+ * Gitea numbers pull requests in the issue sequence, which is why the same
+ * `issue-close` mutation and the same comment endpoint serve both — and why
+ * `number` here is comparable with a ticket number and must never be confused
+ * for one.
+ */
+export function normalisePull(raw) {
+	requireRecord(raw, "pull request");
+	requireNumber(raw.number, "pull.number", raw);
+	requireString(raw.state, "pull.state", raw);
+	requireString(raw.updated_at, "pull.updated_at", raw);
+
+	return Object.freeze({
+		kind: FOREIGN_ID_KINDS.issue,
+		foreign_id: foreignId(FOREIGN_ID_KINDS.issue, raw.id ?? raw.number, raw.updated_at),
+		number: raw.number,
+		state: raw.state,
+		title: raw.title ?? "",
+		body: raw.body ?? "",
+		head_branch: typeof raw.head?.ref === "string" ? raw.head.ref : null,
+		head_sha: typeof raw.head?.sha === "string" ? raw.head.sha : null,
+		base_branch: typeof raw.base?.ref === "string" ? raw.base.ref : null,
+		merged: raw.merged === true,
+		updated_at: epochMillis(raw.updated_at, "pull.updated_at", raw),
+		updated_at_raw: raw.updated_at,
 		html_url: raw.html_url ?? null,
 	});
 }
