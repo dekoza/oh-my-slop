@@ -117,14 +117,14 @@ export async function launch({
 			return commandFailure("workspace create", created, { workspace: null });
 		}
 
-		const result = parseResult(created.stdout, "workspace create");
+		const result = parseResult(created.stdout);
 		if (result === null) {
 			return {
 				error: {
 					kind: "herdr-unreadable-response",
-					command,
+					command: "workspace create",
 					message:
-						`Herdr's ${command} answered exit 0 but no readable \`result.root_pane\`; ` +
+						"Herdr's workspace create answered exit 0 but no readable `result.root_pane`; " +
 						"no pane was run in. Nothing was closed, because nothing here closes anything (§13.B).",
 				},
 				exitCode: EXIT_REFUSED,
@@ -185,7 +185,7 @@ function commandFailure(command, answer, { workspace }) {
 }
 
 /** The `result` object of a CLI JSON answer, or null when it is not there. */
-function parseResult(stdout, command) {
+function parseResult(stdout) {
 	let answer;
 	try {
 		answer = JSON.parse(stdout);
@@ -214,7 +214,7 @@ function spawnHerdr(args, { env, binary }) {
 	return new Promise((resolve) => {
 		const child = spawn(binary, args, {
 			// The context's env is the operator's environment when the CLI carries
-		// one; a direct call without one still means "as this shell would run it".
+			// one; a direct call without one still means "as this shell would run it".
 			env: { ...(env ?? process.env) },
 			stdio: ["ignore", "pipe", "pipe"],
 		});

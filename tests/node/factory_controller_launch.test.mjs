@@ -212,6 +212,21 @@ test("a failed workspace create reports the failure and issues no pane run", asy
 	assert.equal(calls.length, 1, "the half-launch went on to run the command anyway");
 });
 
+test("a workspace create that answers exit 0 without a readable pane refuses, typed", async (t) => {
+	const { runner, calls } = scriptedHerdr({
+		"workspace create": { exitCode: 0, stdout: "not json", stderr: "" },
+	});
+	const context = invocation(t, { runHerdr: runner });
+
+	const { exitCode, value } = await runCli(["start", "42"], context);
+
+	assert.equal(exitCode, EXIT_REFUSED);
+	assert.equal(value.error.kind, "herdr-unreadable-response");
+	assert.equal(value.error.command, "workspace create");
+	assert.match(value.error.message, /workspace create/);
+	assert.equal(calls.length, 1, "the unreadable answer went on to run the command anyway");
+});
+
 test("a failed pane run names the workspace it created", async (t) => {
 	const { runner, calls } = scriptedHerdr({
 		"pane run": { exitCode: 1, stdout: "", stderr: "pane vanished" },
