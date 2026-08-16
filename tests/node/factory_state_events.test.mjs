@@ -196,6 +196,14 @@ test("§8.6: a disposition is on payload v2, because v1 could not say whose faul
 	assert.equal(EVENT_KINDS["ticket.disposition-changed"].payloadVersion, 2);
 });
 
+test("§8.10: a stage result is on payload v2, because v1 had no pass to name", () => {
+	// #146: the semantic key gained a `try` slot when §8.10's automation retry of a
+	// controller phase got its answer — it mints no attempt, so the pass is what
+	// varies. A v1 record predates any way of re-entering a controller phase at
+	// all, which is why it reads as the first pass rather than as a gap.
+	assert.equal(EVENT_KINDS["stage.resolved"].payloadVersion, 2);
+});
+
 // ── Sources and foreign facts (§4.3, §5.1) ───────────────────────────────────
 
 test("source is mandatory and comes from the closed set", () => {

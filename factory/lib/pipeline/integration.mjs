@@ -217,14 +217,15 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
  * `push-failed` — which §8.10 retries on the automation budget, because the
  * publication did not happen and nothing about the work is implicated.
  *
- * **`branch` is the *builder* attempt's branch, and `attempt` may not be its
- * attempt.** §7.3 derives the branch from the attempt that built the work, while
- * §8.10's `push-failed` retry re-enters this phase under a fresh attempt id
- * having rebuilt nothing — so a caller planning that retry passes the branch it
- * is publishing and the attempt it is walking, and they differ. The contract is
- * stated here because nothing enforces it: a caller that derived the branch from
- * the walking attempt would publish a branch that does not exist. What an
- * automation retry of a workerless phase *should* mint is #146's.
+ * **`branch` is the *builder* attempt's branch, and it is passed rather than
+ * derived.** §7.3 derives the branch from the attempt that built the work, and
+ * `attempt` is the one the walk is on. #146 settles that those are the same
+ * attempt on the live path — an automation retry of this phase mints nothing,
+ * because `integrate` has no worker (§8.8), so the walk re-enters under the
+ * attempt it is already on. The branch stays a parameter because the two are
+ * different facts: deriving it here would be this phase forming a second opinion
+ * about which attempt owns the work it is publishing, and §7.5's publication
+ * effects are keyed by the branch for exactly that reason.
  *
  * @param {object} store an open store
  * @param {object} clone the private clone's handle
@@ -257,7 +258,7 @@ export async function integratePublish(store, clone, context) {
 	// them and the resolution is exactly what a re-entry exists to finish. Nothing
 	// in `publish` fetches, rebases, or moves a ref; every mutation in it is an
 	// effect that has already resolved or has not happened yet.
-	if (publicationLanded(store, { run, ticket, attempt, branch })) {
+	if (publicationLanded(store, { run, ticket, branch })) {
 		return underIntegrationLease(leases, { hold, run, ticket, attempt, span: "integrate+publish" }, () =>
 			publish(store, clone, { ...context, verified }),
 		);
@@ -382,7 +383,6 @@ async function publish(store, clone, context) {
 			hold,
 			run,
 			ticket,
-			attempt,
 			branch,
 			head: verified.head,
 			verifiedCommits: verified.commits,
@@ -489,12 +489,14 @@ function evidenceOf(reference) {
  */
 function attestedByVerify(store, { run, ticket, attempt }) {
 	// One reader and one shape. **This attempt's own passing verify, or the ticket
-	// execution's most recent one**: §8.10 routes `integrate × push-failed` to an
-	// *automation* retry, which §8.5 re-enters under a fresh attempt id without
-	// rebuilding anything — the automation failed, not the work — so the commit
-	// that retry publishes was verified under the attempt before it. Reading only
-	// this attempt's record would refuse the retry as if no verification had
-	// happened, which is the opposite of what did.
+	// execution's most recent one.** The first is the live answer: #146 settles
+	// that §8.10's `integrate × push-failed` retry mints no attempt, so the walk
+	// re-enters this phase under the attempt that verified. The fallback is kept
+	// because it is the right answer to the question either way — an automation
+	// retry rebuilds nothing (§8.5), so a caller walking `integrate` under some
+	// other attempt is still publishing the commit this execution verified, and
+	// refusing it as though nothing had been verified is the opposite of what
+	// happened. §7.4's identity compare at the push is what holds the pair honest.
 	const passed = stageResults(store, { run, ticket, phase: PHASE_VERIFY }).filter(
 		(record) => record.outcome === CHECK_RESULTS.passed,
 	);
@@ -526,12 +528,19 @@ function attestedByVerify(store, { run, ticket, attempt }) {
  * check-then-create adopts the branch that is already pushed. The asymmetry is
  * the right way round — what the answer skips is the destructive half.
  */
-function publicationLanded(store, { run, ticket, attempt, branch }) {
-	const pushed = effectByKey(store, effectKey({ run, ticket, phase: PHASE_INTEGRATE, attempt, operation: "push", operand: branch }));
+function publicationLanded(store, { run, ticket, branch }) {
+	// **Neither key names an attempt** (§4.5's rule, in `effects/keys.mjs`): the
+	// subject of both is the published branch, which one ticket execution
+	// publishes once. That is what lets this answer the same way from whichever
+	// attempt is walking `integrate` — including a §8.10 automation retry of the
+	// phase, which is the case that would otherwise look at a key nothing wrote
+	// and push a second time (#146).
+	const pushed = effectByKey(
+		store,
+		effectKey({ run, ticket, phase: PHASE_INTEGRATE, attempt: null, operation: "push", operand: branch }),
+	);
 	const opened = effectByKey(
 		store,
-		// §4.5 keys a tracker mutation to the ticket execution rather than to an
-		// attempt (`tracker/mutations.mjs`), so the PR's key names no attempt.
 		effectKey({ run, ticket, phase: PHASE_IMPLEMENT, attempt: null, operation: "pr-create", operand: branch }),
 	);
 

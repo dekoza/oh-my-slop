@@ -75,12 +75,18 @@ export const EVENT_KINDS = Object.freeze({
 	// writing evidence.
 	"attempt.ended": { payloadVersion: 1, visibility: "operator" },
 	// #108: §8.10's stage result, and the record the outcome chain is read back
-	// from. One per `(run, ticket, phase, attempt)` — §2.1's stage identity plus
-	// the attempt it was resolved under, because a repair re-enters a phase with a
-	// new attempt and that is a new result rather than a contradiction of the old
-	// one. A second, identical result under one key is returned idempotently; a
-	// conflicting one is §8.10's typed conflict.
-	"stage.resolved": { payloadVersion: 1, visibility: "operator" },
+	// from. One per `(run, ticket, phase, attempt, try)` — §2.1's stage identity,
+	// the attempt it was resolved under, and which pass through the phase it was.
+	// A repair re-enters a phase with a new attempt and that is a new result
+	// rather than a contradiction of the old one. A second, identical result under
+	// one key is returned idempotently; a conflicting one is §8.10's typed
+	// conflict.
+	//
+	// #146 puts it on **payload v2**: the `try` slot. A controller phase has no
+	// worker (§8.8), so §8.10's automation retry of one mints no attempt and the
+	// attempt slot cannot vary — the pass is what does. A v1 record predates any
+	// way of re-entering a controller phase, so it reads as the first pass.
+	"stage.resolved": { payloadVersion: 2, visibility: "operator" },
 	// #98: §8.8's disposition as a durable ticket-execution fact. The value is
 	// held to the closed set at the projector; `released` is the one member
 	// this package's writer reaches (abandon, §9.6), and the column speaks the

@@ -355,6 +355,20 @@ export const STAGE_ACTIONS = Object.freeze({
 });
 
 /**
+ * Where a re-launched attempt's branch starts. **Two words, because there are
+ * two answers to "is the prior attempt's work worth keeping"** — and they are
+ * named here rather than only inside `RETRY_BASES` because §8.10's automation
+ * retry of an agent-borne phase also has to name one, and it is not a tier
+ * (§8.5, #146).
+ */
+export const BASE_KINDS = Object.freeze({
+	/** The prior attempt's tip, so its work is preserved. */
+	priorTip: "prior-tip",
+	/** §7.2's freshly fetched pin, so its work is discarded. */
+	pinnedBase: "pinned-base",
+});
+
+/**
  * §8.5's two tiers, by the base each one branches from — and the word rides the
  * `attempt.launched` payload of every attempt a tier produced, which is this
  * file's criterion for holding it.
@@ -362,13 +376,15 @@ export const STAGE_ACTIONS = Object.freeze({
  * The keys are `STAGE_ACTIONS`' own, so the tiers are enumerated once: the
  * question "is this row a retry tier" and the question "what does this tier
  * branch from" are answered from one table rather than from two that can come to
- * disagree about how many tiers there are.
+ * disagree about how many tiers there are. §8.10's `retry` is deliberately not a
+ * key: it is not a tier (§8.6), and adding it here would make it one everywhere
+ * `RETRY_TIERS` is read.
  */
 export const RETRY_BASES = Object.freeze({
 	/** Tier 1 — the prior attempt's tip, so its work is preserved. */
-	[STAGE_ACTIONS.repair]: "prior-tip",
+	[STAGE_ACTIONS.repair]: BASE_KINDS.priorTip,
 	/** Tier 2 — §7.2's freshly fetched pin, so its work is discarded. */
-	[STAGE_ACTIONS.freshRetry]: "pinned-base",
+	[STAGE_ACTIONS.freshRetry]: BASE_KINDS.pinnedBase,
 });
 
 /** The two actions above, as a list — `RETRY_BASES`' own keys and never a copy. */

@@ -5,10 +5,16 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
-import { RETRY_BASES } from "../../factory/lib/domain/vocabulary.mjs";
+import { BASE_KINDS, RETRY_BASES } from "../../factory/lib/domain/vocabulary.mjs";
 import { createAttemptWorktree } from "../../factory/lib/git/attempt.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
-import { openRetryAttempt, originatingAttempt, planRetry, repairBrief } from "../../factory/lib/pipeline/repair.mjs";
+import {
+	openRetryAttempt,
+	originatingAttempt,
+	planAutomationRetry,
+	planRetry,
+	repairBrief,
+} from "../../factory/lib/pipeline/repair.mjs";
 import { routeOutcome } from "../../factory/lib/pipeline/table.mjs";
 import { validateRole } from "../../factory/lib/worker/adapter.mjs";
 import { renderAttemptPrompt } from "../../factory/lib/worker/prompt.mjs";
@@ -167,13 +173,81 @@ test("fresh-retry declares its routing: a plan without one is refused, never def
 });
 
 test("a row whose action is not a tier is refused (§8.10)", () => {
-	// `dead-worker` routes to §8.10's automation `retry`, which is the same phase
-	// again rather than a new attempt — a different thing from either tier.
+	// `dead-worker` routes to §8.10's automation `retry`, which is a relaunch of
+	// the same work rather than either tier's answer to a failure of it.
 	assert.throws(
 		() => planRetry({ prior: prior(), failure: failing("implement", "dead-worker"), routing: routing() }),
 		(error) => {
 			assert.equal(error.reason, "retry-unplannable");
 			assert.equal(error.details.at, "tier");
+			assert.match(error.message, /planAutomationRetry/, "the refusal names where the row is answered instead");
+			return true;
+		},
+	);
+});
+
+// ── §8.10's automation retry of an agent-borne phase (#146) ──────────────────
+
+test("an automation retry of implement relaunches the builder from its own tip (§8.10, #146)", () => {
+	const plan = planAutomationRetry({ prior: prior(), failure: failing("implement", "dead-worker") });
+
+	assert.equal(plan.tier, "retry");
+	assert.equal(plan.from.kind, BASE_KINDS.priorTip, "the pane died, not the work: whatever it committed is kept");
+	assert.equal(plan.from.of, prior().branch);
+	assert.equal(plan.inheritsWork, true);
+	assert.equal(plan.role, "implement");
+	assert.equal(plan.profile, "builder", "§11.5: a dead pane is no reason to re-route");
+	assert.equal(plan.routed, false);
+	assert.equal(plan.routingRole, null);
+	assert.equal(plan.attempt, undefined, "§2.1's ordinal is allocated against the record, not named by a plan");
+});
+
+test("an automation retry is planned without any routing at all (§11.5, #146)", () => {
+	const plan = planAutomationRetry({ prior: prior(), failure: failing("implement", "automation-failure") });
+
+	assert.equal(plan.profile, "builder");
+});
+
+test("an automation retry with no recorded profile is refused, never routed instead (§11.5, #146)", () => {
+	assert.throws(
+		() => planAutomationRetry({ prior: prior({ profile: null }), failure: failing("implement", "dead-worker") }),
+		(error) => {
+			assert.equal(error.reason, "retry-unplannable");
+			assert.equal(error.details.at, "profile");
+			return true;
+		},
+	);
+});
+
+test("only implement has an automation-retry plan: every other phase is refused (§8.4, §8.8, #146)", () => {
+	const elsewhere = [
+		// No worker at all, so there is no worker run for a fresh attempt to be.
+		failing("verify", "unrunnable"),
+		failing("integrate", "push-failed"),
+		// A worker, but not one this planner could ever plan: §8.4's fan-out mints
+		// its own axis attempts at the reviewed commit, under a read-only posture.
+		failing("review", "dead-worker"),
+	];
+
+	for (const failure of elsewhere) {
+		assert.throws(
+			() => planAutomationRetry({ prior: prior(), failure }),
+			(error) => {
+				assert.equal(error.reason, "retry-unplannable");
+				assert.equal(error.details.at, "phase");
+				assert.equal(error.details.phase, failure.phase);
+				return true;
+			},
+		);
+	}
+});
+
+test("neither planner answers for the other: a tier is not an automation retry (§8.5, §8.10, #146)", () => {
+	assert.throws(
+		() => planAutomationRetry({ prior: prior(), failure: REPAIRS }),
+		(error) => {
+			assert.equal(error.reason, "retry-unplannable");
+			assert.equal(error.details.at, "action");
 			return true;
 		},
 	);

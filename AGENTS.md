@@ -207,6 +207,16 @@ is the authority; cite the section a change answers to.
   an identical payload returns the committed result; a different payload is a typed
   conflict. Keying by the digest would turn that conflict into a different key and two
   mutations nobody compared.
+- **When an effect key names an attempt, and when the slot is `-`**, is one rule with one
+  home (`effects/keys.mjs`): keyed by the **attempt** when the subject is that attempt's own
+  work — its branch, worktree, evidence ref, pane — and by the **ticket execution** when the
+  subject is something one ticket execution has exactly one of: the published branch
+  (`push`, `pr-create`) and the ticket (`assign`, `label-add`, `comment-post`). §4.5's *the
+  database itself enforces uniqueness* is a whole-system claim, and a subject that outlives
+  the attempt that made it, keyed by an attempt, gets one row per attempt that touches it —
+  the uniqueness demoted to a per-attempt property with nothing failing. `pushAttemptBranch`
+  therefore takes **no attempt parameter at all**: the wrong key is not something a caller
+  can ask for.
 - **An artifact is never referenced by path** — only by digest, through §12.1's ledger.
   Everything in `factory/lib/artifacts/` takes content or an address (an algorithm from a
   closed set plus a fixed-shape digest) and never a location, so the audited `../` escape is
@@ -449,6 +459,20 @@ is the authority; cite the section a change answers to.
   pipeline's closed reason set that is an answer — a throw only because §8.4's fan-out spends
   the automation budget inside a phase executor, whose only ways out are a phase result and a
   throw.
+- **An automation retry mints an attempt only where there is a worker to run again**
+  (§8.5, §8.8). §8.10's `retry` of an **agent-borne** phase relaunches: `pipeline/retry.mjs`
+  composes the seam `walkStages` takes, and `planAutomationRetry` plans the relaunch from the
+  prior tip under the profile already dispatched — nothing was judged, so nothing is
+  discarded and nothing is re-routed. Its `retry` of a **controller** phase mints nothing:
+  `verify` and `integrate` have no worker, so an attempt id there would be a projection row
+  with no pane, no worktree and no manifest behind it. The walk re-enters those under the
+  attempt it is already on, at the next **try** — the fifth slot of a stage result's semantic
+  key `(run, ticket, phase, attempt, try)`, which exists because the attempt slot is exactly
+  what such a re-entry cannot vary. The consequence is worth knowing before you reach for a
+  branch: **the walking attempt is always a builder attempt**, since every retry that mints
+  re-enters `implement` and every retry that does not leaves the attempt where it was.
+  `retried()`'s loop guard still refuses a seam that answers with the attempt it was handed —
+  a controller re-entry is a different mechanism and never reaches it.
 - **The circuit breaker reads terminal-commit order, and its verdict is monotone**
   (`factory/lib/controller/breaker.mjs`). The order is the journal's own sequence over
   `ticket.disposition-changed` — never a clock, because two lanes finishing in one order and

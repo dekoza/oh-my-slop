@@ -494,33 +494,52 @@ test("a crash mid-integration is repaired by reconcile settling what the world a
 	assert.equal(fixture.gitea.pulls.length, 1);
 });
 
-test("an automation retry publishes what the attempt before it verified (§8.5, §8.10)", async (t) => {
+test("a retried integrate after a successful publication neither re-pushes nor rewrites (§7.7, §14.11, §14.12, #146)", async (t) => {
 	const fixture = await integrating(t);
 	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
 	recordReview(fixture);
+	const published = await integratePublish(fixture.store, fixture.clone, fixture.context);
+	const remoteHead = git(fixture.remote, ["rev-parse", `refs/heads/${fixture.branch}`]);
 
-	// §8.10 routes `integrate × push-failed` to an automation retry, which §8.5
-	// re-enters under a fresh attempt id and rebuilds nothing: the automation
-	// failed, not the work. The commit it publishes is the one verified before.
-	const retried = `${fixture.run}-t${fixture.ticket}-a4`;
-	// §6.5: the mint precedes every attempt-scoped effect, and the seam that
-	// plans the retry is what performs it.
-	fixture.store.append({
-		kind: "attempt.launched",
-		source: "controller",
-		run: fixture.run,
-		ticket: fixture.ticket,
-		phase: "integrate",
-		attempt: retried,
-		occurredAt: FIXED_NOW,
-		observedAt: FIXED_NOW,
-		payload: { role: "implement", profile: "builder" },
-	});
+	// §8.10 routes `integrate × push-failed` to an automation retry, and #146's
+	// answer is that it mints nothing: `integrate` has no worker (§8.8), so the
+	// phase re-enters under the attempt already being walked. The base has moved
+	// under it in the meantime — a human merging this very PR is how it moves —
+	// so a re-entry that went into §9.5's loop would rebase and re-push a branch
+	// that is already out there.
+	moveRemoteBase(t, fixture.remote);
+	const retried = await integratePublish(fixture.store, fixture.clone, fixture.context);
 
-	const integrated = await integratePublish(fixture.store, fixture.clone, { ...fixture.context, attempt: retried });
+	assert.equal(retried.outcome, "integrated");
+	assert.equal(retried.detail.pr.number, published.detail.pr.number);
+	assert.equal(retried.detail.head, published.detail.head);
+	assert.equal(git(fixture.remote, ["rev-parse", `refs/heads/${fixture.branch}`]), remoteHead, "§14.12");
+	assert.equal(fixture.gitea.pulls.length, 1);
+	assert.equal(
+		fixture.store.read((db) => db.prepare("SELECT count(*) AS n FROM effect WHERE operation = 'push'").get()).n,
+		1,
+		"§4.5: one ticket execution, one branch, one push effect (#146)",
+	);
+});
 
-	assert.equal(integrated.outcome, "integrated");
-	assert.equal(git(fixture.remote, ["rev-parse", `refs/heads/${fixture.branch}`]), integrated.detail.head);
+test("the publication is found from a re-entry that never saw it, because its key names no attempt (§4.5, #146)", async (t) => {
+	const fixture = await integrating(t);
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+	await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	const keys = fixture.store.read((db) =>
+		db.prepare("SELECT effect_key FROM effect WHERE operation IN ('push', 'pr-create') ORDER BY operation").all(),
+	);
+
+	assert.deepEqual(
+		keys.map((row) => row.effect_key),
+		[
+			`${fixture.run}/${fixture.ticket}/implement/-/pr-create/${fixture.branch}`,
+			`${fixture.run}/${fixture.ticket}/integrate/-/push/${fixture.branch}`,
+		],
+		"both name the published branch and neither names an attempt, so both are one convention",
+	);
 });
 
 test("integrate refuses to publish from an attempt no verify attested (§14.15, §14.16)", async (t) => {

@@ -4,9 +4,11 @@ import assert from "node:assert/strict";
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
 import { requestEffect, resolveEffect } from "../../factory/lib/effects/records.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
+import { budgetSpend } from "../../factory/lib/pipeline/budgets.mjs";
 import { dispositionOf } from "../../factory/lib/pipeline/dispositions.mjs";
 import { outcomeChain, resolveStage, walkStages } from "../../factory/lib/pipeline/stages.mjs";
 import { TABLE_WIDE, routeOutcome } from "../../factory/lib/pipeline/table.mjs";
+import { answering, answeringInTurn } from "./helpers/factory-pipeline.mjs";
 import {
 	FIXED_NOW,
 	attemptLaunched,
@@ -120,6 +122,34 @@ test("a conflicting result under the same semantic key is a typed conflict (§8.
 	);
 });
 
+test("a controller phase re-entered at the next try is a second fact, not a conflict (§8.10, #146)", async (t) => {
+	const context = await executing(t);
+	context.resolve("verify", "unrunnable", { detail: { problem: "pytest is not on this host" } });
+
+	const again = context.resolve("verify", "passed", { try: 2 });
+
+	assert.equal(again.state, "resolved");
+	assert.deepEqual(
+		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).map((step) => step.outcome),
+		["unrunnable", "passed"],
+		"a workerless phase mints no attempt, so the try is what the re-entry varies",
+	);
+});
+
+test("the same try under one attempt is still §8.10's typed conflict (#146)", async (t) => {
+	const context = await executing(t);
+	context.resolve("verify", "unrunnable", { try: 2 });
+
+	assert.throws(
+		() => context.resolve("verify", "passed", { try: 2 }),
+		(error) => {
+			assert.equal(error.reason, "stage-result-conflict");
+			assert.equal(error.details.try, 2);
+			return true;
+		},
+	);
+});
+
 test("a typed conflict is filed as failed under an automation fault (§8.10)", () => {
 	assert.deepEqual(dispositionOf(routeOutcome(TABLE_WIDE, "duplicate-conflicting")), {
 		disposition: "failed",
@@ -129,19 +159,6 @@ test("a typed conflict is filed as failed under an automation fault (§8.10)", (
 });
 
 // ── The walk (§8.1's order, §8.10's routing) ─────────────────────────────────
-
-/** Phase executors that answer with what each test is about, and count calls. */
-function answering(outcomes) {
-	const calls = [];
-	const phases = {};
-	for (const [phase, answer] of Object.entries(outcomes)) {
-		phases[phase] = async () => {
-			calls.push(phase);
-			return typeof answer === "string" ? { outcome: answer, detail: null } : answer;
-		};
-	}
-	return { phases, calls };
-}
 
 test("a green attempt walks the whole pipeline and settles as published (§8.1, §8.9)", async (t) => {
 	const context = await executing(t);
@@ -371,6 +388,25 @@ test("a seam that hands back the attempt it was given is refused (§8.5)", async
 	);
 });
 
+test("an agent-borne automation retry is held to the same rule: a seam answering with its own attempt is refused (§8.5, #146)", async (t) => {
+	const context = await executing(t);
+	// §8.10 routes `implement × dead-worker` to the automation retry, which does
+	// mint — the phase has a worker, and a relaunch is a worker run. Re-entering
+	// implement under the same attempt would read its recorded result back and
+	// route here again, without end.
+	const { phases } = answering({ implement: "dead-worker" });
+
+	await assert.rejects(
+		() => context.walk(phases, { nextAttempt: async ({ attempt }) => ({ attempt }) }),
+		(error) => {
+			assert.equal(error.reason, "retry-unplannable");
+			assert.equal(error.details.at, "seam");
+			assert.equal(error.details.action, "retry");
+			return true;
+		},
+	);
+});
+
 test("a needs-human attempt pauses under the worker's own reason class (§8.10, §14.18)", async (t) => {
 	const context = await executing(t);
 	const { phases, calls } = answering({
@@ -390,12 +426,15 @@ test("a needs-human attempt pauses under the worker's own reason class (§8.10, 
 
 test("wrote-but-hung is harvested rather than failed, and consumes no budget (§8.10)", async (t) => {
 	const context = await executing(t);
-	const { phases, calls } = answering({ implement: "wrote-but-hung", harvest: "passed", verify: "unrunnable" });
+	const { phases, calls } = answering({ implement: "wrote-but-hung", harvest: "passed", verify: "passed" });
 
+	// `review` is deliberately unwired: the walk has to get past the hang to reach
+	// a phase nobody supplied, which is what proves the hang did not end it.
 	await assert.rejects(
 		() => context.walk(phases),
 		(error) => {
-			assert.equal(error.details.phase, "verify", "the hang did not end the walk");
+			assert.equal(error.reason, "phase-unwired");
+			assert.equal(error.details.phase, "review", "the hang did not end the walk");
 			return true;
 		},
 	);
@@ -404,6 +443,11 @@ test("wrote-but-hung is harvested rather than failed, and consumes no budget (§
 	assert.equal(
 		outcomeChain(context.store, { run: context.run, ticket: context.ticket })[0].outcome,
 		"wrote-but-hung",
+	);
+	assert.deepEqual(
+		budgetSpend(context.store, { run: context.run, ticket: context.ticket }),
+		{ repair: 0, freshRetry: 0, automation: 0 },
+		"§8.10: the outbox is valid, so this is an ordinary action carrying an anomaly — not a failure that spends",
 	);
 });
 
@@ -599,25 +643,33 @@ function minting(context) {
 	};
 }
 
-test("§8.10: an automation failure retries **the same phase**, never a fresh implement", async (t) => {
+test("§8.10: an automation failure retries **the same phase**, never a fresh implement (#146)", async (t) => {
 	const context = await executing(t);
-	const seam = minting(context);
-	let implementations = 0;
-	const phases = {
-		implement: async () => ({ outcome: (implementations += 1) === 1 ? "completed" : "completed" }),
-		harvest: async () => ({ outcome: "passed" }),
+	const { phases, calls } = answeringInTurn({
+		implement: ["completed"],
+		harvest: ["passed"],
 		// The first verify never ran; the second is a real green.
-		verify: async ({ attempt }) => ({ outcome: attempt.endsWith("-a1") ? "unrunnable" : "passed" }),
-		review: async () => ({ outcome: "approved" }),
-		integrate: async () => ({ outcome: "integrated" }),
-	};
+		verify: ["unrunnable", "passed"],
+		review: ["approved"],
+		integrate: ["integrated"],
+	});
 
-	const settled = await context.walk(phases, { nextAttempt: seam.nextAttempt });
+	// **No seam wired at all**, which is the mechanic: §8.8 gives `verify` no
+	// worker, so its retry has nothing to ask one for. That a *composed* seam goes
+	// unasked on the same walk is `factory_pipeline_retry.test.mjs`'s.
+	const settled = await context.walk(phases);
 
 	assert.equal(settled.disposition, "published");
-	assert.equal(seam.asked[0].tier, "retry");
-	assert.equal(seam.asked[0].budget, "automation");
-	assert.equal(implementations, 1, "the builder was not re-run: the automation failed, not the work");
+	assert.deepEqual(
+		calls.filter((call) => call.phase === "implement").length,
+		1,
+		"the builder was not re-run: the automation failed, not the work",
+	);
+	assert.deepEqual(
+		calls.filter((call) => call.phase === "verify").map((call) => call.attempt),
+		[context.attempt, context.attempt],
+		"§8.5's fresh attempt is a statement about worker attempts; a controller phase re-enters under its own",
+	);
 	assert.deepEqual(
 		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).map((step) => `${step.phase}:${step.outcome}`),
 		["implement:completed", "harvest:passed", "verify:unrunnable", "verify:passed", "review:approved", "integrate:integrated"],

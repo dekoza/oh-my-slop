@@ -1,4 +1,5 @@
 import {
+	CONTROLLER_PHASES,
 	PHASE_IMPLEMENT,
 	PHASE_RESULTS,
 	PHASE_REVIEW,
@@ -14,12 +15,26 @@ import { TABLE_WIDE, routeOutcome } from "./table.mjs";
 /**
  * A stage result, as a durable record.
  *
- * **The semantic key is `(run, ticket, phase, attempt)`** — §2.1's stage
- * identity plus the attempt it was resolved under. The attempt slot is what
- * keeps §8.5's repair honest: a repaired ticket execution re-enters `implement`
- * with a new attempt, and that second result is a new fact rather than a
- * contradiction of the first. Without it every repair would look like §8.10's
- * conflicting duplicate, and a working pipeline would fail itself.
+ * **The semantic key is `(run, ticket, phase, attempt, try)`** — §2.1's stage
+ * identity, the attempt it was resolved under, and which pass through the phase
+ * it was. The last two slots exist for the two ways a phase is legitimately
+ * entered twice, and they are two slots because the two ways are different
+ * things (§8.5, #146):
+ *
+ * - The **attempt** slot keeps §8.5's repair honest: a repaired ticket execution
+ *   re-enters `implement` with a new attempt, and that second result is a new
+ *   fact rather than a contradiction of the first. Without it every repair would
+ *   look like §8.10's conflicting duplicate, and a working pipeline would fail
+ *   itself.
+ * - The **try** slot keeps §8.10's automation retry of a *controller* phase
+ *   honest. `verify` and `integrate` have no worker (§8.8), so retrying one
+ *   mints no attempt — there is nothing to run again but the controller itself.
+ *   The attempt slot therefore cannot vary, and without a slot that can, the
+ *   re-entry would read its own recorded result straight back and route to the
+ *   same row forever.
+ *
+ * `try` is `1` for every stage but a controller phase's re-entry, which is why
+ * it defaults rather than being threaded through every caller.
  *
  * Under one key, §8.10's last two rows apply: **an identical duplicate returns
  * the committed result idempotently, and a conflicting one is a typed
@@ -28,6 +43,9 @@ import { TABLE_WIDE, routeOutcome } from "./table.mjs";
  * that hashed the result would turn a disagreement into a different key, and the
  * conflict nobody wants to find would be the one nobody can.
  */
+
+/** The pass every stage is on unless a controller-phase retry moved it (§8.10). */
+export const FIRST_TRY = 1;
 
 /** The fields a stage result is compared on. Everything else is evidence. */
 function resultDigest({ outcome, detail }) {
@@ -48,6 +66,9 @@ function resultDigest({ outcome, detail }) {
  * @param {number} context.ticket
  * @param {string} context.phase a §2.2 pipeline phase
  * @param {string} context.attempt the attempt this stage was resolved under
+ * @param {number} [context.try] which pass through the phase this is (§8.10,
+ *   #146). `1` for everything a worker produced; a controller phase's automation
+ *   retry mints no attempt and counts here instead
  * @param {string} context.outcome the attempt outcome or phase result
  * @param {object | null} [context.detail] evidence the row's action will need —
  *   check results by digest, harvest leftovers, a worker's reason class. It is
@@ -58,11 +79,14 @@ function resultDigest({ outcome, detail }) {
  * @returns {Readonly<{ state: string, outcome: string, detail: object | null, row: Readonly<object> }>}
  * @throws {FactoryPipelineError} `outcome-unmapped` · `stage-result-conflict`
  */
-export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome, detail = null, actor, at }) {
+export function resolveStage(
+	store,
+	{ hold, run, ticket, phase, attempt, try: tryNumber = FIRST_TRY, outcome, detail = null, actor, at },
+) {
 	const row = routeOutcome(phase, outcome);
 	const committedDigest = resultDigest({ outcome, detail });
 
-	const existing = recordedStage(store, { run, ticket, phase, attempt });
+	const existing = recordedStage(store, { run, ticket, phase, attempt, try: tryNumber });
 	if (existing !== null) {
 		if (existing.payload.result_digest === committedDigest) {
 			// §8.10: the duplicate-identical row. The committed result is returned
@@ -79,14 +103,16 @@ export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome
 		throw new FactoryPipelineError(
 			"stage-result-conflict",
 			`Stage ${run}/${ticket}/${phase} was already resolved as ${JSON.stringify(existing.payload.outcome)} under ` +
-				`attempt ${attempt}, and this result says ${JSON.stringify(outcome)}. Two results disagreeing under one ` +
-				"semantic key is §8.10's typed conflict; the controller files it rather than picking a winner.",
+				`attempt ${attempt} try ${tryNumber}, and this result says ${JSON.stringify(outcome)}. Two results ` +
+				"disagreeing under one semantic key is §8.10's typed conflict; the controller files it rather than picking " +
+				"a winner.",
 			{
 				at: "stage",
 				run,
 				ticket,
 				phase,
 				attempt,
+				try: tryNumber,
 				committed: existing.payload.outcome,
 				found: outcome,
 			},
@@ -104,6 +130,11 @@ export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome
 		observedAt: at,
 		payload: {
 			outcome,
+			// The fifth slot of §8.10's semantic key, on the payload rather than in
+			// the envelope: the envelope's tuple is §4.3's, shared by every record
+			// the factory writes, and a pass counter belongs to the one kind that has
+			// passes (#146).
+			try: tryNumber,
 			// §8.10's fourth column and its action, recorded beside the outcome so an
 			// operator reading the journal sees what the controller did about it
 			// without re-deriving the table from the outcome alone.
@@ -160,13 +191,16 @@ export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome
  *   `review.mjs`'s fan-out — which is agent-borne too, but over **its own**
  *   attempts rather than the one the walk is running (§8.4)
  * @param {((request: object) => Promise<{ attempt: string }>) | null} [context.nextAttempt]
- *   §8.5's tier seam: given the tier, the budget it consumes and the failure's
- *   own evidence, it mints and launches the next attempt and answers with its
- *   id. It is the caller's because a tier *plans* (`pipeline/repair.mjs`), which
- *   needs the clone, the routing and the run's pinned base — none of which the
- *   walk has. **It does not decide whether the retry is affordable**: the budget
- *   is asked here, before the seam, so §8.6 is answered once for every caller
- *   rather than once per caller
+ *   the retry seam (`pipeline/retry.mjs`): given the tier, the budget it
+ *   consumes and the failure's own evidence, it mints and opens the next attempt
+ *   and answers with its id. It is the caller's because a tier *plans*
+ *   (`pipeline/repair.mjs`), which needs the clone, the routing and the run's
+ *   pinned base — none of which the walk has. **It does not decide whether the
+ *   retry is affordable**: the budget is asked here, before the seam, so §8.6 is
+ *   answered once for every caller rather than once per caller. **It is not
+ *   asked for a controller phase's automation retry at all** — `verify` and
+ *   `integrate` have no worker (§8.8), so there is no attempt to mint and the
+ *   walk re-enters them under the attempt it is on (#146)
  * @param {Readonly<{ repair: number, freshRetry: number, automation: number }> | null} [context.budgets]
  *   §11.6's validated block. Required the moment the table routes to an action
  *   that spends; a walk that never fails never reads it
@@ -182,6 +216,7 @@ export async function walkStages(
 	{ hold, run, ticket, attempt, phases, nextAttempt = null, budgets = null, actor, now },
 ) {
 	let phase = PHASE_IMPLEMENT;
+	let tryNumber = FIRST_TRY;
 
 	for (;;) {
 		try {
@@ -193,13 +228,14 @@ export async function walkStages(
 			// the same reason — the fan-out spends the automation budget on the
 			// axes' behalf, and a budget that ran out in there settles the ticket
 			// execution exactly as one that ran out here does.
-			const answer = await answerFor(store, { run, ticket, phase, attempt, phases });
+			const answer = await answerFor(store, { run, ticket, phase, attempt, try: tryNumber, phases });
 			const resolved = resolveStage(store, {
 				hold,
 				run,
 				ticket,
 				phase,
 				attempt,
+				try: tryNumber,
 				outcome: answer.outcome,
 				detail: answer.detail ?? null,
 				actor,
@@ -208,6 +244,7 @@ export async function walkStages(
 
 			if (resolved.row.action === STAGE_ACTIONS.advance) {
 				phase = resolved.row.to;
+				tryNumber = FIRST_TRY;
 				continue;
 			}
 
@@ -232,6 +269,18 @@ export async function walkStages(
 				// as there are callers.
 				requireBudget(store, { run, ticket, budgets, row: resolved.row });
 
+				// §8.10's `retry` of a **controller** phase mints nothing (§8.8, #146).
+				// `verify` and `integrate` have no worker, so there is no worker run for
+				// a fresh attempt to be: an attempt id here would name a row with no
+				// pane, no worktree and no manifest behind it. The phase is re-entered
+				// under the attempt the walk is already on, at the next try — which is
+				// the slot the semantic key grew for exactly this, and the reason the
+				// re-entry does not read its own recorded result straight back.
+				if (isControllerRetry(phase, resolved.row.action)) {
+					tryNumber += 1;
+					continue;
+				}
+
 				attempt = await retried(nextAttempt, {
 					attempt,
 					phase,
@@ -239,6 +288,9 @@ export async function walkStages(
 					detail: resolved.detail,
 					row: resolved.row,
 				});
+				// A fresh attempt is a fresh worker run, and its first pass through any
+				// phase is its first: the try counts passes within one attempt.
+				tryNumber = FIRST_TRY;
 
 				// §8.5: a **tier** re-enters `implement` under a new attempt, because
 				// its subject is the work — a repair for a rejected review still starts
@@ -278,13 +330,34 @@ export async function walkStages(
 }
 
 /**
- * Ask the seam for the next attempt, and hold its answer to §8.5's one rule:
- * **a retry is a fresh attempt.**
+ * Whether §8.10 has routed a **controller** phase to its automation retry —
+ * the one retry in the table that mints no attempt (§8.8, #146).
+ *
+ * It asks the two questions separately, and reads the phase from
+ * `CONTROLLER_PHASES` rather than naming `verify` and `integrate`: the phase's
+ * kind is §8.1's, declared once, and a hand-kept pair here would be a second
+ * vote on which phases have a worker. §8.5's two tiers are never controller
+ * retries whatever phase they were routed from — a tier's subject is the work,
+ * so it always re-enters `implement` under a builder attempt.
+ */
+function isControllerRetry(phase, action) {
+	return action === STAGE_ACTIONS.retry && CONTROLLER_PHASES.includes(phase);
+}
+
+/**
+ * Ask the seam for the next attempt, and hold its answer to the rule §8.5 states
+ * about worker attempts: **a retry that mints one mints a fresh one.**
+ *
+ * Every row that reaches here mints: §8.5's two tiers, and §8.10's automation
+ * retry of an agent-borne phase. The one retry that does not is a controller
+ * phase's, and it never gets this far — the walk re-enters it under its own
+ * attempt at the next try, which is a different mechanism and not a seam
+ * answering with the attempt it was handed (#146).
  *
  * The guard is not defensive tidiness. A seam answering with the attempt it was
  * handed would send the walk back to a phase whose result is already recorded
- * for that attempt, read the same outcome back, and route to the same tier
- * forever — a repair loop that looks from outside like a hung controller and
+ * for that attempt **at that try**, read the same outcome back, and route to the
+ * same row forever — a loop that looks from outside like a hung controller and
  * writes nothing to say otherwise.
  */
 async function retried(nextAttempt, request) {
@@ -423,8 +496,8 @@ function settle(
  * go, and it refuses **before** running anything — the refusal names the phase
  * rather than the row, because there is no outcome yet to route.
  */
-async function answerFor(store, { run, ticket, phase, attempt, phases }) {
-	const recorded = recordedStage(store, { run, ticket, phase, attempt });
+async function answerFor(store, { run, ticket, phase, attempt, try: tryNumber, phases }) {
+	const recorded = recordedStage(store, { run, ticket, phase, attempt, try: tryNumber });
 	if (recorded !== null) {
 		return { outcome: recorded.payload.outcome, detail: recorded.payload.detail };
 	}
@@ -432,7 +505,7 @@ async function answerFor(store, { run, ticket, phase, attempt, phases }) {
 	const executor = phases[phase];
 	if (executor === undefined) throw unwiredPhase(phase);
 
-	return executor({ run, ticket, phase, attempt });
+	return executor({ run, ticket, phase, attempt, try: tryNumber });
 }
 
 /**
@@ -553,11 +626,30 @@ export function stageResults(store, { run, ticket, phase }) {
  * axis whose stage is already resolved is not re-run — and re-deriving it from
  * `outcomeChain` would lose the detail, which is where the verdict and its
  * findings live.
+ *
+ * **`try` is required, not defaulted** (#146). Every caller today wants the
+ * first pass, and a default saying so would be right today and silently wrong
+ * the day §8.10 gives another phase a `retry` row: the reader would keep
+ * answering with pass 1 while the walk had moved on, which is the class of
+ * silent wrong answer §15 names. Spelling `FIRST_TRY` at the call site costs a
+ * word and puts the assumption where someone adding the row will see it.
  */
-export function recordedStage(store, { run, ticket, phase, attempt }) {
+export function recordedStage(store, { run, ticket, phase, attempt, try: tryNumber }) {
 	return (
 		stageRecords(store, { run, ticket }).find(
-			(record) => record.phase === phase && record.attempt === attempt,
+			(record) => record.phase === phase && record.attempt === attempt && tryOf(record) === tryNumber,
 		) ?? null
 	);
+}
+
+/**
+ * Which pass a recorded stage was, read tolerantly.
+ *
+ * A record written before the slot existed is the first pass by definition:
+ * nothing could re-enter a controller phase then, because the walk refused at
+ * the seam (#146). Reading it as anything else would make one replayed journal
+ * disagree with the one that wrote it.
+ */
+function tryOf(record) {
+	return record.payload.try ?? FIRST_TRY;
 }

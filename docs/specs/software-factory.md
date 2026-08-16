@@ -233,7 +233,9 @@ Fields: `seq` · `event_id` (ULID) · `envelope_version` · `kind` + `payload_ve
   same kind of reason: it now carries the reason class and the **fault** the execution settled
   under, without which §8.6's terminal-commit order is an order of dispositions nobody can
   classify — and reading a v1 record's missing fault as "not the automation's" would count
-  every historical failure as a product verdict.
+  every historical failure as a product verdict. **`stage.resolved` is on payload v2** because
+  §8.10's semantic key grew its fifth slot: a v1 record predates any way of re-entering a
+  controller phase, so it reads as the first pass rather than as a gap.
 - **Visibility is a three-value class**, not a boolean: `operator` (default feed) · `detail`
   (shown when a node is expanded) · `diagnostic` (filtered by default). Two values cannot
   express "real, but only when you are looking at this node", and the requirement is that
@@ -301,6 +303,14 @@ effects** — they get durable observation cursors.
 - **`run`, `ticket`, and `attempt` are individually nullable, written as the reserved literal
   `-`.** A repo-scoped effect — an orphaned artifact blob, the controller's own pane, a
   `doctor --baseline` worktree — still produces a well-formed, `UNIQUE`-constrainable key.
+- **When the attempt slot is filled, and when it is `-`.** An effect is keyed by the **attempt**
+  when its subject is that attempt's own work — its branch, its worktree, its evidence ref, its
+  pane. It is keyed by the **ticket execution**, attempt `-`, when its subject is something one
+  ticket execution has exactly one of: the published branch (`push`, `pr-create`, §7.5) and the
+  ticket itself (`assign`, `label-add`, `comment-post`, §3.3 and §8.9). The rule exists because
+  *the database itself enforces uniqueness* below is a whole-system claim: a subject that outlives
+  the attempt that made it, keyed by an attempt, gets one row per attempt that touches it, and
+  the uniqueness quietly becomes a per-attempt property with nothing failing.
 - `operand` is a short **natural** discriminator (label name, branch name) and **never a hash
   of the payload**. Hashing the payload into the key would make a conflicting duplicate
   silently become a *different* key, destroying the "same key, different result ⇒ typed
@@ -1025,6 +1035,27 @@ block** using the same trust-boundary language `two-axis-review` already carries
 whose findings contain an injected directive must not have it promoted into an instruction to a
 write-capable builder.
 
+**"Every resume is a fresh attempt" is a statement about worker attempts.** §8.10's automation
+`retry` is not one of the two tiers above — the automation failed rather than the work, so it
+rebuilds nothing and re-enters the phase it left — and what it mints depends on whether that
+phase has a worker:
+
+- **An agent-borne phase** (`implement`, `review`) mints a fresh attempt, because a worker runs
+  again. `implement × dead-worker` relaunches the builder from the prior attempt's tip under the
+  profile already dispatched: nothing was judged, so nothing is discarded and nothing is
+  re-routed. §8.4's fan-out mints one axis attempt per reviewer try, which is the same rule one
+  level down.
+- **A controller phase** (`harvest`, `verify`, `integrate`) mints **nothing**. §8.8 says these
+  phases have no worker, so an attempt id here would be a row in the `attempt` projection with
+  no pane, no worktree, and no manifest behind it — an object the whole of §6 says does not
+  exist. The phase is re-entered under the attempt already being walked, at the next **try**
+  (§8.10's fifth key slot), and no retry seam is asked.
+
+The consequence worth stating rather than deriving: **a walking attempt is always a builder
+attempt.** Every retry that mints re-enters `implement`, and every retry that does not mint
+leaves the attempt where it was, so the attempt a phase is walked under and the attempt whose
+branch it publishes are the same one.
+
 ### 8.6 Budgets and the circuit breaker
 
 **Counted per ticket, never reset within a run:** **1 repair + 1 fresh-retry** (the product
@@ -1237,10 +1268,15 @@ human removing the label is what makes the label mean "someone has acknowledged 
 - **The whole table is re-enterable.** Reconcile replays it from durable state after a crash
   between an external effect and its recorded resolution, which §7.7's end-to-end idempotent
   integration makes safe.
-- **A stage result's semantic key is `(run, ticket, phase, attempt)`** — §2.1's stage identity
-  plus the attempt it was resolved under. §8.5's repair re-enters a phase, so a key without the
-  attempt slot would read every repair as the conflicting duplicate two rows above, and a working
-  pipeline would fail itself.
+- **A stage result's semantic key is `(run, ticket, phase, attempt, try)`** — §2.1's stage
+  identity, the attempt it was resolved under, and which pass through the phase it was. The last
+  two slots cover the two ways a phase is legitimately entered twice, and they are two slots
+  because the two ways are different things. **Attempt**: §8.5's repair re-enters a phase under a
+  new attempt, so a key without that slot would read every repair as the conflicting duplicate two
+  rows above, and a working pipeline would fail itself. **Try**: an automation retry of a
+  *controller* phase mints no attempt (§8.5, §8.8), so the attempt slot cannot vary — and without
+  a slot that can, the re-entry reads its own recorded result straight back and routes to the same
+  row forever. `try` is `1` for every stage but a controller phase's re-entry.
 - **The last two rows are dispositions, not crashes.** A conflicting duplicate is a *typed*
   conflict precisely so the ticket execution still reaches `failed`; letting it escape the walk
   would leave it at no disposition, which is the one state §8.9 has no word for.
@@ -2354,3 +2390,4 @@ touching everything twice.
 | 2026-08-16 | #112 implementation corrections, all four found while fanning §8.4's review out. **§2.1's ordinal is allocated against the record, not derived from the attempt being answered**: §8.5's tiers and §8.4's two axes mint into one ticket execution's ordinal space, so "one past the prior attempt" lands a repair on a reviewer's id, finds its branch and worktree effects already resolved, and re-enters a phase whose result is recorded under that id — which §8.10 reads as its own conflicting duplicate, failing a working pipeline. Idempotency moves to the minter's *purpose* (the tier and the attempt it answers, or the axis, the work, and the try), which is what lets `planRetry` stay pure by naming no attempt at all. **An axis resolves its own stage under its own attempt**, and the phase's result is resolved under the builder attempt — so §8.10's `verdict` action is taken inside the fan-out and is never the walk's; the walk reaching it means an executor answered a phase with an attempt outcome, which is §8.8's two levels crossed. **The verdict's shape and whether one is owed are two different judgements with two homes**: §6.6's schema judge holds a written verdict to the closed pair, a findings list, a mandatory citation per finding, and agreement between the word and its own blocking set — while "a `completed` reviewer owes a verdict" is role knowledge and lives in the fan-out, because §6.1's adapter has never known which roles exist. The controller never classifies a citation, so §8.4's "a baseline smell can never be blocking" is stated in the prompt template and enforced by the skill: recognising a smell by name would be a second copy of the skill's baseline living in the factory, and downgrading a finding would be the reranking §8.4 forbids. **An opening capture that is already dirty is a mutation, not a third answer** — the controller made that worktree out of a commit and handed it to one read-only role, so reading a leftover as an automation problem would hand back the second go §14.19 refuses, to the attempt that earned the refusal. **The commit under review is read off the recorded harvest rather than taken from the caller** — §14.13 measures the commit being published, and a supplied one is a second opinion about which that is — and the fixed point is *required* on a review role's prompt and refused on a builder's, because a reviewer rendered without one gets a prompt naming no diff, which reads as a complete instruction in a pane nobody is watching. §2.1, §6.8 and §8.4 are corrected in place. | #112 |
 | 2026-08-16 | #111 implementation corrections, all six found while counting §8.6's budgets. **The product budget is two declared numbers, not one pool of 2**: §11.6 declares `repair` and `freshRetry` separately because §8.6 grants them separately, and one pool would let a ticket take two repairs and never the fresh-retry that discarding the work was for. **Nothing increments** — a spend is a count of the stage resolutions that charged that budget, so the bound and the count are one expression, and a controller that died between resolving a failing stage and minting its retry reads the same count back. **An automation retry re-enters the phase it left**, while the two tiers re-enter `implement`: §8.5 governs the tiers, and rebuilding good work because a pane died is exactly the infra flake §8.6 refuses to charge the builder. **§8.6's N is `budgets.circuitBreaker`**, a fourth declared number in the block §11.3 already lists, defaulting to 2 — bounded below and **not above**, because the 2 + 2 ceiling bounds the retries *one ticket* may spend while N counts *ticket executions*, and borrowing it would cap a run's tolerance at 2 for a reason that does not apply. §11.8's migration leaves no hole for it: a v1 file had no breaker concept, so there is nothing to carry and nothing an operator must decide before the factory will run. **The breaker's verdict is monotone** rather than trailing, because §3.5 lets in-flight lanes finish and one settling `published` must not erase the reason the run stopped claiming. **Automation-versus-product is the disposition's own `fault`**, recorded on the terminal-commit record — matching a list of reason classes instead would make every class added to §8.8 later a silent vote on whether runs stop, which is also why `ticket.disposition-changed` moves to payload v2 (§4.3) **and why the breaker branches on that version** rather than trusting the bump alone — a pre-v2 record cannot be classified, so it breaks the streak and is counted as unread rather than read as a product verdict. Two wordings were made unambiguous rather than changed: the **hard ceiling of 2 + 2 is 2 on each declared number**, since the other reading puts the shipped default at its own ceiling and leaves a knob that can only be redistributed, which is the refusal-to-have-a-knob this section rejects; and an **operator's stop outranks the breaker**, because both drain identically and the human who typed `stop` should be told their stop was honoured. | #111 |
 | 2026-08-16 | #113 implementation corrections, all four found while publishing §7.5's first pull request. **§8.10 gains an `integrate × integration-red` row and §8.8 the controller-derived class of the same name**: §9.5's compare-and-publish loop re-rebases onto a base that moved, and nothing named the case where the required set then comes back red on the result. Forcing it into `predicate-failed` would file it as an automation fault, and §8.6 is explicit that **product-level outcomes never trip the circuit breaker** — two changes that each pass alone and do not compose is not a broken host, and stopping a run over it points the operator at infrastructure that is working. Named after §8.3's `baseline-red` because it is the same fact about a different commit; it disposes and consumes nothing, since the same base conflicts the same way and a retry buys a second identical answer. **§8.10 gains a `verify × rebase-conflict` row, and `verify`'s result domain grows with it**: §9.5 puts the rebase *inside* that phase — "acquire for `rebase + verify`, release across `review`" — which is exactly what makes §8.2's "the required checks always ran at the commit being published" hold with **no conditional re-check path**, so a rebase that cannot be replayed ends `verify`. The `integrate` row of the same name stays reachable through the loop's second rebase, and the routing is identical in both. **The integration worktree is detached, and the branch is moved by a compare-and-swap**: the attempt's own worktree holds that branch checked out and git refuses both a second worktree on it and a `branch -f` against it, so §7.5's rebase happens on a detached head and `update-ref <new> <old>` adopts the result — which is also the §4.6 discipline the rest of the system already uses, rather than a force wearing a local disguise. **The pushed-SHA identity check is a predicate, not a push failure**: §8.10 retries `push-failed` on the automation budget, and a branch that is not the commits verification attested would be pushed identically by that retry, so §7.4's identity refusal files as `predicate-failed`. §8.8, §8.10 and §8.10's stated properties are corrected in place. | #113 |
+| 2026-08-16 | #146 answers what an automation retry of a controller phase is, and the two corrections that follow from the answer. **A controller-phase automation retry mints no attempt**: §8.5's *"every resume is a fresh attempt"* is a statement about **worker** attempts, and §8.8 says `verify` and `integrate` have none — so an attempt id there would be a row in the `attempt` projection with no pane, no worktree, and no manifest behind it. The phase re-enters under the attempt already being walked; a retry of an *agent-borne* phase still mints, because a worker runs again. **A stage result's semantic key gains a fifth slot, `try`**, since the attempt slot is exactly what a controller-phase re-entry cannot vary and without one that can, the re-entry reads its own recorded result back and routes to the same row forever. **§4.5 states when the attempt slot is `-`**: an effect is keyed by the attempt when its subject is that attempt's own work, and by the ticket execution when its subject is something one ticket execution has one of — the published branch or the ticket. §7.5's `push` moves to the second, joining `pr-create`, which is what makes *the database itself enforces uniqueness* a whole-system property rather than a per-attempt one. | #146 |

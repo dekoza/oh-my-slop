@@ -4,7 +4,7 @@ import { assessMutation, captureWorktreeState } from "../git/attestation.mjs";
 import { allocateAttempt, mintAttempt, requireAttemptIdentity } from "../worker/attempt.mjs";
 import { postureOf, profileForRole, REVIEW_ROLES, REVIEW_ROUTING_ROLE } from "../worker/roles.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
-import { recordedStage, resolveStage } from "./stages.mjs";
+import { FIRST_TRY, recordedStage, resolveStage } from "./stages.mjs";
 import { routeOutcome } from "./table.mjs";
 
 /**
@@ -142,7 +142,10 @@ export async function reviewPhase(
  * the pipeline never measured.
  */
 function harvestedCommit(store, { run, ticket, attempt }) {
-	const harvested = recordedStage(store, { run, ticket, phase: PHASE_HARVEST, attempt });
+	// §8.10 gives `harvest` no `retry` row, so it is entered once per attempt and
+	// the first pass is the only pass. Spelled rather than defaulted: the day the
+	// table grows one, this is where the assumption is (#146).
+	const harvested = recordedStage(store, { run, ticket, phase: PHASE_HARVEST, attempt, try: FIRST_TRY });
 	const head = harvested?.payload.detail?.head;
 
 	if (typeof head !== "string" || head.length === 0) {
@@ -206,7 +209,10 @@ async function walkAxis(store, clone, context) {
 
 	for (;;) {
 		const opened = await openAxisAttempt(store, clone, { ...context, tryNumber });
-		const recorded = recordedStage(store, { run, ticket, phase: PHASE_REVIEW, attempt: opened.attempt });
+		// An axis's retry is a **fresh axis attempt** (§8.4's `try` rides the mint's
+		// purpose, not the stage key), so each pass reads its own attempt's first
+		// and only stage result.
+		const recorded = recordedStage(store, { run, ticket, phase: PHASE_REVIEW, attempt: opened.attempt, try: FIRST_TRY });
 		const answer =
 			recorded === null
 				? await attemptAxis(clone, { ...context, ...opened, tryNumber })

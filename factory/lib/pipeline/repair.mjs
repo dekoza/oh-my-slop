@@ -1,4 +1,6 @@
 import {
+	AGENT_BORNE_PHASES,
+	BASE_KINDS,
 	EVIDENCE_TRUST,
 	PHASE_HARVEST,
 	PHASE_IMPLEMENT,
@@ -36,6 +38,15 @@ import { FactoryPipelineError } from "./errors.mjs";
  *
  * They answer different failures. A failing test is usually a small fix on top
  * of good work; a worker that flailed should not have its flailing inherited.
+ *
+ * **§8.10's automation `retry` is not a tier and lives here anyway**
+ * (`planAutomationRetry`, #146): the automation failed rather than the work, so
+ * it asks neither question — the prior tip, the pinned profile, the role already
+ * running. It shares this module because it shares everything a tier does *after*
+ * the question is answered, and it is a separate function because the question is
+ * the only thing a tier is. It plans an **agent-borne** phase only: `verify` and
+ * `integrate` have no worker (§8.8), so `walkStages` re-enters those under the
+ * attempt it is already walking and never asks for a plan at all.
  *
  * **The repair chain reaches the PR unsquashed.** A repair branch starts at the
  * prior tip and nothing here rewrites, amends, squashes, or cherry-picks what a
@@ -159,15 +170,13 @@ export function planRetry({ prior, failure, priorResult = null, routing = null, 
 		// §8.10's `retry` is the near miss worth naming, because it *is* a retry and
 		// a caller will reasonably bring one here. It is not a §8.5 tier: the
 		// automation failed rather than the work, so it re-enters the phase it left
-		// rather than rebuilding, and what a new attempt has to carry differs by
-		// phase — a relaunched builder for `implement`, nothing new for a controller
-		// phase. That belongs to whoever composes the seam (#113, #114), and
-		// guessing "same as a repair" here would put a plan behind a decision
-		// nobody made.
+		// rather than rebuilding — and what that costs differs by phase, which is
+		// why it has a planner of its own rather than a third branch in this one
+		// (#146).
 		const aboutRetry =
 			tier === STAGE_ACTIONS.retry
-				? " §8.6's automation retry is not a tier: it re-enters the phase it left, and minting for it belongs to" +
-					" the seam that knows what that phase needs (§8.10)."
+				? " §8.6's automation retry is not a tier: it re-enters the phase it left, and `planAutomationRetry` is" +
+					" what plans one (§8.10)."
 				: "";
 		throw unplannable("tier", `${JSON.stringify(tier ?? null)} is not one of §8.5's two tiers.${aboutRetry}`, {
 			tier: tier ?? null,
@@ -188,27 +197,10 @@ export function planRetry({ prior, failure, priorResult = null, routing = null, 
 	// not routable" is then a property of the code's shape rather than a branch
 	// somebody could later make read the routing "just for the model".
 	if (tier === STAGE_ACTIONS.repair) {
-		if (typeof prior.profile !== "string") {
-			// The one way a repair could still be planned here is by asking the
-			// routing — which is the re-routing §11.5 forbids, arrived at through the
-			// back door of a missing record rather than through a decision.
-			throw unplannable(
-				"profile",
-				`Attempt ${prior.attempt} has no recorded profile, and a repair is pinned to the originating attempt's ` +
-					"profile (§11.5). There is nothing else to pin to: consulting the routing instead is the re-routing " +
-					"that tier does not have.",
-				{ tier, attempt: prior.attempt },
-			);
-		}
-
-		return Object.freeze({
-			...shared,
-			role: prior.role,
-			profile: prior.profile,
-			routed: false,
-			from: Object.freeze({ kind: RETRY_BASES[tier], of: prior.branch }),
-			inheritsWork: true,
-		});
+		// The one way a repair could still be planned here is by asking the routing
+		// — which is the re-routing §11.5 forbids, arrived at through the back door
+		// of a missing record rather than through a decision.
+		return pinnedToPrior({ ...shared, action: tier, prior });
 	}
 
 	if (routing === null) {
@@ -229,6 +221,120 @@ export function planRetry({ prior, failure, priorResult = null, routing = null, 
 		routed: true,
 		from: Object.freeze({ kind: RETRY_BASES[tier], of: null }),
 		inheritsWork: false,
+	});
+}
+
+/**
+ * Plan §8.10's automation `retry` of an **agent-borne** phase: the same work,
+ * relaunched (§8.6, #146).
+ *
+ * It is a planner of its own rather than a third branch in `planRetry` because
+ * it answers a different question. A tier asks *is the prior attempt's work
+ * worth keeping* and the answer decides everything else; this asks nothing — the
+ * automation failed and the work was never judged, so the branch starts at the
+ * prior tip, the profile stays pinned, and the role is the one that was already
+ * running. **Nothing about it is routed**: §11.5 makes fresh-retry the one
+ * tier-dependent routing point, and re-routing a builder because its pane died
+ * would be a model change nobody asked for.
+ *
+ * **A controller phase is refused here, and that refusal is the ticket's answer
+ * rather than a gap.** `verify` and `integrate` have no worker (§8.8), so there
+ * is no worker run for a fresh attempt to be — `walkStages` re-enters those
+ * phases under the attempt it is already walking, at the next try, and never
+ * asks a seam. Planning one here would mint an attempt row with no pane, no
+ * worktree and no manifest behind it.
+ *
+ * @param {object} context
+ * @param {Readonly<object>} context.prior the originating attempt (`originatingAttempt`)
+ * @param {object} context.failure the resolved stage that routed here, as
+ *   `planRetry` takes it
+ * @param {Readonly<object> | null} [context.priorResult] the prior attempt's
+ *   outbox record, where it wrote one — usually absent, since the outcomes that
+ *   route here are the ones where nothing readable arrived
+ * @returns {Readonly<object>} the same plan shape `planRetry` answers with, so
+ *   `openRetryAttempt` opens either without asking which produced it
+ * @throws {FactoryPipelineError} `retry-unplannable`
+ */
+export function planAutomationRetry({ prior, failure, priorResult = null }) {
+	const action = failure?.row?.action;
+	if (action !== STAGE_ACTIONS.retry) {
+		throw unplannable(
+			"action",
+			`${JSON.stringify(action ?? null)} is not §8.10's automation retry; §8.5's two tiers are \`planRetry\`'s.`,
+			{ action: action ?? null, expected: STAGE_ACTIONS.retry },
+		);
+	}
+
+	// **`implement` exactly**, and not §8.1's agent-borne pair. `review`'s retry
+	// rows are its own attempt outcomes, spent inside §8.4's fan-out where an axis
+	// is reopened at the reviewed commit under a read-only posture — a relaunch
+	// planned from a builder's tip would be the wrong attempt in every slot. A
+	// controller phase has no worker at all (§8.8). So this is the one phase whose
+	// automation retry is a worker run, and every other phase is refused rather
+	// than given a plan that would mint an attempt nothing launches (#146).
+	if (failure.phase !== PHASE_IMPLEMENT) {
+		throw unplannable("phase", phaseComplaint(failure, action), {
+			phase: failure.phase,
+			outcome: failure.outcome,
+			expected: PHASE_IMPLEMENT,
+		});
+	}
+
+	requirePriorAttempt(prior);
+	return pinnedToPrior({
+		action,
+		prior,
+		tier: action,
+		priorAttempt: prior.attempt,
+		routingRole: null,
+		brief: repairBrief({ tier: action, prior, priorResult, ...failure }),
+	});
+}
+
+/** Why a phase other than `implement` gets no automation-retry plan (§8.4, §8.8). */
+function phaseComplaint({ phase, outcome }, action) {
+	const because = AGENT_BORNE_PHASES.includes(phase)
+		? "§8.4's fan-out mints and spends its own axis attempts, so a retry of one is never the walk's to plan"
+		: `${phase} has no worker (§8.8), so there is no worker run for a fresh attempt to be — the walk re-enters it ` +
+			"under the attempt it is already on";
+
+	return (
+		`§8.10 routes ${phase} × ${outcome} to ${action}, and ${because}. Planning one here would mint an attempt with ` +
+		"no pane, worktree, or manifest behind it (#146)."
+	);
+}
+
+/**
+ * A relaunch **pinned to the prior attempt**: its tip, its role, its profile.
+ *
+ * Two rows land here — §8.5's `repair` and §8.10's automation `retry` of
+ * `implement` — and they share every field because they share every answer once
+ * their own question is settled. The question is what differs, and it is settled
+ * before this is called; keeping one builder is what stops the two from drifting
+ * into disagreeing about what "pinned" means.
+ *
+ * The profile is the one thing that can be missing, and its absence **refuses**:
+ * the only other way to fill it is the routing, which is the re-routing §11.5
+ * forbids reached through the back door of a missing record.
+ */
+function pinnedToPrior({ action, prior, ...plan }) {
+	if (typeof prior.profile !== "string") {
+		throw unplannable(
+			"profile",
+			`Attempt ${prior.attempt} has no recorded profile, and a ${action} runs the profile that attempt was ` +
+				"dispatched under (§11.5). There is nothing else to pin to, and consulting the routing instead is the " +
+				"re-routing neither row has.",
+			{ tier: action, attempt: prior.attempt },
+		);
+	}
+
+	return Object.freeze({
+		...plan,
+		role: prior.role,
+		profile: prior.profile,
+		routed: false,
+		from: Object.freeze({ kind: BASE_KINDS.priorTip, of: prior.branch }),
+		inheritsWork: true,
 	});
 }
 
@@ -316,7 +422,7 @@ function retryPurpose(plan) {
  * the prior attempt's tip" true of the branch rather than of a stale value.
  */
 async function retryBaseCommit(clone, { plan, base }) {
-	if (plan.from.kind === RETRY_BASES[STAGE_ACTIONS.repair]) {
+	if (plan.from.kind === BASE_KINDS.priorTip) {
 		return clone.git(["rev-parse", "--verify", `refs/heads/${plan.from.of}^{commit}`]);
 	}
 

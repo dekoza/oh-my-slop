@@ -348,8 +348,8 @@ export async function assessIntegration(clone, { worktreePath = null, baseCommit
  * @param {object} context.hold the controller's hold
  * @param {string} context.run
  * @param {number} context.ticket
- * @param {string} context.attempt
- * @param {string} context.branch the attempt's branch
+ * @param {string} context.branch the attempt's branch — **the whole subject of
+ *   this effect**, and the reason it takes no attempt id (#146)
  * @param {string} context.head the commit verification attested
  * @param {ReadonlyArray<string>} context.verifiedCommits the commits it attested, in order
  * @param {string} context.actor
@@ -357,11 +357,7 @@ export async function assessIntegration(clone, { worktreePath = null, baseCommit
  * @returns {Promise<Readonly<{ branch: string, head: string, remoteSha: string }>>}
  * @throws {FactoryGitError} `identity-mismatch` · `git-command-failed`
  */
-export async function pushAttemptBranch(
-	store,
-	clone,
-	{ hold, run, ticket, attempt, branch, head, verifiedCommits, actor, at },
-) {
+export async function pushAttemptBranch(store, clone, { hold, run, ticket, branch, head, verifiedCommits, actor, at }) {
 	assertFactoryRef(branch);
 	await requireVerifiedCommits(clone, { branch, head, verifiedCommits });
 
@@ -369,7 +365,21 @@ export async function pushAttemptBranch(
 		hold,
 		run,
 		ticket,
-		attempt,
+		// **Keyed by the ticket execution, not by the attempt** (§4.5's rule, in
+		// `effects/keys.mjs`). The subject is the published branch, and one ticket
+		// execution publishes one branch once — §7.5 says so and §14.12 makes it
+		// permanent. Keying it by whichever attempt happened to be walking
+		// `integrate` would mint a second push effect for one branch the first time
+		// the phase was re-entered under another one, which is §4.5's whole-system
+		// uniqueness demoted to a per-attempt property (#146). `pr-create` is keyed
+		// the same way and for the same reason, which is what makes the pair one
+		// convention rather than two.
+		//
+		// It takes no `attempt` **parameter** either, so the wrong key is not a
+		// thing a caller can ask for: §14.12's "a published branch is never touched
+		// again" is one branch, one push, and an attempt id here would only ever be
+		// a second opinion about which attempt owns a branch §7.3 already names.
+		attempt: null,
 		actor,
 		at,
 		operation: "push",

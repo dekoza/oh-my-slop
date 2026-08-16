@@ -275,13 +275,12 @@ test("a branch with nothing on it is never pushed (§7.4)", async (t) => {
 });
 
 test("the push is plain, and the pushed SHAs are compared against the ones verification attested (§7.4, §14.11)", async (t) => {
-	const { store, clone, remote, run, ticket, attempt, branch, head } = await workedAttempt(t);
+	const { store, clone, remote, run, ticket, branch, head } = await workedAttempt(t);
 
 	const pushed = await pushAttemptBranch(store, clone, {
 		hold: HOLD,
 		run,
 		ticket,
-		attempt,
 		branch,
 		head,
 		verifiedCommits: [head],
@@ -295,7 +294,10 @@ test("the push is plain, and the pushed SHAs are compared against the ones verif
 		effectRows(store).filter((row) => row.operation === "push"),
 		[
 			{
-				effect_key: `${run}/${ticket}/integrate/${attempt}/push/${branch}`,
+				// §4.5's attempt slot is the reserved absent literal: the subject of a
+				// push is the **published branch**, which one ticket execution publishes
+				// once — not the attempt that happened to be walking (#146).
+				effect_key: `${run}/${ticket}/integrate/-/push/${branch}`,
 				operation: "push",
 				state: "resolved",
 			},
@@ -308,7 +310,6 @@ test("the push is plain, and the pushed SHAs are compared against the ones verif
 		hold: HOLD,
 		run,
 		ticket,
-		attempt,
 		branch,
 		head,
 		verifiedCommits: [head],
@@ -320,14 +321,13 @@ test("the push is plain, and the pushed SHAs are compared against the ones verif
 });
 
 test("a head that is not the verified commit list is refused before the remote hears about it (§14.13)", async (t) => {
-	const { store, clone, remote, run, ticket, attempt, branch, head } = await workedAttempt(t);
+	const { store, clone, remote, run, ticket, branch, head } = await workedAttempt(t);
 
 	await assert.rejects(
 		pushAttemptBranch(store, clone, {
 			hold: HOLD,
 			run,
 			ticket,
-			attempt,
 			branch,
 			head,
 			// What verification attested, before something moved underneath it.

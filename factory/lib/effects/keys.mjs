@@ -9,6 +9,21 @@
  * reserved literal `-` (§13.C) — so a repo-scoped effect, an orphaned artifact
  * blob or the controller's own pane, still produces a well-formed,
  * `UNIQUE`-constrainable key rather than a shorter one nothing can constrain.
+ *
+ * **When the attempt slot is filled, and when it is `-`** (#146). The rule is
+ * one sentence and it lives here, because the alternative is call sites that
+ * happen to agree:
+ *
+ * > An effect is keyed by the **attempt** when its subject is that attempt's own
+ * > work — its branch, its worktree, its evidence ref, its pane. It is keyed by
+ * > the **ticket execution**, attempt `-`, when its subject is something one
+ * > ticket execution has exactly one of: the published branch (`push`,
+ * > `pr-create`) and the ticket itself (`assign`, `label-add`, `comment-post`).
+ *
+ * The reason it matters is §4.5's own claim that *the database itself enforces
+ * uniqueness*. A subject that outlives the attempt that made it, keyed by an
+ * attempt, gets one row per attempt that touches it — and the uniqueness §4.5
+ * promises quietly becomes a per-attempt property while every test stays green.
  */
 
 import { IDENTITY_CHARSET, PHASES } from "../domain/vocabulary.mjs";
