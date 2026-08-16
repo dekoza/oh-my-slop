@@ -54,6 +54,16 @@ test("§11.8: tracker survives minus its labels, which are reported and dropped"
 	assert.equal(rowFor(dispositions, "tracker.labels").disposition, "dropped");
 });
 
+test("§11.8: a block the legacy file never wrote is reported by its absence, not by a crash", () => {
+	const legacy = cloneLegacyConfig();
+	delete legacy.tracker;
+
+	const { document, dispositions } = migrateDocument(legacy);
+
+	assert.equal(document.tracker, undefined);
+	assert.equal(dispositions.some((row) => row.from === "tracker"), false);
+});
+
 test("§11.8: git carries over whole", () => {
 	const { document, dispositions } = migrate();
 

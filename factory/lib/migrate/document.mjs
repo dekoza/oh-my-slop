@@ -414,6 +414,12 @@ function setPath(document, path, value) {
 	cursor[segments.at(-1)] = value;
 }
 
+/**
+ * Absent in, absent out — so a legacy file that never wrote a block leaves its
+ * row unreported and unwritten, and the loader answers for the missing block
+ * with the sentence it has for exactly that.
+ */
 function omit(value, keys) {
+	if (value === undefined) return undefined;
 	return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
 }
