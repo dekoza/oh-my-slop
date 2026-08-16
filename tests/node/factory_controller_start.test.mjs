@@ -1263,6 +1263,32 @@ test("§8.6: two consecutive automation failures stop new claims and end the run
 	);
 });
 
+test("§11.6: a declared `budgets.circuitBreaker` is the N the run actually trips at", async (t) => {
+	const config = cloneValidConfig();
+	config.budgets = { ...config.budgets, circuitBreaker: 1 };
+	const context = invocation(t, { config });
+	const loaded = loadFactoryConfig({ cwd: context.cwd });
+	const lane = committing(context, new Map([[42, AUTOMATION_FAILURE], [91, AUTOMATION_FAILURE]]));
+
+	const answer = await runStart({
+		...loaded,
+		agentDir: context.agentDir,
+		executable: context.executable,
+		env: context.env,
+		workerTransports: context.workerTransports,
+		herdr: context.herdr,
+		args: ["42", "91"],
+		flags: new Set([FOREGROUND_FLAG]),
+		frontier: async () => ({ claimable: [42, 91], members: [42, 91].map((ticket) => ({ ticket, labels: [] })) }),
+		execute: lane.execute,
+	});
+
+	assert.deepEqual(lane.executed, [42], "an operator who declared no tolerance gets none");
+	assert.equal(answer.report.end_reason, "circuit-breaker");
+	assert.equal(answer.report.circuit_breaker.threshold, 1);
+	assert.equal(answer.report.circuit_breaker.consecutive, 1);
+});
+
 test("§8.6: product-level failures interleaved among automation failures leave the run claiming", async (t) => {
 	const context = invocation(t);
 	const loaded = loadFactoryConfig({ cwd: context.cwd });

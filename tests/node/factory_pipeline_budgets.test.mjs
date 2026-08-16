@@ -243,9 +243,23 @@ test("§8.10: an action that retries and a row that names a budget are the same 
 
 test("§11.6: every budget an action can charge is a number the loader declares", () => {
 	// The loader's own answer with nothing declared, which is §11.6's defaults.
-	const declared = validateBudgets(undefined, ".pi/factory.json");
+	const declared = Object.keys(validateBudgets(undefined, ".pi/factory.json"));
 
-	assert.deepEqual(BUDGET_KEYS.toSorted(), Object.keys(declared).toSorted());
+	for (const key of BUDGET_KEYS) assert.ok(declared.includes(key), `budgets.${key} is spent but never declared`);
+});
+
+test("§8.6: the breaker's threshold is declared in the same block and charged by nothing", () => {
+	const declared = Object.keys(validateBudgets(undefined, ".pi/factory.json"));
+
+	// It is a *threshold*, not an allowance: N counts ticket executions, and no
+	// §8.10 action spends it. A row that charged it would be a retry bounded by
+	// how many other tickets had failed, which is not a thing.
+	assert.ok(declared.includes("circuitBreaker"));
+	assert.equal(BUDGET_KEYS.includes("circuitBreaker"), false);
+	assert.equal(
+		OUTCOME_TABLE.some((row) => BUDGET_KEY_FOR_ACTION[row.action] === "circuitBreaker"),
+		false,
+	);
 });
 
 test("§8.6: the tree holds no retry counter — the legacy shape is not reintroduced", () => {

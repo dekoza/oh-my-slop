@@ -285,7 +285,8 @@
   "budgets": {
     "repair": 1,
     "freshRetry": 1,
-    "automation": 1
+    "automation": 1,
+    "circuitBreaker": 2
   },
   "checks": [
     {

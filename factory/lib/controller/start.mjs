@@ -403,7 +403,7 @@ async function driveRun(store, hold, context, signals) {
 		// the report shows the operator come from the same call, so the report
 		// cannot say "two consecutive automation failures" beside an end reason
 		// that disagrees.
-		const breaker = circuitBreaker(store, { run: entry.run });
+		const breaker = circuitBreaker(store, { run: entry.run, threshold: context.config.budgets.circuitBreaker });
 		const endReason = endReasonOf(checked, requests, breaker);
 		let execution = executionReport(store, entry.run, executed, context);
 		if (endReason !== END_REASON_BASELINE_RED) {
@@ -519,7 +519,8 @@ function runScheduler(store, capacity, entry, hold, context) {
 		// observable — a lane's disposition is committed by the time the loop asks
 		// again.
 		claiming: () =>
-			latestRequest(operatorRequests(store, run)) === null && !circuitBreaker(store, { run }).tripped,
+			latestRequest(operatorRequests(store, run)) === null &&
+			!circuitBreaker(store, { run, threshold: context.config.budgets.circuitBreaker }).tripped,
 		abandoning: () => latestRequest(operatorRequests(store, run))?.kind === "run.abandon-requested",
 		at: context.now,
 	});

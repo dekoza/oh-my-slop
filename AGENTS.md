@@ -461,9 +461,12 @@ is the authority; cite the section a change answers to.
   is the disposition's own `fault` and never a list of reason classes matched a second time —
   which is why `ticket.disposition-changed` carries the fault on payload v2, and why an
   operator's explicit stop outranks the breaker in `endReasonOf` while the breaker's number
-  stays on the report either way. `CIRCUIT_BREAKER_THRESHOLD` is code and not config: §11.3's
-  block inventory and §11.6's default list are closed and name no breaker key, §14.33 makes an
-  undeclared key a load failure, and promoting a constant later breaks nothing on disk.
+  stays on the report either way. **N is `budgets.circuitBreaker`** and the module takes it with
+  **no default** — the value has one home, §11.6's block, and a fallback here would answer
+  precisely when a caller forgot to thread the config through. It is the one number in that
+  block with a floor and no ceiling: §8.6's 2 + 2 bounds the retries one ticket may spend, and N
+  counts ticket executions, so `config/defaults.mjs` carries **per-key** bounds rather than one
+  block-wide `max` that would be silently wrong for it.
 - **The tracker is read through `tea`, and holds no credential of its own.**
   `.pi/factory.json` carries `tracker.repo`, `tracker.remote`, and `tracker.login` — no
   base URL and no token, which is not an omission: §6.8 states that `tea` credentials are

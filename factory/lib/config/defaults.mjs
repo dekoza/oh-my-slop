@@ -23,17 +23,33 @@ import { requireInteger, requireNoUnknownKeys } from "./shape.mjs";
  * policy rather than legacy's refusal to have a knob, and the answer to
  * `job-pipeline`'s `replanCount`, which was incremented forever and compared to
  * nothing.
+ *
+ * **`circuitBreaker` is bounded below and not above, and that is not an
+ * oversight.** The other three are *allowances a ticket may spend*, and §8.6
+ * caps them because an uncapped one is the foreclosed counter. N is a different
+ * quantity — a count of **ticket executions** that failed consecutively before
+ * the run stops claiming — so the ceiling that keeps one ticket's repair chain
+ * finite has nothing to say about it, and borrowing it would cap a run's
+ * tolerance at 2 for a reason that does not apply to it. The floor is what
+ * matters: at 0 the breaker would trip on a run that has failed nothing.
  */
-const BUDGET_DEFAULTS = Object.freeze({ repair: 1, freshRetry: 1, automation: 1 });
 const BUDGET_CEILING = 2;
+const BUDGET_BOUNDS = Object.freeze({
+	repair: { fallback: 1, max: BUDGET_CEILING },
+	freshRetry: { fallback: 1, max: BUDGET_CEILING },
+	automation: { fallback: 1, max: BUDGET_CEILING },
+	circuitBreaker: { fallback: 2 },
+});
 
 /** §12.10: exactly two numbers, floor of 1 each. */
-const RETENTION_DEFAULTS = Object.freeze({ fullDetailRuns: 20, fullDetailDays: 30 });
+const RETENTION_BOUNDS = Object.freeze({
+	fullDetailRuns: { fallback: 20 },
+	fullDetailDays: { fallback: 30 },
+});
 
 export function validateBudgets(budgets, configPath) {
-	return validateCounts(budgets, BUDGET_DEFAULTS, "budgets", configPath, {
-		max: BUDGET_CEILING,
-		because: "§8.6 caps the declared budgets at 2 + 2.",
+	return validateCounts(budgets, BUDGET_BOUNDS, "budgets", configPath, {
+		because: "§8.6 caps the two product budgets and the automation budget at 2 + 2; §8.6's N is bounded below only.",
 	});
 }
 
@@ -43,22 +59,33 @@ export function validateBudgets(budgets, configPath) {
  * switch off is not a pin (§14.32). Naming one is an unknown key, not an option.
  */
 export function validateRetention(retention, configPath) {
-	return validateCounts(retention, RETENTION_DEFAULTS, "retention", configPath, {
+	return validateCounts(retention, RETENTION_BOUNDS, "retention", configPath, {
 		because: "§12.10 puts a floor of 1 on both retention numbers.",
 	});
 }
 
-function validateCounts(block, defaults, blockName, configPath, bounds) {
-	const keys = Object.keys(defaults);
+/**
+ * A block of declared counts, each with its own bound.
+ *
+ * The bounds are **per key** rather than per block because a block's numbers are
+ * not always the same quantity: §8.6's three retry allowances share a ceiling
+ * that its consecutive-failure threshold has no business inheriting. A single
+ * block-wide `max` reads as tidier right up to the first key it is wrong for,
+ * and then it is wrong silently — the loader would simply refuse a value the
+ * spec permits.
+ */
+function validateCounts(block, perKeyBounds, blockName, configPath, shared) {
+	const keys = Object.keys(perKeyBounds);
 	requireNoUnknownKeys(block ?? {}, keys, blockName, configPath);
 
 	const validated = {};
 	for (const key of keys) {
+		const { fallback, ...bounds } = perKeyBounds[key];
 		const declared = block?.[key];
 		validated[key] =
 			declared === undefined
-				? defaults[key]
-				: requireInteger(declared, `${blockName}.${key}`, configPath, bounds);
+				? fallback
+				: requireInteger(declared, `${blockName}.${key}`, configPath, { ...shared, ...bounds });
 	}
 
 	return Object.freeze(validated);
