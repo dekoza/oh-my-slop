@@ -19,16 +19,52 @@
  */
 export const PHASE_IMPLEMENT = "implement";
 
+export const PHASE_HARVEST = "harvest";
+export const PHASE_VERIFY = "verify";
+export const PHASE_REVIEW = "review";
+export const PHASE_INTEGRATE = "integrate";
+
 export const PHASES = Object.freeze([
 	"preflight",
 	PHASE_IMPLEMENT,
-	"harvest",
-	"verify",
-	"review",
-	"integrate",
+	PHASE_HARVEST,
+	PHASE_VERIFY,
+	PHASE_REVIEW,
+	PHASE_INTEGRATE,
 	"cleanup",
 	"expiry",
 ]);
+
+/**
+ * §8.1's pipeline, in order: `implement → harvest → verify → review →
+ * integrate`. It is the ordered subset of `PHASES`, and deliberately not
+ * `PHASES` itself — the last three members of that enum exist because effect
+ * keys carry a phase slot (§13.C), and a walk that included `cleanup` would be
+ * reading the widening as a pipeline step.
+ */
+export const PIPELINE_PHASES = Object.freeze([
+	PHASE_IMPLEMENT,
+	PHASE_HARVEST,
+	PHASE_VERIFY,
+	PHASE_REVIEW,
+	PHASE_INTEGRATE,
+]);
+
+/**
+ * §8.1: **exactly two phases are agent-borne.** The other three are controller
+ * phases with no model in them — putting a model between `pytest` and an exit
+ * code adds a failure mode and buys nothing.
+ *
+ * Declared as the closed pair rather than as a flag on each phase so that
+ * `CONTROLLER_PHASES` is its complement by construction: a sixth phase cannot
+ * become agent-borne by omission, and a phase cannot be both.
+ */
+export const AGENT_BORNE_PHASES = Object.freeze([PHASE_IMPLEMENT, PHASE_REVIEW]);
+
+/** §8.1's other three, as the complement — never a second hand-kept list. */
+export const CONTROLLER_PHASES = Object.freeze(
+	PIPELINE_PHASES.filter((phase) => !AGENT_BORNE_PHASES.includes(phase)),
+);
 
 /**
  * §10.3's four, in the order a run passes through them. `preflight` is first
@@ -140,6 +176,70 @@ export const ATTEMPT_OUTCOMES = Object.freeze([
 	"wrote-but-hung",
 	"cancelled",
 	"automation-failure",
+]);
+
+/**
+ * §6.6, §8.8: the outcomes **only the controller derives**, as the complement of
+ * the worker-writable set rather than as a second list beside it.
+ *
+ * That is what makes "controller-derived outcomes are never worker-writable"
+ * structural. A hand-kept second list could name `wrote-but-hung` in both, and
+ * the outbox validator and the stage machine would then disagree about who may
+ * say it — with every test still green, because each would be reading its own
+ * list.
+ */
+export const CONTROLLER_DERIVED_OUTCOMES = Object.freeze(
+	ATTEMPT_OUTCOMES.filter((outcome) => !WORKER_WRITABLE_OUTCOMES.includes(outcome)),
+);
+
+/**
+ * §8.8's phase results, per phase.
+ *
+ * **`implement` is absent, and that is the declaration** (§8.1): it has no phase
+ * result of its own — its result *is* its attempt's outcome. Giving it an entry
+ * spelled `["completed", …]` would duplicate `ATTEMPT_OUTCOMES` under a second
+ * name, and the two would drift the first time an outcome was added.
+ *
+ * `review` is likewise only the three verdict-shaped results: a reviewer attempt
+ * that never produced a verdict has an *attempt outcome*, which is a different
+ * level (§8.8), and §8.10's review rows route both.
+ */
+export const PHASE_RESULTS = Object.freeze({
+	[PHASE_HARVEST]: Object.freeze(["passed", "predicate-failed"]),
+	[PHASE_VERIFY]: Object.freeze(Object.values(CHECK_RESULTS)),
+	[PHASE_REVIEW]: Object.freeze(["approved", "rejected", "mutation-detected"]),
+	[PHASE_INTEGRATE]: Object.freeze(["integrated", "rebase-conflict", "predicate-failed", "push-failed"]),
+});
+
+/**
+ * §8.8's reason classes, split by **who may write one**. The split is the whole
+ * content of §14.18: a worker asking a question needs an answer, so its classes
+ * pause; the controller giving up needs an investigation, so its classes fail.
+ *
+ * Letting a worker write `repair-budget-exhausted` would let it lie about a
+ * counter it cannot see, which is why the outbox validator holds a worker's
+ * `reason_class` to the first list alone.
+ */
+export const WORKER_WRITABLE_REASON_CLASSES = Object.freeze([
+	"product-ambiguity",
+	"spec-contradiction",
+	"missing-access",
+	"risky-action-required",
+	"out-of-scope-discovered",
+	"dependency-unmet",
+]);
+
+export const CONTROLLER_DERIVED_REASON_CLASSES = Object.freeze([
+	"repair-budget-exhausted",
+	"automation-budget-exhausted",
+	"rebase-conflict",
+	"review-mutation",
+	"check-unrunnable",
+]);
+
+export const REASON_CLASSES = Object.freeze([
+	...WORKER_WRITABLE_REASON_CLASSES,
+	...CONTROLLER_DERIVED_REASON_CLASSES,
 ]);
 
 /**
