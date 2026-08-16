@@ -1,5 +1,6 @@
-import { createWorkerAdapter, unbuiltLifecycleOperations } from "./adapter.mjs";
+import { createWorkerAdapter } from "./adapter.mjs";
 import { containsPath, realpathOrNull } from "./closure.mjs";
+import { lifecycleOperations } from "./lifecycle.mjs";
 import { harnessVersion, memoizedPreflight, parseJson, probeFinding, unreachableRuntime } from "./probe.mjs";
 import * as realTransport from "./transports.mjs";
 
@@ -197,9 +198,11 @@ export function provePiClosure(probed, closure, { skillsRoots }) {
 /**
  * §6.1's adapter for the pi runtime. `preflight` is layer 2, memoized per
  * pinned revision so the disposable session is one session; the lifecycle
- * operations are #107's and refuse loudly until it lands.
+ * operations are §6.4–§6.6's, bound to pi's own agent kind.
  *
- * @param {object} context everything `probePiRuntime` takes, minus the closure
+ * @param {object} context everything `probePiRuntime` takes, minus the closure,
+ *   plus the launch defaults (`herdr`, `socket`, `timeoutMs`) when the builder
+ *   has them
  * @returns {Readonly<object>} the adapter
  */
 export function createPiAdapter(context) {
@@ -211,7 +214,10 @@ export function createPiAdapter(context) {
 				probe: () => probePiRuntime(context),
 				prove: (runtime, closure) => provePiClosure(runtime, closure, context),
 			}),
-			...unbuiltLifecycleOperations("pi"),
+			// Herdr's own kind vocabulary happens to spell pi the same way; it is
+			// passed explicitly all the same, because the two names answer to
+			// different owners and a coincidence is not a binding.
+			...lifecycleOperations({ runtime: "pi", agentKind: "pi" }, context.launch ?? {}),
 		},
 	});
 }

@@ -93,6 +93,8 @@ test("the kind enumeration is §4.3's closed, dotted list", () => {
 	assert.deepEqual(
 		Object.keys(EVENT_KINDS).sort(),
 		[
+			"attempt.correlated",
+			"attempt.ended",
 			"attempt.launched",
 			"attempt.rechecked",
 			"capacity.granted",
@@ -227,6 +229,34 @@ test("a foreign fact without a foreign source id is refused", () => {
 		}).details.at,
 		"foreign_source_id",
 	);
+});
+
+test("a source that states no time carries no raw timestamp, and may not fake one", () => {
+	// Verified against Herdr protocol 19: a `pane_agent_status_changed` frame is
+	// `{pane_id, workspace_id, agent_status, agent}` and nothing more, and no
+	// answer anywhere in its API is dated. So there is nothing to retain — and
+	// the slot §4.3 reserves for the foreign system's own string must not be
+	// filled with ours under its name.
+	assert.equal(EVENT_SOURCES.herdr.foreign, true);
+	assert.equal(EVENT_SOURCES.herdr.statesTime, false);
+
+	const built = envelope({
+		kind: "observation.recorded",
+		source: "herdr",
+		foreignSourceId: "herdr:w1:p2:R-t42-a1:3",
+		payload: { fact: "worker.alive", status: "blocked" },
+	});
+	assert.equal(built.payload.occurred_at_raw, undefined);
+	assert.equal(built.observed_at, 1_770_000_000_005, "receipt is the only moment anyone observed");
+
+	const error = refusal({
+		kind: "observation.recorded",
+		source: "herdr",
+		foreignSourceId: "herdr:w1:p2:R-t42-a1:3",
+		payload: { fact: "worker.alive", occurred_at_raw: "2026-08-15T09:00:00+02:00" },
+	});
+	assert.equal(error.details.at, "payload.occurred_at_raw");
+	assert.match(error.message, /states no time/);
 });
 
 // ── Timestamps (§4.3) ────────────────────────────────────────────────────────

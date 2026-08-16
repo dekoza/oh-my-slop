@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "../cli/exit-codes.mjs";
 import { newUlid } from "../identity/ulid.mjs";
 import { hasLapsed, openLeases } from "../state/leases.mjs";
@@ -6,6 +5,7 @@ import { openStore } from "../state/store.mjs";
 import { CONTROLLER_LEASE } from "../domain/vocabulary.mjs";
 import { liveRunAnswer } from "./entry.mjs";
 import { probeHerdr } from "./herdr.mjs";
+import { herdrResult, runHerdr } from "./herdr-control.mjs";
 
 /**
  * §10.1's process shape, the half the controller does not have: **the default
@@ -56,7 +56,7 @@ export async function launch({
 	executable,
 	env,
 	herdr = probeHerdr,
-	runHerdr = spawnHerdr,
+	runHerdr: run = runHerdr,
 	now = Date.now,
 	mint = newUlid,
 }) {
@@ -109,7 +109,7 @@ export async function launch({
 		// label is a ULID, not a ticket: the label is per multiplexer, not per
 		// repository, and two repositories' ticket 42 must not be indistinguishable.
 		const label = `factory-${mint()}`;
-		const created = await runHerdr(
+		const created = await run(
 			["workspace", "create", "--cwd", repoRoot, "--label", label, "--no-focus"],
 			{ env, binary: availability.binary },
 		);
@@ -132,7 +132,7 @@ export async function launch({
 		}
 
 		const command = [executable, "start", FOREGROUND_FLAG, ...rawArgs];
-		const ran = await runHerdr(["pane", "run", result.root_pane.pane_id, ...command], {
+		const ran = await run(["pane", "run", result.root_pane.pane_id, ...command], {
 			env,
 			binary: availability.binary,
 		});
@@ -184,16 +184,9 @@ function commandFailure(command, answer, { workspace }) {
 	};
 }
 
-/** The `result` object of a CLI JSON answer, or null when it is not there. */
+/** The workspace a `workspace create` answered with, or null when it did not. */
 function parseResult(stdout) {
-	let answer;
-	try {
-		answer = JSON.parse(stdout);
-	} catch {
-		return null;
-	}
-
-	const result = answer?.result;
+	const result = herdrResult(stdout);
 	if (result?.workspace?.workspace_id === undefined || result?.root_pane?.pane_id === undefined) {
 		return null;
 	}
@@ -207,22 +200,4 @@ function liveOf(row) {
 		pane: row.identity?.pane ?? null,
 		fencing_generation: row.fencingGeneration,
 	};
-}
-
-/** The real runner: the resolved binary, the operator's environment, captured output. */
-function spawnHerdr(args, { env, binary }) {
-	return new Promise((resolve) => {
-		const child = spawn(binary, args, {
-			// The context's env is the operator's environment when the CLI carries
-			// one; a direct call without one still means "as this shell would run it".
-			env: { ...(env ?? process.env) },
-			stdio: ["ignore", "pipe", "pipe"],
-		});
-		let stdout = "";
-		let stderr = "";
-		child.stdout.on("data", (chunk) => (stdout += chunk));
-		child.stderr.on("data", (chunk) => (stderr += chunk));
-		child.on("error", (error) => resolve({ exitCode: 1, stdout, stderr: `${stderr}${error.message}` }));
-		child.on("close", (code) => resolve({ exitCode: code ?? 1, stdout, stderr }));
-	});
 }

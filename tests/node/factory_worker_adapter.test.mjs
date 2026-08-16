@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-	createWorkerAdapter,
-	unbuiltLifecycleOperations,
-	validateRole,
-	WORKER_OPERATIONS,
-} from "../../factory/lib/worker/adapter.mjs";
+import { createWorkerAdapter, validateRole, WORKER_OPERATIONS } from "../../factory/lib/worker/adapter.mjs";
 import { FactoryWorkerError } from "../../factory/lib/worker/errors.mjs";
+import { lifecycleOperations } from "../../factory/lib/worker/lifecycle.mjs";
 import { PIPELINE_ROLES, rolesInPlay } from "../../factory/lib/worker/roles.mjs";
 
 /**
@@ -126,6 +122,11 @@ test("the pipeline declares four roles, every one a valid §6.1 tuple", () => {
 	for (const declared of PIPELINE_ROLES) {
 		const checked = validateRole(declared);
 		assert.equal(checked.closure, null, `${declared.name} hardcodes a closure §6.2 computes`);
+		assert.equal(
+			typeof checked.promptTemplate,
+			"function",
+			`${declared.name} carries no §6.4 template, so nothing could render its first prompt`,
+		);
 	}
 });
 
@@ -146,22 +147,22 @@ test("rolesInPlay resolves each role to the profiles its routing role reaches", 
 	);
 });
 
-// ── The lifecycle refusal (#107's slice) ─────────────────────────────────────
+// ── The lifecycle binding (§6.1, §6.4) ───────────────────────────────────────
 
-test("the unbuilt lifecycle operations refuse loudly, naming the slice", () => {
-	const adapter = createWorkerAdapter({
-		kind: "pi",
-		operations: { preflight: () => ({ ok: true }), ...unbuiltLifecycleOperations("pi") },
-	});
+test("a runtime binds the lifecycle by naming its agent kind, and nothing more", async () => {
+	// What this holds is the *binding*: three operations, whatever the runtime,
+	// with the runtime's two values and the builder's defaults merged under the
+	// attempt — so nothing downstream has to ask which runtime it is running.
+	for (const runtime of ["pi", "claude"]) {
+		const bound = lifecycleOperations({ runtime, agentKind: runtime }, { socket: "/run/herdr.sock" });
+		assert.deepEqual(Object.keys(bound).sort(), ["awaitCompletion", "cancel", "launch"]);
 
-	for (const operation of ["launch", "awaitCompletion", "cancel"]) {
-		assert.throws(
-			() => adapter[operation]({ attempt: "r1-t42-a1" }),
+		const adapter = createWorkerAdapter({ kind: runtime, operations: { preflight: () => ({ ok: true }), ...bound } });
+		await assert.rejects(
+			() => adapter.launch({ store: null, identity: { run: "r", ticket: 1, phase: "implement", attempt: "x" } }),
 			(error) => {
-				assert.ok(error instanceof FactoryWorkerError);
-				assert.equal(error.reason, "worker-lifecycle-unbuilt");
-				assert.match(error.message, /#107/);
-				assert.equal(error.details.operation, operation);
+				assert.ok(error instanceof FactoryWorkerError, "a bad tuple is a typed worker refusal, not a TypeError");
+				assert.equal(error.reason, "attempt-identity-invalid");
 				return true;
 			},
 		);

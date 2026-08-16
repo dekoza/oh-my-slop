@@ -161,10 +161,11 @@ test("a harness probe that cannot match the attempt's token declares the worker 
 		at: FIXED_NOW,
 	});
 	const probes = createProbeRegistry();
+	// No `occurredAtRaw`: Herdr dates nothing it answers, so an observation from
+	// it carries no foreign timestamp and `observed_at` is what dates the read.
 	probes.register("herdr.pane-list", () => ({
 		matched: false,
 		foreignSourceId: "herdr:pane-7",
-		occurredAtRaw: "2026-08-15T09:00:00+02:00",
 		detail: { pane: "herdr:pane-7" },
 	}));
 

@@ -60,6 +60,20 @@ export const EVENT_KINDS = Object.freeze({
 	// carries the observed resolved model id whose within-run stability the
 	// recheck enforces.
 	"attempt.rechecked": { payloadVersion: 1, visibility: "detail" },
+	// #107: §6.5's correlation record — what only the harness can say, once it
+	// has said it. `attempt.launched` is the **mint**, appended before any
+	// attempt-scoped effect because the projections refuse a record for a tuple
+	// nothing minted; the Herdr agent and pane ids, and the transcript pointer
+	// polled out of Herdr after the agent came up, are not known then. It is
+	// also the marker that the launch *finished*: an attempt with a mint and no
+	// correlation is one a controller died in the middle of.
+	"attempt.correlated": { payloadVersion: 1, visibility: "detail" },
+	// #107: §6.6's typed completion. One attempt ends once, carrying the outcome
+	// §8.8 names and — for a cancellation — who asked and why. It is the record
+	// that makes "late outboxes are ignored for state" structural: the projector
+	// refuses a second ending, so a worker that writes after the harvest is
+	// writing evidence.
+	"attempt.ended": { payloadVersion: 1, visibility: "operator" },
 	// #98: §8.8's disposition as a durable ticket-execution fact. The value is
 	// held to the closed set at the projector; `released` is the one member
 	// this package's writer reaches (abandon, §9.6), and the column speaks the
@@ -86,13 +100,24 @@ export const EVENT_KINDS = Object.freeze({
  * observed-not-authored mark: a foreign record must carry that system's own
  * stable id, and its raw timestamp string verbatim in the payload (§4.3), so
  * re-polling is idempotent and the evidence survives our normalisation.
+ *
+ * **`statesTime: false` is a property of the source, not an escape a record
+ * may claim.** Herdr's event frames carry no timestamp and no id — verified
+ * against protocol 19, where a `pane_agent_status_changed` frame is
+ * `{pane_id, workspace_id, agent_status, agent}` and nothing more. There is
+ * therefore no raw timestamp string to retain, and writing our own clock into
+ * the slot reserved for the foreign system's would be the one thing §4.3's
+ * rule exists to prevent: a normalised value presented as the original. So the
+ * source declares that it states no time, the key is refused on it outright,
+ * and `observed_at` alone dates the frame — which is the honest reading, since
+ * receipt is the only moment anyone observed.
  */
 export const EVENT_SOURCES = Object.freeze({
 	controller: { foreign: false },
 	operator: { foreign: false },
 	gitea: { foreign: true },
 	git: { foreign: true },
-	herdr: { foreign: true },
+	herdr: { foreign: true, statesTime: false },
 	outbox: { foreign: true },
 });
 
@@ -346,6 +371,21 @@ function requireForeignEvidence(sourceDeclaration, foreignSourceId, payload) {
 	}
 
 	const raw = payload[FOREIGN_TIMESTAMP_KEY];
+
+	if (sourceDeclaration.statesTime === false) {
+		// The refusal is the load-bearing half: a source that states no time has
+		// nothing to retain, so anything in this slot is our clock wearing the
+		// foreign system's name.
+		if (raw !== undefined) {
+			refuse(
+				`payload.${FOREIGN_TIMESTAMP_KEY}`,
+				`This source states no time of its own, so "${FOREIGN_TIMESTAMP_KEY}" would carry our clock under its name (§4.3). observed_at dates the record.`,
+				{ found: raw },
+			);
+		}
+		return;
+	}
+
 	if (typeof raw !== "string" || raw.length === 0) {
 		refuse(
 			`payload.${FOREIGN_TIMESTAMP_KEY}`,

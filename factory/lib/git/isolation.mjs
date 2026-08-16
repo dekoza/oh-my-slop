@@ -1,7 +1,7 @@
-import { realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { IDENTITY_CHARSET } from "../domain/vocabulary.mjs";
+import { containPath, PATH_REFUSALS } from "../identity/paths.mjs";
 import { FactoryGitError } from "./errors.mjs";
 
 /**
@@ -83,23 +83,22 @@ export function baselineWorktreePath(storeDir, baseline) {
 }
 
 /**
- * §2.1's containment, twice over: the identity segment is charset-validated,
- * **and** the joined path is canonicalized and asserted to sit under its root —
- * both, not either.
+ * §2.1's containment, twice over — charset validation **and**
+ * canonicalize-and-assert-prefix — from the one predicate both subsystems that
+ * derive a path from an identity share (`identity/paths.mjs`). The verdict
+ * arrives as data and becomes this subsystem's own typed refusal here.
  */
 function containedPath(root, segment, field) {
-	requireIdentitySegment(segment, field);
+	const contained = containPath(root, segment);
+	if (contained.ok) return contained.path;
 
-	const path = join(root, segment);
-	const canonical = canonicalize(path);
-	if (!canonical.startsWith(canonicalize(root) + "/")) {
-		throw new FactoryGitError(
-			"identity-path-escape",
-			`${field} ${segment} derives a worktree outside ${root} (§2.1); refusing ${canonical}.`,
-			{ at: field, found: canonical, expected: root },
-		);
-	}
-	return path;
+	if (contained.reason === PATH_REFUSALS.charset) requireIdentitySegment(segment, field);
+
+	throw new FactoryGitError(
+		PATH_REFUSALS.escape,
+		`${field} ${segment} derives a worktree outside ${root} (§2.1); refusing ${contained.found}.`,
+		{ at: field, found: contained.found, expected: root },
+	);
 }
 
 /**
@@ -163,31 +162,9 @@ export function assertFactoryRef(ref) {
 function requireIdentitySegment(value, field) {
 	if (typeof value !== "string" || !IDENTITY_CHARSET.test(value)) {
 		throw new FactoryGitError(
-			"identity-charset",
+			PATH_REFUSALS.charset,
 			`${field} must match ${IDENTITY_CHARSET} (§2.1); found ${JSON.stringify(value ?? null)}.`,
 			{ at: field, found: value ?? null },
 		);
-	}
-}
-
-/**
- * The prefix assertion compares canonical spellings: a symlink planted inside
- * the worktrees root must not launder a path out of it. The path itself may not
- * exist yet — worktrees are asserted before they are created — so resolution
- * walks to the nearest existing ancestor.
- */
-function canonicalize(path) {
-	const absolute = resolve(path);
-	let probe = absolute;
-	let suffix = "";
-	for (;;) {
-		try {
-			return join(realpathSync(probe), suffix);
-		} catch {
-			suffix = join(probe.slice(dirname(probe).length + 1), suffix);
-			const parent = dirname(probe);
-			if (parent === probe) return absolute;
-			probe = parent;
-		}
 	}
 }

@@ -17,10 +17,12 @@ import { FactoryWorkerError } from "./errors.mjs";
  * which checks §6.1's five-slot tuple and never a name against a list. The
  * pipeline's actual role inventory lives with the caller (`roles.mjs`).
  *
- * Operations answer in typed values and typed refusals; the controller is what
- * turns those into journal events (`preflight.checked`, `attempt.launched`,
- * `attempt.rechecked`), because events are appended under the controller's
- * hold and an adapter holding a store write path would be a second writer.
+ * Operations answer in typed values and typed refusals. `preflight` writes
+ * nothing at all — its findings become the controller's `preflight.checked`
+ * stage. The three lifecycle operations do write, but never as a second writer:
+ * they are handed the controller's own hold in the attempt, and every record
+ * goes through `hold.append`, which compares the holder token inside the
+ * write's own transaction (§14.6).
  */
 
 export const WORKER_OPERATIONS = Object.freeze(["preflight", "launch", "awaitCompletion", "cancel"]);
@@ -37,8 +39,9 @@ const SKILL_NAME_SHAPE = /^[a-z0-9][a-z0-9-]*$/;
  * is always handed a role whose closure has been attached; `preflight` refuses
  * a null one rather than probing for an unknown set.
  *
- * The prompt template slot may be null until #107's per-role templates land;
- * the lifecycle operations that would render one refuse as unbuilt anyway.
+ * The prompt template slot may be null on a declaration too: §6.4's template is
+ * one renderer parameterised by the role rather than four strings, so a role
+ * declares its *expectations* and the renderer reads them (`prompt.mjs`).
  *
  * @param {object} role
  * @returns {Readonly<object>} the same tuple, frozen
@@ -137,32 +140,6 @@ export function createWorkerAdapter({ kind, operations } = {}) {
 		launch: (attempt) => operations.launch(requireAttempt(attempt, "launch", kind)),
 		awaitCompletion: (attempt) => operations.awaitCompletion(requireAttempt(attempt, "awaitCompletion", kind)),
 		cancel: (attempt) => operations.cancel(requireAttempt(attempt, "cancel", kind)),
-	});
-}
-
-/**
- * The three lifecycle operations, as the typed refusal #107 replaces. The seam
- * ships whole — a pipeline can compile and dispatch against it today — and a
- * call reaching one of these fails the attempt as an automation failure rather
- * than half-running a worker nothing can harvest (§6.4–§6.6).
- *
- * @param {string} kind
- * @returns {Record<string, Function>}
- */
-export function unbuiltLifecycleOperations(kind) {
-	const refuse = (operation) => () => {
-		throw new FactoryWorkerError(
-			"worker-lifecycle-unbuilt",
-			`${operation}(attempt) for the ${kind} runtime is not built in this package: launching a worker and ` +
-				"harvesting a typed outbox are #107's slice (§6.4–§6.6). The adapter seam exists; nothing behind it half-runs.",
-			{ operation, kind, missing: "launching a worker and harvesting a typed outbox (#107)" },
-		);
-	};
-
-	return Object.freeze({
-		launch: refuse("launch"),
-		awaitCompletion: refuse("awaitCompletion"),
-		cancel: refuse("cancel"),
 	});
 }
 
