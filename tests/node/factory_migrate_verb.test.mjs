@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { EXIT_USAGE } from "../../factory/lib/cli/exit-codes.mjs";
+import { runCli } from "../../factory/lib/cli/main.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { PRESERVED_LEGACY_BASENAME } from "../../factory/lib/migrate/document.mjs";
 import { runMigrate } from "../../factory/lib/migrate/verb.mjs";
-import { cloneLegacyConfig, cloneValidConfig, makeRepo } from "./helpers/factory-repo.mjs";
+import { cloneLegacyConfig, cloneValidConfig, factorySources, makeRepo } from "./helpers/factory-repo.mjs";
 
 const AGENTS = `## Mandatory commands
 
@@ -159,6 +161,33 @@ test("§11.2: a legacy key §11.8's table does not name refuses before anything 
 	assert.equal(error.kind, "unknown-key");
 	assert.equal(error.at, "deploy");
 	assert.throws(() => readFileSync(join(root, ".pi", PRESERVED_LEGACY_BASENAME), "utf8"));
+});
+
+// ── Where migration sits (§10.2, §11.6) ──────────────────────────────────────
+
+test("§10.2: migrate is its own verb, never a flag on doctor", async (t) => {
+	const root = legacyRepo(t, { config: cloneValidConfig() });
+
+	const { exitCode, value } = await runCli(["doctor", "--migrate"], { cwd: root });
+
+	// Doctor's invariant is that it appends nothing in either mode; migration
+	// writes the operator's own config file. One verb for both would mean
+	// doctor's read-only reputation needed an asterisk.
+	assert.equal(exitCode, EXIT_USAGE);
+	assert.equal(value.error.flag, "--migrate");
+});
+
+test("§11.6: AGENTS.md is named in code by migration alone — never parsed at runtime", () => {
+	const named = factorySources()
+		.filter(([, source]) => source.includes('"AGENTS.md"'))
+		.map(([path]) => path)
+		.sort();
+
+	// Two files, for two unrelated reasons, and neither is an agreement check:
+	// migration reads the matrix **once, for human review**, and the worker
+	// environment *writes* the isolated harness its own context file. A third
+	// name here would be the runtime parser §8.2 ruled out.
+	assert.deepEqual(named, [join("lib", "migrate", "matrix.mjs"), join("lib", "worker", "environment.mjs")]);
 });
 
 // ── Legacy run artifacts (§11.8, §12.8) ──────────────────────────────────────
