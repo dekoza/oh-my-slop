@@ -6,9 +6,10 @@ import { unresolvedEffects } from "../../factory/lib/effects/records.mjs";
 import { reconcile } from "../../factory/lib/reconcile/engine.mjs";
 import { createProbeRegistry } from "../../factory/lib/reconcile/probes.mjs";
 import { trackerProbes, withTrackerProbes } from "../../factory/lib/reconcile/tracker-probes.mjs";
-import { claimTicket, releaseClaim } from "../../factory/lib/tracker/claims.mjs";
+import { claimTicket } from "../../factory/lib/tracker/claims.mjs";
+import { applyDisposition } from "../../factory/lib/tracker/disposition.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
-import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
+import { createGiteaWriter, TRACKER_WRITES } from "../../factory/lib/tracker/writer.mjs";
 import { openCapacityPool } from "./helpers/factory-store.mjs";
 import { fakeGitea, giteaIssue, TRACKER_NOW } from "./helpers/factory-tracker.mjs";
 
@@ -40,6 +41,17 @@ async function claimed(t, world) {
 	return { ...pool, gitea, reader, writer, probes: withTrackerProbes(createProbeRegistry(), { reader, assignee: ASSIGNEE }) };
 }
 
+/** The same, for §8.9's disposition comment — the ticket's *second* comment effect. */
+function unsettleDisposition(store) {
+	return store.transaction(({ db }) => {
+		const row = db.prepare("SELECT effect_key FROM effect WHERE operand = 'disposition'").get();
+		db.prepare(
+			"UPDATE effect SET state = 'requested', resolved_at = NULL, resolved_seq = NULL, result = NULL WHERE effect_key = ?",
+		).run(row.effect_key);
+		return row.effect_key;
+	});
+}
+
 /** Put an effect back to `requested`, as a crash between the write and its record does. */
 function unsettle(store, operation) {
 	return store.transaction(({ db }) => {
@@ -51,14 +63,14 @@ function unsettle(store, operation) {
 	});
 }
 
-test("both tracker reads have exactly one probe, and they cover every tracker write", () => {
+test("every tracker write has a probe, and every probe has an implementation", () => {
 	const probes = withTrackerProbes(createProbeRegistry(), { reader: {}, assignee: ASSIGNEE });
 
-	// One read serves several operations, which is the point of keying the
-	// registry by the read: `issue-assign` and `issue-unassign` are one call to
-	// Gitea with two declared matches.
+	// Derived from the writer's own surface rather than a list kept here: a
+	// mutation added with no probe behind it is exactly what §5.3 cannot settle,
+	// and a hand-kept list would have gone on passing while it was added.
 	assert.deepEqual(
-		["issue-assign", "issue-unassign", "comment-post"].map((operation) => [
+		Object.keys(TRACKER_WRITES).map((operation) => [
 			operation,
 			EFFECT_REGISTRY.probeFor(operation).call,
 			EFFECT_REGISTRY.probeFor(operation).match,
@@ -66,14 +78,19 @@ test("both tracker reads have exactly one probe, and they cover every tracker wr
 		[
 			["issue-assign", "issue.assignees", "present"],
 			["issue-unassign", "issue.assignees", "absent"],
+			["label-add", "issue.labels", "present"],
 			["comment-post", "issue.comments", "embedded-key"],
 		],
 	);
-	for (const operation of ["issue-assign", "issue-unassign", "comment-post"]) {
+
+	// One read serves several operations, which is the point of keying the
+	// registry by the read: `issue-assign` and `issue-unassign` are one call to
+	// Gitea with two declared matches.
+	for (const operation of Object.keys(TRACKER_WRITES)) {
 		const call = EFFECT_REGISTRY.probeFor(operation).call;
 		assert.notEqual(probes.implementationFor(call), null, `${operation} reads ${call}, which nothing implements`);
 	}
-	assert.deepEqual([...probes.calls].sort(), ["issue.assignees", "issue.comments"]);
+	assert.deepEqual([...probes.calls].sort(), ["issue.assignees", "issue.comments", "issue.labels"]);
 });
 
 test("one read has one implementation — a base that already claims it refuses", () => {
@@ -162,7 +179,7 @@ test("a deleted *release* comment is corroborated by the assignee being gone (§
 	// under §12.4 with no verb able to discharge it.
 	const { store, gitea, hold, probes, writer, run } = await claimed(t, { issues: [giteaIssue({ number: 10 })] });
 
-	await releaseClaim(store, {
+	await applyDisposition(store, {
 		writer,
 		hold,
 		run,
@@ -170,17 +187,11 @@ test("a deleted *release* comment is corroborated by the assignee being gone (§
 		attempt: `${run}-t10-a1`,
 		assignee: ASSIGNEE,
 		at: TRACKER_NOW,
+		disposition: "released",
 		reason: "the operator stopped the run",
 	});
 
-	const key = store.read((db) =>
-		db.prepare("SELECT effect_key FROM effect WHERE operand = 'disposition'").get(),
-	).effect_key;
-	store.transaction(({ db }) => {
-		db.prepare(
-			"UPDATE effect SET state = 'requested', resolved_at = NULL, resolved_seq = NULL, result = NULL WHERE effect_key = ?",
-		).run(key);
-	});
+	const key = unsettleDisposition(store);
 	gitea.comments.length = 0;
 
 	const reconciled = await reconcile(store, {
@@ -194,6 +205,50 @@ test("a deleted *release* comment is corroborated by the assignee being gone (§
 	assert.equal(reconciled.settled, 1);
 	const settled = store.read((db) => db.prepare("SELECT result FROM effect WHERE effect_key = ?").get(key));
 	assert.equal(JSON.parse(settled.result).absence, "possibly-deleted");
+	assert.deepEqual(unresolvedEffects(store), []);
+});
+
+test("a deleted *pause* comment is corroborated by the label it added, not by the assignee (§5.2)", async (t) => {
+	// §8.9's other three dispositions **retain** the assignee, so "the assignee is
+	// gone" corroborates nothing about them. What their comment announced is the
+	// label, and the label is what is still there to agree with it. Reading the
+	// release rule as "no assignee" for all four would leave every deleted pause
+	// comment uncorroborated, pinning its run's artifacts under §12.4 forever.
+	const { store, gitea, hold, probes, writer, run } = await claimed(t, { issues: [giteaIssue({ number: 10 })] });
+
+	await applyDisposition(store, {
+		writer,
+		hold,
+		run,
+		ticket: 10,
+		attempt: `${run}-t10-a1`,
+		assignee: ASSIGNEE,
+		at: TRACKER_NOW,
+		disposition: "paused",
+		reasonClass: "product-ambiguity",
+		question: "Which of the two invoice rules applies?",
+	});
+
+	const key = unsettleDisposition(store);
+	gitea.comments.length = 0;
+
+	const reconciled = await reconcile(store, {
+		probes,
+		fencingGeneration: hold.fencingGeneration,
+		hold,
+		actor: "controller",
+		at: TRACKER_NOW,
+	});
+
+	assert.equal(reconciled.settled, 1);
+	const settled = store.read((db) => db.prepare("SELECT result FROM effect WHERE effect_key = ?").get(key));
+	assert.equal(JSON.parse(settled.result).absence, "possibly-deleted");
+	// The assignee is still standing, exactly as §8.9 requires of a pause — so it
+	// is the label that did the corroborating.
+	assert.deepEqual(
+		gitea.issues[0].assignees.map((user) => user.login),
+		[ASSIGNEE],
+	);
 	assert.deepEqual(unresolvedEffects(store), []);
 });
 
