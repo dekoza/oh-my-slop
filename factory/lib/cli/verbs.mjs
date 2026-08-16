@@ -3,6 +3,7 @@ import { PARENT_FLAG } from "../controller/scope.mjs";
 import { NEW_RUN_FLAG, runStart } from "../controller/start.mjs";
 import { runStop } from "../controller/stop.mjs";
 import { BASELINE_FLAG, runDoctor } from "../doctor/verb.mjs";
+import { runMigrate } from "../migrate/verb.mjs";
 import { runReconcile } from "../reconcile/verb.mjs";
 import { runStatus } from "../status/verb.mjs";
 
@@ -92,8 +93,8 @@ export const VERB_TABLE = Object.freeze({
 	},
 	migrate: {
 		requiresConfig: false,
+		handler: runMigrate,
 		summary: "rewrite a v1 config as schemaVersion 2, reporting every key",
-		missing: "the legacy key disposition table and the TODO holes it leaves (#116)",
 		spec: "§11.8",
 	},
 });

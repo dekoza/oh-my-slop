@@ -1,262 +1,328 @@
 {
-  "version": 1,
+  "schemaVersion": 2,
   "tracker": {
     "kind": "gitea",
     "repo": "minder/oh-my-slop",
     "remote": "gitea",
     "login": "Kuferek",
-    "assignee": "minder",
-    "labels": {
-      "implementation": "workflow:implement",
-      "readyForAgent": "ready-for-agent",
-      "readyForHuman": "ready-for-human"
-    }
+    "assignee": "minder"
   },
   "git": {
     "baseBranch": "main",
     "remote": "gitea"
   },
-  "herdr": {
-    "maxWorkers": 1
-  },
-  "workers": {
-    "profiles": {
-      "claude-implement": {
-        "kind": "claude",
-        "model": "opus",
-        "effort": "high",
-        "permissionMode": "auto"
-      },
-      "claude-review": {
-        "kind": "claude",
-        "model": "opus",
-        "effort": "high",
-        "permissionMode": "dontAsk"
-      },
-      "final-review": {
-        "kind": "claude",
-        "model": "fable",
-        "effort": "high",
-        "permissionMode": "dontAsk"
-      },
-      "gpt": {
-        "kind": "pi",
-        "model": "openai-codex/gpt-5.6-sol",
-        "thinking": "high"
-      },
-      "glm": {
-        "kind": "pi",
-        "model": "openrouter/z-ai/glm-5.2",
-        "thinking": "high"
-      },
-      "deepseek": {
-        "kind": "pi",
-        "model": "openrouter/deepseek/deepseek-v4-flash-0731",
-        "thinking": "high"
-      },
-      "qwen": {
-        "kind": "pi",
-        "model": "openrouter/qwen/qwen3.8-max",
-        "thinking": "high"
-      },
-      "local": {
-        "kind": "pi",
-        "model": "local/thinkingcap-qwen3.6-27b",
-        "thinking": "high",
-        "startupTimeoutMs": 180000
-      }
+  "profiles": {
+    "claude-implement": {
+      "kind": "claude",
+      "model": "opus",
+      "effort": "high"
     },
-    "routing": {
-      "defaults": {
-        "implement": "gpt",
-        "freshRetry": "glm",
-        "review": "claude-review",
-        "finalReview": "final-review"
-      },
-      "rules": [
-        {
-          "labelsAny": [
-            "factory:claude",
-            "risk:high"
-          ],
-          "phases": [
-            "implement",
-            "freshRetry"
-          ],
-          "profile": "claude-implement"
-        },
-        {
-          "labelsAny": [
-            "factory:claude",
-            "risk:high"
-          ],
-          "phases": [
-            "review"
-          ],
-          "profile": "claude-review"
-        },
-        {
-          "labelsAny": [
-            "factory:gpt"
-          ],
-          "phases": [
-            "implement",
-            "freshRetry"
-          ],
-          "profile": "gpt"
-        },
-        {
-          "labelsAny": [
-            "factory:glm"
-          ],
-          "phases": [
-            "implement",
-            "freshRetry"
-          ],
-          "profile": "glm"
-        },
-        {
-          "labelsAny": [
-            "factory:deepseek"
-          ],
-          "phases": [
-            "implement",
-            "freshRetry"
-          ],
-          "profile": "deepseek"
-        },
-        {
-          "labelsAny": [
-            "factory:qwen"
-          ],
-          "phases": [
-            "implement",
-            "freshRetry"
-          ],
-          "profile": "qwen"
-        },
-        {
-          "labelsAny": [
-            "factory:local"
-          ],
-          "phases": [
-            "implement",
-            "freshRetry"
-          ],
-          "profile": "local"
-        },
-        {
-          "labelsAny": [
-            "factory:local"
-          ],
-          "phases": [
-            "review"
-          ],
-          "profile": "qwen"
-        }
-      ]
+    "claude-review": {
+      "kind": "claude",
+      "model": "opus",
+      "effort": "high"
+    },
+    "gpt": {
+      "kind": "pi",
+      "model": "openai-codex/gpt-5.6-sol",
+      "thinking": "high"
+    },
+    "glm": {
+      "kind": "pi",
+      "model": "openrouter/z-ai/glm-5.2",
+      "thinking": "high"
+    },
+    "deepseek": {
+      "kind": "pi",
+      "model": "openrouter/deepseek/deepseek-v4-flash-0731",
+      "thinking": "high"
+    },
+    "qwen": {
+      "kind": "pi",
+      "model": "openrouter/qwen/qwen3.8-max",
+      "thinking": "high"
+    },
+    "local": {
+      "kind": "pi",
+      "model": "local/thinkingcap-qwen3.6-27b",
+      "thinking": "high",
+      "startupTimeoutMs": 180000
     }
   },
-  "_postSubscription": {
-    "comment": "Migration metadata only; the factory loader ignores this top-level key. When Claude Max and GPT subscriptions end, replace workers.routing.defaults and workers.routing.rules with the fragment below. Relabel tickets carrying factory:claude or factory:gpt; the replacement rules deliberately omit those unavailable providers.",
-    "workers": {
-      "routing": {
-        "defaults": {
+  "routing": {
+    "roles": {
+      "implement": "gpt",
+      "freshRetry": "glm",
+      "review": [
+        "claude-review",
+        "claude-review"
+      ]
+    },
+    "rules": [
+      {
+        "labelsAny": [
+          "factory:claude",
+          "risk:high"
+        ],
+        "role": "implement",
+        "profile": "claude-implement"
+      },
+      {
+        "labelsAny": [
+          "factory:claude",
+          "risk:high"
+        ],
+        "role": "freshRetry",
+        "profile": "claude-implement"
+      },
+      {
+        "labelsAny": [
+          "factory:claude",
+          "risk:high"
+        ],
+        "role": "review",
+        "profile": [
+          "claude-review",
+          "claude-review"
+        ]
+      },
+      {
+        "labelsAny": [
+          "factory:gpt"
+        ],
+        "role": "implement",
+        "profile": "gpt"
+      },
+      {
+        "labelsAny": [
+          "factory:gpt"
+        ],
+        "role": "freshRetry",
+        "profile": "gpt"
+      },
+      {
+        "labelsAny": [
+          "factory:glm"
+        ],
+        "role": "implement",
+        "profile": "glm"
+      },
+      {
+        "labelsAny": [
+          "factory:glm"
+        ],
+        "role": "freshRetry",
+        "profile": "glm"
+      },
+      {
+        "labelsAny": [
+          "factory:deepseek"
+        ],
+        "role": "implement",
+        "profile": "deepseek"
+      },
+      {
+        "labelsAny": [
+          "factory:deepseek"
+        ],
+        "role": "freshRetry",
+        "profile": "deepseek"
+      },
+      {
+        "labelsAny": [
+          "factory:qwen"
+        ],
+        "role": "implement",
+        "profile": "qwen"
+      },
+      {
+        "labelsAny": [
+          "factory:qwen"
+        ],
+        "role": "freshRetry",
+        "profile": "qwen"
+      },
+      {
+        "labelsAny": [
+          "factory:local"
+        ],
+        "role": "implement",
+        "profile": "local"
+      },
+      {
+        "labelsAny": [
+          "factory:local"
+        ],
+        "role": "freshRetry",
+        "profile": "local"
+      },
+      {
+        "labelsAny": [
+          "factory:local"
+        ],
+        "role": "review",
+        "profile": [
+          "qwen",
+          "qwen"
+        ]
+      }
+    ],
+    "sets": {
+      "post-subscription": {
+        "roles": {
           "implement": "local",
           "freshRetry": "glm",
-          "review": "deepseek",
-          "finalReview": "qwen"
+          "review": [
+            "deepseek",
+            "deepseek"
+          ]
         },
         "rules": [
           {
             "labelsAny": [
               "risk:high"
             ],
-            "phases": [
-              "implement",
-              "freshRetry"
-            ],
+            "role": "implement",
             "profile": "qwen"
           },
           {
             "labelsAny": [
               "risk:high"
             ],
-            "phases": [
-              "review"
+            "role": "freshRetry",
+            "profile": "qwen"
+          },
+          {
+            "labelsAny": [
+              "risk:high"
             ],
-            "profile": "deepseek"
+            "role": "review",
+            "profile": [
+              "deepseek",
+              "deepseek"
+            ]
           },
           {
             "labelsAny": [
               "factory:glm"
             ],
-            "phases": [
-              "implement",
-              "freshRetry"
+            "role": "implement",
+            "profile": "glm"
+          },
+          {
+            "labelsAny": [
+              "factory:glm"
             ],
+            "role": "freshRetry",
             "profile": "glm"
           },
           {
             "labelsAny": [
               "factory:deepseek"
             ],
-            "phases": [
-              "implement",
-              "freshRetry"
-            ],
+            "role": "implement",
             "profile": "deepseek"
           },
           {
             "labelsAny": [
               "factory:deepseek"
             ],
-            "phases": [
-              "review"
+            "role": "freshRetry",
+            "profile": "deepseek"
+          },
+          {
+            "labelsAny": [
+              "factory:deepseek"
             ],
+            "role": "review",
+            "profile": [
+              "qwen",
+              "qwen"
+            ]
+          },
+          {
+            "labelsAny": [
+              "factory:qwen"
+            ],
+            "role": "implement",
             "profile": "qwen"
           },
           {
             "labelsAny": [
               "factory:qwen"
             ],
-            "phases": [
-              "implement",
-              "freshRetry"
-            ],
+            "role": "freshRetry",
             "profile": "qwen"
           },
           {
             "labelsAny": [
               "factory:local"
             ],
-            "phases": [
-              "implement",
-              "freshRetry"
-            ],
+            "role": "implement",
             "profile": "local"
           },
           {
             "labelsAny": [
               "factory:local"
             ],
-            "phases": [
-              "review"
+            "role": "freshRetry",
+            "profile": "local"
+          },
+          {
+            "labelsAny": [
+              "factory:local"
             ],
-            "profile": "qwen"
+            "role": "review",
+            "profile": [
+              "qwen",
+              "qwen"
+            ]
           }
         ]
       }
     }
   },
-  "retry": {
-    "repairAttempts": 1,
-    "freshAgentRetries": 1
+  "budgets": {
+    "repair": 1,
+    "freshRetry": 1,
+    "automation": 1
   },
-  "completion": {
-    "closeAfterIntegration": true,
-    "finalMerge": "manual",
-    "createPullRequest": true,
-    "deploy": false
+  "checks": [
+    {
+      "name": "full-python-test-suite",
+      "command": "uv run pytest",
+      "timeout": 900,
+      "severity": "required",
+      "expectedFailureExitCodes": [
+        1
+      ]
+    },
+    {
+      "name": "markdown-reference-validator",
+      "command": "uv run python scripts/validate_refs.py",
+      "timeout": 120,
+      "severity": "required",
+      "expectedFailureExitCodes": [
+        1
+      ]
+    },
+    {
+      "name": "node-extension-tests",
+      "command": "node --test tests/node/*.mjs",
+      "timeout": 600,
+      "severity": "required",
+      "expectedFailureExitCodes": [
+        1
+      ]
+    }
+  ],
+  "concurrency": {
+    "maxTicketExecutions": 1,
+    "resources": {
+      "claude-code": 2,
+      "openai-codex": 1,
+      "openrouter": 2,
+      "local": 1
+    }
   }
 }

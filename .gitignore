@@ -3,3 +3,8 @@ __pycache__/
 .worktrees/
 
 council-debates/
+
+# `factory migrate` preserves the config it replaced beside it (§11.8). It is
+# the operator's own copy to re-author routing rules from, not a second policy
+# file — the effective policy exists on disk exactly once.
+.pi/factory.v1.json

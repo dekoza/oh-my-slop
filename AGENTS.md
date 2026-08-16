@@ -86,6 +86,19 @@ is the authority; cite the section a change answers to.
   `--config`, no env overrides, no merge layering, and no warn-and-continue path.
   `extensions/config-loader.ts`'s fallback-on-parse-error is the failure mode this
   code exists to end — do not reach for it here.
+- `factory migrate` is the **only** verb that writes the operator's config, which is why
+  it is a sibling of `doctor` rather than a flag on it, and the only verb exempt from the
+  load. §11.8's legacy key disposition table lives as **data** in
+  `factory/lib/migrate/document.mjs`, so the printed report and the rewritten file come
+  from the same rows — a row that maps a key without reporting it is not expressible. A
+  legacy key no row names **refuses** the migration rather than being dropped by omission,
+  and the five holes it leaves are `TODO` sentinels the loader hard-fails on. The file it
+  replaces is preserved as `.pi/factory.v1.json` **before** anything is written: the legacy
+  rules and the dormant post-subscription set are what a human re-authors those holes from.
+- `AGENTS.md` is read by the factory in exactly one place, `factory/lib/migrate/matrix.mjs`,
+  and only to draft the initial `checks` block **once, for human review** (§11.6). There is
+  no runtime parse and no automated agreement check — that would need the parser §8.2 ruled
+  out. Thereafter this document and `checks` are kept in step by hand.
 - Exit code `1` means usage or config-load failure and nothing else; `0` and `2`–`6`
   belong to the run end-reason table.
 - Defaults exist only in `factory/lib/config/defaults.mjs` (`budgets`, `retention`),
