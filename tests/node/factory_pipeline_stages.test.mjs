@@ -139,27 +139,33 @@ function answering(outcomes) {
 	return { phases, calls };
 }
 
-test("a green attempt walks implement → harvest → verify, and stops where review is unbuilt", async (t) => {
+test("a green attempt walks implement → harvest → verify → review, and stops where integrate is unbuilt", async (t) => {
 	const context = await executing(t);
-	const { phases, calls } = answering({ implement: "completed", harvest: "passed", verify: "passed" });
+	const { phases, calls } = answering({
+		implement: "completed",
+		harvest: "passed",
+		verify: "passed",
+		review: "approved",
+	});
 
 	await assert.rejects(
 		() => context.walk(phases),
 		(error) => {
 			assert.equal(error.reason, "not-yet-implemented");
-			assert.equal(error.details.phase, "review");
-			assert.match(error.details.missing, /#112/);
+			assert.equal(error.details.phase, "integrate");
+			assert.match(error.details.missing, /#113/);
 			return true;
 		},
 	);
 
-	assert.deepEqual(calls, ["implement", "harvest", "verify"]);
+	assert.deepEqual(calls, ["implement", "harvest", "verify", "review"]);
 	assert.deepEqual(
 		outcomeChain(context.store, { run: context.run, ticket: context.ticket }),
 		[
 			{ phase: "implement", outcome: "completed", attempt: context.attempt },
 			{ phase: "harvest", outcome: "passed", attempt: context.attempt },
 			{ phase: "verify", outcome: "passed", attempt: context.attempt },
+			{ phase: "review", outcome: "approved", attempt: context.attempt },
 		],
 		"the chain a stopped walk leaves behind is the chain `factory status` reads",
 	);
@@ -224,14 +230,15 @@ test("a repair re-enters implement under a new attempt, never the one that faile
 		},
 		harvest: async () => ({ outcome: "passed" }),
 		verify: async () => ({ outcome: seen.length === 1 ? "failed" : "passed" }),
+		review: async () => ({ outcome: "approved" }),
 	};
 
 	await assert.rejects(
 		() => context.walk(phases, { nextAttempt: seam.nextAttempt }),
 		(error) => {
-			// The repaired attempt walked clean through to review, which is #112's.
+			// The repaired attempt walked clean through review to integrate, which is #113's.
 			assert.equal(error.reason, "not-yet-implemented");
-			assert.equal(error.details.phase, "review");
+			assert.equal(error.details.phase, "integrate");
 			return true;
 		},
 	);
@@ -250,6 +257,7 @@ test("a repair re-enters implement under a new attempt, never the one that faile
 			["implement", "completed", `${context.run}-t${context.ticket}-a2`],
 			["harvest", "passed", `${context.run}-t${context.ticket}-a2`],
 			["verify", "passed", `${context.run}-t${context.ticket}-a2`],
+			["review", "approved", `${context.run}-t${context.ticket}-a2`],
 		],
 		"the chain is a list across attempts: the repair is on it, and the failure it answers still is",
 	);
@@ -443,7 +451,7 @@ test("a worker's own test evidence is context, never the verdict (§14.16)", asy
 
 test("the walk writes nothing to the tracker: its whole output is the journal (#108)", async (t) => {
 	const context = await executing(t);
-	const { phases } = answering({ implement: "completed", harvest: "passed", verify: "passed" });
+	const { phases } = answering({ implement: "completed", harvest: "passed", verify: "passed", review: "approved" });
 	const before = context.store.head().seq;
 
 	await assert.rejects(() => context.walk(phases), /not built/);
@@ -513,13 +521,17 @@ test("a crash between an external effect and its recorded resolution replays cle
 		return { outcome: "completed", detail: null };
 	};
 
-	const rest = { harvest: async () => ({ outcome: "passed" }), verify: async () => ({ outcome: "passed" }) };
+	const rest = {
+		harvest: async () => ({ outcome: "passed" }),
+		verify: async () => ({ outcome: "passed" }),
+		review: async () => ({ outcome: "approved" }),
+	};
 	await assert.rejects(() => context.walk({ implement, ...rest }), /controller died/);
 	await assert.rejects(() => context.walk({ implement, ...rest }), /not built/);
 
 	assert.deepEqual(
 		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).map((step) => step.phase),
-		["implement", "harvest", "verify"],
+		["implement", "harvest", "verify", "review"],
 		"one implement step, from the replay that finished it",
 	);
 	assert.equal(

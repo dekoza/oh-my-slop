@@ -480,6 +480,44 @@ is the authority; cite the section a change answers to.
   *most recent* production and would move under a settlement already requested. A pause with
   no question, a publication with no PR link, and a reason class whose §14.18 disposition is
   a different one are all refused before any mutation.
+- **The review phase fans out from the controller** (`pipeline/review.mjs`, §8.4): two
+  read-only attempts, each with its own entry skill, outbox, attempt identity and **its own
+  worktree at the reviewed commit**, so §7.3's one-worktree-per-attempt holds verbatim and a
+  mutation is attributable to a specific attempt. The axes run **in sequence and both to
+  completion** — neither is cancelled on the other's rejection, and taking turns is what makes
+  §15's size-1 case structural rather than arithmetic. Each axis resolves its own
+  `stage.resolved` under its own attempt, so §8.10's per-attempt rows are routed where the
+  attempt is, and the phase's own result — `approved`, `rejected`, `mutation-detected` — is
+  resolved by the walk under the **builder** attempt. `STAGE_ACTIONS.verdict` is therefore
+  never the walk's to take: reaching it there means an executor answered a phase with an
+  attempt outcome. The blocking sets are **unioned by concatenation** in axis order, each
+  finding tagged with the axis that wrote it — nothing merged, deduplicated, or reranked — and
+  one or more blocking findings on either axis is the rejection. §11.5's `review` pair maps
+  onto the axes **positionally**, which is the whole of "model diversity is available as
+  per-run configuration but is not mandated".
+- **The authoritative read-only guard is the attestation, not the permissions**
+  (`git/attestation.mjs`, §6.8): clean worktree **and** HEAD captured before the review and
+  verified unchanged after — both halves, because a reviewer that committed leaves a clean
+  tree and one that edited leaves the same HEAD. A mismatch is `mutation-detected`, §8.10's
+  **only** outcome with no retry at all (§14.19), and an opening capture that is already dirty
+  is a mutation too rather than an automation problem: the controller made that worktree out of
+  a commit and handed it to one role. The module answers a **typed verdict and never an
+  outcome**, exactly as §7.4's harvest predicates do. §8.4's verdict obligation lives in
+  `worker/prompt.mjs` and nowhere else (§8.4 says so explicitly); `worker/outbox.mjs` judges the
+  *shape* a written verdict must have — the closed pair, a findings list, a **mandatory
+  citation** per finding, and the word agreeing with its own blocking set — while whether a
+  verdict is *owed* is role knowledge and stays in `pipeline/review.mjs`. The controller never
+  classifies a citation: recognising a Fowler baseline smell by name would put a second copy of
+  the skill's list in the factory, and downgrading a finding would be the reranking §8.4 forbids.
+- **§2.1's attempt ordinal is allocated against the record** (`allocateAttempt` in
+  `worker/attempt.mjs`), never derived from the attempt being answered. More than one thing
+  mints into one ticket execution's ordinal space — §8.5's two tiers and §8.4's two axes — so
+  "one past the prior attempt" lands a repair on a reviewer's id, finds its branch and worktree
+  effects already resolved, and re-enters a phase whose result is recorded under that id, which
+  §8.10 then reads as its own conflicting duplicate. **Idempotency is the minter's purpose,
+  not the counter's**: a caller says what it is minting *for* — the tier and the attempt it
+  answers, or the axis, the work, and the try — and a record already naming that purpose hands
+  back the same id, so `planRetry` stays pure by no longer naming an attempt at all.
 - §3.5's drain is `factory/lib/controller/drain.mjs`, and it owns **both** clauses: nothing
   claimable now, and nothing that can become claimable without external change — the second
   read off `awaits_external`, which `frontier.mjs` computes per member. The report's classes

@@ -14,7 +14,7 @@ import { validateRole } from "../../factory/lib/worker/adapter.mjs";
 import { renderAttemptPrompt } from "../../factory/lib/worker/prompt.mjs";
 import { PIPELINE_ROLES } from "../../factory/lib/worker/roles.mjs";
 import { mintedAttempt } from "./helpers/factory-git.mjs";
-import { FIXED_NOW, manualTimers } from "./helpers/factory-store.mjs";
+import { attemptLaunched, FIXED_NOW, manualTimers } from "./helpers/factory-store.mjs";
 
 /**
  * §8.5's two tiers.
@@ -89,14 +89,24 @@ test("fresh-retry discards the work: it branches from the pinned base (§8.5)", 
 	assert.equal(plan.inheritsWork, false);
 });
 
-test("every retry is a fresh attempt, minted one ordinal past the one it answers (§8.5)", () => {
+test("a plan names no attempt: §2.1's ordinal is allocated against the record (§8.5)", () => {
 	for (const failure of [REPAIRS, FRESH_RETRIES]) {
 		const plan = planRetry({ prior: prior({ attempt: `${RUN}-t${TICKET}-a2` }), failure, routing: routing() });
 
-		assert.equal(plan.ordinal, 3);
-		assert.equal(plan.attempt, `${RUN}-t${TICKET}-a3`);
-		assert.notEqual(plan.attempt, prior().attempt, `${plan.tier} never continues the attempt it answers`);
+		assert.equal(plan.attempt, undefined);
+		assert.equal(plan.priorAttempt, `${RUN}-t${TICKET}-a2`, "what it names is the attempt it answers");
 	}
+});
+
+test("a prior that is not a §2.1 attempt id is refused while the plan is still pure", () => {
+	assert.throws(
+		() => planRetry({ prior: prior({ attempt: "yesterday" }), failure: REPAIRS }),
+		(error) => {
+			assert.equal(error.reason, "retry-unplannable");
+			assert.equal(error.details.at, "prior");
+			return true;
+		},
+	);
 });
 
 test("repair is not routable: it is pinned to the originating attempt's profile (§11.5)", () => {
@@ -368,10 +378,42 @@ test("re-opening the same retry performs nothing twice: the effects already reso
 
 	assert.deepEqual({ ...again }, { ...once }, "a controller that died mid-retry re-enters onto the same attempt");
 	assert.equal(
-		context.store.readEvents({ kind: "effect.requested" }).filter((record) => record.attempt === plan.attempt).length,
+		context.store.readEvents({ kind: "effect.requested" }).filter((record) => record.attempt === once.attempt).length,
 		2,
 		"one branch-create and one worktree-create, requested once each",
 	);
+	assert.equal(
+		context.store.readEvents({ kind: "attempt.launched" }).filter((record) => record.attempt === once.attempt).length,
+		1,
+		"and the allocation found the mint it already wrote rather than taking a second ordinal",
+	);
+});
+
+test("the ordinal is allocated past everything this ticket execution minted, never past the prior attempt (§2.1)", async (t) => {
+	const context = await executing(t);
+	const first = await worked(context, { attempt: context.attempt, baseCommit: context.base.commit, message: "a fix" });
+	// §8.4's fan-out mints two attempts of its own before a rejected review routes
+	// back to a repair. "One past the attempt I am answering" would land on the
+	// first reviewer's id, find its branch and worktree effects already resolved,
+	// and re-enter a phase whose result is recorded under it — which §8.10 reads
+	// as its own conflicting duplicate.
+	for (const ordinal of [2, 3]) {
+		context.store.append(attemptLaunched(context.run, context.ticket, ordinal, { phase: "review" }));
+	}
+	const plan = planRetry({ prior: prior({ attempt: context.attempt, branch: first.branch }), failure: REPAIRS });
+
+	const opened = await openRetryAttempt(context.store, context.clone, {
+		hold: context.hold,
+		plan,
+		run: context.run,
+		ticket: context.ticket,
+		workerConfig: context.workerConfig,
+		actor: "controller",
+		at: FIXED_NOW,
+	});
+
+	assert.equal(opened.ordinal, 4);
+	assert.equal(opened.attempt, `${context.run}-t${context.ticket}-a4`);
 });
 
 // ── The brief: what the next worker is told, and how much of it is trusted ───

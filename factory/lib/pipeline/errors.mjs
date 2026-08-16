@@ -61,6 +61,14 @@ export const PIPELINE_ERROR_REASONS = Object.freeze([
 	 * branch is created rather than by reusing the last one anybody saw.
 	 */
 	"retry-unplannable",
+	/**
+	 * §8.4: the fan-out cannot run the review it was asked for — a routing that
+	 * names a number of profiles other than one per axis, or an axis attempt whose
+	 * §8.10 row is neither a verdict, a disposition, nor a retry. Both are the
+	 * shape of the review being wrong rather than a review coming back badly; a
+	 * review that comes back badly is `rejected`, which is an answer.
+	 */
+	"review-unroutable",
 ]);
 
 export class FactoryPipelineError extends Error {

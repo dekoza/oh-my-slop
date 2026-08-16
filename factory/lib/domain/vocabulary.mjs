@@ -263,6 +263,28 @@ export const PHASE_OUTCOME_DOMAINS = Object.freeze({
 });
 
 /**
+ * §8.4's typed review verdict. It is a *worker's* word — the reviewer writes it
+ * into its outbox — and it rides the `stage.resolved` detail of every axis
+ * attempt, which is this file's criterion.
+ *
+ * The controller's own answer for the phase is not in this list: §8.4's rule is
+ * mechanical over the **blocking set**, so `approved` and `rejected` are
+ * `PHASE_RESULTS[review]`'s and are derived from the findings rather than from
+ * either reviewer's word.
+ */
+export const REVIEW_VERDICTS = Object.freeze(["approve", "reject"]);
+
+/**
+ * §8.4's severity, carried by every finding.
+ *
+ * **`blocking` is the only one that decides anything**: one or more on either
+ * axis makes the phase `rejected`, and everything else is advisory evidence that
+ * reaches §8.7's attestation and the PR body without gating. The pair is closed
+ * so a reviewer cannot invent a third weight the union has no rule for.
+ */
+export const FINDING_SEVERITIES = Object.freeze({ blocking: "blocking", advisory: "advisory" });
+
+/**
  * §8.10's Action column: what the controller does with a resolved
  * `(phase, outcome)` pair.
  *

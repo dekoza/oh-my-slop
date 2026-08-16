@@ -1,5 +1,6 @@
-import { WORKER_WRITABLE_OUTCOMES } from "../domain/vocabulary.mjs";
+import { REVIEW_VERDICTS, WORKER_WRITABLE_OUTCOMES } from "../domain/vocabulary.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
+import { WORKER_POSTURES } from "./permissions.mjs";
 import { renderAttemptPrompt } from "./prompt.mjs";
 
 /**
@@ -25,8 +26,8 @@ import { renderAttemptPrompt } from "./prompt.mjs";
  * `review-spec` as the two independently invocable review entry skills.
  */
 
-/** §8.4's verdict vocabulary, carried as a review role's result expectation. */
-const REVIEW_VERDICTS = Object.freeze(["approve", "reject"]);
+/** §11.5's routing role both review axes dispatch through. */
+export const REVIEW_ROUTING_ROLE = "review";
 
 const BUILDER_EXPECTATIONS = Object.freeze({ statuses: WORKER_WRITABLE_OUTCOMES });
 const REVIEW_EXPECTATIONS = Object.freeze({ statuses: WORKER_WRITABLE_OUTCOMES, verdicts: REVIEW_VERDICTS });
@@ -34,9 +35,56 @@ const REVIEW_EXPECTATIONS = Object.freeze({ statuses: WORKER_WRITABLE_OUTCOMES, 
 export const PIPELINE_ROLES = Object.freeze([
 	declare("implement", { entrySkill: "implement", routingRole: "implement", expectations: BUILDER_EXPECTATIONS }),
 	declare("fresh-retry", { entrySkill: "implement", routingRole: "freshRetry", expectations: BUILDER_EXPECTATIONS }),
-	declare("review-standards", { entrySkill: "review-standards", routingRole: "review", expectations: REVIEW_EXPECTATIONS }),
-	declare("review-spec", { entrySkill: "review-spec", routingRole: "review", expectations: REVIEW_EXPECTATIONS }),
+	declare("review-standards", { entrySkill: "review-standards", routingRole: REVIEW_ROUTING_ROLE, expectations: REVIEW_EXPECTATIONS }),
+	declare("review-spec", { entrySkill: "review-spec", routingRole: REVIEW_ROUTING_ROLE, expectations: REVIEW_EXPECTATIONS }),
 ]);
+
+/**
+ * §8.4's two axes, **in the order §11.5's `review` pair is written in**.
+ *
+ * The order is load-bearing rather than cosmetic: `routing.roles.review` is a
+ * two-element list and the pair maps onto the axes positionally, which is how
+ * "model diversity is available as per-run configuration" reaches the fan-out
+ * without anything mandating it. Read off `PIPELINE_ROLES` rather than spelled
+ * again, so a third axis — were one ever declared — could not be forgotten here.
+ */
+export const REVIEW_ROLES = Object.freeze(PIPELINE_ROLES.filter((role) => role.routingRole === REVIEW_ROUTING_ROLE));
+
+/**
+ * §6.8's posture for one pipeline role — **derived from the role, never from a
+ * profile** (§11.4).
+ *
+ * The inventory is where this belongs and §6.1's tuple is where it does not: the
+ * adapter is role-parametric and validates five slots, so a sixth would be role
+ * knowledge crossing the seam that exists to keep it out. What a caller needs at
+ * dispatch is a function from the role it is about to run, and here it is.
+ *
+ * **An undeclared role is refused rather than treated as a builder.** The two
+ * postures are not symmetric: the wrong answer in one direction is a reviewer
+ * that cannot use `git log`, and in the other it is a read-only role holding the
+ * edit tools — which is exactly the guarantee §8.4's attestation exists to be the
+ * last line of, not the only one.
+ *
+ * @param {Readonly<object> | string} role a pipeline role, or its name
+ * @returns {string} one of `WORKER_POSTURES`
+ * @throws {FactoryWorkerError} `role-invalid`
+ */
+export function postureOf(role) {
+	const name = typeof role === "string" ? role : role?.name;
+	const declared = PIPELINE_ROLES.find((entry) => entry.name === name);
+
+	if (declared === undefined) {
+		throw new FactoryWorkerError(
+			"role-invalid",
+			`"${name ?? null}" is not a pipeline role, so §6.8 has no posture for it. Answering "builder" for an ` +
+				`unrecognised name would hand the edit tools to whatever asked, which is the one direction this must not ` +
+				`guess in.`,
+			{ at: "role", found: name ?? null, expected: PIPELINE_ROLES.map((entry) => entry.name).join("|") },
+		);
+	}
+
+	return REVIEW_ROLES.includes(declared) ? WORKER_POSTURES.reviewer : WORKER_POSTURES.builder;
+}
 
 function declare(name, { entrySkill, routingRole, expectations }) {
 	return Object.freeze({

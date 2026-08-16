@@ -4,7 +4,7 @@ import test from "node:test";
 import { createWorkerAdapter, validateRole, WORKER_OPERATIONS } from "../../factory/lib/worker/adapter.mjs";
 import { FactoryWorkerError } from "../../factory/lib/worker/errors.mjs";
 import { lifecycleOperations } from "../../factory/lib/worker/lifecycle.mjs";
-import { PIPELINE_ROLES, profileForRole, rolesInPlay } from "../../factory/lib/worker/roles.mjs";
+import { PIPELINE_ROLES, postureOf, profileForRole, REVIEW_ROLES, rolesInPlay } from "../../factory/lib/worker/roles.mjs";
 
 /**
  * §6.1: one runtime-neutral adapter with four operations, role-parametric, and
@@ -127,6 +127,36 @@ test("the pipeline declares four roles, every one a valid §6.1 tuple", () => {
 			"function",
 			`${declared.name} carries no §6.4 template, so nothing could render its first prompt`,
 		);
+	}
+});
+
+test("a role's posture derives from the role, and an unknown name is refused (§6.8, §11.4)", () => {
+	assert.deepEqual(
+		PIPELINE_ROLES.map((declared) => [declared.name, postureOf(declared)]),
+		[
+			["implement", "builder"],
+			["fresh-retry", "builder"],
+			["review-standards", "reviewer"],
+			["review-spec", "reviewer"],
+		],
+	);
+	assert.equal(postureOf("review-spec"), "reviewer", "the name alone answers, for a caller that has only that");
+
+	// Answering "builder" for an unrecognised name would hand the edit tools to
+	// whatever asked — the one direction this must not guess in.
+	assert.throws(() => postureOf("final-review"), (error) => {
+		assert.equal(error.reason, "role-invalid");
+		return true;
+	});
+});
+
+test("REVIEW_ROLES is §8.4's two axes, in the order §11.5's pair is written in", () => {
+	assert.deepEqual(
+		REVIEW_ROLES.map((axis) => axis.name),
+		["review-standards", "review-spec"],
+	);
+	for (const axis of REVIEW_ROLES) {
+		assert.deepEqual(axis.resultExpectations.verdicts, ["approve", "reject"]);
 	}
 });
 

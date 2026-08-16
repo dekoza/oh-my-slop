@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import { PHASES } from "../domain/vocabulary.mjs";
 import { containPath, PATH_REFUSALS } from "../identity/paths.mjs";
+import { runStream } from "../state/events.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
 
 /**
@@ -172,6 +173,53 @@ export function requireAttemptIdentity({ run, ticket, phase, attempt }) {
 export function launchedAttempt(store, attempt) {
 	const rows = store.readAttempts({ runId: runOf(attempt), ticket: ticketOf(attempt) });
 	return rows.find((row) => row.attempt_id === attempt) ?? null;
+}
+
+/**
+ * §2.1's ordinal, **allocated against the record rather than derived from a
+ * neighbour.**
+ *
+ * The ordinal is per *ticket execution*, and more than one thing mints into that
+ * one space: §8.5's two tiers answer a failed builder attempt, and §8.4's review
+ * fans out into two more attempts of its own. "One past the attempt I am
+ * answering" is only correct while a single line of attempts exists — the moment
+ * review mints two, a repair planned that way lands on a reviewer's id, finds its
+ * branch and worktree effects already resolved, and re-enters a phase whose
+ * result is recorded under that id. §8.10 then reads the working pipeline as its
+ * own conflicting duplicate and fails the ticket. So the allocation reads the
+ * record: **one past the highest ordinal this ticket execution has ever minted.**
+ *
+ * **Idempotency is the minter's purpose, not the counter's.** A caller says what
+ * it is minting *for*; if a record already names that purpose the same id comes
+ * back, so a controller that died between the mint and the work it opened
+ * re-enters onto the attempt it already has rather than allocating a second one.
+ *
+ * @param {object} store an open store
+ * @param {object} where
+ * @param {string} where.run
+ * @param {number} where.ticket
+ * @param {(payload: object, record: object) => boolean} where.mintedFor the
+ *   purpose predicate, read against each `attempt.launched` payload of this
+ *   ticket execution
+ * @returns {Readonly<{ attempt: string, ordinal: number, state: string }>}
+ *   `state` is `already-minted` or `allocated`
+ */
+export function allocateAttempt(store, { run, ticket, mintedFor }) {
+	const minted = store
+		.readEvents({ stream: runStream(run), kind: "attempt.launched" })
+		.filter((record) => record.ticket === ticket);
+
+	// The last rather than the first: a purpose that can repeat — a review axis
+	// retried on the automation budget — names its own try, so at most one record
+	// matches. Where a caller's predicate is looser, the most recent mint is the
+	// one its work is open under.
+	const existing = minted.findLast((record) => mintedFor(record.payload, record));
+	if (existing !== undefined) {
+		return Object.freeze({ attempt: existing.attempt, ordinal: ordinalOf(existing.attempt), state: "already-minted" });
+	}
+
+	const ordinal = minted.reduce((highest, record) => Math.max(highest, ordinalOf(record.attempt) ?? 0), 0) + 1;
+	return Object.freeze({ attempt: attemptIdOf({ run, ticket, ordinal }), ordinal, state: "allocated" });
 }
 
 /**

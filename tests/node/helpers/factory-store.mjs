@@ -174,7 +174,12 @@ export function heartbeat({ at = 1_770_000_010_000, watching = 0 } = {}) {
 	};
 }
 
-export function attemptLaunched(runId, ticket, ordinal = 1, { at = 1_770_000_100_000, phase = "implement" } = {}) {
+export function attemptLaunched(
+	runId,
+	ticket,
+	ordinal = 1,
+	{ at = 1_770_000_100_000, phase = "implement", role = "implement", profile = "builder" } = {},
+) {
 	return {
 		kind: "attempt.launched",
 		source: "controller",
@@ -184,7 +189,10 @@ export function attemptLaunched(runId, ticket, ordinal = 1, { at = 1_770_000_100
 		attempt: `${runId}-t${ticket}-a${ordinal}`,
 		occurredAt: at,
 		observedAt: at,
-		payload: { role: "implement" },
+		// The profile is on it because the claim always records one, and §8.5 pins a
+		// repair to the originating attempt's: a fixture that left it out would make
+		// every repair unplannable for a reason production never has.
+		payload: { role, profile },
 	};
 }
 

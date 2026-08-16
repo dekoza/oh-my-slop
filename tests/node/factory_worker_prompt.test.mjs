@@ -263,13 +263,92 @@ test("the completion protocol names the path, the schema, and the whole status s
 	assert.match(prompt, /discarded as an automation failure/);
 });
 
+// ── §8.4's review axis: the fixed point, and the verdict obligation ──────────
+
+const REVIEW = Object.freeze({ baseCommit: "a".repeat(40), reviewedCommit: "b".repeat(40) });
+
+/** One axis attempt's prompt, as `pipeline/review.mjs` renders it. */
+function reviewing(axis = "review-spec", overrides = {}) {
+	const role = PIPELINE_ROLES.find((entry) => entry.name === axis);
+	return render({
+		role: validateRole({ ...role, closure: [role.entrySkill] }),
+		identity: { ...IDENTITY, phase: "review" },
+		review: REVIEW,
+		...overrides,
+	});
+}
+
 test("a reviewer role is told about its verdict; a builder is not", () => {
-	const reviewer = PIPELINE_ROLES.find((role) => role.name === "review-spec");
-	const prompt = render({ role: validateRole({ ...reviewer, closure: [reviewer.entrySkill] }) });
+	const prompt = reviewing();
 
 	assert.match(prompt, /`verdict`/);
 	assert.match(prompt, /`approve` or `reject`/);
 	assert.doesNotMatch(render(), /`verdict`/, "a builder has no verdict to write");
+});
+
+test("the axis is told its fixed point, because there is nobody in the pane to ask (§8.4)", () => {
+	const prompt = reviewing();
+
+	// Both skills open by asking the caller for a fixed point and say "if none
+	// was given, ask". Nobody is watching this pane, so the controller states it.
+	assert.match(prompt, new RegExp(`base\\s+${REVIEW.baseCommit}`));
+	assert.match(prompt, new RegExp(`reviewed\\s+${REVIEW.reviewedCommit}`));
+	assert.match(prompt, new RegExp(`git diff ${REVIEW.baseCommit}\\.\\.\\.${REVIEW.reviewedCommit}`));
+	assert.doesNotMatch(render(), /The change under review/, "a builder is reviewing nothing");
+});
+
+test("independence is stated, not only arranged: the snapshot and the diff are the only inputs (§8.4)", () => {
+	const prompt = reviewing();
+
+	assert.match(prompt, /only inputs/);
+	assert.match(prompt, /no builder transcript/i);
+	assert.match(prompt, /do not go looking for one/i);
+});
+
+test("the axis is told the worktree is read-only and that the guard is the controller's (§6.8)", () => {
+	const prompt = reviewing();
+
+	assert.match(prompt, /captured its HEAD and its clean/);
+	assert.match(prompt, /never retried/);
+	assert.match(prompt, /commit nothing/);
+});
+
+test("§8.4's verdict obligation is stated in full: severity, citation, and the agreement rule", () => {
+	const prompt = reviewing();
+
+	assert.match(prompt, /Every finding carries a citation/);
+	assert.match(prompt, /`blocking` or `advisory`/);
+	assert.match(prompt, /baseline code smell is never `blocking`/);
+	assert.match(prompt, /`reject` carries at least one `blocking` finding/);
+	assert.match(prompt, /union of both blocking sets and never merges or reranks/);
+});
+
+test("both axes carry the same obligation, and each names only its own entry skill (§8.4)", () => {
+	const standards = reviewing("review-standards");
+	const spec = reviewing("review-spec");
+
+	assert.equal(standards.split("\n")[0], "/skill:review-standards");
+	assert.equal(spec.split("\n")[0], "/skill:review-spec");
+	assert.doesNotMatch(standards, /review-spec/, "an axis is never told to run the other one");
+	assert.doesNotMatch(spec, /review-standards/);
+	for (const prompt of [standards, spec]) {
+		assert.match(prompt, /Every finding carries a citation/);
+	}
+});
+
+test("the verdict obligation lives only in the template, never inside a package skill (§8.4)", () => {
+	// §8.4 is explicit that this obligation is the prompt template's. The axis
+	// skills ship to humans and to other harnesses, and a skill body spelling out
+	// a JSON verdict schema would be a factory dependency inside a product the
+	// factory does not own — so the skills carry the *judgement* and the factory
+	// carries the shape it wants that judgement written in.
+	const schema = /"verdict"\s*:|"findings"\s*:|"severity"\s*:/;
+	const offenders = [];
+	for (const file of markdownUnder(join(REPO_ROOT, "skills"))) {
+		if (schema.test(readFileSync(file, "utf8"))) offenders.push(file);
+	}
+
+	assert.deepEqual(offenders, [], "a package skill states the factory's verdict schema");
 });
 
 test("the completion-protocol obligation lives only here, never inside a package skill (§6.4)", () => {

@@ -1,6 +1,11 @@
 import { readFileSync, statSync } from "node:fs";
 
-import { WORKER_WRITABLE_OUTCOMES, WORKER_WRITABLE_REASON_CLASSES } from "../domain/vocabulary.mjs";
+import {
+	FINDING_SEVERITIES,
+	REVIEW_VERDICTS,
+	WORKER_WRITABLE_OUTCOMES,
+	WORKER_WRITABLE_REASON_CLASSES,
+} from "../domain/vocabulary.mjs";
 
 /**
  * §6.6's attempt outbox: **schema-versioned JSON at a controller-designated
@@ -137,7 +142,93 @@ function shapeProblems(parsed) {
 	}
 
 	problems.push(...statusProblems(parsed));
+	problems.push(...verdictProblems(parsed));
 	problems.push(...referenceProblems(parsed));
+
+	return problems;
+}
+
+/**
+ * §8.4's verdict, held to its shape wherever one appears.
+ *
+ * **Whether a verdict is *owed* is role knowledge and lives in
+ * `pipeline/review.mjs`** — this module judges §6.6's schema and has never known
+ * which roles exist. What it does judge is that a verdict, once written, is one
+ * the union rule can act on: a word from the closed pair, a findings list, every
+ * finding carrying a severity from the closed pair and a **mandatory citation**,
+ * and the word agreeing with its own findings.
+ *
+ * The agreement check is the one that earns its place. §8.4 decides the phase
+ * mechanically — one or more `blocking` findings on either axis ⇒ reject — so a
+ * reviewer writing `reject` with nothing blocking, or `approve` over a blocking
+ * finding, has produced a record where its own word and the rule that reads it
+ * disagree. Picking a winner there would be the controller reranking an axis it
+ * was told never to rerank; refusing it as `invalid-result` sends the axis back
+ * through §8.10's retry row, which is the outcome that asks for another reading.
+ */
+function verdictProblems(parsed) {
+	const hasVerdict = parsed.verdict !== undefined && parsed.verdict !== null;
+	const hasFindings = parsed.findings !== undefined && parsed.findings !== null;
+	if (!hasVerdict && !hasFindings) return [];
+
+	const problems = [];
+	if (!REVIEW_VERDICTS.includes(parsed.verdict)) {
+		problems.push(
+			`verdict is ${JSON.stringify(parsed.verdict ?? null)}; §8.4's verdict is one of ${REVIEW_VERDICTS.join(", ")}`,
+		);
+	}
+
+	if (!Array.isArray(parsed.findings)) {
+		return [...problems, "a verdict carries a findings list, written out even when it is empty (§8.4)"];
+	}
+
+	for (const [index, finding] of parsed.findings.entries()) {
+		problems.push(...findingProblems(finding, index));
+	}
+	if (problems.length > 0) return problems;
+
+	const blocking = parsed.findings.filter((finding) => finding.severity === FINDING_SEVERITIES.blocking).length;
+	if (parsed.verdict === "reject" && blocking === 0) {
+		problems.push(
+			"the verdict is reject and no finding is blocking; §8.4 decides the phase from the blocking set, so this " +
+				"record's own word and the rule that reads it disagree (§8.4)",
+		);
+	}
+	if (parsed.verdict === "approve" && blocking > 0) {
+		problems.push(
+			`the verdict is approve over ${blocking} blocking finding(s); one or more on either axis is a rejection (§8.4)`,
+		);
+	}
+
+	return problems;
+}
+
+/**
+ * One finding: a severity from the closed pair, a **mandatory citation**, and
+ * the statement it supports.
+ *
+ * §8.4 makes the citation mandatory because a finding with nothing to cite is an
+ * opinion, and an opinion that cannot be checked is not reviewable — the same
+ * sentence both axis skills carry. It is free text rather than a typed reference
+ * because the two axes cite different things: a spec line on one, a documented
+ * standard on the other. What the controller can hold is that there **is** one.
+ */
+function findingProblems(finding, index) {
+	if (finding === null || typeof finding !== "object" || Array.isArray(finding)) {
+		return [`findings[${index}] is not a §8.4 finding object`];
+	}
+
+	const problems = [];
+	if (!Object.values(FINDING_SEVERITIES).includes(finding.severity)) {
+		problems.push(
+			`findings[${index}].severity is ${JSON.stringify(finding.severity ?? null)}; the set is exactly ` +
+				`${Object.values(FINDING_SEVERITIES).join(", ")} (§8.4)`,
+		);
+	}
+	for (const field of ["citation", "statement"]) {
+		if (typeof finding[field] === "string" && finding[field].trim().length > 0) continue;
+		problems.push(`findings[${index}] carries no ${field}; every finding carries a mandatory citation (§8.4)`);
+	}
 
 	return problems;
 }
@@ -249,6 +340,10 @@ function normalise(parsed) {
 		classification: typeof parsed.classification === "string" ? parsed.classification : null,
 		explanation: typeof parsed.explanation === "string" ? parsed.explanation : null,
 		verdict: typeof parsed.verdict === "string" ? parsed.verdict : null,
+		// The findings come through **as written and in the order written**: §8.4's
+		// union never merges or reranks, and a normaliser that sorted them here
+		// would rerank one axis before the union ever saw it.
+		findings: Object.freeze(Array.isArray(parsed.findings) ? parsed.findings.map(finding) : []),
 		// Worker-reported test evidence is **context only** (§6.6, §14.16): the
 		// controller's own rerun is the attestation boundary, so this rides as a
 		// string and is never parsed into a pass/fail anything acts on.
@@ -259,6 +354,11 @@ function normalise(parsed) {
 
 function reference(entry) {
 	return Object.freeze(Object.fromEntries(REFERENCE_KEYS.map((key) => [key, entry[key]])));
+}
+
+/** §8.4's three finding fields, and nothing a reviewer added beside them. */
+function finding(entry) {
+	return Object.freeze({ severity: entry.severity, citation: entry.citation, statement: entry.statement });
 }
 
 function answer(state, { record = null, problems = [], bytes = null }) {

@@ -11,7 +11,7 @@ import { createAttemptWorktree } from "../git/attempt.mjs";
 import { attemptBranch, attemptWorktreePath } from "../git/isolation.mjs";
 import { runStream } from "../state/events.mjs";
 import {
-	attemptIdOf,
+	allocateAttempt,
 	attemptOutboxPath,
 	launchedAttempt,
 	ordinalOf,
@@ -124,8 +124,13 @@ export function originatingAttempt(store, { run, ticket, attempt }) {
 
 /**
  * Plan the next attempt for the tier §8.10's row names. Pure: it reads no clock,
- * no git, and no store, so the same failure plans the same attempt on a re-entry
- * after a crash — which is what makes calling it twice harmless.
+ * no git, and no store, so the same failure plans the same tier, profile and base
+ * on a re-entry after a crash — which is what makes calling it twice harmless.
+ *
+ * **It does not name the attempt.** §2.1's ordinal is per ticket execution and
+ * §8.4's review mints into the same space, so "one past the attempt I am
+ * answering" is a guess that collides the moment a review has run. The id is
+ * allocated against the record in `openRetryAttempt`, which has the store.
  *
  * @param {object} context
  * @param {Readonly<object>} context.prior the originating attempt (`originatingAttempt`)
@@ -140,10 +145,11 @@ export function originatingAttempt(store, { run, ticket, attempt }) {
  *   active routing. **Required for fresh-retry and unread for repair**
  * @param {ReadonlyArray<string>} [context.labels] the ticket's labels, as the
  *   claim-time snapshot has them
- * @returns {Readonly<{ tier: string, attempt: string, ordinal: number, priorAttempt: string,
+ * @returns {Readonly<{ tier: string, priorAttempt: string,
  *   role: string, routingRole: string | null, profile: string, routed: boolean,
  *   from: Readonly<{ kind: string, of: string | null }>, inheritsWork: boolean,
- *   brief: Readonly<object> }>}
+ *   brief: Readonly<object> }>} **no attempt id**: §2.1's ordinal is allocated
+ *   against the record, which is `openRetryAttempt`'s to do — see `allocateAttempt`
  * @throws {FactoryPipelineError} `retry-unplannable`
  * @throws {FactoryWorkerError} `routing-ambiguous` — §11.5's dispatch is the
  *   worker module's, and a fresh-retry is the one tier that asks it
@@ -157,11 +163,9 @@ export function planRetry({ prior, failure, priorResult = null, routing = null, 
 		});
 	}
 
-	const next = nextAttemptId(prior);
+	requirePriorAttempt(prior);
 	const shared = {
 		tier,
-		attempt: next.attempt,
-		ordinal: next.ordinal,
 		priorAttempt: prior.attempt,
 		routingRole: null,
 		brief: repairBrief({ tier, prior, priorResult, ...failure }),
@@ -238,7 +242,8 @@ export function planRetry({ prior, failure, priorResult = null, routing = null, 
  * @param {object} context.workerConfig §6.8's worker config environment
  * @param {string} context.actor
  * @param {number} context.at
- * @returns {Promise<Readonly<object>>} the plan with the git facts on it
+ * @returns {Promise<Readonly<object>>} the plan with its allocated attempt id and
+ *   the git facts on it
  * @throws {FactoryPipelineError} `retry-unplannable`
  */
 export async function openRetryAttempt(
@@ -246,9 +251,18 @@ export async function openRetryAttempt(
 	clone,
 	{ hold, plan, run, ticket, base = null, workerConfig, actor, at },
 ) {
+	// §2.1's ordinal, allocated against the record. The purpose is the tier and
+	// the attempt it answers: a re-entry after a crash finds the record it already
+	// wrote and comes back with the same id, and a first pass takes the next free
+	// ordinal — which is one past whatever a review fan-out has already minted.
+	const allocated = allocateAttempt(store, {
+		run,
+		ticket,
+		mintedFor: (payload) => payload.tier === plan.tier && payload.prior_attempt === plan.priorAttempt,
+	});
 	// A retry always re-enters `implement`: both tiers produce a builder attempt,
 	// and the phase the failure came from is evidence rather than a destination.
-	const identity = requireAttemptIdentity({ run, ticket, phase: PHASE_IMPLEMENT, attempt: plan.attempt });
+	const identity = requireAttemptIdentity({ run, ticket, phase: PHASE_IMPLEMENT, attempt: allocated.attempt });
 	const baseCommit = await retryBaseCommit(clone, { plan, base });
 
 	mintRetryAttempt(store, { hold, identity, plan, baseCommit, at });
@@ -265,7 +279,7 @@ export async function openRetryAttempt(
 		at,
 	});
 
-	return Object.freeze({ ...plan, ...created });
+	return Object.freeze({ ...plan, attempt: identity.attempt, ordinal: allocated.ordinal, ...created });
 }
 
 /**
@@ -342,21 +356,20 @@ async function retryBaseCommit(clone, { plan, base }) {
 }
 
 /**
- * The next attempt's id: **one ordinal past the attempt being answered**, and
- * derived wholly from that attempt's id — run, ticket and ordinal all read off
- * the one string, so no two of them can disagree.
+ * The prior attempt, held to §2.1's shape while the plan is still pure.
+ *
+ * The plan no longer derives an id from it, but it still *names* it — as the
+ * allocation's purpose, as the repair base's branch, and in the brief the next
+ * worker reads — so a malformed id is refused here rather than at the moment a
+ * store lookup silently matches nothing.
  */
-function nextAttemptId(prior) {
-	const run = runOf(prior?.attempt);
-	const ticket = ticketOf(prior?.attempt);
-	const ordinal = ordinalOf(prior?.attempt);
-	if (run === null || ticket === null || ordinal === null) {
+function requirePriorAttempt(prior) {
+	const parts = [runOf(prior?.attempt), ticketOf(prior?.attempt), ordinalOf(prior?.attempt)];
+	if (parts.some((part) => part === null)) {
 		throw unplannable("prior", `${JSON.stringify(prior?.attempt ?? null)} is not a §2.1 attempt id.`, {
 			found: prior?.attempt ?? null,
 		});
 	}
-
-	return { ordinal: ordinal + 1, attempt: attemptIdOf({ run, ticket, ordinal: ordinal + 1 }) };
 }
 
 /**

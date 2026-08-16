@@ -1,4 +1,11 @@
-import { PHASE_IMPLEMENT, PHASE_INTEGRATE, PHASE_REVIEW, RETRY_TIERS, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
+import {
+	PHASE_IMPLEMENT,
+	PHASE_INTEGRATE,
+	PHASE_RESULTS,
+	PHASE_REVIEW,
+	RETRY_TIERS,
+	STAGE_ACTIONS,
+} from "../domain/vocabulary.mjs";
 import { canonicalJson, digest, runStream } from "../state/events.mjs";
 import { dispositionOf } from "./dispositions.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
@@ -128,10 +135,10 @@ export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome
  * **A row this package does not yet wire raises rather than falling through.**
  * The plausible fallthrough is "carry on to the next phase", which is precisely
  * how an unbuilt repair tier turns a failing attempt into a publication. What is
- * wired here is §8.1's first three phases, §8.5's two repair tiers and §8.9's
- * dispositions; the budgets (#111), the review fan-out (#112) and integration
- * (#113) each replace one refusal with behaviour, and the stages already
- * recorded stay on the chain either way.
+ * wired here is §8.1's first four phases, §8.5's two repair tiers and §8.9's
+ * dispositions; the budgets (#111) and integration (#113) each replace one
+ * refusal with behaviour, and the stages already recorded stay on the chain
+ * either way.
  *
  * @param {object} store an open store
  * @param {object} context
@@ -141,7 +148,9 @@ export function resolveStage(store, { hold, run, ticket, phase, attempt, outcome
  * @param {string} context.attempt the attempt this walk is running
  * @param {Record<string, (where: object) => Promise<{ outcome: string, detail?: object | null }>>} context.phases
  *   the phase executors: `implement` is agent-borne and the caller's (§8.1),
- *   `harvest` and `verify` are `phases.mjs`'s controller phases
+ *   `harvest` and `verify` are `phases.mjs`'s controller phases, and `review` is
+ *   `review.mjs`'s fan-out — which is agent-borne too, but over **its own**
+ *   attempts rather than the one the walk is running (§8.4)
  * @param {((request: object) => Promise<{ attempt: string }>) | null} [context.nextAttempt]
  *   §8.5's tier seam: given the tier, the budget it consumes and the failure's
  *   own evidence, it mints and launches the next attempt and answers with its
@@ -158,10 +167,14 @@ export async function walkStages(store, { hold, run, ticket, attempt, phases, ne
 	let phase = PHASE_IMPLEMENT;
 
 	for (;;) {
-		const answer = await answerFor(store, { run, ticket, phase, attempt, phases });
-
 		let resolved;
 		try {
+			// The executor is inside the try because §8.4's review resolves the
+			// stages of its own axis attempts before answering for the phase: a
+			// conflict met in there is the same race met here, and it is §8.10's
+			// disposition either way rather than an exception in one case and a
+			// filing in the other.
+			const answer = await answerFor(store, { run, ticket, phase, attempt, phases });
 			resolved = resolveStage(store, {
 				hold,
 				run,
@@ -318,12 +331,25 @@ async function answerFor(store, { run, ticket, phase, attempt, phases }) {
  */
 const UNBUILT = Object.freeze({
 	[STAGE_ACTIONS.retry]: { missing: "the budgets and the circuit breaker (#111)", spec: "§8.6" },
-	[STAGE_ACTIONS.verdict]: { missing: "review fan-out and the mutation attestation (#112)", spec: "§8.4" },
-	[PHASE_REVIEW]: { missing: "review fan-out and the mutation attestation (#112)", spec: "§8.4" },
 	[PHASE_INTEGRATE]: { missing: "integration and publication — the first pull request (#113)", spec: "§7.5" },
 });
 
 function unbuilt({ row, phase }) {
+	// §8.4's `verdict` is not on the list and never will be: it is taken inside
+	// the review fan-out, under the axis attempt that produced it, and the walk
+	// only ever resolves the phase's own result under the builder attempt. Reaching
+	// it here means a review executor answered with an attempt outcome instead of a
+	// phase result, which is a composition defect rather than a slice nobody wrote.
+	if (row.action === STAGE_ACTIONS.verdict) {
+		return new FactoryPipelineError(
+			"phase-unwired",
+			`§8.10 routes ${phase} × ${row.outcome} to ${row.action}, which pipeline/review.mjs takes under the axis ` +
+				`attempt that wrote it. The walk resolves the phase's own result — ${PHASE_RESULTS[PHASE_REVIEW].join(", ")} ` +
+				`— so an executor answering with a reviewer's attempt outcome has handed it the wrong level (§8.8).`,
+			{ at: "action", phase, outcome: row.outcome, action: row.action },
+		);
+	}
+
 	const waiting = UNBUILT[row.action] ?? { missing: null, spec: "§8.10" };
 	return new FactoryPipelineError(
 		"not-yet-implemented",
@@ -385,8 +411,16 @@ function stageRecords(store, { run, ticket }) {
 		.filter((record) => record.ticket === ticket);
 }
 
-/** The result committed under one semantic key, or `null` for a stage nobody resolved. */
-function recordedStage(store, { run, ticket, phase, attempt }) {
+/**
+ * The result committed under one semantic key, or `null` for a stage nobody
+ * resolved.
+ *
+ * Exported because §8.4's fan-out resumes the same way the walk does — a review
+ * axis whose stage is already resolved is not re-run — and re-deriving it from
+ * `outcomeChain` would lose the detail, which is where the verdict and its
+ * findings live.
+ */
+export function recordedStage(store, { run, ticket, phase, attempt }) {
 	return (
 		stageRecords(store, { run, ticket }).find(
 			(record) => record.phase === phase && record.attempt === attempt,

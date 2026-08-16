@@ -166,8 +166,104 @@ test("an outbox over the ceiling is invalid rather than read into the controller
 });
 
 test("worker-reported test evidence rides as text and is never parsed into a verdict", (t) => {
-	const read = readOutbox(outbox(t, completed({ test_evidence: "12 passed", verdict: "approve" })), IDENTITY);
+	const read = readOutbox(
+		outbox(t, completed({ test_evidence: "12 passed", verdict: "approve", findings: [] })),
+		IDENTITY,
+	);
 
 	assert.equal(read.record.test_evidence, "12 passed");
 	assert.equal(read.record.verdict, "approve", "§8.4's reviewer verdict is a field, not an interpretation");
+});
+
+// ── §8.4's typed verdict, judged as shape and never as role ──────────────────
+
+/**
+ * Whether a verdict is *owed* is role knowledge and lives in
+ * `pipeline/review.mjs`; what this module judges is that a verdict, once
+ * written, is one §8.4's union rule can act on.
+ */
+function reviewed(overrides = {}) {
+	return completed({ commits: [], verdict: "approve", findings: [], ...overrides });
+}
+
+const BLOCKING = Object.freeze({
+	severity: "blocking",
+	citation: "AGENTS.md: never a per-command allowlist",
+	statement: "the allow list names Bash(uv run pytest)",
+});
+
+test("a well-formed verdict and its findings survive normalisation in the order written (§8.4)", (t) => {
+	const advisory = { severity: "advisory", citation: "Refactoring ch.3: Middle Man", statement: "this wrapper delegates" };
+	const read = readOutbox(outbox(t, reviewed({ verdict: "reject", findings: [advisory, BLOCKING] })), IDENTITY);
+
+	assert.equal(read.state, "valid");
+	assert.deepEqual(
+		read.record.findings,
+		[advisory, BLOCKING],
+		"§8.4's union never merges or reranks, so nothing sorts them on the way in",
+	);
+});
+
+test("a verdict outside the closed pair is invalid, never coerced (§8.4)", (t) => {
+	const read = readOutbox(outbox(t, reviewed({ verdict: "approve-with-nits" })), IDENTITY);
+
+	assert.equal(read.state, "invalid");
+	assert.ok(read.problems.some((problem) => /verdict is "approve-with-nits"/.test(problem)));
+});
+
+test("a verdict with no findings list is invalid: the empty list is written out (§8.4)", (t) => {
+	const withoutList = reviewed();
+	delete withoutList.findings;
+
+	const read = readOutbox(outbox(t, withoutList), IDENTITY);
+
+	assert.equal(read.state, "invalid");
+	assert.ok(read.problems.some((problem) => /findings list/.test(problem)));
+});
+
+test("a finding with nothing to cite is an opinion, and an opinion is not reviewable (§8.4)", (t) => {
+	const uncited = { severity: "advisory", statement: "I would have done it differently" };
+	const read = readOutbox(outbox(t, reviewed({ findings: [uncited] })), IDENTITY);
+
+	assert.equal(read.state, "invalid");
+	assert.ok(read.problems.some((problem) => /mandatory citation/.test(problem)));
+});
+
+test("a severity outside blocking|advisory is invalid: a third weight has no union rule (§8.4)", (t) => {
+	const read = readOutbox(outbox(t, reviewed({ findings: [{ ...BLOCKING, severity: "nit" }] })), IDENTITY);
+
+	assert.equal(read.state, "invalid");
+	assert.ok(read.problems.some((problem) => /severity is "nit"/.test(problem)));
+});
+
+test("a reject with nothing blocking is invalid: its own word and the rule that reads it disagree (§8.4)", (t) => {
+	const read = readOutbox(
+		outbox(t, reviewed({ verdict: "reject", findings: [{ ...BLOCKING, severity: "advisory" }] })),
+		IDENTITY,
+	);
+
+	assert.equal(read.state, "invalid");
+	assert.ok(read.problems.some((problem) => /blocking set/.test(problem)));
+});
+
+test("an approve over a blocking finding is invalid for the same reason (§8.4)", (t) => {
+	const read = readOutbox(outbox(t, reviewed({ verdict: "approve", findings: [BLOCKING] })), IDENTITY);
+
+	assert.equal(read.state, "invalid");
+	assert.ok(read.problems.some((problem) => /is a rejection/.test(problem)));
+});
+
+test("findings with no verdict are invalid too: a findings list is a verdict's, not a status's (§8.4)", (t) => {
+	const read = readOutbox(outbox(t, completed({ findings: [BLOCKING] })), IDENTITY);
+
+	assert.equal(read.state, "invalid");
+	assert.ok(read.problems.some((problem) => /verdict is null/.test(problem)));
+});
+
+test("a builder's record carries neither, and is valid without them (§6.6)", (t) => {
+	const read = readOutbox(outbox(t, completed()), IDENTITY);
+
+	assert.equal(read.state, "valid");
+	assert.equal(read.record.verdict, null);
+	assert.deepEqual(read.record.findings, []);
 });
