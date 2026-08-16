@@ -220,7 +220,18 @@ function requireProfileName(value, profiles, at, configPath) {
 	return name;
 }
 
-function profilesReachedBy(roles, rules) {
+/**
+ * Every profile one routing can dispatch — its three roles plus every rule's.
+ *
+ * Exported because §11.6's reachability rules and §9.1's capacity plan ask the
+ * same question of a routing: the loader asks it of all of them to size the
+ * classes, the plan asks it of the active one to arbitrate over them.
+ *
+ * @param {object} roles the validated `roles` block
+ * @param {ReadonlyArray<object>} rules the validated `rules` list
+ * @returns {Set<string>}
+ */
+export function profilesReachedBy(roles, rules) {
 	const reached = new Set([roles.implement, roles.freshRetry, ...roles.review]);
 	for (const rule of rules) {
 		for (const profile of Array.isArray(rule.profile) ? rule.profile : [rule.profile]) {

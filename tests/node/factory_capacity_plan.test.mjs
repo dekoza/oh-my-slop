@@ -1,0 +1,225 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+	capacityPlan,
+	implementResourceClass,
+	MAX_PANES_PER_TICKET,
+} from "../../factory/lib/capacity/plan.mjs";
+import { CONCURRENCY_KEYS } from "../../factory/lib/config/concurrency.mjs";
+import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
+import { cloneValidConfig, makeRepo } from "./helpers/factory-repo.mjs";
+
+/**
+ * §9.1's capacity model: three dimensions, two declared. The plan is what turns
+ * the two declared numbers plus the active routing into the pool the scheduler
+ * arbitrates over — and into the honest **effective** concurrency §9.2 says the
+ * declared ceiling alone cannot state.
+ */
+
+/** A validated config, loaded the way the binary loads it. */
+function loaded(t, mutate = () => {}) {
+	const config = cloneValidConfig();
+	mutate(config);
+	return loadFactoryConfig({ cwd: makeRepo(t, { config }) });
+}
+
+function planOf(t, mutate) {
+	const { config, activeRouting } = loaded(t, mutate);
+	return capacityPlan({ concurrency: config.concurrency, profiles: config.profiles, activeRouting });
+}
+
+// ── Classes are derived, never declared per profile (§9.1) ───────────────────
+
+test("a pi profile's class is the provider segment of its model id", (t) => {
+	const plan = planOf(t, (config) => {
+		config.profiles.builder.model = "local/thinkingcap-qwen3.6-27b";
+	});
+
+	assert.deepEqual(
+		plan.classes.map((entry) => entry.class),
+		["local"],
+	);
+});
+
+test("two pi profiles on one provider share a single pool, because they share one GPU", (t) => {
+	const plan = planOf(t, (config) => {
+		config.profiles.builder.model = "local/qwen3";
+		config.profiles.reviewer = { kind: "pi", model: "local/mistral" };
+		config.routing.roles.review = ["reviewer", "reviewer"];
+	});
+
+	assert.deepEqual(plan.classes, [{ class: "local", size: 1, profiles: ["builder", "reviewer"] }]);
+});
+
+test("every claude profile shares the constant claude-code class", (t) => {
+	const plan = planOf(t, (config) => {
+		config.profiles.reviewer = { kind: "claude", model: "opus" };
+		config.profiles.second = { kind: "claude", model: "fable" };
+		config.routing.roles.review = ["reviewer", "second"];
+		config.concurrency.resources["claude-code"] = 3;
+	});
+
+	assert.deepEqual(plan.classes, [
+		{ class: "claude-code", size: 3, profiles: ["reviewer", "second"] },
+		{ class: "local", size: 1, profiles: ["builder"] },
+	]);
+});
+
+test("a class only a dormant routing set reaches is not in the plan", (t) => {
+	const plan = planOf(t, (config) => {
+		config.profiles.cloud = { kind: "claude", model: "opus" };
+		config.routing.sets = {
+			"post-subscription": {
+				roles: { implement: "cloud", freshRetry: "cloud", review: ["cloud", "cloud"] },
+				rules: [],
+			},
+		};
+		config.concurrency.resources["claude-code"] = 2;
+	});
+
+	assert.deepEqual(
+		plan.classes.map((entry) => entry.class),
+		["local"],
+		"the active routing reaches only local; the dormant set's class is sized but not in play",
+	);
+});
+
+// ── Effective concurrency (§9.2, §15 case 19) ────────────────────────────────
+
+test("effective concurrency is the declared ceiling when the pools can carry it", (t) => {
+	const { config, activeRouting } = loaded(t, (config) => {
+		config.profiles.cloud = { kind: "claude", model: "opus" };
+		config.routing.roles = { implement: "cloud", freshRetry: "cloud", review: ["cloud", "cloud"] };
+		config.concurrency.resources = { "claude-code": 4 };
+	});
+
+	// The ceiling is raised **after** the load, because §9.3 enforces it in the
+	// loader only: there is no override seam to reach for, and the scheduler's
+	// inputs are ordinary numbers.
+	const plan = capacityPlan({
+		concurrency: { ...config.concurrency, maxTicketExecutions: 2 },
+		profiles: config.profiles,
+		activeRouting,
+	});
+
+	assert.equal(plan.declaredCeiling, 2);
+	assert.equal(plan.effectiveConcurrency, 2);
+});
+
+test("effective concurrency is bounded by the implement pools, not by review's idle slots", (t) => {
+	const { config, activeRouting } = loaded(t, (config) => {
+		config.profiles.cloud = { kind: "claude", model: "opus" };
+		config.routing.roles.review = ["cloud", "cloud"];
+		config.concurrency.resources["claude-code"] = 8;
+	});
+
+	const plan = capacityPlan({
+		concurrency: { ...config.concurrency, maxTicketExecutions: 4 },
+		profiles: config.profiles,
+		activeRouting,
+	});
+
+	assert.equal(plan.resourceSlots, 9, "nine slots are reachable in total");
+	assert.equal(plan.implementSlots, 1, "but a ticket starts on the one that implements it");
+	assert.equal(
+		plan.effectiveConcurrency,
+		1,
+		"§9.4 holds an implement slot before the claim, so the cloud's parallelism is not this run's (§9.7)",
+	);
+});
+
+test("routing that resolves entirely to a size-1 class reports effective concurrency 1 whatever the ceiling says", (t) => {
+	const { config, activeRouting } = loaded(t);
+
+	const plan = capacityPlan({
+		concurrency: { ...config.concurrency, maxTicketExecutions: 4 },
+		profiles: config.profiles,
+		activeRouting,
+	});
+
+	assert.equal(plan.declaredCeiling, 4, "the comfortable lie is still reported as declared");
+	assert.equal(plan.effectiveConcurrency, 1, "and the truth beside it (§9.2)");
+	assert.equal(plan.resourceSlots, 1);
+});
+
+// ── The pane bound is derived, never configured (§9.1) ───────────────────────
+
+test("the pane bound is maxTicketExecutions × MAX_PANES_PER_TICKET", (t) => {
+	const { config, activeRouting } = loaded(t);
+
+	const plan = capacityPlan({
+		concurrency: { ...config.concurrency, maxTicketExecutions: 3 },
+		profiles: config.profiles,
+		activeRouting,
+	});
+
+	assert.equal(MAX_PANES_PER_TICKET, 2, "§8.4's review fan-out owns this number");
+	assert.equal(plan.paneBound, 6);
+});
+
+test("no configuration key anywhere bounds panes", (t) => {
+	const config = cloneValidConfig();
+	config.concurrency.maxWorkerPanes = 2;
+
+	assert.throws(
+		() => loadFactoryConfig({ cwd: makeRepo(t, { config }) }),
+		(error) => error.reason === "unknown-key" && error.details.at === "concurrency.maxWorkerPanes",
+	);
+
+	assert.deepEqual(
+		CONCURRENCY_KEYS,
+		["maxTicketExecutions", "resources"],
+		"a pane knob would deadlock the review phase at 2, 2 (§9.1)",
+	);
+});
+
+// ── The class an implement attempt draws from (§9.4, §11.5) ──────────────────
+
+test("the implement class comes from the role's profile when no rule matches the ticket", (t) => {
+	const { config, activeRouting } = loaded(t);
+
+	assert.equal(
+		implementResourceClass({ profiles: config.profiles, activeRouting }, { labels: ["workflow:implement"] }),
+		"local",
+	);
+});
+
+test("a matching rule routes the ticket to its own profile's class", (t) => {
+	const { config, activeRouting } = loaded(t, (config) => {
+		config.profiles.cloud = { kind: "claude", model: "opus" };
+		config.routing.rules = [{ labelsAny: ["area:ui"], role: "implement", profile: "cloud" }];
+		config.concurrency.resources["claude-code"] = 1;
+	});
+
+	assert.equal(
+		implementResourceClass({ profiles: config.profiles, activeRouting }, { labels: ["area:ui"] }),
+		"claude-code",
+	);
+});
+
+test("a ticket matching two implement rules is refused before any work, naming both rules", (t) => {
+	const { config, activeRouting } = loaded(t, (config) => {
+		config.profiles.cloud = { kind: "claude", model: "opus" };
+		config.routing.rules = [
+			{ labelsAny: ["area:ui"], role: "implement", profile: "cloud" },
+			{ labelsAny: ["area:api"], role: "implement", profile: "builder" },
+		];
+		config.concurrency.resources["claude-code"] = 1;
+	});
+
+	assert.throws(
+		() =>
+			implementResourceClass(
+				{ profiles: config.profiles, activeRouting },
+				{ ticket: 42, labels: ["area:ui", "area:api"] },
+			),
+		(error) => {
+			assert.equal(error.reason, "routing-ambiguous");
+			assert.equal(error.details.role, "implement");
+			assert.equal(error.details.ticket, 42);
+			assert.deepEqual(error.details.profiles, ["builder", "cloud"]);
+			return true;
+		},
+	);
+});

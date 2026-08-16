@@ -51,6 +51,30 @@ export function resourceClassOf(profile) {
 	return profile.kind === "claude" ? CLAUDE_RESOURCE_CLASS : profile.model.split("/")[0];
 }
 
+/**
+ * Which classes a set of profiles puts in play, and through which profiles.
+ *
+ * The loader asks it of every declared routing to answer §11.6's reachability
+ * rules; §9.1's capacity plan asks it of the active one to size the pools. One
+ * implementation, because a class the loader sized and the scheduler did not
+ * arbitrate over — or the reverse — is exactly the drift both checks exist to
+ * prevent.
+ *
+ * @param {Record<string, object>} profiles the validated profile table
+ * @param {Iterable<string>} profileNames
+ * @returns {Map<string, Set<string>>} class → the profiles that put it in play
+ */
+export function classesReachedBy(profiles, profileNames) {
+	const classes = new Map();
+	for (const name of profileNames) {
+		const className = resourceClassOf(profiles[name]);
+		if (!classes.has(className)) classes.set(className, new Set());
+		classes.get(className).add(name);
+	}
+
+	return classes;
+}
+
 /** @returns {Readonly<Record<string, object>>} */
 export function validateProfiles(profiles, configPath) {
 	const names = Object.keys(profiles);

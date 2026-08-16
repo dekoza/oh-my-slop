@@ -489,6 +489,19 @@ function readSurface(db) {
 				.all()
 				.map(decodeRun),
 		),
+		/**
+		 * §10.2's "the current and recent runs", newest first. The limit is the
+		 * caller's and has no default here, because `status` shows a handful and a
+		 * monitor's index shows more — a default would be that policy written down
+		 * twice. Ordering is the projection's own `started_at`, a recorded fact
+		 * rather than a clock read at display time (§14.37).
+		 */
+		readRecentRuns: rendering("run", ({ limit }) =>
+			db
+				.prepare("SELECT * FROM run ORDER BY started_at DESC, run_id DESC LIMIT ?")
+				.all(limit)
+				.map(decodeRun),
+		),
 		readTicketExecutions: rendering("ticket_execution", (runId) =>
 			db.prepare("SELECT * FROM ticket_execution WHERE run_id = ? ORDER BY ticket").all(runId),
 		),

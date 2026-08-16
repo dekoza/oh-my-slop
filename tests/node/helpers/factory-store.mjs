@@ -3,7 +3,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { openCapacity } from "../../../factory/lib/capacity/slots.mjs";
+import { holdControllerLease } from "../../../factory/lib/controller/lease-guard.mjs";
 import { newUlid } from "../../../factory/lib/identity/ulid.mjs";
+import { openLeases } from "../../../factory/lib/state/leases.mjs";
 import {
 	canonicalJson,
 	digest,
@@ -276,6 +279,72 @@ export function manualTimers() {
 		},
 		intervals: () => scheduled.filter((handle) => !handle.cleared).map((handle) => handle.ms),
 	};
+}
+
+/**
+ * §9.1's capacity plan, without going through a config file — so a suite can
+ * instantiate the pools at any size. There is no override seam to reach for:
+ * §9.3's ceiling is enforced in the loader, and the plan is ordinary numbers.
+ *
+ * @param {{ ticketSlots?: number, classes?: Array<{ class: string, size: number, profiles: string[] }> }} [shape]
+ */
+export function capacityPlanOf({
+	ticketSlots = 1,
+	classes = [{ class: "local", size: 1, profiles: ["builder"] }],
+	implementClasses = null,
+} = {}) {
+	const total = (names) =>
+		classes.filter((entry) => names === null || names.includes(entry.class)).reduce((sum, entry) => sum + entry.size, 0);
+	const implementSlots = total(implementClasses);
+
+	return Object.freeze({
+		declaredCeiling: ticketSlots,
+		ticketSlots,
+		classes: Object.freeze(classes),
+		resourceSlots: total(null),
+		implementSlots,
+		effectiveConcurrency: Math.min(ticketSlots, implementSlots),
+		paneBound: ticketSlots * 2,
+	});
+}
+
+/**
+ * A store with a run open, a controller holding its lease, and §9.4's pools over
+ * both — the fixture every capacity and scheduler suite starts from.
+ *
+ * @param {import("node:test").TestContext} t
+ * @param {{ plan?: object, now?: () => number }} [options]
+ */
+export async function openCapacityPool(t, { plan = capacityPlanOf(), now = () => FIXED_NOW } = {}) {
+	const store = await openTestStore(t);
+	const timers = manualTimers();
+	const leases = openLeases(store, { now });
+	const hold = holdControllerLease({ store, leases, timers: timers.api });
+	const run = runStarted().run;
+
+	store.append(runStarted(run));
+	hold.recordStartupReconcile();
+	hold.adopt(run);
+
+	return { store, run, hold, leases, capacity: openCapacity(store, { leases, plan, run, hold, now }) };
+}
+
+/**
+ * A capacity row as a **previous** controller left it: fenced to a generation
+ * below the live hold's, which is what makes it superseded (§9.4).
+ *
+ * It is written through the store's transaction surface rather than its read
+ * handle, because that is the surface a writer has.
+ */
+export function leaveSupersededSlot(store, hold, { slot, ticket, run = "01JRUNDEAD000000000000000", pool = "ticket", at = FIXED_NOW - 60_000 }) {
+	return store.transaction(({ db }) =>
+		db
+			.prepare(
+				`INSERT INTO lease(name, holder_token, fencing_generation, expires_at, renewed_at, identity)
+				 VALUES (?, ?, ?, NULL, ?, ?)`,
+			)
+			.run(slot, `dead-${slot}`, hold.fencingGeneration - 1, at, JSON.stringify({ run, ticket, pool })),
+	);
 }
 
 /**

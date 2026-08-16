@@ -1,9 +1,10 @@
-import { PARENT_FLAG } from "../controller/scope.mjs";
 import { FOREGROUND_FLAG } from "../controller/launch.mjs";
+import { PARENT_FLAG } from "../controller/scope.mjs";
 import { NEW_RUN_FLAG, runStart } from "../controller/start.mjs";
 import { runStop } from "../controller/stop.mjs";
 import { runDoctor } from "../doctor/verb.mjs";
 import { runReconcile } from "../reconcile/verb.mjs";
+import { runStatus } from "../status/verb.mjs";
 
 /**
  * The §10.2 verb set. Every operator verb lives in this one deterministic
@@ -43,14 +44,14 @@ export const VERB_TABLE = Object.freeze({
 	},
 	status: {
 		requiresConfig: true,
+		handler: runStatus,
 		summary: "report the current and recent runs",
-		missing: "the durable state projections it reads (#90)",
 		spec: "§4.4, §10.2",
 	},
 	doctor: {
 		requiresConfig: true,
 		handler: runDoctor,
-		summary: "diagnose the factory without mutating it",
+		summary: "diagnose the factory without mutating it, and classify a scope's members",
 		// §10.5's `--baseline` executes the declared checks in a throwaway
 		// worktree. It is accepted here and refused with the ticket that owes it,
 		// because an operator reading §10.5 will type it — and "unknown flag"
@@ -60,8 +61,13 @@ export const VERB_TABLE = Object.freeze({
 				missing: "the check runner and the throwaway-worktree baseline (#104)",
 				spec: "§8.3, §10.5",
 			},
+			// The same discriminator `start` uses, for the same reason: `<ticket>`
+			// and `<parent>` are both issue numbers, and one flag tells them apart.
+			// `doctor` reads what `start` would claim, so the two must be asked the
+			// question in exactly one way.
+			[PARENT_FLAG]: { spec: "§3.1" },
 		},
-		spec: "§10.5",
+		spec: "§3.1, §3.2, §10.5",
 	},
 	reconcile: {
 		requiresConfig: true,

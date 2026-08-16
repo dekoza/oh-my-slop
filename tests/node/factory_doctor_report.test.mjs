@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { doctorReport } from "../../factory/lib/doctor/report.mjs";
 import { requestEffect } from "../../factory/lib/effects/records.mjs";
 import { newUlid } from "../../factory/lib/identity/ulid.mjs";
@@ -56,6 +57,9 @@ async function diagnosable(t, { effects = true } = {}) {
 
 	const root = makePackage(t);
 	const reader = await openReader(t, { repoRoot, agentDir });
+	// §9.7's capacity section is computed from the policy this invocation loaded,
+	// so a diagnosis carries the config the way every other verb does.
+	const { config, activeRouting } = loadFactoryConfig({ cwd: repoRoot });
 
 	return {
 		repoRoot,
@@ -65,6 +69,8 @@ async function diagnosable(t, { effects = true } = {}) {
 		context: {
 			repoRoot,
 			agentDir: { path: agentDir, source: "caller" },
+			config,
+			activeRouting,
 			executable: join(root, "factory", "bin", "factory.mjs"),
 			env: { PATH: onPath(t, join(root, "factory", "bin", "factory.mjs")) },
 			at: AT,
@@ -214,9 +220,12 @@ test("a quarantined journal stays loud in doctor, however many times it restarts
 
 	const root = makePackage(t);
 	const reader = await openReader(t, { repoRoot, agentDir });
+	const { config, activeRouting } = loadFactoryConfig({ cwd: repoRoot });
 	const report = await doctorReport(reader, {
 		repoRoot,
 		agentDir: { path: agentDir, source: "caller" },
+		config,
+		activeRouting,
 		executable: join(root, "factory", "bin", "factory.mjs"),
 		env: { PATH: onPath(t, join(root, "factory", "bin", "factory.mjs")) },
 		at: AT,
@@ -232,10 +241,13 @@ test("a repository the factory has never run in still gets an answer", async (t)
 	const repoRoot = makeRepo(t);
 	const agentDir = makeAgentDir(t);
 	const root = makePackage(t);
+	const { config, activeRouting } = loadFactoryConfig({ cwd: repoRoot });
 
 	const report = await doctorReport(null, {
 		repoRoot,
 		agentDir: { path: agentDir, source: "caller" },
+		config,
+		activeRouting,
 		executable: join(root, "factory", "bin", "factory.mjs"),
 		env: { PATH: onPath(t, join(root, "factory", "bin", "factory.mjs")) },
 		at: AT,
@@ -243,6 +255,8 @@ test("a repository the factory has never run in still gets an answer", async (t)
 
 	assert.equal(report.store.present, false);
 	assert.equal(report.reconcile, null);
+	assert.equal(report.capacity.effective_concurrency, 1, "the pools are readable without any run history");
+	assert.deepEqual(report.capacity.holders, []);
 	assert.equal(report.package.ok, true, "the package is diagnosable without any run history");
 	assert.equal(report.ok, true);
 });

@@ -154,6 +154,10 @@ async function run(parsed, verb, loaded, context) {
 		herdr: context.herdr,
 		signal: context.signal,
 		runHerdr: context.runHerdr,
+		// §5.1's read client, injectable for the same reason `probes` and `herdr`
+		// are: a suite drives real tracker answer shapes without a Gitea, and the
+		// default is built from the config the verb was handed.
+		tracker: context.tracker,
 		expect: loaded.config.package?.expect ?? null,
 		args: parsed.args,
 		flags: new Set(parsed.flags),

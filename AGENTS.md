@@ -93,13 +93,37 @@ is the authority; cite the section a change answers to.
   a policy the loader fills in is a policy nobody can read on disk.
 - Policy that is not configuration lives in code, and each piece is read from exactly
   one place: the label vocabulary in `factory/lib/tracker/labels.mjs`;
-  `MAX_SUPPORTED_TICKET_CONCURRENCY` in `factory/lib/config/concurrency.mjs`; the
+  `MAX_SUPPORTED_TICKET_CONCURRENCY` in `factory/lib/config/concurrency.mjs`;
+  `MAX_PANES_PER_TICKET` in `factory/lib/capacity/plan.mjs`; the
   closed domain enums — phases, run lifecycles, end reasons, dispositions, attempt
   outcomes — in `factory/lib/domain/vocabulary.mjs`; and the event-kind enumeration in
   `factory/lib/state/events.mjs`. A vocabulary that grows a second home has already
   started to drift. The scheduler stays capacity-parametric and never reads the
   ceiling — that is what makes raising it a one-line change, and
   `tests/node/factory_config_semantics.test.mjs` guards it.
+- **Capacity is arbitrated by named rows, never by a counter.** `capacity:ticket:<i>`
+  and `capacity:model:<class>:<i>` are compare-and-swap holds on the lease primitive,
+  so a slot names its holder and is probeable; a number is not. The resource class is
+  what arbitrates — derived from the profile (`resourceClassOf`), never declared — and
+  the pane bound is derived from the ceiling, so **no pane knob exists in config**.
+  Slots carry **no TTL**: a row records the generation of the **controller lease** that
+  took it — never one minted for the row, which a stale-but-live controller would stamp
+  above its successor's — and a superseded row is settled by probing its holder
+  (`reclaim`, called once per run; the probe itself ships with the slice that can ask a
+  pane whether it is alive). An expiring slot would free itself while its pane still
+  talks to the GPU. The ticket slot spans the whole ticket
+  execution and the model slot spans one attempt, which is what makes hold-and-wait —
+  and therefore deadlock — unconstructible. `factory/lib/capacity/report.mjs` is the one
+  derivation of §9.7's numbers, so `status`, `doctor`, and a live run cannot disagree
+  about saturation; `held` is the rows and `waiting` is a walk over the journal, never a
+  second tally.
+- The scheduler (`factory/lib/controller/scheduler.mjs`) is §9.6's loop and nothing
+  more: **no queue object, no ready-queue, no aging, no priority.** It re-reads the
+  frontier at every scheduling decision, takes the lowest-numbered claimable ticket,
+  and otherwise waits for a ticket execution to terminate. Backpressure is **not
+  claiming** — nothing is buffered and no intent is queued — and the two things it is
+  parametric in, the frontier reader and the execution of one ticket, are injected so
+  the loop stays testable at any capacity with no override seam.
 - Every command answers from one structured value, rendered human by default and
   `--json` on request. A verb that cannot do its job says what is missing; it never
   goes quiet and never half-runs.
@@ -265,6 +289,53 @@ is the authority; cite the section a change answers to.
   hide. The run manifest and the package handshake are **effects keyed by the run**, so a
   re-entry whose declared inputs changed is a typed conflict — §3.1's immutable membership and
   §11.7's single pin arriving as a refusal rather than as a rule anyone follows.
+- **The tracker is read through `tea`, and holds no credential of its own.**
+  `.pi/factory.json` carries `tracker.repo`, `tracker.remote`, and `tracker.login` — no
+  base URL and no token, which is not an omission: §6.8 states that `tea` credentials are
+  ambient on this host and §11.2 forbids env overrides, so `tracker.login` names a `tea`
+  login and `tea` resolves the instance and the secret. It is also why §6.8's deny floor
+  lists `Bash(tea *)` — the scheduler's credentials are exactly what a worker must not
+  reach. `factory/lib/tracker/gitea.mjs` is the only module that shells out to it, every
+  entry point is a `GET`, and **status comes from `--include` rather than the exit code**:
+  `tea api` exits `0` on a 404 and prints the error body, so a client trusting the exit
+  code would parse `{"message":"not found"}` as an answer.
+- §5.2's authority table is **code** (`factory/lib/tracker/authority.mjs`), and every
+  observation passes `requireAuthority` before it is written — a global source ranking
+  always ends up asserting something the winning source does not know. **Comment text is
+  authoritative for nothing** and cannot be asserted at all, so a missing comment reads as
+  `possibly-deleted` and never as `never-posted`; our own effect record and the durable
+  assignee are what corroborate. `worker.alive` is Herdr's one fact, and the outbox is
+  `evidence` while the journal is `intent`, never `proof`.
+- **A run's scope is a live selector, so `frontier.mjs` caches nothing.** Every
+  `readScope` is a fresh set of reads, which makes §3.1's "membership is recomputed at
+  every scheduling decision" a property of the code rather than a discipline the scheduler
+  keeps. Parent membership is the anchored `Part of #N` **first body line** and nothing
+  looser; candidates come from the `workflow:implement` label **server-side**. The **edge
+  set is a parameter**, because §5.1 reads `dependencies`/`blocks` only on an
+  `add_dependency` and a resolve that fetched them per member per decision would be exactly
+  the cost that clause prevents — a caller maintaining the graph from the poll passes it,
+  `doctor` omits it. §3.5's six member classes all exist in `MEMBER_CLASSES`, plus the
+  three a mid-run scope can be in that a drained one cannot; `awaits_external` is a field
+  rather than a seventh class, because a closed six-member vocabulary does not grow a
+  seventh to say "blocked by something that will never move".
+- §5.1's observation cursor is **canonical, not a projection** (`observation.mjs`,
+  `observation_cursor` + `observed_issue`): it is a watermark, and rebuilding it from a
+  journal whose run streams expire would silently re-poll a repository's whole history.
+  **The watermark is a record's `updated_at` and never our clock** — `?since=` is compared
+  by the *tracker's* clock, so a watermark taken from ours puts two clocks in one
+  comparison, and a Gitea lagging by more than the overlap would drop every record written
+  just before a poll. That is the gap §5.1 promises the overlap cannot produce, reintroduced
+  by the watermark itself. The one moment our clock could appear is a cursor with no record
+  to anchor to, and the tracker's own `Date` response header settles it instead.
+  **The foreign id names the fact, not the object** (`gitea:<kind>:<id>@<revision>`): keyed
+  on the id alone, the first sighting of an issue would suppress every later one, and the
+  ticket would be labelled, closed, and reassigned without a fact being recorded. The graph
+  fact is keyed by the timeline entry that caused its read for the same reason — dating it
+  `now` would make it the one fact class a re-run poll records twice. Dedup is enforced by a
+  **partial unique index**, not by the poll behaving itself, exactly as `effect`'s primary
+  key enforces §4.5's. Reads are not effects, so nothing here has a requested/resolved pair;
+  the cheap endpoints are repository-wide on purpose, because an out-of-scope blocker's
+  state is what §3.1 decides `blocked-external` from.
 - `doctor` (`factory/lib/doctor/`) is handed the store from `openRepoStoreReadOnly`, which
   carries no `transaction` and never creates a store, so §14.24 is a property of the handle
   rather than a rule the diagnosis follows. Every section is computed independently and one
@@ -272,6 +343,11 @@ is the authority; cite the section a change answers to.
   increments answers the operator's question wrongly, and an unreadable package must not
   take the journal, the pins, and the reconciliation down with it. Monitor health is
   advisory-only and never an alarm; legacy artifacts are reported and never deleted.
+  A named scope adds the classified member list, resolved live and **claiming nothing** —
+  it reads the observation cursor and never opens one, because a `doctor` that created
+  durable state would do it precisely when the operator is trying to find out what state
+  already exists. A tracker it cannot read *is* an alarm: no run over that scope can claim
+  anything.
 
 ### `scripts/`
 

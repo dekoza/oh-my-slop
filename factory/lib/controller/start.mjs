@@ -1,3 +1,5 @@
+import { capacityPlan, implementResourceClass } from "../capacity/plan.mjs";
+import { openCapacity } from "../capacity/slots.mjs";
 import {
 	EXIT_LEASE_LOST,
 	EXIT_REFUSED,
@@ -26,6 +28,7 @@ import { FactoryRunError, isUsageRefusal } from "./errors.mjs";
 import { HEARTBEAT_INTERVAL_MS, startHeartbeat } from "./heartbeat.mjs";
 import { holdControllerLease } from "./lease-guard.mjs";
 import { preflight } from "./preflight.mjs";
+import { schedule } from "./scheduler.mjs";
 import { describeScope, PARENT_FLAG, parseScope } from "./scope.mjs";
 
 /**
@@ -76,6 +79,12 @@ export const NEW_RUN_FLAG = "--new-run";
  * @param {(args: string[], options: object) => Promise<object>} [invocation.runHerdr]
  *   §10.1's Herdr command runner for the detached launch, injectable for the same
  *   reason `herdr` is: a test drives both answers without a multiplexer on the machine
+ * @param {() => Promise<object>} [invocation.frontier] §3.2's live frontier reader,
+ *   which #100's tracker slice supplies. Empty by default, and the drain report
+ *   says which subsystem is missing rather than reporting a drained scope
+ * @param {(lane: object) => Promise<object>} [invocation.execute] one ticket
+ *   execution from the claim to its terminal disposition (#102 and the pipeline
+ *   above it)
  * @returns {Promise<{ message: string, report: object, exitCode: number } | { error: object, exitCode: number }>}
  */
 export async function runStart({
@@ -96,6 +105,8 @@ export async function runStart({
 	watching = () => 0,
 	signal = globalThis.process,
 	runHerdr,
+	frontier,
+	execute,
 }) {
 	let requested;
 	try {
@@ -140,6 +151,8 @@ export async function runStart({
 			herdr,
 			watching,
 			signal,
+			frontier,
+			execute,
 			pane: env?.HERDR_PANE_ID ?? null,
 		});
 	} finally {
@@ -148,11 +161,15 @@ export async function runStart({
 }
 
 async function start(store, context) {
+	// One registry, shared by the hold and by §9.4's capacity rows: two would be
+	// two clocks, and a slot's generation has to be comparable with the
+	// controller generation that fences it.
+	const leases = openLeases(store, { now: context.now });
 	let hold;
 	try {
 		hold = holdControllerLease({
 			store,
-			leases: openLeases(store, { now: context.now }),
+			leases,
 			pane: context.pane,
 			timers: context.timers,
 		});
@@ -165,7 +182,7 @@ async function start(store, context) {
 	let answered = null;
 	let failure = null;
 	try {
-		answered = await drive(store, hold, context);
+		answered = await drive(store, hold, { ...context, leases });
 	} catch (error) {
 		failure = error;
 	}
@@ -290,20 +307,50 @@ async function driveRun(store, hold, context, signals) {
 		// run. The successor may already be driving this same `run_id`.
 		if (hold.lost) return leaseLostAnswer(store, hold);
 
-		// The run's reason is decided before execution: a red required preflight
-		// ends here, while only a green run reaches `running`.
+		// §9.1's pools, opened once the run is green. The numbers are the config's
+		// own: the loop below is parametric in them and reads no ceiling constant,
+		// which is what makes raising the ceiling a one-line change in the loader.
+		const capacity = openCapacity(store, {
+			leases: context.leases,
+			plan: capacityPlan({
+				concurrency: context.config.concurrency,
+				profiles: context.config.profiles,
+				activeRouting: context.activeRouting,
+			}),
+			run: entry.run,
+			hold,
+			now: context.now,
+		});
+
+		// §9.4: a slot a previous controller left held is settled **by probing its
+		// holder, never by waiting for a clock**. The probe belongs to the slice
+		// that can ask a pane whether it is still there (#114, #107); until then
+		// this call is what reports the rows nothing can settle, rather than a
+		// silent pool one index short.
+		const reclaimed = capacity.reclaim({ probe: context.slotProbe ?? null, at: context.now() });
+
+		// Only a green run reaches `running`: a red required preflight ends the run
+		// with `baseline-red` without a lane ever being offered a slot.
+		let executed = null;
+		if (checked.ok) {
+			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.running, { at: context.now() });
+			executed = await runScheduler(store, capacity, entry.run, context);
+			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.draining, { at: context.now() });
+		}
+
+		if (hold.lost) return leaseLostAnswer(store, hold);
+
+		// §10.3's mandatory reason, read **after** the loop: a stop that arrived
+		// mid-run was honoured at a ticket boundary, and the record of it is what
+		// says so.
 		const requests = operatorRequests(store, entry.run);
 		const endReason = endReasonOf(checked, requests);
-		let execution = executionReport(store, entry.run);
+		let execution = executionReport(store, entry.run, executed);
 		if (endReason !== END_REASON_BASELINE_RED) {
-			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.running, { at: context.now() });
-			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.draining, { at: context.now() });
-			// §9.6's ticket boundary. Nothing here claims yet (#100-#102), so the
-			// run's first boundary is its drain and the poll is one read; the
-			// scheduler loop makes it per-boundary without moving this decision.
 			execution = settleAtBoundary(store, hold, entry.run, {
 				endReason,
 				at: context.now(),
+				executed,
 			});
 		}
 
@@ -339,6 +386,11 @@ async function driveRun(store, hold, context, signals) {
 				lease_renewal_ms: LEASE_RENEWAL_MS,
 				fencing_generation: hold.fencingGeneration,
 			},
+			// §9.7: "the run is slow" looks identical whether lanes are working or
+			// all of them are queued behind one slot, so the run says which — and
+			// beside it, what the last controller left that this one could not
+			// settle.
+			capacity: { ...capacity.snapshot({ at: endedAt }), reclaim: reclaimed },
 			execution,
 			monitor: {
 				// The trigger is a property of the launch surface, not of the run:
@@ -358,11 +410,60 @@ async function driveRun(store, hold, context, signals) {
 }
 
 /**
- * §10.3's mandatory reason for a run this controller still owns, decided
- * **before** the run executes — and from the loop's own inputs only: the
- * preflight verdict and the operator's request. §9.6's "never derived from the
- * lanes" holds structurally here: no execution row reaches this function, so
- * however differently the lanes end, the reason cannot follow them.
+ * §9.6's loop, driven for this run.
+ *
+ * The two seams it is parametric in are the two subsystems that have not landed:
+ * **the frontier** — §3.2's live answer, which #100's tracker reader gives — and
+ * **the execution** of one claimed ticket, which is #102's claim plus the
+ * pipeline above it. Neither is stubbed with a plausible value: the default
+ * frontier is empty *because nothing here can read one*, and the drain report
+ * says so rather than reporting a scope that drained.
+ *
+ * Everything between them is this package's: the slots, the order, the
+ * backpressure, and the waiting.
+ */
+function runScheduler(store, capacity, run, context) {
+	return schedule({
+		capacity,
+		frontier: context.frontier ?? emptyFrontier,
+		resourceClassOf: (member) =>
+			implementResourceClass(
+				{ profiles: context.config.profiles, activeRouting: context.activeRouting },
+				member,
+			),
+		execute: context.execute ?? refuseExecution,
+		// §10.5: the stop request is **polled at ticket boundaries**, which is
+		// exactly where the loop asks. §13.A's abandon supersedes a pending stop
+		// rather than being one, so the two predicates read the same record and
+		// differ only in which kind they stop for.
+		claiming: () => latestRequest(operatorRequests(store, run)) === null,
+		abandoning: () => latestRequest(operatorRequests(store, run))?.kind === "run.abandon-requested",
+		at: context.now,
+	});
+}
+
+/**
+ * The frontier a package with no tracker reader has: empty, and empty for a
+ * reason the report names (#100). Answering anything else here would be §9.7's
+ * green-looking run that did nothing.
+ */
+async function emptyFrontier() {
+	return { claimable: [], members: [] };
+}
+
+/** Unreachable while the frontier is empty, and explicit rather than a silent no-op. */
+function refuseExecution({ ticket }) {
+	throw new Error(
+		`Ticket ${ticket} was claimable, but claiming and the pipeline above it are not built in this package (#102, #107).`,
+	);
+}
+
+/**
+ * §10.3's mandatory reason for a run this controller still owns, from the
+ * controller loop's own inputs only: the preflight verdict and the operator's
+ * request. §9.6's **"one report, one end reason", never derived from the lanes**,
+ * holds structurally here — no execution row reaches this function, so however
+ * differently the lanes ended, the reason cannot follow them.
  */
 function endReasonOf(checked, requests) {
 	if (!checked.ok) return END_REASON_BASELINE_RED;
@@ -396,36 +497,56 @@ function applyExpiry() {
 }
 
 /**
- * §3.5's drain, as far as this package can take it: nothing is claimable,
- * because nothing here can claim.
+ * §3.5's drain, as far as this package can take it: the loop ran, and it found
+ * nothing claimable **because nothing here can read a frontier**.
  *
  * **It says so in the report rather than reporting an empty member list.** §9.7
  * names the failure this avoids outright — a run that starts, claims nothing,
  * and drains as though the work were done is a green-looking run that did
  * nothing, "the worst outcome available here". The exit code is still `0`,
  * because the run genuinely drained; what stops that from being a lie is this
- * section naming the three subsystems that would have found work.
+ * section naming the two subsystems that would have found and claimed work.
  *
- * `in_flight` is the one number this slice can already answer from durable
- * state: the ticket executions the projection holds without a terminal
- * disposition. A run ending beside a lane it is leaving behind says so in the
- * same breath rather than reporting a member list of nothing.
+ * The loop runs, and #100's reader can answer what is claimable — but this run
+ * composes neither into the other, because **the two halves land together or not
+ * at all**: a frontier read without #102's claim would hand the loop a ticket it
+ * could then only refuse to execute, which is a lane claimed for work that
+ * cannot move. So the frontier stays empty here and the sentence names the half
+ * that is missing.
+ *
+ * `refused` and `blocked` are the loop's own answers rather than absences:
+ * §11.5's ticket-scoped routing conflict, and slots a previous controller left
+ * held that §9.4 settles by probe. `in_flight` is what durable state says: the
+ * ticket executions the projection holds without a terminal disposition. A run
+ * ending beside a lane it is leaving behind says so in the same breath.
  */
-function executionReport(store, run) {
+function executionReport(store, run, executed) {
 	const inFlight = store
 		.readTicketExecutions(run)
 		.filter((execution) => execution.disposition === null);
 
 	return {
-		claimed: 0,
-		members: [],
+		claimed: executed?.claimed ?? 0,
+		members: executed === null || executed === undefined ? [] : executed.lanes.map(laneReport),
 		in_flight: inFlight.length,
-		released: 0,
+		released: executed?.released ?? 0,
+		refused: executed?.refused ?? [],
+		blocked: executed?.blocked ?? [],
 		missing:
-			"the tracker scope and eligibility reader (#100), capacity slots and the scheduler loop that " +
-			"lets every in-flight execution reach its terminal disposition (#101), and claiming, release, " +
-			"and the classified drain report (#102)",
+			"claiming, release, and the classified drain report, which is what lets this run's loop " +
+			"read the frontier #100 already answers (#102)",
 		spec: "§3.2, §3.5, §9",
+	};
+}
+
+/** A lane as the operator reads it: what it was, and how it ended. */
+function laneReport(lane) {
+	return {
+		ticket: lane.ticket,
+		disposition: lane.disposition,
+		...(lane.error === undefined || lane.error === null
+			? {}
+			: { failure: { reason: lane.error.reason ?? null, message: lane.error.message } }),
 	};
 }
 
@@ -434,18 +555,18 @@ function executionReport(store, run) {
  * asked for it.
  *
  * `drained` and `stopped-by-operator` let every in-flight execution reach its
- * terminal disposition, integration included — the waiting is the scheduler
- * loop's, and #101's, so this slice only reports what it is not yet able to
- * wait for. `abandoned` is the one reason that acts now: it marks the in-flight
- * executions **`released`** and releases their slots, the durable fact the next
- * reconcile needs to tell a stopped run from an abandoned one (§13.A).
+ * terminal disposition, integration included — the loop has already done that
+ * waiting by the time this runs. `abandoned` is the one reason that acts here:
+ * the loop released the lanes' **slots** where it stood, and this writes the
+ * durable disposition beside them, which is what the next reconcile reads to
+ * tell a stopped run from an abandoned one (§13.A).
  *
  * **It touches no pane.** A wedged pane is evidence (§13.B, §14.27), and pane
  * reclamation is cleanup-plan's exclusively.
  */
-function settleAtBoundary(store, hold, run, { endReason, at }) {
+function settleAtBoundary(store, hold, run, { endReason, at, executed }) {
 	if (endReason !== END_REASON_ABANDONED) {
-		return executionReport(store, run);
+		return executionReport(store, run, executed);
 	}
 
 	// `released` is §8.8's word for an execution whose work the run gives up on
@@ -468,7 +589,16 @@ function settleAtBoundary(store, hold, run, { endReason, at }) {
 		}),
 	);
 
-	return { ...executionReport(store, run), in_flight: inFlight.length, released: inFlight.length };
+	// Counted by ticket rather than added up: the loop already released the lanes
+	// it was running, and once #102 writes a `ticket_execution` row per claim the
+	// same lane would appear in both lists. A run that abandoned one lane must not
+	// report two.
+	const released = new Set([
+		...inFlight.map((execution) => execution.ticket),
+		...(executed?.lanes ?? []).filter((lane) => lane.abandoned === true).map((lane) => lane.ticket),
+	]);
+
+	return { ...executionReport(store, run, executed), in_flight: inFlight.length, released: released.size };
 }
 
 /**

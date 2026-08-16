@@ -1,5 +1,5 @@
 import { FactoryConfigError } from "./errors.mjs";
-import { resourceClassOf } from "./profiles.mjs";
+import { classesReachedBy } from "./profiles.mjs";
 import { requireExactKeys, requireInteger, requireObject } from "./shape.mjs";
 
 /**
@@ -17,7 +17,14 @@ import { requireExactKeys, requireInteger, requireObject } from "./shape.mjs";
  */
 export const MAX_SUPPORTED_TICKET_CONCURRENCY = 1;
 
-const CONCURRENCY_KEYS = Object.freeze(["maxTicketExecutions", "resources"]);
+/**
+ * The whole of what `concurrency` accepts. §9.1's third dimension — the worker
+ * pane — is deliberately absent: it is derived as
+ * `maxTicketExecutions × MAX_PANES_PER_TICKET`, and a declared pane knob both
+ * deadlocks the review phase at `2, 2` and would put the pipeline's pane
+ * arithmetic in the loader to catch that statically.
+ */
+export const CONCURRENCY_KEYS = Object.freeze(["maxTicketExecutions", "resources"]);
 
 /**
  * @param {object} concurrency the `concurrency` block
@@ -106,16 +113,4 @@ function refuseUnreachableClasses(sizes, profiles, declared, configPath) {
 			{ file: configPath, at: `concurrency.resources.${className}`, class: className, expected: [...reachable].join("|") },
 		);
 	}
-}
-
-/** @returns {Map<string, Set<string>>} class → the profiles that put it in play */
-function classesReachedBy(profiles, profileNames) {
-	const classes = new Map();
-	for (const name of profileNames) {
-		const className = resourceClassOf(profiles[name]);
-		if (!classes.has(className)) classes.set(className, new Set());
-		classes.get(className).add(name);
-	}
-
-	return classes;
 }
