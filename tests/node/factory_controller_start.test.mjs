@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { readArtifact } from "../../factory/lib/artifacts/ledger.mjs";
@@ -32,7 +32,7 @@ import { CONTROLLER_LEASE_TTL_MS, openLeases } from "../../factory/lib/state/lea
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { cloneValidConfig, factorySources, makeRemote, makeRepo } from "./helpers/factory-repo.mjs";
-import { FIXED_NOW, herdrAnswering, leaseIdentity, makeAgentDir, manualTimers } from "./helpers/factory-store.mjs";
+import { FIXED_NOW, herdrAnswering, leaseIdentity, makeAgentDir, makeHome, manualTimers } from "./helpers/factory-store.mjs";
 import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 /**
@@ -60,7 +60,7 @@ function invocation(t, { config, herdr = AVAILABLE } = {}) {
 		cwd: makeRepo(t, config === undefined ? {} : { config }),
 		agentDir: makeAgentDir(t),
 		executable,
-		env: { PATH: onPath(t, executable), HERDR_PANE_ID: "w1:p7" },
+		env: { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" },
 		herdr,
 		// §6.2's runtime probes are live reads of the operator's harnesses, so
 		// they are injected exactly as the Herdr probe is; the worker suites
@@ -236,9 +236,15 @@ test("preflight is observable per check and per probe, and runs after the run ex
 	const { value } = await runCli(["start", "--foreground", "42"], context);
 
 	const names = value.report.preflight.checks.map((check) => check.check);
+	// §9.7's order, with §6.8's three obligations in the cheap section: the
+	// environment is built before the manifest that records what it promoted, and
+	// trust is proven before anything is claimed.
 	assert.deepEqual(names, [
 		"package-handshake",
+		"worker-isolation",
 		"run-manifest",
+		"worker-permissions",
+		"worker-trust",
 		"skill-closure",
 		"herdr-available",
 		"git-isolation",
@@ -908,8 +914,47 @@ test("the run manifest records the declared per-run overrides as evidence", asyn
 		model: "local/qwen3",
 	});
 	assert.deepEqual(manifest.scope, { kind: "direct-ticket", tickets: [42] });
-	assert.equal(manifest.overrides.extra_denies.declared, null, "an unbuilt channel reported as 'none declared'");
-	assert.match(manifest.overrides.extra_denies.missing, /#106/);
+
+	// §6.8's other channels, as the worker config environment promoted them. A
+	// config declaring none records none — an empty declaration, which is a
+	// different fact from the environment failing to build.
+	assert.deepEqual(manifest.overrides.extra_denies, { declared: [] });
+	assert.deepEqual(manifest.overrides.pi_extensions, { declared: [] });
+	assert.deepEqual(manifest.overrides.worker_context_file, { declared: null, digest: null, installed_as: [] });
+
+	// Where the workers ran is evidence of isolation, not an override, and sits
+	// beside them rather than among them.
+	assert.match(manifest.worker_environment.claude, /worker-config\/claude$/);
+});
+
+test("a declared worker-context file and extra denies reach the manifest as evidence", async (t) => {
+	const config = cloneValidConfig();
+	config.worker = { denies: ["Bash(curl:*)"], contextFile: "docs/worker-context.md" };
+	const context = invocation(t, { config });
+	mkdirSync(join(context.cwd, "docs"), { recursive: true });
+	writeFileSync(join(context.cwd, "docs", "worker-context.md"), "capture whole output with tee\n");
+
+	const { value } = await runCli(["start", "--foreground", "42"], context);
+
+	const store = await storeOf(t, context);
+	const manifest = JSON.parse(readArtifact(store, value.report.manifest).toString("utf8"));
+
+	assert.deepEqual(manifest.overrides.extra_denies, { declared: ["Bash(curl:*)"] });
+	assert.equal(manifest.overrides.worker_context_file.declared, "docs/worker-context.md");
+	assert.match(manifest.overrides.worker_context_file.digest, /^[0-9a-f]{64}$/);
+});
+
+test("a declared worker-context file that is not there fails preflight rather than reaching nobody", async (t) => {
+	const config = cloneValidConfig();
+	config.worker = { contextFile: "docs/absent.md" };
+	const context = invocation(t, { config });
+
+	const { value } = await runCli(["start", "--foreground", "42"], context);
+
+	const isolation = value.report.preflight.checks.find((check) => check.check === "worker-isolation");
+	assert.equal(isolation.result, "failed");
+	assert.equal(isolation.detail.reason, "config-environment-invalid");
+	assert.ok(value.report.preflight.red.includes("worker-isolation"));
 });
 
 test("a config that declares no budgets records no budget override", async (t) => {

@@ -37,6 +37,9 @@ export const RUN_MANIFEST_VERSION = 1;
  *   keys the file actually wrote (§6.8)
  * @param {object | null} context.handshake §11.7's package handshake, or null when
  *   the package could not be anchored at all
+ * @param {{ overrides: object, environment: object } | null} context.worker §6.8's
+ *   worker config environment facts — the declarations it promoted and where it
+ *   put them — or null when the environment could not be built
  * @param {object} context.hold the controller's hold, for the fencing generation
  * @param {string} context.actor `controller`, or `operator:<verb>`
  * @param {number} context.at
@@ -44,9 +47,9 @@ export const RUN_MANIFEST_VERSION = 1;
  */
 export function writeRunManifest(
 	store,
-	{ run, scope, config, configPath, activeRouting, declared, handshake, hold, actor, at },
+	{ run, scope, config, configPath, activeRouting, declared, handshake, worker, hold, actor, at },
 ) {
-	const content = manifestContent({ run, scope, config, configPath, activeRouting, declared, handshake, at });
+	const content = manifestContent({ run, scope, config, configPath, activeRouting, declared, handshake, worker, at });
 
 	const written = writeArtifact(store, {
 		content: canonicalJson(content),
@@ -69,7 +72,7 @@ export function writeRunManifest(
  * its own — the blob is what `doctor` and the monitor read back, and a shape
  * assembled inline among the effect plumbing is a shape nobody can find.
  */
-function manifestContent({ run, scope, config, configPath, activeRouting, declared, handshake, at }) {
+function manifestContent({ run, scope, config, configPath, activeRouting, declared, handshake, worker, at }) {
 	return {
 		manifest_version: RUN_MANIFEST_VERSION,
 		run,
@@ -89,13 +92,18 @@ function manifestContent({ run, scope, config, configPath, activeRouting, declar
 			checks: config.checks.map((check) => ({ name: check.name, severity: check.severity })),
 			concurrency: { max_ticket_executions: config.concurrency.maxTicketExecutions },
 		},
-		overrides: overrides({ config, activeRouting, declared }),
+		overrides: overrides({ config, activeRouting, declared, worker }),
+		// Beside the overrides, never among them: where the workers ran is evidence
+		// of §6.8's isolation, not a decision a human declared, and `overrides` is
+		// the block whose whole contract is the latter.
+		worker_environment: worker === null || worker === undefined ? null : worker.environment,
 		package: packagePin(handshake),
 	};
 }
 
 /**
- * §6.8's four override channels, each answered or named as a hole.
+ * §6.8's four override channels — extra denies, budgets, model choices, and the
+ * worker-context file — plus the config environment they were promoted into.
  *
  * The hard floor no override may cross — no force-push, no default-branch
  * writes, no auto-merge, no skipping the independent review verdict, no
@@ -103,7 +111,7 @@ function manifestContent({ run, scope, config, configPath, activeRouting, declar
  * floor written into a per-run record is a floor that reads as per-run policy;
  * it lives in the code that enforces it.
  */
-function overrides({ config, activeRouting, declared }) {
+function overrides({ config, activeRouting, declared, worker }) {
 	return {
 		// Declared keys only. `budgets.repair: 1` because nobody wrote the block
 		// is not an override, and recording it as one would put a decision in
@@ -135,19 +143,26 @@ function overrides({ config, activeRouting, declared }) {
 			})),
 		},
 
-		// The two channels whose config surface has not landed. `null` here means
-		// "this package cannot carry one", which is a different fact from "none
-		// was declared" — and §14.34 forbids inferring the difference away.
-		extra_denies: {
-			declared: null,
-			missing: "the worker deny floor and its per-run additions (#106)",
-			spec: "§6.8",
-		},
-		worker_context_file: {
-			declared: null,
-			missing: "the controller-owned config environment and its context file (#106)",
-			spec: "§6.8",
-		},
+		// §6.8's remaining channels, as the worker config environment built them.
+		// A run whose environment could not be built records `null` rather than an
+		// empty declaration: "nothing was promoted" and "nothing could be" are
+		// different facts, and §14.34 forbids inferring the difference away. The
+		// preflight check carrying the diagnosis is `worker-isolation`.
+		//
+		// The deny **floor** is deliberately absent for the reason the hard floor
+		// is: a floor recorded per run reads as per-run policy. Only the additions
+		// a human declared are evidence of a decision a human made.
+		...(worker === null || worker === undefined
+			? {
+					extra_denies: { declared: null, missing: "the worker config environment did not build", spec: "§6.8" },
+					worker_context_file: {
+						declared: null,
+						missing: "the worker config environment did not build",
+						spec: "§6.8",
+					},
+					pi_extensions: { declared: null, missing: "the worker config environment did not build", spec: "§6.8" },
+				}
+			: worker.overrides),
 	};
 }
 

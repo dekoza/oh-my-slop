@@ -699,8 +699,10 @@ integration gate — nothing becomes real except commits the controller itself v
 pushes.
 
 **Reviewer — belt and suspenders, attestation authoritative.** Claude reviewer: plan mode +
-`--disallowedTools Edit,Write,NotebookEdit` + deny floor. pi reviewer: `--exclude-tools
-edit,write`, bash retained (needed for `git diff` / `log`). **The authoritative guard is the
+`--disallowedTools Edit,Write,NotebookEdit` + deny floor, **and the same broad allows for the
+tools it keeps** — a reviewer with no allow rules has a prompt path back, which is the failure
+this whole section closes, on the one posture that was not given them. pi reviewer:
+`--exclude-tools edit,write`, bash retained (needed for `git diff` / `log`). **The authoritative guard is the
 controller's attestation:** capture clean-worktree + HEAD before review, verify unchanged
 after; a mismatch is a typed `mutation-detected` failure.
 
@@ -720,6 +722,25 @@ hooks.** Procedurally valuable personal rules migrate through exactly two channe
    environment at run start and hash-recorded in the run manifest.
 
 **Live inheritance of `~/.claude` / `~/.pi` personal config is never a channel.**
+
+**Capability promotion is a third channel, and it carries no rules.** The two channels above
+govern *rules*; an empty config environment also removes things that are not rules and that the
+factory's own model depends on — measured, not assumed: pi's `local` models are supplied by an
+operator **extension**, so an isolated agent directory deletes a §9.1 resource class outright,
+and §6.5's transcript pointer arrives through another. Two closed lists therefore cross in:
+
+- **Fixed capability artifacts**, named in code per runtime — credentials and the model
+  catalogue. Nothing here carries behaviour, and this section already records that credentials
+  are ambient on this host.
+- **Declared runtime extensions** (`worker.piExtensions`), defaulting to **none**, recorded in
+  the run manifest by declared path **and content digest**, so what a run loaded is evidence
+  rather than a claim about intent.
+
+**The limit is enforced, not promised.** Skills reach a worker only from the pinned package
+root: the live probe requires every `skill:<name>` command record in the session — not merely
+the closure's — to resolve inside that root, so a promoted extension that registers a skill is
+the same typed failure as a shadowed one. A promoted extension may add tools and providers; it
+may not add skills, and it is never a route for personal rules.
 
 **Skill conflicts — one predicate, fail closed.** Every required skill must resolve uniquely
 and verifiably to the pinned package revision. Shadowed, duplicated, disabled, or missing are
@@ -1471,6 +1492,13 @@ to end.
 Surviving blocks: `tracker` (minus `labels`), `git`, `profiles`, `routing`, `checks`,
 `budgets`, `concurrency`, `retention`, and an optional `package.expect`.
 
+**One block is added rather than surviving: an optional `worker`**, holding §6.8's declared
+per-run overrides — `denies`, `contextFile`, `piExtensions`. §6.8 requires overrides to be
+"declared at run start in config" and recorded in the run manifest, and there was nowhere on
+disk to declare them; the manifest's evidence would otherwise record a decision no operator
+could make. It is named in the singular deliberately: legacy `version: 1` files used `workers`
+for profiles and routing, and §11.8's migration must not confuse the two.
+
 - **The label vocabulary is code constants, not config** (§3.2).
 - **`completion` is deleted entirely.** All four knobs (`closeAfterIntegration`, `finalMerge`,
   `createPullRequest`, `deploy`) now have exactly one legal value, three of them protected by
@@ -2189,4 +2217,5 @@ touching everything twice.
 | 2026-08-15 | §18.0 both preconditions discharged. §6.3 gains two **verified** Claude Code 2.1.229 loader facts that justify the generator: skills register at **depth 1 only** (a bucketed skill is dropped with no error), and `author` must be an **object**. Both were found by running the real binary, not by reading docs — the second one failed a test that would otherwise have passed. | #87 |
 | 2026-08-15 | #97 hostile review corrections: normal `run.ended` and controller-lease release are one token-checked transaction; a stale controller emits and exits 6 but leaves the adopted run open. `baseline-red` is clarified as the closed pre-execution outcome for any required red preflight check. §10.4 explicitly permits a fail-closed `scope-unresolvable` result until the tracker membership reader lands. | #97 |
 | 2026-08-15 | #97 reverse-verification corrections. §4.6 and §14.6 extended: **every** record moving a run's lifecycle is written under the token in the same transaction as the compare, not only `run.ended` — a holder whose row lapsed learns it is stale at its next compare-and-swap, and effects survive that window on §14.5's resolution-time check while a run's lifecycle has no such backstop. §10.3's table row records that `lease-lost` is the one member that is only an exit code and never a recorded `end_reason`; the projector enforces it. | #97 |
+| 2026-08-16 | #106 implementation corrections, all three found by running the real harnesses. §11.3 gains an optional **`worker`** block — §6.8 requires per-run overrides to be *declared in config* and recorded in the manifest, and no block held them; singular, so §11.8's migration cannot confuse it with legacy v1's `workers`. §6.8 gains a **third channel, capability promotion**, with an enforced limit: config isolation silently deletes the `local` resource class (its models come from an operator *extension*, verified live — 5 models and the router's `max_instances` with it, zero without) and §6.5's transcript pointer, so declared extensions are promoted, digest-recorded, and held to "no skills" by the probe requiring **every** `skill:<name>` record — not only the closure's — to resolve inside the pinned root. §6.8's Claude reviewer gains broad allows for the tools it keeps: plan mode with an empty allow list leaves a prompt path in the one posture that was not given them. | #106 |
 | 2026-08-15 | #97 second reverse-verification corrections. §4.6: a loss conceded before `run.started` commits names no run — the loss event carries `run: null` and the exit-6 report names no phantom id. §10.3 and §13.A: the published table is restated as **six run end reasons plus one controller exit outcome**, ending the contradiction of a mandatory "end-reason enum" containing a member never recorded as one. §4.3: `run.ended` and `run.lifecycle-changed` move to payload v2, whose contract refuses `lease-lost`, duplicate endings, and post-terminal movement, while v1 journals replay with the tolerance they were written under; the `run` and `run_digest` projectors bump to v3, so a store the previous contract wrote refuses at open and is repaired by a recorded rebuild rather than opened silently or classified as corruption. §4.3's kind enumeration gains the `run.lifecycle-changed` and `preflight.checked` records the implementation already emits. §14.6 invariant 6 qualified accordingly. | #97 |

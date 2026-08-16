@@ -28,6 +28,12 @@ export const GIT_ERROR_REASONS = Object.freeze([
 	"branch-collision",
 	/** A worktree path already occupied by something that is not this attempt's. */
 	"worktree-occupied",
+	/**
+	 * §6.8: an attempt worktree asked for without the worker config environment
+	 * that makes it safe to hand to a worker — no disabled `pushurl`, no
+	 * pre-trust. Refused at creation rather than discovered at launch.
+	 */
+	"worktree-unusable",
 ]);
 
 export class FactoryGitError extends Error {

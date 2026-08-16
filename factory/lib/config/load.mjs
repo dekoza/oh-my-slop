@@ -11,6 +11,7 @@ import { FactoryConfigError } from "./errors.mjs";
 import { validateProfiles } from "./profiles.mjs";
 import { validateRouting } from "./routing.mjs";
 import { requireExactKeys, requireNoUnknownKeys, requireNonEmptyString, requireObject } from "./shape.mjs";
+import { validateWorker } from "./worker.mjs";
 
 /**
  * The factory's fail-closed configuration load (§11.1, §11.2).
@@ -46,11 +47,12 @@ export const CONFIG_BLOCKS = Object.freeze({
 	concurrency: { required: true, container: "object" },
 	retention: { required: false, container: "object" },
 	package: { required: false, container: "object" },
+	worker: { required: false, container: "object" },
 });
 
 /**
  * The blocks §6.8 counts as **per-run overrides** — a human departing from a
- * value an upstream decision already fixed.
+ * value an upstream decision already fixed, or adding to a floor that has one.
  *
  * `retention` defaults upstream too and is deliberately not here: §6.8's
  * overrides are the ones that change how a *run* behaves — extra denies,
@@ -62,6 +64,12 @@ export const CONFIG_BLOCKS = Object.freeze({
  * collapsed it: `budgets.repair: 1` reads identically whether an operator chose
  * it or nobody wrote the block at all, and evidence of an override needs to know
  * which.
+ *
+ * §6.8's other override channels — `worker.denies`, `worker.contextFile`,
+ * `worker.piExtensions` — are **not** here, because they have no such ambiguity:
+ * the absent form of each is empty, so the validated value already says whether
+ * anything was declared. A `declared.worker` nobody could learn anything from
+ * would be one more thing to keep in step.
  */
 const OVERRIDE_BLOCKS = Object.freeze(["budgets"]);
 
@@ -171,6 +179,7 @@ function validateConfig(document, configPath, routingSet) {
 		concurrency: validateConcurrency(document.concurrency, profiles, routings, configPath),
 		retention: validateRetention(document.retention, configPath),
 		...(document.package === undefined ? {} : { package: validatePackage(document.package, configPath) }),
+		worker: validateWorker(document.worker, configPath),
 	});
 
 	return {

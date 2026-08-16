@@ -38,6 +38,27 @@ export const WORKER_ERROR_REASONS = Object.freeze([
 	 * refuses loudly rather than half-running a worker nothing can harvest.
 	 */
 	"worker-lifecycle-unbuilt",
+	/**
+	 * §6.8: a posture nothing dispatches to, or a per-run deny that is not a
+	 * permission rule at all. Both are refusals rather than defaults, because the
+	 * permissive answer is the one a default would reach for.
+	 */
+	"permission-invalid",
+	/**
+	 * §14.17: an override that would re-enable what the deny floor denies. The
+	 * floor is never subtractable, so this is a refusal and never a merge.
+	 */
+	"deny-floor-subtracted",
+	/**
+	 * §6.8: the controller-owned config environment could not be built, or a
+	 * declared promotion — the worker-context file, an extension — is not there.
+	 * A worker inheriting the operator's config instead is the failure this
+	 * refusal exists to prevent.
+	 */
+	"config-environment-invalid",
+	// §6.8's trust misses are **not** here: an unproven pre-trust is observed by
+	// the live probe, so it belongs to `probe.mjs`'s finding vocabulary, exactly
+	// as the shadowing predicate's live half does. One reason, one home.
 ]);
 
 export class FactoryWorkerError extends Error {

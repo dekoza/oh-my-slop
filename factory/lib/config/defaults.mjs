@@ -5,9 +5,16 @@ import { requireInteger, requireNoUnknownKeys } from "./shape.mjs";
  * `budgets` and `retention`. Both may be omitted whole or in part, and both
  * refuse anything outside their declared numbers.
  *
- * These are the only defaults in the loader. Everywhere else, absence is a
- * refusal — a default is legitimate here precisely because the value was decided
- * somewhere the operator can read (§8.6, §12.10), not guessed at load time.
+ * These are the only **values** the loader supplies. Everywhere else, absence is
+ * a refusal — a default is legitimate here precisely because the value was
+ * decided somewhere the operator can read (§8.6, §12.10), not guessed at load
+ * time.
+ *
+ * `config/worker.mjs` supplies no value: §6.8's override channels are *additions*
+ * to floors that live in code, so the absent form of each is the empty addition.
+ * That is the identity of the channel rather than a policy anyone chose, and
+ * spelling it once in the block's own module is what keeps every consumer from
+ * branching on `undefined`.
  */
 
 /**

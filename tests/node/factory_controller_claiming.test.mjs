@@ -13,7 +13,7 @@ import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
-import { herdrAnswering, makeAgentDir } from "./helpers/factory-store.mjs";
+import { herdrAnswering, makeAgentDir, makeHome } from "./helpers/factory-store.mjs";
 import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 import { fakeGitea, giteaIssue } from "./helpers/factory-tracker.mjs";
 
@@ -36,7 +36,7 @@ function invocation(t) {
 		repoRoot,
 		agentDir: makeAgentDir(t),
 		executable,
-		env: { PATH: onPath(t, executable), HERDR_PANE_ID: "w1:p7" },
+		env: { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" },
 		herdr: herdrAnswering(true),
 		// The §6.2 runtime probes are live reads of the operator's harnesses,
 		// injected for the same reason the Herdr probe is.

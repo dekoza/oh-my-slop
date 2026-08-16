@@ -33,6 +33,12 @@ export const PROBE_FINDING_REASONS = Object.freeze([
 	"plugin-invalid",
 	/** §6.2: the expected-vs-actual component diff over `plugin details`. */
 	"plugin-component-diff",
+	/**
+	 * §6.8: the probed session recorded a project the controller had not
+	 * pre-trusted. In an interactive pane that project is a trust dialog, and a
+	 * pane sitting on one is indistinguishable from a worker thinking.
+	 */
+	"trust-not-established",
 ]);
 
 /**
@@ -64,15 +70,29 @@ export function unreachableRuntime(label, binary, sentence) {
  *
  * @returns {Promise<string | null>} the version, or null with the failure recorded
  */
-export async function harnessVersion(io, { label, binary, timeoutMs }, failures) {
+export async function harnessVersion(io, { label, binary, timeoutMs, where = {} }, failures) {
 	try {
-		const answer = await io.runCommand(binary, ["--version"], { timeout: timeoutMs });
+		const answer = await io.runCommand(binary, ["--version"], { timeout: timeoutMs, ...runIn(where) });
 		if (answer.status === 0) return answer.stdout.trim();
 		failures.push(unreachableRuntime(label, binary, `\`${binary} --version\` exited ${answer.status}`));
 	} catch (error) {
 		failures.push(unreachableRuntime(label, binary, error.message));
 	}
 	return null;
+}
+
+/**
+ * §6.8's binding as `child_process` options, with the absent halves dropped.
+ *
+ * Dropping rather than passing `undefined` is what keeps a probe with no
+ * binding — a test's, or a caller that has none — inheriting this process's own
+ * environment instead of being handed an empty one.
+ *
+ * @param {{ env?: object, cwd?: string }} where
+ * @returns {{ env?: object, cwd?: string }}
+ */
+export function runIn({ env, cwd } = {}) {
+	return { ...(env === undefined ? {} : { env }), ...(cwd === undefined ? {} : { cwd }) };
 }
 
 /** A line of harness output, or null — a probe judges shapes, it never throws on one. */

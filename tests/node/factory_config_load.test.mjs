@@ -31,12 +31,15 @@ test("the loader reads schemaVersion 2 and exactly the surviving §11.3 blocks",
 		"concurrency",
 		"retention",
 		"package",
+		// §11.3's inventory plus §6.8's declared per-run overrides, which have to
+		// live somewhere on disk to be recorded in the run manifest as evidence.
+		"worker",
 	]);
 	assert.deepEqual(
 		Object.entries(CONFIG_BLOCKS)
 			.filter(([, block]) => !block.required)
 			.map(([name]) => name),
-		["budgets", "retention", "package"],
+		["budgets", "retention", "package", "worker"],
 	);
 });
 

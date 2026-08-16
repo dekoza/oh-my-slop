@@ -30,11 +30,24 @@ const DEFAULT_TIMEOUT_MS = 60_000;
  * §6.2's production flag set, plus the two flags that make the session
  * disposable: RPC mode and no persisted session.
  *
+ * `sessionArgs` is §6.8's binding — the posture's tool list and the run's
+ * declared extension promotions — and it rides the probe for the same reason
+ * the skill flags do: a probe run under different flags proves a session nobody
+ * will launch.
+ *
  * @param {ReadonlyArray<string>} skillsRoots
+ * @param {ReadonlyArray<string>} [sessionArgs]
  * @returns {string[]}
  */
-export function piProbeArguments(skillsRoots) {
-	return ["--mode", "rpc", "--no-session", "--no-skills", ...skillsRoots.flatMap((root) => ["--skill", root])];
+export function piProbeArguments(skillsRoots, sessionArgs = []) {
+	return [
+		"--mode",
+		"rpc",
+		"--no-session",
+		"--no-skills",
+		...skillsRoots.flatMap((root) => ["--skill", root]),
+		...sessionArgs,
+	];
 }
 
 /**
@@ -48,6 +61,9 @@ export function piProbeArguments(skillsRoots) {
  *   profiles the active routing reaches
  * @param {Record<string, number>} input.declaredResources `concurrency.resources`
  * @param {ReadonlyArray<string>} input.requiredClasses the pi classes those profiles derive
+ * @param {{ env?: object, sessionArgs?: ReadonlyArray<string>, cwd?: string }} [input.session]
+ *   §6.8's controller-owned binding: the config-directory variable, the posture's
+ *   flags, and the directory a worker pane runs in
  * @param {object} [input.transport] overrides for the real IO, so a test drives
  *   every verdict without a harness on the machine
  * @param {string} [input.binary]
@@ -59,17 +75,23 @@ export async function probePiRuntime({
 	profiles,
 	declaredResources,
 	requiredClasses,
+	session: binding = {},
 	transport = {},
 	binary = "pi",
 	timeoutMs = DEFAULT_TIMEOUT_MS,
 }) {
 	const io = { ...realTransport, ...transport };
 	const failures = [];
+	const where = { env: binding.env, cwd: binding.cwd };
 
-	const version = await harnessVersion(io, { label: "pi", binary, timeoutMs }, failures);
+	const version = await harnessVersion(io, { label: "pi", binary, timeoutMs, where }, failures);
 	if (version === null) return observation({ ok: false, version, failures });
 
-	const session = await rpcAnswers(io, { binary, skillsRoots, timeoutMs }, failures);
+	const session = await rpcAnswers(
+		io,
+		{ binary, skillsRoots, sessionArgs: binding.sessionArgs ?? [], where, timeoutMs },
+		failures,
+	);
 	if (session === null) return observation({ ok: false, version, failures });
 
 	const skillCommands = commandRecords(session.get("get_commands"));
@@ -110,6 +132,9 @@ export async function probePiRuntime({
  * alternatives out by name — no prose hints, no global symlinks, no
  * model-driven package discovery — so a miss here is a miss, never a fallback.
  *
+ * The converse is judged too: **no** skill in the session may come from outside
+ * the pinned root, whether the closure names it or not.
+ *
  * @param {Readonly<object>} probed what `probePiRuntime` observed
  * @param {ReadonlyArray<string>} closure the role's computed closure
  * @param {{ skillsRoots: ReadonlyArray<string> }} pin
@@ -118,6 +143,26 @@ export async function probePiRuntime({
 export function provePiClosure(probed, closure, { skillsRoots }) {
 	const roots = skillsRoots.map((root) => realpathOrNull(root));
 	const findings = [];
+
+	// §6.8's limit on capability promotion, enforced rather than promised: a
+	// declared extension may add tools and providers, and may not add skills.
+	// Every command record in the session is judged, not only the closure's,
+	// because a skill the closure never names is exactly the one nobody would
+	// notice arriving from outside the pinned revision.
+	for (const [name, source] of Object.entries(probed.skillCommands)) {
+		if (closure.includes(name)) continue;
+		const resolved = source === null ? null : realpathOrNull(source);
+		if (resolved !== null && roots.some((root) => root !== null && containsPath(root, resolved))) continue;
+
+		findings.push(
+			probeFinding(
+				"skill-shadowed",
+				`skill:${name} resolved to ${source ?? "(no source path)"}, outside the pinned skills root. Skills reach a ` +
+					`worker only from the pinned package: a promoted extension may add tools and providers, never a skill (§6.8).`,
+				{ skill: name, source, roots: skillsRoots },
+			),
+		);
+	}
 
 	for (const name of closure) {
 		const source = probed.skillCommands[name];
@@ -173,13 +218,15 @@ export function createPiAdapter(context) {
 
 // ── The probe's pieces ───────────────────────────────────────────────────────
 
-async function rpcAnswers(io, { binary, skillsRoots, timeoutMs }, failures) {
+async function rpcAnswers(io, { binary, skillsRoots, sessionArgs, where, timeoutMs }, failures) {
 	let session;
 	try {
 		session = await io.lineSession({
 			binary,
-			args: piProbeArguments(skillsRoots),
+			args: piProbeArguments(skillsRoots, sessionArgs),
 			input: RPC_REQUESTS.map((request) => JSON.stringify(request)),
+			env: where.env,
+			cwd: where.cwd,
 			timeoutMs,
 		});
 	} catch (error) {

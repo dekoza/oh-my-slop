@@ -55,6 +55,20 @@ export function makeAgentDir(t) {
 }
 
 /**
+ * An empty home directory for a test's `env.HOME`.
+ *
+ * §6.8's config environment promotes capability artifacts out of the operator's
+ * own `~/.pi` and `~/.claude`, so a suite that let `HOME` fall through to the
+ * real one would copy the developer's credentials into a temp directory to
+ * prove a point about isolation.
+ */
+export function makeHome(t) {
+	const dir = mkdtempSync(join(tmpdir(), "factory-home-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	return dir;
+}
+
+/**
  * @param {import("node:test").TestContext} t
  * @param {{ repoRoot?: string, agentDir?: string }} [options]
  */
