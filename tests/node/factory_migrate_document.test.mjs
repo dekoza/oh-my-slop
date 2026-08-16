@@ -160,7 +160,7 @@ test("§11.8: retry becomes budgets, and the automation budget is a TODO hole", 
 	const { document, dispositions } = migrate();
 
 	assert.equal(document.budgets.repair, 2);
-	assert.equal(document.budgets.freshRetry, 3);
+	assert.equal(document.budgets.freshRetry, 1);
 	assert.match(document.budgets.automation, /^TODO\b/);
 
 	assert.equal(rowFor(dispositions, "retry.repairAttempts").to, "budgets.repair");

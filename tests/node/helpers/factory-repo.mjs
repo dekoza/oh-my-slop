@@ -88,7 +88,7 @@ export const LEGACY_CONFIG = Object.freeze({
 			},
 		},
 	},
-	retry: { repairAttempts: 2, freshAgentRetries: 3 },
+	retry: { repairAttempts: 2, freshAgentRetries: 1 },
 	completion: { closeAfterIntegration: true, finalMerge: "manual", createPullRequest: true, deploy: false },
 });
 
