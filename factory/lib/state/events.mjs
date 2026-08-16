@@ -85,7 +85,15 @@ export const EVENT_KINDS = Object.freeze({
 	// held to the closed set at the projector; `released` is the one member
 	// this package's writer reaches (abandon, §9.6), and the column speaks the
 	// whole set so the slice that owns the rest writes it additively.
-	"ticket.disposition-changed": { payloadVersion: 1, visibility: "operator" },
+	//
+	// #111 puts it on **payload v2**: the record now carries the reason class and
+	// the fault the execution settled under, which is what makes §8.6's "N
+	// consecutive automation failures in terminal-commit order" reconstructible
+	// from the journal at all. A v1 record has a disposition and no fault, and
+	// reading that absence as "not the automation's fault" would count every
+	// historical failure as a product verdict — the silent wrong answer §4.3's
+	// per-kind versioning exists to turn into a visible one.
+	"ticket.disposition-changed": { payloadVersion: 2, visibility: "operator" },
 	"effect.requested": { payloadVersion: 1, visibility: "detail" },
 	"effect.resolved": { payloadVersion: 1, visibility: "detail" },
 	"observation.recorded": { payloadVersion: 1, visibility: "detail" },

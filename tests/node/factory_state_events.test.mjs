@@ -187,6 +187,15 @@ test("the run terminal kinds are on payload v2: v1 spoke the legacy end-reason c
 	assert.equal(EVENT_KINDS["run.lifecycle-changed"].payloadVersion, 2);
 });
 
+test("§8.6: a disposition is on payload v2, because v1 could not say whose fault it was", () => {
+	// #111: the circuit breaker counts **automation** failures, and a v1 record
+	// carries a disposition with no fault beside it. Reading its absence as "not
+	// the automation's fault" would make every historical failure look like a
+	// product verdict — a silent wrong answer rather than a refusal, which is
+	// exactly what a version exists to prevent (§4.3).
+	assert.equal(EVENT_KINDS["ticket.disposition-changed"].payloadVersion, 2);
+});
+
 // ── Sources and foreign facts (§4.3, §5.1) ───────────────────────────────────
 
 test("source is mandatory and comes from the closed set", () => {

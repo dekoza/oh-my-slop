@@ -90,6 +90,7 @@ export const END_REASON_DRAINED = "drained";
 export const END_REASON_BASELINE_RED = "baseline-red";
 export const END_REASON_STOPPED_BY_OPERATOR = "stopped-by-operator";
 export const END_REASON_ABANDONED = "abandoned";
+export const END_REASON_CIRCUIT_BREAKER = "circuit-breaker";
 export const END_REASON_CONTROLLER_LOST = "controller-lost";
 
 /**
@@ -109,7 +110,7 @@ export const RUN_TERMINAL_REASONS = Object.freeze([
 	END_REASON_BASELINE_RED,
 	END_REASON_STOPPED_BY_OPERATOR,
 	END_REASON_ABANDONED,
-	"circuit-breaker",
+	END_REASON_CIRCUIT_BREAKER,
 	END_REASON_CONTROLLER_LOST,
 ]);
 

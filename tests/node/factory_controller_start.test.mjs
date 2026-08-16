@@ -32,7 +32,15 @@ import { CONTROLLER_LEASE_TTL_MS, openLeases } from "../../factory/lib/state/lea
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { cloneValidConfig, factorySources, makeRemote, makeRepo } from "./helpers/factory-repo.mjs";
-import { FIXED_NOW, herdrAnswering, leaseIdentity, makeAgentDir, makeHome, manualTimers } from "./helpers/factory-store.mjs";
+import {
+	FIXED_NOW,
+	attemptLaunched,
+	herdrAnswering,
+	leaseIdentity,
+	makeAgentDir,
+	makeHome,
+	manualTimers,
+} from "./helpers/factory-store.mjs";
 import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 /**
@@ -1159,4 +1167,151 @@ test("a stop honoured at a ticket boundary stops the loop claiming, and the run 
 	assert.equal(answer.exitCode, exitCodeForEndReason("stopped-by-operator"));
 	assert.equal(answer.report.execution.claimed, 1);
 	assert.deepEqual(answer.report.capacity.holders, []);
+});
+
+/**
+ * A lane that commits its disposition durably, as `ticketExecution` does — which
+ * is what §8.6's terminal-commit order is an order *of*. An injected `execute`
+ * stands in for the whole ticket execution, so it owes the same record.
+ */
+function committing(context, dispositions) {
+	const executed = [];
+
+	return {
+		executed,
+		execute: async ({ ticket }) => {
+			executed.push(ticket);
+			const settlement = dispositions.get(ticket);
+			const store = await openStore({ repoRoot: context.cwd, agentDir: context.agentDir });
+			try {
+				const run = store.readUnendedRuns().at(0).run_id;
+				store.append(attemptLaunched(run, ticket, 1));
+				store.append({
+					kind: "ticket.disposition-changed",
+					source: "controller",
+					run,
+					ticket,
+					occurredAt: FIXED_NOW,
+					observedAt: FIXED_NOW,
+					payload: settlement,
+				});
+			} finally {
+				store.close();
+			}
+			return { disposition: settlement.disposition };
+		},
+	};
+}
+
+const AUTOMATION_FAILURE = Object.freeze({
+	disposition: "failed",
+	reason_class: "automation-budget-exhausted",
+	fault: "automation",
+});
+
+test("§8.6: two consecutive automation failures stop new claims and end the run at exit 5", async (t) => {
+	const context = invocation(t);
+	const loaded = loadFactoryConfig({ cwd: context.cwd });
+	const lane = committing(
+		context,
+		new Map([
+			[42, AUTOMATION_FAILURE],
+			[91, AUTOMATION_FAILURE],
+			[77, AUTOMATION_FAILURE],
+		]),
+	);
+
+	const answer = await runStart({
+		...loaded,
+		agentDir: context.agentDir,
+		executable: context.executable,
+		env: context.env,
+		workerTransports: context.workerTransports,
+		herdr: context.herdr,
+		args: ["42", "91", "77"],
+		flags: new Set([FOREGROUND_FLAG]),
+		frontier: async () => ({
+			claimable: [42, 91, 77],
+			members: [42, 91, 77].map((ticket) => ({ ticket, labels: [] })),
+		}),
+		execute: lane.execute,
+	});
+
+	assert.deepEqual(lane.executed, [42, 91], "the third ticket is never claimed: five dying in preflight is not five tries");
+	assert.equal(answer.report.end_reason, "circuit-breaker");
+	assert.equal(answer.exitCode, 5);
+	assert.equal(answer.exitCode, exitCodeForEndReason("circuit-breaker"));
+	assert.deepEqual({ ...answer.report.circuit_breaker }, {
+		tripped: true,
+		consecutive: 2,
+		threshold: 2,
+		ticket: 91,
+	});
+	assert.equal(answer.report.lifecycle, "ended");
+	assert.deepEqual(answer.report.capacity.holders, [], "§15 case 5 holds through a breaker exit too");
+});
+
+test("§8.6: product-level failures interleaved among automation failures leave the run claiming", async (t) => {
+	const context = invocation(t);
+	const loaded = loadFactoryConfig({ cwd: context.cwd });
+	const lane = committing(
+		context,
+		new Map([
+			[42, AUTOMATION_FAILURE],
+			// A worker that could not make the tests pass. §8.6: a verdict about the
+			// work, and five of those is a productive run.
+			[91, { disposition: "failed", reason_class: "repair-budget-exhausted", fault: "repair" }],
+			[77, AUTOMATION_FAILURE],
+		]),
+	);
+
+	const answer = await runStart({
+		...loaded,
+		agentDir: context.agentDir,
+		executable: context.executable,
+		env: context.env,
+		workerTransports: context.workerTransports,
+		herdr: context.herdr,
+		args: ["42", "91", "77"],
+		flags: new Set([FOREGROUND_FLAG]),
+		frontier: async () => ({
+			claimable: [42, 91, 77],
+			members: [42, 91, 77].map((ticket) => ({ ticket, labels: [] })),
+		}),
+		execute: lane.execute,
+	});
+
+	assert.deepEqual(lane.executed, [42, 91, 77], "§15 case 13: the scope drained, every ticket tried");
+	assert.equal(answer.report.end_reason, "drained");
+	assert.equal(answer.exitCode, 0);
+	assert.equal(answer.report.circuit_breaker.tripped, false);
+	assert.equal(answer.report.circuit_breaker.consecutive, 1);
+});
+
+test("§10.3: a run stopped by an operator says so, even with the breaker tripped underneath it", async (t) => {
+	const context = invocation(t);
+	const loaded = loadFactoryConfig({ cwd: context.cwd });
+	const lane = committing(context, new Map([[42, AUTOMATION_FAILURE], [91, AUTOMATION_FAILURE]]));
+
+	const answer = await runStart({
+		...loaded,
+		agentDir: context.agentDir,
+		executable: context.executable,
+		env: context.env,
+		workerTransports: context.workerTransports,
+		herdr: context.herdr,
+		args: ["42", "91"],
+		flags: new Set([FOREGROUND_FLAG]),
+		frontier: async () => ({ claimable: [42, 91], members: [42, 91].map((ticket) => ({ ticket, labels: [] })) }),
+		execute: async (request) => {
+			const answered = await lane.execute(request);
+			if (request.ticket === 91) await runStop({ repoRoot: context.cwd, agentDir: context.agentDir });
+			return answered;
+		},
+	});
+
+	// Both drain identically (§10.3); the reason carries the difference, and the
+	// human who typed `stop` is told their stop was honoured.
+	assert.equal(answer.report.end_reason, "stopped-by-operator");
+	assert.equal(answer.report.circuit_breaker.tripped, true, "and the machine's own verdict is still on the report");
 });
