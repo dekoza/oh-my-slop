@@ -148,8 +148,8 @@ function validateRules(rules, profiles, at, configPath) {
 /**
  * The static half of §11.5's two-level conflict rule. Intersecting label sets for
  * one role are answered here, with no ticket in hand; the ticket-scoped half —
- * one ticket matching two rules for a role — is a claim-time automation failure
- * the scheduler raises before any work.
+ * one ticket matching two rules for a role — needs the ticket's labels and is
+ * raised at dispatch by `worker/roles.mjs`'s `profileForRole`, before any work.
  */
 function refuseOverlap(earlier, candidate, role, configPath) {
 	for (const rule of earlier) {

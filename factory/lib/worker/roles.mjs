@@ -1,4 +1,5 @@
 import { WORKER_WRITABLE_OUTCOMES } from "../domain/vocabulary.mjs";
+import { FactoryWorkerError } from "./errors.mjs";
 import { renderAttemptPrompt } from "./prompt.mjs";
 
 /**
@@ -68,4 +69,58 @@ export function rolesInPlay(activeRouting) {
 			return Object.freeze({ ...role, profiles: Object.freeze([...reached].sort()) });
 		}),
 	);
+}
+
+/**
+ * §11.5's dispatch, for one routing role and one ticket: `labelsAny × role →
+ * profile`, falling back to the role's **declared** profile and to nothing else.
+ *
+ * The two refusals are the two halves of §11.5's "no implicit fallback":
+ *
+ * - **A role the routing does not declare is refused**, never answered from a
+ *   neighbouring role. The specific accident this forecloses is an implicit
+ *   `freshRetry = implement`, which §11.5 names as precisely the silent
+ *   runtime-policy guess the section exists to end — and which would be
+ *   invisible, because the run would work.
+ * - **A ticket matching two rules for one role is refused.** The loader already
+ *   refuses rules whose `labelsAny` sets intersect for a role (`config/routing.mjs`),
+ *   so what reaches here is two *disjoint* rules and a ticket carrying a label
+ *   from each. §11.5 makes that a ticket-scoped automation failure surfaced at
+ *   claim time before any work — never legacy's positional first-match, which
+ *   would answer with whichever rule the operator happened to type first.
+ *
+ * @param {{ roles: object, rules: ReadonlyArray<object> }} activeRouting
+ * @param {{ role: string, labels?: ReadonlyArray<string> }} where the routing
+ *   role to dispatch, and the ticket's labels as the claim-time snapshot has them
+ * @returns {string | ReadonlyArray<string>} a profile name, or `review`'s pair
+ * @throws {FactoryWorkerError} `routing-ambiguous`
+ */
+export function profileForRole(activeRouting, { role, labels = [] }) {
+	const matched = activeRouting.rules.filter(
+		(rule) => rule.role === role && rule.labelsAny.some((label) => labels.includes(label)),
+	);
+
+	if (matched.length > 1) {
+		const profiles = matched.map((rule) => rule.profile);
+		throw new FactoryWorkerError(
+			"routing-ambiguous",
+			`Ticket labels ${labels.join(", ")} match ${matched.length} routing rules for role "${role}" ` +
+				`(${profiles.join(", ")}). §11.5 fails this closed at claim time rather than taking the first match.`,
+			{ at: "routing.rules", role, labels: [...labels], profiles },
+		);
+	}
+
+	if (matched.length === 1) return matched[0].profile;
+
+	const declared = activeRouting.roles[role];
+	if (declared === undefined || declared === null) {
+		throw new FactoryWorkerError(
+			"routing-ambiguous",
+			`This routing declares no profile for role "${role}", and no rule matched. §11.5 requires all three roles ` +
+				`with no implicit fallback, so there is no other role to answer from.`,
+			{ at: "routing.roles", role, labels: [...labels] },
+		);
+	}
+
+	return declared;
 }
