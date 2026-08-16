@@ -12,12 +12,14 @@ import {
 	reclaimAttemptWorktree,
 	releaseIntegrationWorktree,
 } from "../git/integrate.mjs";
+import { FactoryGitError } from "../git/errors.mjs";
 import { LEASE_NAMES } from "../state/leases.mjs";
+import { createTurnstile } from "../state/turnstile.mjs";
 import { publishPullRequest, pullTitle, renderPullBody } from "../tracker/pulls.mjs";
 import { writeAttestation } from "./attestation.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 import { verifyPhase } from "./phases.mjs";
-import { recordedStage, stageResults } from "./stages.mjs";
+import { stageResults } from "./stages.mjs";
 
 /**
  * §7.5's integration and §9.5's serialization, composed — **the two phase
@@ -52,26 +54,36 @@ import { recordedStage, stageResults } from "./stages.mjs";
  */
 
 /**
- * §14.23 and §7.7's lease, as an in-process turn as well as a row.
+ * How many times §9.5's compare-and-publish loop will re-rebase before giving
+ * up, and **why it is a code constant rather than a knob**.
+ *
+ * It is not configuration: nobody tunes "how many times may a human merge while
+ * I am publishing". It is the point at which *the base keeps moving* stops being
+ * a race and starts being a fact about the repository — a repository under
+ * continuous merge, where an unbounded loop would hold the integration lease
+ * indefinitely and report nothing, which is the throughput failure §9.5 exists
+ * to prevent arriving from the other direction. Policy that is not configuration
+ * lives in code and is read from exactly one place.
+ *
+ * There is deliberately **no parameter and no default** for it. §11.2's rule is
+ * that a value the code fills in for a caller who forgot is a policy nobody can
+ * read on disk; a default here would be one nothing can read anywhere.
+ */
+export const MAX_BASE_MOVES = 3;
+
+/**
+ * §7.7's lease is a **row and an in-process turn**, and it needs both.
  *
  * The row is the durable fact — fenced, probeable, and what reconcile finds
  * after a crash — but a row alone answers "somebody else has it" with a refusal,
- * and a lane that met that refusal would fail an integration for a reason that
- * is not a failure. The chain is what makes a second lane **wait** instead, and
- * it is the same mechanism `checks/run.mjs` uses to keep two lanes off the
- * suite: the controller lease means this process is the only controller, so
- * there is no cross-process lock to take.
+ * and a lane meeting that refusal would fail an integration for a reason that is
+ * not a failure. The turnstile is what makes a second lane **wait** instead.
+ *
+ * It is this module's own, never shared with `checks/run.mjs`'s: those are two
+ * different exclusions, and one queue serving both would make every integration
+ * wait behind an unrelated suite.
  */
-let lane = Promise.resolve();
-
-function serialized(work) {
-	const turn = lane.then(work, work);
-	lane = turn.then(
-		() => undefined,
-		() => undefined,
-	);
-	return turn;
-}
+const serialized = createTurnstile();
 
 /**
  * Run `work` holding the `integration` lease, and give it up however `work`
@@ -201,12 +213,9 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
 /**
  * §8.1's `integrate` phase: §9.5's compare-and-publish, then §7.5's steps 4–6.
  *
- * The loop runs at most `maxRebases` times, and the bound is not defensive
- * tidiness — a base that moves on every pass is a repository under continuous
- * merge, and a controller that spun there would hold the lease forever while
- * reporting nothing. Hitting it is `integration-red`'s sibling case and files as
- * `push-failed`, which §8.10 retries on the automation budget: the publication
- * did not happen and nothing about the work is implicated.
+ * The loop runs at most `MAX_BASE_MOVES` times, and hitting the bound files as
+ * `push-failed` — which §8.10 retries on the automation budget, because the
+ * publication did not happen and nothing about the work is implicated.
  *
  * **`branch` is the *builder* attempt's branch, and `attempt` may not be its
  * attempt.** §7.3 derives the branch from the attempt that built the work, while
@@ -224,13 +233,12 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
  * @param {object} context.writer a `createGiteaWriter` client
  * @param {string} context.ticketTitle the ticket's own title (§7.5)
  * @param {string | null} [context.packageRevision] §11.7's pinned revision
- * @param {number} [context.maxRebases]
  * @returns {Promise<Readonly<{ outcome: string, detail: Readonly<object> }>>}
  *   §8.10's `integrate` row: `integrated` · `rebase-conflict` · `predicate-failed`
  *   · `push-failed` · `integration-red`
  */
 export async function integratePublish(store, clone, context) {
-	const { hold, leases, run, ticket, attempt, branch, maxRebases = 3 } = context;
+	const { hold, leases, run, ticket, attempt, branch } = context;
 
 	// What the verify phase attested, read from the record rather than passed in:
 	// §14.13 makes the attested commit a fact of durable state, and a caller's
@@ -264,7 +272,7 @@ export async function integratePublish(store, clone, context) {
 				return publish(store, clone, { ...context, verified });
 			}
 
-			if (pass >= maxRebases) {
+			if (pass >= MAX_BASE_MOVES) {
 				return answer("push-failed", {
 					problem: `the base moved on ${pass} consecutive passes, so the compare-and-publish loop stopped`,
 					base_commit: fresh.commit,
@@ -359,7 +367,13 @@ async function publish(store, clone, context) {
 		integration: {
 			rebased: verified.rebased ?? null,
 			evidence_ref: verified.evidenceRef ?? null,
-			commits: [...predicates.commits],
+			// **The verified list, not the one just re-derived.** §14.13 wants the
+			// attestation and the push to name the same commits, and they are two
+			// consumers of one fact — so they read one value. Attesting a freshly
+			// computed range while pushing the recorded one would be two answers to
+			// "which commits were measured", which is the second opinion this
+			// module's own `attestedByVerify` exists to refuse.
+			commits: [...verified.commits],
 		},
 	});
 
@@ -376,16 +390,28 @@ async function publish(store, clone, context) {
 			at: now(),
 		});
 	} catch (error) {
-		// **The two ways a push does not happen are two different outcomes.**
+		// **Only the two failures this phase has a word for are classified; every
+		// other one escapes.**
+		//
 		// §7.4's identity check refusing — the branch is not the commits
 		// verification attested — is an integration-side predicate, and §8.10 gives
 		// a `predicate-failed` no retry, because retrying would push the same
 		// unattested branch. A remote that would not take a branch it agrees with
 		// says nothing about the work, and that is the automation retry.
-		const predicateFailure = error.name === "FactoryGitError" && error.reason === "identity-mismatch";
+		//
+		// Everything else is rethrown, and the two that make the difference
+		// concrete are why: §4.5's `effect-payload-conflict` is §14.12's
+		// *enforcement* — a second head offered for a published branch — and
+		// catching it as `push-failed` would hand that row an automation retry;
+		// and a lost lease or a superseded generation is terminal under §14.6,
+		// where the answer is to stop issuing effects and exit 6, never to retry.
+		if (!(error instanceof FactoryGitError)) throw error;
+		if (error.reason !== "identity-mismatch" && error.reason !== "git-command-failed") throw error;
+
+		const predicateFailure = error.reason === "identity-mismatch";
 		return answer(predicateFailure ? "predicate-failed" : "push-failed", {
 			problem: error.message,
-			reason: error.reason ?? null,
+			reason: error.reason,
 			...(predicateFailure ? { ...error.details } : {}),
 			head: verified.head,
 		});
@@ -462,34 +488,29 @@ function evidenceOf(reference) {
  * on a caller's word about what was checked is the one thing §14.16 forbids.
  */
 function attestedByVerify(store, { run, ticket, attempt }) {
-	const own = recordedStage(store, { run, ticket, phase: PHASE_VERIFY, attempt });
-	// **This attempt's own record, or the ticket execution's most recent passing
-	// verify.** §8.10 routes `integrate × push-failed` to an *automation* retry,
-	// which §8.5 re-enters under a fresh attempt id without rebuilding anything —
-	// the automation failed, not the work — so the commit that retry publishes was
-	// verified under the attempt before it. Reading only this attempt's record
-	// would refuse the retry as if no verification had happened, which is the
-	// opposite of what did.
-	const recorded =
-		own ??
-		stageResults(store, { run, ticket, phase: PHASE_VERIFY })
-			.filter((record) => record.outcome === CHECK_RESULTS.passed)
-			.at(-1) ??
-		null;
-	const detail = (own === null ? recorded?.detail : recorded.payload.detail) ?? null;
-	const outcome = own === null ? (recorded?.outcome ?? null) : recorded.payload.outcome;
+	// One reader and one shape. **This attempt's own passing verify, or the ticket
+	// execution's most recent one**: §8.10 routes `integrate × push-failed` to an
+	// *automation* retry, which §8.5 re-enters under a fresh attempt id without
+	// rebuilding anything — the automation failed, not the work — so the commit
+	// that retry publishes was verified under the attempt before it. Reading only
+	// this attempt's record would refuse the retry as if no verification had
+	// happened, which is the opposite of what did.
+	const passed = stageResults(store, { run, ticket, phase: PHASE_VERIFY }).filter(
+		(record) => record.outcome === CHECK_RESULTS.passed,
+	);
+	const recorded = passed.find((record) => record.attempt === attempt) ?? passed.at(-1) ?? null;
 
-	if (recorded === null || outcome !== CHECK_RESULTS.passed || typeof detail?.head !== "string") {
+	if (typeof recorded?.detail?.head !== "string") {
 		throw new FactoryPipelineError(
 			"phase-unwired",
 			`Ticket execution ${run}/${ticket} has no passing verify stage to publish from (§14.15). The integrate phase ` +
 				"is reachable only through one, and taking the commit or the check results on a caller's word instead is " +
 				"exactly what §14.16 makes the controller's own rerun the boundary against.",
-			{ at: "phase", phase: PHASE_INTEGRATE, run, ticket, attempt, verify: outcome },
+			{ at: "phase", phase: PHASE_INTEGRATE, run, ticket, attempt, verified: passed.length },
 		);
 	}
 
-	return attestedBy(detail);
+	return attestedBy(recorded.detail);
 }
 
 /**

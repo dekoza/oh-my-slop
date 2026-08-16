@@ -1,5 +1,5 @@
 import { writeArtifact } from "../artifacts/writes.mjs";
-import { FINDING_SEVERITIES, PHASE_INTEGRATE, PHASE_REVIEW } from "../domain/vocabulary.mjs";
+import { CHECK_RESULTS, FINDING_SEVERITIES, PHASE_INTEGRATE, PHASE_REVIEW } from "../domain/vocabulary.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 import { stageResults } from "./stages.mjs";
 
@@ -105,10 +105,19 @@ export function buildAttestation(
  */
 export function attestationSummary(document) {
 	const required = document.checks.filter((check) => check.required);
+	// **Counted on the result, not on the flag.** The sentence claims the required
+	// set is green, and a count of how many checks were *required* is not that
+	// claim — it prints "green" over a red set and reads exactly as convincingly.
+	// This string is the human-facing half of §7.5's PR body and §8.9's ticket
+	// comment, and the whole point of §8.7 is that "the controller verified this"
+	// is checkable rather than asserted.
+	const red = required.filter((check) => check.result !== CHECK_RESULTS.passed);
 	const advisory = document.review.advisory.length;
 
 	return (
-		`${required.length} required check(s) green at ${document.published.commit.slice(0, 12)}` +
+		`${required.length - red.length} of ${required.length} required check(s) green at ` +
+		`${document.published.commit.slice(0, 12)}` +
+		`${red.length === 0 ? "" : ` — red: ${red.map((check) => check.name).join(", ")}`}` +
 		`${document.checks.length > required.length ? `, ${document.checks.length - required.length} advisory recorded` : ""}; ` +
 		`${document.review.verdicts.length} review axis verdict(s): ` +
 		`${document.review.verdicts.map((axis) => `${axis.axis} ${axis.verdict ?? "—"}`).join(", ")}; ` +

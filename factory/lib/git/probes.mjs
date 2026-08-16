@@ -103,12 +103,22 @@ async function probeLsRemote({ effect, store }) {
 		if (!missingRef(error)) throw error;
 	}
 
-	const equal = remote !== null && remote === local;
+	// A remote carrying a branch the clone has lost is **unanswerable, not
+	// matched**: §12.8 makes a published attempt's local branch cleanup-eligible,
+	// so this is a state the system creates on purpose, and dating the answer
+	// from a commit that is not there would be a crash where §12.4 wants an
+	// alarm. `absent` and `unanswerable` are different facts.
+	const equal = remote !== null && local !== null && remote === local;
 	return {
 		matched: equal,
-		result: { branch, sha: remote, remote_sha: remote },
+		// The same shape `git/integrate.mjs` writes when it performs the push, and
+		// the same meanings: `sha` is the local branch and `remote_sha` is what the
+		// remote answered. They are equal whenever this probe matches, which is the
+		// only case the engine commits.
+		result: { branch, sha: local, remote_sha: remote },
 		foreignSourceId: `git:remote:${branch}@${remote ?? "absent"}`,
-		occurredAtRaw: remote === null ? mtimeOf(cloneDir) : await runGit(["show", "--no-patch", "--format=%cI", local], { cwd: cloneDir }),
+		occurredAtRaw:
+			local === null ? mtimeOf(cloneDir) : await runGit(["show", "--no-patch", "--format=%cI", local], { cwd: cloneDir }),
 		detail: { clone: cloneDir, ref: branch, remote_sha: remote, local_sha: local },
 	};
 }

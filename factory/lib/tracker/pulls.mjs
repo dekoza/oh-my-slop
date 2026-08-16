@@ -82,6 +82,21 @@ export function pullTitle({ ticket, title }) {
  * @returns {string}
  */
 export function renderPullBody(block) {
+	// **Refused, not merely omitted.** §8.7's "blocking findings never" is a
+	// property of what gets published, and this function spreads whatever block it
+	// is handed — so leaving the rule to every caller's discipline would make it
+	// exactly as strong as the least careful one. A blocking finding on a
+	// published PR criticises code a repair already replaced.
+	if (Object.hasOwn(block, "blocking")) {
+		throw new FactoryTrackerError(
+			"pull-unpublishable",
+			"§8.7 surfaces advisory findings on a published pull request and blocking findings never: a blocking finding " +
+				"is one a repair already answered, so publishing it criticises code that is no longer there. The " +
+				"attestation artifact is where the blocking set is kept.",
+			{ at: "blocking", found: Array.isArray(block.blocking) ? block.blocking.length : block.blocking },
+		);
+	}
+
 	const machine = JSON.stringify({ schema_version: PULL_BODY_SCHEMA_VERSION, ...block }, null, 2);
 	const fence = "`".repeat(Math.max(3, longestBacktickRun(machine) + 1));
 
@@ -184,12 +199,7 @@ export async function publishPullRequest(
 		result: (pull) => ({ number: pull.number, html_url: pull.html_url, head_branch: pull.head_branch }),
 	});
 
-	const pull = Object.freeze({
-		number: created.number,
-		url: created.html_url,
-		branch: created.head_branch ?? branch,
-		outcome: created.outcome,
-	});
+	const pull = Object.freeze({ number: created.number, url: created.html_url, branch: created.head_branch ?? branch });
 
 	return Object.freeze({ pull, superseded: await supersede(store, { reader, writer, hold, run, ticket, pull, at }) });
 }

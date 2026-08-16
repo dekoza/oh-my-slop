@@ -53,10 +53,20 @@ export const INTEGRATION_REFUSALS = Object.freeze({
 /** §7.3's trailer key, as `git log --format=%(trailers:key=…)` selects it. */
 const TRAILER_KEY = "Factory-Attempt";
 
-/** Record separators no commit message or SHA can contain, for one-call parsing. */
-const RECORD = "";
-const FIELD = "";
-const VALUE = "";
+/**
+ * The ASCII separators the trailer walk parses on — spelled as escapes, because
+ * a raw control byte in source is invisible in a review, invisible in a diff,
+ * and one editor pass away from being normalised into something else.
+ *
+ * They are the C0 separators in their intended nesting, and the names say which
+ * nesting: a group separator between commits, a unit separator between a sha and
+ * its trailer values, and a record separator between those values. No commit
+ * message or sha can contain any of them, which is what makes one `git log` call
+ * parseable in a single pass.
+ */
+const BETWEEN_COMMITS = "\x1d";
+const BETWEEN_FIELDS = "\x1f";
+const BETWEEN_VALUES = "\x1e";
 
 /**
  * §7.5's **controller-owned integration worktree**, opened at the attempt
@@ -480,16 +490,16 @@ async function diffCheck(clone, { worktreePath, baseCommit, head }) {
 
 /** The commits with no §7.3 trailer naming this ticket execution, oldest first. */
 async function untrailedCommits(clone, { worktreePath, baseCommit, head, run, ticket }) {
-	const format = `%H${FIELD}%(trailers:key=${TRAILER_KEY},valueonly,separator=${escaped(VALUE)})${escaped(RECORD)}`;
+	const format = `%H${BETWEEN_FIELDS}%(trailers:key=${TRAILER_KEY},valueonly,separator=${escaped(BETWEEN_VALUES)})${escaped(BETWEEN_COMMITS)}`;
 	const listed = await clone.git(["log", "--reverse", `--format=${format}`, `${baseCommit}..${head}`], where(worktreePath));
 
 	const wanted = `${run}/${ticket}/`;
 	return listed
-		.split(RECORD)
+		.split(BETWEEN_COMMITS)
 		.map((record) => record.trim())
 		.filter((record) => record !== "")
-		.map((record) => record.split(FIELD))
-		.filter(([, values = ""]) => !values.split(VALUE).some((value) => value.trim().startsWith(wanted)))
+		.map((record) => record.split(BETWEEN_FIELDS))
+		.filter(([, values = ""]) => !values.split(BETWEEN_VALUES).some((value) => value.trim().startsWith(wanted)))
 		.map(([sha]) => sha);
 }
 

@@ -106,8 +106,9 @@ async function reviewed(t, { axes = null } = {}) {
 	return { store, hold, run, attempt };
 }
 
-function build(store, { run, attempt }, overrides = {}) {
-	return buildAttestation(store, {
+/** Everything §8.7 records, as one fixture — read by both doors into it. */
+function attesting({ run, attempt }, overrides = {}) {
+	return {
 		run,
 		ticket: TICKET,
 		attempt,
@@ -118,7 +119,11 @@ function build(store, { run, attempt }, overrides = {}) {
 		checks: CHECKS,
 		integration: INTEGRATION,
 		...overrides,
-	});
+	};
+}
+
+function build(store, context, overrides = {}) {
+	return buildAttestation(store, attesting(context, overrides));
 }
 
 test("the attestation records §8.7's whole list, from durable state (§8.7)", async (t) => {
@@ -257,8 +262,8 @@ test("it is written once, referenced by digest, and re-entering returns the same
 	const context = await reviewed(t);
 	const wrote = { hold: context.hold, actor: "controller", at: FIXED_NOW };
 
-	const first = writeAttestation(context.store, { ...wrote, ...whatFor(context) });
-	const again = writeAttestation(context.store, { ...wrote, ...whatFor(context) });
+	const first = writeAttestation(context.store, { ...wrote, ...attesting(context) });
+	const again = writeAttestation(context.store, { ...wrote, ...attesting(context) });
 
 	assert.equal(first.outcome, "written");
 	assert.equal(again.outcome, "already-written");
@@ -281,26 +286,34 @@ test("it is written once, referenced by digest, and re-entering returns the same
 	);
 });
 
-function whatFor(context) {
-	return {
-		run: context.run,
-		ticket: TICKET,
-		attempt: context.attempt,
-		publishedCommit: COMMIT,
-		branch: `factory/t${TICKET}/a${context.attempt}`,
-		baseCommit: "c".repeat(40),
-		packageRevision: "d".repeat(64),
-		checks: CHECKS,
-		integration: INTEGRATION,
-	};
-}
-
 test("the summary names what a human reads on the PR and in the ticket comment (§8.7)", async (t) => {
 	const context = await reviewed(t);
 
 	const summary = attestationSummary(build(context.store, context));
 
-	assert.match(summary, /2 required check\(s\) green at aaaaaaaaaaaa/);
+	assert.match(summary, /2 of 2 required check\(s\) green at aaaaaaaaaaaa/);
 	assert.match(summary, /1 advisory recorded/);
 	assert.match(summary, /review-standards approved, review-spec approved/);
+});
+
+test("the summary counts what the checks *did*, not how many were required (§8.7, §14.16)", async (t) => {
+	const context = await reviewed(t);
+
+	// The sentence is the human-facing half of §7.5's PR body and §8.9's ticket
+	// comment, and §8.7's whole point is that "the controller verified this" is a
+	// checkable claim. A count of how many checks carried the `required` flag is
+	// not that claim: it prints "green" over a red set, and reads exactly as
+	// convincingly.
+	const summary = attestationSummary(
+		build(context.store, context, {
+			checks: [
+				{ name: "unit", command: "uv run pytest", severity: "required", result: "failed", exit_code: 1, duration_ms: 10 },
+				{ name: "lint", command: "ruff check", severity: "required", result: "passed", exit_code: 0, duration_ms: 10 },
+			],
+		}),
+	);
+
+	assert.match(summary, /1 of 2 required check\(s\) green/);
+	assert.match(summary, /red: unit/);
+	assert.doesNotMatch(summary, /2 of 2/);
 });

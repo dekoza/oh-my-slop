@@ -526,23 +526,21 @@ function stageRecords(store, { run, ticket }) {
  * those from the journal a second way is how two readers of one record start to
  * disagree, so there is one reader and two projections of it.
  *
+ * `phase` is required, not a filter a caller may omit: both readers ask about
+ * one phase, and a whole-execution dump would be `outcomeChain` with details
+ * bolted on — a second answer to a question that already has one.
+ *
  * @param {object} store an open store, controller or read-only
- * @param {{ run: string, ticket: number, phase?: string | null }} where
- * @returns {ReadonlyArray<Readonly<object>>} in the journal's own sequence order
+ * @param {{ run: string, ticket: number, phase: string }} where
+ * @returns {ReadonlyArray<Readonly<{ attempt: string | null, outcome: string, detail: object | null }>>}
+ *   in the journal's own sequence order
  */
-export function stageResults(store, { run, ticket, phase = null }) {
+export function stageResults(store, { run, ticket, phase }) {
 	return Object.freeze(
 		stageRecords(store, { run, ticket })
-			.filter((record) => phase === null || record.phase === phase)
+			.filter((record) => record.phase === phase)
 			.map((record) =>
-				Object.freeze({
-					phase: record.phase,
-					attempt: record.attempt,
-					outcome: record.payload.outcome,
-					action: record.payload.action,
-					detail: record.payload.detail,
-					anomaly: record.payload.anomaly,
-				}),
+				Object.freeze({ attempt: record.attempt, outcome: record.payload.outcome, detail: record.payload.detail }),
 			),
 	);
 }

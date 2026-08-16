@@ -10,7 +10,7 @@ import { reconcile } from "../../factory/lib/reconcile/engine.mjs";
 import { createProbeRegistry } from "../../factory/lib/reconcile/probes.mjs";
 import { withTrackerProbes } from "../../factory/lib/reconcile/tracker-probes.mjs";
 import { evidenceRef, integrationWorktreePath } from "../../factory/lib/git/isolation.mjs";
-import { integratePublish, integrationVerify } from "../../factory/lib/pipeline/integration.mjs";
+import { integratePublish, integrationVerify, MAX_BASE_MOVES } from "../../factory/lib/pipeline/integration.mjs";
 import { parsePullBody, renderPullBody } from "../../factory/lib/tracker/pulls.mjs";
 import { resolveStage } from "../../factory/lib/pipeline/stages.mjs";
 import { LEASE_NAMES, openLeases } from "../../factory/lib/state/leases.mjs";
@@ -217,7 +217,10 @@ test("the base moving during review re-rebases and re-verifies, consuming no bud
 	assert.equal(integrated.outcome, "integrated");
 	// The published commit sits on the new tip, and it is the one the remote has.
 	const fresh = git(fixture.clone.dir, ["rev-parse", "refs/factory/base/main"]);
-	assert.equal(git(fixture.clone.dir, ["merge-base", "--is-ancestor", fresh, integrated.detail.head]) || "ancestor", "ancestor");
+	assert.doesNotThrow(
+		() => git(fixture.clone.dir, ["merge-base", "--is-ancestor", fresh, integrated.detail.head]),
+		"the published commit does not sit on the tip the human merged onto",
+	);
 	assert.equal(git(fixture.remote, ["rev-parse", `refs/heads/${fixture.branch}`]), integrated.detail.head);
 
 	// Nothing about the loop is a failure, so no stage of it was resolved: the
@@ -259,6 +262,34 @@ test("a base that moved and now breaks the branch is integration-red, never an a
 	assert.equal(existsSync(integrationWorktreePath(fixture.store.storeDir, fixture.attempt)), true);
 });
 
+test("a base that moves on every pass stops the loop rather than holding the lease forever (§9.5)", async (t) => {
+	const fixture = await integrating(t);
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+
+	// A repository under continuous merge: every fetch answers a tip nobody has
+	// verified against. Unbounded, the loop would hold the integration lease
+	// indefinitely and report nothing.
+	let moves = 0;
+	const churning = {
+		...fixture.clone,
+		fetchBase: async (what) => {
+			moves += 1;
+			moveRemoteBase(t, fixture.remote, { [`human-${moves}.txt`]: `merge ${moves}\n` });
+			return fixture.clone.fetchBase(what);
+		},
+	};
+
+	const integrated = await integratePublish(fixture.store, churning, fixture.context);
+
+	assert.equal(integrated.outcome, "push-failed");
+	assert.equal(integrated.detail.passes, MAX_BASE_MOVES);
+	assert.match(integrated.detail.problem, /base moved on \d+ consecutive passes/);
+	// Nothing was published, and the lease is back for the next lane.
+	assert.throws(() => git(fixture.remote, ["rev-parse", "--verify", `refs/heads/${fixture.branch}`]));
+	assert.equal(fixture.leases.inspect(LEASE_NAMES.integration), null);
+});
+
 test("a base that moved and now conflicts is a rebase-conflict, from the integrate phase (§8.10)", async (t) => {
 	const fixture = await integrating(t, { files: { "contested.txt": "the attempt's line\n" } });
 	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
@@ -290,7 +321,11 @@ test("a branch that grew a commit after verification is never published (§7.4, 
 	assert.equal(integrated.outcome, "predicate-failed");
 	assert.equal(integrated.detail.at, "head");
 	assert.throws(() => git(fixture.remote, ["rev-parse", "--verify", `refs/heads/${fixture.branch}`]));
-	assert.equal(existsSync(path), true, "the only copy of the work was reclaimed on a failure");
+	// §12.7: on a failure both worktrees stay — the attempt's because it is the
+	// only copy of the work, the integration one because that is where an
+	// operator goes to see what the predicate refused.
+	assert.equal(existsSync(fixture.worktreePath), true, "the only copy of the work was reclaimed on a failure");
+	assert.equal(existsSync(path), true, "the integration worktree was reclaimed on a failure");
 });
 
 test("a commit with no §7.3 correlation trailer stops the publication (§7.3, §7.4)", async (t) => {

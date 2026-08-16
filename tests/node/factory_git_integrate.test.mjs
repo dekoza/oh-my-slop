@@ -118,7 +118,10 @@ test("a moved base is rebased onto the fresh tip, and the branch adopts it under
 
 	assert.equal(rebased.result, REBASE_RESULTS.rebased);
 	assert.notEqual(rebased.head, head);
-	assert.equal(git(opened.path, ["merge-base", "--is-ancestor", fresh.commit, rebased.head]) || "ancestor", "ancestor");
+	assert.doesNotThrow(
+		() => git(opened.path, ["merge-base", "--is-ancestor", fresh.commit, rebased.head]),
+		"the rebased head does not sit on the fresh base",
+	);
 
 	// The branch is still where the worker left it until the controller moves it,
 	// and moving it names the value it expects to replace.
@@ -159,7 +162,7 @@ test("a rebase conflict is a typed verdict, aborted and never resolved by the co
 	// human to walk into — and the head is exactly where it was.
 	assert.equal(rebased.head, head);
 	assert.equal(git(opened.path, ["rev-parse", "HEAD"]), head);
-	assert.equal(existsSync(`${clone.dir}/worktrees`) && rebaseInProgress(opened.path), false);
+	assert.equal(rebaseInProgress(opened.path), false, "a rebase was left in progress for the next caller to walk into");
 });
 
 function rebaseInProgress(worktreePath) {

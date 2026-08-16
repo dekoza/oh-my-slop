@@ -395,14 +395,17 @@ export function normalisePull(raw) {
 		kind: FOREIGN_ID_KINDS.issue,
 		foreign_id: foreignId(FOREIGN_ID_KINDS.issue, raw.id ?? raw.number, raw.updated_at),
 		number: raw.number,
+		// `state` is validated and kept because §7.5's reads are scoped to open
+		// pull requests and a record that could not say which it is would make
+		// that scoping unverifiable from the record alone.
 		state: raw.state,
-		title: raw.title ?? "",
+		// `body` is what `parsePullBody` reads to decide whether a PR is ours.
 		body: raw.body ?? "",
 		head_branch: typeof raw.head?.ref === "string" ? raw.head.ref : null,
 		head_sha: typeof raw.head?.sha === "string" ? raw.head.sha : null,
-		base_branch: typeof raw.base?.ref === "string" ? raw.base.ref : null,
-		merged: raw.merged === true,
-		updated_at: epochMillis(raw.updated_at, "pull.updated_at", raw),
+		// §4.3's raw timestamp, verbatim, for the probe's `occurredAtRaw`. The
+		// parsed form has no reader here — `normaliseIssue` carries one because
+		// §5.1's cursor compares against it, and a pull request is on no cursor.
 		updated_at_raw: raw.updated_at,
 		html_url: raw.html_url ?? null,
 	});

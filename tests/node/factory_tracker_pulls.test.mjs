@@ -12,7 +12,7 @@ import {
 import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
 import { TEST_HOLD as HOLD } from "./helpers/factory-git.mjs";
 import { fakeGitea, giteaIssue, giteaPull } from "./helpers/factory-tracker.mjs";
-import { FIXED_NOW, openTestStore, refusalOfAsync, runStarted } from "./helpers/factory-store.mjs";
+import { FIXED_NOW, openTestStore, refusalOf, refusalOfAsync, runStarted } from "./helpers/factory-store.mjs";
 
 /**
  * §7.5's pull request: its title, its machine-parseable body, `Closes #N`, the
@@ -108,6 +108,15 @@ test("§8.7's summary and advisory findings ride the block; blocking findings ne
 	assert.equal(parsed.summary, "one advisory finding stands");
 	assert.deepEqual(parsed.advisory.map((finding) => finding.severity), ["advisory"]);
 	assert.equal(Object.hasOwn(parsed, "blocking"), false, "a blocking finding reached a published PR");
+
+	// And it is a **refusal**, not a caller's discipline: the body is rendered by
+	// spreading whatever block it is handed, so a rule left to every call site
+	// would be as strong as the least careful one.
+	const refusal = refusalOf(() =>
+		renderPullBody(block({ blocking: [{ severity: "blocking", statement: "this swallows an error" }] })),
+	);
+	assert.equal(refusal.name, "FactoryTrackerError");
+	assert.equal(refusal.reason, "pull-unpublishable");
 });
 
 test("the block survives prose an operator wrote around it, and a body with none is not ours", () => {

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
 import { CHECK_RESULTS } from "../domain/vocabulary.mjs";
+import { createTurnstile } from "../state/turnstile.mjs";
 import { FactoryCheckError } from "./errors.mjs";
 
 /**
@@ -95,16 +96,7 @@ export const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
  * §10.5 refuses, because a diagnostic that blocks on a live controller is a
  * diagnostic nobody can use when it matters.
  */
-let lane = Promise.resolve();
-
-function serialized(work) {
-	const turn = lane.then(work, work);
-	lane = turn.then(
-		() => undefined,
-		() => undefined,
-	);
-	return turn;
-}
+const serialized = createTurnstile();
 
 /**
  * Run a declared set of checks in one directory and classify each result.

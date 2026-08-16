@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { createAttemptWorktree, factoryAttemptTrailer } from "../../../factory/lib/git/attempt.mjs";
@@ -106,18 +106,16 @@ export async function workedAttempt(t, { ticket = 42, files = { "worker.txt": "a
  * Move the remote's default branch on, the only way §9.5 says it ever moves: a
  * human merged something. The caller re-fetches to see it.
  *
+ * @param {import("node:test").TestContext} t owner of the checkout's lifetime
  * @param {string} remote the bare repository standing in for Gitea
- * @param {import("node:test").TestContext} t
  * @param {Record<string, string>} files the tree of the new commit
- * @returns {string} the new tip
  */
 export function moveRemoteBase(t, remote, files = { "human.txt": "merged by a human\n" }) {
-	const checkout = join(dirname(remote), `mover-${Math.random().toString(36).slice(2)}`);
+	const checkout = join(dirname(remote), `mover-${newUlid()}`);
 	execFileSync("git", ["clone", "--quiet", remote, checkout]);
-	t.after(() => execFileSync("rm", ["-rf", checkout]));
+	t.after(() => rmSync(checkout, { recursive: true, force: true }));
 	commitInto(checkout, files, { message: "chore: a human merge", trailer: null });
 	execFileSync("git", ["-C", checkout, "push", "--quiet", "origin", "HEAD:refs/heads/main"]);
-	return execFileSync("git", ["-C", checkout, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 }
 
 /** One commit, written into a worktree the way a worker writes one. */

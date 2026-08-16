@@ -50,7 +50,7 @@ export const COMMENT_OPERANDS = Object.freeze({
  * @returns {number | null}
  */
 export function commentTarget({ ticket, operand }) {
-	const matched = typeof operand === "string" ? /^superseded\/([1-9][0-9]*)$/.exec(operand) : null;
+	const matched = typeof operand === "string" ? SUPERSEDED_OPERAND.exec(operand) : null;
 	return matched === null ? ticket : Number.parseInt(matched[1], 10);
 }
 
@@ -58,6 +58,13 @@ export function commentTarget({ ticket, operand }) {
 export function supersededOperand(pullNumber) {
 	return `${COMMENT_OPERANDS.superseded}/${pullNumber}`;
 }
+
+/**
+ * The same spelling, read back — **built from the constant** rather than typed a
+ * second time, which is what "one spelling serves both sides" has to mean if it
+ * is to survive a rename.
+ */
+const SUPERSEDED_OPERAND = new RegExp(`^${COMMENT_OPERANDS.superseded}/([1-9][0-9]*)$`);
 
 /**
  * The two that **announce a claim**, and therefore the two whose absence the
