@@ -14,7 +14,7 @@ requires:
 Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 - **Standards** — does the code conform to this repo's documented coding standards?
-- **Spec** — does the code faithfully implement the originating issue / PRD / spec?
+- **Spec** — does the code faithfully implement the originating issue / spec?
 
 This skill runs both axes and aggregates their findings. **Each axis is its own skill** —
 `review-standards` and `review-spec` — carrying its own brief, its own trust boundary, and (for

@@ -225,12 +225,12 @@ Rituals you run — session and tracker state, from interview through implementa
 | **[Restore Test Pyramid](skills/workflow/restore-test-pyramid/SKILL.md)** | User-invoked ritual that pushes E2E-only assertions down to integration/unit tiers — per-assertion classification, fidelity gate (migrated assertion must go red under the same mutation), one happy-path smoke per flow, xdist pass. |
 | **[Teach](skills/workflow/teach/SKILL.md)** | Multi-session teaching ritual — the current directory becomes a stateful workspace (MISSION.md, HTML lessons, learning records, glossary) grounding lessons in the learner's mission and zone of proximal development. |
 | **[To Questionnaire](skills/workflow/to-questionnaire/SKILL.md)** | Turn a decision you can't answer alone into a Markdown questionnaire for the one person who can fill it in — grills the send (who, expertise, need) not the subject, then writes a structured, ordered file. |
-| **[To Spec](skills/workflow/to-spec/SKILL.md)** | Turn the current conversation into a spec/PRD — problem statement, user stories, implementation and testing decisions — published to the issue tracker or `docs/specs/`. No interview, pure synthesis. |
+| **[To Spec](skills/workflow/to-spec/SKILL.md)** | Turn the current conversation into a spec — problem statement, user stories, implementation and testing decisions — published to the issue tracker or `docs/specs/`. No interview, pure synthesis. |
 | **[Wizard](skills/workflow/wizard/SKILL.md)** | Generate an interactive bash wizard that walks a human through a manual setup or migration procedure — opening URLs, capturing values, confirming each step, and writing `.env` files and CI secrets (GitHub and Gitea/Forgejo Actions). |
 | **[To Tickets](skills/workflow/to-tickets/SKILL.md)** | Break a plan, spec, or conversation into tracer-bullet tickets — vertical slices with explicit blocking edges — published to the tracker or one local file per ticket. Expand–contract sequencing for wide refactors. |
 | **[Triage](skills/workflow/triage/SKILL.md)** | Issue/PR triage state machine — categorise, verify the claim, grill into shape, write durable agent briefs, maintain an .out-of-scope/ knowledge base of rejected requests. |
 | **[Two-Axis Review](skills/workflow/two-axis-review/SKILL.md)** | Run both review axes over the changes since a fixed point and aggregate them without reranking — sub-agents when the harness has them, sequentially when it does not. |
-| **[Wayfinder](skills/workflow/wayfinder/SKILL.md)** | Plan work too big for one session as a shared map of investigation tickets on the issue tracker — destination, frontier, fog of war — resolved one ticket per session until the way is clear. |
+| **[Wayfinder](skills/workflow/wayfinder/SKILL.md)** | Plan work too big for one session as a shared map of decision tickets on the issue tracker — destination, frontier, fog of war — resolved one ticket per session until the way is clear. |
 
 #### Meta
 
