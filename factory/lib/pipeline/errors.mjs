@@ -72,6 +72,14 @@ export const PIPELINE_ERROR_REASONS = Object.freeze([
 	 * review that comes back badly is `rejected`, which is an answer.
 	 */
 	"review-unroutable",
+	/**
+	 * §8.7: an attestation asked for without something it exists to record — no
+	 * published commit, no check results, no review verdicts. It is fail-closed
+	 * because the artifact is what turns "the controller verified this" from a
+	 * policy statement into a checkable claim, and an attestation with a hole in
+	 * it makes the claim weaker while looking exactly as strong (§14.16).
+	 */
+	"attestation-incomplete",
 ]);
 
 export class FactoryPipelineError extends Error {

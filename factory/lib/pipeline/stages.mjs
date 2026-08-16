@@ -412,6 +412,38 @@ function stageRecords(store, { run, ticket }) {
 }
 
 /**
+ * Every stage this ticket execution resolved, **with its detail** — the chain
+ * plus what each step actually found.
+ *
+ * `outcomeChain` deliberately summarises to `(phase, outcome, attempt)` because
+ * that is what a human's next action depends on. §8.7's attestation needs the
+ * other half: the checks the verify phase ran, the verdicts and findings each
+ * review axis wrote, the before/after guard each one was held to. Re-deriving
+ * those from the journal a second way is how two readers of one record start to
+ * disagree, so there is one reader and two projections of it.
+ *
+ * @param {object} store an open store, controller or read-only
+ * @param {{ run: string, ticket: number, phase?: string | null }} where
+ * @returns {ReadonlyArray<Readonly<object>>} in the journal's own sequence order
+ */
+export function stageResults(store, { run, ticket, phase = null }) {
+	return Object.freeze(
+		stageRecords(store, { run, ticket })
+			.filter((record) => phase === null || record.phase === phase)
+			.map((record) =>
+				Object.freeze({
+					phase: record.phase,
+					attempt: record.attempt,
+					outcome: record.payload.outcome,
+					action: record.payload.action,
+					detail: record.payload.detail,
+					anomaly: record.payload.anomaly,
+				}),
+			),
+	);
+}
+
+/**
  * The result committed under one semantic key, or `null` for a stage nobody
  * resolved.
  *

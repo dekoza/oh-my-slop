@@ -189,6 +189,25 @@ export const OUTCOME_TABLE = Object.freeze([
 	}),
 	row({ phase: PHASE_INTEGRATE, outcome: "predicate-failed", action: STAGE_ACTIONS.dispose, fault: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_INTEGRATE, outcome: "push-failed", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
+	/**
+	 * §9.5's loop re-rebased onto a base that moved, and the required set came
+	 * back red on the result (§20, #113).
+	 *
+	 * **Dispose, not retry, and no budget:** the same base conflicts the same way,
+	 * so a retry buys a second identical answer — which is also what keeps §15's
+	 * case 10 intact, since the loop that re-rebases spends nothing and this is
+	 * the exit from it rather than another lap. It carries a **reason class and no
+	 * fault**, so §14.18 settles it `failed` while §8.6's "product-level outcomes
+	 * never trip the breaker" holds by construction rather than by a rule anyone
+	 * has to remember.
+	 */
+	row({
+		phase: PHASE_INTEGRATE,
+		outcome: "integration-red",
+		action: STAGE_ACTIONS.dispose,
+		reasonClass: "integration-red",
+		evidence: EVIDENCE_TRUST.fact,
+	}),
 
 	// ── The four rows that name no phase ─────────────────────────────────────
 	row({ phase: TABLE_WIDE, outcome: "repair-budget-exhausted", action: STAGE_ACTIONS.dispose, reasonClass: "repair-budget-exhausted" }),

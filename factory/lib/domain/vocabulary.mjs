@@ -208,7 +208,25 @@ export const PHASE_RESULTS = Object.freeze({
 	[PHASE_HARVEST]: Object.freeze(["passed", "predicate-failed"]),
 	[PHASE_VERIFY]: Object.freeze(Object.values(CHECK_RESULTS)),
 	[PHASE_REVIEW]: Object.freeze(["approved", "rejected", "mutation-detected"]),
-	[PHASE_INTEGRATE]: Object.freeze(["integrated", "rebase-conflict", "predicate-failed", "push-failed"]),
+	[PHASE_INTEGRATE]: Object.freeze([
+		"integrated",
+		"rebase-conflict",
+		"predicate-failed",
+		"push-failed",
+		/**
+		 * §9.5's compare-and-publish loop found the base had moved, re-rebased, and
+		 * the required set came back **red on the rebased result** (§20, #113).
+		 *
+		 * It is a phase result of its own rather than a `predicate-failed`, for the
+		 * reason §8.8 gives about not squeezing controller-phase results into the
+		 * attempt enum: §7.4's integration-side predicates are controller faults —
+		 * a damaged diff, a mis-pushed sha — and this is the opposite, two changes
+		 * that each pass alone and do not compose. §8.6 says product-level outcomes
+		 * never trip the circuit breaker, and filing this as an automation fault
+		 * would stop a run over infrastructure that is working.
+		 */
+		"integration-red",
+	]),
 });
 
 /**
@@ -235,6 +253,17 @@ export const CONTROLLER_DERIVED_REASON_CLASSES = Object.freeze([
 	"rebase-conflict",
 	"review-mutation",
 	"check-unrunnable",
+	/**
+	 * The required set red at the rebased commit (§20, #113) — §8.3's
+	 * `baseline-red` one phase later, and named after it deliberately: the same
+	 * fact about a different commit, and the same thing to look at.
+	 *
+	 * Controller-derived because no worker was asked: the branch was green at its
+	 * own base and the base moved under it. §14.18 therefore settles it `failed`,
+	 * which is the investigation a human owes it, with the branch and worktree
+	 * retained as §7.7 requires.
+	 */
+	"integration-red",
 ]);
 
 export const REASON_CLASSES = Object.freeze([

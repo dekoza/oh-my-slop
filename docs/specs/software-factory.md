@@ -1062,7 +1062,7 @@ Controller-derived: `invalid-result` · `no-result` · `dead-worker` · `timeout
 `harvest` → `passed` | `predicate-failed` ·
 `verify` → `passed` | `failed` | `unrunnable` ·
 `review` → `approved` | `rejected` | `mutation-detected` ·
-`integrate` → `integrated` | `rebase-conflict` | `predicate-failed` | `push-failed`.
+`integrate` → `integrated` | `rebase-conflict` | `predicate-failed` | `push-failed` | `integration-red`.
 
 `verify` and `integrate` have no worker, so forcing their results into the attempt enum would
 conflate them.
@@ -1073,7 +1073,8 @@ conflate them.
 Worker-writable: `product-ambiguity` · `spec-contradiction` · `missing-access` ·
 `risky-action-required` · `out-of-scope-discovered` · `dependency-unmet`.
 Controller-derived, never worker-writable: `repair-budget-exhausted` ·
-`automation-budget-exhausted` · `rebase-conflict` · `review-mutation` · `check-unrunnable`.
+`automation-budget-exhausted` · `rebase-conflict` · `review-mutation` · `check-unrunnable` ·
+`integration-red`.
 Run-scoped, not a ticket disposition: `baseline-red`.
 
 > **The invariant:** *every worker-writable reason class ⇒ `paused`; every controller-derived
@@ -1138,6 +1139,7 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | integrate | `rebase-conflict` | fresh-retry from the new base tip | repair |
 | integrate | `predicate-failed` | `failed` / automation | — |
 | integrate | `push-failed` | retry | automation |
+| integrate | `integration-red` | `failed` / `integration-red`, check output presented as fact | — |
 | — | repair budget exhausted | `failed` / `repair-budget-exhausted` | — |
 | — | automation budget exhausted | `failed` / `automation-budget-exhausted` | — |
 | — | duplicate result, identical | return the existing result, idempotent | — |
@@ -1147,6 +1149,12 @@ human removing the label is what makes the label mean "someone has acknowledged 
 
 - **`mutation-detected` is the only outcome with no retry at all.** A read-only role that wrote
   has broken its own contract, and retrying it buys a second violation.
+- **`integration-red` disposes and consumes nothing**, because the same base conflicts the same
+  way and a retry buys a second identical answer. It is §8.3's `baseline-red` one phase later —
+  the required set red at a commit no worker chose — and it carries a **reason class and no
+  automation fault**, so §8.6's "product-level outcomes never trip the breaker" holds by
+  construction: two changes that each pass alone and do not compose is not a broken host, and
+  stopping the run over it would point an operator at infrastructure that is working.
 - **A `rebase-conflict` consumes a fresh-retry, not a repair**, because the prior tip is
   precisely what conflicts. A second conflict is `failed` / `rebase-conflict`, and **the
   controller never attempts automatic resolution**, which would put a model inside a controller
