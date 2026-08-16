@@ -1,11 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { validateBudgets } from "../../factory/lib/config/defaults.mjs";
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
-import { budgetSpend, exhaustionOf, requireBudget } from "../../factory/lib/pipeline/budgets.mjs";
+import {
+	BUDGET_KEYS,
+	BUDGET_KEY_FOR_ACTION,
+	budgetSpend,
+	exhaustionOf,
+	requireBudget,
+} from "../../factory/lib/pipeline/budgets.mjs";
 import { resolveStage } from "../../factory/lib/pipeline/stages.mjs";
-import { routeOutcome } from "../../factory/lib/pipeline/table.mjs";
+import { OUTCOME_TABLE, routeOutcome } from "../../factory/lib/pipeline/table.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
+import { factorySources } from "./helpers/factory-repo.mjs";
 import { FIXED_NOW, attemptLaunched, manualTimers, openTestStore, runStarted } from "./helpers/factory-store.mjs";
 
 /**
@@ -216,3 +224,45 @@ test("§8.10: a row naming its own exhausted class keeps that class, and the fau
 test("a row that charges no budget cannot be asked for one", () => {
 	assert.equal(refusal(() => exhaustionOf(routeOutcome("implement", "completed"))).reason, "outcome-unmapped");
 });
+
+// ── §8.6: no counter exists that is not compared to a bound ──────────────────
+
+test("§8.10: an action that retries and a row that names a budget are the same set of rows", () => {
+	const spends = OUTCOME_TABLE.filter((row) => Object.hasOwn(BUDGET_KEY_FOR_ACTION, row.action));
+	const budgeted = OUTCOME_TABLE.filter((row) => row.budget !== null);
+
+	// Both directions, because both are the same defect wearing different
+	// clothes: a retry action with no budget column is a retry nothing bounds,
+	// and a budget column on a row that never retries is a bound nothing reads.
+	assert.deepEqual(spends, budgeted);
+	assert.ok(spends.length > 0, "the table declares retries at all");
+});
+
+test("§11.6: every budget an action can charge is a number the loader declares", () => {
+	// The loader's own answer with nothing declared, which is §11.6's defaults.
+	const declared = validateBudgets(undefined, ".pi/factory.json");
+
+	assert.deepEqual(BUDGET_KEYS.toSorted(), Object.keys(declared).toSorted());
+});
+
+test("§8.6: the tree holds no retry counter — the legacy shape is not reintroduced", () => {
+	// `job-pipeline`'s `replanCount` was incremented forever and compared to
+	// nothing, and §8.6 names it as the failure mode being foreclosed. This is
+	// the same shape of grep the journal's no-mid-stream-delete invariant uses:
+	// the property is worth more as a structural check over the shipped tree
+	// than as a rule each new module is trusted to remember.
+	//
+	// Comments are stripped first, because both modules that count budgets *cite*
+	// `replanCount` as the thing they exist not to be, and a check that could not
+	// tell the citation from the deed would push the explanation out of the code.
+	const counters = factorySources().filter(([, source]) =>
+		/\b(replanCount|repairCount|retryCount|attemptsUsed|budgetUsed)\b/.test(withoutComments(source)),
+	);
+
+	assert.deepEqual(counters.map(([path]) => path), []);
+});
+
+/** Source with block and line comments removed. Enough for a plain-ESM tree. */
+function withoutComments(source) {
+	return source.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/^\s*\/\/.*$/gm, "");
+}

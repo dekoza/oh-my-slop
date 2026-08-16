@@ -1249,6 +1249,17 @@ test("§8.6: two consecutive automation failures stop new claims and end the run
 	});
 	assert.equal(answer.report.lifecycle, "ended");
 	assert.deepEqual(answer.report.capacity.holders, [], "§15 case 5 holds through a breaker exit too");
+
+	// §10.3: draining covers an operator's stop and the breaker **identically**,
+	// so the breaker exits through §3.5's report exactly as a stop does — one
+	// report, one end reason, and the ticket it never reached still classified
+	// rather than quietly absent.
+	assert.equal(answer.report.execution.drained, false, "a scope with work left on it never reports as drained");
+	assert.equal(answer.report.execution.claimed, 2);
+	assert.deepEqual(
+		answer.report.execution.members.map((member) => member.ticket).toSorted((left, right) => left - right),
+		[42, 77, 91],
+	);
 });
 
 test("§8.6: product-level failures interleaved among automation failures leave the run claiming", async (t) => {

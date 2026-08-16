@@ -276,7 +276,7 @@ test("a repository the factory has never run in can still have its baseline exec
 	assert.equal(report.baseline.ok, true);
 });
 
-test("per-ticket budget counters are reported, naming the subsystem that will fill them", async (t) => {
+test("per-ticket budget counters are reported, derived from the chain rather than tallied", async (t) => {
 	const { reader, context, run } = await diagnosable(t);
 
 	const report = await doctorReport(reader, context);
@@ -284,10 +284,17 @@ test("per-ticket budget counters are reported, naming the subsystem that will fi
 	const ticket = report.counters.tickets.find((entry) => entry.ticket === 92);
 	assert.equal(ticket.run, run);
 	assert.equal(ticket.attempts, 1);
-	for (const counter of ["repair", "fresh_retry", "automation"]) {
-		assert.equal(ticket[counter], null, `${counter} is not a number this package can honestly report`);
-	}
-	assert.match(report.counters.missing, /#11[01]/);
+	// §8.6's spend is a count over the stage resolutions that charged each
+	// budget, so a ticket execution that failed nothing has spent nothing — and
+	// that zero is the truth rather than the plausible zero of a counter nothing
+	// increments.
+	assert.deepEqual(
+		{ repair: ticket.repair, fresh_retry: ticket.fresh_retry, automation: ticket.automation },
+		{ repair: 0, fresh_retry: 0, automation: 0 },
+	);
+	assert.equal(report.counters.missing, null, "§8.6 is built: nothing is waiting on a ticket here");
+	assert.equal(report.counters.circuit_breaker.threshold, 2);
+	assert.equal(report.counters.circuit_breaker.runs.find((entry) => entry.run === run).tripped, false);
 });
 
 test("the package handshake runs in report mode, and its findings are data", async (t) => {

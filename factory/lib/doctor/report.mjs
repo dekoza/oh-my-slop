@@ -5,8 +5,10 @@ import { artifactBytesByClass } from "../artifacts/ledger.mjs";
 import { capacityFor } from "../capacity/report.mjs";
 import { baselineForRepo } from "../checks/baseline.mjs";
 import { checkRecord } from "../checks/run.mjs";
+import { CIRCUIT_BREAKER_THRESHOLD, circuitBreaker } from "../controller/breaker.mjs";
 import { describeScope, PARENT_FLAG } from "../controller/scope.mjs";
 import { unresolvedEffects } from "../effects/records.mjs";
+import { budgetSpend } from "../pipeline/budgets.mjs";
 import { FactoryPackageError } from "../package/errors.mjs";
 import { packageHandshake } from "../package/handshake.mjs";
 import { reconcile, RECONCILE_MODES } from "../reconcile/engine.mjs";
@@ -546,23 +548,32 @@ function diagnosed(result) {
 
 /**
  * §10.5's per-ticket counters, "since *why did this stop* is usually a budget
- * question". The attempt count is a projection this package maintains; the three
- * budget counters belong to §8.5's two repair tiers and §8.6's breaker, and a
- * zero reported for a counter nothing increments would answer the operator's
- * question wrongly.
+ * question", plus §8.6's breaker verdict per run — the run-level half of the
+ * same question.
  *
- * **When they arrive, they arrive derived**: a `GROUP BY` over the attempt
- * projection's outcomes, the way §12.10's byte accounting falls out of the
- * ledger — never a second tally kept in step with the attempts it counts. The
- * `attempt.outcome` column is already there and already empty, waiting for the
- * slice that owns §8.8's vocabulary; a parallel counter table would be a number
- * that can disagree with the attempts it claims to describe.
+ * **Every number here is derived**, the way §12.10's byte accounting falls out
+ * of the ledger: the attempt count is a projection this package maintains, and
+ * the three budget spends are counts over the stage resolutions that charged
+ * them. A parallel counter table would be a number that can disagree with the
+ * chain it claims to describe, and a `doctor` whose answer disagrees with the
+ * controller's is worse than one that says nothing.
+ *
+ * A zero here is therefore a real zero — a ticket execution that failed nothing
+ * has spent nothing — rather than the plausible zero of a counter nothing
+ * increments, which is what this section refused to print before §8.6 was built.
  *
  * The scope is the runs doctor is already talking about: those still open, plus
  * any run holding an unresolved effect.
  */
 function countersSection(store, unresolved) {
-	if (store === null) return Object.freeze({ tickets: Object.freeze([]), missing: null, spec: "§8.5, §8.6" });
+	if (store === null) {
+		return Object.freeze({
+			tickets: Object.freeze([]),
+			circuit_breaker: null,
+			missing: null,
+			spec: "§8.5, §8.6",
+		});
+	}
 
 	const runs = new Set([
 		...store.readUnendedRuns().map((row) => row.run_id),
@@ -570,26 +581,32 @@ function countersSection(store, unresolved) {
 	]);
 
 	const tickets = [...runs].flatMap((run) =>
-		store.readTicketExecutions(run).map((execution) =>
-			Object.freeze({
+		store.readTicketExecutions(run).map((execution) => {
+			const spend = budgetSpend(store, { run, ticket: execution.ticket });
+			return Object.freeze({
 				run,
 				ticket: execution.ticket,
 				phase: execution.phase,
 				disposition: execution.disposition,
 				attempts: execution.attempt_count,
-				repair: null,
-				fresh_retry: null,
-				automation: null,
-			}),
-		),
+				repair: spend.repair,
+				fresh_retry: spend.freshRetry,
+				automation: spend.automation,
+			});
+		}),
 	);
 
 	return Object.freeze({
 		tickets: Object.freeze(tickets),
-		// §8.5's two tiers are built (#110), so what is missing from *this* section is
-		// only the counting: the three budgets and the circuit breaker that spend them.
-		missing: "the budgets and the circuit breaker (#111)",
-		spec: "§8.6",
+		// §8.6's run-level verdict, reported whether or not it tripped: a run one
+		// automation failure short of the threshold is exactly what an operator
+		// wants to see before it stops claiming rather than after.
+		circuit_breaker: Object.freeze({
+			threshold: CIRCUIT_BREAKER_THRESHOLD,
+			runs: Object.freeze([...runs].map((run) => Object.freeze({ run, ...circuitBreaker(store, { run }) }))),
+		}),
+		missing: null,
+		spec: "§8.5, §8.6",
 	});
 }
 
