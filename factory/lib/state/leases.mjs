@@ -93,15 +93,25 @@ export function openLeases(store, { now = Date.now } = {}) {
 		now,
 
 		/**
-		 * @param {{ name: string, identity: object, event?: object | null }} request
+		 * @param {{ name: string, identity: object, event?: object | null, fencedTo?: number | null }} request
 		 *   the TTL is **not** a parameter: it belongs to the object (see
 		 *   `LEASE_TTLS`). `event` is appended in the **same transaction** as the
 		 *   row, because a lease row is canonical rather than a projection and
 		 *   must not drift from its event (§4.4).
+		 *
+		 *   `fencedTo` is §9.4's "**fenced to the controller's lease generation**":
+		 *   a capacity slot records the generation of the controller that took it
+		 *   rather than one of its own, so a row a superseded controller took is
+		 *   recognisable as superseded **whenever it was taken**. Minting here
+		 *   instead would stamp a row taken by a stale-but-live controller with a
+		 *   number *above* its successor's, and that row would then be honored
+		 *   forever. The number still comes from the one DB-wide counter — it is
+		 *   the caller's own lease generation, drawn from it earlier — so §4.6's
+		 *   total order across leases is untouched.
 		 * @returns {Readonly<object>} the hold, whose token is the ownership proof
 		 * @throws {FactoryStateError} `lease-held` when a live holder has it
 		 */
-		acquire: ({ name, identity, event = null }) =>
+		acquire: ({ name, identity, event = null, fencedTo = null }) =>
 			store.transaction(({ db, appendEvent }) => {
 				requireLeaseName(name);
 				const at = now();
@@ -115,7 +125,7 @@ export function openLeases(store, { now = Date.now } = {}) {
 					deleteLease(db, name, incumbent.token);
 				}
 
-				const generation = mintGeneration(db);
+				const generation = fencedTo ?? mintGeneration(db);
 				const token = randomBytes(16).toString("hex");
 				const expiresAt = ttlMs === null ? null : at + ttlMs;
 
@@ -222,6 +232,28 @@ export function openLeases(store, { now = Date.now } = {}) {
 
 		/** @returns {object | null} the row as the operator and reconcile read it */
 		inspect: (name) => store.read((db) => readLease(db, name)),
+
+		/**
+		 * Every row whose name starts with `prefix`, in name order.
+		 *
+		 * §9.4's capacity rows are a *pool* rather than a singleton, and the two
+		 * questions asked of a pool — which indices are free, and who holds the rest
+		 * — are one read each rather than one read per index. It lives here because
+		 * the `lease` table is this module's (§4.6): a `SELECT` over it anywhere
+		 * else is the second place a lease row could be interpreted.
+		 *
+		 * @param {string} prefix
+		 * @returns {ReadonlyArray<object>}
+		 */
+		list: (prefix) =>
+			store.read((db) =>
+				Object.freeze(
+					db
+						.prepare("SELECT * FROM lease WHERE name LIKE ? ESCAPE '\\' ORDER BY name")
+						.all(`${prefix.replaceAll(/[%_\\]/g, "\\$&")}%`)
+						.map(decode),
+				),
+			),
 	});
 }
 

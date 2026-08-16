@@ -18,6 +18,7 @@ import { HERDR_REMEDIES } from "../../factory/lib/controller/herdr.mjs";
 import { FOREGROUND_FLAG } from "../../factory/lib/controller/launch.mjs";
 import { writeRunManifest } from "../../factory/lib/controller/manifest.mjs";
 import { runStart } from "../../factory/lib/controller/start.mjs";
+import { runStop } from "../../factory/lib/controller/stop.mjs";
 import {
 	CONTROLLER_EXIT_LEASE_LOST,
 	RUN_LIFECYCLES,
@@ -166,11 +167,13 @@ test("a start drains, ends with a reason, and exits with that reason's code", as
 	assert.equal(value.report.lifecycle, "ended");
 	assert.equal(value.report.execution.claimed, 0);
 	// §9.7's green-looking run that did nothing has to be impossible to mistake
-	// for a run that did the work. #100's tracker reader has landed and `doctor`
-	// answers from it, but nothing calls it from here until #101's loop does —
-	// so the sentence names the loop, and a member list this run never looked at
-	// stays empty rather than being borrowed from a verb that did.
-	assert.match(value.report.execution.missing, /#101/);
+	// for a run that did the work. #100's reader can answer what is claimable and
+	// #101's loop can schedule it, but the two are composed only by #102's claim:
+	// a frontier read without one would hand the loop a ticket it could then only
+	// refuse to execute. So the sentence names that half, and a member list this
+	// run never looked at stays empty rather than being borrowed from a verb that
+	// did.
+	assert.match(value.report.execution.missing, /#102/);
 	assert.deepEqual(value.report.execution.members, []);
 });
 
@@ -842,4 +845,101 @@ test("re-entering a run whose declared inputs changed is a red check, not a sile
 	const check = value.report.preflight.checks.find((candidate) => candidate.check === "run-manifest");
 	assert.equal(check.detail.reason, "effect-payload-conflict");
 	assert.match(check.message, /--new-run/);
+});
+
+// ── §9's capacity and the scheduler loop, from the run's own side ─────────────
+
+test("the run reports the declared ceiling and the effective concurrency beside its execution", async (t) => {
+	const context = invocation(t);
+
+	const { value } = await runCli(["start", "--foreground", "42"], context);
+
+	assert.equal(value.report.capacity.declared_ceiling, 1);
+	assert.equal(value.report.capacity.effective_concurrency, 1);
+	assert.deepEqual(value.report.capacity.classes, [
+		{ class: "local", size: 1, held: 0, waiting: 0, superseded: 0 },
+	]);
+	assert.deepEqual(value.report.capacity.holders, [], "§15 case 5: no capacity row survives the run");
+});
+
+test("a run claims its frontier in ascending order and leaves no slot held", async (t) => {
+	const context = invocation(t);
+	const loaded = loadFactoryConfig({ cwd: context.cwd });
+	const executed = [];
+
+	const answer = await runStart({
+		...loaded,
+		agentDir: context.agentDir,
+		executable: context.executable,
+		env: context.env,
+		herdr: context.herdr,
+		args: ["42"],
+		flags: new Set([FOREGROUND_FLAG]),
+		frontier: async () => ({
+			claimable: [42, 91],
+			members: [
+				{ ticket: 42, labels: ["workflow:implement"] },
+				{ ticket: 91, labels: ["workflow:implement"] },
+			],
+		}),
+		execute: ({ ticket, slots }) => {
+			executed.push({ ticket, ticketSlot: slots.ticket.name, modelSlot: slots.model.name });
+			return { disposition: "published" };
+		},
+	});
+
+	assert.deepEqual(
+		executed.map((lane) => lane.ticket),
+		[42, 91],
+		"§3.2's ascending issue number, and nothing else",
+	);
+	assert.deepEqual(executed[0], {
+		ticket: 42,
+		ticketSlot: "capacity:ticket:0",
+		modelSlot: "capacity:model:local:0",
+	});
+	assert.equal(answer.report.execution.claimed, 2);
+	assert.deepEqual(
+		answer.report.execution.members.map((member) => [member.ticket, member.disposition]),
+		[
+			[42, "published"],
+			[91, "published"],
+		],
+	);
+	assert.deepEqual(answer.report.capacity.holders, [], "§15 case 5, through the whole run");
+});
+
+test("a stop honoured at a ticket boundary stops the loop claiming, and the run still ends with one reason", async (t) => {
+	const context = invocation(t);
+	const loaded = loadFactoryConfig({ cwd: context.cwd });
+	const executed = [];
+
+	const answer = await runStart({
+		...loaded,
+		agentDir: context.agentDir,
+		executable: context.executable,
+		env: context.env,
+		herdr: context.herdr,
+		args: ["42"],
+		flags: new Set([FOREGROUND_FLAG]),
+		frontier: async () => ({
+			claimable: [42, 91],
+			members: [
+				{ ticket: 42, labels: [] },
+				{ ticket: 91, labels: [] },
+			],
+		}),
+		execute: async ({ ticket }) => {
+			executed.push(ticket);
+			// The operator asks, from another terminal, while this lane runs.
+			await runStop({ repoRoot: context.cwd, agentDir: context.agentDir });
+			return { disposition: "published" };
+		},
+	});
+
+	assert.deepEqual(executed, [42], "§9.6: draining is not claiming, and the in-flight lane still finished");
+	assert.equal(answer.report.end_reason, "stopped-by-operator");
+	assert.equal(answer.exitCode, exitCodeForEndReason("stopped-by-operator"));
+	assert.equal(answer.report.execution.claimed, 1);
+	assert.deepEqual(answer.report.capacity.holders, []);
 });

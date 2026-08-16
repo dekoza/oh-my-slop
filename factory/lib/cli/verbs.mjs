@@ -4,6 +4,7 @@ import { NEW_RUN_FLAG, runStart } from "../controller/start.mjs";
 import { runStop } from "../controller/stop.mjs";
 import { runDoctor } from "../doctor/verb.mjs";
 import { runReconcile } from "../reconcile/verb.mjs";
+import { runStatus } from "../status/verb.mjs";
 
 /**
  * The §10.2 verb set. Every operator verb lives in this one deterministic
@@ -43,8 +44,8 @@ export const VERB_TABLE = Object.freeze({
 	},
 	status: {
 		requiresConfig: true,
+		handler: runStatus,
 		summary: "report the current and recent runs",
-		missing: "the durable state projections it reads (#90)",
 		spec: "§4.4, §10.2",
 	},
 	doctor: {

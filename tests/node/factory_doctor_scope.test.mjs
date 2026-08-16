@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { EXIT_USAGE } from "../../factory/lib/cli/exit-codes.mjs";
 import { runCli } from "../../factory/lib/cli/main.mjs";
+import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { parseScope } from "../../factory/lib/controller/scope.mjs";
 import { doctorReport } from "../../factory/lib/doctor/report.mjs";
 import { runDoctor } from "../../factory/lib/doctor/verb.mjs";
@@ -39,6 +40,9 @@ async function diagnosable(t) {
 	const root = makePackage(t);
 	const reader = await openRepoStoreReadOnly({ repoRoot, agentDir });
 	t.after(() => reader?.close());
+	// §9.7's capacity section is computed from the policy this invocation loaded,
+	// so a diagnosis carries the config the way every other verb does.
+	const { config, activeRouting } = loadFactoryConfig({ cwd: repoRoot });
 
 	return {
 		repoRoot,
@@ -47,6 +51,8 @@ async function diagnosable(t) {
 		context: {
 			repoRoot,
 			agentDir: { path: agentDir, source: "caller" },
+			config,
+			activeRouting,
 			executable: join(root, "factory", "bin", "factory.mjs"),
 			env: { PATH: onPath(t, join(root, "factory", "bin", "factory.mjs")) },
 			probes: createProbeRegistry(),
@@ -163,6 +169,8 @@ test("the headline names the frontier when one was asked for", async (t) => {
 	const answered = await runDoctor({
 		repoRoot,
 		agentDir,
+		config: context.config,
+		activeRouting: context.activeRouting,
 		args: ["7", "19", "40"],
 		tracker: trackerReader,
 		probes: context.probes,
@@ -186,6 +194,8 @@ test("`doctor --parent` resolves membership from the label and the Part of line"
 	const answered = await runDoctor({
 		repoRoot,
 		agentDir,
+		config: context.config,
+		activeRouting: context.activeRouting,
 		args: ["75"],
 		flags: new Set(["--parent"]),
 		tracker: trackerReader,

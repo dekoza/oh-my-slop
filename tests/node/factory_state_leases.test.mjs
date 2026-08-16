@@ -175,6 +175,24 @@ test("capacity slots are discrete named rows", () => {
 	assert.equal(capacityModelSlot("local", 2), "capacity:model:local:2");
 });
 
+test("a pool is read in one query, and each row still names its own holder", async (t) => {
+	const store = await openTestStore(t);
+	const leases = openLeases(store, { now: () => T0 });
+	leases.acquire({ name: LEASE_NAMES.controller, identity: leaseIdentity() });
+	leases.acquire({ name: capacityTicketSlot(1), identity: leaseIdentity({ ticket: 42 }) });
+	leases.acquire({ name: capacityModelSlot("local", 0), identity: leaseIdentity({ ticket: 42 }) });
+
+	assert.deepEqual(
+		leases.list("capacity:").map((row) => [row.name, row.identity.ticket]),
+		[
+			["capacity:model:local:0", 42],
+			["capacity:ticket:1", 42],
+		],
+		"the controller lease is not a capacity row, and a counter could name no holder at all",
+	);
+	assert.deepEqual(leases.list("capacity:model:local:"), [leases.inspect(capacityModelSlot("local", 0))]);
+});
+
 // ── The DB-wide fencing counter (§4.6) ───────────────────────────────────────
 
 test("fencing generations come from one counter, so they are totally ordered across all leases", async (t) => {

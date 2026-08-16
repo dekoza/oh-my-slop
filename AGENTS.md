@@ -93,13 +93,37 @@ is the authority; cite the section a change answers to.
   a policy the loader fills in is a policy nobody can read on disk.
 - Policy that is not configuration lives in code, and each piece is read from exactly
   one place: the label vocabulary in `factory/lib/tracker/labels.mjs`;
-  `MAX_SUPPORTED_TICKET_CONCURRENCY` in `factory/lib/config/concurrency.mjs`; the
+  `MAX_SUPPORTED_TICKET_CONCURRENCY` in `factory/lib/config/concurrency.mjs`;
+  `MAX_PANES_PER_TICKET` in `factory/lib/capacity/plan.mjs`; the
   closed domain enums — phases, run lifecycles, end reasons, dispositions, attempt
   outcomes — in `factory/lib/domain/vocabulary.mjs`; and the event-kind enumeration in
   `factory/lib/state/events.mjs`. A vocabulary that grows a second home has already
   started to drift. The scheduler stays capacity-parametric and never reads the
   ceiling — that is what makes raising it a one-line change, and
   `tests/node/factory_config_semantics.test.mjs` guards it.
+- **Capacity is arbitrated by named rows, never by a counter.** `capacity:ticket:<i>`
+  and `capacity:model:<class>:<i>` are compare-and-swap holds on the lease primitive,
+  so a slot names its holder and is probeable; a number is not. The resource class is
+  what arbitrates — derived from the profile (`resourceClassOf`), never declared — and
+  the pane bound is derived from the ceiling, so **no pane knob exists in config**.
+  Slots carry **no TTL**: a row records the generation of the **controller lease** that
+  took it — never one minted for the row, which a stale-but-live controller would stamp
+  above its successor's — and a superseded row is settled by probing its holder
+  (`reclaim`, called once per run; the probe itself ships with the slice that can ask a
+  pane whether it is alive). An expiring slot would free itself while its pane still
+  talks to the GPU. The ticket slot spans the whole ticket
+  execution and the model slot spans one attempt, which is what makes hold-and-wait —
+  and therefore deadlock — unconstructible. `factory/lib/capacity/report.mjs` is the one
+  derivation of §9.7's numbers, so `status`, `doctor`, and a live run cannot disagree
+  about saturation; `held` is the rows and `waiting` is a walk over the journal, never a
+  second tally.
+- The scheduler (`factory/lib/controller/scheduler.mjs`) is §9.6's loop and nothing
+  more: **no queue object, no ready-queue, no aging, no priority.** It re-reads the
+  frontier at every scheduling decision, takes the lowest-numbered claimable ticket,
+  and otherwise waits for a ticket execution to terminate. Backpressure is **not
+  claiming** — nothing is buffered and no intent is queued — and the two things it is
+  parametric in, the frontier reader and the execution of one ticket, are injected so
+  the loop stays testable at any capacity with no override seam.
 - Every command answers from one structured value, rendered human by default and
   `--json` on request. A verb that cannot do its job says what is missing; it never
   goes quiet and never half-runs.

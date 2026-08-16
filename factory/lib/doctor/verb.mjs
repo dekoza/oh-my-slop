@@ -22,8 +22,9 @@ import { doctorReport } from "./report.mjs";
  *
  * @param {object} invocation
  * @param {string} invocation.repoRoot
+ * @param {object} invocation.config the validated configuration
+ * @param {object} invocation.activeRouting the routing this invocation selected
  * @param {string | null} [invocation.agentDir]
- * @param {object} [invocation.config] the validated configuration
  * @param {object | null} [invocation.expect] `package.expect` from config (§11.7)
  * @param {string} [invocation.executable] the running binary (§11.7's anchor)
  * @param {Record<string, string | undefined>} [invocation.env]
@@ -37,8 +38,9 @@ import { doctorReport } from "./report.mjs";
  */
 export async function runDoctor({
 	repoRoot,
+	config,
+	activeRouting,
 	agentDir = null,
-	config = null,
 	expect = null,
 	executable,
 	env,
@@ -76,6 +78,8 @@ export async function runDoctor({
 		const report = await doctorReport(store, {
 			repoRoot,
 			agentDir: agent,
+			config,
+			activeRouting,
 			expect,
 			executable,
 			env,
