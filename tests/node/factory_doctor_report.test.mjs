@@ -143,6 +143,7 @@ test("the last baseline is reported as of when it ran, saying plainly it was not
 		env,
 		herdr: herdrAnswering(),
 		workerTransports: workerTransportsAnswering(root),
+		pipeline: null,
 	});
 	assert.equal(started.value.report.end_reason, "drained");
 
@@ -185,6 +186,7 @@ test("a baseline that went red without running is the last result, not an older 
 			env,
 			herdr: herdrAnswering(),
 			workerTransports: workerTransportsAnswering(root),
+			pipeline: null,
 		});
 	const { config, activeRouting } = loadFactoryConfig({ cwd: repoRoot });
 

@@ -262,6 +262,7 @@ function invocation(t) {
 		herdr: herdrAnswering(),
 		// The §6.2 runtime probes are live reads of the harnesses, for the same reason.
 		workerTransports: workerTransportsAnswering(root),
+		pipeline: null,
 	};
 }
 

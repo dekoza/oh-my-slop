@@ -38,6 +38,7 @@ function invocation(t, { config } = {}) {
 		env: { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" },
 		herdr: herdrAnswering(),
 		workerTransports: workerTransportsAnswering(root),
+		pipeline: null,
 	};
 }
 
@@ -96,6 +97,7 @@ test("status reports the run a start left behind, and the slots it no longer hol
 		env: context.env,
 		herdr: context.herdr,
 		workerTransports: context.workerTransports,
+		pipeline: context.pipeline,
 		args: ["42"],
 		flags: new Set(["--foreground"]),
 	});

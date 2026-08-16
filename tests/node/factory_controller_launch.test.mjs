@@ -39,6 +39,7 @@ function invocation(t, { herdr = AVAILABLE, runHerdr = null } = {}) {
 		env: { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" },
 		herdr,
 		workerTransports: workerTransportsAnswering(root),
+		pipeline: null,
 	};
 	if (runHerdr !== null) context.runHerdr = runHerdr;
 	return context;

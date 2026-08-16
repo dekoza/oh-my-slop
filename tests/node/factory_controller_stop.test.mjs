@@ -48,6 +48,7 @@ function invocation(t) {
 		env: { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" },
 		herdr: AVAILABLE,
 		workerTransports: workerTransportsAnswering(root),
+		pipeline: null,
 	};
 }
 
