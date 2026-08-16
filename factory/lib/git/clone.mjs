@@ -47,8 +47,13 @@ export async function openPrivateClone({ storeDir, remoteUrl, git = runGit }) {
 		rmSync(dir, { recursive: true, force: true });
 		mkdirSync(dirname(dir), { recursive: true });
 		await git(["init", "--bare", "--quiet", dir], { cwd: dirname(dir) });
-		// Per-worktree config is where the factory identity lives (§7.3).
+		// Per-worktree config is where the factory identity lives (§7.3). Git's
+		// contract for the extension: `core.bare` moves into the main tree's
+		// `config.worktree`, or every linked worktree reads bare=true and
+		// refuses to commit.
 		await git(["config", "extensions.worktreeConfig", "true"], { cwd: dir });
+		await git(["config", "--worktree", "core.bare", "true"], { cwd: dir });
+		await git(["config", "--unset", "core.bare"], { cwd: dir });
 		await git(["remote", "add", "origin", remoteUrl], { cwd: dir });
 		// `remote add` installs `+refs/heads/*:refs/remotes/origin/*`, and git
 		// opportunistically updates tracking refs it matches even when the fetch
