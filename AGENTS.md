@@ -560,6 +560,41 @@ is the authority; cite the section a change answers to.
   verdict is *owed* is role knowledge and stays in `pipeline/review.mjs`. The controller never
   classifies a citation: recognising a Fowler baseline smell by name would put a second copy of
   the skill's list in the factory, and downgrading a finding would be the reranking §8.4 forbids.
+- **The integration lease is acquired twice, and the gap is the point**
+  (`pipeline/integration.mjs`, §9.5): `[lease] fetch → evidence ref → rebase → the required
+  set [release]`, then the two review axes with no lease held at all, then `[lease] base
+  unchanged? → predicates → push → PR [release]`. **The rebase is in `verify`, not in
+  `integrate`**, which is what makes §8.2's invariant literally true — the checks always run
+  at the post-rebase commit that will be pushed, with no conditional re-check path bolted on
+  for the case where the base moved, and §14.13 falls out of it. `integrate` re-acquires under
+  a base-commit identity precondition and loops back to re-rebase and re-verify when a human
+  merged during the review, **consuming no budget**, because nothing failed. The lease is a
+  row *and* an in-process turn: the row is what reconcile finds after a crash, and the chain is
+  what makes a second lane wait rather than meet a refusal.
+- **Nothing in `git/integrate.mjs` force-updates anything, and nothing resolves a conflict.**
+  The integration worktree is **detached** — the attempt's own worktree has that branch checked
+  out and git refuses a second one on it — so the branch is moved onto the rebased result by
+  `update-ref` naming the value it replaces; `branch -f` is refused on a checked-out branch
+  anyway, and a compare-and-swap is what §4.6's discipline asks for. A conflicting rebase is
+  aborted, reported with the paths read off the index (git's prose is localized), and left to
+  §8.5's fresh-retry. §7.4's integration-side predicates are commits-ahead, `git diff --check`,
+  and §7.3's correlation trailer on **every** commit, matched on run and ticket rather than on
+  the attempt, since a repair legitimately carries the attempt before it. They need no worktree,
+  which is what lets a re-entry after a reclaimed one re-derive the same verdict. A red
+  re-verify inside §9.5's loop is **`integration-red`** — a reason class named after §8.3's
+  `baseline-red`, carrying no automation fault, because §8.6 says product-level outcomes never
+  trip the breaker and two changes that do not compose is not a broken host.
+- **§7.5's pull request is check-then-create inside §4.5's pair** (`tracker/pulls.mjs`): the
+  pair makes a *recorded* creation idempotent, and the check covers the window it cannot — a
+  controller that opened the PR and died before the resolution committed adopts that PR rather
+  than opening a second one a human must choose between. The body is a **fenced JSON block**,
+  which is what "machine-parseable key-value" means when the values include reviewer prose and
+  check commands, followed by `Closes #N` so the *manual* merge discharges the ticket. §8.7's
+  summary and **advisory findings** ride it and the §8.9 comment alike; **blocking findings ride
+  the attestation artifact and nothing else**, because a blocking finding is one a repair
+  already answered. The stale-PR sweep closes each superseded factory PR of the same ticket
+  with a comment linking the live one and **leaves alone any PR whose body is not ours** — a
+  human fixing a factory branch up by hand is §7.6's redo path.
 - **§2.1's attempt ordinal is allocated against the record** (`allocateAttempt` in
   `worker/attempt.mjs`), never derived from the attempt being answered. More than one thing
   mints into one ticket execution's ordinal space — §8.5's two tiers and §8.4's two axes — so
