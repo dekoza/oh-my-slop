@@ -215,6 +215,26 @@ is the authority; cite the section a change answers to.
   `package.expect` declares a name and a version — exact or a range from npm's common
   subset — and nothing else: a hand-declared digest is refused at load, because the digest
   is observed and would be unmaintainable in development.
+- Git isolation (`factory/lib/git/`) operates **exclusively on a factory-private bare
+  clone** beside `state.db`; the operator's checkout is never read or written — the
+  protection is topological, and `factory_controller_start.test.mjs` snapshots the
+  checkout around a whole run to hold it. The clone is built by `init --bare` plus a
+  **refspec-less** named remote rather than `git clone`, so every ref in it is one the
+  factory wrote deliberately and §14.11 is observable with one `for-each-ref`; fetches
+  pin the base under `refs/factory/base/*` with `--no-tags`, serialized per handle
+  (§7.7). Structural damage means rebuild, never in-place repair; a drifted remote URL
+  converges by `set-url`, because a rebuild would discard attempt branches that are
+  the only copy of unpushed work. Branch (`factory/t<ticket>/a<attempt_id>`) and
+  worktree are effects with the pinned base in both payloads, so §7.2's "never chased
+  mid-attempt" arrives as a typed payload conflict; the per-worktree config carries
+  the dedicated factory identity (`FACTORY_GIT_IDENTITY`, code not configuration), and
+  `core.bare` moves into the bare repo's `config.worktree` or no linked worktree could
+  commit. Every identity-derived path is contained by charset **plus**
+  canonicalize-and-assert-prefix (§2.1), which is also what lets the git probes
+  recompute a worktree path from an effect key alone. §7.4's harvest predicates are
+  typed verdicts — a dirty worktree names its leftovers and is never auto-committed —
+  and preflight's `git-isolation` check fails closed on `.gitmodules` or LFS
+  attributes read from the **fetched base tree**, never from the checkout (§7.8).
 - Reconciliation (`factory/lib/reconcile/`) settles an unresolved effect **only** by
   re-probing the external system, and `doctor` is the identical computation behind a
   read-only flag — one code path, so the two verbs cannot answer differently about what the

@@ -1,4 +1,5 @@
 import { FactoryEffectError } from "../effects/errors.mjs";
+import { gitIsolationCheck } from "../git/preflight.mjs";
 import { FactoryPackageError } from "../package/errors.mjs";
 import { assertPackageIntact, packageHandshake, recordPackageHandshake } from "../package/handshake.mjs";
 import { probeHerdr } from "./herdr.mjs";
@@ -106,6 +107,10 @@ export async function preflight(
 
 	// ── Runtime probes (§9.7) ────────────────────────────────────────────────
 	record(await herdrCheck({ env, herdr }));
+
+	// §7.1's clone, §7.2's fetchable base, §7.8's plain-repo refusal — the
+	// factory-private clone is created here if the run is the repo's first.
+	record(await gitIsolationCheck(store, config));
 
 	record(
 		unbuilt("runtime-probe", PREFLIGHT_CLASSES.probe, {
