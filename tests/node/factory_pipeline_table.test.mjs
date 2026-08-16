@@ -1,14 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { PIPELINE_PHASES } from "../../factory/lib/domain/vocabulary.mjs";
-import {
-	OUTCOME_DOMAINS,
-	OUTCOME_TABLE,
-	TABLE_WIDE,
-	TABLE_WIDE_OUTCOMES,
-	routeOutcome,
-} from "../../factory/lib/pipeline/table.mjs";
+import { PHASE_OUTCOME_DOMAINS, PIPELINE_PHASES } from "../../factory/lib/domain/vocabulary.mjs";
+import { OUTCOME_TABLE, TABLE_WIDE, TABLE_WIDE_OUTCOMES, routeOutcome } from "../../factory/lib/pipeline/table.mjs";
 
 /**
  * §8.10's mapping table, as **one declared data structure**.
@@ -29,9 +23,9 @@ test("the table routes a completed implement attempt on to harvest (§8.10)", ()
 });
 
 test("the table is total over (phase × outcome), with exactly one row per pair (§8.10)", () => {
-	const pairs = PIPELINE_PHASES.flatMap((phase) => OUTCOME_DOMAINS[phase].map((outcome) => [phase, outcome])).concat(
-		TABLE_WIDE_OUTCOMES.map((outcome) => [TABLE_WIDE, outcome]),
-	);
+	const pairs = PIPELINE_PHASES.flatMap((phase) =>
+		PHASE_OUTCOME_DOMAINS[phase].map((outcome) => [phase, outcome]),
+	).concat(TABLE_WIDE_OUTCOMES.map((outcome) => [TABLE_WIDE, outcome]));
 
 	for (const [phase, outcome] of pairs) {
 		assert.ok(routeOutcome(phase, outcome), `${phase} × ${outcome} is routed`);

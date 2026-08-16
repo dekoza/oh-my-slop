@@ -343,6 +343,53 @@ test("the run digest keeps §12.3's transcript pointers, including their absence
 	});
 });
 
+test("the run digest keeps §8.10's outcome-chain shape, per ticket, permanently (§12.3)", async (t) => {
+	const { store, runId } = await storeWithRun(t);
+	store.append(attemptLaunched(runId, 90, 1));
+	const resolved = (phase, outcome, attempt = `${runId}-t90-a1`) => ({
+		kind: "stage.resolved",
+		source: "controller",
+		run: runId,
+		ticket: 90,
+		phase,
+		attempt,
+		occurredAt: 1_770_000_200_000,
+		observedAt: 1_770_000_200_000,
+		payload: { outcome, action: "advance", budget: null, detail: null, result_digest: "d", actor: "controller" },
+	});
+
+	store.append(resolved("implement", "completed"));
+	store.append(resolved("harvest", "passed"));
+
+	assert.deepEqual(store.readRunDigest(runId).outcome_chains, {
+		90: [
+			{ phase: "implement", outcome: "completed", attempt: `${runId}-t90-a1` },
+			{ phase: "harvest", outcome: "passed", attempt: `${runId}-t90-a1` },
+		],
+	});
+});
+
+test("a stage outcome outside §8.10's table is refused rather than projected (§8.10)", async (t) => {
+	const { store, runId } = await storeWithRun(t);
+	store.append(attemptLaunched(runId, 90, 1));
+
+	assert.throws(
+		() =>
+			store.append({
+				kind: "stage.resolved",
+				source: "controller",
+				run: runId,
+				ticket: 90,
+				phase: "verify",
+				attempt: `${runId}-t90-a1`,
+				occurredAt: 1_770_000_200_000,
+				observedAt: 1_770_000_200_000,
+				payload: { outcome: "approved", action: "advance", budget: null, detail: null, result_digest: "d" },
+			}),
+		/§8\.10/,
+	);
+});
+
 test("the ticket index answers cross-run history as a list, never a merge (§2.3)", async (t) => {
 	const agentDir = makeAgentDir(t);
 	const repoRoot = makeRepo(t);

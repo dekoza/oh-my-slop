@@ -74,6 +74,13 @@ export const EVENT_KINDS = Object.freeze({
 	// refuses a second ending, so a worker that writes after the harvest is
 	// writing evidence.
 	"attempt.ended": { payloadVersion: 1, visibility: "operator" },
+	// #108: §8.10's stage result, and the record the outcome chain is read back
+	// from. One per `(run, ticket, phase, attempt)` — §2.1's stage identity plus
+	// the attempt it was resolved under, because a repair re-enters a phase with a
+	// new attempt and that is a new result rather than a contradiction of the old
+	// one. A second, identical result under one key is returned idempotently; a
+	// conflicting one is §8.10's typed conflict.
+	"stage.resolved": { payloadVersion: 1, visibility: "operator" },
 	// #98: §8.8's disposition as a durable ticket-execution fact. The value is
 	// held to the closed set at the projector; `released` is the one member
 	// this package's writer reaches (abandon, §9.6), and the column speaks the

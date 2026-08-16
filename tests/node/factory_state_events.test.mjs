@@ -116,6 +116,7 @@ test("the kind enumeration is §4.3's closed, dotted list", () => {
 			"run.started",
 			"run.stop-requested",
 			"run.abandon-requested",
+			"stage.resolved",
 			"stream.truncated",
 			"ticket.disposition-changed",
 		].sort(),

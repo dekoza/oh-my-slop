@@ -95,6 +95,19 @@ test("each worker-writable status carries what §6.6 says it carries", (t) => {
 	}
 });
 
+test("a worker cannot pause a ticket under a class only the controller derives (§6.6, §8.8)", (t) => {
+	const read = readOutbox(
+		outbox(t, completed({ status: "needs-human", reason_class: "repair-budget-exhausted", question: "why?" })),
+		IDENTITY,
+	);
+
+	assert.equal(read.state, "invalid");
+	assert.ok(
+		read.problems.some((problem) => /reason_class .* worker-writable/.test(problem)),
+		`letting a worker name a counter it cannot see would let it lie about one: ${read.problems}`,
+	);
+});
+
 test("the schema version is checked, so a future worker's record is invalid rather than misread", (t) => {
 	const read = readOutbox(outbox(t, completed({ schema_version: 2 })), IDENTITY);
 	assert.equal(read.state, "invalid");

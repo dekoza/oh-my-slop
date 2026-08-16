@@ -243,6 +243,26 @@ export const REASON_CLASSES = Object.freeze([
 ]);
 
 /**
+ * The outcomes each pipeline phase may be answered over — what "total over
+ * (phase × outcome)" means for §8.10's table, spelled once here so the table,
+ * its totality test, and the projector that holds a recorded outcome to it all
+ * read the same definition rather than agreeing by coincidence.
+ *
+ * An **agent-borne** phase (§8.1) is answered over its attempt outcomes, because
+ * a worker run is what it produces; `review` additionally over its own phase
+ * results, since a `completed` reviewer attempt resolves into one and the two are
+ * different levels (§8.8). A **controller** phase has no attempt and is answered
+ * over its phase results alone.
+ */
+export const PHASE_OUTCOME_DOMAINS = Object.freeze({
+	[PHASE_IMPLEMENT]: ATTEMPT_OUTCOMES,
+	[PHASE_HARVEST]: PHASE_RESULTS[PHASE_HARVEST],
+	[PHASE_VERIFY]: PHASE_RESULTS[PHASE_VERIFY],
+	[PHASE_REVIEW]: Object.freeze([...ATTEMPT_OUTCOMES, ...PHASE_RESULTS[PHASE_REVIEW]]),
+	[PHASE_INTEGRATE]: PHASE_RESULTS[PHASE_INTEGRATE],
+});
+
+/**
  * §4.6's repo-scoped exclusive lease. Named here rather than in the lease
  * primitive because it is read from two sides: the holder renews it, and an
  * effect resolution compares its generation against the holder's (§14.5). The

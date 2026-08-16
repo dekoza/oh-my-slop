@@ -1,11 +1,10 @@
 import {
-	ATTEMPT_OUTCOMES,
 	PHASE_HARVEST,
 	PHASE_IMPLEMENT,
 	PHASE_INTEGRATE,
+	PHASE_OUTCOME_DOMAINS,
 	PHASE_REVIEW,
 	PHASE_VERIFY,
-	PHASE_RESULTS,
 } from "../domain/vocabulary.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 
@@ -216,25 +215,6 @@ export const OUTCOME_TABLE = Object.freeze([
 	row({ phase: TABLE_WIDE, outcome: "duplicate-conflicting", action: ACTIONS.dispose, fault: BUDGETS.automation }),
 ]);
 
-/**
- * The outcome domain each phase is answered over — what "total over (phase ×
- * outcome)" means, spelled once so the table and its totality test read the same
- * definition rather than agreeing by coincidence.
- *
- * An **agent-borne** phase (§8.1) is answered over its attempt outcomes, because
- * that is what a worker run produces; `review` additionally over its own phase
- * results, since a `completed` reviewer attempt resolves into one. A
- * **controller** phase has no attempt and is answered over its phase results
- * alone.
- */
-export const OUTCOME_DOMAINS = Object.freeze({
-	[PHASE_IMPLEMENT]: Object.freeze([...ATTEMPT_OUTCOMES]),
-	[PHASE_HARVEST]: PHASE_RESULTS[PHASE_HARVEST],
-	[PHASE_VERIFY]: PHASE_RESULTS[PHASE_VERIFY],
-	[PHASE_REVIEW]: Object.freeze([...ATTEMPT_OUTCOMES, ...PHASE_RESULTS[PHASE_REVIEW]]),
-	[PHASE_INTEGRATE]: PHASE_RESULTS[PHASE_INTEGRATE],
-});
-
 /** §8.10's four phase-less rows, by name. */
 export const TABLE_WIDE_OUTCOMES = Object.freeze(
 	OUTCOME_TABLE.filter((entry) => entry.phase === TABLE_WIDE).map((entry) => entry.outcome),
@@ -263,6 +243,11 @@ export function routeOutcome(phase, outcome) {
 		`§8.10 maps no outcome ${JSON.stringify(outcome)} for phase ${JSON.stringify(phase)}; the table is total over ${
 			phase === TABLE_WIDE ? "its phase-less rows" : `phase ${phase}'s outcomes`
 		}, so this pair was never a possible answer.`,
-		{ at: "table", phase, outcome, domain: phase === TABLE_WIDE ? TABLE_WIDE_OUTCOMES : (OUTCOME_DOMAINS[phase] ?? null) },
+		{
+			at: "table",
+			phase,
+			outcome,
+			domain: phase === TABLE_WIDE ? TABLE_WIDE_OUTCOMES : (PHASE_OUTCOME_DOMAINS[phase] ?? null),
+		},
 	);
 }

@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 
-import { WORKER_WRITABLE_OUTCOMES } from "../domain/vocabulary.mjs";
+import { WORKER_WRITABLE_OUTCOMES, WORKER_WRITABLE_REASON_CLASSES } from "../domain/vocabulary.mjs";
 
 /**
  * §6.6's attempt outbox: **schema-versioned JSON at a controller-designated
@@ -148,6 +148,15 @@ function statusProblems(parsed) {
 		const problems = [];
 		if (typeof parsed.reason_class !== "string" || parsed.reason_class.length === 0) {
 			problems.push("needs-human carries a reason class (§8.8)");
+		} else if (!WORKER_WRITABLE_REASON_CLASSES.includes(parsed.reason_class)) {
+			// §14.18 routes a worker-writable class to `paused` and a
+			// controller-derived one to `failed`, so a worker allowed to name the
+			// second kind could file its own ticket as an infrastructure failure —
+			// or claim a budget it cannot see has run out (§6.6, §8.8).
+			problems.push(
+				`reason_class is ${JSON.stringify(parsed.reason_class)}; the worker-writable set is exactly ` +
+					`${WORKER_WRITABLE_REASON_CLASSES.join(", ")} — every other class is controller-derived (§6.6, §8.8)`,
+			);
 		}
 		if (typeof parsed.question !== "string" || parsed.question.trim().length === 0) {
 			// "the exact question", not a summary: the human's reply is what
