@@ -4,6 +4,7 @@ import { FactoryEffectError } from "../effects/errors.mjs";
 import { gitIsolationCheck } from "../git/preflight.mjs";
 import { FactoryPackageError } from "../package/errors.mjs";
 import { assertPackageIntact, packageHandshake, recordPackageHandshake } from "../package/handshake.mjs";
+import { createWorkerPreflight } from "../worker/preflight.mjs";
 import { probeHerdr } from "./herdr.mjs";
 import { writeRunManifest } from "./manifest.mjs";
 
@@ -53,6 +54,9 @@ export const PREFLIGHT_CLASSES = Object.freeze({ static: "static", probe: "probe
  * @param {Record<string, string | undefined>} [context.env]
  * @param {(options: object) => Promise<object>} [context.herdr] §10.3's availability
  *   probe, injectable so a test drives both answers without a multiplexer on the machine
+ * @param {{ pi?: object, claude?: object }} [context.workerTransports] the §6.2
+ *   runtime probes' IO, injectable for the same reason `herdr` is: the real
+ *   transports spawn the operator's harnesses
  * @param {string} context.actor
  * @param {number} context.at
  * @returns {Promise<Readonly<object>>} the phase's results, red checks first-class
@@ -70,6 +74,7 @@ export async function preflight(
 		executable,
 		env,
 		herdr = probeHerdr,
+		workerTransports = {},
 		actor,
 		at,
 	},
@@ -100,12 +105,17 @@ export async function preflight(
 		}),
 	);
 
-	record(
-		unbuilt("skill-closure", PREFLIGHT_CLASSES.static, {
-			missing: "the transitive skill closure and its readable-SKILL.md check (#105)",
-			spec: "§6.2",
-		}),
-	);
+	// §6.2's layers 1 and 2, over the handshake's own pin: the closure with the
+	// artifacts, the live probe with the probes, one computation behind both.
+	const worker = createWorkerPreflight({
+		handshake: handshake.handshake ?? null,
+		config,
+		activeRouting,
+		cacheRoot: store.storeDir,
+		transports: workerTransports,
+	});
+
+	record(worker.closureCheck());
 
 	// ── Runtime probes (§9.7) ────────────────────────────────────────────────
 	record(await herdrCheck({ env, herdr }));
@@ -116,12 +126,8 @@ export async function preflight(
 	// a second one, so the recorded base and the verified base are one fact.
 	const isolation = record(await gitIsolationCheck(store, config));
 
-	record(
-		unbuilt("runtime-probe", PREFLIGHT_CLASSES.probe, {
-			missing: "the per-runtime live probe and the capacity observation folded into it (#105)",
-			spec: "§6.2, §9.7",
-		}),
-	);
+	// §6.2's live per-runtime probe, §9.7's capacity observation folded in.
+	record(await worker.runtimeCheck());
 
 	// ── The expensive one, last (§9.7) ───────────────────────────────────────
 	record(await baselineCheck(store, { run, isolation, config, hold, actor, at }));
@@ -320,16 +326,6 @@ function passed(check, className, { message, detail }) {
 
 function failed(check, className, { message, detail }) {
 	return { check, class: className, result: PREFLIGHT_RESULTS.failed, message, detail };
-}
-
-function unbuilt(check, className, { missing, spec }) {
-	return {
-		check,
-		class: className,
-		result: PREFLIGHT_RESULTS.unbuilt,
-		message: `${check} is specified but not built in this package, so this run observed nothing about it.`,
-		detail: { missing, spec },
-	};
 }
 
 /**

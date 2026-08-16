@@ -37,7 +37,7 @@ const NO_PROFILE_DEFAULTS = "A profile's kind and model are declared, never infe
 const CLAUDE_ONLY_MODEL_PATTERN = /(^|[^a-z0-9])(opus|fable)([^a-z0-9]|$)/i;
 
 /** §9.1: the constant class every Claude profile shares — one harness, one pool. */
-const CLAUDE_RESOURCE_CLASS = "claude-code";
+export const CLAUDE_RESOURCE_CLASS = "claude-code";
 
 /**
  * The class that arbitrates a profile's slot. Derived, never declared per

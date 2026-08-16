@@ -13,6 +13,7 @@ import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { makeRepo, VALID_CONFIG } from "./helpers/factory-repo.mjs";
 import { herdrAnswering, leaseIdentity, makeAgentDir } from "./helpers/factory-store.mjs";
+import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BIN_PATH = join(REPO_ROOT, "factory", "bin", "factory.mjs");
@@ -255,6 +256,8 @@ function invocation(t) {
 		// multiplexer; a suite that only passed on a machine running one would be
 		// testing the machine. The run lifecycle's own suite drives both answers.
 		herdr: herdrAnswering(),
+		// The §6.2 runtime probes are live reads of the harnesses, for the same reason.
+		workerTransports: workerTransportsAnswering(root),
 	};
 }
 

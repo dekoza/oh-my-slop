@@ -12,6 +12,7 @@ import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
 import { herdrAnswering, leaseIdentity, makeAgentDir } from "./helpers/factory-store.mjs";
+import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 /**
  * §10.1's process shape, the half #97 did not have: **the default launch is
@@ -37,6 +38,7 @@ function invocation(t, { herdr = AVAILABLE, runHerdr = null } = {}) {
 		executable,
 		env: { PATH: onPath(t, executable), HERDR_PANE_ID: "w1:p7" },
 		herdr,
+		workerTransports: workerTransportsAnswering(root),
 	};
 	if (runHerdr !== null) context.runHerdr = runHerdr;
 	return context;

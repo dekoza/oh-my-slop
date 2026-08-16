@@ -113,11 +113,16 @@ export const TICKET_DISPOSITIONS = Object.freeze(["published", "paused", "failed
  */
 export const CHECK_RESULTS = Object.freeze({ passed: "passed", failed: "failed", unrunnable: "unrunnable" });
 
-/** §8.8 — worker-writable first, then controller-derived. */
+/**
+ * §6.6's closed worker-writable statuses, named so a role's result
+ * expectations and the outbox validator read one list. Everything else in
+ * `ATTEMPT_OUTCOMES` is controller-derived and never worker-writable.
+ */
+export const WORKER_WRITABLE_OUTCOMES = Object.freeze(["completed", "needs-human", "worker-failed"]);
+
+/** §8.8 — the worker-writable three, then the controller-derived rest. */
 export const ATTEMPT_OUTCOMES = Object.freeze([
-	"completed",
-	"needs-human",
-	"worker-failed",
+	...WORKER_WRITABLE_OUTCOMES,
 	"invalid-result",
 	"no-result",
 	"dead-worker",

@@ -215,6 +215,29 @@ is the authority; cite the section a change answers to.
   `package.expect` declares a name and a version — exact or a range from npm's common
   subset — and nothing else: a hand-declared digest is refused at load, because the digest
   is observed and would be unmaintainable in development.
+- The worker adapter (`factory/lib/worker/`) is §6.1's seam: one runtime-neutral contract of
+  exactly four operations — `preflight(role, package_rev)` · `launch` · `awaitCompletion` ·
+  `cancel` — built by `createWorkerAdapter`, which refuses a missing or invented operation and
+  validates every role as §6.1's five-slot tuple before an implementation sees it. **The
+  adapter knows nothing about which roles exist**: the pipeline's role inventory is
+  `roles.mjs`'s data, and a role's closure is computed from the pinned revision's `requires:`
+  frontmatter (`closure.mjs`), never hardcoded. §6.2's layer 1 is static — readable SKILL.md
+  for the whole closure, frontmatter and reference validation, symlink containment, and §6.8's
+  one conflict predicate (shadowed, duplicated, disabled, missing are **one** typed failure,
+  every finding naming the offending source). Layer 2 is one disposable live probe per runtime
+  per revision on the production path — pi: an RPC session over `--no-skills --skill <root>`
+  requiring `skill:<name>` command records; Claude: the §6.3 generator's plugin, **cached per
+  tree digest beside `state.db` and immutable** (factory infrastructure like the bare clone,
+  not an effect), then `plugin validate --strict`, the component diff, and the `initialize`
+  control-request over stream-json — **with §9.7's capacity observation folded into the same
+  probe**, so a declared size above an observed `max_instances` and an unreachable required
+  class are red checks naming the class, the endpoint, and the fix, never a silent clamp or a
+  quiet capacity 0. Layer 3 (`recheck.mjs`) re-records the run-keyed handshake per attempt, so
+  package drift arrives as §4.5's typed payload conflict — **a failure, never a new pin** —
+  and persists the observed resolved model id per attempt (`attempt.rechecked`), refusing a
+  declared model that resolves to two ids within one run (§11.7). The three lifecycle
+  operations refuse as `worker-lifecycle-unbuilt` until #107 lands them; the probes' IO lives
+  behind `transports.mjs` and is injected in tests exactly as the Herdr probe is.
 - Git isolation (`factory/lib/git/`) operates **exclusively on a factory-private bare
   clone** beside `state.db`; the operator's checkout is never read or written — the
   protection is topological, and `factory_controller_start.test.mjs` snapshots the

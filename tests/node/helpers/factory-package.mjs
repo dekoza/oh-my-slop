@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * Fixtures for the §11.7 handshake tests: real package trees on disk, because
@@ -55,6 +56,25 @@ export function writeTree(root, files) {
 	return root;
 }
 
+/** A well-formed SKILL.md, the shape §6.2's layer-1 validation expects. */
+export function skillMarkdown(name, { requires = [] } = {}) {
+	const list = requires.length === 0 ? "" : `requires:\n${requires.map((entry) => `  - ${entry}`).join("\n")}\n`;
+	return `---\nname: ${name}\ndescription: the ${name} skill\n${list}---\n`;
+}
+
+/**
+ * The skills a preflightable package must ship: the pipeline's entry skills
+ * (§6.2, §8.4) with resolvable closures.
+ */
+export function pipelineSkillFiles() {
+	return {
+		"skills/practice/tdd/SKILL.md": skillMarkdown("tdd"),
+		"skills/workflow/implement/SKILL.md": skillMarkdown("implement", { requires: ["tdd"] }),
+		"skills/workflow/review-standards/SKILL.md": skillMarkdown("review-standards"),
+		"skills/workflow/review-spec/SKILL.md": skillMarkdown("review-spec"),
+	};
+}
+
 /**
  * A whole package: the four participants §11.7 names, plus whatever the test
  * adds or overrides. `manifest` merges into `PACKAGE_MANIFEST`, so a test that
@@ -66,9 +86,22 @@ export function makePackage(t, { manifest = {}, files = {} } = {}) {
 		"factory/bin/factory.mjs": "#!/usr/bin/env node\n",
 		"extensions/factory/index.ts": "export const factory = true;\n",
 		"extensions/factory-monitor/index.ts": "export const monitor = true;\n",
-		"skills/practice/tdd/SKILL.md": "# tdd\n",
+		...pipelineSkillFiles(),
 		...files,
 	});
+}
+
+/**
+ * The real §6.3 generator, carried into a fixture the way an install carries
+ * it — so a fixture package can build a real plugin.
+ */
+export function realGeneratorFiles() {
+	const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
+	return {
+		"scripts/__init__.py": "",
+		"scripts/validate_refs.py": readFileSync(join(repoRoot, "scripts", "validate_refs.py"), "utf8"),
+		"scripts/build_claude_plugin.py": readFileSync(join(repoRoot, "scripts", "build_claude_plugin.py"), "utf8"),
+	};
 }
 
 /**

@@ -19,6 +19,7 @@ import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
 import { FIXED_NOW, herdrAnswering, leaseIdentity, makeAgentDir } from "./helpers/factory-store.mjs";
+import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 /**
  * §10.5: **`stop` writes a durable stop-request record carrying the actor
@@ -46,6 +47,7 @@ function invocation(t) {
 		executable,
 		env: { PATH: onPath(t, executable), HERDR_PANE_ID: "w1:p7" },
 		herdr: AVAILABLE,
+		workerTransports: workerTransportsAnswering(root),
 	};
 }
 
