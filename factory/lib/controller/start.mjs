@@ -594,7 +594,19 @@ function ticketExecution(store, entry, hold, context) {
 		// run that touched no ticket must not report one (§9.7).
 		if (!HELD_BY_THIS_RUN.has(claim.outcome)) return { disposition: null, claimed: false, claim };
 
-		const outcome = await context.pipeline({ ticket, member, slots, attempt, claim });
+		// §11.6's declared numbers travel with the lane rather than being fetched
+		// by whoever composes the walk: the budgets a ticket execution spends and
+		// the ones its run was started under are the same numbers, and a composer
+		// reaching for the config itself would be a second place they could be read
+		// from — including, on a re-entry, a file that has since changed.
+		const outcome = await context.pipeline({
+			ticket,
+			member,
+			slots,
+			attempt,
+			claim,
+			budgets: context.config.budgets,
+		});
 		const disposition = outcome?.disposition ?? null;
 
 		if (disposition !== null) {
