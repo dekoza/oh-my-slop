@@ -7,7 +7,15 @@ import { runStart } from "../../factory/lib/controller/start.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { cloneValidConfig, makeRepo } from "./helpers/factory-repo.mjs";
-import { herdrAnswering, makeAgentDir, makeHome } from "./helpers/factory-store.mjs";
+import {
+	FIXED_NOW,
+	attemptLaunched,
+	herdrAnswering,
+	makeAgentDir,
+	makeHome,
+	openTestStore,
+	runStarted,
+} from "./helpers/factory-store.mjs";
 import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 /**
@@ -102,10 +110,51 @@ test("status reports the run a start left behind, and the slots it no longer hol
 	assert.deepEqual(value.report.capacity.holders, []);
 });
 
-test("status carries the two sections this slice owes and no speculative others", async (t) => {
+test("status carries the sections this slice owes and no speculative others", async (t) => {
 	const context = invocation(t);
 
 	const { value } = await runCli(["status"], context);
 
 	assert.deepEqual(Object.keys(value.report), ["schema_version", "at", "store", "runs", "capacity"]);
+});
+
+test("status shows a ticket execution's outcome chain (§8.10)", async (t) => {
+	const context = invocation(t);
+	const store = await openTestStore(t, { repoRoot: context.cwd, agentDir: context.agentDir });
+	const opened = runStarted();
+	store.append(opened);
+	store.append(attemptLaunched(opened.run, 42, 1));
+	const resolved = (phase, outcome) => ({
+		kind: "stage.resolved",
+		source: "controller",
+		run: opened.run,
+		ticket: 42,
+		phase,
+		attempt: `${opened.run}-t42-a1`,
+		occurredAt: FIXED_NOW,
+		observedAt: FIXED_NOW,
+		payload: { outcome, action: "advance", budget: null, detail: null, anomaly: null, result_digest: "d" },
+	});
+	store.append(resolved("implement", "completed"));
+	store.append(resolved("harvest", "passed"));
+	store.append(resolved("verify", "failed"));
+	store.close();
+
+	const { value } = await runCli(["status"], context);
+
+	assert.deepEqual(value.report.runs[0].executions, [
+		{
+			ticket: 42,
+			phase: "verify",
+			disposition: null,
+			attempts: 1,
+			// The shape, never summarised to its last element: what an operator does
+			// next depends on how a ticket execution got here (§8.10).
+			chain: [
+				{ phase: "implement", outcome: "completed" },
+				{ phase: "harvest", outcome: "passed" },
+				{ phase: "verify", outcome: "failed" },
+			],
+		},
+	]);
 });

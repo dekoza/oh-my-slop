@@ -1,7 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { PHASE_OUTCOME_DOMAINS, PIPELINE_PHASES } from "../../factory/lib/domain/vocabulary.mjs";
+import {
+	AGENT_BORNE_PHASES,
+	ATTEMPT_OUTCOMES,
+	CONTROLLER_DERIVED_OUTCOMES,
+	CONTROLLER_PHASES,
+	PHASE_OUTCOME_DOMAINS,
+	PHASE_RESULTS,
+	PIPELINE_PHASES,
+	TICKET_DISPOSITIONS,
+	WORKER_WRITABLE_OUTCOMES,
+} from "../../factory/lib/domain/vocabulary.mjs";
 import { OUTCOME_TABLE, TABLE_WIDE, TABLE_WIDE_OUTCOMES, routeOutcome } from "../../factory/lib/pipeline/table.mjs";
 
 /**
@@ -35,6 +45,52 @@ test("the table is total over (phase × outcome), with exactly one row per pair 
 		OUTCOME_TABLE.length,
 		pairs.length,
 		"and nothing beyond them: a row for a pair no phase can produce is a rule nobody can reach",
+	);
+});
+
+// ── §8.8's three levels, and §8.1's two agent-borne phases ───────────────────
+
+test("exactly two phases are agent-borne; the other three have no model in them (§8.1)", () => {
+	assert.deepEqual([...AGENT_BORNE_PHASES], ["implement", "review"]);
+	assert.deepEqual([...CONTROLLER_PHASES], ["harvest", "verify", "integrate"]);
+	assert.deepEqual(
+		[...AGENT_BORNE_PHASES, ...CONTROLLER_PHASES].sort(),
+		[...PIPELINE_PHASES].sort(),
+		"every pipeline phase is one or the other, and none is both",
+	);
+});
+
+test("implement has no phase result of its own — its result is its attempt's outcome (§8.1)", () => {
+	assert.equal(PHASE_RESULTS.implement, undefined);
+	assert.deepEqual(PHASE_OUTCOME_DOMAINS.implement, ATTEMPT_OUTCOMES);
+});
+
+test("the three levels are distinct types, and a value never travels without its level (§8.8)", () => {
+	const results = [...new Set(Object.values(PHASE_RESULTS).flat())];
+
+	// No attempt outcome is also a phase result: `verify` and `integrate` have no
+	// worker, so forcing their results into the attempt enum would conflate them.
+	assert.deepEqual(
+		results.filter((result) => ATTEMPT_OUTCOMES.includes(result)),
+		[],
+	);
+	// `failed` is a `verify` result **and** a ticket disposition, which is exactly
+	// why the levels are three types rather than one enum: the word alone does not
+	// say which level it belongs to, and only the phase it arrived with does.
+	assert.ok(PHASE_RESULTS.verify.includes("failed") && TICKET_DISPOSITIONS.includes("failed"));
+	assert.equal(routeOutcome("verify", "failed").action, "repair");
+	assert.throws(() => routeOutcome(TABLE_WIDE, "failed"), /maps no outcome/);
+});
+
+test("controller-derived outcomes are the complement of the worker-writable set (§6.6, §8.8)", () => {
+	assert.deepEqual(
+		[...WORKER_WRITABLE_OUTCOMES, ...CONTROLLER_DERIVED_OUTCOMES].sort(),
+		[...ATTEMPT_OUTCOMES].sort(),
+	);
+	assert.deepEqual(
+		CONTROLLER_DERIVED_OUTCOMES.filter((outcome) => WORKER_WRITABLE_OUTCOMES.includes(outcome)),
+		[],
+		"a second hand-kept list could name one in both, and the outbox validator and the table would disagree",
 	);
 });
 

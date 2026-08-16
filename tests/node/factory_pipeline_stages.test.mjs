@@ -227,6 +227,50 @@ test("a cancelled attempt releases the ticket, an honest state rather than a fai
 	});
 });
 
+test("a worker's own test evidence is context, never the verdict (§14.16)", async (t) => {
+	const context = await executing(t);
+	const { phases } = answering({
+		implement: { outcome: "completed", detail: { test_evidence: "851 passed, all green" } },
+		harvest: "passed",
+		verify: "failed",
+	});
+
+	await assert.rejects(() => context.walk(phases), /repair/);
+
+	assert.deepEqual(
+		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).map((step) => [
+			step.phase,
+			step.outcome,
+		]),
+		[
+			["implement", "completed"],
+			["harvest", "passed"],
+			["verify", "failed"],
+		],
+		"the controller's own rerun is the attestation boundary; the worker's claim rode along as context",
+	);
+});
+
+test("the walk writes nothing to the tracker: its whole output is the journal (#108)", async (t) => {
+	const context = await executing(t);
+	const { phases } = answering({ implement: "completed", harvest: "passed", verify: "passed" });
+	const before = context.store.head().seq;
+
+	await assert.rejects(() => context.walk(phases), /not built/);
+
+	assert.deepEqual(
+		[
+			...new Set(
+				context.store
+					.readEvents({ sinceSeq: before })
+					.map((record) => record.kind),
+			),
+		],
+		["stage.resolved"],
+		"no effect is requested, so nothing outside the database is mutated (§4.5)",
+	);
+});
+
 test("a re-entered walk replays the chain from durable state and re-runs nothing (§8.10)", async (t) => {
 	const context = await executing(t);
 	const first = answering({ implement: "completed", harvest: "passed", verify: "failed" });
