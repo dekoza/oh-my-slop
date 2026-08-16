@@ -1,7 +1,8 @@
-import { BUDGET_KINDS, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
+import { BUDGET_KINDS, PHASE_REVIEW, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
 import { runStream } from "../state/events.mjs";
 import { dispositionForReasonClass } from "./dispositions.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
+import { routeOutcome } from "./table.mjs";
 
 /**
  * §8.6's budgets: **counted per ticket, never reset within a run.**
@@ -162,6 +163,35 @@ export function exhaustionOf(row) {
 		reason_class: reasonClass,
 		fault: kind,
 	});
+}
+
+/**
+ * §8.4's `automationRetry` seam, backed by this module.
+ *
+ * The fan-out decides an axis's retries itself — it is the only thing that knows
+ * an axis attempt from a builder's — but **it does not get its own budget.** The
+ * seam exists so the fan-out can ask, and this is the answer, from the same
+ * count `walkStages` reads: an axis's retries and a builder's are one ticket
+ * execution's automation spend, and two places counting it would eventually
+ * grant a ticket more retries than either thought it had.
+ *
+ * It refuses by throwing, which is the seam's contract (§8.4): the fan-out does
+ * not branch on a return value, and the walk turns the refusal into §8.6's
+ * disposition wherever it surfaces from.
+ *
+ * @param {object} store an open store
+ * @param {{ run: string, ticket: number, budgets: Readonly<object> }} context
+ * @returns {(request: { outcome: string }) => Promise<void>}
+ */
+export function automationRetryFor(store, { run, ticket, budgets }) {
+	return async ({ outcome }) => {
+		// §8.10's row, re-read from the outcome rather than taken off the request:
+		// the seam is handed a budget *kind*, and the exhaustion a refusal has to
+		// carry is the row's own — `review` has no `exhausted` override today, and
+		// a seam that could not see one would silently outrank the table the day it
+		// grows one.
+		requireBudget(store, { run, ticket, budgets, row: routeOutcome(PHASE_REVIEW, outcome) });
+	};
 }
 
 /** §8.10's two phase-less exhaustion rows, by the budget kind each answers for. */

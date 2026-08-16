@@ -3,13 +3,16 @@ import assert from "node:assert/strict";
 
 import { validateBudgets } from "../../factory/lib/config/defaults.mjs";
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
+import { CONTROLLER_DERIVED_REASON_CLASSES } from "../../factory/lib/domain/vocabulary.mjs";
 import {
 	BUDGET_KEYS,
 	BUDGET_KEY_FOR_ACTION,
+	automationRetryFor,
 	budgetSpend,
 	exhaustionOf,
 	requireBudget,
 } from "../../factory/lib/pipeline/budgets.mjs";
+import { dispositionForReasonClass } from "../../factory/lib/pipeline/dispositions.mjs";
 import { resolveStage } from "../../factory/lib/pipeline/stages.mjs";
 import { OUTCOME_TABLE, routeOutcome } from "../../factory/lib/pipeline/table.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
@@ -260,6 +263,42 @@ test("§8.6: the tree holds no retry counter — the legacy shape is not reintro
 	);
 
 	assert.deepEqual(counters.map(([path]) => path), []);
+});
+
+test("§8.8: every class an exhaustion can file under is controller-derived, and so unwritable by a worker", () => {
+	const filed = OUTCOME_TABLE.filter((row) => row.budget !== null).map((row) => exhaustionOf(row).reason_class);
+
+	assert.ok(filed.length > 0);
+	for (const reasonClass of new Set(filed)) {
+		assert.ok(
+			CONTROLLER_DERIVED_REASON_CLASSES.includes(reasonClass),
+			`${reasonClass} would let a worker claim a budget it cannot see has run out (§6.6, §8.8)`,
+		);
+		assert.equal(dispositionForReasonClass(reasonClass), "failed", "§14.18");
+	}
+});
+
+// ── §8.4's seam, answered from this module's count ───────────────────────────
+
+test("the review fan-out's retries and the builder's are one ticket execution's automation spend", async (t) => {
+	const { store, run, ticket, charge } = await executing(t);
+	const seam = automationRetryFor(store, { run, ticket, budgets: { ...DEFAULTS, automation: 2 } });
+
+	// A dead builder, then a dead reviewer. Two places counting would have let
+	// the axis retry twice more on a budget the builder had already halved.
+	charge("implement", "dead-worker");
+	charge("review", "dead-worker", { attempt: 2 });
+	await seam({ outcome: "dead-worker" });
+
+	charge("review", "timeout", { attempt: 3 });
+	const error = await seam({ outcome: "timeout" }).then(
+		() => assert.fail("expected the shared automation budget to refuse"),
+		(refused) => refused,
+	);
+
+	assert.equal(error.reason, "budget-exhausted");
+	assert.equal(error.details.spent, 3);
+	assert.equal(error.details.reason_class, "automation-budget-exhausted");
 });
 
 /** Source with block and line comments removed. Enough for a plain-ESM tree. */
