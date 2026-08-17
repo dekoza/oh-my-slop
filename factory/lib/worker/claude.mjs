@@ -6,7 +6,16 @@ import { createWorkerAdapter } from "./adapter.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
 import { lifecycleOperations } from "./lifecycle.mjs";
 import { ensureClaudePlugin, readPluginManifest } from "./plugin.mjs";
-import { harnessVersion, memoizedPreflight, parseJson, probeFinding, runIn, unreachableRuntime } from "./probe.mjs";
+import {
+	flagNames,
+	harnessVersion,
+	memoizedPreflight,
+	parseJson,
+	probeFinding,
+	proveProfileFlags,
+	runIn,
+	unreachableRuntime,
+} from "./probe.mjs";
 import * as realTransport from "./transports.mjs";
 import { readClaudeConfigState, untrustedProjects } from "./trust.mjs";
 
@@ -114,6 +123,43 @@ export function claudeProbeArguments(pluginDir, sessionArgs = [], options = {}) 
 }
 
 /**
+ * The profile's own contribution to a pane's argv — §11.4's `model` plus the
+ * optional `effort`, where omission means "don't pass the flag".
+ *
+ * Exported because two callers must agree on it **by construction** rather than
+ * by care (#164, which is #160 one argument set down): the launch appends it to
+ * the worker binding, and §6.2's spelling proof hands the very same argv to the
+ * installed binary before a pane depends on it.
+ *
+ * @param {{ model: string, effort?: string }} profile
+ * @returns {string[]}
+ */
+export function claudeProfileArguments(profile) {
+	const args = ["--model", profile.model];
+	if (profile.effort !== undefined) args.push("--effort", profile.effort);
+	return args;
+}
+
+/**
+ * The argv §6.2's flag-spelling proof runs for one profile: **the argv a pane
+ * receives**, plus the probe-only IO flags and nothing else. The profile's flags
+ * sit where the launch puts them — after the worker binding — so what the
+ * installed binary parses here is what it will parse there.
+ *
+ * @param {string} pluginDir
+ * @param {ReadonlyArray<string>} sessionArgs
+ * @param {{ model: string, effort?: string }} profile
+ * @returns {string[]}
+ */
+export function claudeSpellingArguments(pluginDir, sessionArgs, profile) {
+	return [
+		...claudeWorkerArguments(pluginDir, sessionArgs),
+		...claudeProfileArguments(profile),
+		...CLAUDE_PROBE_ONLY_FLAGS,
+	];
+}
+
+/**
  * One live probe of the Claude runtime — role-independent, memoized by the
  * adapter per pinned revision.
  *
@@ -208,6 +254,64 @@ export async function probeClaudeRuntime({
 }
 
 /**
+ * §6.2's flag-spelling proof for the Claude runtime: **one `initialize`
+ * control-request per distinct profile**, over that profile's own launch argv
+ * (#164).
+ *
+ * This is deliberately *not* folded into `probeClaudeRuntime`. That probe is
+ * role- and profile-independent and memoized once per pinned revision — §6.2's
+ * "one request" — while profiles vary per role *and* per routing rule, so
+ * exercising each profile inside it would change the probe's **cardinality**
+ * rather than its argv. The two cardinalities stay separate and stated: one
+ * probe per revision, one spelling session per distinct profile.
+ *
+ * The `initialize` control-request is the request because it is the one the
+ * probe already asks and costs no model call (§6.2); its answer is only being
+ * used as proof that the argv parsed, so what it carries is not read here.
+ *
+ * @param {object} input
+ * @param {ReadonlyArray<{ name: string, model: string, effort?: string }>} input.profiles
+ *   the distinct Claude profiles the active routing can dispatch
+ * @param {string} input.pluginDir the §6.3 plugin directory the probe proved
+ * @param {{ env?: object, sessionArgs?: ReadonlyArray<string>, cwd?: string }} [input.session]
+ * @param {object} [input.transport]
+ * @param {string} [input.binary]
+ * @param {number} [input.timeoutMs]
+ * @returns {Promise<Readonly<object>>} `{ kind, binary, checked, findings }`
+ */
+export async function proveClaudeProfileFlags({
+	profiles,
+	pluginDir,
+	session: binding = {},
+	transport = {},
+	binary = "claude",
+	timeoutMs = DEFAULT_TIMEOUT_MS,
+}) {
+	return proveProfileFlags(
+		{ ...realTransport, ...transport },
+		{
+			kind: "claude",
+			label: "Claude",
+			binary,
+			sessions: profiles.map((profile) => {
+				const requestId = `factory-spelling-${profile.name}`;
+				return {
+					profile,
+					flags: flagNames(claudeProfileArguments(profile)),
+					args: claudeSpellingArguments(pluginDir, binding.sessionArgs ?? [], profile),
+					input: [
+						JSON.stringify({ type: "control_request", request_id: requestId, request: { subtype: "initialize" } }),
+					],
+					answered: (parsed) => parsed?.type === "control_response" && parsed.response?.request_id === requestId,
+				};
+			}),
+			where: { env: binding.env, cwd: binding.cwd },
+			timeoutMs,
+		},
+	);
+}
+
+/**
  * The role-level half: every closure member must appear as a
  * `<plugin>:<skill>` command in the initialize response's `commands` array —
  * registration on the production path, not an inspection of the tree.
@@ -276,7 +380,7 @@ export function createClaudeAdapter(context) {
 					...attempt,
 					sessionArgs: [
 						...claudeWorkerArguments(pluginDir, attempt.sessionArgs ?? []),
-						...profileArguments(attempt.profile),
+						...claudeProfileArguments(attempt.profile),
 					],
 					startupTimeoutMs: attempt.profile.startupTimeoutMs ?? null,
 				});
@@ -285,12 +389,6 @@ export function createClaudeAdapter(context) {
 			cancel: lifecycle.cancel,
 		},
 	});
-}
-
-function profileArguments(profile) {
-	const args = ["--model", profile.model];
-	if (profile.effort !== undefined) args.push("--effort", profile.effort);
-	return args;
 }
 
 /**

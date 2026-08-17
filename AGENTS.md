@@ -263,7 +263,14 @@ is the authority; cite the section a change answers to.
   control-request over stream-json — **with §9.7's capacity observation folded into the same
   probe**, so a declared size above an observed `max_instances` and an unreachable required
   class are red checks naming the class, the endpoint, and the fix, never a silent clamp or a
-  quiet capacity 0. Layer 3 (`recheck.mjs`) re-records the run-keyed handshake per attempt, so
+  quiet capacity 0. Beside that probe and behind it sits the **`profile-flags` check** (#164),
+  whose cardinality is the profile's rather than the revision's: **one session per distinct
+  profile the active routing can dispatch**, running that profile's own launch argv so the
+  installed binary accepts or refuses `--model` / `--effort` / `--thinking` before a pane
+  depends on the spelling. It is a separate check precisely *because* the probe is
+  profile-independent — folding profiles in would change the probe's cardinality, not its argv.
+  It costs no model call, and a green probe is what makes a refusal there a statement about the
+  flags rather than about the harness. Layer 3 (`recheck.mjs`) re-records the run-keyed handshake per attempt, so
   package drift arrives as §4.5's typed payload conflict — **a failure, never a new pin** —
   and persists the observed resolved model id per attempt (`attempt.rechecked`), refusing a
   declared model that resolves to two ids within one run (§11.7). The probes' IO lives
@@ -275,6 +282,11 @@ is the authority; cite the section a change answers to.
   topology** so §12.7's eager deletion cannot take a result with it. Then `attempt.launched`,
   the **mint**, because the projections refuse an attempt-scoped record for a tuple nothing
   minted; then one `agent-start` effect covering pane, stamp, identity variables, and agent,
+  whose pane is a **tab in the run's own workspace** (`worker/workspace.mjs`) — one
+  `workspace-open` effect keyed by the *run*, so it is opened once, adopted by every later
+  attempt and by every controller that re-enters the run, probed by the run's deterministic
+  label because Herdr stamps no token on a workspace, and opened by the first attempt that needs
+  one so a refusal is a budgeted `worker-launch-failed` rather than a run with no end reason,
   with the `FACTORY_ATTEMPT` token stamped **before** the agent so a crash in between leaves a
   pane reconcile can still recognise — the probe asks for the token *and* a live agent, so an
   early stamp cannot fake a start. §6.5's identity travels on **two channels**: the prompt, and
@@ -308,9 +320,10 @@ is the authority; cite the section a change answers to.
   harvest path has to remember.
 - **Herdr has no `agent stop`** — verified against protocol 19, where the whole agent surface is
   list/get/read/send-keys/prompt/rename/focus/wait/attach/start/explain and the socket API has
-  no `agent.stop` either. §13.B's "the controller stops agents and never closes panes" is
-  therefore `agent send-keys` with the harness's own quit sequence, and a harness that ignores
-  it leaves a wedged pane **recorded as an anomaly and never escalated**. The availability probe
+  no `agent.stop` either. §13.B's "the controller stops agents and never closes panes" — nor
+  tabs, nor the run's workspace — is therefore `agent send-keys` with the harness's own quit
+  sequence, and a harness that ignores it leaves a wedged pane **recorded as an anomaly and never
+  escalated**. The availability probe
   (`controller/herdr.mjs`) and the commands (`controller/herdr-control.mjs`) are two modules
   because "the factory checks the multiplexer, it does not manage one" is checkable only as
   *the probe imports nothing that can start a process*.
@@ -326,12 +339,19 @@ is the authority; cite the section a change answers to.
   whole binding — env, flags, settings file — comes from it, including the preflight probes':
   a probe run under the operator's config proves a world no worker will ever see. Three closed
   lists cross in and nothing else: **capability artifacts** (credentials, the model
-  catalogue), the **declared worker-context file** (§6.8's second migration channel, installed
-  as each runtime's user-memory file and hash-recorded in the run manifest), and **declared pi
-  extensions**. Isolation is what makes that last one necessary and is worth knowing before
-  you delete it: the `local` resource class's models come from an operator extension, so an
-  empty agent directory silently removes the class — and §6.5's transcript pointer with it.
-  Promotion is declared and recorded; live inheritance is never a channel.
+  catalogue, and §6.5's **agent-state integration** — the herdr-managed hook (Claude) and
+  extension (pi) that push the transcript pointer, copied into the run's roots, digested, and
+  version-observed out of the file's own `HERDR_INTEGRATION_*` header rather than assumed),
+  the **declared worker-context file** (§6.8's second migration channel, installed as each
+  runtime's user-memory file and hash-recorded in the run manifest), and **declared pi
+  extensions**. Isolation is what makes the capability lists necessary and is worth knowing
+  before you delete them: the `local` resource class's models come from an operator
+  extension, so an empty agent directory silently removes the class — and the pointer's
+  integration with it. **`worker-agent-state` is the red that keeps that loss named**
+  (`worker/preflight.mjs`): missing, unversioned, mis-identified, or outdated is a named red
+  ending the run `baseline-red` before the first claim, per runtime the active routing can
+  dispatch to — so `no-transcript-pointer` is an anomaly, never 15/15 nulls. Promotion is
+  declared and recorded; live inheritance is never a channel.
 - **Permissions derive from the role's posture, never from a profile** (§6.8, §11.4).
   `worker/permissions.mjs` is the one home for the deny floor (`git push`, `tea`, `gh`, in
   every spelling the matcher accepts), the builder binding (`dontAsk` + broad tool-family
@@ -571,9 +591,12 @@ is the authority; cite the section a change answers to.
   finding tagged with the axis that wrote it — nothing merged, deduplicated, or reranked — and
   one or more blocking findings on either axis is the rejection. §11.5's `review` pair maps
   onto the axes **positionally**, which is the whole of "model diversity is available as
-  per-run configuration but is not mandated". **The commit under review is read off the
-  recorded harvest**, never taken from the caller: §14.13 measures the commit being published,
-  and a `reviewedCommit` parameter would be a second opinion about which one that is. The fixed
+  per-run configuration but is not mandated". **Both ends of the diff are read off the passing
+  verify record** (`verifiedBoundary`), never taken from the caller: §14.13 measures the commit
+  being published, a `reviewedCommit` parameter would be a second opinion about which one that
+  is — as would the harvest's head, which a moved base makes the pre-rebase commit — and a
+  `baseCommit` parameter briefed a repair chain's reviewers on the repair's delta while their
+  verdicts gated the whole chain (#165). The fixed
   point then reaches the worker through `renderAttemptPrompt`'s `review` block, which is
   **required** for a role whose expectations name verdicts and refused for one that does not —
   a reviewer rendered without it gets a prompt naming no diff, which reads as a complete

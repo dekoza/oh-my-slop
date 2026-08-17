@@ -202,6 +202,10 @@ function reviewVerdicts(store, { run, ticket, attempt }) {
 				verdict: record.detail?.verdict ?? null,
 				profile: record.detail?.profile ?? null,
 				try: record.detail?.try ?? null,
+				// The boundary the axis was briefed on (#165): §14.13's spirit wants an
+				// approval's scope checkable against the published diff, not inferred.
+				base_commit: record.detail?.base_commit ?? null,
+				reviewed_commit: record.detail?.reviewed_commit ?? null,
 				blocking: Object.freeze(findings.filter((finding) => finding.severity === FINDING_SEVERITIES.blocking)),
 				advisory: Object.freeze(findings.filter((finding) => finding.severity === FINDING_SEVERITIES.advisory)),
 				// §6.8's authoritative guard, whatever the review concluded: §8.7 wants

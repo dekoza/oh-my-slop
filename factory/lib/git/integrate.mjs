@@ -2,7 +2,7 @@ import { existsSync, rmSync } from "node:fs";
 
 import { PHASE_INTEGRATE } from "../domain/vocabulary.mjs";
 import { requestEffect, resolveEffect } from "../effects/records.mjs";
-import { FactoryGitError } from "./errors.mjs";
+import { FactoryGitError, isMissingRef } from "./errors.mjs";
 import { assertFactoryRef, attemptWorktreePath, evidenceRef, integrationWorktreePath } from "./isolation.mjs";
 
 /**
@@ -160,12 +160,52 @@ export async function preserveEvidence(store, clone, { hold, run, ticket, attemp
 }
 
 /**
- * §7.5, step 1: replay the attempt onto the fresh base tip.
+ * Whether the worktree's `HEAD` already sits on `commit` — the commit is `HEAD`
+ * itself or an ancestor of it.
  *
- * `--onto` with the attempt's **own** base as the upstream, so exactly the
- * commits this attempt is ahead by are replayed — a repair branches from the
- * prior attempt's tip (§8.5), and rebasing against the run's pin instead would
- * try to replay the prior attempt's commits a second time.
+ * This is §7.5's "did the base move" question asked of the graph rather than of
+ * a recorded value: an attempt's **own** base (§7.3) is the prior attempt's tip
+ * for a repair and a since-rebased commit after §9.5's loop has run once, so
+ * comparing the fresh tip against it answers a different question.
+ *
+ * Only git's silent exit-1 — "no is the answer" — reads as `false`; anything
+ * with a diagnosis rethrows, because "not an ancestor" and "could not answer"
+ * are different facts and the line is drawn where `isMissingRef` draws it
+ * (§12.4).
+ *
+ * @param {object} clone the private clone's handle
+ * @param {{ worktreePath: string, commit: string }} what
+ * @returns {Promise<boolean>}
+ */
+export async function basedOn(clone, { worktreePath, commit }) {
+	try {
+		await clone.git(["merge-base", "--is-ancestor", commit, "HEAD"], { cwd: worktreePath });
+		return true;
+	} catch (error) {
+		if (!isMissingRef(error)) throw error;
+		return false;
+	}
+}
+
+/**
+ * §7.5, step 1: replay the ticket execution's work onto the fresh base tip.
+ *
+ * **The upstream is the fresh tip itself**, so the replay set is every commit
+ * `HEAD` carries that is not already on the base branch — the whole ticket
+ * execution's work, however many attempts contributed to it (#161). It is
+ * deliberately **not** the attempt's own base (§7.3): that value is the prior
+ * attempt's tip for a repair, and using it as the upstream replayed only the
+ * repair, excluding the implement commit it depends on — a conflict when the
+ * repair touched a file the implement created, and a silently incomplete branch
+ * when it did not.
+ *
+ * **A rebase whose result carries fewer non-base commits than its input is
+ * refused, and the shrunken result is never adopted** — the typed refusal that
+ * makes the silent case impossible rather than unlikely (§7.5, §11.2). It fires
+ * whatever the drop's mechanism: a commit whose patch is already upstream is
+ * dropped by git itself, and a branch that quietly lost a commit satisfies every
+ * downstream check (§14.13 measures the commit being published, and attestation
+ * compares heads) while publishing half the work.
  *
  * **A conflict is aborted here, never resolved and never left in progress.**
  * §8.10 gives the conflict a fresh-retry from the new base tip and says plainly
@@ -175,18 +215,24 @@ export async function preserveEvidence(store, clone, { hold, run, ticket, attemp
  * @param {object} clone the private clone's handle
  * @param {object} what
  * @param {string} what.worktreePath the integration worktree, detached at the branch tip
- * @param {string} what.baseCommit the attempt's own base (§7.3)
- * @param {string} what.onto §7.2's freshly fetched tip
- * @returns {Promise<Readonly<{ result: string, head: string, conflicts: ReadonlyArray<string> }>>}
+ * @param {string} what.onto §7.2's freshly fetched tip — the upstream and the target, one value
+ * @returns {Promise<Readonly<{ result: string, head: string, previousBase: string | null,
+ *   conflicts: ReadonlyArray<string> }>>} `previousBase` is the base-branch
+ *   commit the branch sat on before the rebase — the merge base of `HEAD` and
+ *   `onto` — kept for the journal, since it is what an incident review reads
+ * @throws {FactoryGitError} `rebase-dropped-commits`
  */
-export async function rebaseAttempt(clone, { worktreePath, baseCommit, onto }) {
+export async function rebaseAttempt(clone, { worktreePath, onto }) {
 	const before = await clone.git(["rev-parse", "--verify", "HEAD"], { cwd: worktreePath });
-	if (baseCommit === onto) {
-		return Object.freeze({ result: REBASE_RESULTS.upToDate, head: before, conflicts: Object.freeze([]) });
+	const previousBase = await mergeBase(clone, { worktreePath, onto });
+	if (previousBase === onto) {
+		return Object.freeze({ result: REBASE_RESULTS.upToDate, head: before, previousBase, conflicts: Object.freeze([]) });
 	}
 
+	const expected = await nonBaseCommits(clone, { worktreePath, onto });
+
 	try {
-		await clone.git(["rebase", "--onto", onto, baseCommit, "HEAD"], { cwd: worktreePath });
+		await clone.git(["rebase", "--onto", onto, onto, "HEAD"], { cwd: worktreePath });
 	} catch (error) {
 		if (!(error instanceof FactoryGitError)) throw error;
 
@@ -201,15 +247,50 @@ export async function rebaseAttempt(clone, { worktreePath, baseCommit, onto }) {
 		return Object.freeze({
 			result: REBASE_RESULTS.conflict,
 			head: await clone.git(["rev-parse", "--verify", "HEAD"], { cwd: worktreePath }),
+			previousBase,
 			conflicts: Object.freeze(conflicts),
 		});
 	}
 
+	const head = await clone.git(["rev-parse", "--verify", "HEAD"], { cwd: worktreePath });
+	const replayed = await nonBaseCommits(clone, { worktreePath, onto });
+	if (replayed.length < expected.length) {
+		throw new FactoryGitError(
+			"rebase-dropped-commits",
+			`The rebase onto ${onto} replayed ${replayed.length} of ${expected.length} non-base commit(s), and a result ` +
+				"carrying fewer commits than its input is refused rather than adopted (§7.5): every downstream check " +
+				"measures the commits being published, so a branch that quietly lost one would verify and publish as " +
+				"green (#161). The branch is untouched; the shrunken result sits only in the integration worktree.",
+			{ at: "replay", onto, before, after: head, expected, found: replayed },
+		);
+	}
+
 	return Object.freeze({
 		result: REBASE_RESULTS.rebased,
-		head: await clone.git(["rev-parse", "--verify", "HEAD"], { cwd: worktreePath }),
+		head,
+		previousBase,
 		conflicts: Object.freeze([]),
 	});
+}
+
+/**
+ * The merge base of `HEAD` and `onto`, or `null` when the histories are
+ * unrelated — git's silent exit 1. A refusal carrying a diagnosis rethrows, so
+ * an unanswerable repository is never journaled as unrelated histories (§12.4).
+ */
+async function mergeBase(clone, { worktreePath, onto }) {
+	try {
+		return await clone.git(["merge-base", onto, "HEAD"], { cwd: worktreePath });
+	} catch (error) {
+		if (!isMissingRef(error)) throw error;
+		return null;
+	}
+}
+
+/** The commits `HEAD` carries that are not on the base being rebased onto, oldest first. */
+async function nonBaseCommits(clone, { worktreePath, onto }) {
+	const listed = await clone.git(["rev-list", "--reverse", `${onto}..HEAD`], { cwd: worktreePath });
+	return listed === "" ? [] : listed.split("\n");
 }
 
 /**

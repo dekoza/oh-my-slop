@@ -1,10 +1,10 @@
-import { FINDING_SEVERITIES, PHASE_HARVEST, PHASE_REVIEW, REVIEW_VERDICTS, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
+import { CHECK_RESULTS, FINDING_SEVERITIES, PHASE_REVIEW, PHASE_VERIFY, REVIEW_VERDICTS, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
 import { createAttemptWorktree } from "../git/attempt.mjs";
 import { assessMutation, captureWorktreeState } from "../git/attestation.mjs";
 import { allocateAttempt, mintAttempt, requireAttemptIdentity } from "../worker/attempt.mjs";
 import { postureOf, profileForRole, REVIEW_ROLES, REVIEW_ROUTING_ROLE } from "../worker/roles.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
-import { FIRST_TRY, recordedStage, resolveStage } from "./stages.mjs";
+import { FIRST_TRY, recordedStage, resolveStage, stageResults } from "./stages.mjs";
 import { routeOutcome } from "./table.mjs";
 
 /**
@@ -64,10 +64,12 @@ import { routeOutcome } from "./table.mjs";
  * @param {object} context.hold the controller's hold (`controller/lease-guard.mjs`)
  * @param {string} context.run
  * @param {number} context.ticket
- * @param {string} context.attempt the **builder** attempt whose work is reviewed
- * @param {string} context.baseCommit §7.2's pinned base — what the change is
- *   measured against, which for a repair chain is still the run's pin and never
- *   the repairing attempt's own tip
+ * @param {string} context.attempt the **builder** attempt whose work is reviewed.
+ *   What the diff is measured against is deliberately **not** a parameter: both
+ *   ends of it are read off the passing verify record (`verifiedBoundary`), and
+ *   the attempt's own base (§7.3) — the prior attempt's tip for a repair — never
+ *   reaches this phase at all, which is how the two meanings the one value
+ *   conflated are kept apart (#161, #165)
  * @param {{ roles: object, rules: ReadonlyArray<object> }} context.routing the active routing
  * @param {ReadonlyArray<string>} [context.labels] the ticket's labels, as the
  *   claim-time snapshot has them
@@ -93,7 +95,6 @@ export async function reviewPhase(
 		run,
 		ticket,
 		attempt: builderAttempt,
-		baseCommit,
 		routing,
 		labels = [],
 		workerConfig,
@@ -103,7 +104,7 @@ export async function reviewPhase(
 		now,
 	},
 ) {
-	const reviewedCommit = harvestedCommit(store, { run, ticket, attempt: builderAttempt });
+	const { baseCommit, reviewedCommit } = verifiedBoundary(store, { run, ticket, attempt: builderAttempt });
 	const profiles = reviewProfiles(routing, { labels });
 	const axes = [];
 
@@ -131,34 +132,49 @@ export async function reviewPhase(
 }
 
 /**
- * The commit under review, **read off the harvest that measured it** (§14.13).
+ * The boundary a review measures — **both ends read off the passing verify
+ * record** (§8.4, §14.13, #165).
  *
- * It is not a parameter, and that is the finding it answers: §14.13 says
+ * Neither end is a parameter, and that is the finding each answers. §14.13 says
  * verification never attests a commit other than the one being published, and a
  * `reviewedCommit` the caller supplied is a second opinion about which commit
- * that is. §7.4's harvest already resolved the branch's head under this attempt,
- * and §14.15 makes review reachable only through a passing verify of that same
- * head — so the record is the answer, and a lane cannot hand the axes a commit
- * the pipeline never measured.
+ * that is — as is the harvest's head, which a moved base makes the *pre-rebase*
+ * commit while verify's is the exact post-rebase one being published. And a
+ * `baseCommit` the caller supplied is #161's conflation one phase earlier: the
+ * walking attempt's own base (§7.3) is the prior attempt's tip for a repair, so
+ * a review diffed from it sees only the repair's delta while two approved
+ * verdicts gate the publication of the whole chain (§8.5, §8.7).
+ *
+ * The verify record carries the pair together: `base_commit` is the fresh
+ * base-branch tip the branch was left sitting on — the boundary of the
+ * publishable diff — and `head` is the commit §8.2's required set passed at.
+ * §14.15 makes this phase reachable only through that record, and
+ * `integratePublish`'s `attestedByVerify` reads the same durable state for the
+ * same reason — so the review and the checks measure one value, and after a
+ * §9.5 re-rebase the verdicts keep naming the boundary they were rendered
+ * against (§8.7) rather than implying they covered the moved one.
  */
-function harvestedCommit(store, { run, ticket, attempt }) {
-	// §8.10 gives `harvest` no `retry` row, so it is entered once per attempt and
-	// the first pass is the only pass. Spelled rather than defaulted: the day the
-	// table grows one, this is where the assumption is (#146).
-	const harvested = recordedStage(store, { run, ticket, phase: PHASE_HARVEST, attempt, try: FIRST_TRY });
-	const head = harvested?.payload.detail?.head;
+function verifiedBoundary(store, { run, ticket, attempt }) {
+	// The latest passing verify under this attempt: §8.10's automation retry
+	// re-enters `verify` under the same attempt at the next try (#146), so an
+	// earlier unrunnable pass may sit beside the one that passed.
+	const verified = stageResults(store, { run, ticket, phase: PHASE_VERIFY })
+		.filter((record) => record.attempt === attempt && record.outcome === CHECK_RESULTS.passed)
+		.at(-1);
+	const baseCommit = verified?.detail?.base_commit;
+	const reviewedCommit = verified?.detail?.head;
 
-	if (typeof head !== "string" || head.length === 0) {
+	if (typeof baseCommit !== "string" || baseCommit.length === 0 || typeof reviewedCommit !== "string" || reviewedCommit.length === 0) {
 		throw unroutable(
-			"reviewed-commit",
-			`Attempt ${attempt} has no recorded harvest head, so there is nothing §8.2's checks passed on to review. ` +
-				`§14.13 measures the commit being published and §14.15 puts a passing verify of that same commit before ` +
-				`this phase; taking a commit on a caller's word instead would be a second opinion about which one it is.`,
-			{ attempt, phase: PHASE_HARVEST },
+			"verified-boundary",
+			`Attempt ${attempt} has no passing verify record naming a base and a head, so there is nothing §8.2's checks ` +
+				`passed on to review (§14.15). §14.13 measures the commit being published, and taking either end of the ` +
+				`diff on a caller's word instead would be a second opinion about what that is.`,
+			{ attempt, phase: PHASE_VERIFY },
 		);
 	}
 
-	return head;
+	return Object.freeze({ baseCommit, reviewedCommit });
 }
 
 /**
@@ -324,7 +340,15 @@ function axisPurpose({ axis, builderAttempt, tryNumber }) {
 async function attemptAxis(clone, { axis, profile, identity, worktreePath, branch, baseCommit, reviewedCommit, runAxis, tryNumber }) {
 	const before = await captureWorktreeState(clone, { worktreePath, branch });
 	if (!before.clean) {
-		return mutationAnswer({ axis, profile, tryNumber, guard: assessMutation({ before, after: before }), ran: null });
+		return mutationAnswer({
+			axis,
+			profile,
+			tryNumber,
+			baseCommit,
+			reviewedCommit,
+			guard: assessMutation({ before, after: before }),
+			ran: null,
+		});
 	}
 
 	const ran = await runAxis({
@@ -343,7 +367,7 @@ async function attemptAxis(clone, { axis, profile, identity, worktreePath, branc
 	});
 
 	const guard = assessMutation({ before, after: await captureWorktreeState(clone, { worktreePath, branch }) });
-	if (guard.mutated) return mutationAnswer({ axis, profile, tryNumber, guard, ran });
+	if (guard.mutated) return mutationAnswer({ axis, profile, tryNumber, baseCommit, reviewedCommit, guard, ran });
 
 	// §8.4's verdict is what a `completed` reviewer owes, and that obligation is
 	// **role** knowledge — which is why it is asserted here and not in §6.6's
@@ -358,6 +382,8 @@ async function attemptAxis(clone, { axis, profile, identity, worktreePath, branc
 				axis,
 				profile,
 				tryNumber,
+				baseCommit,
+				reviewedCommit,
 				guard,
 				ran,
 				problem: `the attempt ended ${ran.outcome} and wrote no §8.4 verdict, so this axis produced no result`,
@@ -365,16 +391,21 @@ async function attemptAxis(clone, { axis, profile, identity, worktreePath, branc
 		});
 	}
 
-	return Object.freeze({ outcome: ran.outcome, detail: axisDetail({ axis, profile, tryNumber, guard, ran }) });
+	return Object.freeze({
+		outcome: ran.outcome,
+		detail: axisDetail({ axis, profile, tryNumber, baseCommit, reviewedCommit, guard, ran }),
+	});
 }
 
-function mutationAnswer({ axis, profile, tryNumber, guard, ran }) {
+function mutationAnswer({ axis, profile, tryNumber, baseCommit, reviewedCommit, guard, ran }) {
 	return Object.freeze({
 		outcome: "mutation-detected",
 		detail: axisDetail({
 			axis,
 			profile,
 			tryNumber,
+			baseCommit,
+			reviewedCommit,
 			guard,
 			ran,
 			problem: `the reviewer's worktree changed under it (${guard.reasons.join(", ")}); a read-only role that wrote has broken its own contract`,
@@ -389,15 +420,19 @@ function mutationAnswer({ axis, profile, tryNumber, guard, ran }) {
  * blocking set, and a detail that sorted or deduplicated here would rerank one
  * axis before the union ever saw it. The attestation rides it too, on every
  * outcome and not only on a mutation — §8.7's per-attempt attestation artifact
- * wants the before/after guard result whatever the review concluded.
+ * wants the before/after guard result whatever the review concluded. So does
+ * the boundary the axis was briefed on: a verdict's scope is part of the
+ * verdict, and §8.7's artifact names the base it was rendered against (#165).
  */
-function axisDetail({ axis, profile, tryNumber, guard, ran, problem = null }) {
+function axisDetail({ axis, profile, tryNumber, baseCommit, reviewedCommit, guard, ran, problem = null }) {
 	const record = ran?.record ?? null;
 
 	return Object.freeze({
 		axis: axis.name,
 		profile,
 		try: tryNumber,
+		base_commit: baseCommit,
+		reviewed_commit: reviewedCommit,
 		attestation: Object.freeze({
 			mutated: guard.mutated,
 			reasons: guard.reasons,

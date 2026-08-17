@@ -1,11 +1,41 @@
 import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { FactoryWorkerError } from "./errors.mjs";
 import { claudeSessionArguments, claudeSettingsDocument, piSessionArguments, WORKER_POSTURES } from "./permissions.mjs";
 import { pretrustClaude, pretrustPi, claudeTrustKeys } from "./trust.mjs";
+
+/**
+ * §6.5's agent-state integration, per runtime: the capability that pushes the
+ * transcript pointer into Herdr (a `SessionStart` hook for Claude, an
+ * extension for pi), installed by herdr into the operator's own config root.
+ *
+ * It is §6.8's first closed list — a **fixed capability artifact named in
+ * code per runtime**, beside the credentials and the model catalogue — and
+ * not `worker.piExtensions`: the factory's own model depends on the pointer
+ * (the one channel that disambiguates worker and reviewer panes as a fact),
+ * so a capability the operator may or may not declare is not the right
+ * channel for it, and an empty declared list would re-lose the pointer
+ * silently, which is exactly the absence this promotion ends.
+ *
+ * `file` is where herdr installs it, relative to the operator's config root;
+ * the same relative path is where it is copied into the run's root, because
+ * that is where each runtime looks — pi auto-discovers extensions from the
+ * agent directory's `extensions/`, and Claude's hook is wired into the
+ * session settings at that run-owned path.
+ *
+ * `version` is the one the factory is written against. The installed file
+ * states its own version in a leading `HERDR_INTEGRATION_VERSION` comment, and
+ * the environment **observes** that number rather than assuming it: a file
+ * herdr left outdated, or one that lost its header, is a named preflight
+ * finding (§11.2) — never a silent `no-transcript-pointer` on every attempt.
+ */
+export const AGENT_STATE_INTEGRATION = Object.freeze({
+	pi: Object.freeze({ file: "extensions/herdr-agent-state.ts", version: 8 }),
+	claude: Object.freeze({ file: "hooks/herdr-agent-state.sh", version: 7 }),
+});
 
 /**
  * §6.8's **config isolation — promotion, not inheritance**: workers run in a
@@ -32,9 +62,13 @@ import { pretrustClaude, pretrustPi, claudeTrustKeys } from "./trust.mjs";
  *    slot the operator's personal one would have occupied.
  * 3. **Declared pi extensions** — see `config/worker.mjs`. Isolation empties the
  *    agent directory of extensions, and on this host that silently removes the
- *    `local` resource class and §6.5's transcript pointer. A declared,
- *    manifest-recorded promotion is the honest answer; live inheritance is not
- *    a channel.
+ *    `local` resource class. A declared, manifest-recorded promotion is the
+ *    honest answer; live inheritance is not a channel. §6.5's transcript
+ *    pointer, which isolation removes with it, crosses in as a fixed
+ *    capability artifact instead — `AGENT_STATE_INTEGRATION`, above: the
+ *    herdr-managed hook and extension that push it, copied into the run's
+ *    roots and version-observed, because a capability the factory's own model
+ *    depends on is not one the operator may or may not declare.
  *
  * Everything else the operator has — settings, skills roots, extensions,
  * prompts, themes, `AGENTS.md`, `CLAUDE.md`, hooks — is simply not there, which
@@ -119,6 +153,9 @@ export function prepareWorkerEnvironment({
 	const promoted = Object.fromEntries(RUNTIME_KINDS.map((kind) => [kind, promote(operator[kind], roots[kind], PROMOTED[kind])]));
 	const context = installContextFile({ roots, repoRoot, declared: worker.contextFile });
 	const extensions = resolveExtensions(worker.piExtensions, home);
+	const agentState = Object.fromEntries(
+		RUNTIME_KINDS.map((kind) => [kind, installAgentState(operator[kind], roots[kind], kind)]),
+	);
 
 	// pi discovers its own settings; an empty controller-owned file is the
 	// statement that this environment has none — no packages, no skills roots,
@@ -128,7 +165,15 @@ export function prepareWorkerEnvironment({
 	const settingsPaths = {};
 	for (const posture of Object.values(WORKER_POSTURES)) {
 		const path = join(roots.claude, CLAUDE_SETTINGS_FILE[posture]);
-		writeFileSync(path, `${JSON.stringify(claudeSettingsDocument({ posture, extraDenies: worker.denies }), null, 2)}\n`, "utf8");
+		// The hook is wired only when the run actually owns the script it points
+		// at: a hook whose command names an absent file would be a session that
+		// errors on `SessionStart` rather than a worker that loses §6.5's
+		// pointer, and preflight's `worker-agent-state` check is the red that
+		// keeps the latter from reaching a claim.
+		const hook = agentState.claude.installed
+			? `bash '${join(roots.claude, AGENT_STATE_INTEGRATION.claude.file)}' session`
+			: null;
+		writeFileSync(path, `${JSON.stringify(claudeSettingsDocument({ posture, extraDenies: worker.denies, sessionStartHook: hook }), null, 2)}\n`, "utf8");
 		settingsPaths[posture] = path;
 	}
 
@@ -137,6 +182,7 @@ export function prepareWorkerEnvironment({
 		promoted: Object.freeze(promoted),
 		context,
 		extensions,
+		agentState: Object.freeze(agentState),
 
 		/**
 		 * §6.8's per-attempt pre-trust, through both runtimes' stores at once.
@@ -231,10 +277,18 @@ export function prepareWorkerEnvironment({
 		 * and bytes are evidence: an extension edited between runs is visible, and
 		 * a run re-entered with an edited context file is refused rather than
 		 * quietly told something different.
+		 *
+		 * The agent-state integration records the same way (§6.5, §6.8): the
+		 * declared source path, the content digest, and the version **observed**
+		 * out of the file's own header. It is not code policy — herdr manages it
+		 * in place and updates it in the operator's root, so what a run loaded is
+		 * operator state worth pinning, and an integration edited or updated
+		 * between runs is visible in the manifest rather than inferred.
 		 */
 		manifestFacts() {
 			return {
 				extra_denies: { declared: [...worker.denies] },
+				agent_state: agentStateFacts(agentState),
 				pi_extensions: {
 					declared: extensions.map((extension) => ({
 						declared: extension.declared,
@@ -268,6 +322,89 @@ function operatorRoots({ env, home }) {
 		pi: env[CONFIG_DIR_ENV.pi]?.trim() || join(home, ".pi", "agent"),
 		claude: env[CONFIG_DIR_ENV.claude]?.trim() || join(home, ".claude"),
 	});
+}
+
+/**
+ * §6.5's agent-state integration for one runtime: copied from the operator's
+ * config root into the run's own, version-observed out of the file's header.
+ *
+ * The copy, like every promotion here, is rebuilt each run — a file herdr
+ * removed from the operator's root stops existing in the run's root rather
+ * than lingering as capability nobody granted. The facts are the check's
+ * input and the manifest's evidence in one: `installed` is the predicate,
+ * `version` and `id` are read off the bytes, and nothing about the
+ * integration is assumed from the path alone.
+ *
+ * @param {string} operatorRoot the operator's config root for this runtime
+ * @param {string} runRoot the run's own config root for this runtime
+ * @param {string} kind `pi` or `claude`
+ * @returns {Readonly<object>} the promotion's facts
+ */
+function installAgentState(operatorRoot, runRoot, kind) {
+	const { file } = AGENT_STATE_INTEGRATION[kind];
+	const source = join(operatorRoot, file);
+	const target = join(runRoot, file);
+
+	try {
+		if (!statSync(source).isFile()) throw new Error("not a file");
+	} catch {
+		// The environment is rebuilt every run; a copy outliving its source
+		// would be capability nobody granted this run.
+		rmSync(target, { force: true });
+		return Object.freeze({ installed: false, source, installed_as: null, digest: null, id: null, version: null });
+	}
+
+	const content = readFileSync(source);
+	mkdirSync(dirname(target), { recursive: true });
+	copyFileSync(source, target);
+	const header = integrationHeader(content.toString("utf8"));
+
+	return Object.freeze({
+		installed: true,
+		source,
+		installed_as: target,
+		digest: digestOf(content),
+		id: header.id,
+		version: header.version,
+	});
+}
+
+/** What the manifest records per runtime: the declared path, the bytes, and the observed version — or null when nothing was promoted. */
+function agentStateFacts(agentState) {
+	const fact = (kind) => {
+		const observed = agentState[kind];
+		if (!observed.installed) return null;
+		return { source: observed.source, digest: observed.digest, version: observed.version };
+	};
+	return Object.freeze({ pi: fact("pi"), claude: fact("claude") });
+}
+
+/**
+ * The identity and version herdr stamps into the integration's leading
+ * comments — the one surface the factory observes rather than assumes. Both
+ * files spell the same keys under their own comment prefix (`#` and `//`),
+ * so one scan strips either prefix and reads both; the claude file's shebang
+ * is a `#` line like the rest, which is why the scan is bounded (sixty-four
+ * leading lines) rather than terminated — the keys are herdr's, and a body
+ * that merely mentions them must not read as a version.
+ *
+ * @param {string} content the integration file
+ * @returns {{ id: string | null, version: number | null }}
+ */
+function integrationHeader(content) {
+	let id = null;
+	let version = null;
+	for (const line of content.split("\n").slice(0, 64)) {
+		const cleaned = line.replace(/^\s*(?:\/\/|#|\/\*)\s?/, "").trim();
+		const idMatch = /^HERDR_INTEGRATION_ID=([A-Za-z0-9_-]+)$/.exec(cleaned);
+		if (idMatch !== null) {
+			id = idMatch[1];
+			continue;
+		}
+		const versionMatch = /^HERDR_INTEGRATION_VERSION=(\d+)$/.exec(cleaned);
+		if (versionMatch !== null) version = Number(versionMatch[1]);
+	}
+	return { id, version };
 }
 
 /**

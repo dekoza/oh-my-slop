@@ -161,6 +161,11 @@ function overrides({ config, activeRouting, declared, worker }) {
 						spec: "§6.8",
 					},
 					pi_extensions: { declared: null, missing: "the worker config environment did not build", spec: "§6.8" },
+					// §6.5's pointer channel, named like the others: a key that
+					// disappeared from the shape would let an incident read absence
+					// as "the run did not use the channel" rather than "the channel
+					// could not be built".
+					agent_state: { pi: null, claude: null, missing: "the worker config environment did not build", spec: "§6.8" },
 				}
 			: worker.overrides),
 	};

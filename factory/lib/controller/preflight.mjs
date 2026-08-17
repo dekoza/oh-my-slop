@@ -129,6 +129,7 @@ export async function preflight(
 	record(worker.permissionsCheck());
 	record(worker.trustCheck());
 	record(worker.closureCheck());
+	record(worker.agentStateCheck());
 
 	// ── Runtime probes (§9.7) ────────────────────────────────────────────────
 	const herdrAvailable = record(await herdrCheck({ env, herdr }));
@@ -141,6 +142,12 @@ export async function preflight(
 
 	// §6.2's live per-runtime probe, §9.7's capacity observation folded in.
 	record(await worker.runtimeCheck());
+
+	// §6.2's flag-spelling proof, one session per distinct profile (#164). It sits
+	// behind the probe rather than beside it: the probe runs the same session
+	// without the profile's flags, so a green probe is what makes a refusal here a
+	// statement about the spelling and not about the harness.
+	record(await worker.profileFlagsCheck());
 
 	// ── The expensive one, last (§9.7) ───────────────────────────────────────
 	record(await baselineCheck(store, { run, isolation, config, hold, actor, at }));

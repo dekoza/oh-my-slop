@@ -294,8 +294,8 @@ executions reverse index) · `run_digest` (tier 2, permanent).
 
 **Every mutation outside the database is an effect** with a `requested` / `resolved` pair:
 Gitea writes (assign, claim comment, label add/remove, close, PR create, PR body update), Git
-writes (branch create, push, evidence ref, worktree create/delete), Herdr writes (agent start,
-agent stop), artifact and attestation writes, and cleanup deletions. **Reads are not
+writes (branch create, push, evidence ref, worktree create/delete), Herdr writes (workspace open,
+agent start, agent stop), artifact and attestation writes, and cleanup deletions. **Reads are not
 effects** — they get durable observation cursors.
 
 **Key grammar:**
@@ -349,6 +349,7 @@ invariant; without it the invariant is a code-review convention.
 | push | `git ls-remote`, compare SHA |
 | branch create | `git rev-parse` |
 | worktree create | `git worktree list` plus path exists |
+| workspace open | `workspace list` matching the run's label (§6.4) |
 | agent start | `pane list` matching the `FACTORY_ATTEMPT` token |
 | artifact write | file exists and re-hashes to its digest |
 | cleanup delete | does the path / ref / pane still exist |
@@ -616,6 +617,52 @@ minus the probe-only flags plus the profile's. A launch whose closure cannot rea
 typed automation failure before the attempt spends, never a worker that quietly reads skill
 files instead of invoking them.
 
+**The profile's own flags sit outside that composed binding, and are proven by a check of their
+own** (#164). §11.4's `model` and the optional `effort` / `thinking` are appended to the worker
+binding at launch, and this probe cannot absorb them: it is role- **and profile-independent**,
+memoized once per pinned revision, while profiles vary per role *and* per routing rule — so
+exercising each one inside it would change the probe's **cardinality** rather than its argv, which
+is a different design and must be chosen rather than drifted into. Instead:
+
+- **`profile-flags` is a separate preflight check, one live session per *distinct* profile the
+  active routing can dispatch.** A routing table naming one profile in every role and in a rule
+  costs one session, because flag spelling is a property of the profile and not of the role that
+  reached it. **§6.2's runtime probe keeps its own cardinality — one per pinned revision.**
+- **Each session runs that profile's own launch argv plus the probe-only IO flags and nothing
+  else**, and it is judged on the answer the probe already reads: pi's RPC response, Claude's
+  `initialize` control-response. **No model call is made** — spelling is a parse-level fact, and
+  proving it must not spend tokens.
+- **The verdict is that answer, never an exit status.** Measured on the development machine, `pi
+  list` exits 1 over a stale OAuth token while pi's RPC session answers perfectly, so a side
+  subcommand's exit code is not a spelling verdict. **`--version` is measured useless**: against
+  Claude 2.1.233 it short-circuits *before* argument parsing and accepts `--nonsense-flag` with
+  exit 0. What both binaries do offer is that a session which starts has parsed its argv, and a
+  misspelling is refused by name before one does — `error: unknown option '--efffort'`, with
+  `(Did you mean --effort?)` on the line after it, and `Error: Unknown option: --thinnking` from
+  pi. **The quoted line is the one naming a flag the profile passed, matched whole-word**, not
+  the last line: the hint trails the diagnosis, and `--model` occurs inside pi's unrelated
+  `--models`.
+- **The check runs behind the runtime probe and only on a green one.** The probe starts the same
+  kind of session *without* the profile's flags, so a green probe and a refused spelling session
+  differ by exactly those flags — that ordering is what makes the verdict a statement about the
+  spelling rather than a guess about a broken harness. With no green probe there is nothing to
+  attribute against, so the check fails citing `runtime-probe` rather than answering.
+- **A binary that could not be spawned at all is §11.7's unreachable runtime, not a rejected
+  flag.** It was never asked about a spelling, and blaming the profile would point the operator at
+  their config over a missing executable (§11.2).
+- **The cost is stated rather than capped by a new knob**: the sessions are serial at the
+  runtime's own probe timeout, so preflight's worst case grows by the number of distinct profiles
+  times that timeout before the first claim. Measured, an accepted spelling answers in ~1.8 s
+  (Claude) and ~0.7 s (pi), and §9.7's ordering still puts the expensive baseline last.
+- **A refusal names the profile, its flags, the binary and the binary's own diagnostic**, as a
+  §11.2 preflight failure before a branch, a worktree, a pane or a tracker claim exists. Without
+  it a renamed flag surfaces as `worker-launch-failed` *after* all four — the one binding that
+  escaped §6.2's purpose of refusing before an attempt spends.
+
+The reviewer binding is not spelled out a second time for this check, for the reason the probe
+already gives: it differs only by flags the same binary has accepted, and a profile's own flags
+are identical under both postures.
+
 **The capacity probe folds into this same per-runtime probe** (§9.7): one request yielding both
 model inventory and `max_instances`, so no second place can disagree about whether the runtime
 is up.
@@ -648,6 +695,37 @@ and so must be held by tests rather than by care:
 
 **All worker attempts run as interactive Herdr panes**; headless is reserved for disposable
 probes.
+
+**One workspace per run, and a tab in it per attempt.** A workspace rather than a split of
+whatever pane the controller happens to be in: `factory start --foreground` may run in a terminal
+that is not a Herdr pane at all, and a topology that only works when the controller was launched
+detached fails on the operator's second invocation. That argument rules out the controller's own
+pane; it never argued for a workspace *per attempt*. The workspace list is the operator's
+top-level navigation, and one run on one ticket filed four workspaces into it, interleaved with
+the operator's real projects. Watching a worker is a tab switch.
+
+The workspace is **run-scoped, not persistent**. It is a `workspace-open` effect keyed by the
+run, so it is opened exactly once, adopted by every later attempt and by every controller that
+re-enters the run (§10.4), and settled after a crash by probing Herdr's workspace list for the
+run's own deterministic label — Herdr carries no metadata token on a workspace the way
+`pane report-metadata` does on a pane, so the label is the only handle a probe has. A workspace
+that outlived its run would accumulate tabs across runs and would need its own reconciliation
+question — *is this workspace mine, or a dead run's?* — and the effect row gives §12.8's cleanup
+one durable anchor per run to plan from instead of one per attempt. **Reclaiming a workspace is
+not in v1**: there is no workspace deletion in the effect catalogue, because nothing deletes one. It is opened by the first attempt that needs one: a run that
+launches no worker leaves nothing behind, and Herdr refusing the command is that attempt's
+`worker-launch-failed` automation failure (§8.10), which is where a launch failure already has a
+home and a budget.
+
+**The cost is accepted explicitly:** an operator who closed the factory workspace used to lose
+one attempt and now loses every live lane of that run at once. Each pane's loss is still §6.6's
+`dead-worker`, so it is a real robustness cost traded for the navigation. The controller does not
+repair it: a `tab create` against a workspace that is gone is reported, never answered by opening
+a replacement behind the operator's back. A re-entered run therefore adopts the workspace it
+recorded and, if that workspace was closed, launches nothing further — every attempt fails as
+`worker-launch-failed` until §8.6's breaker ends the run, and **a new run is what opens a new
+workspace**. The launch failure says so rather than leaving the operator to derive it from
+`workspace_not_found`.
 
 The controller composes the first prompt from a **deterministic per-role template**: the native
 invocation (`/skill:<name>` for pi, `/oh-my-slop:<name>` for Claude) plus a typed context block
@@ -682,13 +760,20 @@ Herdr agent and pane ids), runtime, exact model, skill source, and package revis
 
 **The transcript pointer is captured from Herdr, not computed.** Herdr persists
 `AgentSessionInfo {kind: "id"|"path", value}` per pane, pushed by the agent's own `SessionStart`
-hook — Claude reports a session id, pi reports a literal `.jsonl` path. Record
+hook — Claude reports a session id, pi reports a literal `.jsonl` path. That hook is herdr's
+**agent-state integration**, installed in the operator's config root and reaching the worker
+through §6.8's capability promotion: config isolation removes the operator's copy, so the
+integration crosses in as a fixed, digested, **version-observed** artifact, and a per-runtime
+preflight check gates its presence before the first claim — a run that could not carry the
+pointer is a named red, not a pointer that will not arrive. Record
 `{worker_kind, transcript_kind, transcript_value, captured_at}` on the attempt, polling with
 backoff for a few seconds after launch. One seam covers both runtimes, and because worker and
 reviewer are *different panes* it disambiguates them **as a fact**; computing the path cannot,
 since pi keys sessions on cwd and both roles share a worktree. If the pointer never arrives,
-record `no-transcript-pointer`. **No later heuristic can recover this** — Herdr drops the
-reference at pane close and integration deletes the worktree the pi path is keyed on.
+record `no-transcript-pointer` — with the gate above, that record is an anomaly an operator
+investigates, not the expected residue of isolation. **No later heuristic can recover this** —
+Herdr drops the reference at pane close and integration deletes the worktree the pi path is
+keyed on.
 
 ### 6.6 Typed completion — hybrid authority
 
@@ -846,11 +931,18 @@ Procedurally valuable personal rules migrate through exactly two channels:
 govern *rules*; an empty config environment also removes things that are not rules and that the
 factory's own model depends on — measured, not assumed: pi's `local` models are supplied by an
 operator **extension**, so an isolated agent directory deletes a §9.1 resource class outright,
-and §6.5's transcript pointer arrives through another. Two closed lists therefore cross in:
+and §6.5's transcript pointer goes with the hook that pushes it. Two closed lists therefore
+cross in:
 
-- **Fixed capability artifacts**, named in code per runtime — credentials and the model
-  catalogue. Nothing here carries behaviour, and this section already records that credentials
-  are ambient on this host.
+- **Fixed capability artifacts**, named in code per runtime — credentials, the model
+  catalogue, and §6.5's **agent-state integration**: the herdr-managed hook (Claude) and
+  extension (pi) that push the transcript pointer. Nothing here carries behaviour, and this
+  section already records that credentials are ambient on this host. The integration is
+  recorded in the run manifest by declared path and content digest **and by the version
+  observed out of the file's own header** — observed, not assumed — and its absence, missing
+  version, or staleness is a **named preflight red per runtime in play**: the pointer has no
+  other channel, so a run that could not carry it ends red before the first claim rather than
+  null on every attempt.
 - **Declared runtime extensions** (`worker.piExtensions`), defaulting to **none**, recorded in
   the run manifest by declared path **and content digest**, so what a run loaded is evidence
   rather than a claim about intent.
@@ -910,7 +1002,11 @@ handled base freshness at all.
   It is created at **the attempt's own base commit** — §7.2's pinned base for a first attempt
   and for a fresh-retry, and **the prior attempt's tip for a repair** (§8.5). A repair's base is
   therefore an attempt branch rather than the default branch, which is what "work preserved"
-  means mechanically.
+  means mechanically. The attempt's own base answers exactly one question — *what did this
+  attempt branch from* — and it is never the boundary of what §7.5 replays, nor what §8.4's
+  review measures against: the values coincide only for a single-attempt execution, §7.5
+  derives its replay set from the graph without consulting this one (#161), and §8.4 reads both
+  ends of its diff off the passing verify record (#165).
 - **Commits** are made under the package's `git-discipline` skill (conventional commits, a
   commit per wave), using a **dedicated factory git identity** set via per-worktree git config,
   plus a mandatory correlation trailer `Factory-Attempt: <run>/<ticket>/<attempt>` — a prompt
@@ -940,8 +1036,17 @@ Only the controller integrates, in a controller-owned integration worktree.
 > one job; a rebase conflict at step 3 is therefore a `verify` result, and the same conflict met
 > again by §9.5's compare-and-publish loop is an `integrate` one (§8.10 carries both rows).
 
-1. **Fetch.** If the base moved, **rebase** the attempt branch onto the fresh tip — safe,
-   because the branch is unpublished.
+1. **Fetch.** If the base moved — the branch no longer sits on the fresh tip, a fact read off
+   the graph and never off an attempt's recorded base — **rebase** the attempt branch onto it:
+   safe, because the branch is unpublished. **The upstream of the rebase is the fresh tip
+   itself**, so the replay set is every commit the ticket execution produced that is not
+   already on the base branch, however many attempts contributed to it (§8.5). An attempt's
+   **own** base (§7.3) is the prior attempt's tip for a repair, and bounding the replay with it
+   excludes the implement commit the repair builds on (#161). A rebase whose result carries
+   fewer non-base commits than its input is **refused as a typed failure and never adopted**
+   (§11.2), whatever the drop's mechanism: a branch that quietly lost a commit satisfies every
+   downstream measure — §14.13 measures the commit being published, attestation compares heads
+   — while publishing half the work.
 2. Before a destructive rebase, **the pre-rebase head is preserved under a local evidence ref**
    `refs/factory/evidence/<attempt_id>`. Evidence survives by contract, not by reflog.
 3. **A rebase conflict is a typed outcome** ending the integration step.
@@ -1115,6 +1220,18 @@ transcript, ticket snapshot and diff as the only inputs. **Model diversity is av
 per-run configuration but is not mandated** — it would constrain model routing for a benefit
 nobody can measure.
 
+**The diff both axes read is the publishable diff, and both of its ends are the passing verify
+record's.** That record's base is the fresh base-branch tip the branch sits on after §7.5's
+step-1 rebase — the boundary of what will be published — and its head is the exact commit
+§8.2's checks passed at, so the review and the checks measure one value (§14.13). When §9.5's
+compare-and-publish loop later re-rebases onto a base that moved during review, the verdicts
+keep naming the boundary they were rendered against (§8.7) rather than implying they covered
+the moved one. A walking attempt's **own** base (§7.3) is the prior attempt's tip for a repair
+(§8.5), and a review diffed from it would brief both axes on the repair's delta alone while
+their verdicts gate the publication of the whole chain — §8.7 would then record approvals whose
+scope is a subset of the published change (#165). A repair's re-review therefore covers the
+whole chain by construction, and neither end of the diff is a value a caller can supply.
+
 **Ordering short-circuit.** A failed `verify` goes **straight to repair** with the check output
 as evidence; **the reviewer only ever sees mechanically-passing code.** This sharpens the
 reviewer's brief to "is this right and clean" rather than "is this broken".
@@ -1238,8 +1355,9 @@ runs should stop, cast by whoever happened to add it.
 
 The controller writes a **per-attempt immutable attestation artifact**, referenced by digest
 (never embedded): the exact published commit; every check with its command, exit code,
-duration, and required flag; **both** review verdicts with blocking **and** advisory findings;
-and the before/after HEAD guard result.
+duration, and required flag; **both** review verdicts with blocking **and** advisory findings,
+each naming the base and head it was rendered against (§8.4, #165); and the before/after HEAD
+guard result.
 
 A summary lands in §7.5's machine-parseable PR-body block and in the ticket comment — advisory
 findings surfaced there, blocking findings never. This is what makes "the controller verified
@@ -2230,6 +2348,10 @@ survives the run. That pane is recorded as an anomaly and reclaimed later throug
 controller's own pane (closing it destroys the classified drain report an operator looks at
 first) applies identically to workers: **a wedged pane is evidence.**
 
+The same holds one level up. §6.4's run-scoped workspace and the attempt tabs inside it are
+**left exactly as found**: the controller closes no pane, no tab, and no workspace, and the run's
+workspace survives its run for the operator to read and for `cleanup-plan` to reclaim.
+
 ### 13.C The effect-key grammar — widened, not contradicted
 
 #79 fixed the key as `<run>/<ticket>/<phase>/<attempt>/<operation>[/<operand>]` with `phase` a
@@ -2378,7 +2500,8 @@ crash.
 
 **Configuration and migration.** multiple global/user installations · `PATH` shadowing · stale
 generated adapter artifacts · package revision change · a bridge present-but-nonfunctional ·
-overlapping `labelsAny` rules · a ticket matching two rules for one role · Opus/Fable on pi.
+overlapping `labelsAny` rules · a ticket matching two rules for one role · Opus/Fable on pi · **a
+profile flag the installed binary no longer accepts under that spelling** (#164).
 
 **Skill loading.** A **one-time acceptance matrix** per (harness version × model × package
 revision) proving that Opus and Fable actually load and follow skill bodies — discharging the
@@ -2534,5 +2657,10 @@ touching everything twice.
 | 2026-08-17 | #150 replaces §6.6's single wall-clock deadline with **two clocks**. The **hard ceiling** (`attemptTimeoutMs`) still bounds the lane, and is now anchored to the launch completion so a controller that died and adopted a live worker does not reset it; the **no-progress timeout** (`noProgressTimeoutMs`) ends an attempt that has stopped producing anything observable. **Progress is an observed fact, never the controller's clock**: a status transition and a changed pane-output snapshot are recorded as `observation.recorded` facts — `worker.alive` and the new `worker.output`, both source `herdr` — and the no-progress clock reads the latest of them. Pane output is sampled through `pane read` because Herdr exposes no output stream; a degraded observation channel makes a no-progress verdict `automation-failure`, never a worker-tier timeout. `attempt.ended` gains `clock` and `last_progress` so the operator reads which clock fired and what the last progress was rather than reading elapsed time as a diagnosis. §5.2's Herdr row widens from one fact to two (`worker.alive` · `worker.output`); §11.4's profiles gain `noProgressTimeoutMs`; both clocks carry code-owned defaults, calibrated against #114's measured 17- and 86-minute completions. | #150 |
 | 2026-08-17 | #152 makes §6.6's recorded stop outcome an observation rather than a race. `stopAgent` sent the quit sequence and read the pane on the very next line, so **`agent_stopped` recorded a teardown in flight as a refusal** — across #114's two runs every attempt recorded `false` while the workers had in fact gone, and nothing re-checked it. The outcome now comes from a **bounded re-probe** whose budget covers Herdr's *detection* lag rather than the process exit: the controller closes no pane (§13.B), so `pane_exited` never fires and the agent merely stops being detected, measured at 729 ms (claude) and 418 ms (pi) on an idle session. `agent_stopped` keeps three values — `true`/`false` are observations, `null` is Herdr declining to answer, which §14.1 forbids writing down as though it were evidence the agent stayed. A stop that could not be confirmed records a named **`stop_anomaly`** on `attempt.ended` carrying the surviving pane, the status it was last seen in, and how much of the bound was spent, in one of three classes: `wedged-pane` (§13.B's accepted wedge, `cleanup-plan`'s to reclaim), `stop-unconfirmed` (Herdr silent), and `quit-undelivered` (the keys never landed, which the pane read cannot distinguish from a wedge because both leave a live agent). §11.2's no-silent-guessing is what forbids collapsing the three into one `false`. `attempt.ended` moves to payload v2 accordingly (§4.3). Nothing on this path closes a pane. | #152 |
 | 2026-08-17 | #151 makes an **unharvested attempt's branch evidence on its disposition**. §8.10 harvests what an outbox claims; an attempt that never wrote one has still created a branch, and §7.7 makes that branch the only copy of the work on it — so on #114 a complete implementation was recoverable only because an operator read the factory-private clone by hand. §8.9's block gains a fourth element: every attempt of the ticket execution, with its branch, the head **git answers now** (§5.2 — never the outbox's claim nor the mint's record), and its commit count against **its own** base (§7.4). It is read for every disposition and every attempt outcome rather than for the endings that harvest nothing, because a list of which outcomes those are is a list somebody extends without extending — and the failure that permits is the silent one, "nothing was built" reported over work sitting on a branch. Every answer the read can get stays distinguishable and none is spelled as the absence of another (§11.2): commits, no commits, no branch, no answer from git, and no base recorded to count against, with **the attempts not listable** and **no read at all** distinct from all five. The read rides the comment and **not the digested intent** — every other field of the block is a function of durable state, and digesting a branch head would make a §10.4 re-entry that read a moved head a §4.5 payload conflict instead of the comment already posted; the one ending that therefore carries nothing is §9.6's abandon boundary, which writes no comment at all (#159). The **remote is deliberately not consulted** — §7.7 makes an attempt branch absent from it by construction, so an `ls-remote` would answer "absent" for exactly the attempts the read exists for, and §5.4 already names `git-local` for this. The read never throws: a settlement lost to a failed evidence read leaves the ticket claimed with nothing on it, which is the one state §8.9 has no word for. §7.7 and §8.9 corrected in place. | #151 |
+| 2026-08-17 | #156 replaces §6.4's workspace-per-attempt with **one workspace per run and a tab per attempt**. The original reasoning — a workspace rather than a split of the controller's own pane, because a `--foreground` start may not be in a Herdr pane at all — rules out the controller's pane and never argued for one workspace *per attempt*; the workspace list is the operator's top-level navigation, and run `01M06G9WM4J389YE9AQ317GK0B` on #114 filed four of them (w2C–w2F) for one ticket among the operator's real projects. The workspace is a **`workspace-open` effect keyed by the run** (§4.5), so it is opened exactly once and a re-entering controller adopts the committed one instead of opening a second; its probe reads Herdr's workspace list for the run's **deterministic label**, because Herdr carries no metadata token on a workspace the way `pane report-metadata` does on a pane, and that probe is what recovers an id a crash left only in Herdr. It is opened by the first attempt that needs one rather than during run startup: a refusal then is an attempt's `worker-launch-failed` (§8.10), which is budgeted and counted, while the same refusal during startup would have no §10.3 end reason to be reported as — and a run that launches no worker leaves no workspace behind. Correlation is untouched: a pane is still found by its `FACTORY_ATTEMPT` token and never by its workspace or tab (§5.5). §13.B extends by construction — the controller closes no tab and no workspace either — and the **accepted cost is recorded in §6.4**: closing the factory workspace now ends every live lane of that run at once, recoverable through §6.6's `dead-worker` and §5.5's adoption, and never repaired by opening a replacement. `tab create --workspace --cwd --label --no-focus` and its answer shape were read off the installed Herdr 0.8.0 rather than assumed. | #156 |
 | 2026-08-17 | #160 restores §6.2's probe to proving the session workers actually run. Both runtime adapters passed the skill-delivery flags to the **probe** and not to the **worker session**: every Claude worker launched without the §6.3 plugin (`plugin list` under the live worker binding: "No plugins installed"), every pi worker without the pinned roots — and pi's default discovery, which the probe's `--no-skills` suppressed, loaded four of the operator's personal skills from `~/.agents/skills`, a root `PI_CODING_AGENT_DIR` does not fence, inverting both §6.8 guarantees at once. §6.2 gains the composed-binding rule: the worker session's argument set is the primary object, the probe's is that set plus its probe-only IO flags and nothing else, held by a test at the launch seam (worker argv = probed argv − probe-only flags + profile flags). §6.8 records the measured discovery leak and makes `--no-skills --skill <root>` load-bearing isolation on every pi worker session. A launch whose closure cannot reach the session — no proven plugin directory, no pinned skills roots, a plugin cache wiped since preflight — is a typed automation failure before the attempt spends. §6.7's acceptance matrix (#115) is untouched by construction but noted: anything it proves must run the worker binding. | #160 |
+| 2026-08-17 | #161 corrects §7.5's replay boundary. The rebase used the attempt's **own** base (§7.3) as its upstream, and a repair's own base is the prior attempt's tip (§8.5) — so a repair's replay set excluded the implement commit it builds on. The lucky outcome was #114's rebase conflict over sound, already-verified work: the repair edited a file the implement commit created, which does not exist at the fresh tip. The dangerous one was a repair touching only files the implement did not create, which replays **cleanly** and yields a branch carrying the repair without the work it repairs — verified, attested and published, since §14.13 measures the commit being published and attestation compares heads, and both are satisfied by a branch that quietly lost a commit. §7.5's upstream is now **the fresh tip itself**, so the replay set is every commit the ticket execution produced that is not already on the base branch, whatever attempt chain produced it; whether the base moved is read off the graph — is the branch already sitting on the fresh tip — never off a recorded base, which a §9.5 re-rebase has already made stale once; and a rebase whose result carries fewer non-base commits than its input is refused as a typed `rebase-dropped-commits` failure and never adopted — the guard that makes the silent case impossible rather than unlikely (§11.2), whatever the drop's mechanism, including git dropping a commit whose patch a human already cherry-picked upstream. §7.3 separates the two meanings the one value conflated: what an attempt branched from and the boundary of what §7.5 replays coincide only for a single-attempt execution, and neither is inferred from the other. §7.3 and §7.5 corrected in place. | #161 |
+| 2026-08-17 | #165 corrects §8.4's review boundary — #161's conflation one phase earlier. `reviewPhase`'s contract said the base a review measures against is never a repairing attempt's own tip, and the caller violated it: the axes were prompted with the **walking attempt's own §7.3 base**, which for a repair is the prior attempt's tip (§8.5) — so on a repair chain both reviewers read only the repair's delta while their two approved verdicts gated the publication of the whole chain, and §8.7 recorded approvals whose scope is a subset of the published change. The exegesis is settled for **the publishable diff**, on §8.4's own structure: a failed verify goes straight to repair, so a repair after one has *no* previously reviewed state — the "delta since last reviewed" reading leaves the implement commit reviewed by nobody. **Both ends of the diff are the passing verify record's** — its `base_commit` is the fresh base-branch tip the branch sits on after §7.5's step-1 rebase, its `head` the exact commit §8.2's checks passed at — which also retires the harvest-head read that went stale whenever verify rebased, and makes the review and the checks measure one value (§14.13) — after a §9.5 re-rebase the verdicts keep naming the boundary they were rendered against rather than implying they covered the moved one. Neither end is a parameter: the attempt's own base cannot reach the phase at all, the same separation-by-removal #161 applied to §7.5. Each axis's durable result and §8.7's attestation now name the base and head the verdict was rendered against, so an approval's scope is a checkable claim. §7.3, §8.4 and §8.7 corrected in place. | #165 |
+| 2026-08-17 | #153: the worker's session identity never reached Herdr. §6.5's transcript pointer is pushed by herdr's **agent-state integration** — a Claude `SessionStart` hook and a pi extension — which lived only in the operator's config root, so §6.8's config isolation removed it from every worker session and 15/15 `attempt.correlated` records carried `transcript: null`. The integration crosses in as a **fixed capability artifact named in code per runtime** (first closed list, beside credentials and the model catalogue): copied from the operator's config root into the run's own root, digested, and **version-observed** out of the file's own `HERDR_INTEGRATION_*` header rather than assumed. A new static preflight check, `worker-agent-state`, gates its presence and currency **per runtime the active routing can dispatch to** — missing, unversioned, mis-identified, or outdated is a named red ending the run `baseline-red` before the first claim, so `no-transcript-pointer` is an anomaly rather than the expected residue. The run manifest records it by declared path, content digest, and observed version per runtime, and records a named absence when the environment did not build. | #153 |
+| 2026-08-17 | #164 closes #160's defect one argument set down: **a profile's own flags reached a live worker having never been handed to the installed binary.** `--model`, and Claude's `--effort` / pi's `--thinking`, are appended at launch and were exercised by nothing, so a renamed or dropped flag surfaced as `worker-launch-failed` — a pane that will not come up — *after* a branch, a worktree, a pane and the tracker claim already existed, which is the one binding that escaped §6.2's purpose of refusing before an attempt spends. §6.2 gains a **`profile-flags` check whose cardinality is the profile's, not the revision's**: one live session per **distinct** profile the active routing can dispatch, so a routing table naming one profile five times costs one session, while the runtime probe keeps its own one-per-pinned-revision cardinality — folding profiles into a probe that is *role- and profile-independent by design* would have changed that number rather than its argv, and that is a different design. Each session runs the profile's launch argv plus the probe-only IO flags and nothing else, and is judged on the answer the probe already reads — pi's RPC response, Claude's `initialize` control-response — at **zero model cost**, since spelling is a parse-level fact. Three measurements decided the mechanism rather than taste: **`--version` short-circuits before argument parsing** (Claude 2.1.233 accepts `--nonsense-flag` with exit 0), so it proves nothing; **a side subcommand's exit status is not a spelling verdict** (`pi list` exits 1 over a stale OAuth token on the development machine while the RPC session answers perfectly); and **a misspelling is refused by name before a session starts** (`unknown option '--efffort' (Did you mean --effort?)`, `Error: Unknown option: --thinnking`), so *a session that answers* is the proof and *one that never does* is the refusal, with no text parsing and no exit code in the judgement. The check runs **behind** the runtime probe and only on a green one, which is what makes it a spelling verdict at all: the probe starts the same session without the profile's flags, so the two differ by exactly those flags. A refusal names the profile, its flags, the binary and the binary's own diagnostic; an unproven spelling composes no production context, exactly as an unproven runtime does not. A binary that could not be spawned at all stays §11.7's `runtime-unreachable` rather than a rejected flag — it was never asked about a spelling. The profile-argument builders are exported so the launch and the proof share one definition by construction (#160's rule, applied one argument set down). **§15's configuration obligations gain the case by name**, and the cost is recorded rather than capped: the sessions are serial at the runtime's own probe timeout, so the worst case grows by distinct profiles × that timeout ahead of §9.7's expensive baseline, against a measured ~1.8 s (Claude) / ~0.7 s (pi) for an accepted spelling. | #164 |
 | 2026-08-17 | #163 closes #160's leak class in the other runtime. **Claude registers the project skills its own working directory ships**, and an isolated `CLAUDE_CONFIG_DIR` does not fence them — measured live on Claude Code 2.1.233 at zero model cost: an `initialize` control-request in a scratch project shipping `.claude/skills/leaktest/SKILL.md`, under an *empty* isolated config dir, answered 44 commands including a bare `leaktest`, and a project `.claude/commands/` file registered the same way. A worker's cwd is the attempt worktree, so on any target repository shipping `.claude/skills/` every Claude worker would load skills from outside the pinned package root, and §6.8's "skills reach a worker only from the pinned package root" would be false again. §6.8 records the fact and makes **`--setting-sources user`** load-bearing isolation on every Claude **worker** session — measured in the same pass to drop the project skill and the project command (it drops the `project` and `local` setting *sources*) while leaving the §6.3 plugin's records, the injected `--settings` file, and `--permission-mode dontAsk` untouched. §6.2's Claude probe gains a **fourth step**, because Claude's command records carry names and no source path, so pi's converse check has no analogue: the probe plants a canary project skill in the directory it probes in, requires the fenced session not to register it, and requires one deliberately unfenced control session — the worker binding minus the fence, nothing else — to register it. A canary that survives the fence is `skill-shadowed` naming its source; a control session blind to it is the new `discovery-fence-unproven`, since a probe that could not have observed the leak is not evidence of its absence. The canary is planted and removed by the probe, and what a run proved is recorded on the `runtime-probe` check. One consequence is recorded rather than left to be discovered: the fence also stops the **target repository's own `CLAUDE.md`** from being auto-loaded (measured — a marker word in a project `CLAUDE.md` was answered unfenced and not fenced), which is §6.8's two rule channels applied rather than an accident; the declared worker-context file is installed in the user scope the fence keeps, and `worker.contextFile` is where a target repo's standing rules are declared. | #163 |

@@ -2,12 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 
 import { CLAUDE_RESOURCE_CLASS, resourceClassOf } from "../config/profiles.mjs";
 import { privateClonePath, worktreesRoot } from "../git/isolation.mjs";
-import { createClaudeAdapter } from "./claude.mjs";
+import { createClaudeAdapter, proveClaudeProfileFlags } from "./claude.mjs";
 import { readSkillInventory, skillClosure, validateClosureReferences } from "./closure.mjs";
-import { prepareWorkerEnvironment } from "./environment.mjs";
+import { AGENT_STATE_INTEGRATION, prepareWorkerEnvironment } from "./environment.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
 import { DENY_FLOOR, NO_MID_ATTEMPT_APPROVALS, PI_GATING_CAVEAT, WORKER_POSTURES } from "./permissions.mjs";
-import { createPiAdapter } from "./pi.mjs";
+import { createPiAdapter, provePiProfileFlags } from "./pi.mjs";
 import { rolesInPlay } from "./roles.mjs";
 import { claudeTrustDecision, piTrustDecision, readClaudeConfigState, readPiTrust } from "./trust.mjs";
 
@@ -28,6 +28,11 @@ import { claudeTrustDecision, piTrustDecision, readClaudeConfigState, readPiTrus
  * - **`skill-closure`** — the §6.1 roles the active routing puts in play, each
  *   closed over `requires:` frontmatter from the pinned revision, with §6.8's
  *   conflict predicate and reference validation.
+ * - **`worker-agent-state`** — §6.5's agent-state integration, the capability
+ *   that pushes the transcript pointer, observed out of the environment the
+ *   workers get: present, identifiable, and current, per runtime in play. A
+ *   run that could not carry the pointer ends red here, named — not with a
+ *   silent `null` on every `attempt.correlated` (§6.5, §6.8).
  *
  * Then, in the probe section:
  *
@@ -35,6 +40,10 @@ import { claudeTrustDecision, piTrustDecision, readClaudeConfigState, readPiTrus
  *   live through its §6.1 adapter **inside the environment the workers get**,
  *   with the capacity observation folded in. A probe run under the operator's
  *   own config would prove a world no worker will ever see.
+ * - **`profile-flags`** — every distinct profile's own launch flags, handed to
+ *   the installed binary before a pane depends on their spelling (#164). It is
+ *   its own check rather than part of the probe because its cardinality is the
+ *   profile's, not the revision's.
  *
  * Every check answers from one computation: the closure the probe proves is the
  * closure the static layer computed, and the environment the probe runs in is
@@ -58,13 +67,15 @@ import { claudeTrustDecision, piTrustDecision, readClaudeConfigState, readPiTrus
  * @param {{ pi?: object, claude?: object }} [input.transports] per-runtime IO
  *   overrides, so a test drives every verdict without a harness on the machine
  * @returns {{ isolationCheck: () => object, permissionsCheck: () => object,
- *   trustCheck: () => object, closureCheck: () => object, runtimeCheck: () => Promise<object>,
+ *   trustCheck: () => object, closureCheck: () => object, agentStateCheck: () => object,
+ *   runtimeCheck: () => Promise<object>, profileFlagsCheck: () => Promise<object>,
  *   productionContext: () => object | null }}
  */
 export function createWorkerPreflight({ handshake, config, activeRouting, cacheRoot, repoRoot, env = {}, transports = {} }) {
 	let computed = null;
 	let isolation = null;
 	let runtimeResults = null;
+	let flagsProven = null;
 
 	/**
 	 * The §6.8 environment, built once. Its failure is data rather than a throw
@@ -108,6 +119,16 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 
 		computed = { unresolved: false, skillsRoots, roles: Object.freeze(roles), inventory, findings };
 		return computed;
+	};
+
+	/**
+	 * What the runtime probe observed per kind, or null while there is no green
+	 * probe to answer from. Both the spelling check and the production context
+	 * read it, so "the probe proved this" has one meaning in both.
+	 */
+	const provenRuntimes = () => {
+		if (runtimeResults === null || runtimeResults.some((result) => !result.ok)) return null;
+		return Object.freeze(Object.fromEntries(runtimeResults.map((result) => [result.kind, result.runtime])));
 	};
 
 	return {
@@ -295,6 +316,120 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 			});
 		},
 
+		/**
+		 * §6.5's transcript pointer, promoted rather than inherited (§6.8): the
+		 * herdr-managed integration that pushes it, observed out of the operator's
+		 * config root the environment read it from. The environment only records
+		 * facts — installed, digest, version — and this check is where those facts
+		 * become a verdict: a missing, unidentifiable, unversioned, or outdated
+		 * integration is a named red, because the pointer has no other channel and
+		 * every attempt of that runtime would otherwise correlate with
+		 * `transcript: null`, which is the plausible zero §6.5 says to refuse.
+		 *
+		 * The gate is per runtime the **active routing** can dispatch to — not per
+		 * runtime the host has installed — for the same reason the permissions
+		 * check's caveat is: a verdict about this run, not a survey of the host.
+		 * And the version is **observed** out of the file's own header and compared
+		 * against the one in `AGENT_STATE_INTEGRATION` — the number the factory is
+		 * written against — so a file herdr left outdated, or updated ahead of the
+		 * factory, is a finding naming both rather than an assumption either way
+		 * (§11.2: measured, not assumed).
+		 */
+		agentStateCheck() {
+			const state = closure();
+			if (state.unresolved) return unpinned("worker-agent-state", "static");
+
+			const built = environment();
+			if (!built.ok) return dependsOnIsolation("worker-agent-state");
+
+			const kinds = runtimeKinds(state.roles, config.profiles);
+			const findings = [];
+			const runtimes = {};
+			for (const kind of [...kinds.keys()].sort()) {
+				const observed = built.handle.agentState[kind];
+				const expected = AGENT_STATE_INTEGRATION[kind].version;
+				// The digest is not repeated here: it rides the worker-isolation
+				// check's facts one line up the same stream, and a check that
+				// re-records its neighbour's evidence is a second tally.
+				runtimes[kind] = {
+					installed: observed.installed,
+					source: observed.source,
+					observed_version: observed.version,
+					expected_version: expected,
+				};
+
+				if (!observed.installed) {
+					findings.push({
+						reason: "agent-state-missing",
+						runtime: kind,
+						source: observed.source,
+						message:
+							`The ${kind} agent-state integration — the capability that pushes §6.5's transcript ` +
+							`pointer — is not installed at ${observed.source}, and the pointer has no other channel: ` +
+							`every ${kind} attempt of this run would correlate with no transcript. Install herdr's ` +
+							`${kind} integration (§6.5, §6.8).`,
+						});
+					continue;
+				}
+				if (observed.version === null) {
+					findings.push({
+						reason: "agent-state-unversioned",
+						runtime: kind,
+						source: observed.source,
+						message:
+							`The ${kind} agent-state integration at ${observed.source} carries no readable ` +
+							`HERDR_INTEGRATION_VERSION header, so the version a run would observe cannot be stated ` +
+							`(§11.2). Reinstall it so the integration states its own identity (§6.5).`,
+						});
+					continue;
+				}
+				if (observed.id !== kind) {
+					findings.push({
+						reason: "agent-state-mismatch",
+						runtime: kind,
+						source: observed.source,
+						message:
+							`The ${kind} agent-state slot at ${observed.source} is identified as ` +
+							`${JSON.stringify(observed.id)} — not the ${kind} integration. Reinstall it so the ` +
+							`right integration lands in the right slot (§6.5).`,
+						});
+					continue;
+				}
+				if (observed.version !== expected) {
+					findings.push({
+						reason: "agent-state-version-mismatch",
+						runtime: kind,
+						source: observed.source,
+						observed_version: observed.version,
+						expected_version: expected,
+						message:
+							`The ${kind} agent-state integration at ${observed.source} observes as version ` +
+							`${observed.version}; the factory is written against ${expected}. The number comes from ` +
+							`the file's own header — observed, not assumed (§6.5, §11.2). Update the integration or ` +
+							`the factory against it, deliberately.`,
+						});
+				}
+			}
+
+			if (findings.length > 0) {
+				return check("worker-agent-state", "static", "failed", {
+					message: `The §6.5 agent-state integration is not current for this run: ${findings.map((entry) => entry.message).join(" ")}`,
+					detail: { findings, runtimes },
+				});
+			}
+
+			return check("worker-agent-state", "static", "passed", {
+				message:
+					`The §6.5 agent-state integration is installed and current for ` +
+					Object.entries(runtimes)
+					.map(([kind, entry]) => `${kind} (observed ${entry.observed_version})`)
+					.join(", ") +
+					`, promoted into the run's own config environment — the transcript pointer is a ` +
+					`capability, not an accident of the operator's home (§6.5, §6.8).`,
+				detail: { runtimes },
+			});
+		},
+
 		/** Layer 2 with the capacity observation folded in, in the probe section. */
 		async runtimeCheck() {
 			const state = closure();
@@ -342,6 +477,82 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 		},
 
 		/**
+		 * §6.2's flag-spelling proof, in the probe section right behind the runtime
+		 * probe (#164).
+		 *
+		 * **Cardinality: one session per distinct profile the active routing can
+		 * dispatch** — a routing table naming one profile in every role and in a
+		 * rule costs one, because what is being proven is a property of the profile
+		 * and not of the role that reached it. §6.2's runtime probe keeps its own
+		 * cardinality, one per pinned revision: folding profiles into it would have
+		 * changed that number rather than its argv, which is a different design.
+		 *
+		 * **It runs behind the runtime probe deliberately.** The probe starts the
+		 * same kind of session without the profile's flags, so a green probe and a
+		 * refused spelling session differ by exactly those flags — which is what
+		 * makes this a spelling verdict rather than a guess about a broken harness.
+		 * With no green probe to stand on there is nothing to attribute against, so
+		 * the check says so and points at the one that carries the diagnosis.
+		 */
+		async profileFlagsCheck() {
+			const state = closure();
+			if (state.unresolved) return unpinned("profile-flags", "probe");
+
+			const built = environment();
+			if (!built.ok) return dependsOnIsolation("profile-flags", "probe");
+
+			const runtimes = provenRuntimes();
+			if (runtimes === null) {
+				return check("profile-flags", "probe", "failed", {
+					message:
+						`No runtime was proven on the production path, so a profile's flags have nothing to be accepted or ` +
+						`refused *by* — see the runtime-probe check (§6.2).`,
+					detail: { cause: "runtime-probe" },
+				});
+			}
+
+			const byKind = profilesInPlay(state.roles, config.profiles);
+			const findings = [];
+			const reported = [];
+			for (const kind of [...byKind.keys()].sort()) {
+				const proven = await proveProfileFlagsFor(kind, {
+					profiles: byKind.get(kind),
+					skillsRoots: state.skillsRoots,
+					// A green Claude probe has a built plugin by construction —
+					// `ensureClaudePlugin` runs before the initialize step and its failure
+					// is the probe's own red — so the dir the launch argv is composed from
+					// is present here, and the launch's `requireProvenPlugin` is still the
+					// fail-closed point if that ever stops holding (§6.3, #160).
+					pluginDir: runtimes.claude?.plugin?.dir ?? null,
+					cacheRoot,
+					environment: built.handle,
+					transport: transports[kind],
+				});
+				findings.push(...proven.findings);
+				reported.push(...proven.checked.map((entry) => ({ ...entry, kind, binary: proven.binary })));
+			}
+
+			flagsProven = findings.length === 0;
+			if (!flagsProven) {
+				return check("profile-flags", "probe", "failed", {
+					message:
+						`The installed binary did not accept every profile's flag spelling (§6.2, §11.7): ` +
+						findings.map((finding) => finding.message).join(" "),
+					detail: { findings, profiles: reported },
+				});
+			}
+
+			return check("profile-flags", "probe", "passed", {
+				message:
+					`Every distinct profile the active routing can dispatch has its flag spelling accepted by the installed ` +
+					`binary: ` +
+					reported.map((entry) => `${entry.profile} (${entry.kind}, ${entry.flags.join(" ")})`).join(", ") +
+					`. One session per distinct profile and no model call; §6.2's runtime probe stays one per pinned revision.`,
+				detail: { revision: handshake.tree.digest, profiles: reported },
+			});
+		},
+
+		/**
 		 * The already-proven values the production ticket pipeline executes with.
 		 * They remain off the report shape: these handles are process-local seams,
 		 * while the checks above are the durable evidence an operator reads.
@@ -349,12 +560,12 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 		productionContext() {
 			const state = closure();
 			const built = environment();
-			if (state.unresolved || state.findings.length > 0 || !built.ok || runtimeResults === null) return null;
-			if (runtimeResults.some((result) => !result.ok)) return null;
-
-			const runtimes = Object.freeze(
-				Object.fromEntries(runtimeResults.map((result) => [result.kind, result.runtime])),
-			);
+			const runtimes = provenRuntimes();
+			if (state.unresolved || state.findings.length > 0 || !built.ok || runtimes === null) return null;
+			// A profile whose flags the binary never accepted would launch a pane
+			// that cannot come up, which is the whole of #164 — so an unproven
+			// spelling composes nothing, exactly as an unproven runtime does not.
+			if (flagsProven !== true) return null;
 
 			return Object.freeze({
 				environment: built.handle,
@@ -370,6 +581,45 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 			});
 		},
 	};
+}
+
+/**
+ * The **distinct** profiles the roles in play can dispatch to, grouped by runtime
+ * kind and sorted by name (#164).
+ *
+ * Distinct by name is the whole point: `runtimeKinds` below answers a different
+ * question — which kinds to probe — and a profile named by four roles is one
+ * profile whose flags one session settles.
+ *
+ * It is also the one answer to "which profiles does this run reach": the runtime
+ * probe's model-availability check reads it too, so the set whose flags are proven
+ * and the set whose models are proven cannot drift apart.
+ */
+function profilesInPlay(roles, profiles) {
+	const byKind = new Map();
+	for (const name of [...new Set(roles.flatMap((role) => role.profiles))].sort()) {
+		const kind = profiles[name].kind;
+		if (!byKind.has(kind)) byKind.set(kind, []);
+		byKind.get(kind).push({ name, ...profiles[name] });
+	}
+	return byKind;
+}
+
+/**
+ * One runtime's flag-spelling proof, over the same builder binding the probe ran
+ * and the same skill-delivery facts the probe proved (#160's composed binding).
+ *
+ * The reviewer binding is not spelled out for a second time here for the reason
+ * `probeSession` already gives: it differs only by flags the same binary has
+ * accepted, and a profile's own flags are identical under both postures.
+ */
+function proveProfileFlagsFor(kind, { profiles, skillsRoots, pluginDir, cacheRoot, environment, transport }) {
+	const session = probeSession(kind, { environment, cacheRoot });
+	const io = transport === undefined ? {} : { transport };
+
+	return kind === "pi"
+		? provePiProfileFlags({ profiles, skillsRoots, session, ...io })
+		: proveClaudeProfileFlags({ profiles, pluginDir, session, ...io });
 }
 
 /** Which runtime kinds the roles in play can dispatch to, and which roles each serves. */
@@ -418,10 +668,10 @@ function adapterFor(kind, { state, handshake, config, cacheRoot, environment, tr
 	const session = probeSession(kind, { environment, cacheRoot });
 
 	if (kind === "pi") {
-		const piProfiles = Object.entries(config.profiles)
-			.filter(([, profile]) => profile.kind === "pi")
-			.filter(([name]) => state.roles.some((role) => role.profiles.includes(name)))
-			.map(([name, profile]) => ({ name, model: profile.model }));
+		// The same "which distinct profiles do the roles in play reach" the spelling
+		// check asks, from the same place: two answers to it could disagree about
+		// which models the probe holds the inventory to (§6.2).
+		const piProfiles = profilesInPlay(state.roles, config.profiles).get("pi") ?? [];
 
 		return createPiAdapter({
 			skillsRoots: state.skillsRoots,
