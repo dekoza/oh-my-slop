@@ -251,6 +251,22 @@ test("an integration herdr left outdated is a version mismatch naming the number
 	assert.match(checked.message, /7/);
 });
 
+test("an integration that identifies as another runtime is a mismatch, not a version story", (t) => {
+	const context = lab(t);
+	// claude's integration, in pi's slot, stamped with the version pi expects:
+	// a version-only check would read this as current, and it is not.
+	writeFileSync(join(context.home, ".pi", "agent", "extensions", "herdr-agent-state.ts"), herdrIntegration("claude", 8));
+	context.preflight.isolationCheck();
+
+	const checked = context.preflight.agentStateCheck();
+
+	assert.equal(checked.result, "failed");
+	assert.deepEqual(checked.detail.findings.map((entry) => entry.reason), ["agent-state-mismatch"]);
+	const finding = checked.detail.findings[0];
+	assert.equal(finding.runtime, "pi");
+	assert.match(checked.message, /"claude"/);
+});
+
 test("an integration that lost its header is unversioned — observed, not assumed away", (t) => {
 	const context = lab(t);
 	writeFileSync(join(context.home, ".pi", "agent", "extensions", "herdr-agent-state.ts"), herdrIntegration("pi", null));

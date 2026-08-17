@@ -1048,9 +1048,9 @@ test("a run whose environment did not build records the missing channels in its 
 	const manifest = JSON.parse(readArtifact(store, value.report.manifest).toString("utf8"));
 
 	// "Nothing was promoted" is recorded as a named absence per channel — and
-	// the agent-state channel is one of them, with the check that carries the
-	// diagnosis named beside it — rather than a key that quietly disappears
-	// from the shape.
+	// the agent-state channel is one of them — rather than a key that quietly
+	// disappears from the shape; the diagnosis itself rides the red check on
+	// the run's stream.
 	for (const channel of [
 		manifest.overrides.extra_denies,
 		manifest.overrides.worker_context_file,
