@@ -1,4 +1,4 @@
-import { capacityPlan, implementResourceClass } from "../capacity/plan.mjs";
+import { capacityPlan, implementDispatch } from "../capacity/plan.mjs";
 import { openCapacity } from "../capacity/slots.mjs";
 import {
 	EXIT_LEASE_LOST,
@@ -541,10 +541,11 @@ function runScheduler(store, capacity, entry, hold, context) {
 	return schedule({
 		capacity,
 		frontier: executor === null ? emptyFrontier : (context.frontier ?? liveFrontier(entry, context)),
-		resourceClassOf: (member) =>
-			implementResourceClass(
+		dispatch: (member, { at }) =>
+			implementDispatch(
 				{ profiles: context.config.profiles, activeRouting: context.activeRouting },
 				member,
+				{ exhaustion: capacity.exhaustion, at },
 			),
 		execute: executor ?? refuseExecution,
 		// §10.5: the stop request is **polled at ticket boundaries**, which is
