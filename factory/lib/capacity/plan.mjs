@@ -40,7 +40,7 @@ export const MAX_PANES_PER_TICKET = 2;
  */
 export function capacityPlan({ concurrency, profiles, activeRouting }) {
 	const classes = Object.freeze(
-		[...classesReachedBy(profiles, profilesReachedBy(activeRouting.roles, activeRouting.rules))]
+		[...classesReachedBy(profiles, profilesReachedBy(activeRouting))]
 			.map(([className, reached]) =>
 				Object.freeze({
 					class: className,
