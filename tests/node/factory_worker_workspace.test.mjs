@@ -65,6 +65,49 @@ test("a run opens exactly one workspace, however many attempts ask for it", asyn
 	assert.equal(second.outcome, "already-resolved");
 });
 
+test("an intent whose outcome nobody recorded adopts the workspace it already made, mid-run", async (t) => {
+	// Herdr did the work and answered unreadably, so the row stands `requested`
+	// with the workspace already open. Startup reconcile is a whole invocation
+	// away, and the next attempt is not.
+	const context = await opened(t, {
+		herdr: fakeHerdr({ refuse: { "workspace create": { exitCode: 0, stderr: "" } } }),
+	});
+	await context.open();
+
+	// What that unreadable answer hid: the workspace exists, under the run's own
+	// label, and only Herdr knows its id.
+	delete context.herdr.refuse["workspace create"];
+	const created = await context.herdr.control.openWorkspace({ cwd: "/state", label: runWorkspaceLabel(context.run) });
+	const before = context.herdr.commands().filter((command) => command === "workspace create").length;
+
+	const answer = await context.open();
+
+	assert.equal(answer.workspace, created.workspace, "the label found it; nothing was opened a second time");
+	assert.equal(
+		context.herdr.commands().filter((command) => command === "workspace create").length,
+		before,
+		"the retry asked the list and created nothing",
+	);
+});
+
+test("a multiplexer that will not answer refuses rather than opening a second workspace (§12.4)", async (t) => {
+	const context = await opened(t, {
+		herdr: fakeHerdr({ refuse: { "workspace create": { exitCode: 0, stderr: "" } } }),
+	});
+	await context.open();
+	context.herdr.refuse["workspace list"] = { exitCode: 1, stderr: "no server" };
+
+	const refusal = await context.open();
+
+	assert.equal(refusal.ok, false);
+	assert.equal(refusal.command, "workspace list");
+	assert.equal(
+		context.herdr.commands().filter((command) => command === "workspace create").length,
+		1,
+		"unanswerable is not absent: a second workspace under one label is what nothing could then tell apart",
+	);
+});
+
 test("a resumed controller re-enters its run's workspace rather than opening a second one (§5.5, §10.4)", async (t) => {
 	const context = await opened(t);
 	const first = await context.open();
@@ -135,15 +178,18 @@ test("the label is derived from the run, which is the only handle a probe has on
 	assert.notEqual(runWorkspaceLabel(context.run), runWorkspaceLabel("01OTHERRUN"));
 });
 
-test("a Herdr that refuses the workspace is a typed automation failure, and nothing is recorded as done", async (t) => {
+test("a Herdr that refuses the workspace hands the refusal back, and records nothing as done", async (t) => {
 	const context = await opened(t, {
 		herdr: fakeHerdr({ refuse: { "workspace create": { exitCode: 1, stderr: "no server" } } }),
 	});
 
-	const refusal = await refusalOfAsync(() => context.open());
+	const refusal = await context.open();
 
-	assert.ok(refusal instanceof FactoryWorkerError);
-	assert.equal(refusal.reason, "worker-launch-failed");
+	// Handed back rather than thrown: the launch is what knows the attempt this
+	// failed for, and one launch failure carrying that tuple is what §8.10's
+	// record is written from.
+	assert.equal(refusal.ok, false);
+	assert.equal(refusal.command, "workspace create");
 	assert.match(refusal.message, /no server/);
 	assert.deepEqual(
 		unresolvedEffects(context.store, { run: context.run }).map((effect) => effect.operation),
@@ -173,14 +219,18 @@ test("reconcile settles an unresolved open by the run's label, recovering the id
 });
 
 test("a workspace the operator closed is answered `absent`, not invented", async (t) => {
-	const herdr = fakeHerdr();
 	const context = await opened(t);
+	await context.open();
+	const ask = () =>
+		herdrWorkspaceListProbe({ herdr: context.herdr.control })({
+			effect: { effect_key: runWorkspaceKey(context.run), run_id: context.run },
+			probe: { match: "present" },
+		});
+	assert.equal((await ask()).matched, true);
 
-	const answer = await herdrWorkspaceListProbe({ herdr: herdr.control })({
-		effect: { effect_key: runWorkspaceKey(context.run), run_id: context.run },
-		probe: { match: "present" },
-	});
+	context.herdr.closeWorkspaces();
 
+	const answer = await ask();
 	assert.equal(answer.matched, false);
-	assert.equal(answer.result, null);
+	assert.equal(answer.result, null, "an absent workspace carries no id, rather than the one it used to have");
 });

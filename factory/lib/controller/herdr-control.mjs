@@ -117,14 +117,28 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 	 * surface, which is exactly how a control object gets used.
 	 */
 	async function panes() {
-		const listed = await call(["pane", "list"]);
-		if (listed.exitCode !== 0) return failed("pane list", listed);
+		const listed = await listOf(["pane", "list"], "panes");
+		return listed.ok ? Object.freeze({ ok: true, panes: listed.entries }) : listed;
+	}
+
+	/**
+	 * One `<thing> list` command, read the same way for every thing.
+	 *
+	 * The `result?.<key> ?? result` shrug is Herdr's envelope quirk — a list
+	 * answer is sometimes the array itself — and it belongs in one place: a
+	 * second spelling of it is a second thing to correct when the envelope
+	 * settles down.
+	 */
+	async function listOf(args, key) {
+		const command = args.join(" ");
+		const listed = await call(args);
+		if (listed.exitCode !== 0) return failed(command, listed);
 
 		const result = herdrResult(listed.stdout);
-		const found = result?.panes ?? result;
-		if (!Array.isArray(found)) return unreadable("pane list", listed);
+		const entries = result?.[key] ?? result;
+		if (!Array.isArray(entries)) return unreadable(command, listed);
 
-		return Object.freeze({ ok: true, panes: Object.freeze(found) });
+		return Object.freeze({ ok: true, entries: Object.freeze(entries) });
 	}
 
 	return Object.freeze({
@@ -146,18 +160,14 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 			const created = await call(["workspace", "create", "--cwd", cwd, "--label", label, "--no-focus"]);
 			if (created.exitCode !== 0) return failed("workspace create", created);
 
+			// The id and nothing else. Herdr answers with the workspace's root tab
+			// and root pane too, but no attempt runs in them — every attempt gets a
+			// tab of its own — and gating on a field nobody reads would turn a
+			// created workspace into a launch failure over an unused key.
 			const result = herdrResult(created.stdout);
-			if (result?.workspace?.workspace_id === undefined || result?.root_pane?.pane_id === undefined) {
-				return unreadable("workspace create", created);
-			}
+			if (result?.workspace?.workspace_id === undefined) return unreadable("workspace create", created);
 
-			return Object.freeze({
-				ok: true,
-				workspace: result.workspace.workspace_id,
-				tab: result.tab?.tab_id ?? null,
-				pane: result.root_pane.pane_id,
-				label,
-			});
+			return Object.freeze({ ok: true, workspace: result.workspace.workspace_id, label });
 		},
 
 		/**
@@ -212,14 +222,10 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 		 * anything has of the workspace list.
 		 */
 		async workspaceLabelled(label) {
-			const listed = await call(["workspace", "list"]);
-			if (listed.exitCode !== 0) return failed("workspace list", listed);
+			const listed = await listOf(["workspace", "list"], "workspaces");
+			if (!listed.ok) return listed;
 
-			const result = herdrResult(listed.stdout);
-			const found = result?.workspaces ?? result;
-			if (!Array.isArray(found)) return unreadable("workspace list", listed);
-
-			return Object.freeze({ ok: true, workspace: found.find((entry) => entry?.label === label) ?? null });
+			return Object.freeze({ ok: true, workspace: listed.entries.find((entry) => entry?.label === label) ?? null });
 		},
 
 		/**
@@ -253,12 +259,18 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 		 * §6.5's second identity channel: **environment variables in the pane the
 		 * agent will run in.**
 		 *
-		 * Neither `workspace create` nor `agent start` takes an environment, so
-		 * the exports are typed into the pane's own shell before the agent occupies
-		 * it — which is also why they survive into everything the worker starts,
-		 * rather than only into the harness process. The prompt carries the same
-		 * tuple; two channels because a worker that lost track of the prompt can
-		 * still read `$FACTORY_ATTEMPT`, and a script it writes can too.
+		 * `agent start` takes no environment, so the exports are typed into the
+		 * pane's own shell before the agent occupies it — which is also why they
+		 * survive into everything the worker starts, rather than only into the
+		 * harness process. The prompt carries the same tuple; two channels because
+		 * a worker that lost track of the prompt can still read `$FACTORY_ATTEMPT`,
+		 * and a script it writes can too.
+		 *
+		 * Herdr 0.8.0 does offer `--env KEY=VALUE` on `workspace create` and
+		 * `tab create`, so half the original reason for typing them is gone;
+		 * declaring them to the server instead is #157's, and it has a live
+		 * question to settle first — whether a variable set that way reaches the
+		 * agent process `agent start` launches later, or only the pane's shell.
 		 *
 		 * Every value is single-quoted with the shell's own escape for an embedded
 		 * quote. The identity segments are §2.1-charset by construction and the

@@ -4,15 +4,21 @@ import { runWorkspaceLabel } from "./workspace.mjs";
 
 /**
  * §5.3: each effect kind's probe ships with the subsystem that introduces the
- * kind, and the attempt path introduces `agent-start` and `agent-stop`. **One
- * read serves both**, and §12.8's `pane-delete` besides — they are three
- * questions about the same list, and registering by the read is what keeps
- * them one implementation.
+ * kind, and the attempt path introduces `agent-start`, `agent-stop`, and #156's
+ * run-scoped `workspace-open`.
  *
- * **The question the read can answer is exactly one**: §5.2 gives Herdr
+ * **Two reads, because they are two questions.** `herdr.pane-list` answers about
+ * a *worker* and serves three effect kinds — `agent-start`, `agent-stop`, and
+ * §12.8's `pane-delete` — since they are three questions about one list, and
+ * registering by the read is what keeps them one implementation.
+ * `herdr.workspace-list` answers about the *run's* workspace, which no pane
+ * reading can: Herdr stamps no token on a workspace, and the pane that would
+ * carry one is a pane no attempt occupies.
+ *
+ * **What the pane read can answer is exactly one fact**: §5.2 gives Herdr
  * authority over whether a worker process is alive right now, and nothing else.
  * So a probe here never reports how an attempt went, only whether the pane
- * carrying its token still hosts a live agent — and the three matches are three
+ * carrying its token still hosts a live agent — and its three matches are three
  * readings of that single fact:
  *
  * - `token-matches` (`agent-start`) — a pane carries this attempt's token *and*
@@ -22,9 +28,10 @@ import { runWorkspaceLabel } from "./workspace.mjs";
  *   pane went with it or stayed at a shell prompt. §13.B leaves the pane.
  * - `absent` (`pane-delete`) — no pane carries the token at all.
  *
- * The effect row carries no payload, so the target is recomputed from the key's
- * attempt segment — the same property §7.3's deterministic paths give the git
- * probes.
+ * The effect row carries no payload, so each probe recomputes its target from
+ * the key — the attempt segment for a pane, the run segment for a workspace,
+ * whose label is derived from it. That is the same property §7.3's deterministic
+ * paths give the git probes.
  *
  * **Herdr dates nothing.** Its API carries no timestamp on any answer, so an
  * observation from it has no `occurredAtRaw` to keep verbatim; `observed_at`

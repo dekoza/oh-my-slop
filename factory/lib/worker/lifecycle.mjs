@@ -14,6 +14,7 @@ import {
 	attemptPromptPath,
 	herdrAgentName,
 	herdrPaneTitle,
+	herdrTabLabel,
 	launchedAttempt,
 	requireAttemptIdentity,
 } from "./attempt.mjs";
@@ -845,13 +846,14 @@ async function startedAgent(
 	// second workspace. A refusal here is this attempt's automation failure, so
 	// the lane answers for it under §8.10 like any other launch failure.
 	const workspace = await openRunWorkspace(store, { hold, run, herdr, cwd: store.storeDir, actor, at });
+	if (!workspace.ok) throw launchFailure(workspace, identity);
 
 	const opened = await herdr.openTab({
 		workspace: workspace.workspace,
 		cwd: worktreePath,
-		label: `factory-${attempt}`,
+		label: herdrTabLabel(attempt),
 	});
-	if (!opened.ok) throw launchFailure(opened, identity);
+	if (!opened.ok) throw workspaceTabFailure(opened, identity, workspace.workspace);
 
 	// Before `agent start`, deliberately: a crash in between must leave a pane
 	// this factory can still recognise, or reconcile concludes nothing started
@@ -1371,6 +1373,26 @@ function launchFailure(answer, identity) {
 		`${answer.message} The worker never ran, so attempt ${identity.attempt} is an automation failure rather than ` +
 			`anything the attempt can be blamed for (§6.4). Nothing was closed, because nothing here closes a pane (§13.B).`,
 		{ ...identity, command: answer.command, exit_code: answer.exit_code, stderr: answer.stderr },
+	);
+}
+
+/**
+ * The one launch failure that names a way out (#156).
+ *
+ * A run adopts the workspace it recorded and never opens a replacement, so a
+ * workspace the operator closed — §6.4's accepted cost — leaves this run unable
+ * to launch anything at all, and every further attempt fails here identically
+ * until §8.6's breaker ends the run. The operator's recovery is a new run, and
+ * a message that made them derive that from `workspace_not_found` would be the
+ * lane failing quietly twice.
+ */
+function workspaceTabFailure(answer, identity, workspace) {
+	return new FactoryWorkerError(
+		"worker-launch-failed",
+		`${answer.message} Workspace ${workspace} could not take a tab for attempt ${identity.attempt}. If it is gone, ` +
+			`this run cannot launch into it again — a run adopts the workspace it opened and never opens a replacement ` +
+			`(§6.4) — so a new run is what opens a new one. Nothing was closed (§13.B).`,
+		{ ...identity, workspace, command: answer.command, exit_code: answer.exit_code, stderr: answer.stderr },
 	);
 }
 

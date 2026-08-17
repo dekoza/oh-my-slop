@@ -111,6 +111,29 @@ test("every attempt of a run is a tab in the one workspace that run opened (#156
 	assert.notEqual(second.tab, first.tab);
 });
 
+test("a run whose workspace the operator closed fails its launch and names the way out (#156)", async (t) => {
+	const context = await launchable(t);
+	await context.launch();
+
+	// §6.4's accepted cost, arriving: the workspace is gone and with it every
+	// live lane. The run adopts what it recorded and opens no replacement.
+	context.herdr.closeWorkspaces();
+	const error = await refusalOfAsync(() =>
+		context.launch({
+			identity: { run: context.run, ticket: 42, phase: "implement", attempt: `${context.run}-t42-a2` },
+		}),
+	);
+
+	assert.equal(error.reason, "worker-launch-failed");
+	assert.equal(error.details.workspace, "w1");
+	assert.match(error.message, /a new run is what opens a new one/);
+	assert.equal(
+		context.herdr.commands().filter((command) => command === "workspace create").length,
+		1,
+		"never a replacement opened behind the operator's back",
+	);
+});
+
 test("a launch opens an interactive pane, stamps it, starts the agent, then prompts", async (t) => {
 	const context = await launchable(t);
 

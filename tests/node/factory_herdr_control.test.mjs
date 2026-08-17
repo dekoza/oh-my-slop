@@ -66,7 +66,9 @@ test("the run's workspace is one `workspace create`, labelled for the operator's
 
 	const opened = await createHerdrControl({ run: io.run }).openWorkspace({ cwd: "/state", label: "factory-run-R" });
 
-	assert.deepEqual({ ...opened }, { ok: true, workspace: "w7", tab: "w7:t1", pane: "w7:p1", label: "factory-run-R" });
+	// The id and the label: nothing runs in the workspace's own root tab, so its
+	// pane is not something a caller is given or a readable answer must carry.
+	assert.deepEqual({ ...opened }, { ok: true, workspace: "w7", label: "factory-run-R" });
 	assert.deepEqual(io.calls[0], ["workspace", "create", "--cwd", "/state", "--label", "factory-run-R", "--no-focus"]);
 });
 

@@ -1,6 +1,5 @@
 import { effectKey } from "../effects/keys.mjs";
 import { requestEffect, resolveEffect } from "../effects/records.mjs";
-import { FactoryWorkerError } from "./errors.mjs";
 
 /**
  * §6.4's topology: **one Herdr workspace per run, and a tab in it per attempt**
@@ -18,9 +17,12 @@ import { FactoryWorkerError } from "./errors.mjs";
  * **Run-scoped, not persistent.** A workspace that outlived its run would
  * accumulate tabs across runs and would need a reconciliation question of its
  * own — *is this workspace mine, or a dead run's?* This one is keyed by the run,
- * so it is opened once, adopted by every later attempt and by every controller
- * that re-enters the run, and left behind for `cleanup-plan` as a single anchor
- * rather than one per attempt (§12.8).
+ * so it is opened once and adopted by every later attempt and by every
+ * controller that re-enters the run. It is left behind when the run ends, which
+ * gives §12.8's cleanup **one durable anchor per run to plan from** — this
+ * effect row — instead of one per attempt. Reclaiming it is #118's to define:
+ * there is no `workspace-delete` kind here, because nothing in this package
+ * deletes one.
  *
  * **The cost is accepted rather than discovered:** an operator who closes the
  * factory workspace used to lose one attempt and now loses every live lane of
@@ -64,15 +66,28 @@ export function runWorkspaceLabel(run) {
 	return `factory-run-${run}`;
 }
 
-/** The run's own effect key, built in one place so probe and opener agree. */
-export function runWorkspaceKey(run) {
-	return effectKey({
+/**
+ * §4.5's identity slots for this effect, named once.
+ *
+ * The subject is the **run**, so ticket and attempt are both the absent literal.
+ * An attempt here would give one workspace a row per attempt that opened a tab
+ * in it, and the uniqueness the key exists for would quietly become a
+ * per-attempt property with nothing failing (#146).
+ */
+function runWorkspaceSlots(run) {
+	return {
+		operation: RUN_WORKSPACE_OPERATION,
+		operand: null,
 		run,
 		ticket: null,
 		phase: RUN_WORKSPACE_PHASE,
 		attempt: null,
-		operation: RUN_WORKSPACE_OPERATION,
-	});
+	};
+}
+
+/** The run's own effect key — the same slots the request is made under. */
+export function runWorkspaceKey(run) {
+	return effectKey(runWorkspaceSlots(run));
 }
 
 /**
@@ -89,23 +104,16 @@ export function runWorkspaceKey(run) {
  *   digest cannot make a re-entry a §4.5 conflict
  * @param {string} context.actor `controller`, or `operator:<verb>`
  * @param {number} context.at
- * @returns {Promise<Readonly<{ key: string, workspace: string, label: string, outcome: string }>>}
- * @throws {FactoryWorkerError} `worker-launch-failed`
+ * @returns {Promise<Readonly<{ ok: true, key: string, workspace: string, label: string, outcome: string }
+ *   | { ok: false, command: string, message: string }>>} the workspace, or the
+ *   Herdr refusal exactly as the control surface reported it — the caller turns
+ *   that into its own typed failure
  */
 export async function openRunWorkspace(store, { hold, run, herdr, cwd, actor, at }) {
 	const label = runWorkspaceLabel(run);
 	const fence = hold.fence();
 	const requested = requestEffect(store, {
-		operation: RUN_WORKSPACE_OPERATION,
-		operand: null,
-		run,
-		ticket: null,
-		phase: RUN_WORKSPACE_PHASE,
-		// The subject is the run, so the attempt slot is §4.5's absent literal. An
-		// attempt here would give one workspace a row per attempt that opened a tab
-		// in it, and the uniqueness the key exists for would quietly become a
-		// per-attempt property with nothing failing (#146).
-		attempt: null,
+		...runWorkspaceSlots(run),
 		actor,
 		fencingGeneration: fence.generation,
 		payload: { label, cwd },
@@ -113,18 +121,26 @@ export async function openRunWorkspace(store, { hold, run, herdr, cwd, actor, at
 	});
 
 	if (requested.outcome === "already-resolved") {
-		return Object.freeze({ key: requested.key, outcome: requested.outcome, ...requested.result });
+		return Object.freeze({ ok: true, key: requested.key, outcome: requested.outcome, ...requested.result });
 	}
 
-	const opened = await herdr.openWorkspace({ cwd, label });
-	if (!opened.ok) {
-		throw new FactoryWorkerError(
-			"worker-launch-failed",
-			`${opened.message} Run ${run} has no workspace to open a tab in, so no worker can be launched for it ` +
-				`(§6.4). Nothing was closed (§13.B).`,
-			{ run, command: opened.command, exit_code: opened.exit_code ?? null },
-		);
-	}
+	// A row already standing as `requested` is an intent whose outcome nobody
+	// recorded: the process died between the two writes, or Herdr did the work
+	// and answered unreadably. Startup reconcile settles that — but it runs once
+	// per invocation, and this row can appear *during* a run, where the next
+	// attempt would otherwise mint a second workspace under an identical label
+	// and make the label ambiguous for every probe afterwards. So the same
+	// question the probe asks is asked here, and its answer is the resolution.
+	const opened =
+		requested.outcome === "already-requested"
+			? await theOneAlreadyAskedFor(herdr, { cwd, label })
+			: await herdr.openWorkspace({ cwd, label });
+	// **The refusal is handed back, not thrown.** The caller is a launch, and a
+	// launch has exactly one way of saying "the worker never ran" — carrying the
+	// attempt tuple its record is written under. Throwing a second, thinner one
+	// from here is how a workspace refusal ends up the only launch failure whose
+	// attempt record names no attempt.
+	if (!opened.ok) return opened;
 
 	const resolved = resolveEffect(store, {
 		key: requested.key,
@@ -136,5 +152,21 @@ export async function openRunWorkspace(store, { hold, run, herdr, cwd, actor, at
 		at,
 	});
 
-	return Object.freeze({ key: requested.key, outcome: resolved.outcome, ...resolved.result });
+	return Object.freeze({ ok: true, key: requested.key, outcome: resolved.outcome, ...resolved.result });
+}
+
+/**
+ * The workspace an unresolved request may already have created, or a new one.
+ *
+ * **A multiplexer that will not answer refuses rather than creating** (§12.4):
+ * "unanswerable" is not "absent", and creating on an unanswerable read is
+ * exactly how one run ends up with two workspaces wearing one label — the
+ * ambiguity every later probe would then have to resolve and could not.
+ */
+async function theOneAlreadyAskedFor(herdr, { cwd, label }) {
+	const listed = await herdr.workspaceLabelled(label);
+	if (!listed.ok) return listed;
+	if (listed.workspace !== null) return Object.freeze({ ok: true, workspace: listed.workspace.workspace_id, label });
+
+	return herdr.openWorkspace({ cwd, label });
 }

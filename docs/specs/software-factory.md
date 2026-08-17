@@ -658,18 +658,22 @@ re-enters the run (§10.4), and settled after a crash by probing Herdr's workspa
 run's own deterministic label — Herdr carries no metadata token on a workspace the way
 `pane report-metadata` does on a pane, so the label is the only handle a probe has. A workspace
 that outlived its run would accumulate tabs across runs and would need its own reconciliation
-question — *is this workspace mine, or a dead run's?* — and it gives §12.8's cleanup one anchor
-per run instead of one per attempt. It is opened by the first attempt that needs one: a run that
+question — *is this workspace mine, or a dead run's?* — and the effect row gives §12.8's cleanup
+one durable anchor per run to plan from instead of one per attempt. **Reclaiming a workspace is
+not in v1**: there is no workspace deletion in the effect catalogue, because nothing deletes one. It is opened by the first attempt that needs one: a run that
 launches no worker leaves nothing behind, and Herdr refusing the command is that attempt's
 `worker-launch-failed` automation failure (§8.10), which is where a launch failure already has a
 home and a budget.
 
 **The cost is accepted explicitly:** an operator who closed the factory workspace used to lose
 one attempt and now loses every live lane of that run at once. Each pane's loss is still §6.6's
-`dead-worker` and §5.5's adoption makes re-entry cheap, so it is recoverable — but it is a real
-robustness cost traded for the navigation, and the controller does not repair it: a `tab create`
-against a workspace that is gone is reported, never answered by opening a replacement behind the
-operator's back.
+`dead-worker`, so it is a real robustness cost traded for the navigation. The controller does not
+repair it: a `tab create` against a workspace that is gone is reported, never answered by opening
+a replacement behind the operator's back. A re-entered run therefore adopts the workspace it
+recorded and, if that workspace was closed, launches nothing further — every attempt fails as
+`worker-launch-failed` until §8.6's breaker ends the run, and **a new run is what opens a new
+workspace**. The launch failure says so rather than leaving the operator to derive it from
+`workspace_not_found`.
 
 The controller composes the first prompt from a **deterministic per-role template**: the native
 invocation (`/skill:<name>` for pi, `/oh-my-slop:<name>` for Claude) plus a typed context block

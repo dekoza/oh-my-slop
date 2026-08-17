@@ -372,6 +372,19 @@ export function herdrPaneTitle(attempt) {
 	return `factory ${attempt}`;
 }
 
+/**
+ * The label on the tab one attempt runs in (#156).
+ *
+ * Beside the agent name and the pane title because it is the third name derived
+ * from an attempt id for Herdr's benefit, and a derived name with a second home
+ * is a name that drifts. The run's *workspace* label is not here: it is derived
+ * from the run, and it lives with the effect it is the probe's handle on
+ * (`worker/workspace.mjs`).
+ */
+export function herdrTabLabel(attempt) {
+	return `factory-${attempt}`;
+}
+
 /** The run half of an attempt id, or null when it is not one. */
 export function runOf(attempt) {
 	const match = /^(.+)-t[1-9][0-9]*-a[1-9][0-9]*$/.exec(attempt ?? "");

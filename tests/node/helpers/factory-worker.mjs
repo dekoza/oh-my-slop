@@ -234,6 +234,8 @@ export function fakeHerdr({
 		calls,
 		panes,
 		run,
+		/** The refusals in force, mutable so a test can break one command mid-run. */
+		refuse,
 		/** The pane output the next `pane read` answers with (§6.6, #150). */
 		set paneOutput(value) {
 			paneOutput = value;
@@ -253,6 +255,14 @@ export function fakeHerdr({
 		},
 		/** The pane's process ends: Herdr drops the pane from its list. */
 		vanish() {
+			panes.length = 0;
+		},
+		/**
+		 * The operator closes every workspace — §6.4's accepted cost, which takes
+		 * the panes inside them with it.
+		 */
+		closeWorkspaces() {
+			workspaces.length = 0;
 			panes.length = 0;
 		},
 	};
