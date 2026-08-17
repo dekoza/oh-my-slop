@@ -775,6 +775,55 @@ test("a repair chain's re-review measures the publishable diff, never the repair
 	}
 });
 
+test("with no passing verify on record the review refuses: there is nothing measured to diff (§14.15)", async (t) => {
+	const built = await workedAttempt(t, { files: { "worker.txt": "the implement\n" } });
+	const leases = openLeases(built.store, { now: () => FIXED_NOW });
+	const hold = holdControllerLease({ store: built.store, leases, timers: manualTimers().api });
+	hold.recordStartupReconcile();
+	hold.adopt(built.run);
+
+	// A harvest alone — the head the worker left — is not a measured boundary:
+	// verify may rebase, and its record is the only place both ends live.
+	resolveStage(built.store, {
+		hold,
+		run: built.run,
+		ticket: built.ticket,
+		phase: "harvest",
+		attempt: built.attempt,
+		outcome: "passed",
+		detail: { head: built.head, commits_ahead: 1 },
+		actor: "controller",
+		at: FIXED_NOW,
+	});
+
+	const seam = reviewers(bothAnswering(APPROVING));
+	await assert.rejects(
+		() => reviewChain({ ...built, hold }, seam),
+		(error) => {
+			assert.equal(error.reason, "review-unroutable");
+			assert.equal(error.details.at, "verified-boundary");
+			return true;
+		},
+	);
+	assert.deepEqual(seam.asked, [], "no axis is launched over an unmeasured diff");
+});
+
+test("each axis's durable result names the boundary its verdict was rendered against (§8.7, #165)", async (t) => {
+	const chain = await reviewableChain(t);
+	const seam = reviewers(bothAnswering(APPROVING));
+
+	await reviewChain(chain, seam);
+
+	const axes = chain.store.readEvents({ kind: "stage.resolved" }).filter((record) => record.phase === "review");
+	assert.equal(axes.length, 2);
+	for (const record of axes) {
+		// §8.7's attestation reads these back off the record, so an incident review
+		// can see the verdicts' scope was the published diff and not a subset of it.
+		assert.equal(record.payload.detail.base_commit, chain.base.commit);
+		assert.equal(record.payload.detail.reviewed_commit, chain.head);
+	}
+});
+
 test("the axis mint says why the attempt exists: which axis, whose work, which try (§6.5)", async (t) => {
 	const context = await reviewable(t);
 	const { run } = review(context, { answers: bothAnswering(APPROVING) });

@@ -338,7 +338,15 @@ function axisPurpose({ axis, builderAttempt, tryNumber }) {
 async function attemptAxis(clone, { axis, profile, identity, worktreePath, branch, baseCommit, reviewedCommit, runAxis, tryNumber }) {
 	const before = await captureWorktreeState(clone, { worktreePath, branch });
 	if (!before.clean) {
-		return mutationAnswer({ axis, profile, tryNumber, guard: assessMutation({ before, after: before }), ran: null });
+		return mutationAnswer({
+			axis,
+			profile,
+			tryNumber,
+			baseCommit,
+			reviewedCommit,
+			guard: assessMutation({ before, after: before }),
+			ran: null,
+		});
 	}
 
 	const ran = await runAxis({
@@ -357,7 +365,7 @@ async function attemptAxis(clone, { axis, profile, identity, worktreePath, branc
 	});
 
 	const guard = assessMutation({ before, after: await captureWorktreeState(clone, { worktreePath, branch }) });
-	if (guard.mutated) return mutationAnswer({ axis, profile, tryNumber, guard, ran });
+	if (guard.mutated) return mutationAnswer({ axis, profile, tryNumber, baseCommit, reviewedCommit, guard, ran });
 
 	// §8.4's verdict is what a `completed` reviewer owes, and that obligation is
 	// **role** knowledge — which is why it is asserted here and not in §6.6's
@@ -372,6 +380,8 @@ async function attemptAxis(clone, { axis, profile, identity, worktreePath, branc
 				axis,
 				profile,
 				tryNumber,
+				baseCommit,
+				reviewedCommit,
 				guard,
 				ran,
 				problem: `the attempt ended ${ran.outcome} and wrote no §8.4 verdict, so this axis produced no result`,
@@ -379,16 +389,21 @@ async function attemptAxis(clone, { axis, profile, identity, worktreePath, branc
 		});
 	}
 
-	return Object.freeze({ outcome: ran.outcome, detail: axisDetail({ axis, profile, tryNumber, guard, ran }) });
+	return Object.freeze({
+		outcome: ran.outcome,
+		detail: axisDetail({ axis, profile, tryNumber, baseCommit, reviewedCommit, guard, ran }),
+	});
 }
 
-function mutationAnswer({ axis, profile, tryNumber, guard, ran }) {
+function mutationAnswer({ axis, profile, tryNumber, baseCommit, reviewedCommit, guard, ran }) {
 	return Object.freeze({
 		outcome: "mutation-detected",
 		detail: axisDetail({
 			axis,
 			profile,
 			tryNumber,
+			baseCommit,
+			reviewedCommit,
 			guard,
 			ran,
 			problem: `the reviewer's worktree changed under it (${guard.reasons.join(", ")}); a read-only role that wrote has broken its own contract`,
@@ -403,15 +418,19 @@ function mutationAnswer({ axis, profile, tryNumber, guard, ran }) {
  * blocking set, and a detail that sorted or deduplicated here would rerank one
  * axis before the union ever saw it. The attestation rides it too, on every
  * outcome and not only on a mutation — §8.7's per-attempt attestation artifact
- * wants the before/after guard result whatever the review concluded.
+ * wants the before/after guard result whatever the review concluded. So does
+ * the boundary the axis was briefed on: a verdict's scope is part of the
+ * verdict, and §8.7's artifact names the base it was rendered against (#165).
  */
-function axisDetail({ axis, profile, tryNumber, guard, ran, problem = null }) {
+function axisDetail({ axis, profile, tryNumber, baseCommit, reviewedCommit, guard, ran, problem = null }) {
 	const record = ran?.record ?? null;
 
 	return Object.freeze({
 		axis: axis.name,
 		profile,
 		try: tryNumber,
+		base_commit: baseCommit,
+		reviewed_commit: reviewedCommit,
 		attestation: Object.freeze({
 			mutated: guard.mutated,
 			reasons: guard.reasons,
