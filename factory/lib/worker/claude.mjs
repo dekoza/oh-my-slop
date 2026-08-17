@@ -1,3 +1,6 @@
+import { mkdirSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { CLAUDE_RESOURCE_CLASS } from "../config/profiles.mjs";
 import { createWorkerAdapter } from "./adapter.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
@@ -56,6 +59,27 @@ export const CLAUDE_PROBE_ONLY_FLAGS = Object.freeze([
 ]);
 
 /**
+ * §6.8's discovery fence — load-bearing isolation, the Claude counterpart of
+ * pi's `--no-skills`.
+ *
+ * A Claude session registers the project-level `.claude/skills` and
+ * `.claude/commands` its **cwd** ships, and a controller-owned
+ * `CLAUDE_CONFIG_DIR` does not fence them: measured live on Claude Code 2.1.233
+ * in a scratch project holding only `.claude/skills/leaktest/SKILL.md`, an
+ * `initialize` control-request under an *empty* isolated config dir answered 44
+ * commands including a bare `leaktest` (#163). A worker's cwd is the attempt
+ * worktree — the operator's repository at the pinned commit — so on any target
+ * repository shipping project skills, every worker would load skills from
+ * outside the pinned package root.
+ *
+ * `--setting-sources user` drops the `project` and `local` sources: the same
+ * request answered 43 commands with no `leaktest` and no project command, while
+ * the §6.3 plugin's `<plugin>:<skill>` records, the injected `--settings` file,
+ * and `--permission-mode` were all untouched (measured together, same binary).
+ */
+export const CLAUDE_DISCOVERY_FENCE = Object.freeze(["--setting-sources", "user"]);
+
+/**
  * The production flag set — what every Claude **worker** session is launched
  * with, and therefore what the probe must prove.
  *
@@ -70,10 +94,14 @@ export const CLAUDE_PROBE_ONLY_FLAGS = Object.freeze([
  *
  * @param {string} pluginDir the §6.3 plugin directory
  * @param {ReadonlyArray<string>} [sessionArgs]
+ * @param {{ fenced?: boolean }} [options] `fenced: false` builds the one session
+ *   the factory deliberately runs **without** the discovery fence: the control
+ *   side of the probe's fence proof, which must see the planted canary or the
+ *   fenced session's silence means nothing. No worker is ever launched with it.
  * @returns {string[]}
  */
-export function claudeWorkerArguments(pluginDir, sessionArgs = []) {
-	return ["--plugin-dir", pluginDir, ...sessionArgs];
+export function claudeWorkerArguments(pluginDir, sessionArgs = [], { fenced = true } = {}) {
+	return ["--plugin-dir", pluginDir, ...(fenced ? CLAUDE_DISCOVERY_FENCE : []), ...sessionArgs];
 }
 
 /**
@@ -87,10 +115,11 @@ export function claudeWorkerArguments(pluginDir, sessionArgs = []) {
  *
  * @param {string} pluginDir
  * @param {ReadonlyArray<string>} [sessionArgs]
+ * @param {{ fenced?: boolean }} [options]
  * @returns {string[]}
  */
-export function claudeProbeArguments(pluginDir, sessionArgs = []) {
-	return [...claudeWorkerArguments(pluginDir, sessionArgs), ...CLAUDE_PROBE_ONLY_FLAGS];
+export function claudeProbeArguments(pluginDir, sessionArgs = [], options = {}) {
+	return [...claudeWorkerArguments(pluginDir, sessionArgs, options), ...CLAUDE_PROBE_ONLY_FLAGS];
 }
 
 /**
@@ -180,11 +209,25 @@ export async function probeClaudeRuntime({
 	await strictValidation(io, { binary, plugin, where, timeoutMs }, failures);
 	await componentDiff(io, { binary, plugin, expectedSkills, where, timeoutMs }, failures);
 
-	const initialized = await initializeProbe(
-		io,
-		{ binary, plugin, sessionArgs: binding.sessionArgs ?? [], where, timeoutMs },
-		failures,
-	);
+	// Planted before the production session runs, so the very session that proves
+	// the closure is the session that proves nothing leaked into it (#163).
+	const canary = plantDiscoveryCanary(where.cwd, failures);
+	let initialized;
+	let fenceProven = false;
+	try {
+		initialized = await initializeProbe(
+			io,
+			{ binary, plugin, sessionArgs: binding.sessionArgs ?? [], where, timeoutMs },
+			failures,
+		);
+		fenceProven = await proveDiscoveryFence(
+			io,
+			{ binary, plugin, sessionArgs: binding.sessionArgs ?? [], where, timeoutMs, canary, registered: initialized },
+			failures,
+		);
+	} finally {
+		canary?.remove();
+	}
 	assertNothingUntrusted(binding.configDir, failures);
 	const commands = initialized?.commands ?? Object.freeze([]);
 	const models = initialized?.models ?? Object.freeze([]);
@@ -196,6 +239,14 @@ export async function probeClaudeRuntime({
 		plugin,
 		commands,
 		models,
+		// The fence and its proof, as a fact the run records: a green probe that
+		// says nothing about the fence leaves an operator unable to tell whether
+		// the proof ran at all (§6.8's "enforced, not promised").
+		discovery: Object.freeze({
+			fence: CLAUDE_DISCOVERY_FENCE,
+			canary: canary?.name ?? null,
+			proven: fenceProven,
+		}),
 		reachable: initialized !== null,
 		declaredSize,
 		binary,
@@ -420,20 +471,39 @@ async function componentDiff(io, { binary, plugin, expectedSkills, where, timeou
 }
 
 async function initializeProbe(io, { binary, plugin, sessionArgs, where, timeoutMs }, failures) {
+	const answered = await initializeSession(io, {
+		binary,
+		args: claudeProbeArguments(plugin.dir, sessionArgs),
+		where,
+		timeoutMs,
+	});
+	if (answered.error === undefined) return answered;
+
+	failures.push(unreachableRuntime("Claude", binary, answered.error));
+	return null;
+}
+
+/**
+ * One `initialize` control-request over stream-json, as a result rather than a
+ * verdict: `{ commands, models }`, or `{ error }` naming what the session did
+ * instead of answering. Two callers judge that differently — an unanswered
+ * production probe is an unreachable runtime, an unanswered *control* session is
+ * an unproven fence — and neither judgement belongs to the transport.
+ */
+async function initializeSession(io, { binary, args, where, timeoutMs }) {
 	const requestId = `factory-preflight-${Date.now().toString(36)}`;
 	let session;
 	try {
 		session = await io.lineSession({
 			binary,
-			args: claudeProbeArguments(plugin.dir, sessionArgs),
+			args,
 			input: [JSON.stringify({ type: "control_request", request_id: requestId, request: { subtype: "initialize" } })],
 			env: where.env,
 			cwd: where.cwd,
 			timeoutMs,
 		});
 	} catch (error) {
-		failures.push(unreachableRuntime("Claude", binary, error.message));
-		return null;
+		return { error: error.message };
 	}
 
 	for (const line of session.lines) {
@@ -455,17 +525,162 @@ async function initializeProbe(io, { binary, plugin, sessionArgs, where, timeout
 		};
 	}
 
+	return {
+		error: session.timedOut
+			? `the initialize control-request over stream-json got no control_response within ${timeoutMs}ms`
+			: `the initialize control-request over stream-json got no control_response (exit ${session.status})` +
+					(session.stderr.trim() === "" ? "" : `: ${session.stderr.trim().split("\n").at(-1)}`),
+	};
+}
+
+// ── §6.8's discovery fence, proven from both sides (#163) ───────────────────
+
+/**
+ * The canary project skill the probe plants in its own cwd, and its body. Not
+ * exported: what leaves this module is the *observed* name, on the finding and
+ * on the recorded `discovery` fact, never a constant a caller could match on.
+ */
+const CLAUDE_DISCOVERY_CANARY = "factory-discovery-canary";
+
+const CANARY_SKILL =
+	`---\nname: ${CLAUDE_DISCOVERY_CANARY}\ndescription: Canary — the factory's preflight plants this to prove that a ` +
+	`worker session registers no skill from its working directory.\n---\n\n` +
+	`The factory controller writes this file into the directory it probes Claude in, and removes it again when the probe ` +
+	`ends. If a session ever registers it, project-level skill discovery reached that session and §6.8's "skills reach a ` +
+	`worker only from the pinned package root" is false. Nothing invokes it.\n`;
+
+/**
+ * Plant the canary in the directory the probe runs in.
+ *
+ * The probe's cwd is the factory-private clone — a bare repository, where a
+ * planted `.claude/skills/<name>` is discovered exactly as it is in a plain
+ * directory (measured on Claude Code 2.1.233).
+ *
+ * **The write is not a §4.5 effect**, on the same ground as the plugin cache it
+ * sits beside: it is factory infrastructure inside the controller's own store,
+ * scoped to one probe, removed by that probe, and idempotent under re-entry —
+ * there is no outside-world state a later run could find in an unknown
+ * condition, which is what an effect's requested/resolved pair exists to settle.
+ *
+ * A binding with no usable cwd is a different matter: the session would inherit
+ * the controller's own directory, which is the operator's repository. Nothing is
+ * planted there — the factory does not write into a tree it does not own — and
+ * the fence is then **unproven**, which is a finding rather than a quiet pass.
+ * (`preflight.mjs` always supplies one, so this guards a caller that does not.)
+ *
+ * @returns {{ name: string, dir: string, remove: () => void } | null}
+ */
+function plantDiscoveryCanary(cwd, failures) {
+	if (typeof cwd !== "string" || cwd === "") {
+		failures.push(
+			probeFinding(
+				"discovery-fence-unproven",
+				`The probe was given no working directory to plant the discovery canary in, so it cannot show that a project ` +
+					`skill in a worker's own working directory stays out of its session — and planting one in the directory ` +
+					`the controller itself runs in would write into the operator's repository. §6.8's limit is enforced, not ` +
+					`promised, so an unprovable fence is a failure now rather than a worker reading someone else's skills later.`,
+				{ canary: CLAUDE_DISCOVERY_CANARY, at: null, fence: [...CLAUDE_DISCOVERY_FENCE] },
+			),
+		);
+		return null;
+	}
+
+	const skills = join(cwd, ".claude", "skills");
+	const dir = join(skills, CLAUDE_DISCOVERY_CANARY);
+	try {
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "SKILL.md"), CANARY_SKILL, "utf8");
+	} catch (error) {
+		failures.push(
+			probeFinding(
+				"discovery-fence-unproven",
+				`The discovery canary could not be planted at ${dir} (${error.message}), so this probe cannot show that a ` +
+					`project skill in a worker's own working directory stays out of its session. §6.8's limit is enforced, not ` +
+					`promised, so an unprovable fence is a failure now rather than a worker reading someone else's skills later.`,
+				{ canary: CLAUDE_DISCOVERY_CANARY, at: dir, fence: [...CLAUDE_DISCOVERY_FENCE] },
+			),
+		);
+		return null;
+	}
+
+	return {
+		name: CLAUDE_DISCOVERY_CANARY,
+		dir,
+		// Total by construction, and deliberately so: this runs in the probe's
+		// `finally`, where a throw would replace the probe's verdict with an
+		// exception about tidying up. A canary that outlives its probe is fenced
+		// out of every session anyway, and the next run plants the same file over
+		// it.
+		remove: () => {
+			try {
+				rmSync(dir, { recursive: true, force: true });
+			} catch {
+				return;
+			}
+			// Only the directories the planting made: `rmdir` refuses a non-empty
+			// one, so a `.claude` that was already there is left exactly as it was.
+			for (const parent of [skills, join(cwd, ".claude")]) {
+				try {
+					rmdirSync(parent);
+				} catch {
+					break;
+				}
+			}
+		},
+	};
+}
+
+/**
+ * §6.8's fence, proven against the session a worker actually runs — both sides.
+ *
+ * The **fenced** side is the production probe itself: the canary sitting in its
+ * cwd must not appear among the commands it registered. The **control** side is
+ * one deliberately unfenced session, the same binding minus
+ * `CLAUDE_DISCOVERY_FENCE`, which must register it — otherwise the fenced
+ * session's silence is not evidence of a fence but of a probe that could not
+ * have seen the leak, which is #160's defect in a new place.
+ *
+ * @returns {Promise<boolean>} whether the fence was proven — false both when it
+ *   was broken and when nothing could be proven either way
+ */
+async function proveDiscoveryFence(io, { binary, plugin, sessionArgs, where, timeoutMs, canary, registered }, failures) {
+	if (canary === null || registered === null) return false;
+
+	if (registered.commands.includes(canary.name)) {
+		failures.push(
+			probeFinding(
+				"skill-shadowed",
+				`The probed session registered ${canary.name}, a skill planted in its own working directory at ${canary.dir} ` +
+					`and not in the pinned package. Skills reach a worker only from the pinned package root (§6.8), and ` +
+					`\`${CLAUDE_DISCOVERY_FENCE.join(" ")}\` did not fence project discovery on this harness ` +
+					`(${binary}) — so a worker in a repository shipping .claude/skills/ would run the repository's skills.`,
+				{ skill: canary.name, source: canary.dir, fence: [...CLAUDE_DISCOVERY_FENCE] },
+			),
+		);
+		return false;
+	}
+
+	const control = await initializeSession(io, {
+		binary,
+		args: claudeProbeArguments(plugin.dir, sessionArgs, { fenced: false }),
+		where,
+		timeoutMs,
+	});
+
+	if (control.error === undefined && control.commands.includes(canary.name)) return true;
+
 	failures.push(
-		unreachableRuntime(
-			"Claude",
-			binary,
-			session.timedOut
-				? `the initialize control-request over stream-json got no control_response within ${timeoutMs}ms`
-				: `the initialize control-request over stream-json got no control_response (exit ${session.status})` +
-						(session.stderr.trim() === "" ? "" : `: ${session.stderr.trim().split("\n").at(-1)}`),
+		probeFinding(
+			"discovery-fence-unproven",
+			`The control session — the worker binding without \`${CLAUDE_DISCOVERY_FENCE.join(" ")}\` — did not register ` +
+				`the canary project skill at ${canary.dir}` +
+				(control.error === undefined ? "" : ` (${control.error})`) +
+				`, so the fenced session registering none of it proves nothing: this probe cannot show it would notice a ` +
+				`project skill reaching a worker. The fence is therefore unproven rather than proven (§6.2, §6.8).`,
+			{ canary: canary.name, at: canary.dir, fence: [...CLAUDE_DISCOVERY_FENCE] },
 		),
 	);
-	return null;
+	return false;
 }
 
 /**
@@ -524,6 +739,7 @@ function observation({
 	plugin = null,
 	commands = Object.freeze([]),
 	models = Object.freeze([]),
+	discovery = null,
 	reachable = false,
 	declaredSize,
 	binary,
@@ -536,6 +752,7 @@ function observation({
 		plugin,
 		commands,
 		models,
+		discovery,
 		resolvedModels: Object.freeze(Object.fromEntries(models.map((model) => [model.value, model.resolved]))),
 		// §9.7: a cloud class has nothing to observe and stays declared-only, so
 		// `max_instances` is null by construction and reachability is the probe's

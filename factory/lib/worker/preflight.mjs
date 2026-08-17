@@ -759,6 +759,12 @@ function reportedRuntimes(results) {
 			...(result.runtime.plugin === undefined || result.runtime.plugin === null
 				? {}
 				: { plugin: { dir: result.runtime.plugin.dir, outcome: result.runtime.plugin.outcome } }),
+			// §6.8's discovery fence and whether this run proved it (#163) — a green
+			// check that recorded nothing about the fence leaves an operator unable
+			// to tell the proof from its absence.
+			...(result.runtime.discovery === undefined || result.runtime.discovery === null
+				? {}
+				: { discovery: result.runtime.discovery }),
 		};
 	}
 	return runtimes;

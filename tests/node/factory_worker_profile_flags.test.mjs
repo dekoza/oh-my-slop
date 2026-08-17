@@ -21,7 +21,7 @@ import {
 import { createWorkerPreflight } from "../../factory/lib/worker/preflight.mjs";
 import { runCommand } from "../../factory/lib/worker/transports.mjs";
 import { makeTree, realGeneratorFiles, skillMarkdown } from "./helpers/factory-package.mjs";
-import { skillCommandsOf } from "./helpers/factory-worker.mjs";
+import { claudeProjectSkills, skillCommandsOf } from "./helpers/factory-worker.mjs";
 
 /**
  * #164: the profile's own flags — `--model`, and Claude's `--effort` / pi's
@@ -119,6 +119,9 @@ function parsingHarness({ known, answer }) {
 const PI_KNOWN = ["--mode", "--no-session", "--no-skills", "--skill", "--exclude-tools", "--model", "--thinking"];
 const CLAUDE_KNOWN = [
 	"--plugin-dir",
+	// §6.8's discovery fence rides the worker binding, so the spelling proof
+	// hands it to the binary too (#163).
+	"--setting-sources",
 	"--settings",
 	"--permission-mode",
 	"--input-format",
@@ -210,6 +213,8 @@ test("a Claude profile whose flags the binary accepts is proven by one session o
 	assert.deepEqual(harness.sessions[0].args, [
 		"--plugin-dir",
 		"/store/plugins/rev-1",
+		"--setting-sources",
+		"user",
 		"--settings",
 		"/cfg/settings-builder.json",
 		"--model",
@@ -498,7 +503,13 @@ function claudePreflightHarness(skills, { known = CLAUDE_KNOWN } = {}) {
 								subtype: "success",
 								request_id: JSON.parse(session.input[0]).request_id,
 								response: {
-									commands: skills.map((name) => ({ name: `oh-my-slop:${name}` })),
+									// The plugin's skills, plus whatever project skills this
+									// session's cwd ships and the fence let in (#163) — without
+									// which the fence proof's control session sees nothing.
+									commands: [
+										...skills.map((name) => ({ name: `oh-my-slop:${name}` })),
+										...claudeProjectSkills(session),
+									],
 									models: [{ value: "opus", resolvedModel: "claude-opus-5-test" }],
 								},
 							},
@@ -555,7 +566,10 @@ test("a Claude profile is checked over the plugin directory the runtime probe pr
 
 	// The proven §6.3 plugin, not a second computation of it: the spelling session
 	// carries the same `--plugin-dir` the probe's own session did (#160).
-	const [probed, spelling] = harness.sessions;
+	// Between them sits the fence proof's unfenced control session (#163), so the
+	// spelling one is named by its position at the end rather than by an index.
+	const [probed] = harness.sessions;
+	const spelling = harness.sessions.at(-1);
 	assert.deepEqual(spelling.args.slice(0, 2), probed.args.slice(0, 2));
 	assert.equal(probed.args[0], "--plugin-dir");
 	assert.deepEqual(
