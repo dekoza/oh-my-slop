@@ -261,7 +261,31 @@ export async function walkStages(
 				});
 			}
 
-			if (Object.hasOwn(BUDGET_KEY_FOR_ACTION, resolved.row.action)) {
+				// #155: **the same work, on the next routable profile, charged to
+				// nothing.** It is placed before the budget branch and deliberately
+				// outside it: a reroute spends no declared number, and `requireBudget`
+				// is what makes an unbounded retry unconstructible, so a reroute that
+				// passed through it would have to be given a budget to be free of one.
+				// What bounds it instead is the seam — each routable profile is
+				// dispatched at most once per ticket execution, and running out is
+				// `routes-exhausted` below rather than another lap.
+				//
+				// It re-enters the phase it left, like §8.10's automation retry and
+				// unlike §8.5's tiers: nothing about the work was judged, so there is
+				// nothing to rebuild from the top.
+				if (resolved.row.action === STAGE_ACTIONS.reroute) {
+					attempt = await retried(nextAttempt, {
+						attempt,
+						phase,
+						outcome: resolved.outcome,
+						detail: resolved.detail,
+						row: resolved.row,
+					});
+					tryNumber = FIRST_TRY;
+					continue;
+				}
+
+				if (Object.hasOwn(BUDGET_KEY_FOR_ACTION, resolved.row.action)) {
 				// §8.6, **before the seam is asked**: the resolution that routed here
 				// is itself the charge, so the count this reads already includes it.
 				// Asking after the mint would spend on a chain the budget had already
@@ -324,6 +348,15 @@ export async function walkStages(
 			// refused under are one value.
 			if (error.reason === "budget-exhausted") return exhausted(store, { run, ticket, phase, details: error.details });
 
+			// #155's exhaustion, and it arrives the same way for the same reason:
+			// the reroute has nowhere left to send the work, and that is §8.10's
+			// own row rather than a crash. It settles through `settle` and not
+			// through `exhausted` because the verdict is the row's — a budgetless
+			// `released` — while a spent budget's verdict is carried on the refusal.
+			if (error.reason === "routes-exhausted") {
+				return settle(phase, "routes-exhausted", { store, run, ticket, summary: error.message });
+			}
+
 			throw error;
 		}
 	}
@@ -365,7 +398,7 @@ async function retried(nextAttempt, request) {
 		throw new FactoryPipelineError(
 			"retry-unplannable",
 			`§8.10 routes ${request.phase} × ${request.row.outcome} to ${request.row.action}, and this caller wired no ` +
-				"seam to mint the next attempt (§8.5). Carrying on to the next phase instead is how a failing attempt " +
+				"seam to mint the next attempt (§8.5, §9). Carrying on to the next phase instead is how a failing attempt " +
 				"becomes a publication, so the walk stops here with the chain it has written.",
 			{
 				at: "seam",
@@ -542,15 +575,15 @@ function unbuilt({ row, phase }) {
 		);
 	}
 
-	// Every action §8.10 declares now advances, disposes, or spends a budget, so
-	// the walk reaching here means the table grew an action nothing routes. It is
-	// a refusal rather than a fallthrough for the reason the whole file is: the
-	// plausible fallthrough is "carry on to the next phase", which is how a
-	// failing attempt becomes a publication.
+	// Every action §8.10 declares now advances, disposes, reroutes, or spends a
+	// budget, so the walk reaching here means the table grew an action nothing
+	// routes. It is a refusal rather than a fallthrough for the reason the whole
+	// file is: the plausible fallthrough is "carry on to the next phase", which is
+	// how a failing attempt becomes a publication.
 	return new FactoryPipelineError(
 		"not-yet-implemented",
 		`§8.10 routes ${phase} × ${row.outcome} to ${row.action}, which no slice claims: the walk advances, disposes, ` +
-			"and spends the three budgets, and this is none of them (§8.10).",
+			"reroutes, and spends the three budgets, and this is none of them (§8.10).",
 		{ at: "action", phase, outcome: row.outcome, action: row.action, budget: row.budget, missing: null, spec: "§8.10" },
 	);
 }

@@ -6,6 +6,7 @@ import { requestEffect, resolveEffect } from "../../factory/lib/effects/records.
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { budgetSpend } from "../../factory/lib/pipeline/budgets.mjs";
 import { dispositionOf } from "../../factory/lib/pipeline/dispositions.mjs";
+import { FactoryPipelineError } from "../../factory/lib/pipeline/errors.mjs";
 import { outcomeChain, resolveStage, walkStages } from "../../factory/lib/pipeline/stages.mjs";
 import { TABLE_WIDE, routeOutcome } from "../../factory/lib/pipeline/table.mjs";
 import { answering, answeringInTurn } from "./helpers/factory-pipeline.mjs";
@@ -760,22 +761,62 @@ test("a walk that reaches a retry with no declared budgets refuses rather than g
 	);
 });
 
-test("a provider-refused attempt releases the ticket and spends no budget (§8.10, #154)", async (t) => {
-	// The provider's refusal is neither the worker's fault nor the automation's:
-	// the ticket goes back to the frontier untouched, and the memo the dispatch
-	// path wrote is what keeps the next claim out of the exhausted class.
+test("a provider-refused attempt is rerouted onto a fresh attempt, charged to nothing (§8.10, #154, #155)", async (t) => {
+	// The provider's refusal is neither the worker's fault nor the automation's,
+	// so the ticket is not made to pay for it: the same work re-enters implement
+	// under a new attempt on the next routable profile, and no budget moves.
 	const context = await executing(t);
-	const { phases } = answering({ implement: "provider-refused" });
+	const seam = retrying(context);
+	const { phases, calls } = answeringInTurn({
+		implement: ["provider-refused", "completed"],
+		harvest: ["passed"],
+		verify: ["passed"],
+		review: ["approved"],
+		integrate: ["integrated"],
+	});
 
-	const settled = await context.walk(phases);
+	const settled = await context.walk(phases, { nextAttempt: seam.nextAttempt });
 
-	assert.equal(settled.disposition, "released");
-	assert.equal(settled.outcome, "provider-refused");
-	assert.equal(settled.reason_class, null);
-	assert.equal(settled.fault, null, "no fault: §8.6's breaker counts neither a product nor an automation failure");
+	assert.equal(settled.disposition, "published");
+	assert.deepEqual(seam.asked.map((request) => request.tier), ["reroute"]);
+	assert.equal(seam.asked[0].budget, null, "a reroute names no budget, because it spends none");
+	assert.notEqual(
+		calls.find((call) => call.phase === "harvest").attempt,
+		calls[0].attempt,
+		"the work went somewhere else, not back to the attempt the provider refused",
+	);
 	assert.deepEqual(
 		budgetSpend(context.store, { run: context.run, ticket: context.ticket }),
 		{ repair: 0, freshRetry: 0, automation: 0 },
 		"the provider's refusal charges no budget — before #154 the same refusal arrived as a repair-charged no-result",
 	);
+});
+
+test("a reroute with nowhere left to go releases the ticket untouched, as its own outcome (§8.10, #155)", async (t) => {
+	const context = await executing(t);
+	const { phases } = answering({ implement: "provider-refused" });
+
+	const settled = await context.walk(phases, {
+		nextAttempt: async () => {
+			throw new FactoryPipelineError("routes-exhausted", "every routable profile for role implement is memo-locked", {
+				at: "route",
+				role: "implement",
+			});
+		},
+	});
+
+	assert.equal(settled.disposition, "released", "the ticket goes back to the frontier: no label, no human owed anything");
+	assert.equal(settled.outcome, "routes-exhausted", "and it is distinguishable from a worker that failed");
+	assert.equal(settled.reason_class, null);
+	assert.equal(settled.fault, null, "no fault: §8.6's breaker counts neither a product nor an automation failure");
+	assert.deepEqual(
+		settled.chain.map((entry) => entry.outcome),
+		["provider-refused"],
+		"the chain says the refusal happened and the reroute answered it, rather than only the ending",
+	);
+	assert.deepEqual(budgetSpend(context.store, { run: context.run, ticket: context.ticket }), {
+		repair: 0,
+		freshRetry: 0,
+		automation: 0,
+	});
 });

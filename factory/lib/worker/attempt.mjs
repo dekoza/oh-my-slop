@@ -297,6 +297,17 @@ function mintsPurpose(payload, purpose) {
  * @param {Readonly<object>} context.identity the minted tuple (`requireAttemptIdentity`)
  * @param {string} context.role the role this attempt runs
  * @param {string} context.profile the dispatched profile
+ * @param {Readonly<object> | null} [context.routing] **the dispatch decision that
+ *   chose that profile** (#155, `worker/dispatch.mjs`): what §11.5 declared, what
+ *   will run, why they differ, and every candidate passed over. `null` where no
+ *   decision was made — §8.5's repair and §8.10's automation retry are pinned to
+ *   the originating attempt, and a record on those would read as a routing that
+ *   happened to land where the pin already was.
+ *
+ *   It rides the mint rather than a record of its own because §6.5 re-asserts a
+ *   *declared* model against the observed one, and the mint is where the declared
+ *   one is written down. A substitution recorded somewhere else would be a second
+ *   answer to "what ran", which is the question this exists to keep answerable
  * @param {string} context.baseCommit the commit its branch starts at
  * @param {object} context.purpose **why this attempt exists**, in the minter's own
  *   words — §8.5's tier and the attempt it answers, or §8.4's axis, work and try.
@@ -305,7 +316,7 @@ function mintsPurpose(payload, purpose) {
  * @param {number} context.at
  * @returns {boolean} whether this call wrote the record
  */
-export function mintAttempt(store, { hold, identity, role, profile, baseCommit, purpose, at }) {
+export function mintAttempt(store, { hold, identity, role, profile, routing = null, baseCommit, purpose, at }) {
 	if (launchedAttempt(store, identity.attempt) !== null) return false;
 
 	hold.append({
@@ -320,6 +331,7 @@ export function mintAttempt(store, { hold, identity, role, profile, baseCommit, 
 		payload: {
 			role,
 			profile,
+			routing,
 			...purpose,
 			base_commit: baseCommit,
 			// The three derived paths cost nothing to compute and are what an

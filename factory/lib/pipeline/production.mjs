@@ -19,7 +19,8 @@ import {
 	mintedAttemptBranches,
 	requireAttemptIdentity,
 } from "../worker/attempt.mjs";
-import { postureOf, profileForRole } from "../worker/roles.mjs";
+import { dispatchOrder, selectRoute } from "../worker/dispatch.mjs";
+import { PIPELINE_ROLES, postureOf } from "../worker/roles.mjs";
 import { createRetrySeam } from "./retry.mjs";
 import { harvestPhase } from "./phases.mjs";
 import { integrationVerify, integratePublish } from "./integration.mjs";
@@ -105,10 +106,15 @@ export function createProductionPipeline(store, context) {
 	}
 
 	async function executeProduction(lane) {
-		const { ticket, attempt, slots, capacity } = lane;
+		const { ticket, attempt, slots, capacity, route } = lane;
 		const ticketSnapshot = await snapshotTicket(tracker, ticket);
 		const labels = ticketSnapshot.labels;
-		const initialProfile = profileForRole(activeRouting, { role: PHASE_IMPLEMENT, labels });
+		// §11.5's dispatch for this ticket is the scheduler's, made before the
+		// claim and against the memo, and it is what the ticket slot and the
+		// implement model slot were taken for (§9.4, #155). Resolving it again
+		// here could reach a different answer — the memo moves — and the lane
+		// would then be running on a pool it never took.
+		const initialRoute = requireLaneRoute(route, { ticket, attempt });
 		const initial = await openInitialAttempt({
 			store,
 			clone,
@@ -116,7 +122,7 @@ export function createProductionPipeline(store, context) {
 			run: runOfAttempt(attempt),
 			ticket,
 			attempt,
-			profile: initialProfile,
+			route: initialRoute,
 			baseBranch: config.git.baseBranch,
 			workerConfig: worker.environment,
 			now,
@@ -149,8 +155,8 @@ export function createProductionPipeline(store, context) {
 			run: initial.identity.run,
 			ticket,
 			baseBranch: config.git.baseBranch,
-			routing: activeRouting,
-			labels,
+			selectRoute: (request) =>
+				roleRoute({ config, activeRouting, capacity, labels, now }, { ticket, ...request }),
 			workerConfig: worker.environment,
 			readResult: (prior) => endedAttempt(store, initial.identity.run, prior)?.payload.result ?? null,
 			actor: "controller",
@@ -237,9 +243,12 @@ async function review(context, { run, ticket, attempt }) {
 		run,
 		ticket,
 		attempt,
-		routing: context.activeRouting,
-		labels: context.labels,
 		workerConfig: context.worker.environment,
+		// §8.4's two axes are routed one at a time and never together: the seam
+		// takes an axis and answers for that axis alone, so an exhausted class
+		// walks each down its own declared order (§11.5, #155).
+		routeAxis: ({ axis, index, dispatched }) =>
+			roleRoute(context, { ticket, role: axis, axis: index, dispatched }),
 		runAxis: async (axis) => {
 			const axisOpened = attemptRecord(context.store, { run, attempt: axis.identity.attempt });
 			return withAttemptModelSlot(context, axisOpened, axis.identity.attempt, () =>
@@ -414,7 +423,56 @@ function integrationContext(context, { run, ticket, attempt, opened }) {
 	};
 }
 
-async function openInitialAttempt({ store, clone, hold, run, ticket, attempt, profile, baseBranch, workerConfig, now }) {
+/**
+ * §11.5's dispatch for one pipeline role on this ticket, read under §9.8's memo.
+ *
+ * The role arrives by **pipeline** name (`fresh-retry`, `review-standards`) and
+ * is mapped to its routing role here, because §11.5 routes roles and §6.1's
+ * inventory is what knows which is which — a caller spelling the routing role
+ * itself would be a second copy of that mapping.
+ */
+async function roleRoute({ config, activeRouting, capacity, labels, now }, { ticket, role, axis = null, dispatched = [] }) {
+	const declared = PIPELINE_ROLES.find((entry) => entry.name === role);
+	if (declared === undefined) {
+		throw new FactoryWorkerError("role-invalid", `"${role}" is not a pipeline role, so §11.5 has no order for it.`, {
+			at: "role",
+			ticket,
+			found: role,
+			expected: PIPELINE_ROLES.map((entry) => entry.name).join("|"),
+		});
+	}
+
+	return selectRoute({
+		order: dispatchOrder(activeRouting, { role: declared.routingRole, labels, axis }),
+		profiles: config.profiles,
+		exhaustion: capacity.exhaustion,
+		dispatched,
+		at: now(),
+	});
+}
+
+/**
+ * The dispatch decision the scheduler made for this lane, held to being one.
+ *
+ * A lane with no route is a composition defect rather than a missing default:
+ * §9.4 took this lane's slots from a specific class pool, and the only thing
+ * that named that class is the decision this asks for. Falling back to resolving
+ * §11.5 here would fill the hole with an answer that can differ from the one the
+ * slot was taken under.
+ */
+function requireLaneRoute(route, { ticket, attempt }) {
+	if (typeof route?.profile === "string") return route;
+
+	throw new FactoryWorkerError(
+		"routing-ambiguous",
+		`Ticket ${ticket}'s lane was handed no dispatch decision, and attempt ${attempt} cannot be minted without one ` +
+			"(§11.5, §9.4). The scheduler chooses the route before the claim and takes the model slot from the class it " +
+			"names; resolving the routing again here could name a different class than the slot this lane holds.",
+		{ at: "route", ticket, attempt, found: route?.profile ?? null },
+	);
+}
+
+async function openInitialAttempt({ store, clone, hold, run, ticket, attempt, route, baseBranch, workerConfig, now }) {
 	const purpose = { initial: true };
 	const allocated = allocateAttempt(store, { run, ticket, purpose });
 	if (allocated.attempt !== attempt) {
@@ -430,7 +488,8 @@ async function openInitialAttempt({ store, clone, hold, run, ticket, attempt, pr
 		hold,
 		identity,
 		role: PHASE_IMPLEMENT,
-		profile,
+		profile: route.profile,
+		routing: route,
 		baseCommit: base.commit,
 		purpose,
 		at: now(),

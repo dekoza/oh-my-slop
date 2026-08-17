@@ -12,6 +12,7 @@ import { reviewPhase } from "../../factory/lib/pipeline/review.mjs";
 import { outcomeChain, resolveStage, walkStages } from "../../factory/lib/pipeline/stages.mjs";
 import { routeOutcome } from "../../factory/lib/pipeline/table.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
+import { dispatchOrder, selectRoute } from "../../factory/lib/worker/dispatch.mjs";
 import { REVIEW_ROLES } from "../../factory/lib/worker/roles.mjs";
 import { mintedAttempt, repairAttempt, workedAttempt } from "./helpers/factory-git.mjs";
 import { FIXED_NOW, manualTimers } from "./helpers/factory-store.mjs";
@@ -28,9 +29,28 @@ import { FIXED_NOW, manualTimers } from "./helpers/factory-store.mjs";
 const OUTBOX_VERSION = 1;
 
 /** A routing whose review pair names two different profiles (§11.5). */
-function routing(review = ["reader-a", "reader-b"]) {
-	return { roles: { implement: "builder", freshRetry: "big-builder", review }, rules: [] };
+function routing(review = ["reader-a", "reader-b"], fallbacks = undefined) {
+	return {
+		roles: { implement: "builder", freshRetry: "big-builder", review },
+		rules: [],
+		...(fallbacks === undefined ? {} : { fallbacks: { implement: [], freshRetry: [], review: fallbacks } }),
+	};
 }
+
+/**
+ * Every profile the routings here name, on two classes — because §9.8's memo is
+ * class-scoped and a reroute between two profiles on one class buys nothing.
+ */
+const PROFILES = Object.freeze({
+	builder: { kind: "pi", model: "local/qwen3" },
+	"big-builder": { kind: "pi", model: "local/qwen3-big" },
+	reader: { kind: "pi", model: "local/reader" },
+	"reader-a": { kind: "pi", model: "local/reader-a" },
+	"reader-b": { kind: "pi", model: "local/reader-b" },
+	"only-one": { kind: "pi", model: "local/only-one" },
+	"cloud-reader": { kind: "claude", model: "opus" },
+	"cloud-reader-b": { kind: "claude", model: "fable" },
+});
 
 const BLOCKING = Object.freeze({
 	severity: "blocking",
@@ -141,20 +161,35 @@ function reviewers(answers, { mutate = {} } = {}) {
 	};
 }
 
-function review(context, { answers, routing: active = routing(), ...overrides } = {}) {
+function review(context, { answers, routing: active = routing(), blocked = {}, ...overrides } = {}) {
 	const seam = reviewers(answers ?? {}, overrides);
+	const routed = [];
+	// The production composition, not a stub: §11.5's order for **this axis**,
+	// settled against §9.8's memo, with the profiles this axis has already spent
+	// excluded (#155). Which is what makes "the two axes are independently
+	// routed" a property of the call rather than of a fixture.
+	const routeAxis = async ({ axis, index, dispatched }) => {
+		routed.push({ axis, index, dispatched: [...dispatched] });
+		return selectRoute({
+			order: dispatchOrder(active, { role: "review", axis: index }),
+			profiles: PROFILES,
+			exhaustion: { settle: async (className) => blocked[className] ?? { state: "available", until: null } },
+			dispatched,
+		});
+	};
+
 	return {
 		seam,
+		routed,
 		run: (more = {}) =>
 			reviewPhase(context.store, context.clone, {
 				hold: context.hold,
 				run: context.run,
 				ticket: context.ticket,
 				attempt: context.attempt,
-				routing: active,
-				labels: [],
 				workerConfig: context.workerConfig,
 				runAxis: seam.runAxis,
+				routeAxis,
 				actor: "controller",
 				now: () => FIXED_NOW,
 				...more,
@@ -289,8 +324,132 @@ test("a routing that does not name one profile per axis is refused, never stretc
 	const { run } = review(context, { answers: bothAnswering(APPROVING), routing: routing(["only-one"]) });
 
 	await assert.rejects(run, (error) => {
+		assert.equal(error.reason, "routing-ambiguous");
+		assert.match(error.message, /axis/);
+		return true;
+	});
+});
+
+test("each axis reroutes down its own declared order: an exhausted class never collapses them silently (§8.4, #155)", async (t) => {
+	const context = await reviewable(t);
+	const { seam, routed, run } = review(context, {
+		answers: bothAnswering(APPROVING),
+		// Both declared readers sit on the exhausted class; each axis declares a
+		// different escape, so the fan-out stays two profiles wide.
+		routing: routing(["reader-a", "reader-b"], [["cloud-reader"], ["cloud-reader-b"]]),
+		blocked: { local: { state: "blocked", until: 900 } },
+	});
+
+	const answered = await run();
+
+	assert.equal(answered.outcome, "approved");
+	assert.deepEqual(
+		seam.asked.map((request) => [request.axis.name, request.profile]),
+		[
+			["review-standards", "cloud-reader"],
+			["review-spec", "cloud-reader-b"],
+		],
+		"neither axis was routed from the other's order",
+	);
+	assert.deepEqual(
+		routed.map((call) => call.axis),
+		["review-standards", "review-spec"],
+		"the seam is asked once per axis, never once for the pair",
+	);
+	assert.equal(answered.detail.routing.collapsed, false);
+});
+
+test("a fan-out that could only fill one axis says so in its verdict (§8.4, #155)", async (t) => {
+	const context = await reviewable(t);
+	// One escape between them: §11.5 declared two profiles and the run arrived at
+	// one, which is a legal verdict and must not be an invisible one.
+	const { seam, run } = review(context, {
+		answers: bothAnswering(APPROVING),
+		routing: routing(["reader-a", "reader-b"], [["cloud-reader"], ["cloud-reader"]]),
+		blocked: { local: { state: "blocked", until: 900 } },
+	});
+
+	const answered = await run();
+
+	assert.equal(answered.outcome, "approved");
+	assert.deepEqual(seam.asked.map((request) => request.profile), ["cloud-reader", "cloud-reader"]);
+	assert.equal(answered.detail.routing.collapsed, true);
+	assert.match(answered.detail.routing.note, /both review axes ran on cloud-reader/);
+	assert.deepEqual(
+		answered.detail.routing.axes.map((axis) => [axis.declared, axis.profile, axis.rerouted]),
+		[
+			["reader-a", "cloud-reader", true],
+			["reader-b", "cloud-reader", true],
+		],
+	);
+});
+
+test("two axes an operator wrote onto one profile is not reported as a collapse (§8.4, #155)", async (t) => {
+	const context = await reviewable(t);
+	const { run } = review(context, { answers: bothAnswering(APPROVING), routing: routing(["reader", "reader"]) });
+
+	const answered = await run();
+
+	assert.equal(
+		answered.detail.routing.collapsed,
+		false,
+		"§11.5 makes the operator write it twice, so they already know; the note is for the run arriving there itself",
+	);
+});
+
+test("an axis with no routable profile left releases the ticket untouched, minting nothing (§8.10, #155)", async (t) => {
+	const context = await reviewable(t);
+	const { seam, run } = review(context, {
+		answers: bothAnswering(APPROVING),
+		blocked: { local: { state: "blocked", until: 900 } },
+	});
+
+	const answered = await run();
+
+	assert.equal(answered.outcome, "routes-exhausted");
+	assert.equal(dispositionOf(routeOutcome("review", answered.outcome)).disposition, "released");
+	assert.deepEqual(seam.asked, [], "no reviewer was launched into a class a provider had already refused");
+	assert.deepEqual(
+		context.store.readEvents({ kind: "attempt.launched" }).filter((event) => event.phase === "review"),
+		[],
+		"and no axis attempt was minted for a launch that could not happen",
+	);
+});
+
+test("an axis reroute is free: it spends no automation budget and asks for none (§8.6, #155)", async (t) => {
+	const context = await reviewable(t);
+	const asked = [];
+	const answers = { "review-standards": { outcome: "provider-refused", record: null }, "review-spec": APPROVING };
+	let standardsTurn = 0;
+	const { run } = review(context, {
+		routing: routing(["reader-a", "reader-b"], [["cloud-reader"], []]),
+		answers: {
+			...answers,
+			"review-standards": () => (standardsTurn++ === 0 ? { outcome: "provider-refused", record: null } : APPROVING),
+		},
+	});
+
+	const answered = await run({ automationRetry: async (request) => asked.push(request) });
+
+	assert.equal(answered.outcome, "approved");
+	assert.deepEqual(asked, [], "the budget was never asked: the attempt the reroute replaces did nothing wrong");
+	assert.deepEqual(
+		context.store
+			.readEvents({ kind: "stage.resolved" })
+			.filter((event) => event.payload.budget !== null)
+			.map((event) => event.payload.action),
+		[],
+		"and nothing charged one either",
+	);
+});
+
+test("the fan-out refuses without a dispatch seam rather than routing an axis blind (§8.4, #155)", async (t) => {
+	const context = await reviewable(t);
+	const { run } = review(context, { answers: bothAnswering(APPROVING) });
+
+	await assert.rejects(() => run({ routeAxis: null }), (error) => {
 		assert.equal(error.reason, "review-unroutable");
-		assert.equal(error.details.at, "routing");
+		assert.equal(error.details.at, "seam");
 		return true;
 	});
 });
@@ -738,10 +897,14 @@ function reviewChain(chain, seam) {
 		run: chain.run,
 		ticket: chain.ticket,
 		attempt: chain.attempt,
-		routing: routing(),
-		labels: [],
 		workerConfig: chain.workerConfig,
 		runAxis: seam.runAxis,
+		routeAxis: ({ index }) =>
+			selectRoute({
+				order: dispatchOrder(routing(), { role: "review", axis: index }),
+				profiles: PROFILES,
+				exhaustion: { settle: async () => ({ state: "available", until: null }) },
+			}),
 		actor: "controller",
 		now: () => FIXED_NOW,
 	});

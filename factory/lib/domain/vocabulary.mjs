@@ -197,6 +197,20 @@ export const ATTEMPT_OUTCOMES = Object.freeze([
 	 * rather than as anything the worker did.
 	 */
 	"provider-refused",
+	/**
+	 * #155: **every profile this role can route to belongs to a class §9.8's memo
+	 * has locked.** Not a worker outcome at all — no worker ran, and none can
+	 * until a memo expires and a probe re-admits its class — but it is an attempt
+	 * outcome because it is what the walk answers *instead of* minting the next
+	 * attempt, and §8.10 has to route it somewhere.
+	 *
+	 * It is its own word rather than a second `provider-refused` because the two
+	 * ask for different things: a refusal says *this provider is out*, and this
+	 * says *the run is out of providers for this role*. The first is answered by
+	 * rerouting and the second is answered by waiting, and an operator reading
+	 * one as the other would go looking at the wrong provider.
+	 */
+	"routes-exhausted",
 ]);
 
 /**
@@ -374,6 +388,23 @@ export const STAGE_ACTIONS = Object.freeze({
 	 * outcome that carried it (§8.8).
 	 */
 	verdict: "verdict",
+	/**
+	 * #155 — the same work, on the next profile the role's declared order names,
+	 * because the class the last one ran on is memo-locked (§9.8).
+	 *
+	 * It is not one of §8.5's tiers and not §8.10's automation retry, and the
+	 * reason is the same in both directions: **nothing failed.** A tier asks *is
+	 * the prior attempt's work worth keeping* and a retry says *the automation
+	 * broke* — a reroute answers neither question, because the provider refused
+	 * to serve the attempt and the attempt is what has to happen somewhere else.
+	 *
+	 * **It spends no budget**, which is why it is an action of its own rather
+	 * than a retry with a `null` budget: `BUDGET_KEY_FOR_ACTION` is what makes an
+	 * unbounded retry unconstructible, and a fourth key in it that charged
+	 * nothing would put a hole in exactly that property. What bounds a reroute is
+	 * that each routable profile is spent at most once (§9, `worker/dispatch.mjs`).
+	 */
+	reroute: "reroute",
 	/** §8.5 tier 1 — a fresh attempt from the prior attempt's tip. */
 	repair: "repair",
 	/** §8.5 tier 2 — a fresh attempt from the pinned base, work discarded. */

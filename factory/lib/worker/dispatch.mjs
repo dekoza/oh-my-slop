@@ -148,16 +148,26 @@ function route({ profile, class: className, declared, considered }) {
 		profile,
 		class: className,
 		rerouted,
-		// The reason names the class that moved the dispatch, not the fact that it
-		// moved: "this ran on cloud" is half an answer, and the half an operator
-		// reading a green ticket a week later is missing is which provider was out.
-		reason: rerouted ? `${blockedClasses(considered).join(", ")} exhausted (§9.8)` : null,
+		// The reason names what moved the dispatch, not the fact that it moved:
+		// "this ran on cloud" is half an answer, and the half an operator reading a
+		// green ticket a week later is missing is *why not the declared one*. There
+		// are two ways past a candidate and they call for different things — an
+		// exhausted class is a provider to go and look at, and a spent one is this
+		// ticket having already tried there.
+		reason: rerouted ? passedOver(considered, profile) : null,
 		considered: Object.freeze(considered),
 	});
 }
 
-function blockedClasses(considered) {
-	return [...new Set(considered.filter((seen) => seen.state === "blocked").map((seen) => seen.class))];
+function passedOver(considered, chosen) {
+	return considered
+		.filter((seen) => seen.profile !== chosen)
+		.map((seen) =>
+			seen.state === "blocked"
+				? `${seen.profile} on ${seen.class} is provider-exhausted (§9.8)`
+				: `${seen.profile} on ${seen.class} was already dispatched for this ticket`,
+		)
+		.join("; ");
 }
 
 function entry(seen) {

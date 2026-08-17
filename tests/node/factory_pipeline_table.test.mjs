@@ -137,12 +137,26 @@ test("a pair the table does not map is a typed refusal, never a fallthrough (§8
 	);
 });
 
-test("provider-refused routes to a budgetless release, for a builder and for a reviewer (§8.10, #154)", () => {
+test("provider-refused reroutes, budgetlessly, for a builder and for a reviewer (§8.10, #154, #155)", () => {
 	for (const phase of ["implement", "review"]) {
 		const row = routeOutcome(phase, "provider-refused");
-		assert.equal(row.action, "dispose", `${phase}: the execution settles — a refused provider cannot be retried into`);
-		assert.equal(row.disposition, "released", `${phase}: the ticket goes back untouched; the provider failed it, not the work`);
+		assert.equal(row.action, "reroute", `${phase}: the same work goes to the next routable profile, not to a disposition`);
 		assert.equal(row.budget, null, `${phase}: no budget is charged for the provider's fault`);
+		assert.equal(row.disposition, null, `${phase}: nothing settles here — the attempt it replaces did nothing wrong`);
+	}
+});
+
+test("routes-exhausted is a budgetless release of its own, distinguishable from a worker that failed (§8.10, #155)", () => {
+	for (const phase of ["implement", "review"]) {
+		const row = routeOutcome(phase, "routes-exhausted");
+		assert.equal(row.action, "dispose", `${phase}: the run has nowhere to send this work`);
+		assert.equal(row.disposition, "released", `${phase}: the ticket goes back untouched; no provider was available, and no label is owed`);
+		assert.equal(row.budget, null, `${phase}: no budget is charged for the providers' caps`);
 		assert.equal(row.reasonClass, null, `${phase}: no reason class — released carries none (§8.9)`);
+		assert.notEqual(
+			row.outcome,
+			routeOutcome(phase, "worker-failed").outcome,
+			`${phase}: a worker that failed and a run out of routes are different facts`,
+		);
 	}
 });
