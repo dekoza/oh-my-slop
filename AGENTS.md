@@ -26,6 +26,10 @@ Run these commands when you touch the related areas. Do not skip them.
 - Markdown reference validator: `uv run python scripts/validate_refs.py`
 - Node extension tests: `node --test tests/node/*.mjs`
 
+`tests/live/` is deliberately outside that glob: those scripts probe a running Herdr server and
+one of them starts a paid model session. Run them by hand, never from a suite — see
+`tests/live/README.md`.
+
 Targeted minimums:
 
 - Any change under `skills/` or to markdown references: `uv run pytest tests/test_validate_refs.py tests/test_skill_frontmatter.py`
