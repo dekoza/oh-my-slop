@@ -167,6 +167,27 @@ export const EVENT_SOURCES = Object.freeze({
 });
 
 /**
+ * Which §4.3 `source` a §4.5 actor writes as.
+ *
+ * The actor grammar is `controller` or `operator:<verb>` (monitor O6, §13.D) and
+ * the source vocabulary is the six above, so the mapping is a collapse: every
+ * operator verb writes as `operator`. It lives here, with `EVENT_SOURCES`,
+ * because three callers need it from two layers — the effect pair, the
+ * truncation primitive, and §12.6's expiry — and the state layer cannot import
+ * from `effects/`. Three copies of one ternary is how the day arrives that a
+ * record from `operator:cleanup-execute` is attributed to the controller.
+ *
+ * It does not validate: the grammar's refusal is §4.5's, at the one place an
+ * actor enters a pair.
+ *
+ * @param {string} actor
+ * @returns {string} a member of `EVENT_SOURCES`
+ */
+export function sourceForActor(actor) {
+	return actor === "controller" ? "controller" : "operator";
+}
+
+/**
  * The payload key holding a foreign system's own timestamp string. Gitea
  * returns RFC3339 with the server's local offset; we store integer UTC
  * milliseconds *and* keep the original, because normalising in place destroys
@@ -177,9 +198,18 @@ export const FOREIGN_TIMESTAMP_KEY = "occurred_at_raw";
 export const CONTROLLER_STREAM = "controller";
 export const HEARTBEAT_STREAM = "controller.heartbeat";
 
+/**
+ * What every run stream's name begins with. Named because a reader sometimes
+ * asks about the *class* rather than one run — §12.2's heartbeat boundary is
+ * "the first record of the oldest surviving run stream" — and a second spelling
+ * of `run:` in a `LIKE` somewhere else is a prefix waiting to disagree with this
+ * one.
+ */
+export const RUN_STREAM_PREFIX = "run:";
+
 /** @param {string} runId @returns {string} */
 export function runStream(runId) {
-	return `run:${runId}`;
+	return `${RUN_STREAM_PREFIX}${runId}`;
 }
 
 /**

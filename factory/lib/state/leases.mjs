@@ -217,6 +217,26 @@ export function openLeases(store, { now = Date.now } = {}) {
 			}),
 
 		/**
+		 * The same compare, over a body of several statements.
+		 *
+		 * §12.2's expiry is the shape that needs it: a run's stream deletion
+		 * **cannot be recorded inside the stream**, so the deletion, the projection
+		 * rows it clears, and the `run.expired` on the `controller` stream commit
+		 * together or not at all — and a holder that lost the lease in between
+		 * writes none of them. `attest` cannot express that, and running the body
+		 * outside the compare would put the destructive half of expiry beyond the
+		 * one proof of ownership this module recognises.
+		 *
+		 * @param {object} held
+		 * @param {(tx: { db: object, appendEvent: (input: object) => object }) => unknown} body
+		 * @returns {{ held: boolean, result: unknown }}
+		 */
+		attestIn: (held, body) =>
+			store.transaction((tx) =>
+				holdsLease(tx.db, held) ? { held: true, result: body(tx) } : { held: false, result: null },
+			),
+
+		/**
 		 * Compare-and-delete on the token. There is **no unconditional removal
 		 * path** in this module: `job-pipeline`'s `releaseJobLock` was a bare
 		 * `rmSync`, so any process could drop any owner's lock.

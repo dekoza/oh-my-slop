@@ -42,6 +42,7 @@ import { FactoryRunError, isUsageRefusal } from "./errors.mjs";
 import { HEARTBEAT_INTERVAL_MS, startHeartbeat } from "./heartbeat.mjs";
 import { holdControllerLease } from "./lease-guard.mjs";
 import { preflight } from "./preflight.mjs";
+import { applyExpiry } from "../retention/expiry.mjs";
 import { createProductionPipeline } from "../pipeline/production.mjs";
 import { schedule } from "./scheduler.mjs";
 import { describeScope, PARENT_FLAG, parseScope } from "./scope.mjs";
@@ -324,7 +325,16 @@ async function driveRun(store, hold, context, signals) {
 		);
 	}
 
-	const expiry = applyExpiry();
+	// §12.6: **once per controller invocation, after reconcile and before
+	// preflight, under the controller lease** — the established "state is
+	// authoritative and nothing is in flight" window, and never on a timer, never
+	// mid-run (§14.30). It sits above `openLifecycle` on purpose: this run has no
+	// record yet, so it is not a candidate, and an adopted one is held as `live`.
+	// A failure here propagates rather than being swallowed — a housekeeping pass
+	// that warns and continues is the failure mode §11.2 exists to end, and a run
+	// that could not settle its own history has not established the "nothing is in
+	// flight" premise the rest of this function is written under.
+	const expiry = applyExpiry(store, { retention: context.config.retention, hold, at: startedAt });
 	openLifecycle(hold, entry, { at: startedAt, pane: context.pane });
 	signals.attach(entry.run);
 
@@ -766,25 +776,6 @@ function endReasonOf(checked, requests, breaker, executed = null) {
 	if ((executed?.exhausted?.length ?? 0) > 0) return END_REASON_CAPACITY_EXHAUSTED;
 
 	return END_REASON_DRAINED;
-}
-
-/**
- * §12.6: expiry runs **once per controller invocation, after reconcile and
- * before preflight, under the controller lease** — the established "state is
- * authoritative and nothing is in flight" window.
- *
- * It is a no-op until retention lands, and says so rather than reporting a
- * plausible zero: "reclaimed 0 bytes" and "nothing ran" are different answers to
- * the operator's question, and only one of them is true here.
- */
-function applyExpiry() {
-	return {
-		ran: false,
-		reclaimed_bytes: null,
-		expired_runs: null,
-		missing: "the two retention tiers, the four pins, and expiry (#117)",
-		spec: "§12.6",
-	};
 }
 
 /**

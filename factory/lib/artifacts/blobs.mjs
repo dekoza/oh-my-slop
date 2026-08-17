@@ -177,9 +177,15 @@ export function readArtifactBlob(stateRoot, address, { verify = true } = {}) {
 }
 
 /**
- * Remove a blob. **Deleting one is a mutation outside the database and therefore
- * an effect** (§4.5's `artifact-delete`); this is the mechanism, and sequencing
- * it behind that pair belongs to expiry (§12.6) and cleanup (§12.8).
+ * Remove a blob — the mechanism; who sequences it, and behind what, differs by
+ * caller.
+ *
+ * **Cleanup** (§12.8) sequences it behind §4.5's `artifact-delete` pair, because
+ * an orphaned blob has no ledger row and the pair is the only durable record
+ * that anything meant to remove it. **Expiry** (§12.6) does not: §12.5 makes the
+ * row itself the record, so it commits the dated tombstone first and unlinks
+ * after — a crash in between still resolves to `unavailable(retention-expired)`
+ * and the next pass re-attempts every tombstone. See `retention/expiry.mjs`.
  *
  * @param {string} stateRoot
  * @param {{ algorithm?: string, digest: string }} address

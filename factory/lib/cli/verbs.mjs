@@ -79,16 +79,25 @@ export const VERB_TABLE = Object.freeze({
 		summary: "request a drain at the next ticket boundary",
 		spec: "§10.5",
 	},
+	// The ledger (#94) and retention (#117) have landed, so what these two are
+	// still waiting on is §12.8's own half: the six target kinds, the
+	// untracked-work and live-pane guards, and the re-derived plan digest.
+	//
+	// Two pieces are built and **not yet called from here**, because neither verb
+	// has a handler: `retention/expiry.mjs`'s `planExpiry` answers §12.10's
+	// reclaimable bytes (`doctor` already prints it), and its `applyExpiry` is
+	// §12.6's explicit expiry path for `cleanup-execute` to call under the lease
+	// it will already hold.
 	"cleanup-plan": {
 		requiresConfig: true,
 		summary: "derive a reviewable reclamation plan",
-		missing: "the artifact ledger and the cleanup target whitelist (#118)",
+		missing: "§12.8's target whitelist, its two guards, and the plan digest (#118)",
 		spec: "§12.8",
 	},
 	"cleanup-execute": {
 		requiresConfig: true,
 		summary: "execute a plan whose digest still matches",
-		missing: "the artifact ledger and the cleanup target whitelist (#118)",
+		missing: "§12.8's target whitelist, its two guards, and the plan digest (#118)",
 		spec: "§12.8",
 	},
 	migrate: {
