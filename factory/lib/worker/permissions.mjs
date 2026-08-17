@@ -174,14 +174,25 @@ export function mergeDenies(declared = [], { allow = [] } = {}) {
 /**
  * The settings document injected per session via `--settings` (§6.8).
  *
- * It carries the permissions and nothing else: this file is the worker's whole
+ * It carries the permissions, and — when the run owns the script — the §6.5
+ * agent-state hook, and nothing else: this file is the worker's whole
  * user-level settings surface, so anything else written here would be policy
- * arriving through a channel no operator reads.
+ * arriving through a channel no operator reads. The hook is the one other
+ * surface, and it is a closed one: a `SessionStart` command hook naming the
+ * herdr-managed script the environment copied into this run's own config
+ * root, with no skills, no MCP servers, no personal rules. The script is a
+ * no-op outside a Herdr pane (it exits before doing anything when
+ * `HERDR_ENV`, `HERDR_SOCKET_PATH`, or `HERDR_PANE_ID` is absent), so a
+ * session the controller runs itself — the probe — never sees it act.
  *
- * @param {{ posture: string, extraDenies?: ReadonlyArray<string> }} binding
+ * @param {{ posture: string, extraDenies?: ReadonlyArray<string>, sessionStartHook?: string | null }} binding
+ *   `sessionStartHook` is the hook's command line, or null when the run does
+ *   not own the script it would point at — in which case no `hooks` key at
+ *   all, because a hook naming an absent file is an error on every session
+ *   start rather than the pointer's absence.
  * @returns {object} the settings document, ready to serialize
  */
-export function claudeSettingsDocument({ posture, extraDenies = [] }) {
+export function claudeSettingsDocument({ posture, extraDenies = [], sessionStartHook = null }) {
 	const mode = requireMode(posture);
 	const allow = posture === WORKER_POSTURES.builder ? [...BUILDER_ALLOWED_TOOLS] : [...REVIEWER_ALLOWED_TOOLS];
 	// The document's own allow list is what the cross-check reads: the day one of
@@ -195,6 +206,22 @@ export function claudeSettingsDocument({ posture, extraDenies = [] }) {
 			allow,
 			deny: posture === WORKER_POSTURES.builder ? [...denies] : [...denies, ...REVIEWER_DENIED_TOOLS],
 		},
+		...(sessionStartHook === null
+			? {}
+			: {
+					// Mirrors the wiring herdr installs in the operator's own
+					// settings: `matcher: "*"` fires the hook on every
+					// `SessionStart` source, and the action argument `session` is
+					// what the script's own dispatcher switches on.
+					hooks: {
+						SessionStart: [
+							{
+								matcher: "*",
+								hooks: [{ type: "command", command: sessionStartHook, timeout: 10 }],
+							},
+						],
+					},
+				}),
 	};
 }
 

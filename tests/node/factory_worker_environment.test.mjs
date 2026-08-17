@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,7 @@ import { FactoryWorkerError } from "../../factory/lib/worker/errors.mjs";
 import { prepareWorkerEnvironment, workerConfigRoots } from "../../factory/lib/worker/environment.mjs";
 import { DENY_FLOOR } from "../../factory/lib/worker/permissions.mjs";
 import { claudeTrustDecision, piTrustDecision, readClaudeConfigState, readPiTrust } from "../../factory/lib/worker/trust.mjs";
+import { herdrIntegration } from "./helpers/factory-package.mjs";
 
 /**
  * §6.8's config isolation: a controller-owned environment per runtime, holding
@@ -17,15 +19,30 @@ import { claudeTrustDecision, piTrustDecision, readClaudeConfigState, readPiTrus
 
 const NO_OVERRIDES = Object.freeze({ denies: [], contextFile: null, piExtensions: [] });
 
+/** §6.5's integrations at the version the factory is written against. */
+const PI_INTEGRATION = herdrIntegration("pi", 8);
+const CLAUDE_INTEGRATION = herdrIntegration("claude", 7);
+
+function installIntegrations(home) {
+	writeFileSync(join(home, ".pi", "agent", "extensions", "herdr-agent-state.ts"), PI_INTEGRATION);
+	writeFileSync(join(home, ".claude", "hooks", "herdr-agent-state.sh"), CLAUDE_INTEGRATION);
+}
+
 function lab(t) {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "factory-env-")));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 
-	// An operator's config, as personal as they come.
+	// An operator's config, as personal as they come, on a host where herdr is
+	// installed: the §6.5 agent-state integration sits in both config roots.
 	const home = join(root, "home");
-	for (const path of [join(home, ".pi", "agent", "skills", "secret-skill"), join(home, ".claude", "hooks")]) {
+	for (const path of [
+		join(home, ".pi", "agent", "skills", "secret-skill"),
+		join(home, ".pi", "agent", "extensions"),
+		join(home, ".claude", "hooks"),
+	]) {
 		mkdirSync(path, { recursive: true });
 	}
+	installIntegrations(home);
 	writeFileSync(join(home, ".pi", "agent", "auth.json"), '{"anthropic":"operator-token"}');
 	writeFileSync(join(home, ".pi", "agent", "models.json"), '{"providers":{"local":{"baseUrl":"http://router/v1"}}}');
 	writeFileSync(join(home, ".pi", "agent", "settings.json"), '{"packages":["npm:personal"],"skills":["~/.agents/skills"]}');
@@ -66,12 +83,123 @@ test("the environment is the controller's own, and the operator's rules are simp
 		join(environment.roots.pi, "AGENTS.md"),
 		join(environment.roots.pi, "skills"),
 		join(environment.roots.claude, "CLAUDE.md"),
-		join(environment.roots.claude, "hooks"),
+		join(environment.roots.claude, "settings.json"),
 	]) {
 		assert.equal(existsSync(absent), false, `${absent} leaked out of the operator's config`);
 	}
 	// pi's settings are the controller's: no packages, no skills roots.
 	assert.deepEqual(JSON.parse(readFileSync(join(environment.roots.pi, "settings.json"), "utf8")), {});
+});
+
+test("the §6.5 agent-state integration is promoted into the run's roots, digested and version-observed", (t) => {
+	const context = lab(t);
+
+	const environment = prepare(context);
+
+	// Copied, never inherited: the bytes sit in the controller-owned root the
+	// session runs under, and pi auto-discovers its extension from the agent
+	// directory's extensions/ — no flag, no operator path.
+	const piPath = join(environment.roots.pi, "extensions", "herdr-agent-state.ts");
+	const claudePath = join(environment.roots.claude, "hooks", "herdr-agent-state.sh");
+	assert.equal(readFileSync(piPath, "utf8"), PI_INTEGRATION);
+	assert.equal(readFileSync(claudePath, "utf8"), CLAUDE_INTEGRATION);
+
+	const pi = environment.agentState.pi;
+	assert.equal(pi.installed, true);
+	assert.equal(pi.source, join(context.home, ".pi", "agent", "extensions", "herdr-agent-state.ts"));
+	assert.equal(pi.installed_as, piPath);
+	assert.equal(pi.id, "pi");
+	assert.equal(pi.version, 8);
+	assert.match(pi.digest, /^[0-9a-f]{64}$/);
+	assert.equal(createHash("sha256").update(PI_INTEGRATION).digest("hex"), pi.digest);
+
+	const claude = environment.agentState.claude;
+	assert.equal(claude.installed, true);
+	assert.equal(claude.source, join(context.home, ".claude", "hooks", "herdr-agent-state.sh"));
+	assert.equal(claude.installed_as, claudePath);
+	assert.equal(claude.id, "claude");
+	assert.equal(claude.version, 7);
+	assert.equal(createHash("sha256").update(CLAUDE_INTEGRATION).digest("hex"), claude.digest);
+
+	// §6.8: what a run promoted is recorded by declared path and content digest,
+	// with the version observed out of the file rather than assumed.
+	const facts = environment.manifestFacts();
+	assert.deepEqual(facts.agent_state.pi, { source: pi.source, digest: pi.digest, version: 8 });
+	assert.deepEqual(facts.agent_state.claude, { source: claude.source, digest: claude.digest, version: 7 });
+});
+
+test("an agent-state integration the operator has not installed is recorded absent, and the Claude settings wire no hook", (t) => {
+	const context = lab(t);
+	for (const path of [
+		join(context.home, ".pi", "agent", "extensions", "herdr-agent-state.ts"),
+		join(context.home, ".claude", "hooks", "herdr-agent-state.sh"),
+	]) {
+		rmSync(path, { force: true });
+	}
+
+	const environment = prepare(context);
+
+	for (const kind of ["pi", "claude"]) {
+		const fact = environment.agentState[kind];
+		assert.equal(fact.installed, false, kind);
+		assert.equal(fact.digest, null);
+		assert.equal(fact.version, null);
+		assert.equal(fact.id, null);
+	}
+	assert.equal(existsSync(join(environment.roots.pi, "extensions", "herdr-agent-state.ts")), false);
+	assert.equal(existsSync(join(environment.roots.claude, "hooks", "herdr-agent-state.sh")), false);
+
+	const facts = environment.manifestFacts();
+	assert.deepEqual(facts.agent_state, { pi: null, claude: null });
+
+	// Nothing to point a hook at: the session settings carry permissions only.
+	for (const posture of ["builder", "reviewer"]) {
+		const settings = JSON.parse(
+			readFileSync(join(environment.roots.claude, `settings-${posture}.json`), "utf8"),
+		);
+		assert.equal("hooks" in settings, false);
+	}
+});
+
+test("an integration herdr left outdated or that lost its header is observed as such, not assumed away", (t) => {
+	const context = lab(t);
+	// herdr left the pi integration on the version before the one the factory
+	// is written against, and the claude one is from before the stamped header
+	// existed at all: two different facts, and neither is the other's.
+	writeFileSync(join(context.home, ".pi", "agent", "extensions", "herdr-agent-state.ts"), herdrIntegration("pi", 6));
+	writeFileSync(join(context.home, ".claude", "hooks", "herdr-agent-state.sh"), herdrIntegration("claude", null));
+
+	const environment = prepare(context);
+
+	// Outdated: the observed version is the older number, and it is the
+	// observation rather than a constant that the preflight compares.
+	assert.equal(environment.agentState.pi.version, 6);
+	assert.equal(environment.agentState.pi.installed, true);
+	// No header at all: installed, but unversioned — a different fact than absent.
+	assert.equal(environment.agentState.claude.installed, true);
+	assert.equal(environment.agentState.claude.version, null);
+	assert.equal(environment.agentState.claude.id, null);
+
+	const facts = environment.manifestFacts();
+	assert.deepEqual(facts.agent_state.pi, { source: environment.agentState.pi.source, digest: environment.agentState.pi.digest, version: 6 });
+	assert.deepEqual(facts.agent_state.claude, { source: environment.agentState.claude.source, digest: environment.agentState.claude.digest, version: null });
+});
+
+test("the Claude session settings wire §6.5's hook to the run-owned script, in both postures", (t) => {
+	const context = lab(t);
+
+	const environment = prepare(context);
+
+	const expectedCommand = `bash '${join(environment.roots.claude, "hooks", "herdr-agent-state.sh")}' session`;
+	for (const posture of ["builder", "reviewer"]) {
+		const settings = JSON.parse(
+			readFileSync(join(environment.roots.claude, `settings-${posture}.json`), "utf8"),
+		);
+		assert.deepEqual(Object.keys(settings).sort(), ["hooks", "permissions"]);
+		assert.deepEqual(settings.hooks, {
+			SessionStart: [{ matcher: "*", hooks: [{ type: "command", command: expectedCommand, timeout: 10 }] }],
+		});
+	}
 });
 
 test("a session binds to the controller-owned root through each runtime's own variable", (t) => {
@@ -250,7 +378,7 @@ test("the manifest facts are declarations only — the promoted capability list 
 	const facts = prepare(context, { ...NO_OVERRIDES, denies: ["WebFetch"] }).manifestFacts();
 
 	assert.deepEqual(facts.extra_denies, { declared: ["WebFetch"] });
-	assert.deepEqual(Object.keys(facts).sort(), ["extra_denies", "pi_extensions", "worker_context_file"]);
+	assert.deepEqual(Object.keys(facts).sort(), ["agent_state", "extra_denies", "pi_extensions", "worker_context_file"]);
 	assert.equal(JSON.stringify(facts).includes("credentials"), false);
 });
 
