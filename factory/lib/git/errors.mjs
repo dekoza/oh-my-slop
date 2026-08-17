@@ -26,6 +26,12 @@ export const GIT_ERROR_REASONS = Object.freeze([
 	"git-command-failed",
 	/** A deterministically-named ref already exists and names a different commit. */
 	"branch-collision",
+	/**
+	 * §7.5's replay guard: a rebase whose result carries fewer non-base commits
+	 * than its input, refused rather than adopted (#161) — the silent way a
+	 * branch loses the work it publishes.
+	 */
+	"rebase-dropped-commits",
 	/** A worktree path already occupied by something that is not this attempt's. */
 	"worktree-occupied",
 	/**

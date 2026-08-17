@@ -899,7 +899,11 @@ handled base freshness at all.
   It is created at **the attempt's own base commit** — §7.2's pinned base for a first attempt
   and for a fresh-retry, and **the prior attempt's tip for a repair** (§8.5). A repair's base is
   therefore an attempt branch rather than the default branch, which is what "work preserved"
-  means mechanically.
+  means mechanically. The attempt's own base answers exactly one question — *what did this
+  attempt branch from* — and it is never the boundary of what §7.5 replays, nor what §8.4's
+  review measures against: the values coincide only for a single-attempt execution, §7.5
+  derives its replay set from the graph without consulting this one (#161), and §8.4 reads both
+  ends of its diff off the passing verify record (#165).
 - **Commits** are made under the package's `git-discipline` skill (conventional commits, a
   commit per wave), using a **dedicated factory git identity** set via per-worktree git config,
   plus a mandatory correlation trailer `Factory-Attempt: <run>/<ticket>/<attempt>` — a prompt
@@ -929,8 +933,17 @@ Only the controller integrates, in a controller-owned integration worktree.
 > one job; a rebase conflict at step 3 is therefore a `verify` result, and the same conflict met
 > again by §9.5's compare-and-publish loop is an `integrate` one (§8.10 carries both rows).
 
-1. **Fetch.** If the base moved, **rebase** the attempt branch onto the fresh tip — safe,
-   because the branch is unpublished.
+1. **Fetch.** If the base moved — the branch no longer sits on the fresh tip, a fact read off
+   the graph and never off an attempt's recorded base — **rebase** the attempt branch onto it:
+   safe, because the branch is unpublished. **The upstream of the rebase is the fresh tip
+   itself**, so the replay set is every commit the ticket execution produced that is not
+   already on the base branch, however many attempts contributed to it (§8.5). An attempt's
+   **own** base (§7.3) is the prior attempt's tip for a repair, and bounding the replay with it
+   excludes the implement commit the repair builds on (#161). A rebase whose result carries
+   fewer non-base commits than its input is **refused as a typed failure and never adopted**
+   (§11.2), whatever the drop's mechanism: a branch that quietly lost a commit satisfies every
+   downstream measure — §14.13 measures the commit being published, attestation compares heads
+   — while publishing half the work.
 2. Before a destructive rebase, **the pre-rebase head is preserved under a local evidence ref**
    `refs/factory/evidence/<attempt_id>`. Evidence survives by contract, not by reflog.
 3. **A rebase conflict is a typed outcome** ending the integration step.
@@ -1104,6 +1117,18 @@ transcript, ticket snapshot and diff as the only inputs. **Model diversity is av
 per-run configuration but is not mandated** — it would constrain model routing for a benefit
 nobody can measure.
 
+**The diff both axes read is the publishable diff, and both of its ends are the passing verify
+record's.** That record's base is the fresh base-branch tip the branch sits on after §7.5's
+step-1 rebase — the boundary of what will be published — and its head is the exact commit
+§8.2's checks passed at, so the review and the checks measure one value (§14.13). When §9.5's
+compare-and-publish loop later re-rebases onto a base that moved during review, the verdicts
+keep naming the boundary they were rendered against (§8.7) rather than implying they covered
+the moved one. A walking attempt's **own** base (§7.3) is the prior attempt's tip for a repair
+(§8.5), and a review diffed from it would brief both axes on the repair's delta alone while
+their verdicts gate the publication of the whole chain — §8.7 would then record approvals whose
+scope is a subset of the published change (#165). A repair's re-review therefore covers the
+whole chain by construction, and neither end of the diff is a value a caller can supply.
+
 **Ordering short-circuit.** A failed `verify` goes **straight to repair** with the check output
 as evidence; **the reviewer only ever sees mechanically-passing code.** This sharpens the
 reviewer's brief to "is this right and clean" rather than "is this broken".
@@ -1227,8 +1252,9 @@ runs should stop, cast by whoever happened to add it.
 
 The controller writes a **per-attempt immutable attestation artifact**, referenced by digest
 (never embedded): the exact published commit; every check with its command, exit code,
-duration, and required flag; **both** review verdicts with blocking **and** advisory findings;
-and the before/after HEAD guard result.
+duration, and required flag; **both** review verdicts with blocking **and** advisory findings,
+each naming the base and head it was rendered against (§8.4, #165); and the before/after HEAD
+guard result.
 
 A summary lands in §7.5's machine-parseable PR-body block and in the ticket comment — advisory
 findings surfaced there, blocking findings never. This is what makes "the controller verified
@@ -2529,3 +2555,5 @@ touching everything twice.
 | 2026-08-17 | #151 makes an **unharvested attempt's branch evidence on its disposition**. §8.10 harvests what an outbox claims; an attempt that never wrote one has still created a branch, and §7.7 makes that branch the only copy of the work on it — so on #114 a complete implementation was recoverable only because an operator read the factory-private clone by hand. §8.9's block gains a fourth element: every attempt of the ticket execution, with its branch, the head **git answers now** (§5.2 — never the outbox's claim nor the mint's record), and its commit count against **its own** base (§7.4). It is read for every disposition and every attempt outcome rather than for the endings that harvest nothing, because a list of which outcomes those are is a list somebody extends without extending — and the failure that permits is the silent one, "nothing was built" reported over work sitting on a branch. Every answer the read can get stays distinguishable and none is spelled as the absence of another (§11.2): commits, no commits, no branch, no answer from git, and no base recorded to count against, with **the attempts not listable** and **no read at all** distinct from all five. The read rides the comment and **not the digested intent** — every other field of the block is a function of durable state, and digesting a branch head would make a §10.4 re-entry that read a moved head a §4.5 payload conflict instead of the comment already posted; the one ending that therefore carries nothing is §9.6's abandon boundary, which writes no comment at all (#159). The **remote is deliberately not consulted** — §7.7 makes an attempt branch absent from it by construction, so an `ls-remote` would answer "absent" for exactly the attempts the read exists for, and §5.4 already names `git-local` for this. The read never throws: a settlement lost to a failed evidence read leaves the ticket claimed with nothing on it, which is the one state §8.9 has no word for. §7.7 and §8.9 corrected in place. | #151 |
 | 2026-08-17 | #156 replaces §6.4's workspace-per-attempt with **one workspace per run and a tab per attempt**. The original reasoning — a workspace rather than a split of the controller's own pane, because a `--foreground` start may not be in a Herdr pane at all — rules out the controller's pane and never argued for one workspace *per attempt*; the workspace list is the operator's top-level navigation, and run `01M06G9WM4J389YE9AQ317GK0B` on #114 filed four of them (w2C–w2F) for one ticket among the operator's real projects. The workspace is a **`workspace-open` effect keyed by the run** (§4.5), so it is opened exactly once and a re-entering controller adopts the committed one instead of opening a second; its probe reads Herdr's workspace list for the run's **deterministic label**, because Herdr carries no metadata token on a workspace the way `pane report-metadata` does on a pane, and that probe is what recovers an id a crash left only in Herdr. It is opened by the first attempt that needs one rather than during run startup: a refusal then is an attempt's `worker-launch-failed` (§8.10), which is budgeted and counted, while the same refusal during startup would have no §10.3 end reason to be reported as — and a run that launches no worker leaves no workspace behind. Correlation is untouched: a pane is still found by its `FACTORY_ATTEMPT` token and never by its workspace or tab (§5.5). §13.B extends by construction — the controller closes no tab and no workspace either — and the **accepted cost is recorded in §6.4**: closing the factory workspace now ends every live lane of that run at once, recoverable through §6.6's `dead-worker` and §5.5's adoption, and never repaired by opening a replacement. `tab create --workspace --cwd --label --no-focus` and its answer shape were read off the installed Herdr 0.8.0 rather than assumed. | #156 |
 | 2026-08-17 | #160 restores §6.2's probe to proving the session workers actually run. Both runtime adapters passed the skill-delivery flags to the **probe** and not to the **worker session**: every Claude worker launched without the §6.3 plugin (`plugin list` under the live worker binding: "No plugins installed"), every pi worker without the pinned roots — and pi's default discovery, which the probe's `--no-skills` suppressed, loaded four of the operator's personal skills from `~/.agents/skills`, a root `PI_CODING_AGENT_DIR` does not fence, inverting both §6.8 guarantees at once. §6.2 gains the composed-binding rule: the worker session's argument set is the primary object, the probe's is that set plus its probe-only IO flags and nothing else, held by a test at the launch seam (worker argv = probed argv − probe-only flags + profile flags). §6.8 records the measured discovery leak and makes `--no-skills --skill <root>` load-bearing isolation on every pi worker session. A launch whose closure cannot reach the session — no proven plugin directory, no pinned skills roots, a plugin cache wiped since preflight — is a typed automation failure before the attempt spends. §6.7's acceptance matrix (#115) is untouched by construction but noted: anything it proves must run the worker binding. | #160 |
+| 2026-08-17 | #161 corrects §7.5's replay boundary. The rebase used the attempt's **own** base (§7.3) as its upstream, and a repair's own base is the prior attempt's tip (§8.5) — so a repair's replay set excluded the implement commit it builds on. The lucky outcome was #114's rebase conflict over sound, already-verified work: the repair edited a file the implement commit created, which does not exist at the fresh tip. The dangerous one was a repair touching only files the implement did not create, which replays **cleanly** and yields a branch carrying the repair without the work it repairs — verified, attested and published, since §14.13 measures the commit being published and attestation compares heads, and both are satisfied by a branch that quietly lost a commit. §7.5's upstream is now **the fresh tip itself**, so the replay set is every commit the ticket execution produced that is not already on the base branch, whatever attempt chain produced it; whether the base moved is read off the graph — is the branch already sitting on the fresh tip — never off a recorded base, which a §9.5 re-rebase has already made stale once; and a rebase whose result carries fewer non-base commits than its input is refused as a typed `rebase-dropped-commits` failure and never adopted — the guard that makes the silent case impossible rather than unlikely (§11.2), whatever the drop's mechanism, including git dropping a commit whose patch a human already cherry-picked upstream. §7.3 separates the two meanings the one value conflated: what an attempt branched from and the boundary of what §7.5 replays coincide only for a single-attempt execution, and neither is inferred from the other. §7.3 and §7.5 corrected in place. | #161 |
+| 2026-08-17 | #165 corrects §8.4's review boundary — #161's conflation one phase earlier. `reviewPhase`'s contract said the base a review measures against is never a repairing attempt's own tip, and the caller violated it: the axes were prompted with the **walking attempt's own §7.3 base**, which for a repair is the prior attempt's tip (§8.5) — so on a repair chain both reviewers read only the repair's delta while their two approved verdicts gated the publication of the whole chain, and §8.7 recorded approvals whose scope is a subset of the published change. The exegesis is settled for **the publishable diff**, on §8.4's own structure: a failed verify goes straight to repair, so a repair after one has *no* previously reviewed state — the "delta since last reviewed" reading leaves the implement commit reviewed by nobody. **Both ends of the diff are the passing verify record's** — its `base_commit` is the fresh base-branch tip the branch sits on after §7.5's step-1 rebase, its `head` the exact commit §8.2's checks passed at — which also retires the harvest-head read that went stale whenever verify rebased, and makes the review and the checks measure one value (§14.13) — after a §9.5 re-rebase the verdicts keep naming the boundary they were rendered against rather than implying they covered the moved one. Neither end is a parameter: the attempt's own base cannot reach the phase at all, the same separation-by-removal #161 applied to §7.5. Each axis's durable result and §8.7's attestation now name the base and head the verdict was rendered against, so an approval's scope is a checkable claim. §7.3, §8.4 and §8.7 corrected in place. | #165 |
