@@ -16,7 +16,7 @@ import { resolveStage } from "../../factory/lib/pipeline/stages.mjs";
 import { LEASE_NAMES, openLeases } from "../../factory/lib/state/leases.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
-import { commitInto, moveRemoteBase, workedAttempt } from "./helpers/factory-git.mjs";
+import { commitInto, moveRemoteBase, repairAttempt, workedAttempt } from "./helpers/factory-git.mjs";
 import { fakeGitea, giteaIssue, giteaPull } from "./helpers/factory-tracker.mjs";
 import { FIXED_NOW, manualTimers } from "./helpers/factory-store.mjs";
 
@@ -33,8 +33,11 @@ const git = (dir, args) => execFileSync("git", ["-C", dir, ...args], { encoding:
 const GREEN = [{ name: "unit", command: "git rev-parse HEAD", timeout: 60, severity: "required", expectedFailureExitCodes: [1] }];
 const RED = [{ name: "unit", command: "exit 1", timeout: 60, severity: "required", expectedFailureExitCodes: [1] }];
 
-async function integrating(t, { status = {}, ...options } = {}) {
-	const fixture = await workedAttempt(t, options);
+async function integrating(t, { status = {}, repairs = [], ...options } = {}) {
+	let fixture = await workedAttempt(t, options);
+	for (const repair of repairs) {
+		fixture = await repairAttempt(fixture, repair);
+	}
 	const { store } = fixture;
 	const leases = openLeases(store, { now: () => FIXED_NOW });
 	const hold = holdControllerLease({ store, leases, timers: manualTimers().api });
@@ -52,7 +55,6 @@ async function integrating(t, { status = {}, ...options } = {}) {
 		ticket: fixture.ticket,
 		attempt: fixture.attempt,
 		branch: fixture.branch,
-		baseCommit: fixture.base.commit,
 		baseBranch: "main",
 		checks: GREEN,
 		reader: createGiteaReader({ repo: "acme/widgets", login: "gitea", request: gitea.request }),
@@ -135,6 +137,102 @@ test("verify rebases onto the fresh base and runs the set at the result, under t
 	assert.equal(git(fixture.clone.dir, ["rev-parse", verified.detail.evidence_ref]), fixture.head);
 
 	// §9.5: the lease is given up at the end of the span, so review runs without it.
+	assert.equal(fixture.leases.inspect(LEASE_NAMES.integration), null);
+});
+
+test("a repair's verify replays the implement commit it builds on, not only the repair (#161, §7.5, §8.5)", async (t) => {
+	// The dangerous half of #161: the repair touches only a file the implement
+	// commit did not create, so a rebase that excluded the implement commit would
+	// replay **cleanly** — and a branch that quietly lost the work it repairs
+	// would verify, and publish, as green.
+	const fixture = await integrating(t, {
+		files: { "worker.txt": "the implement's work\n" },
+		repairs: [{ ordinal: 2, files: { "repair.txt": "the repair's own file\n" } }],
+	});
+	const implementHead = fixture.ownBase;
+	moveRemoteBase(t, fixture.remote);
+
+	const verified = await integrationVerify(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(verified.outcome, "passed");
+	// §7.5: the replay set is every commit the ticket execution produced that is
+	// not already on the base branch — both of them, not the repair alone.
+	assert.equal(verified.detail.commits.length, 2, "the implement commit was dropped from the replay set");
+	// The implement's work exists at the head being published.
+	assert.doesNotThrow(
+		() => git(fixture.clone.dir, ["cat-file", "-e", `${verified.detail.head}:worker.txt`]),
+		"the head being published does not carry the implement commit's file",
+	);
+	// And the pre-rebase evidence ref holds the repair attempt's head as the
+	// worker left it, implement commit included.
+	assert.equal(git(fixture.clone.dir, ["rev-parse", verified.detail.evidence_ref]), fixture.head);
+	assert.doesNotThrow(() => git(fixture.clone.dir, ["merge-base", "--is-ancestor", implementHead, fixture.head]));
+});
+
+test("a repair editing a file the implement commit created verifies clean, not as a conflict (#161, §7.5)", async (t) => {
+	// #114's observed shape: the repair edits a file that does not exist on the
+	// base branch at all. A rebase whose replay set excludes the implement commit
+	// has nothing to apply the edit to, and reports a conflict over work that is
+	// sound and already verified.
+	const fixture = await integrating(t, {
+		files: { "worker.txt": "the implement's work\n" },
+		repairs: [{ ordinal: 2, files: { "worker.txt": "the implement's work, repaired\n" } }],
+	});
+	moveRemoteBase(t, fixture.remote);
+
+	const verified = await integrationVerify(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(verified.outcome, "passed");
+	assert.equal(verified.detail.commits.length, 2);
+	assert.equal(
+		git(fixture.clone.dir, ["show", `${verified.detail.head}:worker.txt`]),
+		"the implement's work, repaired",
+	);
+});
+
+test("a repair chain of two tiers publishes all three commits, through the same path verify took (#161, §7.5, §8.5, §8.6)", async (t) => {
+	// Two repairs stacked on one implement — ordinals 4 and 5, because §8.4's
+	// review axes mint 2 and 3 into the same ordinal space. The base then moves
+	// during review, so §9.5's compare-and-publish loop re-rebases on the
+	// publication path too: both halves of rebaseAndVerify's double duty.
+	const fixture = await integrating(t, {
+		files: { "worker.txt": "the implement's work\n" },
+		repairs: [
+			{ ordinal: 4, files: { "worker.txt": "repaired once\n" } },
+			{ ordinal: 5, files: { "repair-two.txt": "repaired twice\n" } },
+		],
+	});
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+	moveRemoteBase(t, fixture.remote);
+
+	const integrated = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(integrated.outcome, "integrated");
+	const remoteHead = git(fixture.remote, ["rev-parse", `refs/heads/${fixture.branch}`]);
+	assert.equal(remoteHead, integrated.detail.head);
+	const fresh = git(fixture.clone.dir, ["rev-parse", "refs/factory/base/main"]);
+	assert.equal(git(fixture.clone.dir, ["rev-list", "--count", `${fresh}..${remoteHead}`]), "3");
+	assert.equal(git(fixture.clone.dir, ["show", `${remoteHead}:worker.txt`]), "repaired once");
+	assert.doesNotThrow(() => git(fixture.clone.dir, ["cat-file", "-e", `${remoteHead}:repair-two.txt`]));
+	assert.equal(fixture.gitea.pulls.length, 1);
+});
+
+test("a rebase that drops a commit fails verify as a typed refusal, and nothing is adopted (#161, §7.5, §11.2)", async (t) => {
+	const fixture = await integrating(t);
+	// A human cherry-picked the attempt's only commit onto the default branch, so
+	// the replay drops it as already applied and the result carries nothing.
+	moveRemoteBase(t, fixture.remote, { "worker.txt": "attempt work\n" });
+
+	await assert.rejects(
+		integrationVerify(fixture.store, fixture.clone, fixture.context),
+		(error) => error.name === "FactoryGitError" && error.reason === "rebase-dropped-commits",
+	);
+
+	// The branch still holds the worker's work, nothing reached the remote, and
+	// the lease is back for the next lane.
+	assert.equal(git(fixture.clone.dir, ["rev-parse", `refs/heads/${fixture.branch}`]), fixture.head);
+	assert.throws(() => git(fixture.remote, ["rev-parse", "--verify", `refs/heads/${fixture.branch}`]));
 	assert.equal(fixture.leases.inspect(LEASE_NAMES.integration), null);
 });
 

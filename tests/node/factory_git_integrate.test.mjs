@@ -15,7 +15,7 @@ import {
 	releaseIntegrationWorktree,
 } from "../../factory/lib/git/integrate.mjs";
 import { evidenceRef, integrationWorktreePath } from "../../factory/lib/git/isolation.mjs";
-import { commitInto, moveRemoteBase, TEST_HOLD as HOLD, workedAttempt } from "./helpers/factory-git.mjs";
+import { commitInto, moveRemoteBase, repairAttempt, TEST_HOLD as HOLD, workedAttempt } from "./helpers/factory-git.mjs";
 import { FIXED_NOW } from "./helpers/factory-store.mjs";
 
 /**
@@ -96,12 +96,12 @@ test("a rebase onto an unmoved base is up-to-date and rewrites nothing (§7.5)",
 
 	const rebased = await rebaseAttempt(clone, {
 		worktreePath: opened.path,
-		baseCommit: base.commit,
 		onto: base.commit,
 	});
 
 	assert.equal(rebased.result, REBASE_RESULTS.upToDate);
 	assert.equal(rebased.head, head);
+	assert.equal(rebased.previousBase, base.commit);
 });
 
 test("a moved base is rebased onto the fresh tip, and the branch adopts it under compare-and-swap (§7.5)", async (t) => {
@@ -112,11 +112,11 @@ test("a moved base is rebased onto the fresh tip, and the branch adopts it under
 
 	const rebased = await rebaseAttempt(clone, {
 		worktreePath: opened.path,
-		baseCommit: base.commit,
 		onto: fresh.commit,
 	});
 
 	assert.equal(rebased.result, REBASE_RESULTS.rebased);
+	assert.equal(rebased.previousBase, base.commit);
 	assert.notEqual(rebased.head, head);
 	assert.doesNotThrow(
 		() => git(opened.path, ["merge-base", "--is-ancestor", fresh.commit, rebased.head]),
@@ -152,7 +152,6 @@ test("a rebase conflict is a typed verdict, aborted and never resolved by the co
 
 	const rebased = await rebaseAttempt(clone, {
 		worktreePath: opened.path,
-		baseCommit: base.commit,
 		onto: fresh.commit,
 	});
 
@@ -163,6 +162,59 @@ test("a rebase conflict is a typed verdict, aborted and never resolved by the co
 	assert.equal(rebased.head, head);
 	assert.equal(git(opened.path, ["rev-parse", "HEAD"]), head);
 	assert.equal(rebaseInProgress(opened.path), false, "a rebase was left in progress for the next caller to walk into");
+});
+
+test("a rebase whose result carries fewer non-base commits than its input is refused, never adopted (#161, §7.5, §11.2)", async (t) => {
+	const { store, clone, remote, attempt, branch, head } = await workedAttempt(t);
+	// A human cherry-picked the attempt's work onto the default branch: the
+	// commit's patch is already upstream, so git's replay drops it and the rebase
+	// completes "cleanly" with the work gone. That is the silent case the guard
+	// exists to make impossible.
+	moveRemoteBase(t, remote, { "worker.txt": "attempt work\n" });
+	const fresh = await clone.fetchBase({ baseBranch: "main" });
+	const opened = await openIntegrationWorktree(clone, { storeDir: store.storeDir, attempt, branch });
+
+	await assert.rejects(
+		rebaseAttempt(clone, { worktreePath: opened.path, onto: fresh.commit }),
+		(error) => {
+			assert.equal(error.name, "FactoryGitError");
+			assert.equal(error.reason, "rebase-dropped-commits");
+			assert.deepEqual(error.details.expected, [head]);
+			assert.deepEqual(error.details.found, []);
+			return true;
+		},
+	);
+
+	// Never performed: the branch still holds exactly what the worker wrote — the
+	// shrunken result exists only in the controller's scratch worktree.
+	assert.equal(git(clone.dir, ["rev-parse", `refs/heads/${branch}`]), head);
+});
+
+test("the replay set is derived from the graph, so a repair's own base never bounds it (#161, §7.5)", async (t) => {
+	// The seam itself: `rebaseAttempt` takes one base — the fresh tip that is both
+	// the upstream and the target — so there is no argument through which an
+	// attempt's own base (§7.3) could shrink the replay set.
+	const fixture = await workedAttempt(t, { files: { "worker.txt": "the implement's work\n" } });
+	const repaired = await repairAttempt(fixture, { ordinal: 2, files: { "repair.txt": "the repair\n" } });
+	moveRemoteBase(t, repaired.remote);
+	const fresh = await repaired.clone.fetchBase({ baseBranch: "main" });
+	const opened = await openIntegrationWorktree(repaired.clone, {
+		storeDir: repaired.store.storeDir,
+		attempt: repaired.attempt,
+		branch: repaired.branch,
+	});
+
+	const rebased = await rebaseAttempt(repaired.clone, { worktreePath: opened.path, onto: fresh.commit });
+
+	assert.equal(rebased.result, REBASE_RESULTS.rebased);
+	// Both commits — the implement's and the repair's — sit on the fresh tip.
+	assert.equal(git(opened.path, ["rev-list", "--count", `${fresh.commit}..${rebased.head}`]), "2");
+	assert.doesNotThrow(() => git(opened.path, ["cat-file", "-e", `${rebased.head}:worker.txt`]));
+	assert.doesNotThrow(() => git(opened.path, ["cat-file", "-e", `${rebased.head}:repair.txt`]));
+	// And the recorded previous base is the base-branch commit the chain sat on,
+	// not the repair's own base (the prior attempt's tip).
+	assert.equal(rebased.previousBase, repaired.base.commit);
+	assert.notEqual(rebased.previousBase, repaired.ownBase);
 });
 
 function rebaseInProgress(worktreePath) {

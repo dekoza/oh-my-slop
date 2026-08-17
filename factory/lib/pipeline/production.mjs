@@ -338,6 +338,10 @@ async function withAttemptModelSlot(context, opened, attempt, work) {
 	}
 }
 
+// The attempt's own base (§7.3) deliberately does not ride along: for a repair
+// it is the prior attempt's tip, and handing it to integration as though it
+// were §7.5's replay boundary is exactly how the implement commit was dropped
+// from the replay set (#161). Integration reads what to replay off the graph.
 function integrationContext(context, { run, ticket, attempt, opened }) {
 	return {
 		hold: context.hold,
@@ -346,7 +350,6 @@ function integrationContext(context, { run, ticket, attempt, opened }) {
 		ticket,
 		attempt,
 		branch: opened.branch,
-		baseCommit: opened.baseCommit,
 		baseBranch: context.config.git.baseBranch,
 		checks: context.config.checks,
 		reader: context.tracker,

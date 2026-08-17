@@ -4,6 +4,7 @@ import { effectByKey } from "../effects/records.mjs";
 import {
 	adoptRebasedHead,
 	assessIntegration,
+	basedOn,
 	openIntegrationWorktree,
 	preserveEvidence,
 	pushAttemptBranch,
@@ -129,8 +130,10 @@ async function underIntegrationLease(leases, { hold, run, ticket, attempt, span 
  * @param {string} context.run
  * @param {number} context.ticket
  * @param {string} context.attempt
- * @param {string} context.branch the attempt branch
- * @param {string} context.baseCommit the attempt's **own** base (§7.3)
+ * @param {string} context.branch the attempt branch — **no §7.3 base rides with
+ *   it**: an attempt's own base is the prior attempt's tip for a repair, and
+ *   §7.5's replay boundary is the base branch itself, so integration derives
+ *   what to replay from the graph and never from what an attempt branched from (#161)
  * @param {string} context.baseBranch the default branch to fetch
  * @param {ReadonlyArray<object>} context.checks the validated `checks` block
  * @param {Record<string, string | undefined>} [context.env]
@@ -150,12 +153,16 @@ export async function integrationVerify(store, clone, context) {
  * whenever the base moved. **One function, so the two can never disagree about
  * what "verified" means** — which is the whole of §14.13.
  */
-async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branch, baseCommit, baseBranch, checks, env, actor, now }) {
+async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branch, baseBranch, checks, env, actor, now }) {
 	const fresh = await clone.fetchBase({ baseBranch });
 	const opened = await openIntegrationWorktree(clone, { storeDir: store.storeDir, attempt, branch });
 
+	// "Did the base move" is asked of the graph — is the branch already sitting
+	// on the fresh tip — never of the attempt's recorded base: for a repair that
+	// base is the prior attempt's tip and the comparison would answer a different
+	// question (#161).
 	let evidence = null;
-	if (fresh.commit !== baseCommit) {
+	if (!(await basedOn(clone, { worktreePath: opened.path, commit: fresh.commit }))) {
 		evidence = await preserveEvidence(store, clone, {
 			hold,
 			run,
@@ -167,13 +174,13 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
 		});
 	}
 
-	const rebased = await rebaseAttempt(clone, { worktreePath: opened.path, baseCommit, onto: fresh.commit });
+	const rebased = await rebaseAttempt(clone, { worktreePath: opened.path, onto: fresh.commit });
 	if (rebased.result === REBASE_RESULTS.conflict) {
 		// The worktree is left where it is (§12.7): a conflict is exactly when an
 		// operator wants to `cd` in and see what would not replay.
 		return answer("rebase-conflict", {
 			base_commit: fresh.commit,
-			previous_base: baseCommit,
+			previous_base: rebased.previousBase,
 			head: rebased.head,
 			conflicts: rebased.conflicts,
 			evidence_ref: evidence?.ref ?? null,
@@ -200,7 +207,7 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
 	return answer(verified.outcome, {
 		...verified.detail,
 		base_commit: fresh.commit,
-		previous_base: baseCommit,
+		previous_base: rebased.previousBase,
 		head: rebased.head,
 		rebased: rebased.result === REBASE_RESULTS.rebased,
 		evidence_ref: evidence?.ref ?? null,
@@ -283,8 +290,10 @@ export async function integratePublish(store, clone, context) {
 			}
 
 			// §15's case 10: re-rebase and re-verify, **consuming no budget**, because
-			// nothing failed — the base only ever moves by a human merge.
-			return Object.freeze({ reverify: await rebaseAndVerify(store, clone, { ...context, baseCommit: verified.baseCommit }) });
+			// nothing failed — the base only ever moves by a human merge. The context
+			// goes through unamended: the replay set is read off the graph, so the
+			// base the branch verified at needs no restating (#161).
+			return Object.freeze({ reverify: await rebaseAndVerify(store, clone, context) });
 		});
 
 		if (settled.reverify === undefined) return settled;

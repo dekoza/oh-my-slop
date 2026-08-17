@@ -103,6 +103,56 @@ export async function workedAttempt(t, { ticket = 42, files = { "worker.txt": "a
 }
 
 /**
+ * A §8.5 repair stacked on a worked fixture: a fresh attempt whose branch starts
+ * at **the prior attempt's tip**, with its own committed work on top.
+ *
+ * The chain is real — `attempt.launched` appended, branch and worktree created
+ * through the same effects production uses — because #161's defect is only
+ * observable on a branch whose own base is another attempt's branch rather than
+ * the default branch.
+ *
+ * @param {Readonly<object>} fixture a `workedAttempt` (or a prior repair's) fixture
+ * @param {{ ordinal: number, files: Record<string, string>, message?: string }} what
+ * @returns {Promise<Readonly<object>>} the fixture, re-pointed at the repair
+ *   attempt: its `attempt`, `branch`, `worktreePath`, `head`, and `ownBase` —
+ *   the prior tip its branch starts at
+ */
+export async function repairAttempt(fixture, { ordinal, files, message = "fix: the repair" }) {
+	const { store, clone, run, ticket, workerConfig } = fixture;
+	const attempt = `${run}-t${ticket}-a${ordinal}`;
+	const ownBase = execFileSync("git", ["-C", clone.dir, "rev-parse", `refs/heads/${fixture.branch}`], {
+		encoding: "utf8",
+	}).trim();
+
+	store.append(attemptLaunched(run, ticket, ordinal, { at: FIXED_NOW }));
+	const { worktreePath, branch } = await createAttemptWorktree(store, clone, {
+		hold: TEST_HOLD,
+		run,
+		ticket,
+		attempt,
+		phase: "implement",
+		baseCommit: ownBase,
+		workerConfig,
+		actor: "controller",
+		at: FIXED_NOW,
+	});
+
+	commitInto(worktreePath, files, {
+		message,
+		trailer: factoryAttemptTrailer({ run, ticket, attempt }),
+	});
+
+	return {
+		...fixture,
+		attempt,
+		branch,
+		worktreePath,
+		ownBase,
+		head: execFileSync("git", ["-C", clone.dir, "rev-parse", `refs/heads/${branch}`], { encoding: "utf8" }).trim(),
+	};
+}
+
+/**
  * Move the remote's default branch on, the only way §9.5 says it ever moves: a
  * human merged something. The caller re-fetches to see it.
  *
