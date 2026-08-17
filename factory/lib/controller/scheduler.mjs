@@ -162,16 +162,18 @@ export async function schedule({
 		 * like §11.5's routing refusal, which the run remembers for good.
 		 */
 		const memoBlocked = new Map();
-		let candidate = nextClaimable(view, {
-			running: lanes.keys(),
-			// §2.1: a run has **one** ticket execution per ticket, so a ticket this
-			// run already executed is not a candidate again — whatever the tracker
-			// still says about it. §8.9's dispositions are what remove it from the
-			// frontier, and this is the identity rule that holds while they land.
-			executed: [...settled, ...released].map((lane) => lane.ticket),
-			refused: refused.map((entry) => entry.ticket),
-			blocked: memoBlocked.keys(),
-		});
+		// §2.1: a run has **one** ticket execution per ticket, so a ticket this
+		// run already executed is not a candidate again — whatever the tracker
+		// still says about it. §8.9's dispositions are what remove it from the
+		// frontier, and this is the identity rule that holds while they land.
+		const claimNext = () =>
+			nextClaimable(view, {
+				running: lanes.keys(),
+				executed: [...settled, ...released].map((lane) => lane.ticket),
+				refused: refused.map((entry) => entry.ticket),
+				blocked: memoBlocked.keys(),
+			});
+		let candidate = claimNext();
 
 		// Walk past candidates whose class the memo gates, lowest number first,
 		// without re-reading the frontier per step: one view, one pass.
@@ -187,12 +189,7 @@ export async function schedule({
 				refused.push(
 					Object.freeze({ ticket: candidate.ticket, reason: error.reason, message: error.message, ...error.details }),
 				);
-				candidate = nextClaimable(view, {
-					running: lanes.keys(),
-					executed: [...settled, ...released].map((lane) => lane.ticket),
-					refused: refused.map((entry) => entry.ticket),
-					blocked: memoBlocked.keys(),
-				});
+				candidate = claimNext();
 				continue;
 			}
 
@@ -200,21 +197,13 @@ export async function schedule({
 			// settled by probe right here, before any claim — which is how a class
 			// is re-admitted by probe and never by assumption (§5.2), and how the
 			// rediscovery every ticket used to pay for stops happening.
-			const gate =
-				capacity.exhaustion === undefined
-					? Object.freeze({ state: "available", until: null })
-					: await capacity.exhaustion.settle(resourceClass, { at: at() });
+			const gate = await capacity.exhaustion.settle(resourceClass, { at: at() });
 			if (gate.state === "blocked") {
 				memoBlocked.set(
 					candidate.ticket,
 					Object.freeze({ ticket: candidate.ticket, class: resourceClass, until: gate.until ?? null }),
 				);
-				candidate = nextClaimable(view, {
-					running: lanes.keys(),
-					executed: [...settled, ...released].map((lane) => lane.ticket),
-					refused: refused.map((entry) => entry.ticket),
-					blocked: memoBlocked.keys(),
-				});
+				candidate = claimNext();
 				continue;
 			}
 

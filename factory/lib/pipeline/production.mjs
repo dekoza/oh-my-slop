@@ -299,7 +299,8 @@ async function launched(context, { identity, opened, repair, review }) {
 	const role = roleFor(context.worker.roles, opened.role);
 	const profile = namedProfile(context.config.profiles, opened.profile);
 	const adapter = context.adapters[profile.kind];
-	const binding = context.worker.environment.binding({ kind: profile.kind, posture: postureOf(role) });	const common = {
+	const binding = context.worker.environment.binding({ kind: profile.kind, posture: postureOf(role) });
+	const common = {
 		store: context.store,
 		hold: context.hold,
 		identity,

@@ -320,12 +320,13 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 		 * @returns {Promise<Readonly<{ state: "available" | "blocked", until: number | null, missing?: string }>>}
 		 */
 		async settle(className, { at = now() } = {}) {
-			const status = classAvailability(exhaustionLedger(store, { at }), className);
+			const ledger = exhaustionLedger(store, { at });
+			const status = classAvailability(ledger, className);
 			if (status === EXHAUSTION_STATES.available) {
 				return Object.freeze({ state: "available", until: null });
 			}
 			if (status === EXHAUSTION_STATES.exhausted) {
-				const entry = exhaustionLedger(store, { at }).find((memo) => memo.class === className);
+				const entry = ledger.find((memo) => memo.class === className);
 				return Object.freeze({ state: "blocked", until: entry.until });
 			}
 
