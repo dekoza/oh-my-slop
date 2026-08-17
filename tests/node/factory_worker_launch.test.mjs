@@ -92,6 +92,48 @@ async function launchable(t, { herdr = fakeHerdr() } = {}) {
 
 // ── The launch, in order (§6.4, §6.5) ────────────────────────────────────────
 
+test("every attempt of a run is a tab in the one workspace that run opened (#156)", async (t) => {
+	const context = await launchable(t);
+
+	const first = await context.launch();
+	const second = await context.launch({
+		identity: { run: context.run, ticket: 42, phase: "implement", attempt: `${context.run}-t42-a2` },
+	});
+
+	assert.equal(
+		context.herdr.commands().filter((command) => command === "workspace create").length,
+		1,
+		"the operator's workspace list gains one entry per run, not one per attempt",
+	);
+	assert.equal(context.herdr.commands().filter((command) => command === "tab create").length, 2);
+	assert.notEqual(second.pane, first.pane);
+	assert.equal(second.workspace, first.workspace, "both lanes are a tab switch apart");
+	assert.notEqual(second.tab, first.tab);
+});
+
+test("a run whose workspace the operator closed fails its launch and names the way out (#156)", async (t) => {
+	const context = await launchable(t);
+	await context.launch();
+
+	// §6.4's accepted cost, arriving: the workspace is gone and with it every
+	// live lane. The run adopts what it recorded and opens no replacement.
+	context.herdr.closeWorkspaces();
+	const error = await refusalOfAsync(() =>
+		context.launch({
+			identity: { run: context.run, ticket: 42, phase: "implement", attempt: `${context.run}-t42-a2` },
+		}),
+	);
+
+	assert.equal(error.reason, "worker-launch-failed");
+	assert.equal(error.details.workspace, "w1");
+	assert.match(error.message, /a new run is what opens a new one/);
+	assert.equal(
+		context.herdr.commands().filter((command) => command === "workspace create").length,
+		1,
+		"never a replacement opened behind the operator's back",
+	);
+});
+
 test("a launch opens an interactive pane, stamps it, starts the agent, then prompts", async (t) => {
 	const context = await launchable(t);
 
@@ -99,6 +141,7 @@ test("a launch opens an interactive pane, stamps it, starts the agent, then prom
 
 	assert.deepEqual(context.herdr.commands(), [
 		"workspace create",
+		"tab create",
 		"pane report-metadata",
 		"pane run",
 		"agent start",
@@ -108,7 +151,7 @@ test("a launch opens an interactive pane, stamps it, starts the agent, then prom
 		// the pane shows the worker took it up.
 		"pane list",
 	]);
-	assert.equal(launched.pane, "w1:p1");
+	assert.equal(launched.pane, "w1:p2", "the tab's pane, not the workspace root");
 	assert.equal(launched.agent, herdrAgentName(context.attempt));
 });
 
@@ -119,7 +162,7 @@ test("identity reaches the worker through the environment as well as the prompt 
 
 	// Two channels, deliberately: a worker that lost track of the prompt can
 	// still read `$FACTORY_ATTEMPT`, and so can anything it starts.
-	const exported = context.herdr.panes[0].exported;
+	const exported = context.herdr.paneFor(context.attempt).exported;
 	assert.match(exported, /^export /);
 	for (const [name, value] of [
 		["FACTORY_RUN", context.run],
@@ -149,13 +192,13 @@ test("the pane is stamped with FACTORY_ATTEMPT before the agent starts (§5.5)",
 	assert.deepEqual(stamp.slice(0, 7), [
 		"pane",
 		"report-metadata",
-		context.herdr.panes[0].pane_id,
+		context.herdr.paneFor(context.attempt).pane_id,
 		"--source",
 		METADATA_SOURCE,
 		"--token",
 		`${FACTORY_ATTEMPT_TOKEN}=${context.attempt}`,
 	]);
-	assert.equal(context.herdr.panes[0].tokens[FACTORY_ATTEMPT_TOKEN], context.attempt);
+	assert.equal(context.herdr.paneFor(context.attempt).tokens[FACTORY_ATTEMPT_TOKEN], context.attempt);
 });
 
 test("headless is never reached: the session is a pane running the agent (§6.4)", async (t) => {
@@ -176,8 +219,8 @@ test("the first prompt is the rendered template, and the pane cwd is the worktre
 
 	await context.launch();
 
-	const created = context.herdr.calls.find((args) => args[1] === "create");
-	assert.deepEqual(created.slice(2, 4), ["--cwd", "/state/worktrees/attempt"]);
+	const created = context.herdr.calls.find((args) => args[0] === "tab" && args[1] === "create");
+	assert.deepEqual(created.slice(4, 6), ["--cwd", "/state/worktrees/attempt"]);
 	assert.ok(created.includes("--no-focus"), "the operator is watching something else");
 
 	const prompted = context.herdr.calls.find((args) => args[1] === "prompt");
@@ -225,9 +268,18 @@ test("the mint is recorded before any attempt-scoped effect (§6.5)", async (t) 
 	// minted, which is exactly why the order is this one and not the reverse.
 	const kinds = context.store
 		.readEvents({ stream: runStream(context.run) })
-		.map((event) => event.kind)
-		.filter((kind) => kind.startsWith("attempt.") || kind.startsWith("effect."));
-	assert.deepEqual(kinds, ["attempt.launched", "effect.requested", "effect.resolved", "attempt.correlated"]);
+		.filter((event) => event.kind.startsWith("attempt.") || event.kind.startsWith("effect."))
+		.map((event) => (event.kind.startsWith("effect.") ? `${event.kind}:${event.payload.operation}` : event.kind));
+	assert.deepEqual(kinds, [
+		"attempt.launched",
+		"effect.requested:agent-start",
+		// #156: the run's workspace is opened inside the attempt's launch but is
+		// the run's own effect, so it settles first and the pane's tab goes in it.
+		"effect.requested:workspace-open",
+		"effect.resolved:workspace-open",
+		"effect.resolved:agent-start",
+		"attempt.correlated",
+	]);
 
 	const [event] = context.store.readEvents({ kind: "attempt.launched" });
 	assert.equal(event.attempt, context.attempt);
@@ -248,8 +300,8 @@ test("attempt.correlated carries what only the harness could say (§6.5)", async
 	const [event] = context.store.readEvents({ kind: "attempt.correlated" });
 	assert.deepEqual(event.payload.herdr, {
 		workspace: "w1",
-		tab: "w1:t1",
-		pane: "w1:p1",
+		tab: "w1:t2",
+		pane: "w1:p2",
 		agent: herdrAgentName(context.attempt),
 	});
 	assert.equal(event.payload.resolved_model, "qwen3-30b", "§11.7's observed id, per attempt");
@@ -361,6 +413,7 @@ test("the recheck runs after attempt.launched exists and before the prompt is se
 	// with the prompt still unsent, because the prompt is what spends.
 	assert.deepEqual(context.herdr.commands().slice(0, recheck.commandsBefore), [
 		"workspace create",
+		"tab create",
 		"pane report-metadata",
 		"pane run",
 		"agent start",
@@ -389,6 +442,7 @@ test("package drift stops the attempt before it spends anything", async (t) => {
 
 	assert.deepEqual(context.herdr.commands(), [
 		"workspace create",
+		"tab create",
 		"pane report-metadata",
 		"pane run",
 		"agent start",
@@ -409,8 +463,15 @@ test("the launch is one agent-start effect, resolved with the session ids", asyn
 	assert.equal(requested.payload.effect_key, `${context.run}/42/implement/${context.attempt}/agent-start`);
 	assert.equal(requested.payload.effect_payload.outbox, attemptOutboxPath(context.store.storeDir, context.attempt));
 
-	const [resolved] = context.store.readEvents({ kind: "effect.resolved" });
-	assert.equal(resolved.payload.result.pane, "w1:p1");
+	const resolved = context.store
+		.readEvents({ kind: "effect.resolved" })
+		.find((event) => event.payload.operation === "agent-start");
+	assert.deepEqual(resolved.payload.result, {
+		workspace: "w1",
+		tab: "w1:t2",
+		pane: "w1:p2",
+		agent: herdrAgentName(context.attempt),
+	});
 	assert.deepEqual(unresolvedEffects(context.store), [], "a launched attempt leaves nothing for reconcile to settle");
 });
 
@@ -447,7 +508,7 @@ test("a re-entry after a mid-launch crash finishes the launch rather than refusi
 	crash = false;
 	const launched = await context.launch();
 
-	assert.equal(launched.pane, "w1:p1", "the committed effect answered; no second pane was opened");
+	assert.equal(launched.pane, "w1:p2", "the committed effect answered; no second pane was opened");
 	assert.equal(context.herdr.commands().filter((command) => command === "workspace create").length, 1);
 	assert.equal(context.store.readEvents({ kind: "attempt.correlated" }).length, 1);
 });

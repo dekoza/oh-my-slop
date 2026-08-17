@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { EXIT_OK } from "../../factory/lib/cli/exit-codes.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
+import { FACTORY_ATTEMPT_TOKEN } from "../../factory/lib/controller/herdr-control.mjs";
 import { FOREGROUND_FLAG } from "../../factory/lib/controller/launch.mjs";
 import { runStart } from "../../factory/lib/controller/start.mjs";
 import { privateClonePath } from "../../factory/lib/git/isolation.mjs";
@@ -175,8 +176,15 @@ test("every launched worker pane carries the controller-owned runtime binding, n
 	// One builder and two review axes launched; the controller's own environment
 	// in this test carries neither config-directory variable, so anything the
 	// panes have was handed over deliberately rather than inherited.
-	assert.equal(herdr.panes.length, 3);
-	for (const pane of herdr.panes) {
+	//
+	// Three worker panes and **one** workspace: since #156 the run opens a single
+	// workspace and every attempt is a tab in it (the fourth pane is that
+	// workspace's own root, which no worker occupies).
+	const workers = herdr.panes.filter((pane) => pane.tokens[FACTORY_ATTEMPT_TOKEN] !== undefined);
+	assert.equal(workers.length, 3);
+	assert.equal(herdr.commands().filter((command) => command === "workspace create").length, 1);
+	assert.equal(new Set(workers.map((pane) => pane.workspace_id)).size, 1, "one run, one workspace");
+	for (const pane of workers) {
 		const variables = exported(pane.exported);
 		assert.equal(variables.PI_CODING_AGENT_DIR, roots.pi, `${pane.pane_id} lacks the controller-owned pi root`);
 		assert.equal(variables.CLAUDE_CONFIG_DIR, roots.claude, `${pane.pane_id} lacks the controller-owned Claude root`);

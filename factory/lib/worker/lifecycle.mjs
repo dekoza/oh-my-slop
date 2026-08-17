@@ -14,6 +14,7 @@ import {
 	attemptPromptPath,
 	herdrAgentName,
 	herdrPaneTitle,
+	herdrTabLabel,
 	launchedAttempt,
 	requireAttemptIdentity,
 } from "./attempt.mjs";
@@ -22,6 +23,7 @@ import { FactoryWorkerError } from "./errors.mjs";
 import { readOutbox } from "./outbox.mjs";
 import { renderAttemptPrompt } from "./prompt.mjs";
 import { attemptRecheck } from "./recheck.mjs";
+import { openRunWorkspace } from "./workspace.mjs";
 
 /**
  * §6.4–§6.6: **launch a worker into an interactive pane, and harvest a typed
@@ -192,9 +194,10 @@ export const DEFAULT_NO_PROGRESS_TIMEOUT_MS = 600_000;
  * 2. `attempt.launched` records the **mint**, because the projections refuse an
  *    attempt-scoped record for a tuple nothing minted — and the effect below is
  *    one. A claim that already minted this attempt finds its own record;
- * 3. the pane is opened, **stamped**, given §6.5's identity variables, and the
- *    agent started — one effect, because a pane carrying no token is a pane
- *    reconcile cannot recognise and §14.27 will not clean up;
+ * 3. the pane is opened as a tab in the run's workspace (#156), **stamped**,
+ *    given §6.5's identity variables, and the agent started — one effect,
+ *    because a pane carrying no token is a pane reconcile cannot recognise and
+ *    §14.27 will not clean up;
  * 4. the transcript pointer is captured from Herdr, polled with backoff;
  * 5. §6.2's layer-3 recheck runs — **after the mint's record exists and before
  *    the prompt**, so package drift is refused before the attempt spends;
@@ -807,6 +810,12 @@ function writeAttemptManifest(
  * probe asks (`pane list` matching the `FACTORY_ATTEMPT` token). Splitting them
  * into three effects would give reconcile two intermediate states it has no
  * question to ask about.
+ *
+ * The run's workspace is the one thing here that is **not** part of that
+ * mutation and is its own effect (#156): it outlives this attempt, is shared by
+ * every other attempt of the run, and is asked for by a different question —
+ * *does this run have a workspace* rather than *is this worker running*. It is
+ * opened before the pane because the pane is a tab inside it.
  */
 async function startedAgent(
 	store,
@@ -831,8 +840,20 @@ async function startedAgent(
 	});
 	if (requested.state === "resolved") return requested.result;
 
-	const opened = await herdr.openPane({ cwd: worktreePath, label: `factory-${attempt}` });
-	if (!opened.ok) throw launchFailure(opened, identity);
+	// #156: the run's workspace, opened by whichever attempt needs one first and
+	// adopted by every attempt after it — including the ones a re-entering
+	// controller launches, which read the committed id rather than opening a
+	// second workspace. A refusal here is this attempt's automation failure, so
+	// the lane answers for it under §8.10 like any other launch failure.
+	const workspace = await openRunWorkspace(store, { hold, run, herdr, cwd: store.storeDir, actor, at });
+	if (!workspace.ok) throw launchFailure(workspace, identity);
+
+	const opened = await herdr.openTab({
+		workspace: workspace.workspace,
+		cwd: worktreePath,
+		label: herdrTabLabel(attempt),
+	});
+	if (!opened.ok) throw workspaceTabFailure(opened, identity, workspace.workspace);
 
 	// Before `agent start`, deliberately: a crash in between must leave a pane
 	// this factory can still recognise, or reconcile concludes nothing started
@@ -1352,6 +1373,26 @@ function launchFailure(answer, identity) {
 		`${answer.message} The worker never ran, so attempt ${identity.attempt} is an automation failure rather than ` +
 			`anything the attempt can be blamed for (§6.4). Nothing was closed, because nothing here closes a pane (§13.B).`,
 		{ ...identity, command: answer.command, exit_code: answer.exit_code, stderr: answer.stderr },
+	);
+}
+
+/**
+ * The one launch failure that names a way out (#156).
+ *
+ * A run adopts the workspace it recorded and never opens a replacement, so a
+ * workspace the operator closed — §6.4's accepted cost — leaves this run unable
+ * to launch anything at all, and every further attempt fails here identically
+ * until §8.6's breaker ends the run. The operator's recovery is a new run, and
+ * a message that made them derive that from `workspace_not_found` would be the
+ * lane failing quietly twice.
+ */
+function workspaceTabFailure(answer, identity, workspace) {
+	return new FactoryWorkerError(
+		"worker-launch-failed",
+		`${answer.message} Workspace ${workspace} could not take a tab for attempt ${identity.attempt}. If it is gone, ` +
+			`this run cannot launch into it again — a run adopts the workspace it opened and never opens a replacement ` +
+			`(§6.4) — so a new run is what opens a new one. Nothing was closed (§13.B).`,
+		{ ...identity, workspace, command: answer.command, exit_code: answer.exit_code, stderr: answer.stderr },
 	);
 }
 

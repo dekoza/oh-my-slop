@@ -19,6 +19,7 @@ import {
 	STOP_CONFIRM_BACKOFF_MS,
 } from "../../factory/lib/worker/lifecycle.mjs";
 import { OUTBOX_SCHEMA_VERSION, readOutbox } from "../../factory/lib/worker/outbox.mjs";
+import { runWorkspaceLabel } from "../../factory/lib/worker/workspace.mjs";
 import { fakeHerdr } from "./helpers/factory-worker.mjs";
 import {
 	attemptLaunched,
@@ -281,10 +282,16 @@ async function waiting(t, { herdr = fakeHerdr() } = {}) {
 	store.append(attemptLaunched(opened.run, 42, 1));
 
 	const identity = { run: opened.run, ticket: 42, phase: "implement", attempt: `${opened.run}-t42-a1` };
-	// A pane carrying the attempt's token, as a launch would have left it.
-	await herdr.control.openPane({ cwd: "/state/worktrees/attempt", label: "factory" });
-	await herdr.control.stamp("w1:p1", { attempt: identity.attempt, title: "factory" });
-	await herdr.control.startAgent({ name: herdrAgentName(identity.attempt), kind: "pi", pane: "w1:p1" });
+	// A pane carrying the attempt's token, as a launch would have left it: a tab
+	// in the run's own workspace since #156.
+	const workspace = await herdr.control.openWorkspace({ cwd: "/state", label: runWorkspaceLabel(opened.run) });
+	const tab = await herdr.control.openTab({
+		workspace: workspace.workspace,
+		cwd: "/state/worktrees/attempt",
+		label: "factory",
+	});
+	await herdr.control.stamp(tab.pane, { attempt: identity.attempt, title: "factory" });
+	await herdr.control.startAgent({ name: herdrAgentName(identity.attempt), kind: "pi", pane: tab.pane });
 	herdr.calls.length = 0;
 
 	return {
@@ -304,7 +311,7 @@ async function waiting(t, { herdr = fakeHerdr() } = {}) {
 			awaitCompletion(store, {
 				hold,
 				identity,
-				pane: "w1:p1",
+				pane: "w1:p2",
 				agent: herdrAgentName(identity.attempt),
 				socket: "/run/herdr.sock",
 				herdr: herdr.control,
@@ -500,7 +507,7 @@ test("a valid outbox from a settled worker is harvested, and the agent stopped (
 	// The liveness seed, then the stop, then the read-back — and **the agent,
 	// never the pane** (§13.B).
 	assert.deepEqual(context.herdr.commands(), ["pane list", "agent send-keys", "pane list"]);
-	assert.equal(context.herdr.panes.length, 1, "the pane survives its worker");
+	assert.equal(context.herdr.panes.length, 2, "the workspace root and the attempt pane both survive the worker");
 });
 
 test("attempt.ended records the outcome, the evidence, and nothing more", async (t) => {
@@ -577,7 +584,7 @@ test("a cancellation stops the agent as an effect, and closes no pane", async (t
 	assert.equal(requested.payload.operation, "agent-stop");
 	assert.deepEqual(unresolvedEffects(context.store), []);
 	assert.equal(context.herdr.commands().includes("pane close"), false);
-	assert.equal(context.herdr.panes.length, 1);
+	assert.equal(context.herdr.panes.length, 2, "the run's workspace root, and the attempt's tab");
 });
 
 test("a quit still in flight is re-probed rather than raced into a false (#152)", async (t) => {
@@ -614,7 +621,7 @@ test("a wedged agent is an anomaly on the record, never an escalation (§13.B)",
 	// left inferring the survivor from a bare false (§11.2).
 	assert.deepEqual(ended.payload.stop_anomaly, {
 		anomaly: "wedged-pane",
-		pane: "w1:p1",
+		pane: "w1:p2",
 		agent: herdrAgentName(context.identity.attempt),
 		status: "working",
 		probes: STOP_CONFIRM_BACKOFF_MS.length,
@@ -622,7 +629,7 @@ test("a wedged agent is an anomaly on the record, never an escalation (§13.B)",
 	});
 	// §13.B holds either way: the pane it names is still there, unclosed.
 	assert.equal(herdr.commands().includes("pane close"), false);
-	assert.equal(herdr.panes.length, 1);
+	assert.equal(herdr.panes.length, 2, "the run's workspace root, and the attempt's tab");
 });
 
 test("a Herdr that will not answer leaves the stop unconfirmed, never a false (§5.2, §14.1)", async (t) => {
@@ -653,7 +660,7 @@ test("a quit that was never delivered is not filed as a harness that ignored it 
 	const cancelled = await context.cancel({ herdr: herdr.control });
 
 	assert.equal(cancelled.stop_anomaly.anomaly, "quit-undelivered");
-	assert.equal(cancelled.stop_anomaly.pane, "w1:p1", "the pane is named either way");
+	assert.equal(cancelled.stop_anomaly.pane, "w1:p2", "the pane is named either way");
 	assert.equal(cancelled.agent_stopped, false, "the observation still stands beside the anomaly");
 	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
 	assert.equal(ended.payload.stop_anomaly.anomaly, "quit-undelivered");
@@ -681,7 +688,7 @@ test("a last probe that goes unanswered loses the answer, never the pane it was 
 
 	assert.equal(cancelled.agent_stopped, null, "the last word was Herdr declining to answer");
 	assert.equal(cancelled.stop_anomaly.anomaly, "stop-unconfirmed");
-	assert.equal(cancelled.stop_anomaly.pane, "w1:p1", "the pane four good reads saw is still named");
+	assert.equal(cancelled.stop_anomaly.pane, "w1:p2", "the pane four good reads saw is still named");
 });
 
 test("the re-probe is bounded: a pane that never frees costs the budget and no more (#152)", async (t) => {
@@ -720,7 +727,7 @@ test("a stop resolved before #152 keeps its raced answer and claims no probes it
 		key: requested.key,
 		actor: "controller",
 		fencingGeneration: context.hold.fence().generation,
-		result: { agent: herdrAgentName(context.identity.attempt), stopped: false, pane: "w1:p1" },
+		result: { agent: herdrAgentName(context.identity.attempt), stopped: false, pane: "w1:p2" },
 		at: FIXED_NOW,
 	});
 
@@ -729,7 +736,7 @@ test("a stop resolved before #152 keeps its raced answer and claims no probes it
 	assert.equal(cancelled.agent_stopped, false, "the replayed effect is the one that decided");
 	assert.deepEqual(cancelled.stop_anomaly, {
 		anomaly: "wedged-pane",
-		pane: "w1:p1",
+		pane: "w1:p2",
 		agent: herdrAgentName(context.identity.attempt),
 		status: null,
 		probes: null,
@@ -810,9 +817,9 @@ test("an unrecognised frame for this pane is recorded as a diagnostic, never sil
 
 	await context.wait({
 		watch: ({ onTransition, onUnrecognised }) => {
-			onUnrecognised({ pane: "w1:p1", event: "pane.new_event" });
-			onUnrecognised({ pane: "w1:p1", event: "pane.new_event" });
-			onUnrecognised({ pane: "w1:p1", event: "pane.another_event" });
+			onUnrecognised({ pane: "w1:p2", event: "pane.new_event" });
+			onUnrecognised({ pane: "w1:p2", event: "pane.new_event" });
+			onUnrecognised({ pane: "w1:p2", event: "pane.another_event" });
 			onTransition({ status: "done", alive: false, agent: "pi", source: "subscribe", event: null, from: null });
 			return { close: () => {}, degraded: () => false };
 		},
@@ -821,7 +828,7 @@ test("an unrecognised frame for this pane is recorded as a diagnostic, never sil
 	const unrecognised = context.store.readEvents({ kind: "observation.unrecognised" });
 	assert.equal(unrecognised.length, 2, "once per distinct wire name, not per frame");
 	assert.equal(unrecognised[0].payload.event, "pane.new_event");
-	assert.equal(unrecognised[0].payload.pane, "w1:p1");
+	assert.equal(unrecognised[0].payload.pane, "w1:p2");
 	assert.equal(unrecognised[0].source, "controller", "our vocabulary gap, not Herdr's fact");
 	assert.deepEqual(
 		unrecognised.map((event) => event.payload.event),
