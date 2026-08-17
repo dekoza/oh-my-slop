@@ -22,6 +22,11 @@
       "model": "opus",
       "effort": "high"
     },
+    "claude-fable-review": {
+      "kind": "claude",
+      "model": "fable",
+      "effort": "high"
+    },
     "gpt": {
       "kind": "pi",
       "model": "openai-codex/gpt-5.6-sol",
@@ -51,11 +56,11 @@
   },
   "routing": {
     "roles": {
-      "implement": "gpt",
-      "freshRetry": "glm",
+      "implement": "claude-implement",
+      "freshRetry": "gpt",
       "review": [
-        "claude-review",
-        "claude-review"
+        "claude-fable-review",
+        "claude-fable-review"
       ]
     },
     "rules": [
