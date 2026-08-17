@@ -1,5 +1,6 @@
 import { createWorkerAdapter } from "./adapter.mjs";
 import { containsPath, realpathOrNull } from "./closure.mjs";
+import { FactoryWorkerError } from "./errors.mjs";
 import { lifecycleOperations } from "./lifecycle.mjs";
 import { harnessVersion, memoizedPreflight, parseJson, probeFinding, unreachableRuntime } from "./probe.mjs";
 import * as realTransport from "./transports.mjs";
@@ -28,27 +29,46 @@ const RPC_REQUESTS = Object.freeze([{ type: "get_commands" }, { type: "get_avail
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 /**
- * §6.2's production flag set, plus the two flags that make the session
- * disposable: RPC mode and no persisted session.
+ * The two flags only the probe carries — RPC mode and no persisted session,
+ * what makes it disposable. Everything else a probe session runs under is the
+ * worker binding itself, by construction below: a flag added to one side and
+ * not the other is #160's defect, a probe proving a session no worker runs in.
+ */
+export const PI_PROBE_ONLY_FLAGS = Object.freeze(["--mode", "rpc", "--no-session"]);
+
+/**
+ * §6.2's production flag set — what every pi **worker** session is launched
+ * with, and therefore what the probe must prove.
+ *
+ * `--no-skills` is load-bearing isolation, not tidiness: pi's default
+ * discovery reaches roots `PI_CODING_AGENT_DIR` does not fence — measured
+ * live, a worker session with discovery on loaded four of the operator's
+ * personal skills from `~/.agents/skills` while loading none of the pinned 65
+ * (#160). Suppressing discovery and passing the pinned roots explicitly is
+ * §6.8's "skills reach a worker only from the pinned package root", enforced.
  *
  * `sessionArgs` is §6.8's binding — the posture's tool list and the run's
- * declared extension promotions — and it rides the probe for the same reason
- * the skill flags do: a probe run under different flags proves a session nobody
- * will launch.
+ * declared extension promotions.
+ *
+ * @param {ReadonlyArray<string>} skillsRoots the pinned skills roots — never empty
+ * @param {ReadonlyArray<string>} [sessionArgs]
+ * @returns {string[]}
+ */
+export function piWorkerArguments(skillsRoots, sessionArgs = []) {
+	return ["--no-skills", ...skillsRoots.flatMap((root) => ["--skill", root]), ...sessionArgs];
+}
+
+/**
+ * The probe's flag set: the worker binding, plus the probe-only flags, plus
+ * **nothing** — composed from `piWorkerArguments` so the two cannot diverge.
+ * A probe run under different flags proves a session nobody will launch.
  *
  * @param {ReadonlyArray<string>} skillsRoots
  * @param {ReadonlyArray<string>} [sessionArgs]
  * @returns {string[]}
  */
 export function piProbeArguments(skillsRoots, sessionArgs = []) {
-	return [
-		"--mode",
-		"rpc",
-		"--no-session",
-		"--no-skills",
-		...skillsRoots.flatMap((root) => ["--skill", root]),
-		...sessionArgs,
-	];
+	return [...PI_PROBE_ONLY_FLAGS, ...piWorkerArguments(skillsRoots, sessionArgs)];
 }
 
 /**
@@ -217,10 +237,16 @@ export function createPiAdapter(context) {
 			}),
 			// Profile flags are a pi runtime difference and therefore enter through
 			// this adapter's launch operation, never through the pipeline composer.
-			launch: (attempt) =>
+			// The skill flags enter here too, from the same `skillsRoots` the probe
+			// proved: the launch and the probe share one binding (#160), and the
+			// worker binding plus the profile is everything a pane's argv carries.
+			launch: async (attempt) =>
 				lifecycle.launch({
 					...attempt,
-					sessionArgs: [...(attempt.sessionArgs ?? []), ...profileArguments(attempt.profile)],
+					sessionArgs: [
+						...piWorkerArguments(requirePinnedRoots(context.skillsRoots), attempt.sessionArgs ?? []),
+						...profileArguments(attempt.profile),
+					],
 					startupTimeoutMs: attempt.profile.startupTimeoutMs ?? null,
 				}),
 			awaitCompletion: lifecycle.awaitCompletion,
@@ -233,6 +259,22 @@ function profileArguments(profile) {
 	const args = ["--model", profile.model];
 	if (profile.thinking !== undefined) args.push("--thinking", profile.thinking);
 	return args;
+}
+
+/**
+ * A launch with no pinned skills root would start a worker whose `--no-skills`
+ * left it nothing to invoke — a session that quietly reads files instead of
+ * invoking its closure, which is #160's forbidden outcome. Typed, before a
+ * pane exists, so the attempt never spends (§6.2).
+ */
+function requirePinnedRoots(skillsRoots) {
+	if (Array.isArray(skillsRoots) && skillsRoots.length > 0) return skillsRoots;
+	throw new FactoryWorkerError(
+		"worker-launch-failed",
+		"A pi worker launch was asked for with no pinned skills roots, so no skill in its closure could reach the " +
+			"session — the worker would run without its discipline rather than fail (§6.2, #160).",
+		{ at: "skillsRoots", found: skillsRoots ?? null },
+	);
 }
 
 // ── The probe's pieces ───────────────────────────────────────────────────────

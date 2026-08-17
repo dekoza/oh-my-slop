@@ -2,7 +2,7 @@ import { CLAUDE_RESOURCE_CLASS } from "../config/profiles.mjs";
 import { createWorkerAdapter } from "./adapter.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
 import { lifecycleOperations } from "./lifecycle.mjs";
-import { ensureClaudePlugin } from "./plugin.mjs";
+import { ensureClaudePlugin, readPluginManifest } from "./plugin.mjs";
 import { harnessVersion, memoizedPreflight, parseJson, probeFinding, runIn, unreachableRuntime } from "./probe.mjs";
 import * as realTransport from "./transports.mjs";
 import { readClaudeConfigState, untrustedProjects } from "./trust.mjs";
@@ -32,30 +32,56 @@ import { readClaudeConfigState, untrustedProjects } from "./trust.mjs";
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 /**
- * The production flag set for the initialize probe, per §6.2.
+ * The flags only the probe carries — the stream-json IO mode its `initialize`
+ * control-request needs. Everything else a probe session runs under is the
+ * worker binding itself, by construction below: a flag added to one side and
+ * not the other is #160's defect, a probe proving a session no worker runs in.
+ */
+export const CLAUDE_PROBE_ONLY_FLAGS = Object.freeze([
+	"--input-format",
+	"stream-json",
+	"--output-format",
+	"stream-json",
+	"--print",
+	"--verbose",
+]);
+
+/**
+ * The production flag set — what every Claude **worker** session is launched
+ * with, and therefore what the probe must prove.
+ *
+ * `--plugin-dir` is the closure's only delivery channel: the controller-owned
+ * config environment has no installed plugins, so a session launched without
+ * it has no skill natively invocable — measured live, `plugin list` under the
+ * worker's exact binding answered "No plugins installed" (#160), while the
+ * prompt told every worker to invoke `<plugin>:<skill>`.
  *
  * `sessionArgs` is §6.8's binding — the controller-owned `--settings` file and
- * the posture's `--permission-mode` — and it rides the probe deliberately: the
- * mode is also written into the settings file, and passing it here is what
- * makes the installed binary *accept or reject* the spelling before a pane
- * depends on it.
+ * the posture's `--permission-mode`.
+ *
+ * @param {string} pluginDir the §6.3 plugin directory
+ * @param {ReadonlyArray<string>} [sessionArgs]
+ * @returns {string[]}
+ */
+export function claudeWorkerArguments(pluginDir, sessionArgs = []) {
+	return ["--plugin-dir", pluginDir, ...sessionArgs];
+}
+
+/**
+ * The probe's flag set: the worker binding, plus the probe-only IO flags, plus
+ * **nothing** — composed from `claudeWorkerArguments` so the two cannot
+ * diverge (§6.2's "the probe must use the production flag set").
+ *
+ * The session flags ride the probe deliberately: the permission mode is also
+ * written into the settings file, and passing it here is what makes the
+ * installed binary *accept or reject* the spelling before a pane depends on it.
  *
  * @param {string} pluginDir
  * @param {ReadonlyArray<string>} [sessionArgs]
  * @returns {string[]}
  */
 export function claudeProbeArguments(pluginDir, sessionArgs = []) {
-	return [
-		"--plugin-dir",
-		pluginDir,
-		"--input-format",
-		"stream-json",
-		"--output-format",
-		"stream-json",
-		"--print",
-		"--verbose",
-		...sessionArgs,
-	];
+	return [...claudeWorkerArguments(pluginDir, sessionArgs), ...CLAUDE_PROBE_ONLY_FLAGS];
 }
 
 /**
@@ -170,7 +196,10 @@ export function proveClaudeClosure(probed, closure) {
  * result, rather than being a second copy of a name the generator owns.
  *
  * @param {object} context everything `probeClaudeRuntime` takes except the revision,
- *   which arrives per call as §6.1's `package_rev`
+ *   which arrives per call as §6.1's `package_rev` — plus, for a context that
+ *   launches, `pluginDir`: the §6.3 plugin directory the probe proved, off the
+ *   preflight's runtime observation, so the session a worker gets is the session
+ *   the probe ran rather than a second computation of it
  * @returns {Readonly<object>} the adapter
  */
 export function createClaudeAdapter(context) {
@@ -185,12 +214,22 @@ export function createClaudeAdapter(context) {
 			}),
 			// Claude's model and effort flags stay behind the runtime-neutral launch
 			// operation; the production composer never branches on their spelling.
-			launch: (attempt) =>
-				lifecycle.launch({
+			// The plugin flag enters here too, from the dir the probe proved: the
+			// launch and the probe share one binding (#160). Reading the manifest
+			// back first turns a cache wiped since preflight into a typed failure
+			// before a pane exists, never a worker that quietly has no skills.
+			launch: async (attempt) => {
+				const pluginDir = requireProvenPlugin(context.pluginDir);
+				readPluginManifest(pluginDir);
+				return lifecycle.launch({
 					...attempt,
-					sessionArgs: [...(attempt.sessionArgs ?? []), ...profileArguments(attempt.profile)],
+					sessionArgs: [
+						...claudeWorkerArguments(pluginDir, attempt.sessionArgs ?? []),
+						...profileArguments(attempt.profile),
+					],
 					startupTimeoutMs: attempt.profile.startupTimeoutMs ?? null,
-				}),
+				});
+			},
 			awaitCompletion: lifecycle.awaitCompletion,
 			cancel: lifecycle.cancel,
 		},
@@ -201,6 +240,22 @@ function profileArguments(profile) {
 	const args = ["--model", profile.model];
 	if (profile.effort !== undefined) args.push("--effort", profile.effort);
 	return args;
+}
+
+/**
+ * A launch with no proven plugin directory would start a worker with no skill
+ * natively invocable — a session that quietly reads files instead of invoking
+ * its closure, which is #160's forbidden outcome. Typed, before a pane exists,
+ * so the attempt never spends (§6.2, §6.3).
+ */
+function requireProvenPlugin(pluginDir) {
+	if (typeof pluginDir === "string" && pluginDir !== "") return pluginDir;
+	throw new FactoryWorkerError(
+		"worker-launch-failed",
+		"A Claude worker launch was asked for with no proven §6.3 plugin directory, so no skill in its closure could " +
+			"reach the session — the worker would run without its discipline rather than fail (§6.2, #160).",
+		{ at: "pluginDir", found: pluginDir ?? null },
+	);
 }
 
 // ── The probe's three steps ──────────────────────────────────────────────────

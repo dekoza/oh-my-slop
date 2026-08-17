@@ -352,13 +352,21 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 			if (state.unresolved || state.findings.length > 0 || !built.ok || runtimeResults === null) return null;
 			if (runtimeResults.some((result) => !result.ok)) return null;
 
+			const runtimes = Object.freeze(
+				Object.fromEntries(runtimeResults.map((result) => [result.kind, result.runtime])),
+			);
+
 			return Object.freeze({
 				environment: built.handle,
 				roles: state.roles,
 				packageRev: handshake.tree.digest,
-				runtimes: Object.freeze(
-					Object.fromEntries(runtimeResults.map((result) => [result.kind, result.runtime])),
-				),
+				// The two skill-delivery facts the probe proved, hoisted side by side
+				// for the launch half of the same binding (#160): the pi roots and the
+				// §6.3 plugin directory. The composer reads two symmetric facts rather
+				// than walking one runtime's observation shape.
+				skillsRoots: Object.freeze([...state.skillsRoots]),
+				pluginDir: runtimes.claude?.plugin?.dir ?? null,
+				runtimes,
 			});
 		},
 	};

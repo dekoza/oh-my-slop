@@ -51,7 +51,7 @@ export function createProductionPipeline(store, context) {
 	} = context;
 	const { clone, worker, socket } = requireProductionPreflight(preflight);
 	const retryPlans = new Map();
-	const adapters = workerAdapters({ herdr, socket, now });
+	const adapters = workerAdapters({ herdr, socket, now, worker });
 
 	return async function productionPipeline(lane) {
 		return withAttemptBranches(lane, await settled(lane));
@@ -391,11 +391,18 @@ async function openInitialAttempt({ store, clone, hold, run, ticket, attempt, pr
 	return { identity, ...created };
 }
 
-function workerAdapters({ herdr, socket, now }) {
+/**
+ * The production adapters launch and never probe, so their context is the
+ * launch defaults plus the two skill-delivery facts the preflight already
+ * proved: pi's pinned skills roots and Claude's §6.3 plugin directory. The
+ * worker session and the probe thereby run one binding (#160) — the delivery
+ * facts have exactly one origin, the green preflight.
+ */
+function workerAdapters({ herdr, socket, now, worker }) {
 	const launch = { herdr, socket, now };
 	return Object.freeze({
-		pi: createPiAdapter({ launch }),
-		claude: createClaudeAdapter({ launch }),
+		pi: createPiAdapter({ launch, skillsRoots: worker.skillsRoots }),
+		claude: createClaudeAdapter({ launch, pluginDir: worker.pluginDir }),
 	});
 }
 

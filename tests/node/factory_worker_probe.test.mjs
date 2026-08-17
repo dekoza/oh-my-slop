@@ -449,7 +449,9 @@ test("the Claude probe runs the posture's own flags, so the installed binary is 
 	});
 
 	const [session] = fake.calls.lineSession;
-	assert.deepEqual(session.args.slice(-4), [
+	// The worker binding first — plugin dir, then the posture's flags — with the
+	// probe-only IO flags after it (#160's restored invariant).
+	assert.deepEqual(session.args.slice(2, 6), [
 		"--settings",
 		"/state/settings-builder.json",
 		"--permission-mode",
