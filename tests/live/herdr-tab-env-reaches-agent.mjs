@@ -67,9 +67,10 @@ try {
 	log("agent process", agent.pid, agent.cmdline);
 	report("the agent process", environOf(agent.pid));
 
-	// And the point of the change: none of it is in the pane's own output.
-	const scrollback = spawnSync("herdr", ["pane", "read", pane, "--raw", "--lines", "500"], { encoding: "utf8" }).stdout;
-	const leaked = Object.entries(DECLARED).filter(([, value]) => scrollback.includes(value));
+	// And the point of the change: none of it is in the pane's own output. Read
+	// raw, so an escape sequence cannot hide a value the probe is looking for.
+	const scrollback = herdr(["pane", "read", pane, "--raw", "--lines", "500"]);
+	const leaked = Object.entries(DECLARED).filter(([, value]) => String(scrollback).includes(value));
 	log(leaked.length === 0 ? "PASS scrollback carries none of them" : "FAIL scrollback leaked", leaked);
 } finally {
 	log("-- done --");
@@ -97,11 +98,19 @@ function foreground(pane) {
 	return herdr(["pane", "process-info", "--pane", pane]).process_info;
 }
 
+/**
+ * A refused command **throws**, so the probe stops at the reason rather than at
+ * a `TypeError` on the next line — every caller here reads a field off the
+ * answer. `optional` is for the teardown, where a workspace that already went
+ * away is the ordinary path.
+ */
 function herdr(args, { optional = false } = {}) {
 	const answer = spawnSync("herdr", args, { encoding: "utf8" });
 	if (answer.status !== 0) {
-		if (!optional) log(`herdr ${args.join(" ")} EXIT ${answer.status}`, (answer.stderr ?? "").trim());
-		return null;
+		const said = (answer.stderr ?? "").trim();
+		if (optional) return null;
+		log(`herdr ${args.join(" ")} EXIT ${answer.status}`, said);
+		throw new Error(`herdr ${args.join(" ")} exited ${answer.status}: ${said}`);
 	}
 	try {
 		const parsed = JSON.parse(answer.stdout);

@@ -212,17 +212,20 @@ test("the stamp is one metadata call carrying the token and the derived title", 
 	]);
 });
 
-test("the environment is a tab-create option and nothing in this surface types into a shell (#157)", async () => {
-	const surface = createHerdrControl({ run: runner().run });
+test("a tab with nothing declared asks for no environment at all (#157)", async () => {
+	const io = runner({
+		"tab create": {
+			exitCode: 0,
+			stdout: JSON.stringify({ result: { tab: { tab_id: "w7:t2" }, root_pane: { pane_id: "w7:p2" } } }),
+			stderr: "",
+		},
+	});
 
-	// The typed path is gone, not merely unused: a second way to put a variable
-	// in front of a worker is a second thing to keep in step with §6.8's closed
-	// set, and the one that types leaves it in the scrollback.
-	assert.equal(surface.exportIdentity, undefined);
-	assert.equal(
-		Object.keys(surface).some((name) => /export|quote/i.test(name)),
-		false,
-	);
+	// The bare pane a probe opens: no `--env` at all rather than an empty one,
+	// so the command Herdr is asked for says exactly what was declared.
+	await createHerdrControl({ run: io.run }).openTab({ workspace: "w7", cwd: "/w", label: "l" });
+
+	assert.equal(io.calls[0].includes("--env"), false);
 });
 
 test("the agent starts in an existing pane, with the session flags after `--`", async () => {

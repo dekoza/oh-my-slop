@@ -197,6 +197,14 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 		 * this repository probes rather than believes. Each value crosses as one
 		 * argv element, so nothing here quotes anything: a space or an apostrophe in
 		 * a path is the CLI's problem, and it does not have one.
+		 *
+		 * **`env` defaults to the empty declaration, and that is not a hole in §6.5.**
+		 * The invariant that matters is *a launched worker carries its identity*, and
+		 * that is asserted where a worker is launched (`factory_worker_launch.test.mjs`
+		 * reads the whole map back off `tab create`) — not here, where a tab is also
+		 * what the probe tests open when all they want is a pane to correlate. A
+		 * refusal on this surface would make every bare-pane caller pass an empty
+		 * object to say nothing.
 		 */
 		async openTab({ workspace, cwd, label, env = {} }) {
 			const created = await call([

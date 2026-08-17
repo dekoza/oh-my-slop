@@ -73,10 +73,23 @@ const binding = environment.binding({ kind, posture: "builder" });
 const args = kind === "pi" ? ["--model", model, "--thinking", thinking, ...binding.args] : [...binding.args];
 
 log(`kind=${kind} model=${model} stamp=${stamp} extensions=${piExtensions.length}`);
-log("config dir =", binding.exports.CLAUDE_CONFIG_DIR, "|", binding.exports.PI_CODING_AGENT_DIR);
+log("config dir =", binding.paneEnv.CLAUDE_CONFIG_DIR, "|", binding.paneEnv.PI_CODING_AGENT_DIR);
 log("args =", args.join(" "));
 
-const created = herdr(["workspace", "create", "--cwd", work, "--label", "herdr-probe", "--no-focus"]);
+// §6.8's binding is **declared** to the server, exactly as a launch declares it
+// (#157) — a probe that typed it at the shell instead would prove a pane no
+// worker will ever occupy, which is the same objection §6.8 makes to probing
+// under the operator's own config.
+const created = herdr([
+	"workspace",
+	"create",
+	"--cwd",
+	work,
+	"--label",
+	"herdr-probe",
+	...Object.entries(binding.paneEnv).flatMap(([name, value]) => ["--env", `${name}=${value}`]),
+	"--no-focus",
+]);
 const pane = created?.root_pane?.pane_id;
 const workspace = created?.workspace?.workspace_id;
 if (pane === undefined) {
@@ -88,14 +101,6 @@ log("pane =", pane);
 if (stamp) {
 	herdr(["pane", "report-metadata", pane, "--source", METADATA_SOURCE, "--token", "FACTORY_ATTEMPT=live-probe", "--title", "live probe"]);
 }
-herdr([
-	"pane",
-	"run",
-	pane,
-	`export ${Object.entries(binding.exports)
-		.map(([name, value]) => `${name}='${String(value).replaceAll("'", `'\\''`)}'`)
-		.join(" ")}`,
-]);
 
 const transitions = [];
 const watcher = watchPane({

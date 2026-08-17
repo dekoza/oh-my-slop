@@ -708,7 +708,10 @@ three commands a launch issues, `workspace create` and `tab create` take an envi
 **`agent start` takes none** — so the tab is the last point before the agent at which anything
 can be put in front of it, and that is where the binding is assembled. That the variables reach
 the *agent process* and not merely the shell Herdr launches for the tab was established live
-before the typed path was removed (§5.2, `tests/live/herdr-tab-env-reaches-agent.mjs`); each
+before the typed path was removed — **§5.2 enumerates what Herdr is authoritative for, and this
+is not among the two facts**, so its help text ("an environment variable for the launched
+process", where the launched process is the shell) is a claim to observe rather than to rely on;
+`tests/live/herdr-tab-env-reaches-agent.mjs` is that observation. Each
 value crosses as one argv element, so the factory quotes nothing. **Identity is applied last and
 no declared value may shadow it** — a binding naming `FACTORY_ATTEMPT` would correlate a worker
 to somebody else's attempt — and it is one variable per name, never a repeated option whose
