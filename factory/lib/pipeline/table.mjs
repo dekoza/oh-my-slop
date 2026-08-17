@@ -103,6 +103,17 @@ export const OUTCOME_TABLE = Object.freeze([
 	row({ phase: PHASE_IMPLEMENT, outcome: "dead-worker", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_IMPLEMENT, outcome: "automation-failure", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_IMPLEMENT, outcome: "cancelled", action: STAGE_ACTIONS.dispose, disposition: "released" }),
+	/**
+	 * #154: the provider refused the attempt — quota, rate limit, a usage cap —
+	 * an observation typed apart from `timeout` and `no-result` (§6.6). The
+	 * refusal is the provider's fault, so the ticket goes back to the frontier
+	 * **untouched** — no label, no budget — and the time-boxed class memo the
+	 * detection recorded is what keeps dispatch from launching into the same
+	 * refusal again (§9). A reviewer's attempt is released the same way: the
+	 * axis said nothing about the work, and charging the automation budget for
+	 * a provider's cap would be the wrong blame with the same answer.
+	 */
+	row({ phase: PHASE_IMPLEMENT, outcome: "provider-refused", action: STAGE_ACTIONS.dispose, disposition: "released" }),
 
 	// ── harvest (§7.4's builder-fault predicates) ────────────────────────────
 	row({ phase: PHASE_HARVEST, outcome: "passed", action: STAGE_ACTIONS.advance, to: PHASE_VERIFY }),
@@ -185,6 +196,9 @@ export const OUTCOME_TABLE = Object.freeze([
 	row({ phase: PHASE_REVIEW, outcome: "automation-failure", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_REVIEW, outcome: "wrote-but-hung", action: STAGE_ACTIONS.verdict, anomaly: ANOMALY_WROTE_BUT_HUNG }),
 	row({ phase: PHASE_REVIEW, outcome: "cancelled", action: STAGE_ACTIONS.dispose, disposition: "released" }),
+	// #154: a reviewer attempt its provider refused is the implement row's twin —
+	// released, budgetless, and the memo is the dispatch-side consequence.
+	row({ phase: PHASE_REVIEW, outcome: "provider-refused", action: STAGE_ACTIONS.dispose, disposition: "released" }),
 
 	// ── integrate (§7.5) ─────────────────────────────────────────────────────
 	row({ phase: PHASE_INTEGRATE, outcome: "integrated", action: STAGE_ACTIONS.dispose, disposition: "published" }),

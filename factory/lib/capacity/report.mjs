@@ -1,5 +1,6 @@
 import { runStream } from "../state/events.mjs";
 import { isSuperseded, LEASE_NAMES, openLeases } from "../state/leases.mjs";
+import { exhaustionLedger } from "./exhaustion.mjs";
 import { capacityPlan } from "./plan.mjs";
 
 /**
@@ -73,11 +74,22 @@ export function capacityFor(store, { config, activeRouting, run = null, at = Dat
  */
 export function capacitySnapshot(store, { plan, run, rows, generation, at = Date.now() }) {
 	const waiting = waitingLanes(store, run);
+	// #154: the exhaustion memo, resolved at the snapshot's own instant and read
+	// once — the per-class rows below and any consumer asking `exhaustion.ledger`
+	// read this same derivation, never a second tally.
+	const ledger = store === null ? [] : exhaustionLedger(store, { at });
 	const ticket = tally(rows, [], { pool: "ticket", resourceClass: null, size: plan.ticketSlots, generation });
 	const classes = plan.classes.map((entry) =>
 		Object.freeze({
 			class: entry.class,
 			...tally(rows, waiting, { pool: "model", resourceClass: entry.class, size: entry.size, generation }),
+			/**
+			 * §9's time-boxed unavailability when the class carries one, or null.
+			 * A class that is blocked prints *why* beside its held and waiting
+			 * numbers — "the run is slow" must be answerable whether the lanes are
+			 * queued behind a slot or locked out of a provider (#154).
+			 */
+			exhaustion: ledger.find((memo) => memo.class === entry.class) ?? null,
 		}),
 	);
 

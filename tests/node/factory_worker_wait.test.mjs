@@ -860,3 +860,150 @@ test("a wait or a cancel for an attempt nothing launched refuses rather than inv
 		assert.equal(error.reason, "worker-not-launched");
 	}
 });
+
+// ── A provider refusal is its own typed outcome (§6.6, #154) ────────────────
+
+const refusal = Object.freeze({ signatures: Object.freeze(["quota"]), excerpt: "insufficient_quota" });
+
+test("a settled worker that wrote nothing is provider-refused when the pane ends on a refusal (#154)", () => {
+	const decided = decideOutcome({
+		outbox: outboxOf("absent"),
+		liveness: liveness({ status: "idle", alive: false, settledAt: FIXED_NOW }),
+		at: FIXED_NOW + SETTLE_GRACE_MS,
+		deadline: FIXED_NOW + 60_000,
+		refusal,
+	});
+	assert.equal(decided.outcome, "provider-refused");
+});
+
+test("the hard ceiling and the no-progress clock are reclassified the same way (#154)", () => {
+	for (const noProgressDeadline of [null, FIXED_NOW - 1]) {
+		const decided = decideOutcome({
+			outbox: outboxOf("absent"),
+			liveness: liveness({ status: "working" }),
+			at: FIXED_NOW + 60_000,
+			deadline: FIXED_NOW,
+			noProgressDeadline,
+			refusal,
+		});
+		assert.equal(decided.outcome, "provider-refused", `deadline case noProgressDeadline=${noProgressDeadline}`);
+	}
+});
+
+test("a valid outbox outranks a refusal in the pane: the worker's answer wins (#154)", () => {
+	const decided = decideOutcome({
+		outbox: outboxOf("valid", { status: "completed" }),
+		liveness: liveness({ status: "idle", alive: false, settledAt: FIXED_NOW }),
+		at: FIXED_NOW + SETTLE_GRACE_MS,
+		deadline: FIXED_NOW + 60_000,
+		refusal,
+	});
+	assert.equal(decided.outcome, "completed");
+});
+
+test("a pane that died stays dead-worker whatever the output printed (#154)", () => {
+	const decided = decideOutcome({
+		outbox: outboxOf("absent"),
+		liveness: liveness({ status: "exited", alive: false }),
+		at: FIXED_NOW,
+		deadline: FIXED_NOW + 60_000,
+		refusal,
+	});
+	assert.equal(decided.outcome, "dead-worker");
+});
+
+test("a foreign outbox is never reclassified by the final look: an answered anomaly outranks the pane (#154)", async (t) => {
+	// Only the silence-based verdicts get the final look. A foreign outbox is an
+	// affirmative fact — some worker answered into the wrong tuple — and a
+	// refusal scrolling in the pane must not mask that anomaly as the provider's.
+	const context = await waiting(t);
+	context.herdr.paneOutput = "API Error: 429 insufficient_quota: you exceeded your current quota\n";
+	context.writeOutbox({ ...completedOutbox(context.identity), attempt: "other-run-t42-a1" });
+
+	const result = await context.wait();
+
+	assert.equal(result.outcome, "automation-failure");
+	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
+	assert.equal(ended.payload.outcome, "automation-failure");
+});
+
+test("without a refusal the old verdicts stand, unchanged (#154)", () => {
+	const decided = decideOutcome({
+		outbox: outboxOf("absent"),
+		liveness: liveness({ status: "idle", alive: false, settledAt: FIXED_NOW }),
+		at: FIXED_NOW + SETTLE_GRACE_MS,
+		deadline: FIXED_NOW + 60_000,
+	});
+	assert.equal(decided.outcome, "no-result");
+});
+
+test("a refusal observed in the pane output is recorded as its own fact and typed on the ending (§4.3, §5.2, #154)", async (t) => {
+	const context = await waiting(t);
+	let clock = FIXED_NOW;
+	let polls = 0;
+	let push;
+
+	const result = await context.wait({
+		now: () => clock,
+		watch: ({ onTransition }) => {
+			push = onTransition;
+			return { close: () => {}, degraded: () => false };
+		},
+		sleep: async () => {
+			clock += 1_000;
+			polls += 1;
+			if (polls === 1) push({ status: "working", alive: true, agent: "pi", source: "subscribe", event: null, from: "idle" });
+			if (polls === 2) {
+				// The provider's refusal is the last thing the pane shows, and the
+				// worker settles without writing an outbox.
+				context.herdr.paneOutput = "working...\nAPI Error: 429 insufficient_quota: you exceeded your current quota\n";
+				push({ status: "idle", alive: false, agent: "pi", source: "subscribe", event: null, from: "working" });
+			}
+		},
+	});
+
+	assert.equal(result.outcome, "provider-refused");
+	assert.ok(result.refusal.signatures.length > 0, "the ending carries the observed evidence");
+
+	const facts = context.store.readEvents({ kind: "observation.recorded" });
+	const recorded = facts.find((event) => event.payload.fact === "provider.refusal");
+	assert.ok(recorded, "the refusal is its own observation event, not an inference from elapsed time");
+	assert.equal(recorded.source, "herdr", "the pane output is what stated it");
+	assert.equal(recorded.attempt, context.identity.attempt);
+
+	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
+	assert.equal(ended.payload.outcome, "provider-refused");
+	assert.ok(ended.payload.refusal, "the record names the refusal it was decided on");
+});
+
+test("a refusal early in the session that the worker worked past decides nothing (#154)", async (t) => {
+	const context = await waiting(t);
+	let clock = FIXED_NOW;
+	let polls = 0;
+	let push;
+
+	const result = await context.wait({
+		now: () => clock,
+		watch: ({ onTransition }) => {
+			push = onTransition;
+			return { close: () => {}, degraded: () => false };
+		},
+		sleep: async () => {
+			clock += 1_000;
+			polls += 1;
+			if (polls === 1) {
+				// A transient throttle the harness retried past: visible once, then
+				// scrolled away by real work.
+				context.herdr.paneOutput = "rate limit, retrying...\n";
+				push({ status: "working", alive: true, agent: "pi", source: "subscribe", event: null, from: "idle" });
+			}
+			if (polls === 3) context.herdr.paneOutput = "rate limit, retrying...\n" + "real work\n".repeat(80);
+			if (polls === 5) {
+				context.writeOutbox(completedOutbox(context.identity));
+				push({ status: "idle", alive: false, agent: "pi", source: "subscribe", event: null, from: "working" });
+			}
+		},
+	});
+
+	assert.equal(result.outcome, "completed", "the worker's own outbox decides; the recovered refusal is history");
+});

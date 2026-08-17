@@ -60,7 +60,7 @@ const AVAILABLE = herdrAnswering();
 const UNAVAILABLE = herdrAnswering(false);
 
 /** The process facts a start drives, rather than inheriting the test runner's. */
-function invocation(t, { config, herdr = AVAILABLE } = {}) {
+function invocation(t, { config, herdr = AVAILABLE, transportOverrides = {} } = {}) {
 	const root = makePackage(t);
 	const executable = join(root, "factory", "bin", "factory.mjs");
 
@@ -72,8 +72,9 @@ function invocation(t, { config, herdr = AVAILABLE } = {}) {
 		herdr,
 		// §6.2's runtime probes are live reads of the operator's harnesses, so
 		// they are injected exactly as the Herdr probe is; the worker suites
-		// drive every verdict through the same seam.
-		workerTransports: workerTransportsAnswering(root),
+		// drive every verdict through the same seam. Overrides let a test name
+		// models the probed inventory must carry beside the fixture's own.
+		workerTransports: workerTransportsAnswering(root, transportOverrides),
 		// This suite isolates the controller lifecycle. Explicit null preserves the
 		// focused no-pipeline seam now that an omitted override selects #147's
 		// production composition.
@@ -109,7 +110,7 @@ async function orphanRun(context, { tickets = [42], at = 1_770_000_000_000, then
 
 // ── The published contract (§10.3, §13.A, §14.36) ────────────────────────────
 
-test("§10.3's table maps the six run end reasons plus the one controller exit outcome, and only those", () => {
+test("§10.3's table maps the seven run end reasons plus the one controller exit outcome, and only those", () => {
 	assert.deepEqual(
 		Object.keys(OUTCOME_EXIT_CODES).sort(),
 		[...RUN_TERMINAL_REASONS, CONTROLLER_EXIT_LEASE_LOST].sort(),
@@ -121,6 +122,7 @@ test("§10.3's table maps the six run end reasons plus the one controller exit o
 		abandoned: 4,
 		"circuit-breaker": 5,
 		"lease-lost": 6,
+		"capacity-exhausted": 9,
 		"controller-lost": null,
 	});
 });
@@ -1188,7 +1190,7 @@ test("the run reports the declared ceiling and the effective concurrency beside 
 	assert.equal(value.report.capacity.declared_ceiling, 1);
 	assert.equal(value.report.capacity.effective_concurrency, 1);
 	assert.deepEqual(value.report.capacity.classes, [
-		{ class: "local", size: 1, held: 0, waiting: 0, superseded: 0 },
+		{ class: "local", size: 1, held: 0, waiting: 0, superseded: 0, exhaustion: null },
 	]);
 	assert.deepEqual(value.report.capacity.holders, [], "§15 case 5: no capacity row survives the run");
 });
@@ -1460,4 +1462,107 @@ test("§10.3: a run stopped by an operator says so, even with the breaker trippe
 	// human who typed `stop` is told their stop was honoured.
 	assert.equal(answer.report.end_reason, "stopped-by-operator");
 	assert.equal(answer.report.circuit_breaker.tripped, true, "and the machine's own verdict is still on the report");
+});
+
+test("#154: a run whose only claimable class is memo-exhausted says so plainly and exits 9, claiming nothing", async (t) => {
+	const context = invocation(t);
+	const loaded = loadFactoryConfig({ cwd: context.cwd });
+
+	// Seed the memo the way a previous run's observed refusal would have left it:
+	// on the controller stream, with no run in the envelope, outliving its author.
+	const seeded = await openStore({ repoRoot: context.cwd, agentDir: context.agentDir });
+	seeded.append({
+		kind: "capacity.exhausted",
+		source: "controller",
+		occurredAt: FIXED_NOW - 1_000,
+		observedAt: FIXED_NOW - 1_000,
+		payload: { class: "local", until: FIXED_NOW + 3_600_000, evidence: { source: "herdr" } },
+	});
+	seeded.close();
+
+	const executed = [];
+	const answer = await runStart({
+		...loaded,
+		agentDir: context.agentDir,
+		executable: context.executable,
+		env: context.env,
+		workerTransports: context.workerTransports,
+		herdr: context.herdr,
+		args: ["42", "91"],
+		flags: new Set([FOREGROUND_FLAG]),
+		frontier: async () => ({
+			claimable: [42, 91],
+			members: [42, 91].map((ticket) => ({ ticket, labels: [] })),
+		}),
+		execute: ({ ticket }) => {
+			executed.push(ticket);
+			return { disposition: "published" };
+		},
+	});
+
+	assert.deepEqual(executed, [], "nothing is launched into an exhausted class before its expiry");
+	assert.equal(answer.report.end_reason, "capacity-exhausted");
+	assert.equal(answer.exitCode, 9);
+	assert.equal(answer.exitCode, exitCodeForEndReason("capacity-exhausted"));
+	assert.equal(answer.report.execution.drained, false, "work the run could not spend is not a drained scope");
+
+	const blocked = answer.report.execution.members.filter((member) => member.class === "blocked-external");
+	assert.equal(blocked.length, 2, "both claimable tickets are classified, not quietly absent");
+	for (const member of blocked) {
+		assert.match(member.reason, /exhausted|class/i, "the reason names the exhausted class");
+	}
+});
+
+test("#154: a live memo on one class does not hold the others — routing around is the scheduler's ordinary scan", async (t) => {
+	const config = cloneValidConfig();
+	// A second class the active routing reaches, so the run has somewhere to go.
+	config.profiles.cloud = { kind: "pi", model: "cloud/qwen3" };
+	config.concurrency.resources.cloud = 1;
+	config.routing.rules = [{ role: "implement", labelsAny: ["cloud"], profile: "cloud" }];
+	const context = invocation(t, {
+		config,
+		transportOverrides: {
+			models: [
+				{ id: "qwen3", provider: "local", baseUrl: "http://127.0.0.1:9/v1" },
+				{ id: "qwen3", provider: "cloud", baseUrl: "http://127.0.0.1:10/v1" },
+			],
+		},
+	});
+	const loaded = loadFactoryConfig({ cwd: context.cwd });
+
+	const seeded = await openStore({ repoRoot: context.cwd, agentDir: context.agentDir });
+	seeded.append({
+		kind: "capacity.exhausted",
+		source: "controller",
+		occurredAt: FIXED_NOW - 1_000,
+		observedAt: FIXED_NOW - 1_000,
+		payload: { class: "local", until: FIXED_NOW + 3_600_000, evidence: { source: "herdr" } },
+	});
+	seeded.close();
+
+	const executed = [];
+	const answer = await runStart({
+		...loaded,
+		agentDir: context.agentDir,
+		executable: context.executable,
+		env: context.env,
+		workerTransports: context.workerTransports,
+		herdr: context.herdr,
+		args: ["42", "91"],
+		flags: new Set([FOREGROUND_FLAG]),
+		frontier: async () => ({
+			claimable: [42, 91],
+			members: [
+				{ ticket: 42, labels: [] },
+				{ ticket: 91, labels: ["cloud"] },
+			],
+		}),
+		execute: ({ ticket }) => {
+			executed.push(ticket);
+			return { disposition: "published" };
+		},
+	});
+
+	assert.deepEqual(executed, [91], "the non-exhausted class is claimed; the exhausted one is not");
+	assert.equal(answer.report.end_reason, "capacity-exhausted", "the exhausted ticket still holds the run from draining");
 });

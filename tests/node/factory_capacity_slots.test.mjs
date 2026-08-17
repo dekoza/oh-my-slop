@@ -309,8 +309,8 @@ test("the snapshot carries the declared ceiling, the effective concurrency, and 
 	assert.equal(snapshot.effective_concurrency, 3);
 	assert.deepEqual(snapshot.ticket, { size: 4, held: 1, waiting: 0, superseded: 0 });
 	assert.deepEqual(snapshot.classes, [
-		{ class: "local", size: 1, held: 1, waiting: 1, superseded: 0 },
-		{ class: "claude-code", size: 2, held: 0, waiting: 0, superseded: 0 },
+		{ class: "local", size: 1, held: 1, waiting: 1, superseded: 0, exhaustion: null },
+		{ class: "claude-code", size: 2, held: 0, waiting: 0, superseded: 0, exhaustion: null },
 	]);
 });
 

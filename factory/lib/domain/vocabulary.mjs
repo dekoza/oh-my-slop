@@ -94,12 +94,22 @@ export const END_REASON_CIRCUIT_BREAKER = "circuit-breaker";
 export const END_REASON_CONTROLLER_LOST = "controller-lost";
 
 /**
- * §10.3's six run end reasons, mandatory on every ended run. `controller-lost`
+ * #154: every class the active routing can reach is locked by §9's exhaustion
+ * memo, so there is nothing this run can claim. It is its own reason rather
+ * than `drained` because a scope with claimable work the run cannot spend is
+ * precisely not drained — ending 0 over it is §9.7's green-looking run that
+ * did nothing, and the memo's expiry (plus its probe) is what the next start
+ * consults.
+ */
+export const END_REASON_CAPACITY_EXHAUSTED = "capacity-exhausted";
+
+/**
+ * §10.3's seven run end reasons, mandatory on every ended run. `controller-lost`
  * is asserted only by a different controller or the monitor, never by the run
  * itself, and is therefore the one member with no exit code (§14.36).
  *
  * This is the whole enum a `run.ended` may draw from. The published exit-code
- * table has a seventh row — `CONTROLLER_EXIT_LEASE_LOST` below — and keeping
+ * table has an eighth row — `CONTROLLER_EXIT_LEASE_LOST` below — and keeping
  * that row **out** of this list is the point: a collection named "end reasons"
  * that contained a value no run may end for is how the forbidden ending gets
  * reintroduced with every test still green. `exit-codes.mjs` checks the two
@@ -111,6 +121,7 @@ export const RUN_TERMINAL_REASONS = Object.freeze([
 	END_REASON_STOPPED_BY_OPERATOR,
 	END_REASON_ABANDONED,
 	END_REASON_CIRCUIT_BREAKER,
+	END_REASON_CAPACITY_EXHAUSTED,
 	END_REASON_CONTROLLER_LOST,
 ]);
 
@@ -177,6 +188,15 @@ export const ATTEMPT_OUTCOMES = Object.freeze([
 	"wrote-but-hung",
 	"cancelled",
 	"automation-failure",
+	/**
+	 * #154: the provider refused to serve the attempt — quota, rate limit, a
+	 * usage cap — observed in the pane output and typed apart from `timeout`
+	 * and `no-result`, which are what it read as before the detection existed.
+	 * The refusal is the provider's fault, so §8.10 charges no budget for it,
+	 * and the observation is recorded as §9's time-boxed class unavailability
+	 * rather than as anything the worker did.
+	 */
+	"provider-refused",
 ]);
 
 /**

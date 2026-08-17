@@ -759,3 +759,23 @@ test("a walk that reaches a retry with no declared budgets refuses rather than g
 		(error) => error.reason === "retry-unplannable" && /budgets\.repair/.test(error.message),
 	);
 });
+
+test("a provider-refused attempt releases the ticket and spends no budget (§8.10, #154)", async (t) => {
+	// The provider's refusal is neither the worker's fault nor the automation's:
+	// the ticket goes back to the frontier untouched, and the memo the dispatch
+	// path wrote is what keeps the next claim out of the exhausted class.
+	const context = await executing(t);
+	const { phases } = answering({ implement: "provider-refused" });
+
+	const settled = await context.walk(phases);
+
+	assert.equal(settled.disposition, "released");
+	assert.equal(settled.outcome, "provider-refused");
+	assert.equal(settled.reason_class, null);
+	assert.equal(settled.fault, null, "no fault: §8.6's breaker counts neither a product nor an automation failure");
+	assert.deepEqual(
+		budgetSpend(context.store, { run: context.run, ticket: context.ticket }),
+		{ repair: 0, freshRetry: 0, automation: 0 },
+		"the provider's refusal charges no budget — before #154 the same refusal arrived as a repair-charged no-result",
+	);
+});

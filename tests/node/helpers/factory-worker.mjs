@@ -308,8 +308,13 @@ export function fakeHerdr({
 			if (prompts <= swallowPrompts) return json({ submitted: true });
 			await onPrompt?.({ pane, text: args[3] });
 			// With a driven turn the agent has already finished it (idle); without
-			// one the prompt was merely taken up and the agent is now busy.
-			if (pane !== undefined) pane.agent_status = onPrompt === null ? "working" : "idle";
+			// one the prompt was merely taken up and the agent is now busy. A turn
+			// that locked the status owns the lifecycle itself (#154's refusal:
+			// the worker is still visibly working when the prompt lands, and
+			// settles a beat later).
+			if (pane !== undefined && pane.statusLocked !== true) {
+				pane.agent_status = onPrompt === null ? "working" : "idle";
+			}
 			return json({ submitted: true });
 		}
 		if (command === "pane read") {

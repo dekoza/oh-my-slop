@@ -42,6 +42,19 @@ function workerTurn({ builderStatuses = ["completed"], commitsAlways = false, on
 			onAbandon?.();
 			return;
 		}
+		// #154's provider refusal, as the worker experiences it: the turn ends,
+		// **no outbox is written**, and the provider's error is the last thing on
+		// the pane (the test puts it there through the fake's `paneOutput`). The
+		// worker is still visibly working when the prompt lands, and settles a
+		// beat later — a refusal kills the turn, it does not prevent it starting.
+		if (status === "refused") {
+			pane.agent_status = "working";
+			pane.statusLocked = true;
+			setTimeout(() => {
+				pane.agent_status = "idle";
+			}, 200);
+			return;
+		}
 
 		const result = {
 			schema_version: 1,
@@ -98,6 +111,7 @@ async function runProduction(
 		config = undefined,
 		issue = giteaIssue({ number: 147, title: "feat: production pipeline" }),
 		onTrackerWrite = null,
+		paneOutput = "",
 	} = {},
 ) {
 	const packageRoot = makePackage(t);
@@ -111,7 +125,7 @@ async function runProduction(
 		onWrite: (write, world) => onTrackerWrite?.({ write, world, loaded }),
 	});
 	const where = { repo: loaded.config.tracker.repo, login: loaded.config.tracker.login };
-	const herdr = fakeHerdr({ onPrompt: turn });
+	const herdr = fakeHerdr({ onPrompt: turn, paneOutput });
 	const checkoutBefore = git(repoRoot, "status", "--porcelain=v1", "--untracked-files=all");
 
 	const answer = await runStart({
@@ -314,4 +328,35 @@ test("a subsystem refusal after claim becomes a durable automation failure inste
 
 	assert.equal(answer.report.execution.members[0].disposition, "failed");
 	assert.match(tracker.comments.at(-1).body, /cannot pin|git|fetch/i);
+});
+
+test("#154: a provider refusal releases the ticket untouched and records the class memo", async (t) => {
+	const { answer, tracker, repoRoot, agentDir } = await runProduction(t, {
+		turn: workerTurn({ builderStatuses: ["refused"] }),
+		paneOutput: "working...\nAPI Error: 429 insufficient_quota: you exceeded your current quota\n",
+	});
+
+	// The attempt is typed, and the ticket goes back to the frontier untouched:
+	// released, never `factory:failed`, and no budget was spent deciding that.
+	assert.equal(answer.report.execution.members[0].disposition, "released");
+	assert.ok(
+		tracker.writes.some((write) => write.operation === "issue-unassign"),
+		"the released claim is dropped on the tracker",
+	);
+	assert.ok(
+		!tracker.writes.some((write) => write.operation === "label-add"),
+		"no eligibility label: the provider failed, not the ticket",
+	);
+
+	const store = await openStore({ repoRoot, agentDir });
+	t.after(() => store.close());
+
+	const [ended] = store.readEvents({ kind: "attempt.ended" });
+	assert.equal(ended.payload.outcome, "provider-refused");
+
+	const memos = store.readEvents({ kind: "capacity.exhausted" });
+	assert.equal(memos.length, 1, "the observed refusal became the class's time-boxed memo");
+	assert.equal(memos[0].payload.class, "local");
+	assert.ok(memos[0].payload.until > ended.occurred_at, "the memo outlives the attempt that paid for it");
+	assert.equal(memos[0].payload.evidence.source, "herdr");
 });

@@ -3,10 +3,13 @@ import { CONTROLLER_EXIT_LEASE_LOST, RUN_TERMINAL_REASONS } from "../domain/voca
 /**
  * Exit codes are published contract (§10.3), not configuration.
  *
- * `0` and `2`–`6` belong to the run end-reason table below. What lives here
- * besides is the pair that exists *before* a run does — plus the two markers for
- * a verb that never reached a run at all, deliberately outside the end-reason
- * range so no caller can read one as a run outcome.
+ * `0` and `2`–`6` and `9` belong to the run end-reason table below; `9` is
+ * #154's `capacity-exhausted`, and it sits after `7` and `8` because those
+ * two are verb-level markers that exist before any run does, deliberately
+ * outside the end-reason range. What lives here besides is the pair that
+ * exists *before* a run does — plus the two markers for a verb that never
+ * reached a run at all, deliberately outside the end-reason range so no
+ * caller can read one as a run outcome.
  *
  * **There is no knob for any of this.** Callers' error handling depends on the
  * table, so a config key would let a config file silently break every downstream
@@ -21,7 +24,7 @@ export const EXIT_OK = 0;
 export const EXIT_USAGE = 1;
 
 /**
- * §10.3's table, as one value: the six run end reasons **plus the one
+ * §10.3's table, as one value: the seven run end reasons **plus the one
  * controller exit outcome**, `lease-lost` — a code a `factory start` caller can
  * really receive, from a process whose run it does not end.
  *
@@ -48,6 +51,14 @@ export const OUTCOME_EXIT_CODES = Object.freeze({
 	abandoned: 4,
 	"circuit-breaker": 5,
 	"lease-lost": 6,
+	/**
+	 * #154: claimable work remained whose every route §9's exhaustion memo
+	 * locked at the final scheduling decision — the run stopped claiming
+	 * because the rest cannot be spent, not because the scope drained. Non-zero
+	 * so `factory start && next-thing` cannot read it as a finished scope; 7
+	 * and 8 are the verb-level markers below.
+	 */
+	"capacity-exhausted": 9,
 	"controller-lost": null,
 });
 
@@ -66,7 +77,7 @@ if (!Object.hasOwn(OUTCOME_EXIT_CODES, CONTROLLER_EXIT_LEASE_LOST)) {
 for (const outcome of Object.keys(OUTCOME_EXIT_CODES)) {
 	if (!RUN_TERMINAL_REASONS.includes(outcome) && outcome !== CONTROLLER_EXIT_LEASE_LOST) {
 		throw new Error(
-			`Exit-code table row "${outcome}" is neither one of §10.3's six run end reasons ` +
+			`Exit-code table row "${outcome}" is neither one of §10.3's seven run end reasons ` +
 				"nor the controller exit outcome.",
 		);
 	}
@@ -88,7 +99,7 @@ export const EXIT_LEASE_LOST = OUTCOME_EXIT_CODES[CONTROLLER_EXIT_LEASE_LOST];
 /**
  * The code a run leaves with, given the reason it ended.
  *
- * @param {string} endReason one of §10.3's six run end reasons
+ * @param {string} endReason one of §10.3's seven run end reasons
  * @returns {number}
  * @throws {Error} for `controller-lost`, which has no exit code by construction,
  *   and for `lease-lost`, which is a controller exit outcome rather than a
@@ -102,7 +113,7 @@ export function exitCodeForEndReason(endReason) {
 		);
 	}
 	const code = OUTCOME_EXIT_CODES[endReason];
-	if (code === undefined) throw new Error(`"${endReason}" is not one of §10.3's six run end reasons.`);
+	if (code === undefined) throw new Error(`"${endReason}" is not one of §10.3's seven run end reasons.`);
 	if (code === null) {
 		throw new Error(
 			`"${endReason}" is never self-asserted, so no process ever exits with it (§14.36); ` +

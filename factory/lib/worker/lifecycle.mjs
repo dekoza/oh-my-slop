@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 import { agentAlive, FACTORY_ATTEMPT_TOKEN, transcriptPointerOf } from "../controller/herdr-control.mjs";
 import { fromPane, watchPane } from "../controller/herdr-events.mjs";
+import { matchRefusal } from "../capacity/exhaustion.mjs";
 import { ATTEMPT_CLOCK_DEADLINE, ATTEMPT_CLOCK_NO_PROGRESS } from "../domain/vocabulary.mjs";
 import { requestEffect, resolveEffect } from "../effects/records.mjs";
 import { canonicalJson, runStream } from "../state/events.mjs";
@@ -158,6 +159,17 @@ export const STOP_ANOMALIES = Object.freeze({
 
 /** The agent statuses that mean the turn is over (§6.6's liveness half). */
 const SETTLED_STATUSES = Object.freeze(["idle", "done", "released", "exited"]);
+
+/**
+ * The verdicts #154 reclassifies when the pane's tail shows a provider
+ * refusal: the three silence-based ones, and only when the outbox is absent.
+ * `automation-failure` is on the list for its degraded-observation reading —
+ * its foreign-outbox reading is an affirmative fact, which the absence gate
+ * excludes. A worker that answered is answering whatever the pane scrolled
+ * past, and a pane that died is a different fact — so neither is ever re-read
+ * for a refusal.
+ */
+const REFUSAL_RECLASSIFIABLE = Object.freeze(["no-result", "timeout", "automation-failure"]);
 
 /** The two that mean the worker is gone rather than waiting for input. */
 const GONE_STATUSES = Object.freeze(["released", "exited"]);
@@ -537,6 +549,11 @@ export async function awaitCompletion(
 	let nextProgressCheckAt = now();
 	let outputSnapshot = null;
 	let observationDegraded = false;
+	// #154: the provider refusal visible in the pane's tail right now, or null.
+	// It is recomputed on every output read, so a worker that was refused and
+	// then recovered clears it — a transient throttle the harness retried past is
+	// history, not a verdict.
+	let refusalNow = null;
 
 	// **Seeded from a read, never assumed.** A worker that finished before the
 	// subscription opened produces no transition at all, and starting from
@@ -608,17 +625,43 @@ export async function awaitCompletion(
 				deadline,
 				noProgressDeadline: lastProgressAt + noProgressTimeoutMs,
 				observationDegraded,
+				refusal: refusalNow,
 				settleGraceMs,
 			});
 			if (decided !== null) {
+				let outcome = decided.outcome;
+				let clock = decided.clock ?? null;
+
+				// #154: a silence-based verdict gets **one final look at the pane**
+				// before it is made durable. The settle grace is shorter than the
+				// output cadence, so a refusal printed as the worker settled can be
+				// newer than the last sample; deciding "the worker produced nothing"
+				// without reading what it visibly produced last is the inference this
+				// ticket exists to end. A refusal found now is recorded like any other.
+				// Only silence qualifies: an outbox that exists — foreign included —
+				// is an affirmative fact the pane must not mask (§6.6).
+				if (refusalNow === null && outbox.state === "absent" && REFUSAL_RECLASSIFIABLE.includes(outcome)) {
+					const lastLook = await herdr.readPaneOutput(pane);
+					if (lastLook.ok) {
+						const refusalSeen = matchRefusal(lastLook.text);
+						if (refusalSeen !== null) {
+							observer.refusal(refusalSeen, at);
+							refusalNow = refusalSeen;
+							outcome = "provider-refused";
+							clock = null;
+						}
+					}
+				}
+
 				return await settle(store, {
 					hold,
 					identity,
 					herdr,
 					agent,
-					outcome: decided.outcome,
-					clock: decided.clock ?? null,
+					outcome,
+					clock,
 					lastProgress,
+					refusal: refusalNow,
 					outbox,
 					liveness,
 					actor,
@@ -642,6 +685,13 @@ export async function awaitCompletion(
 						lastProgressAt = at;
 						lastProgress = outputProgress({ bytes: output.bytes, digest }, at);
 					}
+					// #154: is the provider's refusal what the pane is showing now?
+					// Recorded once per sighting as its own fact — the refusal is an
+					// observation with a named source, never an inference from elapsed
+					// time (§4.3, §5.2).
+					const refusalSeen = matchRefusal(output.text);
+					if (refusalSeen !== null && refusalNow === null) observer.refusal(refusalSeen, at);
+					refusalNow = refusalSeen;
 				}
 			}
 			await sleep(pollIntervalMs);
@@ -701,6 +751,15 @@ export async function cancelAttempt(store, { hold, identity: minted, herdr, agen
  * | absent | working, observed progress | `timeout` / `clock: deadline` at the hard ceiling |
  * | absent | working | undecided; keep waiting |
  *
+ * **A provider refusal observed in the pane output overrides the three
+ * no-outbox endings** (#154): a worker whose last visible output is a quota or
+ * rate-limit refusal did not answer badly and did not hang — its provider
+ * refused it. `no-result`, the no-progress clock, and the hard ceiling all
+ * become `provider-refused`, which is what keeps §8.10 from charging the
+ * worker's budget for the provider's fault. The outbox still wins — a worker
+ * that answered is answering, whatever the pane scrolled past — and a pane
+ * that died is `dead-worker` still, because that is a different fact.
+ *
  * The no-progress row is the one that splits by fault (§8.10): when the
  * controller's own observation channel degraded, the absence of progress is
  * evidence about the controller, not the worker, so it answers
@@ -721,6 +780,7 @@ export function decideOutcome({
 	deadline,
 	noProgressDeadline = null,
 	observationDegraded = false,
+	refusal = null,
 	settleGraceMs = SETTLE_GRACE_MS,
 }) {
 	if (outbox.state === "foreign") return Object.freeze({ outcome: "automation-failure" });
@@ -734,6 +794,12 @@ export function decideOutcome({
 	}
 
 	if (GONE_STATUSES.includes(liveness.status)) return Object.freeze({ outcome: "dead-worker" });
+
+	// #154: the provider's refusal, observed in the pane output, outranks the
+	// three silence-based verdicts below — it says *why* the worker produced
+	// nothing, and the reason is neither the worker's fault nor a clock's.
+	if (refusal !== null) return Object.freeze({ outcome: "provider-refused" });
+
 	if (liveness.settledAt !== null && at - liveness.settledAt >= settleGraceMs) {
 		return Object.freeze({ outcome: "no-result" });
 	}
@@ -999,6 +1065,7 @@ async function settle(
 		outcome,
 		clock = null,
 		lastProgress = null,
+		refusal = null,
 		outbox,
 		liveness,
 		cancellation = null,
@@ -1029,6 +1096,10 @@ async function settle(
 			// last observed fact that kept the no-progress clock from firing.
 			clock,
 			last_progress: lastProgress,
+			// #154: the provider refusal this ending was decided on, when one was
+			// observed — the signatures that matched and the pane's own excerpt, so
+			// the verdict is readable as an observation rather than as elapsed time.
+			refusal,
 			// §5.2: the outbox is **evidence**, so what it claimed rides the record
 			// and never becomes the record. The controller's own rerun is the
 			// attestation boundary (§14.16).
@@ -1051,6 +1122,7 @@ async function settle(
 		outcome,
 		clock,
 		lastProgress,
+		refusal,
 		record: outbox?.record ?? null,
 		problems: outbox === null ? Object.freeze([]) : outbox.problems,
 		worker_status: liveness === null ? null : liveness.status,
@@ -1255,6 +1327,35 @@ function observationRecorder(store, { hold, identity, pane, actor, now }) {
 					pane,
 					bytes,
 					digest,
+					observed_by: "poll",
+				},
+			});
+		},
+
+		/**
+		 * A provider refusal seen in the pane output (#154) — its own fact under
+		 * §5.2's herdr row, because the pane's tail is where the refusal becomes
+		 * visible. Recorded once per sighting: a refusal that clears and returns
+		 * is a new observation, and the memo the dispatch path writes cites the
+		 * latest one.
+		 */
+		refusal(match, at) {
+			ordinal += 1;
+			hold.append({
+				kind: "observation.recorded",
+				source: requireAuthority("provider.refusal", "herdr"),
+				run,
+				ticket,
+				phase,
+				attempt,
+				occurredAt: at,
+				observedAt: at,
+				foreignSourceId: `herdr:${pane}:${attempt}:${ordinal}`,
+				payload: {
+					fact: "provider.refusal",
+					pane,
+					signatures: [...match.signatures],
+					excerpt: match.excerpt,
 					observed_by: "poll",
 				},
 			});

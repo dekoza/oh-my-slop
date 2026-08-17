@@ -144,7 +144,7 @@ test("an ended run does not move again: its terminal state is where it stays", a
 test("no run ends `lease-lost`: that reason names a process's exit, not a run's ending", async (t) => {
 	const { store, runId } = await storeWithRun(t);
 
-	// It is one of §10.3's seven — it has a published exit code — and it is still
+	// It is one of §10.3's eight rows — it has a published exit code — and it is still
 	// refused here. The process that lost its lease has no ownership proof left,
 	// and a successor may already be adopting this same run id, so closing the
 	// run would be a stale writer ending somebody else's work.
@@ -160,7 +160,7 @@ test("no run ends `lease-lost`: that reason names a process's exit, not a run's 
 	);
 
 	assert.equal(store.readRun(runId).end_reason, null);
-	// The vocabulary keeps the two domains apart by construction: six reasons a
+	// The vocabulary keeps the two domains apart by construction: seven reasons a
 	// run ends for, and one controller exit outcome that is never among them.
 	assert.deepEqual(RUN_TERMINAL_REASONS, [
 		"drained",
@@ -168,6 +168,7 @@ test("no run ends `lease-lost`: that reason names a process's exit, not a run's 
 		"stopped-by-operator",
 		"abandoned",
 		"circuit-breaker",
+		"capacity-exhausted",
 		"controller-lost",
 	]);
 	assert.equal(CONTROLLER_EXIT_LEASE_LOST, "lease-lost");

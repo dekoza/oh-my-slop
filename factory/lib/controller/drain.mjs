@@ -102,7 +102,14 @@ export function drainVerdict(view) {
 export function drainReport({ view = null, executed = null, inFlight = [], missing = null } = {}) {
 	const verdict = drainVerdict(view);
 	const lanes = new Map((executed?.lanes ?? []).map((lane) => [lane.ticket, lane]));
-	const members = (view?.members ?? []).map((member) => reportedMember(member, view, lanes.get(member.ticket)));
+	// #154: the tickets §9's exhaustion memo held at the loop's last decision.
+	// They are claimable on the tracker and unspendable by the run, and the
+	// report says so in one of the six classes rather than hiding them in a
+	// count — the operator's question is *why* the run stopped.
+	const exhausted = new Map((executed?.exhausted ?? []).map((entry) => [entry.ticket, entry]));
+	const members = (view?.members ?? []).map((member) =>
+		reportedMember(member, view, lanes.get(member.ticket), exhausted.get(member.ticket)),
+	);
 
 	return Object.freeze({
 		claimed: claimsMade(executed),
@@ -173,8 +180,11 @@ function claimsMade(executed) {
  * only a human adding the missing label changes that. `frontier_class` is kept
  * beside the mapped one so nothing the classifier knew is lost in the mapping.
  */
-function reportedMember(member, view, lane) {
-	const mapped = mapClass(member, view, new Set(), lane);
+function reportedMember(member, view, lane, exhaustedEntry) {
+	const mapped =
+		exhaustedEntry !== undefined
+			? exhaustionBlock(member, exhaustedEntry)
+			: mapClass(member, view, new Set(), lane);
 
 	return Object.freeze({
 		ticket: member.ticket,
@@ -196,6 +206,29 @@ function reportedMember(member, view, lane) {
 		// §7.6, carried through. `null` is *not discovered* rather than *mergeable*.
 		unmergeable: typeof member.unmergeable === "boolean" ? member.unmergeable : null,
 	});
+}
+
+/**
+ * #154: a member the tracker calls claimable but §9's exhaustion memo will not
+ * let the run spend. It lands in `blocked-external` — the one of §3.5's six
+ * meaning *something outside this run has to move first* — and the reason
+ * carries what the class alone cannot: which resource class refused, and the
+ * expiry a probe must settle before dispatch touches it again. No seventh
+ * member class is invented for it: the closed six hold, and the sentence does
+ * the rest.
+ */
+function exhaustionBlock(member, exhaustedEntry) {
+	const until =
+		exhaustedEntry.until === null
+			? "no expiry is recorded, so only a probe can settle it"
+			: `until ${new Date(exhaustedEntry.until).toISOString()}`;
+	return {
+		class: MEMBER_CLASSES.blockedExternal,
+		reason:
+			`#${member.ticket} is claimable, but its resource class "${exhaustedEntry.class}" is provider-exhausted ${until} (§9). ` +
+			"The provider refused for quota or rate reasons; dispatch holds until the memo expires and a probe re-admits the class.",
+		blockedBy: null,
+	};
 }
 
 function mapClass(member, view, seen = new Set(), lane = undefined) {
