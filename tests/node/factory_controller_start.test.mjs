@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { readArtifact } from "../../factory/lib/artifacts/ledger.mjs";
@@ -30,7 +30,7 @@ import { isUlid, newUlid } from "../../factory/lib/identity/ulid.mjs";
 import { HEARTBEAT_STREAM, runStream } from "../../factory/lib/state/events.mjs";
 import { CONTROLLER_LEASE_TTL_MS, openLeases } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
-import { makePackage, onPath } from "./helpers/factory-package.mjs";
+import { herdrIntegration, makePackage, onPath } from "./helpers/factory-package.mjs";
 import { cloneValidConfig, factorySources, makeRemote, makeRepo } from "./helpers/factory-repo.mjs";
 import {
 	FIXED_NOW,
@@ -248,9 +248,10 @@ test("preflight is observable per check and per probe, and runs after the run ex
 	const { value } = await runCli(["start", "--foreground", "42"], context);
 
 	const names = value.report.preflight.checks.map((check) => check.check);
-	// §9.7's order, with §6.8's three obligations in the cheap section: the
-	// environment is built before the manifest that records what it promoted, and
-	// trust is proven before anything is claimed.
+	// §9.7's order, with §6.8's obligations in the cheap section: the
+	// environment is built before the manifest that records what it promoted,
+	// trust is proven before anything is claimed, and §6.5's pointer channel is
+	// observed before the probes that would use it.
 	assert.deepEqual(names, [
 		"package-handshake",
 		"worker-isolation",
@@ -258,6 +259,7 @@ test("preflight is observable per check and per probe, and runs after the run ex
 		"worker-permissions",
 		"worker-trust",
 		"skill-closure",
+		"worker-agent-state",
 		"herdr-available",
 		"git-isolation",
 		"runtime-probe",
@@ -334,18 +336,72 @@ test("an unanchorable package is a recorded red check, not an unhandled exceptio
 
 	assert.equal(exitCode, 2);
 	assert.equal(value.report.end_reason, "baseline-red");
-	// The two §6.2 checks answer from the handshake's pin, so a package nothing
+	// The §6.2 checks answer from the handshake's pin, so a package nothing
 	// could anchor fails them too — each citing the handshake as the cause
-	// rather than inventing a second diagnosis.
-	assert.deepEqual(value.report.preflight.red, ["package-handshake", "skill-closure", "runtime-probe"]);
+	// rather than inventing a second diagnosis. The agent-state check joins
+	// them: with no pinned revision there are no roles in play to gate, so it
+	// names the handshake rather than answering for a package it never read.
+	assert.deepEqual(value.report.preflight.red, [
+		"package-handshake",
+		"skill-closure",
+		"worker-agent-state",
+		"runtime-probe",
+	]);
 	assert.equal(value.report.preflight.checks.find((check) => check.check === "package-handshake").result, "failed");
-	for (const dependent of ["skill-closure", "runtime-probe"]) {
+	for (const dependent of ["skill-closure", "worker-agent-state", "runtime-probe"]) {
 		assert.equal(
 			value.report.preflight.checks.find((check) => check.check === dependent).detail.cause,
 			"package-handshake",
 		);
 	}
 	assert.ok(value.report.manifest, "the failed handshake prevented the remaining static evidence from being recorded");
+});
+
+test("a missing agent-state integration ends the run baseline-red, naming the channel §6.5 loses", async (t) => {
+	const context = invocation(t);
+	// The host's pi integration is gone — herdr was never installed for it, or
+	// it was removed. The config dispatches every role to its pi profile, so
+	// exactly the runtime in play is the one that is broken, and every attempt
+	// of the run would correlate with no transcript.
+	rmSync(join(context.env.HOME, ".pi", "agent", "extensions", "herdr-agent-state.ts"));
+
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
+
+	assert.equal(exitCode, 2);
+	assert.equal(value.report.end_reason, "baseline-red");
+	// The integration's absence is the only red: the rest of the run would have
+	// been healthy, and reporting more than the truth would send the operator
+	// after ghosts.
+	assert.deepEqual(value.report.preflight.red, ["worker-agent-state"]);
+	const checked = value.report.preflight.checks.find((check) => check.check === "worker-agent-state");
+	assert.equal(checked.result, "failed");
+	assert.deepEqual(checked.detail.findings.map((entry) => entry.reason), ["agent-state-missing"]);
+	assert.match(checked.message, /herdr-agent-state\.ts/);
+	assert.match(checked.message, /no other channel/);
+	// The check answers for the runtimes in play — here pi only — not for a
+	// runtime the config cannot dispatch to, which is not part of this run.
+	assert.deepEqual(Object.keys(checked.detail.runtimes), ["pi"]);
+	assert.equal(checked.detail.runtimes.pi.installed, false);
+	assert.equal(checked.detail.runtimes.pi.expected_version, 8);
+});
+
+test("an outdated agent-state integration ends the run baseline-red, naming both numbers", async (t) => {
+	const context = invocation(t);
+	writeFileSync(
+		join(context.env.HOME, ".pi", "agent", "extensions", "herdr-agent-state.ts"),
+		herdrIntegration("pi", 3),
+	);
+
+	const { exitCode, value } = await runCli(["start", "--foreground", "42"], context);
+
+	assert.equal(exitCode, 2);
+	assert.equal(value.report.end_reason, "baseline-red");
+	assert.deepEqual(value.report.preflight.red, ["worker-agent-state"]);
+	const finding = value.report.preflight.checks.find((check) => check.check === "worker-agent-state").detail.findings[0];
+	assert.equal(finding.reason, "agent-state-version-mismatch");
+	assert.equal(finding.runtime, "pi");
+	assert.equal(finding.observed_version, 3);
+	assert.equal(finding.expected_version, 8);
 });
 
 test("a red preflight check ends the run baseline-red, naming the check, exiting 2", async (t) => {
@@ -934,6 +990,17 @@ test("the run manifest records the declared per-run overrides as evidence", asyn
 	assert.deepEqual(manifest.overrides.pi_extensions, { declared: [] });
 	assert.deepEqual(manifest.overrides.worker_context_file, { declared: null, digest: null, installed_as: [] });
 
+	// §6.5's pointer channel: what a run promoted, recorded by declared path
+	// and content digest, with the version observed out of the file rather than
+	// assumed — the evidence an incident reads to learn what the workers ran.
+	assert.deepEqual(Object.keys(manifest.overrides.agent_state).sort(), ["claude", "pi"]);
+	assert.match(manifest.overrides.agent_state.pi.source, /\.pi\/agent\/extensions\/herdr-agent-state\.ts$/);
+	assert.match(manifest.overrides.agent_state.pi.digest, /^[0-9a-f]{64}$/);
+	assert.equal(manifest.overrides.agent_state.pi.version, 8);
+	assert.match(manifest.overrides.agent_state.claude.source, /\.claude\/hooks\/herdr-agent-state\.sh$/);
+	assert.match(manifest.overrides.agent_state.claude.digest, /^[0-9a-f]{64}$/);
+	assert.equal(manifest.overrides.agent_state.claude.version, 7);
+
 	// Where the workers ran is evidence of isolation, not an override, and sits
 	// beside them rather than among them.
 	assert.match(manifest.worker_environment.claude, /worker-config\/claude$/);
@@ -967,6 +1034,37 @@ test("a declared worker-context file that is not there fails preflight rather th
 	assert.equal(isolation.result, "failed");
 	assert.equal(isolation.detail.reason, "config-environment-invalid");
 	assert.ok(value.report.preflight.red.includes("worker-isolation"));
+});
+
+test("a run whose environment did not build records the missing channels in its manifest, agent-state among them", async (t) => {
+	const config = cloneValidConfig();
+	config.worker = { contextFile: "docs/absent.md" };
+	const context = invocation(t, { config });
+
+	const { value } = await runCli(["start", "--foreground", "42"], context);
+
+	assert.ok(value.report.manifest, "the red run still records its manifest");
+	const store = await storeOf(t, context);
+	const manifest = JSON.parse(readArtifact(store, value.report.manifest).toString("utf8"));
+
+	// "Nothing was promoted" is recorded as a named absence per channel — and
+	// the agent-state channel is one of them, with the check that carries the
+	// diagnosis named beside it — rather than a key that quietly disappears
+	// from the shape.
+	for (const channel of [
+		manifest.overrides.extra_denies,
+		manifest.overrides.worker_context_file,
+		manifest.overrides.pi_extensions,
+	]) {
+		assert.equal(channel.missing, "the worker config environment did not build");
+		assert.equal(channel.spec, "§6.8");
+	}
+	assert.deepEqual(manifest.overrides.agent_state, {
+		pi: null,
+		claude: null,
+		missing: "the worker config environment did not build",
+		spec: "§6.8",
+	});
 });
 
 test("a config that declares no budgets records no budget override", async (t) => {
