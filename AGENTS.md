@@ -571,9 +571,12 @@ is the authority; cite the section a change answers to.
   finding tagged with the axis that wrote it — nothing merged, deduplicated, or reranked — and
   one or more blocking findings on either axis is the rejection. §11.5's `review` pair maps
   onto the axes **positionally**, which is the whole of "model diversity is available as
-  per-run configuration but is not mandated". **The commit under review is read off the
-  recorded harvest**, never taken from the caller: §14.13 measures the commit being published,
-  and a `reviewedCommit` parameter would be a second opinion about which one that is. The fixed
+  per-run configuration but is not mandated". **Both ends of the diff are read off the passing
+  verify record** (`verifiedBoundary`), never taken from the caller: §14.13 measures the commit
+  being published, a `reviewedCommit` parameter would be a second opinion about which one that
+  is — as would the harvest's head, which a moved base makes the pre-rebase commit — and a
+  `baseCommit` parameter briefed a repair chain's reviewers on the repair's delta while their
+  verdicts gated the whole chain (#165). The fixed
   point then reaches the worker through `renderAttemptPrompt`'s `review` block, which is
   **required** for a role whose expectations name verdicts and refused for one that does not —
   a reviewer rendered without it gets a prompt naming no diff, which reads as a complete

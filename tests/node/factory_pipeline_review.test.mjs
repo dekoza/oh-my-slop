@@ -102,7 +102,7 @@ async function reviewable(t) {
 		phase: "verify",
 		attempt: context.attempt,
 		outcome: "passed",
-		detail: { base_commit: context.base.commit, head: reviewedCommit, rebased: false, checks: [], commits: [] },
+		detail: verifiedDetail({ baseCommit: context.base.commit, head: reviewedCommit }),
 		actor: "controller",
 		at: FIXED_NOW,
 	});
@@ -168,6 +168,14 @@ function bothAnswering(answer) {
 }
 
 const APPROVING = Object.freeze({ outcome: "completed", record: verdict("approve") });
+
+/**
+ * A passing verify record's detail, as `integration.mjs`'s `rebaseAndVerify`
+ * shapes one for a base that never moved — the pair `verifiedBoundary` reads.
+ */
+function verifiedDetail({ baseCommit, head }) {
+	return { base_commit: baseCommit, head, rebased: false, checks: [], commits: [] };
+}
 
 // ── The fan-out: two attempts, two worktrees, one commit (§8.4) ──────────────
 
@@ -705,7 +713,7 @@ async function reviewableChain(t) {
 		["harvest", { head: chain.head, commits_ahead: 1 }],
 		// What §8.1's verify resolved: the base never moved, so the branch already
 		// sits on the run's pin and the head is the chain's tip, both commits deep.
-		["verify", { base_commit: chain.base.commit, head: chain.head, rebased: false, checks: [], commits: [] }],
+		["verify", verifiedDetail({ baseCommit: chain.base.commit, head: chain.head })],
 	]) {
 		resolveStage(chain.store, {
 			hold,

@@ -149,8 +149,10 @@ export async function reviewPhase(
  * base-branch tip the branch was left sitting on — the boundary of the
  * publishable diff — and `head` is the commit §8.2's required set passed at.
  * §14.15 makes this phase reachable only through that record, and
- * `integratePublish` reads the same one for the same reason, so the review, the
- * checks, and the publication measure one value.
+ * `integratePublish`'s `attestedByVerify` reads the same durable state for the
+ * same reason — so the review and the checks measure one value, and after a
+ * §9.5 re-rebase the verdicts keep naming the boundary they were rendered
+ * against (§8.7) rather than implying they covered the moved one.
  */
 function verifiedBoundary(store, { run, ticket, attempt }) {
 	// The latest passing verify under this attempt: §8.10's automation retry
