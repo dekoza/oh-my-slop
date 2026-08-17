@@ -258,6 +258,24 @@ test("no factory module issues a Herdr pane, tab, or workspace close (§13.B)", 
 	}
 });
 
+test("only the controller's own detach builds a Herdr `pane run` (§6.5, #157)", () => {
+	// Also a tree invariant rather than a launcher one. §6.8's closed pane set is
+	// declared on `tab create`; a future path that typed it into a shell instead
+	// would pass every behavioural test here while putting the run's config roots
+	// and the attempt identity back into scrollback anything can `pane read`.
+	//
+	// The shape ruled out is the *command*, not the word `export`: what this
+	// replaced was `call(["pane", "run", pane, `export ${…}`])`, whose literal
+	// text is an interpolation and which a search for `export NAME=` would miss.
+	// One module may build it — launch.mjs runs the factory binary in the
+	// controller's own pane and carries no worker environment (§10.1).
+	const pattern = /["']pane["']\s*,\s*["']run["']|\bpane\s+run\b/;
+	for (const [file, source] of factorySources()) {
+		if (file.endsWith("controller/launch.mjs")) continue;
+		assert.equal(pattern.test(source), false, `${file} builds a Herdr pane run`);
+	}
+});
+
 // ── The run.started payload carries the controller's pane ────────────────────
 
 test("the foreground run records the pane it runs in on run.started", async (t) => {

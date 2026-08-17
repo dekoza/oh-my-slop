@@ -858,7 +858,7 @@ test("a declared extension environment may not name the isolation or identity va
 	}
 });
 
-test("a declared extension environment refuses secret-shaped names: pane exports land in scrollback (§6.8)", (t) => {
+test("a declared extension environment refuses secret-shaped names: credentials have their own channel (§6.8)", (t) => {
 	const config = clone();
 	config.worker = { piExtensions: [{ path: "/ext/index.ts", env: { ROUTER_API_TOKEN: "hunter2" } }] };
 
@@ -866,10 +866,15 @@ test("a declared extension environment refuses secret-shaped names: pane exports
 
 	assert.equal(error.reason, "invalid-value");
 	assert.equal(error.details.at, "worker.piExtensions[0].env.ROUTER_API_TOKEN");
-	assert.match(error.message, /scrollback/);
+	// The refusal is about the channel, not about where the value would show:
+	// since #157 the set is declared on the pane's tab and never typed at its
+	// shell, so a reason naming the scrollback would be false (§6.8's promoted
+	// capability artifacts are the way a credential crosses).
+	assert.match(error.message, /promoted capability artifacts/);
+	assert.equal(/scrollback/.test(error.message), false);
 });
 
-test("a declared extension environment refuses names and values a shell export cannot carry faithfully", (t) => {
+test("a declared extension environment refuses names and values the manifest and reports cannot show", (t) => {
 	for (const [env, at] of [
 		[{ "lower-case": "x" }, "worker.piExtensions[0].env.lower-case"],
 		[{ GOOD_NAME: "with\nnewline" }, "worker.piExtensions[0].env.GOOD_NAME"],

@@ -56,17 +56,22 @@ environment.pretrust({ worktreePath: work, gitCommonDir: join(work, ".git") });
 const binding = environment.binding({ kind, posture: "builder" });
 const args = kind === "pi" ? ["--model", model, "--thinking", "high", ...binding.args] : [...binding.args];
 
-const created = herdr(["workspace", "create", "--cwd", work, "--label", "herdr-stop-probe", "--no-focus"]);
+// §6.8's binding is **declared** to the server, exactly as a launch declares it
+// (#157) — a probe that typed it at the shell instead would prove a pane no
+// worker will ever occupy, which is the same objection §6.8 makes to probing
+// under the operator's own config.
+const created = herdr([
+	"workspace",
+	"create",
+	"--cwd",
+	work,
+	"--label",
+	"herdr-stop-probe",
+	...Object.entries(binding.paneEnv).flatMap(([name, value]) => ["--env", `${name}=${value}`]),
+	"--no-focus",
+]);
 const pane = created.root_pane.pane_id;
 const workspace = created.workspace.workspace_id;
-herdr([
-	"pane",
-	"run",
-	pane,
-	`export ${Object.entries(binding.exports)
-		.map(([name, value]) => `${name}='${String(value).replaceAll("'", `'\\''`)}'`)
-		.join(" ")}`,
-]);
 
 const agent = "stopprobe";
 log(`starting ${kind} in ${pane} (never prompted, so no request is made)`);

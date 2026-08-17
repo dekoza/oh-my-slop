@@ -206,14 +206,15 @@ export function prepareWorkerEnvironment({
 		 * different environment from the one the worker gets proves nothing.
 		 *
 		 * `env` is the spawn environment for a probe the controller runs itself.
-		 * `exports` is the **closed** pane set: a worker pane's shell belongs to
-		 * the multiplexer server, not to this controller, so the launch types
-		 * exactly these variables into it — never the controller's whole
-		 * environment, which would put every ambient value in pane scrollback and
-		 * reopen the inheritance channel this environment exists to close.
+		 * `paneEnv` is the **closed** pane set: a worker pane's shell belongs to the
+		 * multiplexer server, not to this controller, so the launch declares exactly
+		 * these variables on the pane's tab (§6.5, #157) — never the controller's
+		 * whole environment, which would reopen the inheritance channel this
+		 * environment exists to close. Declared rather than typed, so the set does
+		 * not also become pane scrollback the operator and every `pane read` sees.
 		 *
 		 * @param {{ kind: string, posture: string }} session
-		 * @returns {{ env: Record<string, string | undefined>, exports: Record<string, string>, args: ReadonlyArray<string> }}
+		 * @returns {{ env: Record<string, string | undefined>, paneEnv: Record<string, string>, args: ReadonlyArray<string> }}
 		 */
 		binding({ kind, posture }) {
 			// **Both** variables, in both bindings. A pi worker that shells out to
@@ -231,7 +232,7 @@ export function prepareWorkerEnvironment({
 				const extensionEnv = Object.assign({}, ...extensions.map((extension) => extension.env));
 				return Object.freeze({
 					env: Object.freeze({ ...env, ...extensionEnv, ...configDirs }),
-					exports: Object.freeze({ ...extensionEnv, ...configDirs }),
+					paneEnv: Object.freeze({ ...extensionEnv, ...configDirs }),
 					args: Object.freeze([
 						...piSessionArguments({ posture }),
 						...extensions.flatMap((extension) => ["--extension", extension.path]),
@@ -244,7 +245,7 @@ export function prepareWorkerEnvironment({
 				// that was never written — one posture vocabulary, one refusal.
 				return Object.freeze({
 					env: Object.freeze(isolated),
-					exports: Object.freeze({ ...configDirs }),
+					paneEnv: Object.freeze({ ...configDirs }),
 					args: Object.freeze(claudeSessionArguments({ posture, settingsPath: settingsPaths[posture] })),
 				});
 			}

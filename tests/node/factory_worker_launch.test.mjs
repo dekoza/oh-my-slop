@@ -143,7 +143,6 @@ test("a launch opens an interactive pane, stamps it, starts the agent, then prom
 		"workspace create",
 		"tab create",
 		"pane report-metadata",
-		"pane run",
 		"agent start",
 		"pane list",
 		"agent prompt",
@@ -162,23 +161,49 @@ test("identity reaches the worker through the environment as well as the prompt 
 
 	// Two channels, deliberately: a worker that lost track of the prompt can
 	// still read `$FACTORY_ATTEMPT`, and so can anything it starts.
-	const exported = context.herdr.paneFor(context.attempt).exported;
-	assert.match(exported, /^export /);
-	for (const [name, value] of [
-		["FACTORY_RUN", context.run],
-		["FACTORY_TICKET", "42"],
-		["FACTORY_PHASE", "implement"],
-		["FACTORY_ATTEMPT", context.attempt],
-		["FACTORY_OUTBOX", attemptOutboxPath(context.store.storeDir, context.attempt)],
-		["FACTORY_WORKTREE", "/state/worktrees/attempt"],
-	]) {
-		assert.ok(exported.includes(`${name}='${value}'`), `${name} is not in the worker's environment: ${exported}`);
-	}
+	assert.deepEqual(context.herdr.paneFor(context.attempt).env, {
+		FACTORY_RUN: context.run,
+		FACTORY_TICKET: "42",
+		FACTORY_PHASE: "implement",
+		FACTORY_ATTEMPT: context.attempt,
+		FACTORY_OUTBOX: attemptOutboxPath(context.store.storeDir, context.attempt),
+		FACTORY_WORKTREE: "/state/worktrees/attempt",
+	});
+});
 
-	// Into the shell **before** the agent occupies the pane, or the harness
-	// process never sees them.
-	const commands = context.herdr.commands();
-	assert.ok(commands.indexOf("pane run") < commands.indexOf("agent start"));
+test("the closed pane set is declared to Herdr, so it never reaches the scrollback (#157, §6.8)", async (t) => {
+	const context = await launchable(t);
+
+	await context.launch();
+
+	// The whole point of the channel change: an `export` typed at the pane puts
+	// every config-directory path and the attempt identity into terminal output
+	// the operator, and anything reading the pane, can see. Declared on the tab,
+	// they are the server's to set on the shell it launches.
+	assert.equal(context.herdr.commands().includes("pane run"), false);
+	const created = context.herdr.calls.find((args) => args[0] === "tab" && args[1] === "create");
+	assert.ok(created.includes("--env"), "the tab carries them instead");
+});
+
+test("a declared session variable cannot shadow the attempt's identity (§6.5)", async (t) => {
+	const context = await launchable(t);
+
+	// §6.8's binding is the run's, and §6.5's identity is the attempt's. A
+	// binding that named `FACTORY_ATTEMPT` would correlate a worker to somebody
+	// else's attempt, so identity wins on whichever channel carries it.
+	await context.launch({
+		sessionEnv: { PI_CODING_AGENT_DIR: "/state/config/pi", FACTORY_ATTEMPT: "somebody-elses-attempt" },
+	});
+
+	const env = context.herdr.paneFor(context.attempt).env;
+	assert.equal(env.FACTORY_ATTEMPT, context.attempt);
+	assert.equal(env.PI_CODING_AGENT_DIR, "/state/config/pi", "the rest of the binding still rides it");
+
+	// One `--env` per name: a duplicate would leave which value wins to Herdr's
+	// argument parser, which is not where this decision belongs.
+	const created = context.herdr.calls.find((args) => args[0] === "tab" && args[1] === "create");
+	const declared = created.filter((_, index) => created[index - 1] === "--env").map((pair) => pair.split("=")[0]);
+	assert.equal(new Set(declared).size, declared.length);
 });
 
 test("the pane is stamped with FACTORY_ATTEMPT before the agent starts (§5.5)", async (t) => {
@@ -415,7 +440,6 @@ test("the recheck runs after attempt.launched exists and before the prompt is se
 		"workspace create",
 		"tab create",
 		"pane report-metadata",
-		"pane run",
 		"agent start",
 		"pane list",
 	]);
@@ -444,7 +468,6 @@ test("package drift stops the attempt before it spends anything", async (t) => {
 		"workspace create",
 		"tab create",
 		"pane report-metadata",
-		"pane run",
 		"agent start",
 		"pane list",
 	]);

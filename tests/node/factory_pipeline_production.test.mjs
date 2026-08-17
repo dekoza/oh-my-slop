@@ -23,12 +23,6 @@ import { fakeHerdr, workerTransportsAnswering } from "./helpers/factory-worker.m
 
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
 
-function exported(command) {
-	return Object.fromEntries(
-		[...command.matchAll(/([A-Z_]+)='([^']*)'/g)].map((match) => [match[1], match[2]]),
-	);
-}
-
 /**
  * `commitsAlways` is #151's builder: one that commits real work and then ends
  * without claiming it — a timeout, a refusal, a dead pane. The commit is in the
@@ -37,7 +31,9 @@ function exported(command) {
 function workerTurn({ builderStatuses = ["completed"], commitsAlways = false, onAbandon = null } = {}) {
 	let builderTurn = 0;
 	return async ({ pane, text }) => {
-		const identity = exported(pane.exported);
+		// The environment the pane's tab was created under (#157) — which is what a
+		// real worker reads out of its own process, rather than off the scrollback.
+		const identity = pane.env;
 		const status =
 			identity.FACTORY_PHASE === "implement"
 				? (builderStatuses[Math.min(builderTurn++, builderStatuses.length - 1)] ?? "completed")
@@ -185,11 +181,15 @@ test("every launched worker pane carries the controller-owned runtime binding, n
 	assert.equal(herdr.commands().filter((command) => command === "workspace create").length, 1);
 	assert.equal(new Set(workers.map((pane) => pane.workspace_id)).size, 1, "one run, one workspace");
 	for (const pane of workers) {
-		const variables = exported(pane.exported);
-		assert.equal(variables.PI_CODING_AGENT_DIR, roots.pi, `${pane.pane_id} lacks the controller-owned pi root`);
-		assert.equal(variables.CLAUDE_CONFIG_DIR, roots.claude, `${pane.pane_id} lacks the controller-owned Claude root`);
-		assert.equal(variables.FACTORY_TICKET, "147", `${pane.pane_id} lost the identity channel`);
+		assert.equal(pane.env.PI_CODING_AGENT_DIR, roots.pi, `${pane.pane_id} lacks the controller-owned pi root`);
+		assert.equal(pane.env.CLAUDE_CONFIG_DIR, roots.claude, `${pane.pane_id} lacks the controller-owned Claude root`);
+		assert.equal(pane.env.FACTORY_TICKET, "147", `${pane.pane_id} lost the identity channel`);
 	}
+
+	// #157: and none of it was typed at a pane, so none of it is in the operator's
+	// scrollback. The binding names two config roots per worker; a `pane run` here
+	// would put both, and the attempt identity, into readable terminal output.
+	assert.equal(herdr.commands().includes("pane run"), false);
 });
 
 test("profile model, thinking, and startup timeout reach the worker through its runtime adapter (§6.1, §11.4)", async (t) => {

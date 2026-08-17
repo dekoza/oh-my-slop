@@ -282,7 +282,7 @@ async function runWorker(context, { identity, opened, repair, review }) {
 		repair,
 		review,
 		sessionArgs: binding.args,
-		sessionEnv: binding.exports,
+		sessionEnv: binding.paneEnv,
 		// §6.6's two clocks: the profile's declared ceiling and no-progress window,
 		// or the lifecycle's code-owned defaults when neither is — never absent,
 		// because an absent deadline made the timeout row unreachable and a hung

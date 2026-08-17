@@ -324,11 +324,11 @@ test("a declared extension's environment reaches the pi session, its pane export
 	// declared value, so the session the probe proves is the session a worker gets.
 	const pi = environment.binding({ kind: "pi", posture: "builder" });
 	assert.equal(pi.env.PI_LOCAL_ROUTER_BASE_URL, "http://router.lab:11545");
-	assert.equal(pi.exports.PI_LOCAL_ROUTER_BASE_URL, "http://router.lab:11545");
+	assert.equal(pi.paneEnv.PI_LOCAL_ROUTER_BASE_URL, "http://router.lab:11545");
 
 	// Claude sessions never load the extension, so its variable does not ride them.
 	const claude = environment.binding({ kind: "claude", posture: "builder" });
-	assert.equal("PI_LOCAL_ROUTER_BASE_URL" in claude.exports, false);
+	assert.equal("PI_LOCAL_ROUTER_BASE_URL" in claude.paneEnv, false);
 	assert.equal("PI_LOCAL_ROUTER_BASE_URL" in claude.env, false);
 
 	// Recorded as evidence beside the digest: which values a run handed its workers.
@@ -353,7 +353,7 @@ test("a declared extension environment cannot displace the isolation variables (
 
 	const pi = environment.binding({ kind: "pi", posture: "builder" });
 	assert.equal(pi.env.PI_CODING_AGENT_DIR, environment.roots.pi);
-	assert.equal(pi.exports.PI_CODING_AGENT_DIR, environment.roots.pi);
+	assert.equal(pi.paneEnv.PI_CODING_AGENT_DIR, environment.roots.pi);
 });
 
 test("pre-trusting a worktree writes both stores, keyed the way each runtime resolves them", (t) => {
