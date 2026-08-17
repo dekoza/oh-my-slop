@@ -339,7 +339,7 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 				});
 			}
 
-			const answer = await probeClass(className, { at });
+			const answer = await probeClass(className);
 			if (answer.verdict === "admitted") {
 				recordAdmission(hold, { class: className, at, evidence: answer.evidence ?? {} });
 				return Object.freeze({ state: "available", until: null });

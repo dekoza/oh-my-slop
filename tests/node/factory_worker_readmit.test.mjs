@@ -50,7 +50,6 @@ function probe({ answer, reject = null, calls = [] } = {}) {
 		profiles: PROFILES,
 		environment,
 		repoRoot: "/repo",
-		env: {},
 		transport,
 	});
 }
@@ -59,7 +58,7 @@ test("a completion the provider answers is an admission", async () => {
 	const calls = [];
 	const probeClass = probe({ answer: { status: 0, stdout: "ok\n", stderr: "" }, calls });
 
-	const result = await probeClass("local", { at: 1 });
+	const result = await probeClass("local");
 
 	assert.equal(result.verdict, "admitted");
 	assert.equal(result.evidence.model, "local/qwen3");
@@ -70,17 +69,47 @@ test("a completion the provider refuses for quota is a refusal carrying the sign
 		answer: { status: 1, stdout: "", stderr: "Error: insufficient_quota: you exceeded your current quota\n" },
 	});
 
-	const result = await probeClass("local", { at: 1 });
+	const result = await probeClass("local");
 
 	assert.equal(result.verdict, "refused");
 	assert.ok(result.evidence.signatures.includes("quota"));
 	assert.match(result.evidence.excerpt, /insufficient_quota/);
 });
 
+test("a refusal printed over a zero exit is a refusal, never an admission", async () => {
+	// A harness that prints its limit message and exits 0 looks like an answer;
+	// the signature match outranks the exit status, or the memo would be cleared
+	// by the very refusal it exists to remember.
+	const probeClass = probe({
+		answer: { status: 0, stdout: "You exceeded your current quota, please check your plan.\n", stderr: "" },
+	});
+
+	const result = await probeClass("local");
+
+	assert.equal(result.verdict, "refused");
+	assert.ok(result.evidence.signatures.includes("quota"));
+});
+
+test("a profile the table does not carry refuses to answer", async () => {
+	const probeClass = createReadmissionProbe({
+		plan: { classes: [{ class: "local", size: 1, profiles: ["ghost"] }] },
+		profiles: PROFILES,
+		environment: { binding: () => BINDINGS.pi },
+		repoRoot: "/repo",
+		transport: { runCommand: async () => ({ status: 0, stdout: "ok", stderr: "" }) },
+	});
+
+	const result = await probeClass("local");
+
+	assert.equal(result.verdict, "inconclusive");
+	assert.equal(result.evidence.reason, "profile-unknown");
+	assert.equal(result.evidence.profile, "ghost");
+});
+
 test("a failure with no refusal wording is inconclusive — the class stays locked on it", async () => {
 	const probeClass = probe({ answer: { status: 1, stdout: "", stderr: "segfault in libssl\n" } });
 
-	const result = await probeClass("local", { at: 1 });
+	const result = await probeClass("local");
 
 	assert.equal(result.verdict, "inconclusive");
 });
@@ -88,7 +117,7 @@ test("a failure with no refusal wording is inconclusive — the class stays lock
 test("a probe that cannot run at all is inconclusive, never an admission", async () => {
 	const probeClass = probe({ reject: new Error("spawn pi ENOENT") });
 
-	const result = await probeClass("local", { at: 1 });
+	const result = await probeClass("local");
 
 	assert.equal(result.verdict, "inconclusive");
 	assert.match(result.evidence.reason, /probe-failed|ENOENT/i);
@@ -107,7 +136,7 @@ test("the pi probe runs the worker binding plus the probe-only flags, and nothin
 	const calls = [];
 	const probeClass = probe({ answer: { status: 0, stdout: "ok", stderr: "" }, calls });
 
-	await probeClass("local", { at: 1 });
+	await probeClass("local");
 
 	assert.equal(calls.length, 1);
 	const { command, args, options } = calls[0];
@@ -122,7 +151,7 @@ test("the claude probe carries the worker binding's settings and the model flag"
 	const calls = [];
 	const probeClass = probe({ answer: { status: 0, stdout: "ok", stderr: "" }, calls });
 
-	await probeClass("claude-code", { at: 1 });
+	await probeClass("claude-code");
 
 	const { command, args, options } = calls[0];
 	assert.equal(command, "claude");

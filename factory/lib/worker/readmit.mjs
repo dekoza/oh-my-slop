@@ -37,7 +37,7 @@ export const READMIT_PROBE_PROMPT = "Reply with exactly the word: ok";
  * @param {string} context.repoRoot where the probe runs
  * @param {object} [context.transport] injectable IO, as every probe's is
  * @param {number} [context.timeoutMs]
- * @returns {(className: string, request: object) => Promise<Readonly<{ verdict: string, evidence: object }>>}
+ * @returns {(className: string) => Promise<Readonly<{ verdict: string, evidence: object }>>}
  */
 export function createReadmissionProbe({
 	plan,
@@ -60,6 +60,12 @@ export function createReadmissionProbe({
 		// deterministically.
 		const profileName = entry.profiles[0];
 		const profile = profiles[profileName];
+		if (profile === undefined) {
+			return Object.freeze({
+				verdict: "inconclusive",
+				evidence: Object.freeze({ reason: "profile-unknown", class: className, profile: profileName }),
+			});
+		}
 		const kind = profile.kind;
 		const binding = environment.binding({ kind, posture: "builder" });
 
@@ -84,16 +90,19 @@ export function createReadmissionProbe({
 
 		const base = Object.freeze({ probe: "readmit", profile: profileName, model: profile.model, status: answer.status });
 
-		if (answer.status === 0 && answer.stdout.trim() !== "") {
-			return Object.freeze({ verdict: "admitted", evidence: base });
-		}
-
+		// The refusal signatures outrank the exit status: a harness that prints
+		// its limit message and exits 0 would otherwise clear the memo with the
+		// very refusal it exists to remember.
 		const refusal = matchRefusal(`${answer.stdout}\n${answer.stderr}`);
 		if (refusal !== null) {
 			return Object.freeze({
 				verdict: "refused",
 				evidence: Object.freeze({ ...base, signatures: [...refusal.signatures], excerpt: refusal.excerpt }),
 			});
+		}
+
+		if (answer.status === 0 && answer.stdout.trim() !== "") {
+			return Object.freeze({ verdict: "admitted", evidence: base });
 		}
 
 		return Object.freeze({
