@@ -99,12 +99,19 @@ function declare(name, { entrySkill, routingRole, expectations }) {
 
 /**
  * Each pipeline role with the profiles its routing role can dispatch to under
- * the active routing — the declared role value plus every rule that names the
- * role. Both review roles carry the whole review reach: §11.5 binds the pair to
- * the phase, and which attempt lands on which axis is dispatch's decision, not
- * a preflight assumption.
+ * the active routing — the declared role value, every rule that names the role,
+ * and **every entry in the role's reroute order** (§11.5, #155). Both review
+ * roles carry the whole review reach: §11.5 binds the pair to the phase, and
+ * which attempt lands on which axis is dispatch's decision, not a preflight
+ * assumption.
  *
- * @param {{ roles: object, rules: ReadonlyArray<object> }} activeRouting
+ * The reroute order counts for the same reason the rules do. §6.2's preflight
+ * asks this to size its proof — one session per distinct profile the active
+ * routing can dispatch (#164) — and a fallback profile is by definition one it
+ * can dispatch. Leaving them out would prove the flag spelling of every profile
+ * except the ones a quota blip makes the only way forward.
+ *
+ * @param {{ roles: object, rules: ReadonlyArray<object>, fallbacks?: object }} activeRouting
  * @returns {ReadonlyArray<Readonly<object>>} `PIPELINE_ROLES`, each with `profiles`
  */
 export function rolesInPlay(activeRouting) {
@@ -114,6 +121,7 @@ export function rolesInPlay(activeRouting) {
 			for (const rule of activeRouting.rules) {
 				if (rule.role === role.routingRole) for (const profile of [rule.profile].flat()) reached.add(profile);
 			}
+			for (const profile of (activeRouting.fallbacks?.[role.routingRole] ?? []).flat()) reached.add(profile);
 			return Object.freeze({ ...role, profiles: Object.freeze([...reached].sort()) });
 		}),
 	);

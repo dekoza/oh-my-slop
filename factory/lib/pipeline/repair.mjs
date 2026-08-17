@@ -14,6 +14,7 @@ import { attemptBranch } from "../git/isolation.mjs";
 import { runStream } from "../state/events.mjs";
 import {
 	allocateAttempt,
+	dispatchedAttempts,
 	mintAttempt,
 	ordinalOf,
 	requireAttemptIdentity,
@@ -387,11 +388,9 @@ export function planReroute({ prior, failure, route, priorResult = null }) {
 export function dispatchedProfiles(store, { run, ticket, role }) {
 	return Object.freeze([
 		...new Set(
-			store
-				.readEvents({ stream: runStream(run), kind: "attempt.launched" })
-				.filter((record) => record.ticket === ticket && record.payload.role === role)
-				.map((record) => record.payload.profile)
-				.filter((profile) => typeof profile === "string"),
+			dispatchedAttempts(store, { run, ticket })
+				.filter((entry) => entry.role === role && typeof entry.profile === "string")
+				.map((entry) => entry.profile),
 		),
 	]);
 }

@@ -2,6 +2,7 @@ import { ARTIFACT_WRITE_OPERATIONS } from "../artifacts/writes.mjs";
 import { DISPOSITION_RELEASED, TICKET_DISPOSITIONS } from "../domain/vocabulary.mjs";
 import { dispositionForReasonClass } from "../pipeline/dispositions.mjs";
 import { outcomeChain } from "../pipeline/stages.mjs";
+import { dispatchedAttempts } from "../worker/attempt.mjs";
 import { FactoryTrackerError } from "./errors.mjs";
 import { FACTORY_LABELS } from "./labels.mjs";
 import { COMMENT_OPERANDS, performEffect, postComment } from "./mutations.mjs";
@@ -270,6 +271,14 @@ function dispositionBlock(
 		// The **shape** of the chain is what a human's next action depends on, so it
 		// is never summarised to its last element.
 		outcome_chain: outcomeChain(store, { run, ticket }).map((step) => ({ ...step })),
+		// #155: **what actually did the work.** A reroute runs a profile other than
+		// the one §11.5 declared, and a disposition that named neither would leave a
+		// green ticket unable to answer "what wrote this?" — which is the auditing
+		// hole a silent substitution opens, and the reason §6.5 re-asserts a
+		// declared model against the observed one at all. It rides the digested
+		// intent rather than the prose beside it because it is a function of durable
+		// state: a re-entered settlement recomputes it exactly.
+		dispatch: dispatchedAttempts(store, { run, ticket }).map((entry) => ({ ...entry })),
 		evidence: evidenceFor(store, { run, ticket }),
 	};
 }

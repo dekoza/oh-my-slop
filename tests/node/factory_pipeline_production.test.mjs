@@ -112,6 +112,10 @@ async function runProduction(
 		issue = giteaIssue({ number: 147, title: "feat: production pipeline" }),
 		onTrackerWrite = null,
 		paneOutput = "",
+		// The models pi advertises. A second provider is what a reroute needs to be
+		// visible at all: §9.8's memo is class-scoped, and the class is the provider
+		// segment of the model id (§9.1).
+		models = undefined,
 	} = {},
 ) {
 	const packageRoot = makePackage(t);
@@ -137,7 +141,7 @@ async function runProduction(
 		flags: new Set([FOREGROUND_FLAG]),
 		herdr: herdrAnswering(true),
 		runHerdr: herdr.run,
-		workerTransports: workerTransportsAnswering(packageRoot),
+		workerTransports: workerTransportsAnswering(packageRoot, models === undefined ? {} : { models }),
 		tracker: createGiteaReader({ ...where, request: tracker.request }),
 		trackerWriter: createGiteaWriter({ ...where, request: tracker.write }),
 		...(signal === undefined ? {} : { signal }),
@@ -371,6 +375,10 @@ test("#155: a refused provider costs the ticket a relaunch, not the ticket — i
 		config,
 		turn: workerTurn({ builderStatuses: ["refused", "completed"] }),
 		paneOutput: "working...\nAPI Error: 429 insufficient_quota: you exceeded your current quota\n",
+		models: [
+			{ id: "qwen3", provider: "local", baseUrl: "http://127.0.0.1:9/v1" },
+			{ id: "glm", provider: "cloudy", baseUrl: "http://127.0.0.1:9/v1" },
+		],
 	});
 
 	assert.equal(

@@ -160,6 +160,47 @@ export function requireAttemptIdentity({ run, ticket, phase, attempt }) {
 }
 
 /**
+ * **What actually ran each attempt of one ticket execution** (#155): the role,
+ * the profile it was dispatched under, and what §11.5 declared for it.
+ *
+ * One reader, because two consumers ask the same question of the same records
+ * for the same reason. §8.9's disposition block names what did the work, and a
+ * reroute bounds itself on what this execution has already spent — and a green
+ * ticket that cannot answer "what wrote this?" is the auditing hole a silent
+ * substitution opens.
+ *
+ * It is a pure function of durable state, which is what lets it ride §8.9's
+ * digested intent rather than the comment prose beside it (#151's split): a
+ * re-entered settlement recomputes it exactly.
+ *
+ * @param {object} store an open store, controller or read-only
+ * @param {{ run: string, ticket: number }} where
+ * @returns {ReadonlyArray<Readonly<{ attempt: string, role: string, profile: string | null,
+ *   declared: string | null, rerouted: boolean, reason: string | null }>>} in mint order
+ */
+export function dispatchedAttempts(store, { run, ticket }) {
+	return Object.freeze(
+		store
+			.readEvents({ stream: runStream(run), kind: "attempt.launched" })
+			.filter((record) => record.ticket === ticket)
+			.map((record) =>
+				Object.freeze({
+					attempt: record.attempt,
+					role: record.payload.role,
+					profile: record.payload.profile ?? null,
+					// `null` on a **pinned** attempt rather than a copy of the profile:
+					// §8.5's repair and §8.10's automation retry made no dispatch
+					// decision, and saying they declared what they ran would read as a
+					// routing that happened to land where the pin already was.
+					declared: record.payload.routing?.declared ?? null,
+					rerouted: record.payload.routing?.rerouted ?? false,
+					reason: record.payload.routing?.reason ?? null,
+				}),
+			),
+	);
+}
+
+/**
  * Whether this attempt has already been launched in this store.
  *
  * A launched attempt is never launched again: §5.5 reads "every resume is a
