@@ -570,10 +570,10 @@ credentials, controller-mediated + durable):
 2. **Herdr `agent prompt` as mid-flight steering** (controller → worker; both runtimes).
    The delivery primitive already used at launch; both runtimes document queued-steering
    semantics for text typed while working (pi `usage.md:66`, Claude
-   how-claude-code-works.md). Needs the launch's uptake-confirmation loop and a live
-   probe to upgrade the composition from INFERRED to measured. Turn-boundary latency;
-   non-destructive; payload lands in scrollback, so point at files rather than embedding
-   content.
+   how-claude-code-works.md). Needs the launch's uptake-confirmation loop. Live-probed
+   same day for both runtimes — see §9: delivery is tool-boundary (better than
+   turn-boundary), at-least-once on pi. Non-destructive; payload lands in scrollback, so
+   point at files rather than embedding content.
 3. **`pane.output_matched` sentinel subscription** (worker → controller; both runtimes).
    Push-latency signals over the already-open socket, correlated by pane token; small,
    screen-safe payloads only; needs the polled fallback the status watch already has.
@@ -604,11 +604,64 @@ credentials, controller-mediated + durable):
    straight into a worker's context. Ranked last for this protocol.
 
 **Not verified / open items.**
-- The steering compositions (Herdr `agent prompt` → working Claude / working pi) are
-  doc-backed but not live-probed here; one throwaway-pane probe per runtime (one short
-  model turn each) would settle uptake behavior and latency.
+- ~~The steering compositions (Herdr `agent prompt` → working Claude / working pi) are
+  doc-backed but not live-probed here~~ — probed same day, both runtimes; results in §9.
+  Still open from that probe: ordering across multiple queued steers, and whether pi's
+  duplicate delivery is deterministic.
 - Whether Claude cross-session discovery crosses `CLAUDE_CONFIG_DIR` boundaries.
 - SIGKILL semantics for Claude Code (undocumented); mid-turn (vs idle) stop latency for
   both runtimes (#114 has no data point).
 - `pane.output_matched` end-to-end from a factory worker pane (subscription verified,
   factory-side consumption never built).
+
+---
+
+## 9. Addendum (2026-08-17, same day): live probe of the steering seam
+
+Run after the survey above was written, in two throwaway panes created and closed for the
+probe (this supersedes the Method note that no new model session was started — the two
+probe sessions were scratch sessions in
+`…/scratchpad/steer-probe`, never a pane running real work). Findings were also posted to
+#140. Everything below is **VERIFIED** by direct observation.
+
+**Protocol, per runtime.** `herdr pane split` → `herdr agent start` in a scratchpad cwd →
+first prompt: a 4-step task (echo, `sleep 15`, `sleep 15`, echo), each step required to be
+its own tool call → while the agent was *inside* a `sleep 15` tool call, one steering
+message via `herdr agent prompt`, instructing an immediate `echo STEER-ACK-<token>` →
+transcript read back after settle; panes closed.
+
+**Claude Code 2.1.233.**
+- The TUI visibly queued the steer mid-turn ("Press up to edit queued messages").
+- Delivery at the **next tool boundary**, not the end of the turn: the transcript
+  re-segments as 2 tool calls → steer as a user message → ack + remaining steps, and the
+  agent's own summary states the ack was "inserted after step 2 when your mid-turn
+  message arrived".
+- Delivered exactly once. Send→settle 28.7 s for a turn containing two 15 s sleeps;
+  effective delivery latency ≈ the remainder of the in-flight tool call (~11 s).
+
+**pi 0.84.2** (session model: `qwen/qwen3.8-max` via openrouter — delivery mechanics are
+the runtime's; compliance behavior is partly the model's).
+- Same **tool-boundary delivery**: the steer lands as a user message immediately after
+  the in-flight `sleep 15` returns; the ack runs before step 3.
+- **At-least-once delivery observed**: the model saw the steer text a second time after
+  acking and explicitly dismissed it as "a duplicate of the first". Whether duplication
+  is deterministic is unprobed; the protocol must assume at-least-once.
+- **Injection suspicion**: the model openly deliberated whether the steer was "a
+  legitimate user steer or a prompt injection" before complying — steer text arrives as
+  unauthenticated user prose with no envelope.
+
+**Consequences for the protocol (feeding #140/#141).**
+- Delivery latency is bounded by the worker's *longest tool call*, not the turn — an
+  improvement on §7's turn-boundary assumption, but still unbounded in principle (a long
+  build delays delivery arbitrarily).
+- Records need stable IDs and receiver-side dedup; uptake confirmation must key on a
+  record-ID echo in the worker's outbox, never on text appearing in scrollback.
+- The files-as-medium design doubles as authentication: the steer carries no authority,
+  only a pointer to a record in the controller-owned inbox. Workers briefed at launch
+  that legitimate coordination always resolves to such a record turn pi's healthy
+  suspicion into a verification rule — a steer that resolves to no record fails closed.
+
+**Still open after this probe:** ordering and coalescing across multiple queued steers;
+determinism of pi's duplicate delivery; the same probe under a *long* single tool call
+(does queue depth or TUI state change behavior); steering into a `blocked`
+(permission-prompt) agent.
