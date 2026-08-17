@@ -141,3 +141,24 @@ export function onPath(t, target, name = "factory") {
 	chmodSync(target, 0o755);
 	return bin;
 }
+
+/**
+ * §6.5's agent-state integration, the way herdr installs it on a test host:
+ * a managed file whose leading comments carry the identity and version the
+ * factory observes rather than assumes.
+ *
+ * @param {"pi"|"claude"} kind the runtime the integration belongs to
+ * @param {number | null} version the stamped `HERDR_INTEGRATION_VERSION`, or
+ *   null for a file that never had the header — the shape an unversioned
+ *   install reads as
+ * @returns {string} the file's content
+ */
+export function herdrIntegration(kind, version) {
+	if (kind === "pi") {
+		const header =
+			version === null ? "" : `// HERDR_INTEGRATION_ID=pi\n// HERDR_INTEGRATION_VERSION=${version}\n`;
+		return `// installed by herdr\n${header}export default function (pi) {}\n`;
+	}
+	const header = version === null ? "" : `# HERDR_INTEGRATION_ID=claude\n# HERDR_INTEGRATION_VERSION=${version}\n`;
+	return `#!/bin/sh\n# installed by herdr\n${header}exit 0\n`;
+}

@@ -9,6 +9,7 @@ import { FactoryWorkerError } from "../../factory/lib/worker/errors.mjs";
 import { prepareWorkerEnvironment, workerConfigRoots } from "../../factory/lib/worker/environment.mjs";
 import { DENY_FLOOR } from "../../factory/lib/worker/permissions.mjs";
 import { claudeTrustDecision, piTrustDecision, readClaudeConfigState, readPiTrust } from "../../factory/lib/worker/trust.mjs";
+import { herdrIntegration } from "./helpers/factory-package.mjs";
 
 /**
  * §6.8's config isolation: a controller-owned environment per runtime, holding
@@ -18,28 +19,9 @@ import { claudeTrustDecision, piTrustDecision, readClaudeConfigState, readPiTrus
 
 const NO_OVERRIDES = Object.freeze({ denies: [], contextFile: null, piExtensions: [] });
 
-/**
- * The §6.5 agent-state integration, as herdr installs it: a managed file whose
- * leading comments carry the identity and version the factory observes rather
- * than assumes. The body is the integration's own business — the promotion
- * copies bytes and reads a header, nothing more.
- */
-const PI_INTEGRATION = [
-	"// installed by herdr",
-	"// HERDR_INTEGRATION_ID=pi",
-	"// HERDR_INTEGRATION_VERSION=8",
-	"export default function (pi) {}",
-	"",
-].join("\n");
-
-const CLAUDE_INTEGRATION = [
-	"#!/bin/sh",
-	"# installed by herdr",
-	"# HERDR_INTEGRATION_ID=claude",
-	"# HERDR_INTEGRATION_VERSION=7",
-	"exit 0",
-	"",
-].join("\n");
+/** §6.5's integrations at the version the factory is written against. */
+const PI_INTEGRATION = herdrIntegration("pi", 8);
+const CLAUDE_INTEGRATION = herdrIntegration("claude", 7);
 
 function installIntegrations(home) {
 	writeFileSync(join(home, ".pi", "agent", "extensions", "herdr-agent-state.ts"), PI_INTEGRATION);
@@ -181,11 +163,11 @@ test("an agent-state integration the operator has not installed is recorded abse
 
 test("an integration herdr left outdated or that lost its header is observed as such, not assumed away", (t) => {
 	const context = lab(t);
-	writeFileSync(
-		join(context.home, ".pi", "agent", "extensions", "herdr-agent-state.ts"),
-		PI_INTEGRATION.replace("HERDR_INTEGRATION_VERSION=8", "HERDR_INTEGRATION_VERSION=6"),
-	);
-	writeFileSync(join(context.home, ".claude", "hooks", "herdr-agent-state.sh"), "#!/bin/sh\nexit 0\n");
+	// herdr left the pi integration on the version before the one the factory
+	// is written against, and the claude one is from before the stamped header
+	// existed at all: two different facts, and neither is the other's.
+	writeFileSync(join(context.home, ".pi", "agent", "extensions", "herdr-agent-state.ts"), herdrIntegration("pi", 6));
+	writeFileSync(join(context.home, ".claude", "hooks", "herdr-agent-state.sh"), herdrIntegration("claude", null));
 
 	const environment = prepare(context);
 
