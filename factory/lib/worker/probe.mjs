@@ -39,6 +39,12 @@ export const PROBE_FINDING_REASONS = Object.freeze([
 	 * pane sitting on one is indistinguishable from a worker thinking.
 	 */
 	"trust-not-established",
+	/**
+	 * #164: a profile's own launch flags — `--model`, and Claude's `--effort` /
+	 * pi's `--thinking` — spelled in a way the installed binary does not accept.
+	 * A parse-level fact, so it is provable before any pane exists.
+	 */
+	"profile-flags-unaccepted",
 ]);
 
 /**
@@ -79,6 +85,169 @@ export async function harnessVersion(io, { label, binary, timeoutMs, where = {} 
 		failures.push(unreachableRuntime(label, binary, error.message));
 	}
 	return null;
+}
+
+/**
+ * §6.2's flag-spelling proof for **one profile**, shared by both runtimes (#164).
+ *
+ * The profile's flags are appended at launch and, before this, exercised by
+ * nothing: a renamed or dropped flag surfaced as a pane that would not come up,
+ * *after* a branch, a worktree and the tracker claim already existed. The proof
+ * hands the installed binary the argv a pane receives — plus the probe-only IO
+ * flags — and reads back the same parse-level answer the runtime probe reads.
+ *
+ * **The verdict is the answer, never the exit status.** A side subcommand's exit
+ * code is not a spelling verdict: measured on this repository's own machine,
+ * `pi list` exits 1 over a stale OAuth token while its RPC session answers
+ * perfectly. A session that answers has parsed the argv; one that never does has
+ * not, and the two cannot be confused.
+ *
+ * **What makes it a *spelling* verdict is the ordering, not this function.** The
+ * check runs only when the runtime probe is already green, and the probe starts
+ * the same kind of session without the profile's flags — so the two sessions
+ * differ by exactly those flags and nothing else has to be inferred.
+ *
+ * `--version` is deliberately not used: measured against Claude 2.1.233 it
+ * short-circuits before argument parsing, accepting `--nonsense-flag` with
+ * exit 0, so it proves nothing at all.
+ *
+ * @param {object} io the transport
+ * @param {object} input
+ * @param {string} input.label the harness's operator-facing name
+ * @param {string} input.binary
+ * @param {{ name: string }} input.profile
+ * @param {ReadonlyArray<string>} input.flags the flag names the profile contributes
+ * @param {ReadonlyArray<string>} input.args the full argv, launch shape plus probe-only flags
+ * @param {ReadonlyArray<string>} input.input the request lines
+ * @param {(parsed: object | null) => boolean} input.answered recognises this
+ *   runtime's answer to that request
+ * @param {{ env?: object, cwd?: string }} [input.where]
+ * @param {number} input.timeoutMs
+ * @returns {Promise<Readonly<object> | null>} the finding, or null when accepted
+ */
+export async function proveFlagSpelling(
+	io,
+	{ label, binary, profile, flags, args, input, answered, where = {}, timeoutMs },
+) {
+	const refusal = await refusalFrom(io, { binary, args, input, answered, flags, where, timeoutMs });
+	if (refusal === null) return null;
+
+	// A binary that could not be spawned at all was never asked about a spelling,
+	// and §11.7 already has the word for it. Reporting it as a rejected flag would
+	// point the operator at their profile over a missing executable.
+	if (refusal.spawned === false) return unreachableRuntime(label, binary, refusal.said);
+
+	return probeFinding(
+		"profile-flags-unaccepted",
+		`Profile "${profile.name}" launches a ${label} worker with ${flags.join(" ")}, and \`${binary}\` did not accept ` +
+			`that spelling — ${refusal.said}. The flags a profile carries are appended at launch, so a renamed or dropped one ` +
+			`would otherwise surface as a pane that never comes up, after the branch, the worktree and the tracker claim ` +
+			`already exist. §6.2 refuses before an attempt spends, and the fix is the flag as the installed binary now ` +
+			`spells it, or a profile that does not declare it (§6.2, §11.2, §11.7).`,
+		{ profile: profile.name, flags: [...flags], binary },
+	);
+}
+
+/**
+ * Why the session did not answer — or null when it did, which is the whole of
+ * "the binary accepted this spelling".
+ *
+ * **`spawned` is the fact the caller branches on**, because it separates two
+ * findings rather than two sentences (§11.2): a binary that never started was
+ * never asked about a spelling, while one that took the argv and did not answer
+ * was. A harness that wedges and one that exits refusing are both the latter —
+ * the runtime probe has already started this binary without the profile's flags,
+ * so what changed is the flags either way.
+ */
+async function refusalFrom(io, { binary, args, input, answered, flags, where, timeoutMs }) {
+	let session;
+	try {
+		session = await io.lineSession({ binary, args, input, env: where.env, cwd: where.cwd, timeoutMs });
+	} catch (error) {
+		return { spawned: false, said: error.message };
+	}
+
+	if (session.lines.some((line) => answered(parseJson(line)))) return null;
+	if (session.timedOut) {
+		return { spawned: true, said: `the session took the argv and answered nothing within ${timeoutMs}ms` };
+	}
+
+	const said = complaint(session.stderr, flags);
+	return {
+		spawned: true,
+		said: `exit ${session.status}` + (said === null ? " with nothing on stderr" : `: ${said}`),
+	};
+}
+
+/**
+ * §6.2's flag-spelling proof over **every distinct profile of one runtime** — the
+ * loop both runtimes share, so the cardinality, the accumulation and the reported
+ * shape have one implementation (#164).
+ *
+ * What differs per runtime is data, not control flow: each hands over one
+ * descriptor per profile — the argv, the request, and the recogniser for that
+ * runtime's answer — built by its own module, which is where §6.1 keeps every
+ * runtime difference.
+ *
+ * @param {object} io the transport
+ * @param {object} input
+ * @param {string} input.kind the runtime kind
+ * @param {string} input.label the harness's operator-facing name
+ * @param {string} input.binary
+ * @param {ReadonlyArray<{ profile: object, flags: ReadonlyArray<string>, args: string[],
+ *   input: string[], answered: (parsed: object | null) => boolean }>} input.sessions
+ *   one descriptor per distinct profile, in the order they are reported
+ * @param {{ env?: object, cwd?: string }} [input.where]
+ * @param {number} input.timeoutMs
+ * @returns {Promise<Readonly<object>>} `{ kind, binary, checked, findings }`
+ */
+export async function proveProfileFlags(io, { kind, label, binary, sessions, where = {}, timeoutMs }) {
+	const checked = [];
+	const findings = [];
+
+	for (const session of sessions) {
+		const finding = await proveFlagSpelling(io, { label, binary, ...session, where, timeoutMs });
+
+		checked.push(Object.freeze({ profile: session.profile.name, flags: [...session.flags] }));
+		if (finding !== null) findings.push(finding);
+	}
+
+	return Object.freeze({ kind, binary, checked: Object.freeze(checked), findings: Object.freeze(findings) });
+}
+
+/** The flag names an argument list carries — derived, never a second list (#164). */
+export function flagNames(args) {
+	return args.filter((argument) => argument.startsWith("--"));
+}
+
+/**
+ * The one line of a refusing harness's stderr worth quoting: **the binary's own
+ * words about a flag we passed.**
+ *
+ * The last line is the wrong default here, unlike everywhere else in this module.
+ * Measured against Claude 2.1.233, a rejected spelling prints the diagnosis
+ * first and a hint after it — `error: unknown option '--efffort'` then `(Did you
+ * mean --effort?)` — so `.at(-1)` keeps the half that names no flag. Where
+ * nothing mentions one of our flags the harness is complaining about something
+ * else, and the last line is the best available answer again.
+ *
+ * The match is on whole words, never a substring: `--model` occurs inside pi's
+ * unrelated `--models`, and a line about the wrong flag is worse than the
+ * fallback because it reads as a diagnosis.
+ */
+function complaint(stderr, flags) {
+	const lines = stderr
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line !== "");
+
+	if (lines.length === 0) return null;
+	return lines.find((line) => flags.some((flag) => words(line).includes(flag))) ?? lines.at(-1);
+}
+
+/** A line's flag-shaped words, with the harness's quoting and punctuation dropped. */
+function words(line) {
+	return line.split(/[^\w-]+/).filter((word) => word !== "");
 }
 
 /**

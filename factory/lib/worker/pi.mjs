@@ -2,7 +2,15 @@ import { createWorkerAdapter } from "./adapter.mjs";
 import { containsPath, realpathOrNull } from "./closure.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
 import { lifecycleOperations } from "./lifecycle.mjs";
-import { harnessVersion, memoizedPreflight, parseJson, probeFinding, unreachableRuntime } from "./probe.mjs";
+import {
+	flagNames,
+	harnessVersion,
+	memoizedPreflight,
+	parseJson,
+	probeFinding,
+	proveProfileFlags,
+	unreachableRuntime,
+} from "./probe.mjs";
 import * as realTransport from "./transports.mjs";
 
 /**
@@ -25,6 +33,14 @@ import * as realTransport from "./transports.mjs";
 
 /** The RPC requests one disposable session answers. Both verified live. */
 const RPC_REQUESTS = Object.freeze([{ type: "get_commands" }, { type: "get_available_models" }]);
+
+/**
+ * The one of those requests §6.2's flag-spelling proof asks (#164) — **found by
+ * name, not by position**, so the constant above stays free to be reordered. Its
+ * answer is used only as proof that the argv parsed, so what it carries is never
+ * read; it is this request because the probe already asks it, at no model cost.
+ */
+const SPELLING_REQUEST = RPC_REQUESTS.find((request) => request.type === "get_commands");
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 
@@ -69,6 +85,39 @@ export function piWorkerArguments(skillsRoots, sessionArgs = []) {
  */
 export function piProbeArguments(skillsRoots, sessionArgs = []) {
 	return [...PI_PROBE_ONLY_FLAGS, ...piWorkerArguments(skillsRoots, sessionArgs)];
+}
+
+/**
+ * The profile's own contribution to a pane's argv — §11.4's `model` plus the
+ * optional `thinking`, where omission means "don't pass the flag".
+ *
+ * Exported because two callers must agree on it **by construction** rather than
+ * by care (#164, which is #160 one argument set down): the launch appends it to
+ * the worker binding, and §6.2's spelling proof hands the very same argv to the
+ * installed binary before a pane depends on it.
+ *
+ * @param {{ model: string, thinking?: string }} profile
+ * @returns {string[]}
+ */
+export function piProfileArguments(profile) {
+	const args = ["--model", profile.model];
+	if (profile.thinking !== undefined) args.push("--thinking", profile.thinking);
+	return args;
+}
+
+/**
+ * The argv §6.2's flag-spelling proof runs for one profile: **the argv a pane
+ * receives**, plus the probe-only flags and nothing else. The profile's flags
+ * sit where the launch puts them — after the worker binding — so what the
+ * installed binary parses here is what it will parse there.
+ *
+ * @param {ReadonlyArray<string>} skillsRoots
+ * @param {ReadonlyArray<string>} sessionArgs
+ * @param {{ model: string, thinking?: string }} profile
+ * @returns {string[]}
+ */
+export function piSpellingArguments(skillsRoots, sessionArgs, profile) {
+	return [...piProbeArguments(skillsRoots, sessionArgs), ...piProfileArguments(profile)];
 }
 
 /**
@@ -145,6 +194,59 @@ export async function probePiRuntime({
 	}
 
 	return observation({ ok: failures.length === 0, version, failures, skillCommands, models, classes });
+}
+
+/**
+ * §6.2's flag-spelling proof for the pi runtime: **one disposable session per
+ * distinct profile**, over that profile's own launch argv (#164).
+ *
+ * This is deliberately *not* folded into `probePiRuntime`. That probe is role-
+ * and profile-independent and memoized once per pinned revision — §6.2's "one
+ * request" — while profiles vary per role *and* per routing rule, so exercising
+ * each profile inside it would change the probe's **cardinality** rather than
+ * its argv. The two cardinalities stay separate and stated: one probe per
+ * revision, one spelling session per distinct profile.
+ *
+ * The request it asks is `SPELLING_REQUEST` above, with the reasoning beside it.
+ *
+ * @param {object} input
+ * @param {ReadonlyArray<{ name: string, model: string, thinking?: string }>} input.profiles
+ *   the distinct pi profiles the active routing can dispatch
+ * @param {ReadonlyArray<string>} input.skillsRoots the pinned roots the probe proved
+ * @param {{ env?: object, sessionArgs?: ReadonlyArray<string>, cwd?: string }} [input.session]
+ * @param {object} [input.transport]
+ * @param {string} [input.binary]
+ * @param {number} [input.timeoutMs]
+ * @returns {Promise<Readonly<object>>} `{ kind, binary, checked, findings }`
+ */
+export async function provePiProfileFlags({
+	profiles,
+	skillsRoots,
+	session: binding = {},
+	transport = {},
+	binary = "pi",
+	timeoutMs = DEFAULT_TIMEOUT_MS,
+}) {
+	const request = SPELLING_REQUEST;
+
+	return proveProfileFlags(
+		{ ...realTransport, ...transport },
+		{
+			kind: "pi",
+			label: "pi",
+			binary,
+			sessions: profiles.map((profile) => ({
+				profile,
+				flags: flagNames(piProfileArguments(profile)),
+				args: piSpellingArguments(skillsRoots, binding.sessionArgs ?? [], profile),
+				input: [JSON.stringify(request)],
+				answered: (parsed) =>
+					parsed?.type === "response" && parsed.command === request.type && parsed.success === true,
+			})),
+			where: { env: binding.env, cwd: binding.cwd },
+			timeoutMs,
+		},
+	);
 }
 
 /**
@@ -245,7 +347,7 @@ export function createPiAdapter(context) {
 					...attempt,
 					sessionArgs: [
 						...piWorkerArguments(requirePinnedRoots(context.skillsRoots), attempt.sessionArgs ?? []),
-						...profileArguments(attempt.profile),
+						...piProfileArguments(attempt.profile),
 					],
 					startupTimeoutMs: attempt.profile.startupTimeoutMs ?? null,
 				}),
@@ -253,12 +355,6 @@ export function createPiAdapter(context) {
 			cancel: lifecycle.cancel,
 		},
 	});
-}
-
-function profileArguments(profile) {
-	const args = ["--model", profile.model];
-	if (profile.thinking !== undefined) args.push("--thinking", profile.thinking);
-	return args;
 }
 
 /**

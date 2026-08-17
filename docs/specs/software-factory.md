@@ -610,6 +610,52 @@ minus the probe-only flags plus the profile's. A launch whose closure cannot rea
 typed automation failure before the attempt spends, never a worker that quietly reads skill
 files instead of invoking them.
 
+**The profile's own flags sit outside that composed binding, and are proven by a check of their
+own** (#164). §11.4's `model` and the optional `effort` / `thinking` are appended to the worker
+binding at launch, and this probe cannot absorb them: it is role- **and profile-independent**,
+memoized once per pinned revision, while profiles vary per role *and* per routing rule — so
+exercising each one inside it would change the probe's **cardinality** rather than its argv, which
+is a different design and must be chosen rather than drifted into. Instead:
+
+- **`profile-flags` is a separate preflight check, one live session per *distinct* profile the
+  active routing can dispatch.** A routing table naming one profile in every role and in a rule
+  costs one session, because flag spelling is a property of the profile and not of the role that
+  reached it. **§6.2's runtime probe keeps its own cardinality — one per pinned revision.**
+- **Each session runs that profile's own launch argv plus the probe-only IO flags and nothing
+  else**, and it is judged on the answer the probe already reads: pi's RPC response, Claude's
+  `initialize` control-response. **No model call is made** — spelling is a parse-level fact, and
+  proving it must not spend tokens.
+- **The verdict is that answer, never an exit status.** Measured on the development machine, `pi
+  list` exits 1 over a stale OAuth token while pi's RPC session answers perfectly, so a side
+  subcommand's exit code is not a spelling verdict. **`--version` is measured useless**: against
+  Claude 2.1.233 it short-circuits *before* argument parsing and accepts `--nonsense-flag` with
+  exit 0. What both binaries do offer is that a session which starts has parsed its argv, and a
+  misspelling is refused by name before one does — `error: unknown option '--efffort'`, with
+  `(Did you mean --effort?)` on the line after it, and `Error: Unknown option: --thinnking` from
+  pi. **The quoted line is the one naming a flag the profile passed, matched whole-word**, not
+  the last line: the hint trails the diagnosis, and `--model` occurs inside pi's unrelated
+  `--models`.
+- **The check runs behind the runtime probe and only on a green one.** The probe starts the same
+  kind of session *without* the profile's flags, so a green probe and a refused spelling session
+  differ by exactly those flags — that ordering is what makes the verdict a statement about the
+  spelling rather than a guess about a broken harness. With no green probe there is nothing to
+  attribute against, so the check fails citing `runtime-probe` rather than answering.
+- **A binary that could not be spawned at all is §11.7's unreachable runtime, not a rejected
+  flag.** It was never asked about a spelling, and blaming the profile would point the operator at
+  their config over a missing executable (§11.2).
+- **The cost is stated rather than capped by a new knob**: the sessions are serial at the
+  runtime's own probe timeout, so preflight's worst case grows by the number of distinct profiles
+  times that timeout before the first claim. Measured, an accepted spelling answers in ~1.8 s
+  (Claude) and ~0.7 s (pi), and §9.7's ordering still puts the expensive baseline last.
+- **A refusal names the profile, its flags, the binary and the binary's own diagnostic**, as a
+  §11.2 preflight failure before a branch, a worktree, a pane or a tracker claim exists. Without
+  it a renamed flag surfaces as `worker-launch-failed` *after* all four — the one binding that
+  escaped §6.2's purpose of refusing before an attempt spends.
+
+The reviewer binding is not spelled out a second time for this check, for the reason the probe
+already gives: it differs only by flags the same binary has accepted, and a profile's own flags
+are identical under both postures.
+
 **The capacity probe folds into this same per-runtime probe** (§9.7): one request yielding both
 model inventory and `max_instances`, so no second place can disagree about whether the runtime
 is up.
@@ -2335,7 +2381,8 @@ crash.
 
 **Configuration and migration.** multiple global/user installations · `PATH` shadowing · stale
 generated adapter artifacts · package revision change · a bridge present-but-nonfunctional ·
-overlapping `labelsAny` rules · a ticket matching two rules for one role · Opus/Fable on pi.
+overlapping `labelsAny` rules · a ticket matching two rules for one role · Opus/Fable on pi · **a
+profile flag the installed binary no longer accepts under that spelling** (#164).
 
 **Skill loading.** A **one-time acceptance matrix** per (harness version × model × package
 revision) proving that Opus and Fable actually load and follow skill bodies — discharging the
@@ -2492,3 +2539,4 @@ touching everything twice.
 | 2026-08-17 | #152 makes §6.6's recorded stop outcome an observation rather than a race. `stopAgent` sent the quit sequence and read the pane on the very next line, so **`agent_stopped` recorded a teardown in flight as a refusal** — across #114's two runs every attempt recorded `false` while the workers had in fact gone, and nothing re-checked it. The outcome now comes from a **bounded re-probe** whose budget covers Herdr's *detection* lag rather than the process exit: the controller closes no pane (§13.B), so `pane_exited` never fires and the agent merely stops being detected, measured at 729 ms (claude) and 418 ms (pi) on an idle session. `agent_stopped` keeps three values — `true`/`false` are observations, `null` is Herdr declining to answer, which §14.1 forbids writing down as though it were evidence the agent stayed. A stop that could not be confirmed records a named **`stop_anomaly`** on `attempt.ended` carrying the surviving pane, the status it was last seen in, and how much of the bound was spent, in one of three classes: `wedged-pane` (§13.B's accepted wedge, `cleanup-plan`'s to reclaim), `stop-unconfirmed` (Herdr silent), and `quit-undelivered` (the keys never landed, which the pane read cannot distinguish from a wedge because both leave a live agent). §11.2's no-silent-guessing is what forbids collapsing the three into one `false`. `attempt.ended` moves to payload v2 accordingly (§4.3). Nothing on this path closes a pane. | #152 |
 | 2026-08-17 | #151 makes an **unharvested attempt's branch evidence on its disposition**. §8.10 harvests what an outbox claims; an attempt that never wrote one has still created a branch, and §7.7 makes that branch the only copy of the work on it — so on #114 a complete implementation was recoverable only because an operator read the factory-private clone by hand. §8.9's block gains a fourth element: every attempt of the ticket execution, with its branch, the head **git answers now** (§5.2 — never the outbox's claim nor the mint's record), and its commit count against **its own** base (§7.4). It is read for every disposition and every attempt outcome rather than for the endings that harvest nothing, because a list of which outcomes those are is a list somebody extends without extending — and the failure that permits is the silent one, "nothing was built" reported over work sitting on a branch. Every answer the read can get stays distinguishable and none is spelled as the absence of another (§11.2): commits, no commits, no branch, no answer from git, and no base recorded to count against, with **the attempts not listable** and **no read at all** distinct from all five. The read rides the comment and **not the digested intent** — every other field of the block is a function of durable state, and digesting a branch head would make a §10.4 re-entry that read a moved head a §4.5 payload conflict instead of the comment already posted; the one ending that therefore carries nothing is §9.6's abandon boundary, which writes no comment at all (#159). The **remote is deliberately not consulted** — §7.7 makes an attempt branch absent from it by construction, so an `ls-remote` would answer "absent" for exactly the attempts the read exists for, and §5.4 already names `git-local` for this. The read never throws: a settlement lost to a failed evidence read leaves the ticket claimed with nothing on it, which is the one state §8.9 has no word for. §7.7 and §8.9 corrected in place. | #151 |
 | 2026-08-17 | #160 restores §6.2's probe to proving the session workers actually run. Both runtime adapters passed the skill-delivery flags to the **probe** and not to the **worker session**: every Claude worker launched without the §6.3 plugin (`plugin list` under the live worker binding: "No plugins installed"), every pi worker without the pinned roots — and pi's default discovery, which the probe's `--no-skills` suppressed, loaded four of the operator's personal skills from `~/.agents/skills`, a root `PI_CODING_AGENT_DIR` does not fence, inverting both §6.8 guarantees at once. §6.2 gains the composed-binding rule: the worker session's argument set is the primary object, the probe's is that set plus its probe-only IO flags and nothing else, held by a test at the launch seam (worker argv = probed argv − probe-only flags + profile flags). §6.8 records the measured discovery leak and makes `--no-skills --skill <root>` load-bearing isolation on every pi worker session. A launch whose closure cannot reach the session — no proven plugin directory, no pinned skills roots, a plugin cache wiped since preflight — is a typed automation failure before the attempt spends. §6.7's acceptance matrix (#115) is untouched by construction but noted: anything it proves must run the worker binding. | #160 |
+| 2026-08-17 | #164 closes #160's defect one argument set down: **a profile's own flags reached a live worker having never been handed to the installed binary.** `--model`, and Claude's `--effort` / pi's `--thinking`, are appended at launch and were exercised by nothing, so a renamed or dropped flag surfaced as `worker-launch-failed` — a pane that will not come up — *after* a branch, a worktree, a pane and the tracker claim already existed, which is the one binding that escaped §6.2's purpose of refusing before an attempt spends. §6.2 gains a **`profile-flags` check whose cardinality is the profile's, not the revision's**: one live session per **distinct** profile the active routing can dispatch, so a routing table naming one profile five times costs one session, while the runtime probe keeps its own one-per-pinned-revision cardinality — folding profiles into a probe that is *role- and profile-independent by design* would have changed that number rather than its argv, and that is a different design. Each session runs the profile's launch argv plus the probe-only IO flags and nothing else, and is judged on the answer the probe already reads — pi's RPC response, Claude's `initialize` control-response — at **zero model cost**, since spelling is a parse-level fact. Three measurements decided the mechanism rather than taste: **`--version` short-circuits before argument parsing** (Claude 2.1.233 accepts `--nonsense-flag` with exit 0), so it proves nothing; **a side subcommand's exit status is not a spelling verdict** (`pi list` exits 1 over a stale OAuth token on the development machine while the RPC session answers perfectly); and **a misspelling is refused by name before a session starts** (`unknown option '--efffort' (Did you mean --effort?)`, `Error: Unknown option: --thinnking`), so *a session that answers* is the proof and *one that never does* is the refusal, with no text parsing and no exit code in the judgement. The check runs **behind** the runtime probe and only on a green one, which is what makes it a spelling verdict at all: the probe starts the same session without the profile's flags, so the two differ by exactly those flags. A refusal names the profile, its flags, the binary and the binary's own diagnostic; an unproven spelling composes no production context, exactly as an unproven runtime does not. A binary that could not be spawned at all stays §11.7's `runtime-unreachable` rather than a rejected flag — it was never asked about a spelling. The profile-argument builders are exported so the launch and the proof share one definition by construction (#160's rule, applied one argument set down). **§15's configuration obligations gain the case by name**, and the cost is recorded rather than capped: the sessions are serial at the runtime's own probe timeout, so the worst case grows by distinct profiles × that timeout ahead of §9.7's expensive baseline, against a measured ~1.8 s (Claude) / ~0.7 s (pi) for an accepted spelling. | #164 |

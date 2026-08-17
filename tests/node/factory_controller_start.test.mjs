@@ -261,6 +261,9 @@ test("preflight is observable per check and per probe, and runs after the run ex
 		"herdr-available",
 		"git-isolation",
 		"runtime-probe",
+		// #164: behind the probe, because a green probe is what makes a refused
+		// spelling a statement about the profile's flags rather than the harness.
+		"profile-flags",
 		"baseline",
 	]);
 	assert.deepEqual(
@@ -334,12 +337,17 @@ test("an unanchorable package is a recorded red check, not an unhandled exceptio
 
 	assert.equal(exitCode, 2);
 	assert.equal(value.report.end_reason, "baseline-red");
-	// The two §6.2 checks answer from the handshake's pin, so a package nothing
+	// The three §6.2 checks answer from the handshake's pin, so a package nothing
 	// could anchor fails them too — each citing the handshake as the cause
 	// rather than inventing a second diagnosis.
-	assert.deepEqual(value.report.preflight.red, ["package-handshake", "skill-closure", "runtime-probe"]);
+	assert.deepEqual(value.report.preflight.red, [
+		"package-handshake",
+		"skill-closure",
+		"runtime-probe",
+		"profile-flags",
+	]);
 	assert.equal(value.report.preflight.checks.find((check) => check.check === "package-handshake").result, "failed");
-	for (const dependent of ["skill-closure", "runtime-probe"]) {
+	for (const dependent of ["skill-closure", "runtime-probe", "profile-flags"]) {
 		assert.equal(
 			value.report.preflight.checks.find((check) => check.check === dependent).detail.cause,
 			"package-handshake",

@@ -263,7 +263,14 @@ is the authority; cite the section a change answers to.
   control-request over stream-json — **with §9.7's capacity observation folded into the same
   probe**, so a declared size above an observed `max_instances` and an unreachable required
   class are red checks naming the class, the endpoint, and the fix, never a silent clamp or a
-  quiet capacity 0. Layer 3 (`recheck.mjs`) re-records the run-keyed handshake per attempt, so
+  quiet capacity 0. Beside that probe and behind it sits the **`profile-flags` check** (#164),
+  whose cardinality is the profile's rather than the revision's: **one session per distinct
+  profile the active routing can dispatch**, running that profile's own launch argv so the
+  installed binary accepts or refuses `--model` / `--effort` / `--thinking` before a pane
+  depends on the spelling. It is a separate check precisely *because* the probe is
+  profile-independent — folding profiles in would change the probe's cardinality, not its argv.
+  It costs no model call, and a green probe is what makes a refusal there a statement about the
+  flags rather than about the harness. Layer 3 (`recheck.mjs`) re-records the run-keyed handshake per attempt, so
   package drift arrives as §4.5's typed payload conflict — **a failure, never a new pin** —
   and persists the observed resolved model id per attempt (`attempt.rechecked`), refusing a
   declared model that resolves to two ids within one run (§11.7). The probes' IO lives
