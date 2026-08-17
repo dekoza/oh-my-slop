@@ -159,6 +159,50 @@ test("the attestation records §8.7's whole list, from durable state (§8.7)", a
 	);
 });
 
+test("each verdict names the boundary it was rendered against (§8.7, §14.13, #165)", async (t) => {
+	const boundary = { base_commit: "e".repeat(40), reviewed_commit: COMMIT };
+	const context = await reviewed(t, {
+		axes: [
+			{
+				ordinal: 2,
+				detail: {
+					axis: "review-standards",
+					profile: "builder",
+					try: 1,
+					verdict: "approved",
+					findings: [],
+					...boundary,
+					attestation: { mutated: false, reasons: [], before_head: COMMIT, after_head: COMMIT, leftovers: [] },
+				},
+			},
+			{
+				ordinal: 3,
+				detail: {
+					axis: "review-spec",
+					profile: "builder",
+					try: 1,
+					verdict: "approved",
+					findings: [],
+					...boundary,
+					attestation: { mutated: false, reasons: [], before_head: COMMIT, after_head: COMMIT, leftovers: [] },
+				},
+			},
+		],
+	});
+
+	const document = build(context.store, context);
+
+	// The scope of an approval is part of the approval: a repair chain's verdicts
+	// gate the whole published diff, and the artifact says which diff that was.
+	assert.deepEqual(
+		document.review.verdicts.map((axis) => [axis.axis, axis.base_commit, axis.reviewed_commit]),
+		[
+			["review-standards", boundary.base_commit, boundary.reviewed_commit],
+			["review-spec", boundary.base_commit, boundary.reviewed_commit],
+		],
+	);
+});
+
 test("blocking findings live in the artifact and never in the summary (§8.7)", async (t) => {
 	const context = await reviewed(t, {
 		axes: [

@@ -3,8 +3,9 @@ import { spawn } from "node:child_process";
 import { BINARY } from "./herdr.mjs";
 
 /**
- * The commands the attempt path issues against Herdr: open a pane, stamp it,
- * start an agent, prompt it, list panes, stop an agent.
+ * The commands the run and its attempts issue against Herdr: open the run's
+ * workspace, open a tab in it, stamp that tab's pane, start an agent, prompt it,
+ * list panes, stop an agent.
  *
  * It is separate from `herdr.mjs` on purpose. That module is §10.3's
  * availability *probe*, and the checkable form of "the factory checks the
@@ -116,42 +117,115 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 	 * surface, which is exactly how a control object gets used.
 	 */
 	async function panes() {
-		const listed = await call(["pane", "list"]);
-		if (listed.exitCode !== 0) return failed("pane list", listed);
+		const listed = await listOf(["pane", "list"], "panes");
+		return listed.ok ? Object.freeze({ ok: true, panes: listed.entries }) : listed;
+	}
+
+	/**
+	 * One `<thing> list` command, read the same way for every thing.
+	 *
+	 * The `result?.<key> ?? result` shrug is Herdr's envelope quirk — a list
+	 * answer is sometimes the array itself — and it belongs in one place: a
+	 * second spelling of it is a second thing to correct when the envelope
+	 * settles down.
+	 */
+	async function listOf(args, key) {
+		const command = args.join(" ");
+		const listed = await call(args);
+		if (listed.exitCode !== 0) return failed(command, listed);
 
 		const result = herdrResult(listed.stdout);
-		const found = result?.panes ?? result;
-		if (!Array.isArray(found)) return unreadable("pane list", listed);
+		const entries = result?.[key] ?? result;
+		if (!Array.isArray(entries)) return unreadable(command, listed);
 
-		return Object.freeze({ ok: true, panes: Object.freeze(found) });
+		return Object.freeze({ ok: true, entries: Object.freeze(entries) });
 	}
 
 	return Object.freeze({
 		/**
-		 * A workspace of its own per attempt, opened at the attempt's worktree.
+		 * **The run's** workspace, opened once and shared by every attempt of that
+		 * run (#156).
 		 *
 		 * A workspace rather than a split of whatever pane the controller happens
 		 * to be in: `factory start --foreground` runs in a terminal that may not be
 		 * a Herdr pane at all, and a topology that only works when the controller
 		 * was launched detached is a topology that fails on the operator's second
-		 * invocation. `--no-focus`, because the operator is watching something else.
+		 * invocation. That argument rules out the controller's own pane; it never
+		 * argued for one workspace *per attempt*, and the workspace list is the
+		 * operator's top-level navigation — four workspaces for one ticket, filed
+		 * among their real projects, is what the run-scoped one replaces.
+		 * `--no-focus`, because the operator is watching something else.
 		 */
-		async openPane({ cwd, label }) {
+		async openWorkspace({ cwd, label }) {
 			const created = await call(["workspace", "create", "--cwd", cwd, "--label", label, "--no-focus"]);
 			if (created.exitCode !== 0) return failed("workspace create", created);
 
+			// The id and nothing else. Herdr answers with the workspace's root tab
+			// and root pane too, but no attempt runs in them — every attempt gets a
+			// tab of its own — and gating on a field nobody reads would turn a
+			// created workspace into a launch failure over an unused key.
 			const result = herdrResult(created.stdout);
-			if (result?.workspace?.workspace_id === undefined || result?.root_pane?.pane_id === undefined) {
-				return unreadable("workspace create", created);
+			if (result?.workspace?.workspace_id === undefined) return unreadable("workspace create", created);
+
+			return Object.freeze({ ok: true, workspace: result.workspace.workspace_id, label });
+		},
+
+		/**
+		 * One attempt's pane: **a tab in the run's workspace**, at the attempt's
+		 * worktree (§6.4, #156).
+		 *
+		 * The answer shape is the installed Herdr's own, read off a live
+		 * `tab create` (0.8.0): a `tab` and its `root_pane`, and no `workspace` —
+		 * the tab was created in one. A workspace this controller no longer has is
+		 * exit 1 with `workspace_not_found`, and that is reported rather than
+		 * repaired: an operator who closed the run's workspace ends its live lanes,
+		 * which is #156's stated cost, and opening a replacement behind their back
+		 * would re-create the topology they closed.
+		 */
+		async openTab({ workspace, cwd, label }) {
+			const created = await call([
+				"tab",
+				"create",
+				"--workspace",
+				workspace,
+				"--cwd",
+				cwd,
+				"--label",
+				label,
+				"--no-focus",
+			]);
+			if (created.exitCode !== 0) return failed("tab create", created);
+
+			const result = herdrResult(created.stdout);
+			if (result?.tab?.tab_id === undefined || result?.root_pane?.pane_id === undefined) {
+				return unreadable("tab create", created);
 			}
 
 			return Object.freeze({
 				ok: true,
-				workspace: result.workspace.workspace_id,
-				tab: result.tab?.tab_id ?? null,
+				workspace,
+				tab: result.tab.tab_id,
 				pane: result.root_pane.pane_id,
 				label,
 			});
+		},
+
+		/**
+		 * The workspace carrying a given label, or `null` when none does — which is
+		 * what a workspace the operator closed looks like.
+		 *
+		 * The label is how a run's workspace is recognised at all: Herdr's answers
+		 * carry no metadata tokens on a workspace the way they do on a pane, so the
+		 * deterministic label is the only handle a probe has on a workspace whose
+		 * id was never recorded (§5.3). The list is asked for and filtered here
+		 * rather than handed out, because that identity question is the only one
+		 * anything has of the workspace list.
+		 */
+		async workspaceLabelled(label) {
+			const listed = await listOf(["workspace", "list"], "workspaces");
+			if (!listed.ok) return listed;
+
+			return Object.freeze({ ok: true, workspace: listed.entries.find((entry) => entry?.label === label) ?? null });
 		},
 
 		/**
@@ -185,12 +259,18 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 		 * §6.5's second identity channel: **environment variables in the pane the
 		 * agent will run in.**
 		 *
-		 * Neither `workspace create` nor `agent start` takes an environment, so
-		 * the exports are typed into the pane's own shell before the agent occupies
-		 * it — which is also why they survive into everything the worker starts,
-		 * rather than only into the harness process. The prompt carries the same
-		 * tuple; two channels because a worker that lost track of the prompt can
-		 * still read `$FACTORY_ATTEMPT`, and a script it writes can too.
+		 * `agent start` takes no environment, so the exports are typed into the
+		 * pane's own shell before the agent occupies it — which is also why they
+		 * survive into everything the worker starts, rather than only into the
+		 * harness process. The prompt carries the same tuple; two channels because
+		 * a worker that lost track of the prompt can still read `$FACTORY_ATTEMPT`,
+		 * and a script it writes can too.
+		 *
+		 * Herdr 0.8.0 does offer `--env KEY=VALUE` on `workspace create` and
+		 * `tab create`, so half the original reason for typing them is gone;
+		 * declaring them to the server instead is #157's, and it has a live
+		 * question to settle first — whether a variable set that way reaches the
+		 * agent process `agent start` launches later, or only the pane's shell.
 		 *
 		 * Every value is single-quoted with the shell's own escape for an embedded
 		 * quote. The identity segments are §2.1-charset by construction and the

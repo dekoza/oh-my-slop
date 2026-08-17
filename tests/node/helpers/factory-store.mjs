@@ -1,7 +1,7 @@
 import { AssertionError } from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { openCapacity } from "../../../factory/lib/capacity/slots.mjs";
 import { holdControllerLease } from "../../../factory/lib/controller/lease-guard.mjs";
@@ -15,6 +15,7 @@ import {
 	streamFor,
 } from "../../../factory/lib/state/events.mjs";
 import { openStore } from "../../../factory/lib/state/store.mjs";
+import { herdrIntegration } from "./factory-package.mjs";
 import { makeRepo } from "./factory-repo.mjs";
 
 /**
@@ -62,10 +63,30 @@ export function makeAgentDir(t) {
  * real one would copy the developer's credentials into a temp directory to
  * prove a point about isolation.
  */
+/**
+ * An operator's home on a host where herdr is installed: §6.5's agent-state
+ * integration sits in the operator's config roots at the version the factory
+ * is written against. Every full-path suite drives a preflight, and a host
+ * without the integration would make them red for a reason the suite is not
+ * about; a test that needs the absence deletes the file it wants gone.
+ */
 export function makeHome(t) {
 	const dir = mkdtempSync(join(tmpdir(), "factory-home-"));
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	for (const [path, content] of Object.entries(herdrInstalledIntegrations())) {
+		const target = join(dir, path);
+		mkdirSync(dirname(target), { recursive: true });
+		writeFileSync(target, content);
+	}
 	return dir;
+}
+
+/** The §6.5 integrations a herdr-installed host carries, by path and content. */
+export function herdrInstalledIntegrations() {
+	return {
+		".pi/agent/extensions/herdr-agent-state.ts": herdrIntegration("pi", 8),
+		".claude/hooks/herdr-agent-state.sh": herdrIntegration("claude", 7),
+	};
 }
 
 /**

@@ -129,6 +129,7 @@ export async function preflight(
 	record(worker.permissionsCheck());
 	record(worker.trustCheck());
 	record(worker.closureCheck());
+	record(worker.agentStateCheck());
 
 	// ── Runtime probes (§9.7) ────────────────────────────────────────────────
 	const herdrAvailable = record(await herdrCheck({ env, herdr }));
