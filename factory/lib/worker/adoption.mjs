@@ -139,7 +139,7 @@ export function candidateAttempt(store, { run = null, ticket = null, attempt = n
  * @returns {Promise<Readonly<object>>} the verdict, its five tests, and the
  *   evidence a record can carry
  */
-export async function proveAdoption({ store, herdr, mint, correlation = null, pathState = statePathState }) {
+export async function proveAdoption({ store, herdr, mint, correlation = null, pathState = pathStateOnDisk }) {
 	const attempt = mint.attempt;
 	const listed = await herdr.paneForAttempt(attempt);
 	const pane = listed.ok ? listed.pane : null;
@@ -230,7 +230,7 @@ export async function proveAdoption({ store, herdr, mint, correlation = null, pa
  * @param {{ store: object, herdr: object, pathState?: Function }} where
  * @returns {(row: { identity: object }) => Promise<Readonly<object>>}
  */
-export function createAdoptionProbe({ store, herdr, pathState = statePathState }) {
+export function createAdoptionProbe({ store, herdr, pathState = pathStateOnDisk }) {
 	return async ({ identity = {} } = {}) => {
 		const candidate = candidateAttempt(store, {
 			run: identity.run ?? null,
@@ -313,7 +313,7 @@ function outboxState(store, mint, pathState) {
  * share, an IO error — taught this process nothing, and reading it as "gone"
  * would evict a live worker over a mount that was slow to come back (§12.4).
  */
-function statePathState(path) {
+function pathStateOnDisk(path) {
 	if (typeof path !== "string" || path === "") return TEST_RESULTS.fail;
 	try {
 		statSync(path);

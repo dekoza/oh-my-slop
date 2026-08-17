@@ -162,7 +162,11 @@ is the authority; cite the section a change answers to.
   and otherwise waits for a ticket execution to terminate. Backpressure is **not
   claiming** — nothing is buffered and no intent is queued — and the two things it is
   parametric in, the frontier reader and the execution of one ticket, are injected so
-  the loop stays testable at any capacity with no override seam.
+  the loop stays testable at any capacity with no override seam. §5.5's `resumed` lanes
+  are **not** a third: they are lanes already *running* when this controller took over,
+  started before the first frontier read because they were never this loop's to claim —
+  their slots are held and their ticket execution is part-way through §8.1's pipeline —
+  and a ticket already running is not a candidate again (§2.1).
 - Every command answers from one structured value, rendered human by default and
   `--json` on request. A verb that cannot do its job says what is missing; it never
   goes quiet and never half-runs.

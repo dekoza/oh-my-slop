@@ -502,6 +502,18 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 	}
 
 	/**
+	 * Whether any later controller could still **adopt** this row rather than only
+	 * disprove it: adoption requires the row to name the run that controller is
+	 * driving, so a row of this run — which is ending — is nobody's to adopt, and
+	 * one naming a run already ended is nobody's either.
+	 */
+	function adoptableLater(row) {
+		const named = row.identity?.run ?? null;
+		if (named === null || named === run) return false;
+		return store.readRun(named)?.lifecycle !== "ended";
+	}
+
+	/**
 	 * Whether a row names a slot **this run's plan still has** — a declared class,
 	 * and an index inside its size. A ceiling that shrank, or a class the routing
 	 * no longer reaches, leaves rows a pool cannot account for.
@@ -608,19 +620,14 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 
 	/** A row nothing settled this pass, described with the verdict that left it. */
 	function retain(row, { reason, answer = null }) {
-		retainedVerdicts.set(row.name, {
+		const verdict = Object.freeze({
 			reason,
 			verdict: answer?.verdict ?? null,
 			tests: answer?.tests ?? null,
 			evidence: answer?.detail ?? null,
 		});
-		return Object.freeze({
-			...describeSlot(row, hold.fencingGeneration),
-			reason,
-			verdict: answer?.verdict ?? null,
-			tests: answer?.tests ?? null,
-			evidence: answer?.detail ?? null,
-		});
+		retainedVerdicts.set(row.name, verdict);
+		return Object.freeze({ ...describeSlot(row, hold.fencingGeneration), ...verdict });
 	}
 
 	/**
@@ -691,15 +698,19 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 		async reclaim({ probe = null, adopt = false, settleAttempt = null, at = now() } = {}) {
 			const superseded = supersededRows();
 			if (probe === null) {
+				// Every slot spelled, so the two branches answer the same shape: a
+				// caller reading `settled` must not have to tell "nothing was ended"
+				// from "this branch does not say" (§11.2).
 				return Object.freeze({
 					reclaimed: 0,
 					adopted: 0,
 					resumed: Object.freeze([]),
+					settled: Object.freeze([]),
 					held: Object.freeze(superseded.map((row) => retain(row, { reason: RETAINED_REASONS.unanswerable }))),
 					missing:
 						superseded.length === 0
 							? null
-							: "the §5.5 adoption probe that adopts a live worker or declares it dead (`worker/adoption.mjs`)",
+							: "a §5.5 adoption probe on this call; nothing is settled by reasoning about a row nobody asked about (`worker/adoption.mjs`)",
 					spec: "§5.5, §9.4, §14.22",
 				});
 			}
@@ -775,29 +786,31 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 		 * @param {{ at?: number }} [options]
 		 */
 		unsettled({ at = now() } = {}) {
-			const rowsHeld = supersededRows();
+			const rowsHeld = supersededRows().map((row) => {
+				const known = retainedVerdicts.get(row.name) ?? null;
+				return Object.freeze({
+					...describeSlot(row, hold.fencingGeneration),
+					reason: known?.reason ?? null,
+					verdict: known?.verdict ?? null,
+					evidence: known?.evidence ?? null,
+					// The operator's actual question: is anything going to pick this up
+					// on its own? Only a controller driving the run the row names can
+					// adopt it — this run is ending, so its own rows are nobody's to
+					// adopt, and the rest depend on whether their run is still open.
+					adoptable_by_successor: adoptableLater(row),
+				});
+			});
+
 			return Object.freeze({
 				count: rowsHeld.length,
-				rows: Object.freeze(
-					rowsHeld.map((row) => {
-						const known = retainedVerdicts.get(row.name) ?? null;
-						return Object.freeze({
-							...describeSlot(row, hold.fencingGeneration),
-							reason: known?.reason ?? null,
-							verdict: known?.verdict ?? null,
-							evidence: known?.evidence ?? null,
-							// The operator's actual question: is anything going to pick this
-							// up on its own? Only a probe that disproves it will.
-							adoptable_by_successor: false,
-						});
-					}),
-				),
+				rows: Object.freeze(rowsHeld),
 				at,
 				resolution:
 					rowsHeld.length === 0
 						? null
-						: "a later controller re-probes each row and releases the ones it disproves; none of them can be " +
-							"adopted, because the run that took them is not the run a successor will drive (§5.5, §9.4)",
+						: "a later controller re-probes each row and releases the ones it disproves; the ones marked " +
+							"`adoptable_by_successor: false` can be settled no other way, because the run that took them " +
+							"is over (§5.5, §9.4)",
 				spec: "§5.5, §9.4, §12.4",
 			});
 		},
@@ -813,6 +826,13 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 		 *
 		 * Lanes that ran gave their slots back in the scheduler's `finally`, and
 		 * `release` is idempotent, so this takes nothing from them.
+		 *
+		 * **It is a backstop, and today's wiring cannot reach it**, which is worth
+		 * knowing before deleting it as dead: the transfer is gated on there being
+		 * an executor, and the scheduler starts every resumed lane before its loop
+		 * head, so every adopted row is a running lane's. What would reach it is a
+		 * return between the reclaim and the scheduler, or a scheduler that could
+		 * decline a lane — and either would otherwise strand an index silently.
 		 *
 		 * @param {{ reason?: string, at?: number }} [options]
 		 * @returns {number} how many rows this call actually released
