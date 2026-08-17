@@ -238,6 +238,23 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 			return sent.exitCode === 0 ? Object.freeze({ ok: true }) : failed("agent prompt", sent);
 		},
 
+		/**
+		 * §6.6's progress half, sampled: the pane's own terminal output. Herdr
+		 * exposes no output stream in `events.subscribe` — the subscribed kinds are
+		 * the pane-lifecycle three — so growth is read here, on the CLI, and judged
+		 * by the caller against its last snapshot rather than trusted to be
+		 * monotonic (#150).
+		 *
+		 * Bounded deliberately: §6.6 sends large output to artifacts, and the
+		 * recent-window digest only has to *differ* from the last one to be
+		 * progress, so the whole scrollback is never read into the controller.
+		 */
+		async readPaneOutput(pane, { lines = 200 } = {}) {
+			const read = await call(["pane", "read", pane, "--raw", "--lines", String(lines)]);
+			if (read.exitCode !== 0) return failed("pane read", read);
+			return Object.freeze({ ok: true, text: read.stdout, bytes: read.stdout.length });
+		},
+
 		panes,
 
 		/**

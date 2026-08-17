@@ -13,7 +13,7 @@ import {
 	awaitCompletion,
 	cancelAttempt,
 	decideOutcome,
-	DEFAULT_ATTEMPT_TIMEOUT_MS,
+	DEFAULT_NO_PROGRESS_TIMEOUT_MS,
 	readLiveness,
 	SETTLE_GRACE_MS,
 } from "../../factory/lib/worker/lifecycle.mjs";
@@ -143,6 +143,50 @@ test("a worker that never settles is a timeout, and until then nothing is decide
 
 	assert.equal(decideOutcome({ ...table, at: FIXED_NOW, deadline: FIXED_NOW + 1 }), null);
 	assert.equal(decideOutcome({ ...table, at: FIXED_NOW + 1, deadline: FIXED_NOW + 1 }).outcome, "timeout");
+});
+
+// ── §6.6's two clocks, #150 ──────────────────────────────────────────────────
+
+test("no observed progress ends the attempt on the no-progress clock, and the clock is named (§6.6, #150)", () => {
+	const table = { outbox: outboxOf("absent"), liveness: liveness({ status: "working" }) };
+
+	assert.equal(
+		decideOutcome({ ...table, at: FIXED_NOW, deadline: FIXED_NOW + 60_000, noProgressDeadline: FIXED_NOW + 1 }),
+		null,
+	);
+	const decided = decideOutcome({
+		...table,
+		at: FIXED_NOW + 1,
+		deadline: FIXED_NOW + 60_000,
+		noProgressDeadline: FIXED_NOW + 1,
+	});
+	assert.equal(decided.outcome, "timeout");
+	assert.equal(decided.clock, "no-progress");
+});
+
+test("the hard ceiling still bounds a progressing worker, and names itself (§6.6, #150)", () => {
+	const table = { outbox: outboxOf("absent"), liveness: liveness({ status: "working" }) };
+	const decided = decideOutcome({
+		...table,
+		at: FIXED_NOW + 60_000,
+		deadline: FIXED_NOW + 60_000,
+		noProgressDeadline: FIXED_NOW + 120_000,
+	});
+	assert.equal(decided.outcome, "timeout");
+	assert.equal(decided.clock, "deadline");
+});
+
+test("a controller that stopped observing is the automation's failure, not the worker tier's (§8.10, #150)", () => {
+	const decided = decideOutcome({
+		outbox: outboxOf("absent"),
+		liveness: liveness({ status: "working" }),
+		at: FIXED_NOW + 1,
+		deadline: FIXED_NOW + 60_000,
+		noProgressDeadline: FIXED_NOW + 1,
+		observationDegraded: true,
+	});
+	assert.equal(decided.outcome, "automation-failure");
+	assert.equal(decided.clock, undefined, "a non-timeout carries no clock");
 });
 
 test("every outcome the table can produce is one of §8.8's", () => {
@@ -286,26 +330,106 @@ function completedOutbox(identity) {
 	};
 }
 
-test("an omitted deadline is the default attempt timeout, never an unreachable one (§6.6)", async (t) => {
+test("an omitted no-progress window is the default, never an unreachable one (§6.6, #150)", async (t) => {
 	// Proven live: production composed the wait without a timeoutMs, the
 	// deadline computed as NaN, and §6.6's timeout row was unreachable — a
-	// worker that hung mid-turn would have been waited on forever.
+	// worker that hung mid-turn would have been waited on forever. Both clocks
+	// have code-owned defaults for the same reason.
 	const context = await waiting(t);
 	let clock = FIXED_NOW;
 
 	const result = await context.wait({
 		timeoutMs: undefined,
+		noProgressTimeoutMs: undefined,
 		now: () => clock,
 		sleep: async () => {
-			clock += 300_000;
-			if (clock - FIXED_NOW > 3 * DEFAULT_ATTEMPT_TIMEOUT_MS) {
-				throw new Error("the wait sailed past three default deadlines without timing out");
+			clock += 60_000;
+			if (clock - FIXED_NOW > 3 * DEFAULT_NO_PROGRESS_TIMEOUT_MS) {
+				throw new Error("the wait sailed past three default no-progress windows without timing out");
 			}
 		},
 	});
 
 	assert.equal(result.outcome, "timeout");
-	assert.ok(clock - FIXED_NOW >= DEFAULT_ATTEMPT_TIMEOUT_MS, "the default deadline was not honoured");
+	assert.equal(result.clock, "no-progress");
+	assert.ok(clock - FIXED_NOW >= DEFAULT_NO_PROGRESS_TIMEOUT_MS, "the default no-progress window was not honoured");
+});
+
+test("the hard ceiling still bounds a worker that keeps producing progress (§6.6, #150)", async (t) => {
+	const context = await waiting(t);
+	let clock = FIXED_NOW;
+	let step = 0;
+	let push;
+
+	const result = await context.wait({
+		timeoutMs: 60_000,
+		noProgressTimeoutMs: 10_000,
+		now: () => clock,
+		watch: ({ onTransition }) => {
+			push = onTransition;
+			return { close: () => {}, degraded: () => false };
+		},
+		sleep: async () => {
+			clock += 1_000;
+			step += 1;
+			// A status transition every five samples: progress keeps arriving, so
+			// only the hard ceiling may end the attempt.
+			if (step % 5 === 0) {
+				push({ status: "working", alive: true, agent: "pi", source: "poll", event: null, from: "working" });
+			}
+		},
+	});
+
+	assert.equal(result.outcome, "timeout");
+	assert.equal(result.clock, "deadline");
+});
+
+test("pane output growth is observed progress, and its absence is the no-progress timeout (§6.6, #150)", async (t) => {
+	const context = await waiting(t);
+	let clock = FIXED_NOW;
+	let samples = 0;
+
+	const result = await context.wait({
+		timeoutMs: 60_000,
+		noProgressTimeoutMs: 10_000,
+		now: () => clock,
+		sleep: async () => {
+			clock += 1_000;
+			samples += 1;
+			// The pane grows for three samples, then goes quiet.
+			if (samples <= 3) context.herdr.paneOutput = `output ${samples}`;
+		},
+	});
+
+	assert.equal(result.outcome, "timeout");
+	assert.equal(result.clock, "no-progress");
+	assert.equal(result.lastProgress.fact, "worker.output", "the disposition names the last observed progress");
+
+	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
+	assert.equal(ended.payload.clock, "no-progress");
+	assert.equal(ended.payload.last_progress.fact, "worker.output");
+	assert.equal(ended.payload.last_progress.source, "herdr");
+});
+
+test("a degraded observation channel makes a no-progress timeout an automation failure (§8.10, #150)", async (t) => {
+	const context = await waiting(t);
+	let clock = FIXED_NOW;
+
+	const result = await context.wait({
+		timeoutMs: 60_000,
+		noProgressTimeoutMs: 10_000,
+		now: () => clock,
+		watch: ({ onDegraded }) => {
+			onDegraded({ source: "herdr", reason: "socket-unavailable", detail: "ENOENT", fallback: "polling", interval_ms: 2_000 });
+			return { close: () => {}, degraded: () => true };
+		},
+		sleep: async () => {
+			clock += 1_000;
+		},
+	});
+
+	assert.equal(result.outcome, "automation-failure");
+	assert.equal(result.clock, null, "a controller fault is not a worker-tier timeout");
 });
 
 test("an idle seed is a state, not a transition: the just-prompted worker gets its turn before silence counts (§6.6)", async (t) => {
@@ -483,7 +607,7 @@ test("agent-status transitions are recorded as events, one per observed change",
 	const observed = context.store.readEvents({ stream: runStream(context.run), kind: "observation.recorded" });
 	assert.deepEqual(observed.map((event) => event.payload.status), ["working", "blocked", "working", "done"]);
 	assert.equal(observed[0].source, "herdr");
-	assert.equal(observed[0].payload.fact, "worker.alive", "§5.2 gives Herdr exactly one fact");
+	assert.equal(observed[0].payload.fact, "worker.alive", "§5.2 names the fact a status transition records");
 	assert.equal(observed[1].payload.from, "working");
 
 	// Herdr dates nothing it answers, so the slot §4.3 reserves for a foreign

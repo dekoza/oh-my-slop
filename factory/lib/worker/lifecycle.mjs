@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 import { agentAlive, FACTORY_ATTEMPT_TOKEN, transcriptPointerOf } from "../controller/herdr-control.mjs";
 import { fromPane, watchPane } from "../controller/herdr-events.mjs";
+import { ATTEMPT_CLOCK_DEADLINE, ATTEMPT_CLOCK_NO_PROGRESS } from "../domain/vocabulary.mjs";
 import { requestEffect, resolveEffect } from "../effects/records.mjs";
 import { canonicalJson, runStream } from "../state/events.mjs";
 import { requireAuthority } from "../tracker/authority.mjs";
@@ -88,6 +89,9 @@ const PROMPT_SUBMISSIONS = 3;
 /** How often the wait re-reads the outbox. The Herdr half is subscribed, not sampled. */
 const OUTBOX_POLL_INTERVAL_MS = 1_000;
 
+/** How often the wait samples pane output as a progress signal (§6.6, #150). */
+const PROGRESS_POLL_INTERVAL_MS = 5_000;
+
 /**
  * How long a settled worker gets before its silence is called silent-completion.
  *
@@ -105,12 +109,25 @@ const SETTLED_STATUSES = Object.freeze(["idle", "done", "released", "exited"]);
 const GONE_STATUSES = Object.freeze(["released", "exited"]);
 
 /**
- * §6.6's deadline when nobody declared one. Thirty minutes: an order of
- * magnitude over the longest attempt observed live (~3 minutes), and short
- * enough that a worker hung mid-turn surrenders its lane the same night
- * rather than never. A profile declares `attemptTimeoutMs` to move it.
+ * §6.6's hard ceiling when nobody declared one. Three hours: the longest
+ * attempt observed live completed at 86 minutes (commit a48bcef, #114), and
+ * three hours is ~2.1× that — so no observed attempt has been cut off, while a
+ * worker wedged mid-turn still surrenders its lane the same day rather than
+ * never. A profile declares `attemptTimeoutMs` to move it.
  */
-export const DEFAULT_ATTEMPT_TIMEOUT_MS = 1_800_000;
+export const DEFAULT_ATTEMPT_TIMEOUT_MS = 10_800_000;
+
+/**
+ * §6.6's no-progress timeout when nobody declared one. Ten minutes. The
+ * journal's measured attempt durations — 17 minutes and 86 minutes to
+ * completion (#114) — are whole-attempt spans, not silent gaps, so they bound
+ * this from below rather than pinning it: a worker that completed in either
+ * span produced observable progress far more often than every ten minutes, and
+ * a worker that produces *nothing* observable for ten minutes has stopped
+ * doing what a completing worker does. A profile declares `noProgressTimeoutMs`
+ * to move it.
+ */
+export const DEFAULT_NO_PROGRESS_TIMEOUT_MS = 600_000;
 
 /**
  * Launch one attempt (§6.4, §6.5).
@@ -382,15 +399,31 @@ function correlatedAttempt(store, { run, attempt }) {
 	);
 }
 
+/** The time the launch completed (§6.5), or null when it never finished. */
+function correlationTime(store, identity) {
+	return correlatedAttempt(store, identity)?.occurred_at ?? null;
+}
+
 /**
- * §6.6's wait: **first-signal-wins**, over the outbox and the worker's liveness.
+ * §6.6's wait: **first-signal-wins**, over the outbox and the worker's liveness,
+ * with the two clocks of #150 governing the end.
  *
  * Neither signal is polled the same way, and that asymmetry is §5.1's. Herdr is
  * **subscribed** to, because a poll structurally cannot see `working → blocked
  * → working` between two samples, and the transitions are recorded as events.
  * The outbox is a file this controller designated and is re-read on a short
  * interval — there is nothing to subscribe to and no transition to miss, only a
- * file that appears once.
+ * file that appears once. Pane output, the third progress signal, is **sampled**
+ * on its own slower cadence: there is no output stream to subscribe to, and the
+ * point is only whether the recent output *changed* since the last sample.
+ *
+ * **Two clocks, both finite.** The hard ceiling (`timeoutMs`) bounds the lane
+ * whatever the worker is doing, and is anchored to the launch completion so a
+ * controller that died and adopted a live worker does not reset the bound. The
+ * no-progress clock (`noProgressTimeoutMs`) ends an attempt that has stopped
+ * producing anything observable — a status transition, pane output, or a
+ * transcript growing — and its verdict names which clock fired and what the last
+ * observed progress was.
  *
  * @param {object} store an open store
  * @param {object} context
@@ -400,12 +433,14 @@ function correlatedAttempt(store, { run, attempt }) {
  * @param {string} context.agent the Herdr agent name
  * @param {string} context.socket the Herdr socket path
  * @param {object} context.herdr the Herdr control surface
- * @param {number} context.timeoutMs the attempt's deadline
+ * @param {number} context.timeoutMs the attempt's hard ceiling
+ * @param {number} context.noProgressTimeoutMs the attempt's no-progress window
  * @param {string} context.actor
  * @param {() => number} context.now
  * @param {(ms: number) => Promise<void>} [context.sleep]
  * @param {Function} [context.watch] injectable subscription opener
  * @param {number} [context.pollIntervalMs]
+ * @param {number} [context.progressPollIntervalMs]
  * @returns {Promise<Readonly<object>>} the typed outcome
  */
 export async function awaitCompletion(
@@ -418,20 +453,35 @@ export async function awaitCompletion(
 		socket,
 		herdr,
 		timeoutMs = DEFAULT_ATTEMPT_TIMEOUT_MS,
+		noProgressTimeoutMs = DEFAULT_NO_PROGRESS_TIMEOUT_MS,
 		actor,
 		now,
 		sleep = delay,
 		watch = watchPane,
 		pollIntervalMs = OUTBOX_POLL_INTERVAL_MS,
 		settleGraceMs = SETTLE_GRACE_MS,
+		progressPollIntervalMs = PROGRESS_POLL_INTERVAL_MS,
 	},
 ) {
 	const identity = requireAttemptIdentity(minted);
 	requireLaunched(store, identity);
 
 	const outboxPath = attemptOutboxPath(store.storeDir, identity.attempt);
-	const deadline = now() + timeoutMs;
+	// The hard ceiling is anchored to the launch completion, not to this wait: a
+	// controller that died and adopted a live worker must not hand the lane a
+	// fresh deadline (§6.6, #150).
+	const deadline = (correlationTime(store, identity) ?? now()) + timeoutMs;
 	const observer = observationRecorder(store, { hold, identity, pane, actor, now });
+
+	// §6.6's second clock. The window opens when this controller starts watching,
+	// because a re-entry cannot know what the worker did while it was down — the
+	// progress it *did* observe is already durable, and what matters now is
+	// whether the worker produces something observable from here on.
+	let lastProgressAt = now();
+	let lastProgress = null;
+	let nextProgressCheckAt = now();
+	let outputSnapshot = null;
+	let observationDegraded = false;
 
 	// **Seeded from a read, never assumed.** A worker that finished before the
 	// subscription opened produces no transition at all, and starting from
@@ -468,10 +518,16 @@ export async function awaitCompletion(
 
 	try {
 		for (;;) {
+			const at = now();
+
 			while (pending.length > 0) {
 				const entry = pending.shift();
 				if (entry.degradation !== undefined) {
 					observer.degraded(entry.degradation, entry.at);
+					// The controller has admitted its own observation channel failed:
+					// a no-progress verdict reached from here on is the automation's
+					// failure, not the worker tier's (§8.10, #150).
+					observationDegraded = true;
 					continue;
 				}
 				if (entry.unrecognised !== undefined) {
@@ -480,13 +536,25 @@ export async function awaitCompletion(
 				}
 				liveness = readLiveness(entry.transition, liveness, entry.at);
 				observer.record(entry.transition, entry.at);
+				// A status transition is observed progress: something about the
+				// worker changed, and the no-progress window reopens from it.
+				lastProgressAt = entry.at;
+				lastProgress = transitionProgress(entry.transition, entry.at);
 			}
 
 			// First schema-valid content wins: the loop keeps the first valid read
 			// and never re-reads for state, so a worker writing again after the
 			// harvest is writing evidence (§6.6).
 			const outbox = readOutbox(outboxPath, identity);
-			const decided = decideOutcome({ outbox, liveness, at: now(), deadline, settleGraceMs });
+			const decided = decideOutcome({
+				outbox,
+				liveness,
+				at,
+				deadline,
+				noProgressDeadline: lastProgressAt + noProgressTimeoutMs,
+				observationDegraded,
+				settleGraceMs,
+			});
 			if (decided !== null) {
 				return await settle(store, {
 					hold,
@@ -494,11 +562,31 @@ export async function awaitCompletion(
 					herdr,
 					agent,
 					outcome: decided.outcome,
+					clock: decided.clock ?? null,
+					lastProgress,
 					outbox,
 					liveness,
 					actor,
 					now,
 				});
+			}
+
+			// Still undecided: sample pane output for progress, on its own cadence.
+			// A changed snapshot is observed progress; a read that fails is not an
+			// end — it is one fewer observation this round, and the no-progress
+			// clock, the hard ceiling, and the next sample all stand behind it.
+			if (at >= nextProgressCheckAt) {
+				nextProgressCheckAt = at + progressPollIntervalMs;
+				const output = await herdr.readPaneOutput(pane);
+				if (output.ok) {
+					const digest = digestOf(output.text);
+					if (digest !== outputSnapshot) {
+						outputSnapshot = digest;
+						observer.output({ bytes: output.bytes, digest }, at);
+						lastProgressAt = at;
+						lastProgress = outputProgress({ bytes: output.bytes, digest }, at);
+					}
+				}
 			}
 			await sleep(pollIntervalMs);
 		}
@@ -541,7 +629,8 @@ export async function cancelAttempt(store, { hold, identity: minted, herdr, agen
 }
 
 /**
- * §6.6's state table, as one function: **(outbox validity × worker liveness)**.
+ * §6.6's state table, as one function: **(outbox validity × worker liveness)**,
+ * now with the two clocks of #150.
  *
  * | outbox | worker | outcome |
  * |---|---|---|
@@ -551,16 +640,32 @@ export async function cancelAttempt(store, { hold, identity: minted, herdr, agen
  * | valid, foreign tuple | either | `automation-failure` (§6.5) |
  * | absent | gone | `dead-worker` |
  * | absent | settled past the grace | `no-result` — silent completion |
- * | absent | working, past the deadline | `timeout` |
+ * | absent | working, no progress observed | `timeout` / `clock: no-progress` |
+ * | absent | working, observed progress | `timeout` / `clock: deadline` at the hard ceiling |
  * | absent | working | undecided; keep waiting |
+ *
+ * The no-progress row is the one that splits by fault (§8.10): when the
+ * controller's own observation channel degraded, the absence of progress is
+ * evidence about the controller, not the worker, so it answers
+ * `automation-failure` and spends the automation budget rather than the worker
+ * tier's. The hard ceiling fires regardless — it bounds the lane, not the
+ * verdict about who failed.
  *
  * The two absences are different faults and route to different budgets (§8.10):
  * a worker that ended its turn without writing failed at its own job, while a
  * pane that died under it is the automation's failure.
  *
- * @returns {Readonly<{ outcome: string }> | null} null while nothing has decided
+ * @returns {Readonly<{ outcome: string, clock?: string }> | null} null while nothing has decided
  */
-export function decideOutcome({ outbox, liveness, at, deadline, settleGraceMs = SETTLE_GRACE_MS }) {
+export function decideOutcome({
+	outbox,
+	liveness,
+	at,
+	deadline,
+	noProgressDeadline = null,
+	observationDegraded = false,
+	settleGraceMs = SETTLE_GRACE_MS,
+}) {
 	if (outbox.state === "foreign") return Object.freeze({ outcome: "automation-failure" });
 	if (outbox.state === "invalid" || outbox.state === "unreadable") return Object.freeze({ outcome: "invalid-result" });
 
@@ -575,7 +680,16 @@ export function decideOutcome({ outbox, liveness, at, deadline, settleGraceMs = 
 	if (liveness.settledAt !== null && at - liveness.settledAt >= settleGraceMs) {
 		return Object.freeze({ outcome: "no-result" });
 	}
-	if (at >= deadline) return Object.freeze({ outcome: "timeout" });
+
+	// §6.6's no-progress clock: the worker is still going, but nothing
+	// observable changed for the whole window. A controller that stopped
+	// observing is the automation's failure, never the worker tier's.
+	if (noProgressDeadline !== null && at >= noProgressDeadline) {
+		return observationDegraded
+			? Object.freeze({ outcome: "automation-failure" })
+			: Object.freeze({ outcome: "timeout", clock: ATTEMPT_CLOCK_NO_PROGRESS });
+	}
+	if (at >= deadline) return Object.freeze({ outcome: "timeout", clock: ATTEMPT_CLOCK_DEADLINE });
 
 	return null;
 }
@@ -802,7 +916,10 @@ async function captureTranscript({ herdr, attempt, sleep, now }) {
  * **routine shutdown, not an error** (§13.B): the anomaly is recorded, the pane
  * is left exactly as it is, and `cleanup-plan` reclaims it later.
  */
-async function settle(store, { hold, identity, herdr, agent, outcome, outbox, liveness, cancellation = null, actor, now }) {
+async function settle(
+	store,
+	{ hold, identity, herdr, agent, outcome, clock = null, lastProgress = null, outbox, liveness, cancellation = null, actor, now },
+) {
 	const { run, ticket, phase, attempt } = identity;
 	const stopped = await stopAgent(store, { hold, identity, herdr, agent, actor, at: now() });
 	const at = now();
@@ -818,6 +935,12 @@ async function settle(store, { hold, identity, herdr, agent, outcome, outbox, li
 		observedAt: at,
 		payload: {
 			outcome,
+			// §6.6's two clocks, named rather than left for the operator to read
+			// elapsed time as a diagnosis (§8.10, #150). `clock` is which one fired
+			// a timeout — `no-progress` or `deadline` — and `last_progress` is the
+			// last observed fact that kept the no-progress clock from firing.
+			clock,
+			last_progress: lastProgress,
 			// §5.2: the outbox is **evidence**, so what it claimed rides the record
 			// and never becomes the record. The controller's own rerun is the
 			// attestation boundary (§14.16).
@@ -833,6 +956,8 @@ async function settle(store, { hold, identity, herdr, agent, outcome, outbox, li
 
 	return Object.freeze({
 		outcome,
+		clock,
+		lastProgress,
 		record: outbox?.record ?? null,
 		problems: outbox === null ? Object.freeze([]) : outbox.problems,
 		worker_status: liveness === null ? null : liveness.status,
@@ -893,7 +1018,7 @@ async function stopAgent(store, { hold, identity, herdr, agent, actor, at }) {
  */
 function observationRecorder(store, { hold, identity, pane, actor, now }) {
 	const { run, ticket, phase, attempt } = identity;
-	let ordinal = recordedTransitions(store, { run, attempt });
+	let ordinal = recordedObservations(store, { run, attempt });
 	let degradedOnce = false;
 	const unrecognisedOnce = new Set();
 
@@ -921,6 +1046,35 @@ function observationRecorder(store, { hold, identity, pane, actor, now }) {
 					// `poll` is a run whose operator should know the socket was down.
 					observed_by: transition.source,
 					event: transition.event,
+				},
+			});
+		},
+
+		/**
+		 * Pane output that changed since the last sample — §6.6's progress half
+		 * (#150). Recorded as its own fact, `worker.output`, under the same
+		 * authority and the same foreign-id space as a status transition, because
+		 * Herdr dates nothing and the fact is "this pane's output changed", never
+		 * "this pane" (§5.1).
+		 */
+		output({ bytes, digest }, at) {
+			ordinal += 1;
+			hold.append({
+				kind: "observation.recorded",
+				source: requireAuthority("worker.output", "herdr"),
+				run,
+				ticket,
+				phase,
+				attempt,
+				occurredAt: at,
+				observedAt: at,
+				foreignSourceId: `herdr:${pane}:${attempt}:${ordinal}`,
+				payload: {
+					fact: "worker.output",
+					pane,
+					bytes,
+					digest,
+					observed_by: "poll",
 				},
 			});
 		},
@@ -970,8 +1124,8 @@ function observationRecorder(store, { hold, identity, pane, actor, now }) {
 	};
 }
 
-/** How many transitions this store has already recorded for the attempt. */
-function recordedTransitions(store, { run, attempt }) {
+/** How many observations this store has already recorded for the attempt. */
+function recordedObservations(store, { run, attempt }) {
 	return store
 		.readEvents({ stream: runStream(run), kind: "observation.recorded" })
 		.filter((event) => event.attempt === attempt).length;
@@ -994,6 +1148,29 @@ export function readLiveness(transition, previous, at) {
 		// state so the grace measures from the first one.
 		settledAt: settled ? (previous.settledAt ?? at) : null,
 	};
+}
+
+/** The last observed progress, as a status transition (§6.6, #150). */
+function transitionProgress(transition, at) {
+	return Object.freeze({
+		fact: "worker.alive",
+		source: "herdr",
+		observed_at: at,
+		status: transition.status,
+		from: transition.from ?? null,
+		observed_by: transition.source,
+	});
+}
+
+/** The last observed progress, as pane output that changed (§6.6, #150). */
+function outputProgress({ bytes, digest }, at) {
+	return Object.freeze({
+		fact: "worker.output",
+		source: "herdr",
+		observed_at: at,
+		bytes,
+		digest,
+	});
 }
 
 function requireLaunched(store, identity) {

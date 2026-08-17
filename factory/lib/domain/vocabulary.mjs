@@ -180,6 +180,18 @@ export const ATTEMPT_OUTCOMES = Object.freeze([
 ]);
 
 /**
+ * §6.6's two clocks, as `attempt.ended` names the one that fired (#150).
+ *
+ * The two share the one outcome word — `timeout` — because both are the lane
+ * being ended, and the word that reaches the operator is the clock, not a
+ * second outcome. Kept here because it rides a record payload and reaches the
+ * operator's screen unchanged, which is this file's criterion.
+ */
+export const ATTEMPT_CLOCK_NO_PROGRESS = "no-progress";
+export const ATTEMPT_CLOCK_DEADLINE = "deadline";
+export const ATTEMPT_CLOCKS = Object.freeze([ATTEMPT_CLOCK_NO_PROGRESS, ATTEMPT_CLOCK_DEADLINE]);
+
+/**
  * §6.6, §8.8: the outcomes **only the controller derives**, as the complement of
  * the worker-writable set rather than as a second list beside it.
  *

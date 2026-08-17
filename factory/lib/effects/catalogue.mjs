@@ -125,8 +125,9 @@ export const PROBE_CATALOGUE = Object.freeze({
 	"worktree-delete": probe("git-local", "git.worktree-list", "absent"),
 
 	// ── Harness writes ──────────────────────────────────────────────────────
-	// §5.2: Herdr is authoritative for exactly one fact — whether a worker
-	// process is alive right now — so both probes ask only that.
+	// §5.2: Herdr is authoritative for liveness and the pane output it holds,
+	// so these probes ask only for the fact they are about — whether a worker
+	// is alive right now.
 	"agent-start": probe("harness", "herdr.pane-list", "token-matches"),
 	"agent-stop": probe("harness", "herdr.pane-list", "agent-stopped"),
 

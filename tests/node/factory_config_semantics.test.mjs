@@ -317,6 +317,22 @@ test("either kind of profile may declare an attempt deadline, and a nonsense one
 	assert.equal(error.details.at, "profiles.builder.attemptTimeoutMs");
 });
 
+test("either kind of profile may declare a no-progress window, and a nonsense one refuses (§6.6, #150)", (t) => {
+	const config = clone();
+	config.profiles.builder.noProgressTimeoutMs = 900_000;
+	config.profiles.reviewer = { kind: "claude", model: "opus", noProgressTimeoutMs: 300_000 };
+
+	const { config: validated } = loaded(t, config);
+	assert.equal(validated.profiles.builder.noProgressTimeoutMs, 900_000);
+	assert.equal(validated.profiles.reviewer.noProgressTimeoutMs, 300_000);
+
+	const broken = clone();
+	broken.profiles.builder.noProgressTimeoutMs = 0;
+	const error = loadFailure(t, broken);
+	assert.equal(error.reason, "invalid-value");
+	assert.equal(error.details.at, "profiles.builder.noProgressTimeoutMs");
+});
+
 test("a pi profile's model must be an exact provider/model selector", (t) => {
 	const config = clone();
 	config.profiles.builder.model = "qwen3";

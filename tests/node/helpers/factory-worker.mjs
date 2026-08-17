@@ -97,6 +97,7 @@ export function fakeHerdr({
 	ignoresQuitKeys = false,
 	onPrompt = null,
 	swallowPrompts = 0,
+	paneOutput = "",
 } = {}) {
 	const calls = [];
 	const panes = [];
@@ -163,6 +164,12 @@ export function fakeHerdr({
 			if (pane !== undefined) pane.agent_status = onPrompt === null ? "working" : "idle";
 			return json({ submitted: true });
 		}
+		if (command === "pane read") {
+			// §6.6's progress sample: the recent pane output, bounded like the real
+			// `pane read --raw --lines N`. A test drives growth by mutating the
+			// returned handle's `paneOutput` between samples.
+			return { exitCode: 0, stdout: paneOutput, stderr: "" };
+		}
 		if (command === "pane list") return json({ panes: [...panes] });
 		return { exitCode: 2, stdout: "", stderr: `fake herdr does not know \`${command}\`` };
 	};
@@ -171,6 +178,10 @@ export function fakeHerdr({
 		calls,
 		panes,
 		run,
+		/** The pane output the next `pane read` answers with (§6.6, #150). */
+		set paneOutput(value) {
+			paneOutput = value;
+		},
 		/** The argv words of every command issued, joined — for order assertions. */
 		commands: () => calls.map((args) => args.slice(0, 2).join(" ")),
 		control: createHerdrControl({ run }),

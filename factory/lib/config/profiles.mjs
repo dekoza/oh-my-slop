@@ -18,8 +18,8 @@ const PROFILE_KINDS = Object.freeze(["pi", "claude"]);
 
 /** Per kind, because a flag the other harness cannot take is dormant config. */
 const PROFILE_KEYS = Object.freeze({
-	pi: Object.freeze(["kind", "model", "thinking", "startupTimeoutMs", "attemptTimeoutMs"]),
-	claude: Object.freeze(["kind", "model", "effort", "startupTimeoutMs", "attemptTimeoutMs"]),
+	pi: Object.freeze(["kind", "model", "thinking", "startupTimeoutMs", "attemptTimeoutMs", "noProgressTimeoutMs"]),
+	claude: Object.freeze(["kind", "model", "effort", "startupTimeoutMs", "attemptTimeoutMs", "noProgressTimeoutMs"]),
 });
 
 const THINKING_LEVELS = Object.freeze(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
@@ -133,10 +133,15 @@ function validateProfile(name, profile, configPath) {
 		validated.startupTimeoutMs = requireInteger(profile.startupTimeoutMs, `${at}.startupTimeoutMs`, configPath);
 	}
 
-	// §6.6's attempt deadline. Declared per profile because the honest ceiling
-	// differs by model and role; absent, the lifecycle's default applies.
+	// §6.6's two clocks, declared per profile because the honest ceiling and the
+	// honest no-progress window both differ by model and role; absent, the
+	// lifecycle's code-owned defaults apply — an unset deadline would make the
+	// timeout row unreachable (#150).
 	if (profile.attemptTimeoutMs !== undefined) {
 		validated.attemptTimeoutMs = requireInteger(profile.attemptTimeoutMs, `${at}.attemptTimeoutMs`, configPath);
+	}
+	if (profile.noProgressTimeoutMs !== undefined) {
+		validated.noProgressTimeoutMs = requireInteger(profile.noProgressTimeoutMs, `${at}.noProgressTimeoutMs`, configPath);
 	}
 
 	return Object.freeze(validated);

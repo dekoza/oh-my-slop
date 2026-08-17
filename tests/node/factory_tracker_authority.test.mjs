@@ -41,9 +41,9 @@ test("Gitea is authoritative for ticket state, labels, assignee, and PR existenc
 	}
 });
 
-test("Herdr is authoritative for exactly one fact — whether a worker is alive", () => {
+test("Herdr is authoritative for liveness and the pane output it holds — and nothing else (§5.2, #150)", () => {
 	const herdr = AUTHORITY_TABLE.find((row) => row.source === "herdr");
-	assert.deepEqual(herdr.authoritativeFor, ["worker.alive"]);
+	assert.deepEqual(herdr.authoritativeFor, ["worker.alive", "worker.output"]);
 });
 
 test("the outbox is evidence and the journal is intent, never proof", () => {

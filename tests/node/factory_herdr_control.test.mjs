@@ -200,6 +200,17 @@ test("liveness is Herdr's one fact, read off the pane", () => {
 	assert.equal(agentAlive(null), false);
 });
 
+test("pane output is read raw and bounded, as §6.6's progress sample (#150)", async () => {
+	const io = runner({
+		"pane read": { exitCode: 0, stdout: "line one\nline two", stderr: "" },
+	});
+
+	const output = await createHerdrControl({ run: io.run }).readPaneOutput("w1:p1");
+
+	assert.deepEqual({ ...output }, { ok: true, text: "line one\nline two", bytes: 17 });
+	assert.deepEqual(io.calls[0], ["pane", "read", "w1:p1", "--raw", "--lines", "200"]);
+});
+
 test("the transcript pointer is whatever Herdr persisted, or nothing", () => {
 	assert.deepEqual(
 		{ ...transcriptPointerOf({ agent_session: { agent: "claude", source: "herdr:claude", kind: "id", value: "d956" } }) },

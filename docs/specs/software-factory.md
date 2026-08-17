@@ -452,6 +452,16 @@ An event is emitted per observed transition; a confirmation of no change emits n
 the controller heartbeat carrying "watching N panes" so *quiet* stays distinguishable from
 *stopped watching*.
 
+**Progress is observed, never inferred from the controller's clock (§6.6).** A status
+transition and a changed pane-output snapshot are each recorded as `observation.recorded` facts
+— `worker.alive` (source `herdr`) for the first, `worker.output` (source `herdr`) for the
+second. Pane output is **sampled** through `pane read` on its own cadence rather than
+subscribed to, because Herdr exposes no output stream — the point is only whether the recent
+output *changed* since the last sample. For pi the transcript pointer is a path whose growth is
+the same output observed at its source; the pane is the uniform channel across both runtimes, so
+it is the one sampled. The no-progress clock reads the latest of these recorded facts, and the
+controller's own elapsed time is the *measure* of silence, never the evidence of activity.
+
 **Gitea: a durable cursor `(scope, last_updated_at, last_foreign_id)`.** Poll the two cheap
 `since` endpoints at **15s** during a run with a **60s overlap**, deduping on foreign event id
 — safe because timeline and comment ids share one monotonic sequence, and because `?since=` is
@@ -473,7 +483,7 @@ A global ranking always ends up asserting something the winning source does not 
 |---|---|
 | **Gitea** | ticket state, labels, assignee, PR existence — **not comment text** |
 | **Git remote, freshly fetched** | what was actually published: branch SHAs, whether a push landed |
-| **Herdr** | exactly one fact: whether a worker process is alive right now |
+| **Herdr** | two facts: whether a worker process is alive right now, and the pane output it produced |
 | **The attempt outbox** | what the worker *claimed* — evidence, never proof, of a phase outcome |
 | **The journal** | **intent only**; it never establishes an external fact |
 
@@ -677,9 +687,18 @@ wrote-but-hung, and invalid-result **distinct typed outcomes**.
 **Controller-derived outcomes are never worker-writable:** `automation-failure` · `timeout` ·
 `invalid-result` · `no-result` · `dead-worker` · `wrote-but-hung` · `cancelled`.
 
-**Every attempt has a finite deadline.** A profile may declare `attemptTimeoutMs`; absent one,
-a code-owned default applies — an unset deadline would make the `timeout` row unreachable and a
-worker hung mid-turn would hold its lane forever (observed live as an unbounded wait).
+**Every attempt has two finite clocks, and both have code-owned defaults.** The **hard
+ceiling** (`attemptTimeoutMs`) bounds the lane whatever the worker is doing; the **no-progress
+timeout** (`noProgressTimeoutMs`) ends an attempt that has stopped producing anything
+observable — a status transition, changed pane output, or a growing transcript. A profile may
+declare either; absent one, its code-owned default applies, because an unset clock would make
+its `timeout` row unreachable and a worker hung mid-turn would hold its lane forever (observed
+live as an unbounded wait). The two verdicts are different: the hard ceiling says *the lane is
+surrendered*, while the no-progress timeout says *this worker stopped* — and when the
+controller's own observation channel degraded, a no-progress verdict is the **automation's**
+failure, never the worker tier's (§8.10). `attempt.ended` records **which clock fired**
+(`clock`) and **the last observed progress** (`last_progress`), so the operator is not left to
+read elapsed time as a diagnosis.
 
 **Every outbox status carries the full `{run, ticket, phase, attempt}` tuple and the schema
 version.** Correlation and idempotency identity are mandatory, never optional.
@@ -1289,6 +1308,11 @@ human removing the label is what makes the label mean "someone has acknowledged 
   the same in both.
 - **`wrote-but-hung` is not a failure.** The outbox is valid, so harvest it, stop the agent as
   routine shutdown, and record the anomaly.
+- **A `timeout` carries which clock fired (§6.6).** The two clocks share the one outcome word;
+  `attempt.ended`'s `clock` field names `no-progress` or `deadline`, and its `last_progress`
+  names the last observed fact. A no-progress timeout reached while the controller's observation
+  channel was degraded is recorded as `automation-failure` instead, so the worker tier's budget
+  is never spent on a controller that stopped observing.
 - **The whole table is re-enterable.** Reconcile replays it from durable state after a crash
   between an external effect and its recorded resolution, which §7.7's end-to-end idempotent
   integration makes safe.
@@ -1693,9 +1717,11 @@ for profiles and routing, and §11.8's migration must not confuse the two.
 
 ### 11.4 Profiles and permissions
 
-Profiles carry `kind`, `model`, and optionally `effort` / `thinking` / `startupTimeoutMs`, where
-omission means "don't pass the flag" — safe because non-passing is a **recordable observation**
-in the handshake, not an inference.
+Profiles carry `kind`, `model`, and optionally `effort` / `thinking` / `startupTimeoutMs` /
+`attemptTimeoutMs` / `noProgressTimeoutMs`, where omission means "don't pass the flag" — safe
+because non-passing is a **recordable observation** in the handshake, not an inference. The
+last two are §6.6's two clocks, each with a code-owned default when the profile does not
+declare it.
 
 **`permissionMode` is removed from author control.** Permissions derive from the **role** a
 profile is bound to at dispatch. Both Claude postures use the non-interactive `dontAsk` mode,
@@ -2418,4 +2444,4 @@ touching everything twice.
 | 2026-08-16 | #111 implementation corrections, all six found while counting §8.6's budgets. **The product budget is two declared numbers, not one pool of 2**: §11.6 declares `repair` and `freshRetry` separately because §8.6 grants them separately, and one pool would let a ticket take two repairs and never the fresh-retry that discarding the work was for. **Nothing increments** — a spend is a count of the stage resolutions that charged that budget, so the bound and the count are one expression, and a controller that died between resolving a failing stage and minting its retry reads the same count back. **An automation retry re-enters the phase it left**, while the two tiers re-enter `implement`: §8.5 governs the tiers, and rebuilding good work because a pane died is exactly the infra flake §8.6 refuses to charge the builder. **§8.6's N is `budgets.circuitBreaker`**, a fourth declared number in the block §11.3 already lists, defaulting to 2 — bounded below and **not above**, because the 2 + 2 ceiling bounds the retries *one ticket* may spend while N counts *ticket executions*, and borrowing it would cap a run's tolerance at 2 for a reason that does not apply. §11.8's migration leaves no hole for it: a v1 file had no breaker concept, so there is nothing to carry and nothing an operator must decide before the factory will run. **The breaker's verdict is monotone** rather than trailing, because §3.5 lets in-flight lanes finish and one settling `published` must not erase the reason the run stopped claiming. **Automation-versus-product is the disposition's own `fault`**, recorded on the terminal-commit record — matching a list of reason classes instead would make every class added to §8.8 later a silent vote on whether runs stop, which is also why `ticket.disposition-changed` moves to payload v2 (§4.3) **and why the breaker branches on that version** rather than trusting the bump alone — a pre-v2 record cannot be classified, so it breaks the streak and is counted as unread rather than read as a product verdict. Two wordings were made unambiguous rather than changed: the **hard ceiling of 2 + 2 is 2 on each declared number**, since the other reading puts the shipped default at its own ceiling and leaves a knob that can only be redistributed, which is the refusal-to-have-a-knob this section rejects; and an **operator's stop outranks the breaker**, because both drain identically and the human who typed `stop` should be told their stop was honoured. | #111 |
 | 2026-08-16 | #113 implementation corrections, all four found while publishing §7.5's first pull request. **§8.10 gains an `integrate × integration-red` row and §8.8 the controller-derived class of the same name**: §9.5's compare-and-publish loop re-rebases onto a base that moved, and nothing named the case where the required set then comes back red on the result. Forcing it into `predicate-failed` would file it as an automation fault, and §8.6 is explicit that **product-level outcomes never trip the circuit breaker** — two changes that each pass alone and do not compose is not a broken host, and stopping a run over it points the operator at infrastructure that is working. Named after §8.3's `baseline-red` because it is the same fact about a different commit; it disposes and consumes nothing, since the same base conflicts the same way and a retry buys a second identical answer. **§8.10 gains a `verify × rebase-conflict` row, and `verify`'s result domain grows with it**: §9.5 puts the rebase *inside* that phase — "acquire for `rebase + verify`, release across `review`" — which is exactly what makes §8.2's "the required checks always ran at the commit being published" hold with **no conditional re-check path**, so a rebase that cannot be replayed ends `verify`. The `integrate` row of the same name stays reachable through the loop's second rebase, and the routing is identical in both. **The integration worktree is detached, and the branch is moved by a compare-and-swap**: the attempt's own worktree holds that branch checked out and git refuses both a second worktree on it and a `branch -f` against it, so §7.5's rebase happens on a detached head and `update-ref <new> <old>` adopts the result — which is also the §4.6 discipline the rest of the system already uses, rather than a force wearing a local disguise. **The pushed-SHA identity check is a predicate, not a push failure**: §8.10 retries `push-failed` on the automation budget, and a branch that is not the commits verification attested would be pushed identically by that retry, so §7.4's identity refusal files as `predicate-failed`. §8.8, §8.10 and §8.10's stated properties are corrected in place. | #113 |
 | 2026-08-16 | #146 answers what an automation retry of a controller phase is, and the two corrections that follow from the answer. **A controller-phase automation retry mints no attempt**: §8.5's *"every resume is a fresh attempt"* is a statement about **worker** attempts, and §8.8 says `verify` and `integrate` have none — so an attempt id there would be a row in the `attempt` projection with no pane, no worktree, and no manifest behind it. The phase re-enters under the attempt already being walked; a retry of an *agent-borne* phase still mints, because a worker runs again. **A stage result's semantic key gains a fifth slot, `try`**, since the attempt slot is exactly what a controller-phase re-entry cannot vary and without one that can, the re-entry reads its own recorded result back and routes to the same row forever. **§4.5 states when the attempt slot is `-`**: an effect is keyed by the attempt when its subject is that attempt's own work, and by the ticket execution when its subject is something one ticket execution has one of — the published branch or the ticket. §7.5's `push` moves to the second, joining `pr-create`, which is what makes *the database itself enforces uniqueness* a whole-system property rather than a per-attempt one. | #146 |
-| 2026-08-17 | #149 implementation corrections, both found by running the installed Herdr (protocol 19). **Herdr's wire names are inconsistent**: `pane.agent_status_changed` arrives **dotted** while `pane_agent_detected` and `pane_exited` arrive underscored, so the old matcher — which tested the underscored spelling for all three — silently dropped every status-changed frame and §6.6's liveness axis never observed anything, in any run, in either runtime. §5.1 therefore accepts each subscribed event in **both** spellings, records a frame for this pane that matches no known event as a new `observation.unrecognised` diagnostic rather than the silent null of a filter (§11.2), and states that a quiet socket at subscribe time is a calm worker rather than degradation — node's socket timeout fires before `connect` when the loop is blocked, which degraded a healthy socket 80 ms before its first frame. §4.3's kind enumeration gains `observation.unrecognised`. | #149 |
+| 2026-08-17 | #150 replaces §6.6's single wall-clock deadline with **two clocks**. The **hard ceiling** (`attemptTimeoutMs`) still bounds the lane, and is now anchored to the launch completion so a controller that died and adopted a live worker does not reset it; the **no-progress timeout** (`noProgressTimeoutMs`) ends an attempt that has stopped producing anything observable. **Progress is an observed fact, never the controller's clock**: a status transition and a changed pane-output snapshot are recorded as `observation.recorded` facts — `worker.alive` and the new `worker.output`, both source `herdr` — and the no-progress clock reads the latest of them. Pane output is sampled through `pane read` because Herdr exposes no output stream; a degraded observation channel makes a no-progress verdict `automation-failure`, never a worker-tier timeout. `attempt.ended` gains `clock` and `last_progress` so the operator reads which clock fired and what the last progress was rather than reading elapsed time as a diagnosis. §5.2's Herdr row widens from one fact to two (`worker.alive` · `worker.output`); §11.4's profiles gain `noProgressTimeoutMs`; both clocks carry code-owned defaults, calibrated against #114's measured 17- and 86-minute completions. | #150 |
