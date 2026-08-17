@@ -332,8 +332,9 @@ is the authority; cite the section a change answers to.
   `worker/permissions.mjs` is the one home for the deny floor (`git push`, `tea`, `gh`, in
   every spelling the matcher accepts), the builder binding (`dontAsk` + broad tool-family
   allows — never a per-command allowlist, never `acceptEdits`, which still prompts for Bash),
-  and the reviewer binding (plan mode, edit tools withheld). **Overrides may only add
-  denies**: the config surface has no allow channel and no remove channel, so subtraction is
+  and the reviewer binding (`dontAsk`, because plan mode requires an interactive approval;
+  edit tools still withheld). **Overrides may only add denies**: the config surface has no
+  allow channel and no remove channel, so subtraction is
   unexpressible rather than checked, and an inverted rule spelling fails to parse. The floor's
   non-permission half lives in `git/attempt.mjs` — a **disabled `pushurl` in every attempt
   worktree**, worktree-scoped so §7.5's integration push from the clone still works.

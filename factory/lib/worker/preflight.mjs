@@ -189,8 +189,8 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 			const piInPlay = Object.values(config.profiles).some((profile) => profile.kind === "pi");
 			return check("worker-permissions", "static", "passed", {
 				message:
-					`Builder sessions run dontAsk with broad allows and the deny floor; reviewer sessions run plan mode with ` +
-					`Edit, Write, and NotebookEdit withheld. acceptEdits is never used — it still prompts for Bash.` +
+					`All Claude sessions run dontAsk with broad allows and the deny floor; reviewer sessions additionally have ` +
+					`Edit, Write, and NotebookEdit withheld. plan and acceptEdits are never used — both open approval paths.` +
 					(piInPlay ? ` ${PI_GATING_CAVEAT}` : ""),
 				detail: {
 					postures: Object.values(WORKER_POSTURES),

@@ -15,8 +15,9 @@ import {
 
 /**
  * §6.8's postures: allow-by-default with an override-proof deny floor for the
- * builder, plan mode with the edit tools withheld for the reviewer, and no
- * prompt path in either — `acceptEdits` and full bypass are refused by name.
+ * builder, the same non-interactive mode with edit tools withheld for the
+ * reviewer, and no prompt path in either — `acceptEdits`, interactive plan
+ * approval, and full bypass are refused by construction.
  */
 
 test("the deny floor covers push, tea, and gh in every spelling Claude's matcher accepts", () => {
@@ -77,20 +78,23 @@ test("the builder binding is dontAsk plus broad allows plus the floor — never 
 	assert.ok(!args.some((argument) => argument.includes("dangerously")));
 });
 
-test("the reviewer binding is plan mode with the edit tools disallowed, in both places", () => {
+test("the reviewer binding cannot enter interactive plan approval and still disallows edit tools", () => {
 	const settings = claudeSettingsDocument({ posture: WORKER_POSTURES.reviewer, extraDenies: [] });
 	const args = claudeSessionArguments({ posture: WORKER_POSTURES.reviewer, settingsPath: "/s.json" });
 
-	assert.equal(settings.permissions.defaultMode, "plan");
+	// Claude Code's plan mode writes a plan through Write and then asks for
+	// ExitPlanMode approval. With Write deliberately absent and nobody watching
+	// the pane, that workflow cannot finish; the reviewer must be non-interactive.
+	assert.equal(settings.permissions.defaultMode, "dontAsk");
 	for (const tool of ["Edit", "Write", "NotebookEdit"]) {
 		assert.ok(settings.permissions.deny.includes(tool), `${tool} is not denied in settings`);
 		assert.ok(!settings.permissions.allow.includes(tool), `${tool} is allowed as well as denied`);
 	}
 	// An empty allow list would leave a prompt path in the one posture that was
 	// not given broad allows — a pane hanging on an approval nobody watches.
-	assert.ok(settings.permissions.allow.includes("Bash"), "a reviewer cannot read a diff without Bash");
+	assert.ok(settings.permissions.allow.includes("Bash"), "a reviewer cannot read a diff or write its outbox without Bash");
 	assert.ok(settings.permissions.allow.includes("Read"));
-	assert.deepEqual(args.slice(2), ["--permission-mode", "plan", "--disallowedTools", "Edit,Write,NotebookEdit"]);
+	assert.deepEqual(args.slice(2), ["--permission-mode", "dontAsk", "--disallowedTools", "Edit,Write,NotebookEdit"]);
 });
 
 test("pi is tool lists only: the builder withholds nothing, the reviewer loses edit and write but keeps bash", () => {

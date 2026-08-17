@@ -309,6 +309,14 @@ test("a reviewer role is told about its verdict; a builder is not", () => {
 	assert.doesNotMatch(render(), /`verdict`/, "a builder has no verdict to write");
 });
 
+test("a reviewer is told to use Bash for its one permitted write", () => {
+	const prompt = reviewing();
+
+	assert.match(prompt, /Edit, Write, and NotebookEdit are unavailable/);
+	assert.match(prompt, /Use Bash to write the temporary outbox and rename it/);
+	assert.doesNotMatch(render(), /Edit, Write, and NotebookEdit are unavailable/, "a builder keeps its write tools");
+});
+
 test("a role and its fixed point must agree, so the mismatch is unconstructible (§8.4)", () => {
 	const role = PIPELINE_ROLES.find((entry) => entry.name === "review-standards");
 

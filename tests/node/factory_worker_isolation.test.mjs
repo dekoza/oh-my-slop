@@ -90,7 +90,7 @@ test("the permissions check reads the floor back out of the settings a session w
 	const checked = context.preflight.permissionsCheck();
 
 	assert.equal(checked.result, "passed");
-	assert.match(checked.message, /acceptEdits is never used/);
+	assert.match(checked.message, /plan and acceptEdits are never used/);
 	// A pi profile is in play, so §6.8's concession is recorded loudly rather
 	// than left in a specification nobody reads during an incident.
 	assert.match(checked.message, /no command-level permission system/);

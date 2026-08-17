@@ -725,13 +725,17 @@ permissions constrain behavior, not capability**. The guarantee is §7's control
 integration gate — nothing becomes real except commits the controller itself verifies and
 pushes.
 
-**Reviewer — belt and suspenders, attestation authoritative.** Claude reviewer: plan mode +
+**Reviewer — belt and suspenders, attestation authoritative.** Claude reviewer: `dontAsk` mode +
 `--disallowedTools Edit,Write,NotebookEdit` + deny floor, **and the same broad allows for the
-tools it keeps** — a reviewer with no allow rules has a prompt path back, which is the failure
-this whole section closes, on the one posture that was not given them. pi reviewer:
-`--exclude-tools edit,write`, bash retained (needed for `git diff` / `log`). **The authoritative guard is the
-controller's attestation:** capture clean-worktree + HEAD before review, verify unchanged
-after; a mismatch is a typed `mutation-detected` failure. **An opening capture that is already
+tools it keeps**. `dontAsk` removes the approval workflow; it does not restore a tool named by
+`--disallowedTools`. Plan mode is unusable in an unattended pane: Claude writes its plan through
+`Write` and then enters `ExitPlanMode` approval, so combining plan mode with the required tool
+withholding makes completion structurally impossible. A reviewer with no allow rules has a
+second prompt path back, which is the failure this whole section closes. pi reviewer:
+`--exclude-tools edit,write`, bash retained (needed for `git diff` / `log` and for the one
+controller-owned outbox write). **The authoritative guard is the controller's attestation:**
+capture clean-worktree + HEAD before review, verify unchanged after; a mismatch is a typed
+`mutation-detected` failure. **An opening capture that is already
 dirty is a mismatch too**, not a third answer: the controller made that worktree out of a commit
 and handed it to one read-only role, so anything in it beforehand was written under that
 attempt's identity — and reading a leftover as an automation problem would hand back the second
@@ -1685,10 +1689,11 @@ omission means "don't pass the flag" — safe because non-passing is a **recorda
 in the handshake, not an inference.
 
 **`permissionMode` is removed from author control.** Permissions derive from the **role** a
-profile is bound to at dispatch. A profile setting `dontAsk` and later being used as a reviewer
-would silently defeat the read-only guarantee that §6.8's before/after mutation attestation
-rests on. Altering permissions requires a declared, manifest-recorded per-run override that can
-never cross the hard floor.
+profile is bound to at dispatch. Both Claude postures use the non-interactive `dontAsk` mode,
+but the reviewer posture additionally withholds `Edit`, `Write`, and `NotebookEdit`; a profile
+cannot remove that withholding or the §6.8 before/after mutation attestation. Altering
+permissions requires a declared, manifest-recorded per-run override that can never cross the
+hard floor.
 
 ### 11.5 Routing
 

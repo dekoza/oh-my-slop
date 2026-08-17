@@ -16,9 +16,11 @@ import { FactoryWorkerError } from "./errors.mjs";
  * proven #64 failure. The builder therefore gets broad tool-family allows plus
  * the deny floor, and the mode that never prompts.
  *
- * **`acceptEdits` is unusable**, and not as a matter of taste: it still prompts
- * for Bash. That is why the mode vocabulary here is a closed set of two rather
- * than a string the caller picks.
+ * **`acceptEdits` and `plan` are unusable**, and not as a matter of taste:
+ * `acceptEdits` still prompts for Bash, while plan mode writes through the
+ * reviewer's deliberately absent `Write` tool and then asks for approval via
+ * `ExitPlanMode`. Unattended workers therefore use one non-interactive mode;
+ * posture still determines which tools that mode can reach.
  */
 
 /** The two postures a role can be dispatched under (§6.8, §8.4). */
@@ -26,11 +28,11 @@ export const WORKER_POSTURES = Object.freeze({ builder: "builder", reviewer: "re
 
 /**
  * The permission modes this factory will pass, and no others. `acceptEdits`
- * (prompts for Bash) and `bypassPermissions` (§6.8 rejects full bypass) are
- * absent by construction — a mode is chosen from this table by posture, never
- * assembled from a caller's string.
+ * (prompts for Bash), `plan` (writes a plan and asks for approval), and
+ * `bypassPermissions` (§6.8 rejects full bypass) are absent by construction —
+ * posture controls the tool set, never whether an unattended worker can prompt.
  */
-const POSTURE_MODES = Object.freeze({ [WORKER_POSTURES.builder]: "dontAsk", [WORKER_POSTURES.reviewer]: "plan" });
+const POSTURE_MODES = Object.freeze({ [WORKER_POSTURES.builder]: "dontAsk", [WORKER_POSTURES.reviewer]: "dontAsk" });
 
 /**
  * The scheduler-only verbs no worker may run (§6.8). Deliberately small: the
@@ -198,8 +200,8 @@ export function claudeSettingsDocument({ posture, extraDenies = [] }) {
 
 /**
  * The Claude flags for one session: the controller-owned settings file, the
- * posture's mode, and — for a reviewer — the edit tools withheld on the command
- * line as well as in the file.
+ * posture's non-interactive mode, and — for a reviewer — the edit tools withheld
+ * on the command line as well as in the file.
  *
  * The mode rides the flag *and* the file deliberately. The file is what §6.8
  * names, and the flag is what a `--print` probe proves the installed binary

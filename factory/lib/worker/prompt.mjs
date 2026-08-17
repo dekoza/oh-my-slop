@@ -455,6 +455,13 @@ function completionProtocol({ identity, outboxPath, role }) {
 		`End your turn by writing exactly one JSON file to \`${outboxPath}\`, **atomically** — write a`,
 		"temporary file beside it and rename it into place. A partially-written file is read as an",
 		"invalid result, which is a different outcome from having written nothing.",
+		...(reviewing
+			? [
+					"",
+					"Edit, Write, and NotebookEdit are unavailable to a reviewer. Use Bash to write the temporary outbox and rename it",
+					"into place; that controller-owned outbox is your one permitted write, while the reviewed worktree stays untouched.",
+				]
+			: []),
 		"",
 		"```json",
 		"{",
