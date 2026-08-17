@@ -160,9 +160,12 @@ const SETTLED_STATUSES = Object.freeze(["idle", "done", "released", "exited"]);
 
 /**
  * The verdicts #154 reclassifies when the pane's tail shows a provider
- * refusal: the three silence-based ones. A worker that answered is answering
- * whatever the pane scrolled past, and a pane that died is a different fact —
- * so neither is ever re-read for a refusal.
+ * refusal: the three silence-based ones, and only when the outbox is absent.
+ * `automation-failure` is on the list for its degraded-observation reading —
+ * its foreign-outbox reading is an affirmative fact, which the absence gate
+ * excludes. A worker that answered is answering whatever the pane scrolled
+ * past, and a pane that died is a different fact — so neither is ever re-read
+ * for a refusal.
  */
 const REFUSAL_RECLASSIFIABLE = Object.freeze(["no-result", "timeout", "automation-failure"]);
 
@@ -632,13 +635,15 @@ export async function awaitCompletion(
 				// newer than the last sample; deciding "the worker produced nothing"
 				// without reading what it visibly produced last is the inference this
 				// ticket exists to end. A refusal found now is recorded like any other.
-				if (refusalNow === null && REFUSAL_RECLASSIFIABLE.includes(outcome)) {
+				// Only silence qualifies: an outbox that exists — foreign included —
+				// is an affirmative fact the pane must not mask (§6.6).
+				if (refusalNow === null && outbox.state === "absent" && REFUSAL_RECLASSIFIABLE.includes(outcome)) {
 					const lastLook = await herdr.readPaneOutput(pane);
 					if (lastLook.ok) {
-						const seen = matchRefusal(lastLook.text);
-						if (seen !== null) {
-							observer.refusal(seen, at);
-							refusalNow = seen;
+						const refusalSeen = matchRefusal(lastLook.text);
+						if (refusalSeen !== null) {
+							observer.refusal(refusalSeen, at);
+							refusalNow = refusalSeen;
 							outcome = "provider-refused";
 							clock = null;
 						}
@@ -681,9 +686,9 @@ export async function awaitCompletion(
 					// Recorded once per sighting as its own fact — the refusal is an
 					// observation with a named source, never an inference from elapsed
 					// time (§4.3, §5.2).
-					const seen = matchRefusal(output.text);
-					if (seen !== null && refusalNow === null) observer.refusal(seen, at);
-					refusalNow = seen;
+					const refusalSeen = matchRefusal(output.text);
+					if (refusalSeen !== null && refusalNow === null) observer.refusal(refusalSeen, at);
+					refusalNow = refusalSeen;
 				}
 			}
 			await sleep(pollIntervalMs);

@@ -905,6 +905,21 @@ test("a pane that died stays dead-worker whatever the output printed (#154)", ()
 	assert.equal(decided.outcome, "dead-worker");
 });
 
+test("a foreign outbox is never reclassified by the final look: an answered anomaly outranks the pane (#154)", async (t) => {
+	// Only the silence-based verdicts get the final look. A foreign outbox is an
+	// affirmative fact — some worker answered into the wrong tuple — and a
+	// refusal scrolling in the pane must not mask that anomaly as the provider's.
+	const context = await waiting(t);
+	context.herdr.paneOutput = "API Error: 429 insufficient_quota: you exceeded your current quota\n";
+	context.writeOutbox({ ...completedOutbox(context.identity), attempt: "other-run-t42-a1" });
+
+	const result = await context.wait();
+
+	assert.equal(result.outcome, "automation-failure");
+	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
+	assert.equal(ended.payload.outcome, "automation-failure");
+});
+
 test("without a refusal the old verdicts stand, unchanged (#154)", () => {
 	const decided = decideOutcome({
 		outbox: outboxOf("absent"),
