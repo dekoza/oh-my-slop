@@ -1,4 +1,4 @@
-import { PROBE_SOURCES } from "../effects/catalogue.mjs";
+import { PROBE_SOURCES, SOURCE_GIT_LOCAL } from "../effects/catalogue.mjs";
 import { FactoryReconcileError } from "./errors.mjs";
 
 /**
@@ -31,7 +31,7 @@ export const RECONCILE_CONCLUSIONS = Object.freeze(["adopted", "released", "decl
 export const EVIDENCE_SOURCES = Object.freeze([
 	"tracker",
 	"git-remote",
-	"git-local",
+	SOURCE_GIT_LOCAL,
 	"harness",
 	"outbox",
 	"artifact",

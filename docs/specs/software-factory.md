@@ -918,7 +918,9 @@ attempt with a new branch and worktree runs. **The factory never resurrects a cl
 ### 7.7 Failed attempts, idempotency, and the lock
 
 - **Nothing non-integrated is ever pushed.** A failed attempt's worktree and unpushed branch
-  are **the only copy of that work**, so they are retained and pinned (§12.4).
+  are **the only copy of that work**, so they are retained and pinned (§12.4) — and **§8.9's
+  disposition comment names the branch and its head**, because a copy nobody can find without
+  reading the private clone by hand is retained in name only.
 - **Integration is re-runnable end to end**: rebase on a scratch ref, push of a unique branch
   retries cleanly, PR creation is check-then-create. A crash mid-integration is repaired by
   reconcile re-running integration from durable state.
@@ -1231,7 +1233,29 @@ about a counter it cannot see.
 `paused` and `failed` both need a human and both resume by label removal, but **the label tells
 the human at a glance whether they owe an *answer* or an *investigation*** — the difference
 between a two-minute reply and opening a terminal. Every disposition gets the same
-machine-parseable comment block: identity tuple, outcome chain, evidence references by digest.
+machine-parseable comment block: identity tuple, outcome chain, evidence references by digest,
+and **the ticket execution's attempt branches, read from the private clone at settlement**.
+
+**The branches are the fourth element because §8.10 harvests what an outbox claims, and an
+attempt that never wrote one has still created a branch** — routinely carrying real commits, and
+under §7.7 the only copy of them. So every attempt of the execution is named with its branch, the
+head git answers *now* (§5.2, never the outbox's claim or the mint's record), and its commit
+count against **its own** base (§7.4). It is read for every disposition and every attempt
+outcome rather than for the endings that harvest nothing: a list of which outcomes those are is a
+list somebody extends without extending, and the failure it permits is silent — "nothing was
+built" reported over work sitting on a branch. Every answer the read can get is distinguishable
+from every other, and none of them is spelled as the absence of another (§11.2): commits, no
+commits, no branch, no answer from git, and no base recorded to count against — with **the
+attempts not listable** and **no read at all** distinct from all five.
+
+**The read rides the comment and not the digested intent.** §4.5 compares an effect's payload
+digest, and every other field of the block is a function of durable state — so a re-entered
+settlement recomputes it exactly, while a branch head is a fact about the world at the moment of
+reading. Digesting it would make an ordinary §10.4 re-entry that read a moved head a payload
+conflict instead of returning the comment already posted. **The one ending it therefore does not
+reach is §9.6's abandon boundary**, which marks in-flight executions `released` in the journal and
+writes nothing to the tracker: there is no comment there for any of §8.9's block to ride, which is
+tracked as its own defect (#159) rather than carved out here.
 
 `released` is for operator stop and controller shutdown mid-attempt: an honest state, not a lock
 nobody holds.
@@ -2450,3 +2474,4 @@ touching everything twice.
 | 2026-08-16 | #146 answers what an automation retry of a controller phase is, and the two corrections that follow from the answer. **A controller-phase automation retry mints no attempt**: §8.5's *"every resume is a fresh attempt"* is a statement about **worker** attempts, and §8.8 says `verify` and `integrate` have none — so an attempt id there would be a row in the `attempt` projection with no pane, no worktree, and no manifest behind it. The phase re-enters under the attempt already being walked; a retry of an *agent-borne* phase still mints, because a worker runs again. **A stage result's semantic key gains a fifth slot, `try`**, since the attempt slot is exactly what a controller-phase re-entry cannot vary and without one that can, the re-entry reads its own recorded result back and routes to the same row forever. **§4.5 states when the attempt slot is `-`**: an effect is keyed by the attempt when its subject is that attempt's own work, and by the ticket execution when its subject is something one ticket execution has one of — the published branch or the ticket. §7.5's `push` moves to the second, joining `pr-create`, which is what makes *the database itself enforces uniqueness* a whole-system property rather than a per-attempt one. | #146 |
 | 2026-08-17 | #150 replaces §6.6's single wall-clock deadline with **two clocks**. The **hard ceiling** (`attemptTimeoutMs`) still bounds the lane, and is now anchored to the launch completion so a controller that died and adopted a live worker does not reset it; the **no-progress timeout** (`noProgressTimeoutMs`) ends an attempt that has stopped producing anything observable. **Progress is an observed fact, never the controller's clock**: a status transition and a changed pane-output snapshot are recorded as `observation.recorded` facts — `worker.alive` and the new `worker.output`, both source `herdr` — and the no-progress clock reads the latest of them. Pane output is sampled through `pane read` because Herdr exposes no output stream; a degraded observation channel makes a no-progress verdict `automation-failure`, never a worker-tier timeout. `attempt.ended` gains `clock` and `last_progress` so the operator reads which clock fired and what the last progress was rather than reading elapsed time as a diagnosis. §5.2's Herdr row widens from one fact to two (`worker.alive` · `worker.output`); §11.4's profiles gain `noProgressTimeoutMs`; both clocks carry code-owned defaults, calibrated against #114's measured 17- and 86-minute completions. | #150 |
 | 2026-08-17 | #152 makes §6.6's recorded stop outcome an observation rather than a race. `stopAgent` sent the quit sequence and read the pane on the very next line, so **`agent_stopped` recorded a teardown in flight as a refusal** — across #114's two runs every attempt recorded `false` while the workers had in fact gone, and nothing re-checked it. The outcome now comes from a **bounded re-probe** whose budget covers Herdr's *detection* lag rather than the process exit: the controller closes no pane (§13.B), so `pane_exited` never fires and the agent merely stops being detected, measured at 729 ms (claude) and 418 ms (pi) on an idle session. `agent_stopped` keeps three values — `true`/`false` are observations, `null` is Herdr declining to answer, which §14.1 forbids writing down as though it were evidence the agent stayed. A stop that could not be confirmed records a named **`stop_anomaly`** on `attempt.ended` carrying the surviving pane, the status it was last seen in, and how much of the bound was spent, in one of three classes: `wedged-pane` (§13.B's accepted wedge, `cleanup-plan`'s to reclaim), `stop-unconfirmed` (Herdr silent), and `quit-undelivered` (the keys never landed, which the pane read cannot distinguish from a wedge because both leave a live agent). §11.2's no-silent-guessing is what forbids collapsing the three into one `false`. `attempt.ended` moves to payload v2 accordingly (§4.3). Nothing on this path closes a pane. | #152 |
+| 2026-08-17 | #151 makes an **unharvested attempt's branch evidence on its disposition**. §8.10 harvests what an outbox claims; an attempt that never wrote one has still created a branch, and §7.7 makes that branch the only copy of the work on it — so on #114 a complete implementation was recoverable only because an operator read the factory-private clone by hand. §8.9's block gains a fourth element: every attempt of the ticket execution, with its branch, the head **git answers now** (§5.2 — never the outbox's claim nor the mint's record), and its commit count against **its own** base (§7.4). It is read for every disposition and every attempt outcome rather than for the endings that harvest nothing, because a list of which outcomes those are is a list somebody extends without extending — and the failure that permits is the silent one, "nothing was built" reported over work sitting on a branch. Every answer the read can get stays distinguishable and none is spelled as the absence of another (§11.2): commits, no commits, no branch, no answer from git, and no base recorded to count against, with **the attempts not listable** and **no read at all** distinct from all five. The read rides the comment and **not the digested intent** — every other field of the block is a function of durable state, and digesting a branch head would make a §10.4 re-entry that read a moved head a §4.5 payload conflict instead of the comment already posted; the one ending that therefore carries nothing is §9.6's abandon boundary, which writes no comment at all (#159). The **remote is deliberately not consulted** — §7.7 makes an attempt branch absent from it by construction, so an `ls-remote` would answer "absent" for exactly the attempts the read exists for, and §5.4 already names `git-local` for this. The read never throws: a settlement lost to a failed evidence read leaves the ticket claimed with nothing on it, which is the one state §8.9 has no word for. §7.7 and §8.9 corrected in place. | #151 |

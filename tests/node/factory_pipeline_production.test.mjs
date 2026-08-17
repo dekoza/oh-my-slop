@@ -9,6 +9,7 @@ import { EXIT_OK } from "../../factory/lib/cli/exit-codes.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { FOREGROUND_FLAG } from "../../factory/lib/controller/launch.mjs";
 import { runStart } from "../../factory/lib/controller/start.mjs";
+import { privateClonePath } from "../../factory/lib/git/isolation.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
@@ -16,7 +17,7 @@ import { workerConfigRoots } from "../../factory/lib/worker/environment.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { cloneValidConfig, makeRepo } from "./helpers/factory-repo.mjs";
 import { makeAgentDir, makeHome, herdrAnswering } from "./helpers/factory-store.mjs";
-import { fakeGitea, giteaIssue } from "./helpers/factory-tracker.mjs";
+import { dispositionBlockIn as blockIn, fakeGitea, giteaIssue } from "./helpers/factory-tracker.mjs";
 import { fakeHerdr, workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
@@ -27,7 +28,12 @@ function exported(command) {
 	);
 }
 
-function workerTurn({ builderStatuses = ["completed"], onAbandon = null } = {}) {
+/**
+ * `commitsAlways` is #151's builder: one that commits real work and then ends
+ * without claiming it — a timeout, a refusal, a dead pane. The commit is in the
+ * worktree and nothing in the outbox mentions it.
+ */
+function workerTurn({ builderStatuses = ["completed"], commitsAlways = false, onAbandon = null } = {}) {
 	let builderTurn = 0;
 	return async ({ pane, text }) => {
 		const identity = exported(pane.exported);
@@ -50,8 +56,14 @@ function workerTurn({ builderStatuses = ["completed"], onAbandon = null } = {}) 
 			summary: "the fixture worker completed its assigned role",
 		};
 
-		if (identity.FACTORY_PHASE === "implement" && status === "completed") {
-			writeFileSync(join(pane.cwd, "implemented.txt"), "production composition reached the builder\n", "utf8");
+		if (identity.FACTORY_PHASE === "implement" && (status === "completed" || commitsAlways)) {
+			// Per attempt, because §8.5 branches a repair from the prior attempt's tip:
+			// identical content there would leave the repair with nothing to commit.
+			writeFileSync(
+				join(pane.cwd, "implemented.txt"),
+				`production composition reached the builder as ${identity.FACTORY_ATTEMPT}\n`,
+				"utf8",
+			);
 			git(pane.cwd, "add", "implemented.txt");
 			git(
 				pane.cwd,
@@ -60,6 +72,9 @@ function workerTurn({ builderStatuses = ["completed"], onAbandon = null } = {}) 
 				"--message",
 				`feat: implement ticket ${identity.FACTORY_TICKET}\n\nFactory-Attempt: ${identity.FACTORY_RUN}/${identity.FACTORY_TICKET}/${identity.FACTORY_ATTEMPT}`,
 			);
+		}
+
+		if (identity.FACTORY_PHASE === "implement" && status === "completed") {
 			result.commits = [git(pane.cwd, "rev-parse", "HEAD")];
 		} else if (status === "needs-human") {
 			result.reason_class = "product-ambiguity";
@@ -217,7 +232,7 @@ test("an exhausted builder failure reaches a durable failed disposition instead 
 
 test("an operator abandon durably releases a claimed production lane without waiting for its worker (#147, §8.9)", async (t) => {
 	const signal = new EventEmitter();
-	const { answer } = await runProduction(t, {
+	const { answer, tracker, repoRoot, agentDir } = await runProduction(t, {
 		signal,
 		turn: workerTurn({ builderStatuses: ["abandon"], onAbandon: () => signal.emit("SIGTERM", "SIGTERM") }),
 	});
@@ -225,6 +240,61 @@ test("an operator abandon durably releases a claimed production lane without wai
 	assert.equal(answer.report.end_reason, "abandoned");
 	assert.equal(answer.report.execution.members[0].disposition, "released");
 	assert.equal(answer.report.execution.released, 1);
+	// §9.6's boundary records the release in the journal — that is the fact this path
+	// does produce, and the one the next reconcile reads.
+	const store = await openStore({ repoRoot, agentDir });
+	t.after(() => store.close());
+	assert.deepEqual(
+		store.readEvents({ kind: "ticket.disposition-changed" }).map((event) => event.payload.disposition),
+		["released"],
+	);
+	// It settles nothing on the tracker: no §8.9 comment, and the claim left standing
+	// for §3.3's staleness. So there is no disposition block on this path for #151's
+	// read to ride — a gap in the boundary's settlement rather than in the read, since
+	// a `released` reached through the walk carries it like any other row (#159).
+	assert.equal(
+		tracker.comments.filter((comment) => comment.body.includes('"disposition"')).length,
+		0,
+		"the abandon boundary now posts a disposition comment; #151's parked read belongs on it (#159)",
+	);
+});
+
+test("#151: a ticket execution that harvested nothing names the branch and head SHA its commits are parked on", async (t) => {
+	const { answer, tracker, repoRoot, agentDir } = await runProduction(t, {
+		// A builder that committed real work and then ended without claiming it,
+		// twice — the shape #114 arrived in, where the implementation was recoverable
+		// only because an operator went looking inside the private clone by hand.
+		turn: workerTurn({ builderStatuses: ["worker-failed", "worker-failed"], commitsAlways: true }),
+	});
+
+	assert.equal(answer.report.execution.members[0].disposition, "failed");
+	const posted = tracker.comments.at(-1).body;
+	const read = blockIn(posted).attempt_branches;
+	assert.equal(read.source, "git-local");
+
+	// §7.4: each attempt against its own base, so the repair is credited with its
+	// own commit and not with the one it branched from.
+	assert.deepEqual(
+		read.branches.map((branch) => [branch.branch.endsWith("-a2"), branch.commits_ahead]),
+		[
+			[false, 1],
+			[true, 1],
+		],
+	);
+
+	// §5.2: the heads are git's answer, not the outbox's — neither of these workers
+	// reported a commit at all.
+	const store = await openStore({ repoRoot, agentDir });
+	t.after(() => store.close());
+	for (const branch of read.branches) {
+		assert.equal(git(privateClonePath(store.storeDir), "rev-parse", `refs/heads/${branch.branch}`), branch.head);
+		assert.ok(posted.includes(branch.head), `attempt ${branch.attempt}'s parked head is not visible to a human`);
+	}
+	assert.deepEqual(
+		store.readEvents({ kind: "attempt.ended" }).map((event) => (event.payload.result?.commits ?? []).length),
+		[0, 0],
+		"the fixture's builders claimed a commit, so the heads above could have come from the outbox",
+	);
 });
 
 test("a subsystem refusal after claim becomes a durable automation failure instead of an unexplained lane (#147, §8.9)", async (t) => {

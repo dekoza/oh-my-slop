@@ -9,7 +9,7 @@ import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { FACTORY_LABELS } from "../../factory/lib/tracker/labels.mjs";
 import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
 import { attemptLaunched, openCapacityPool } from "./helpers/factory-store.mjs";
-import { fakeGitea, giteaIssue, TRACKER_NOW } from "./helpers/factory-tracker.mjs";
+import { dispositionBlockIn as blockIn, fakeGitea, giteaIssue, TRACKER_NOW } from "./helpers/factory-tracker.mjs";
 
 /**
  * §8.9's four dispositions as facts on the tracker, and the one machine-parseable
@@ -86,13 +86,6 @@ function labelsOf(gitea, ticket) {
 
 function assigneesOf(gitea, ticket) {
 	return gitea.issues.find((issue) => issue.number === ticket).assignees.map((user) => user.login);
-}
-
-/** The machine half of the comment, read back the way a machine would read it. */
-function blockIn(body) {
-	const fenced = /`{3,}json\n([\s\S]*?)\n`{3,}/.exec(body);
-	assert.ok(fenced !== null, `no machine-parseable block in:\n${body}`);
-	return JSON.parse(fenced[1]);
 }
 
 test("paused sets factory:needs-human, retains the assignee, and carries the reason class and the exact question", async (t) => {
@@ -321,6 +314,176 @@ test("the block references this ticket execution's evidence by digest, and never
 	assert.equal(evidence[0].produced_by.includes(attempt) || evidence[0].produced_by.includes("/10/"), true);
 });
 
+/** §5.2's git-local read, as `git/parked.mjs` hands it over (#151). */
+function parkedRead(branches) {
+	return { source: "git-local", branches, unreadable: null };
+}
+
+function parkedBranch(attempt, { head, commitsAhead, base = "b".repeat(40), role = "implement", unreadable = null }) {
+	return {
+		attempt,
+		role,
+		branch: `factory/t10/a${attempt}`,
+		base_commit: base,
+		head,
+		commits_ahead: commitsAhead,
+		unreadable,
+	};
+}
+
+test("#151: a disposition that harvested nothing names the branch and head SHA the work is parked on", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+	const attempt = await claimed(context, 10);
+	resolveStages(context, 10, attempt, [["implement", "timeout"]]);
+	const head = "a48bcef".padEnd(40, "0");
+
+	await dispose(context, {
+		ticket: 10,
+		disposition: "failed",
+		reasonClass: "repair-budget-exhausted",
+		parked: parkedRead([parkedBranch(attempt, { head, commitsAhead: 1 })]),
+	});
+
+	// The machine half: a next run acts on this without reopening a worktree that
+	// integration may already have removed (§8.9, §11.2).
+	const posted = context.gitea.comments.at(-1).body;
+	const block = blockIn(posted);
+	assert.equal(block.attempt_branches.source, "git-local");
+	assert.deepEqual(
+		block.attempt_branches.branches.map((branch) => [branch.branch, branch.head, branch.commits_ahead]),
+		[[`factory/t10/a${attempt}`, head, 1]],
+	);
+	// The human half: the branch and the head are both visible without expanding
+	// anything, because the work would otherwise be discoverable only by somebody
+	// who knew to look inside the factory-private clone.
+	assert.ok(posted.includes(`factory/t10/a${attempt}`), `the parked branch is not visible to a human:\n${posted}`);
+	assert.ok(posted.includes(head), `the parked head is not visible to a human:\n${posted}`);
+	// §7.7: nothing non-integrated is ever pushed, so the comment must not read as
+	// though this work were on the remote.
+	assert.match(posted, /private clone/);
+});
+
+test("#151: an attempt that committed nothing says so, so an empty evidence list is never 'nobody looked'", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+	const attempt = await claimed(context, 10);
+
+	await dispose(context, {
+		ticket: 10,
+		disposition: "failed",
+		fault: "automation",
+		parked: parkedRead([parkedBranch(attempt, { head: "b".repeat(40), commitsAhead: 0 })]),
+	});
+
+	const posted = context.gitea.comments.at(-1).body;
+	assert.equal(blockIn(posted).attempt_branches.branches[0].commits_ahead, 0);
+	// "Nothing was built" and "nobody looked" are two facts, and the comment says
+	// which one this is: the branch was read, and it carries nothing (§11.2).
+	assert.match(posted, /no commits/i);
+	assert.match(posted, /read from the factory's private clone/i);
+});
+
+test("#151: a disposition nobody read git for records that, rather than implying nothing was built", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+	await claimed(context, 10);
+
+	await dispose(context, { ticket: 10, disposition: "failed", fault: "automation" });
+
+	// `null` is the third fact: not "no branches", not "no commits" — no read.
+	assert.equal(blockIn(context.gitea.comments.at(-1).body).attempt_branches, null);
+});
+
+test("#151: a branch git could not answer for is distinguished from one it answered was absent", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+	const attempt = await claimed(context, 10);
+
+	await dispose(context, {
+		ticket: 10,
+		disposition: "released",
+		parked: parkedRead([
+			parkedBranch(attempt, { head: null, commitsAhead: null }),
+			parkedBranch(`${attempt}x`, {
+				head: null,
+				commitsAhead: null,
+				// Git's diagnostics are routinely several lines, and a newline inside a
+				// list item ends the list — rendering every branch after it as prose.
+				unreadable: "fatal: not a git repository\nfatal: the second line",
+			}),
+		]),
+	});
+
+	const posted = context.gitea.comments.at(-1).body;
+	assert.match(posted, /no branch in the clone/i);
+	assert.match(posted, /fatal: not a git repository fatal: the second line/);
+	// The JSON half keeps git's words exactly as git said them.
+	assert.equal(blockIn(posted).attempt_branches.branches[1].unreadable.includes("\n"), true);
+});
+
+test("#151: a re-entered settlement whose branches moved returns the comment already posted, never a conflict (§4.5)", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+	const attempt = await claimed(context, 10);
+	const settlement = { ticket: 10, disposition: "failed", fault: "automation" };
+	const first = await dispose(context, {
+		...settlement,
+		parked: parkedRead([parkedBranch(attempt, { head: "a".repeat(40), commitsAhead: 1 })]),
+	});
+
+	// A re-entry reads git again, and git answers about *now*: the branch may have
+	// been rebased, swept, or joined by another. Everything the effect digests is a
+	// function of durable state, so the read is not among it — otherwise an ordinary
+	// §10.4 re-entry would be a payload conflict instead of the comment it already
+	// posted.
+	const again = await dispose(context, {
+		...settlement,
+		parked: parkedRead([
+			parkedBranch(attempt, { head: "c".repeat(40), commitsAhead: 4 }),
+			parkedBranch(`${attempt}9`, { head: null, commitsAhead: null }),
+		]),
+	});
+
+	assert.equal(again.comment.id, first.comment.id);
+	assert.equal(again.comment.outcome, "already-resolved");
+	assert.equal(context.gitea.comments.filter((comment) => comment.body.includes('"disposition"')).length, 1);
+	// The first rendering is the one on the ticket, exactly as it already is for the
+	// prose §8.9 renders around the block.
+	assert.equal(blockIn(context.gitea.comments.at(-1).body).attempt_branches.branches.length, 1);
+});
+
+test("#151: a branch whose commit count git could not answer still counts as work to recover (§11.2)", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+	const attempt = await claimed(context, 10);
+
+	await dispose(context, {
+		ticket: 10,
+		disposition: "failed",
+		fault: "automation",
+		parked: parkedRead([
+			parkedBranch(attempt, { head: "d".repeat(40), commitsAhead: null, unreadable: "fatal: bad revision" }),
+		]),
+	});
+
+	// An unknown count is not zero. Reading it as zero would drop the one paragraph
+	// that tells the operator the work may be sitting in the private clone.
+	const posted = context.gitea.comments.at(-1).body;
+	assert.match(posted, /commit count unavailable: fatal: bad revision/);
+	assert.match(posted, /Nothing non-integrated is ever pushed/);
+});
+
+test("#151: a read that could not list the attempts says so, rather than reading as 'no branches'", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+	await claimed(context, 10);
+
+	await dispose(context, {
+		ticket: 10,
+		disposition: "failed",
+		fault: "automation",
+		parked: { source: "git-local", branches: [], unreadable: "the private clone is not a repository" },
+	});
+
+	const posted = context.gitea.comments.at(-1).body;
+	assert.match(posted, /could not be listed.*not a repository/);
+	assert.equal(/No attempt branch exists/.test(posted), false);
+});
+
 test("§8.9: every disposition gets the same block — identity tuple, outcome chain, evidence", async (t) => {
 	const settlements = {
 		published: { pr: { number: 7, url: "http://gitea.example/acme/widgets/pulls/7" } },
@@ -355,6 +518,10 @@ test("§8.9: every disposition gets the same block — identity tuple, outcome c
 				// question is: one shape, whatever the disposition, so a machine
 				// reading a ticket's history parses one thing.
 				advisory: extra.advisory ?? null,
+				// #151's read, on every block for the same reason: `null` is "nobody
+				// looked", which is a different fact from "nothing was built" and
+				// belongs on all four rather than on the ones that failed.
+				attempt_branches: null,
 				outcome_chain: 1,
 				evidence: 0,
 			},

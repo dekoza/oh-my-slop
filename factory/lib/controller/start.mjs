@@ -676,6 +676,11 @@ function ticketExecution(store, entry, hold, context) {
 				pr: outcome?.pr ?? null,
 				reason: outcome?.reason ?? null,
 				advisory: outcome?.advisory ?? null,
+				// #151: the pipeline read the attempt branches, because reading git is
+				// the pipeline's to do and a disposition never shells out. A lane whose
+				// composition made no such read carries `null`, which the block records
+				// as "nobody looked" rather than as "nothing was built".
+				parked: outcome?.attempt_branches ?? null,
 			});
 		}
 

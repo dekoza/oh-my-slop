@@ -121,6 +121,12 @@ export const DISPOSITION_LABELS = Object.freeze(
  *   findings, surfaced in the comment. **Blocking findings are never passed
  *   here**: a blocking finding is one a repair already answered, and publishing
  *   it would be a criticism of code that is no longer there
+ * @param {Readonly<object> | null} [settlement.parked] #151's read of this ticket
+ *   execution's attempt branches (`git/parked.mjs`), or `null` where no git read
+ *   was made. The caller reads it because the read is git's to answer and this
+ *   module never shells out; `null` is carried rather than omitted, because
+ *   "nobody looked" is a different fact from "nothing was built". It lands in the
+ *   comment and **not** in the digested payload — see below
  * @returns {Promise<Readonly<object>>}
  * @throws {FactoryTrackerError} `disposition-unknown` · `disposition-incomplete`
  * @throws {FactoryPipelineError} `reason-class-unknown` — a class in neither of
@@ -145,12 +151,13 @@ export async function applyDisposition(
 		pr = null,
 		reason = null,
 		advisory = null,
+		parked = null,
 	},
 ) {
 	const row = actionFor(disposition);
 	requireComplete(disposition, { reasonClass, fault, question, pr });
 
-	const block = dispositionBlock(store, {
+	const intent = dispositionBlock(store, {
 		run,
 		ticket,
 		attempt,
@@ -162,6 +169,16 @@ export async function applyDisposition(
 		reason,
 		advisory,
 	});
+
+	// #151's read sits **in the block and outside the intent**, which is the split
+	// the payload/body pair below exists for. Everything in `intent` is a function
+	// of durable state, so a re-entered settlement recomputes it exactly; a branch
+	// head is a fact about the world at the moment of reading, and §4.5 compares the
+	// payload digest — so digesting it would turn an ordinary §10.4 re-entry that
+	// read a moved head into a payload conflict instead of returning the comment
+	// already posted. The first rendering is the one on the ticket, exactly as it
+	// already is for the prose.
+	const block = { ...intent, attempt_branches: parked };
 
 	const labelled =
 		row.label === null
@@ -207,24 +224,30 @@ export async function applyDisposition(
 		// it.** Digesting the rendering instead would make a re-entry that
 		// re-rendered the same facts a §4.5 payload conflict the moment a word of
 		// the prose changed — and the block is what a machine reads anyway.
-		payload: block,
+		payload: intent,
 	});
 
 	return Object.freeze({ disposition, run, ticket, attempt, label: row.label, block, labelled, unassigned, comment });
 }
 
 /**
- * §8.9's machine-parseable block: **identity tuple, outcome chain, evidence
- * references by digest** — the same shape for all four dispositions, so a machine
- * reading a ticket's history parses one thing.
+ * §8.9's machine-parseable block, in the half that is **intent**: identity tuple,
+ * outcome chain, evidence references by digest — the same shape for all four
+ * dispositions, so a machine reading a ticket's history parses one thing.
  *
- * **It carries no timestamp of ours.** Every comment has the tracker's own
- * creation date on it, and §3.3 is explicit that the tracker's clock is the one
- * that counts — while a clock reading in the body would make the block
- * non-deterministic, and a re-entered settlement would then arrive as §4.5's
- * payload conflict instead of returning the comment already posted.
+ * **Every field here is a function of durable state, and nothing here reads a
+ * clock or the world.** Every comment has the tracker's own creation date on it,
+ * and §3.3 is explicit that the tracker's clock is the one that counts — while a
+ * clock reading, or any other fact observed at settlement time, would make the
+ * block non-deterministic, and a re-entered settlement would then arrive as §4.5's
+ * payload conflict instead of returning the comment already posted. That is the
+ * whole reason #151's git read is added to the block by the caller and is not a
+ * field of this function.
  */
-function dispositionBlock(store, { run, ticket, attempt, disposition, reasonClass, fault, question, pr, reason, advisory }) {
+function dispositionBlock(
+	store,
+	{ run, ticket, attempt, disposition, reasonClass, fault, question, pr, reason, advisory },
+) {
 	return {
 		schema_version: DISPOSITION_BLOCK_SCHEMA_VERSION,
 		// §2.1's identities, whole: the ticket execution is `(run, ticket)` and the
@@ -310,11 +333,89 @@ function renderDisposition(row, block) {
 		"",
 		row.guidance(block),
 		...(block.question === null ? [] : ["", quote(block.question)]),
+		...parkedProse(block),
 		"",
 		`${fence}json`,
 		machine,
 		fence,
 	].join("\n");
+}
+
+/**
+ * #151's read, in the half a human acts on.
+ *
+ * The JSON block already carries it, and that is not enough: the work this names
+ * was recoverable on #114 only because an operator went looking inside the
+ * factory-private clone by hand. So the branch and the head are prose, one line
+ * per attempt, saying **which answer the read got** — commits, no commits, no
+ * branch, no answer from git, or no base recorded to count against. None of them
+ * is spelled as the absence of another (§11.2).
+ */
+function parkedProse(block) {
+	const read = block.attempt_branches;
+	if (read === null) return [];
+
+	if (read.unreadable !== null) {
+		return [
+			"",
+			`**The attempt branches could not be listed**: ${read.unreadable}. Whether this ticket execution left commits ` +
+				"behind is therefore unknown here rather than answered — the private clone is where to look (§7.7, §11.2).",
+		];
+	}
+
+	if (read.branches.length === 0) {
+		return [
+			"",
+			"**No attempt branch exists for this ticket execution**, read from the factory's private clone at settlement — " +
+				"nothing was built, rather than nothing having been looked for (§8.9, §11.2).",
+		];
+	}
+
+	// Every branch git did not say was empty, which is not the same as every branch
+	// git said had commits: a head with no countable base is work that may well be
+	// there, and treating an unknown count as zero is the absence-standing-in-for-a-
+	// value §11.2 forbids — here it would drop the one paragraph naming where the
+	// work is.
+	const parked = read.branches.filter((branch) => branch.head !== null && branch.commits_ahead !== 0);
+	return [
+		"",
+		"**Attempt branches**, read from the factory's private clone at settlement:",
+		...read.branches.map((branch) => `- \`${branch.branch}\` — ${describeBranch(branch)}`),
+		// Said only where it is the operator's next move: on a `published`
+		// disposition the branch is on the PR the guidance already links.
+		...(parked.length === 0 || block.disposition === "published"
+			? []
+			: [
+					"",
+					`**Nothing non-integrated is ever pushed** (§7.7), so ${parked.length === 1 ? "that branch is" : "those branches are"} ` +
+						"in the factory's private clone and nowhere else. The branch and head SHA above are what recovers that " +
+						"work, without reopening a worktree integration may already have removed.",
+				]),
+	];
+}
+
+/**
+ * One branch, as the answer the read got about it.
+ *
+ * The reason is kept in the reporting subsystem's own words, on one line: a git
+ * diagnostic is often several, and a newline inside a list item ends the list —
+ * with the branches after it rendered as a paragraph. The JSON block above carries
+ * the message unaltered.
+ */
+function describeBranch(branch) {
+	const role = `(${branch.role})`;
+	const refused = branch.unreadable === null ? null : branch.unreadable.replace(/\s+/g, " ");
+	if (branch.head === null) {
+		return refused === null ? `no branch in the clone ${role}` : `git could not answer: ${refused} ${role}`;
+	}
+	if (branch.commits_ahead === null) {
+		return `head \`${branch.head}\`, commit count unavailable: ${refused} ${role}`;
+	}
+	if (branch.commits_ahead === 0) {
+		return `no commits — head \`${branch.head}\` is still its base ${role}`;
+	}
+	const commits = `${branch.commits_ahead} commit${branch.commits_ahead === 1 ? "" : "s"}`;
+	return `head \`${branch.head}\`, ${commits} ahead of \`${branch.base_commit}\` ${role}`;
 }
 
 /** §8.8's four, and the refusal that keeps a fifth from being invented at a call site. */

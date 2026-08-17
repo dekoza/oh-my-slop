@@ -225,6 +225,47 @@ export function allocateAttempt(store, { run, ticket, purpose }) {
 }
 
 /**
+ * Every attempt one ticket execution minted, as the identities a git read of
+ * their branches needs (#151).
+ *
+ * **The branch is derived, never read off the payload.** §7.3 mints it
+ * deterministically from `(ticket, attempt)`, so deriving it here means a journal
+ * record cannot point a later read at a ref the attempt never owned — the same
+ * reason `git/probes.mjs` recomputes a probe's target from the effect's identity.
+ *
+ * The base commit has no such second source: it is what §7.2 pinned for this
+ * attempt, and for a repair it is the prior attempt's tip (§8.5) — which is why a
+ * count against the run's base would credit a repair with the work it branched
+ * from (§7.4). A record minted before the field existed carries `null`, and a
+ * reader says so rather than counting from somewhere else (§11.2).
+ *
+ * It lives here rather than beside the git read because **this is the journal
+ * half**: §5.2 makes the journal intent only, and the two halves are separate
+ * functions so the seam between "which attempts exist" and "what their refs are
+ * now" is visible in the signatures rather than buried in one call.
+ *
+ * @param {object} store an open store
+ * @param {{ run: string, ticket: number }} where
+ * @returns {ReadonlyArray<Readonly<{ attempt: string, role: string, branch: string, baseCommit: string | null }>>}
+ *   in mint order
+ */
+export function mintedAttemptBranches(store, { run, ticket }) {
+	return Object.freeze(
+		store
+			.readEvents({ stream: runStream(run), kind: "attempt.launched" })
+			.filter((record) => record.ticket === ticket)
+			.map((record) =>
+				Object.freeze({
+					attempt: record.attempt,
+					role: record.payload.role,
+					branch: attemptBranch({ ticket, attempt: record.attempt }),
+					baseCommit: record.payload.base_commit ?? null,
+				}),
+			),
+	);
+}
+
+/**
  * Whether one `attempt.launched` payload was minted for a purpose.
  *
  * Compared field by field against the purpose's **own** keys, canonically, so a

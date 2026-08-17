@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 
 import { runGit } from "./clone.mjs";
-import { FactoryGitError } from "./errors.mjs";
+import { FactoryGitError, isMissingRef } from "./errors.mjs";
 import { attemptWorktreePath, privateClonePath } from "./isolation.mjs";
 
 /**
@@ -40,7 +40,7 @@ async function probeRevParse({ effect, probe, store }) {
 	try {
 		sha = await runGit(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { cwd: cloneDir });
 	} catch (error) {
-		if (!missingRef(error)) throw error;
+		if (!isMissingRef(error)) throw error;
 	}
 
 	const present = sha !== null;
@@ -100,7 +100,7 @@ async function probeLsRemote({ effect, store }) {
 	try {
 		local = await runGit(["rev-parse", "--verify", "--quiet", `${branch}^{commit}`], { cwd: cloneDir });
 	} catch (error) {
-		if (!missingRef(error)) throw error;
+		if (!isMissingRef(error)) throw error;
 	}
 
 	// A remote carrying a branch the clone has lost is **unanswerable, not
@@ -137,15 +137,6 @@ function refOf(effect) {
 		);
 	}
 	return effect.operand.startsWith("refs/") ? effect.operand : `refs/heads/${effect.operand}`;
-}
-
-/**
- * `rev-parse --verify --quiet` exits 1 for a missing ref with nothing on
- * stderr; any *other* failure — no repository, corrupt objects — must escape,
- * because "absent" and "unanswerable" are different facts (§12.4).
- */
-function missingRef(error) {
-	return error instanceof FactoryGitError && error.reason === "git-command-failed" && error.details.stderr === "";
 }
 
 function mtimeOf(path) {

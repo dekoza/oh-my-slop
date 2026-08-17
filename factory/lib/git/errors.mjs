@@ -52,3 +52,21 @@ export class FactoryGitError extends Error {
 		this.details = details;
 	}
 }
+
+/**
+ * Whether a refusal is git saying **"no such ref"** rather than "I could not
+ * answer": `rev-parse --verify --quiet` exits 1 for a missing ref with nothing on
+ * stderr, while every *other* failure — no repository, corrupt objects — leaves a
+ * diagnostic there.
+ *
+ * It lives here, beside the error it reads, because **"absent" and "unanswerable"
+ * are different facts** (§12.4) and every reader of a ref has to draw the line in
+ * the same place. A second spelling of it would be a second vocabulary, and the
+ * one that drifted would report a broken repository as an empty one.
+ *
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+export function isMissingRef(error) {
+	return error instanceof FactoryGitError && error.reason === "git-command-failed" && error.details.stderr === "";
+}

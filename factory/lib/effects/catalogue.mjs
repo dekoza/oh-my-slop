@@ -20,7 +20,17 @@
  * is which source decided. `journal-intent` is not among them either — that is
  * how §14.1 gets teeth.
  */
-export const PROBE_SOURCES = Object.freeze(["tracker", "git-remote", "git-local", "harness", "artifact"]);
+/**
+ * The private clone, named rather than spelled again.
+ *
+ * §5.4's classes are cited from three places — this list, `EVIDENCE_SOURCES`,
+ * and #151's read of an attempt's branches — and this one is the member all
+ * three name. A vocabulary with a second spelling has already started to drift,
+ * and the one that drifted would cite a source no basis recognises.
+ */
+export const SOURCE_GIT_LOCAL = "git-local";
+
+export const PROBE_SOURCES = Object.freeze(["tracker", "git-remote", SOURCE_GIT_LOCAL, "harness", "artifact"]);
 
 /**
  * The reads a probe performs. Closed, because a probe that invents its own call

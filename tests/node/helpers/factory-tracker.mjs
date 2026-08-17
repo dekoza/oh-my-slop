@@ -1,3 +1,5 @@
+import assert from "node:assert/strict";
+
 import { PAGE_LIMIT } from "../../../factory/lib/tracker/gitea.mjs";
 
 /**
@@ -15,6 +17,20 @@ import { PAGE_LIMIT } from "../../../factory/lib/tracker/gitea.mjs";
 
 /** The instant the tracker fixtures are dated around. */
 export const TRACKER_NOW = Date.parse("2026-08-15T12:00:00Z");
+
+/**
+ * §8.9's machine-parseable block, read back out of a posted comment the way a
+ * machine would read it — the fence is sized to its content, so the pattern
+ * matches whatever width the body used.
+ *
+ * @param {string} body a comment body
+ * @returns {object} the parsed block
+ */
+export function dispositionBlockIn(body) {
+	const fenced = /`{3,}json\n([\s\S]*?)\n`{3,}/.exec(body);
+	assert.ok(fenced !== null, `no machine-parseable block in:\n${body}`);
+	return JSON.parse(fenced[1]);
+}
 
 /**
  * @param {object} raw the fields this ticket cares about

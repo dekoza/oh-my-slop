@@ -6,6 +6,7 @@ import { PHASE_IMPLEMENT } from "../domain/vocabulary.mjs";
 import { createAttemptWorktree } from "../git/attempt.mjs";
 import { FactoryGitError } from "../git/errors.mjs";
 import { attemptBranch } from "../git/isolation.mjs";
+import { readAttemptBranches, unreadableAttemptBranches } from "../git/parked.mjs";
 import { FactoryTrackerError } from "../tracker/errors.mjs";
 import { snapshotTicket } from "../tracker/snapshot.mjs";
 import { createClaudeAdapter } from "../worker/claude.mjs";
@@ -14,6 +15,7 @@ import { createPiAdapter } from "../worker/pi.mjs";
 import {
 	allocateAttempt,
 	mintAttempt,
+	mintedAttemptBranches,
 	requireAttemptIdentity,
 } from "../worker/attempt.mjs";
 import { postureOf, profileForRole } from "../worker/roles.mjs";
@@ -52,6 +54,10 @@ export function createProductionPipeline(store, context) {
 	const adapters = workerAdapters({ herdr, socket, now });
 
 	return async function productionPipeline(lane) {
+		return withAttemptBranches(lane, await settled(lane));
+	};
+
+	async function settled(lane) {
 		try {
 			return await executeProduction(lane);
 		} catch (error) {
@@ -63,7 +69,39 @@ export function createProductionPipeline(store, context) {
 				reason: error.message,
 			});
 		}
-	};
+	}
+
+	/**
+	 * #151: **what each attempt left on its branch, attached to every disposition
+	 * this pipeline produces.**
+	 *
+	 * Here rather than inside the walk, and once rather than per row, because both
+	 * ways of ending are covered from one place: §8.10's dispose rows come back
+	 * through `executeProduction`, and a typed subsystem refusal comes back through
+	 * `settled`'s catch — an attempt whose branch carries work is just as likely to
+	 * be settled by the second as by the first. A phase or a row that had to
+	 * remember to carry it would be a phase or a row that could forget.
+	 *
+	 * The clone read is git's answer to *now* (§5.2), so it is taken after the walk
+	 * has finished with the attempt and not while a worker may still be committing.
+	 *
+	 * **A refusal here is carried, never raised.** The read is evidence about a
+	 * disposition that has already been decided, so letting a typed refusal escape
+	 * would trade the settlement for the evidence and leave the ticket claimed with
+	 * nothing on it — the one state §8.9 has no word for. An outcome that settles
+	 * nothing needs no evidence to ride, and is returned untouched.
+	 */
+	async function withAttemptBranches(lane, outcome) {
+		if ((outcome?.disposition ?? null) === null) return outcome;
+
+		try {
+			const minted = mintedAttemptBranches(store, { run: runOfAttempt(lane.attempt), ticket: lane.ticket });
+			return Object.freeze({ ...outcome, attempt_branches: await readAttemptBranches(clone, minted) });
+		} catch (error) {
+			if (!PRODUCTION_FAILURES.some((kind) => error instanceof kind)) throw error;
+			return Object.freeze({ ...outcome, attempt_branches: unreadableAttemptBranches(error.message) });
+		}
+	}
 
 	async function executeProduction(lane) {
 		const { ticket, attempt, slots, capacity } = lane;
