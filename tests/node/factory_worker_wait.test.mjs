@@ -5,7 +5,7 @@ import test from "node:test";
 import { fromFrame } from "../../factory/lib/controller/herdr-events.mjs";
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
 import { ATTEMPT_OUTCOMES } from "../../factory/lib/domain/vocabulary.mjs";
-import { unresolvedEffects } from "../../factory/lib/effects/records.mjs";
+import { requestEffect, resolveEffect, unresolvedEffects } from "../../factory/lib/effects/records.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { runStream } from "../../factory/lib/state/events.mjs";
 import { attemptDir, attemptOutboxPath, herdrAgentName } from "../../factory/lib/worker/attempt.mjs";
@@ -16,6 +16,7 @@ import {
 	DEFAULT_NO_PROGRESS_TIMEOUT_MS,
 	readLiveness,
 	SETTLE_GRACE_MS,
+	STOP_CONFIRM_BACKOFF_MS,
 } from "../../factory/lib/worker/lifecycle.mjs";
 import { OUTBOX_SCHEMA_VERSION, readOutbox } from "../../factory/lib/worker/outbox.mjs";
 import { fakeHerdr } from "./helpers/factory-worker.mjs";
@@ -317,6 +318,21 @@ async function waiting(t, { herdr = fakeHerdr() } = {}) {
 				watch: () => ({ close: () => {}, degraded: () => false }),
 				...overrides,
 			}),
+		cancel: (overrides = {}) =>
+			cancelAttempt(store, {
+				hold,
+				identity,
+				herdr: herdr.control,
+				agent: herdrAgentName(identity.attempt),
+				by: "operator:stop",
+				reason: "the operator asked",
+				actor: "operator:stop",
+				now: () => FIXED_NOW,
+				// The stop's re-probe waits between reads; a suite spends no wall clock
+				// on it, so the bound is exercised by its shape rather than its seconds.
+				sleep: async () => {},
+				...overrides,
+			}),
 	};
 }
 
@@ -564,27 +580,172 @@ test("a cancellation stops the agent as an effect, and closes no pane", async (t
 	assert.equal(context.herdr.panes.length, 1);
 });
 
+test("a quit still in flight is re-probed rather than raced into a false (#152)", async (t) => {
+	// #114: every attempt across two runs recorded `stopped: false`, while the pi
+	// workers' session files stopped growing at the exact second of their
+	// `attempt.ended` — 02:18:53 and 08:57:04. The quit had worked; the read taken
+	// on the next line saw a teardown in flight and recorded it as a refusal.
+	const herdr = fakeHerdr({ quitProbes: 3 });
+	const context = await waiting(t, { herdr });
+
+	const cancelled = await context.cancel({ herdr: herdr.control });
+
+	assert.equal(cancelled.agent_stopped, true, "the bounded re-probe saw the agent go");
+	assert.equal(cancelled.stop_anomaly, null, "an agent that went is no anomaly");
+	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
+	assert.equal(ended.payload.agent_stopped, true);
+	assert.equal(ended.payload.stop_anomaly, null);
+});
+
 test("a wedged agent is an anomaly on the record, never an escalation (§13.B)", async (t) => {
 	// A harness that ignores its own quit keys: the pane stays, the agent stays,
 	// and #86's resolution accepts exactly that — a wedged pane is evidence.
 	const herdr = fakeHerdr({ ignoresQuitKeys: true });
 	const context = await waiting(t, { herdr });
 
-	const cancelled = await cancelAttempt(context.store, {
-		hold: context.hold,
-		identity: context.identity,
-		herdr: herdr.control,
-		agent: herdrAgentName(context.identity.attempt),
-		by: "operator:stop",
-		reason: "the operator asked",
-		actor: "operator:stop",
-		now: () => FIXED_NOW,
-	});
+	const cancelled = await context.cancel({ herdr: herdr.control });
 
 	assert.equal(cancelled.outcome, "cancelled");
 	assert.equal(cancelled.agent_stopped, false, "the record says it did not go");
 	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
 	assert.equal(ended.payload.agent_stopped, false);
+
+	// #152: and it says *which* pane, so the operator reading the run back is not
+	// left inferring the survivor from a bare false (§11.2).
+	assert.deepEqual(ended.payload.stop_anomaly, {
+		anomaly: "wedged-pane",
+		pane: "w1:p1",
+		agent: herdrAgentName(context.identity.attempt),
+		status: "working",
+		probes: STOP_CONFIRM_BACKOFF_MS.length,
+		waited_ms: STOP_CONFIRM_BACKOFF_MS.reduce((total, wait) => total + wait, 0),
+	});
+	// §13.B holds either way: the pane it names is still there, unclosed.
+	assert.equal(herdr.commands().includes("pane close"), false);
+	assert.equal(herdr.panes.length, 1);
+});
+
+test("a Herdr that will not answer leaves the stop unconfirmed, never a false (§5.2, §14.1)", async (t) => {
+	// Herdr declining to answer says nothing about the agent. Writing `false`
+	// there would be the controller establishing an external fact by reasoning,
+	// which is exactly what the journal is forbidden to do.
+	const herdr = fakeHerdr({ refuse: { "pane list": { exitCode: 1, stderr: "no server" } } });
+	const context = await waiting(t, { herdr });
+
+	const cancelled = await context.cancel({ herdr: herdr.control });
+
+	assert.equal(cancelled.agent_stopped, null, "unanswered is not the same as unstopped");
+	assert.equal(cancelled.stop_anomaly.anomaly, "stop-unconfirmed");
+	assert.equal(cancelled.stop_anomaly.pane, null, "there is no pane to name — that is the anomaly");
+	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
+	assert.equal(ended.payload.agent_stopped, null);
+	assert.equal(ended.payload.stop_anomaly.anomaly, "stop-unconfirmed");
+});
+
+test("a quit that was never delivered is not filed as a harness that ignored it (#152)", async (t) => {
+	// Two different facts about two different parties: a harness that took the
+	// keys and stayed is §13.B's accepted wedge, while keys that never landed are
+	// the controller not having stopped the agent at all. Both leave a live agent
+	// in the pane, so the pane read cannot tell them apart — only the send can.
+	const herdr = fakeHerdr({ refuse: { "agent send-keys": { exitCode: 1, stderr: "no such agent" } } });
+	const context = await waiting(t, { herdr });
+
+	const cancelled = await context.cancel({ herdr: herdr.control });
+
+	assert.equal(cancelled.stop_anomaly.anomaly, "quit-undelivered");
+	assert.equal(cancelled.stop_anomaly.pane, "w1:p1", "the pane is named either way");
+	assert.equal(cancelled.agent_stopped, false, "the observation still stands beside the anomaly");
+	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
+	assert.equal(ended.payload.stop_anomaly.anomaly, "quit-undelivered");
+});
+
+test("a last probe that goes unanswered loses the answer, never the pane it was watching", async (t) => {
+	// The anomaly is only actionable if it names a pane, and a stop that watched
+	// w1:p1 for four reads knows which pane it was watching however the fifth
+	// went. Dropping the sighting because the last read failed would hand the
+	// operator §13.B's wedge with the one field they need blanked.
+	const herdr = fakeHerdr({ ignoresQuitKeys: true });
+	const context = await waiting(t, { herdr });
+	let reads = 0;
+	const flaky = {
+		...herdr.control,
+		paneForAttempt: async (attempt) => {
+			reads += 1;
+			return reads < STOP_CONFIRM_BACKOFF_MS.length
+				? herdr.control.paneForAttempt(attempt)
+				: Object.freeze({ ok: false, message: "herdr went away" });
+		},
+	};
+
+	const cancelled = await context.cancel({ herdr: flaky });
+
+	assert.equal(cancelled.agent_stopped, null, "the last word was Herdr declining to answer");
+	assert.equal(cancelled.stop_anomaly.anomaly, "stop-unconfirmed");
+	assert.equal(cancelled.stop_anomaly.pane, "w1:p1", "the pane four good reads saw is still named");
+});
+
+test("the re-probe is bounded: a pane that never frees costs the budget and no more (#152)", async (t) => {
+	// The bound is what separates this from a wait: past it the pane is §13.B's
+	// accepted wedge, which `cleanup-plan` reclaims rather than this path.
+	const herdr = fakeHerdr({ ignoresQuitKeys: true });
+	const context = await waiting(t, { herdr });
+	const waits = [];
+
+	await context.cancel({ herdr: herdr.control, sleep: async (ms) => void waits.push(ms) });
+
+	assert.deepEqual(waits, [...STOP_CONFIRM_BACKOFF_MS]);
+	assert.equal(
+		herdr.commands().filter((command) => command === "pane list").length,
+		STOP_CONFIRM_BACKOFF_MS.length,
+		"one read per step of the bound, and none after it",
+	);
+});
+
+test("a stop resolved before #152 keeps its raced answer and claims no probes it never made", async (t) => {
+	// The `agent-stop` effect is idempotent, so a re-entry replays whatever the
+	// binary that resolved it wrote — and a pre-#152 result has no probe count.
+	// The anomaly says so with a null rather than crediting the old single read
+	// with the bound this binary would have spent (§14.1).
+	const context = await waiting(t);
+	const requested = requestEffect(context.store, {
+		operation: "agent-stop",
+		operand: null,
+		...context.identity,
+		actor: "controller",
+		fencingGeneration: context.hold.fence().generation,
+		payload: { agent: herdrAgentName(context.identity.attempt) },
+		at: FIXED_NOW,
+	});
+	resolveEffect(context.store, {
+		key: requested.key,
+		actor: "controller",
+		fencingGeneration: context.hold.fence().generation,
+		result: { agent: herdrAgentName(context.identity.attempt), stopped: false, pane: "w1:p1" },
+		at: FIXED_NOW,
+	});
+
+	const cancelled = await context.cancel();
+
+	assert.equal(cancelled.agent_stopped, false, "the replayed effect is the one that decided");
+	assert.deepEqual(cancelled.stop_anomaly, {
+		anomaly: "wedged-pane",
+		pane: "w1:p1",
+		agent: herdrAgentName(context.identity.attempt),
+		status: null,
+		probes: null,
+		waited_ms: null,
+	});
+	assert.equal(context.herdr.commands().includes("agent send-keys"), false, "a resolved effect is not re-performed");
+});
+
+test("a stop that takes at once costs one read, not the whole bound (#152)", async (t) => {
+	const context = await waiting(t);
+	const waits = [];
+
+	const cancelled = await context.cancel({ sleep: async (ms) => void waits.push(ms) });
+
+	assert.equal(cancelled.agent_stopped, true);
+	assert.deepEqual(waits, [STOP_CONFIRM_BACKOFF_MS[0]], "the loop returns on the first read that says it went");
 });
 
 // ── §5.1's observation half ──────────────────────────────────────────────────

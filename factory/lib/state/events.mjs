@@ -73,7 +73,16 @@ export const EVENT_KINDS = Object.freeze({
 	// that makes "late outboxes are ignored for state" structural: the projector
 	// refuses a second ending, so a worker that writes after the harvest is
 	// writing evidence.
-	"attempt.ended": { payloadVersion: 1, visibility: "operator" },
+	//
+	// #152 puts it on **payload v2**: `agent_stopped`. A v1 record carries the
+	// pane read taken on the line after the quit sequence — a race, not an
+	// observation, and one #114's two runs lost every time: every attempt
+	// recorded `false` while the workers' session files stopped growing at the
+	// exact second of the record. From v2 the value is what a bounded re-probe
+	// saw, `null` where Herdr would not answer, and a stop that could not be
+	// confirmed names the surviving pane in `stop_anomaly` rather than leaving a
+	// later reader to guess which of the three a bare `false` meant (§11.2, §13.B).
+	"attempt.ended": { payloadVersion: 2, visibility: "operator" },
 	// #108: §8.10's stage result, and the record the outcome chain is read back
 	// from. One per `(run, ticket, phase, attempt, try)` — §2.1's stage identity,
 	// the attempt it was resolved under, and which pass through the phase it was.

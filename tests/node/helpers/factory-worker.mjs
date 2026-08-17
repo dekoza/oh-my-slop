@@ -83,6 +83,9 @@ export function piTransport({
  *   commands that fail, keyed by their first two argv words
  * @param {boolean} [options.ignoresQuitKeys] a harness that takes the keys and
  *   stays — §13.B's wedged pane, which is accepted and recorded, never escalated
+ * @param {number} [options.quitProbes] how many pane reads the harness's teardown
+ *   outlives before the agent is actually gone. A TUI does not exit on the line
+ *   after its quit keys, which is the race #152 was filed for
  * @param {(input: { pane: object, text: string }) => Promise<void> | void} [options.onPrompt]
  *   the worker turn a production-path test drives after the real launch submits
  *   its prompt; the callback writes the outbox and, for builders, commits work
@@ -95,6 +98,7 @@ export function fakeHerdr({
 	session = { agent: "pi", kind: "path", value: "/t/s.jsonl" },
 	refuse = {},
 	ignoresQuitKeys = false,
+	quitProbes = 0,
 	onPrompt = null,
 	swallowPrompts = 0,
 	paneOutput = "",
@@ -103,6 +107,15 @@ export function fakeHerdr({
 	const panes = [];
 	let nextPane = 1;
 	let prompts = 0;
+	let tearingDown = 0;
+
+	const dropAgents = () => {
+		for (const pane of panes) {
+			if (pane.agent === undefined) continue;
+			delete pane.agent;
+			pane.agent_status = "unknown";
+		}
+	};
 
 	const run = async (args) => {
 		calls.push(args);
@@ -147,11 +160,10 @@ export function fakeHerdr({
 		}
 		if (command === "agent send-keys") {
 			if (ignoresQuitKeys) return json({ sent: true });
-			for (const pane of panes) {
-				if (pane.agent === undefined) continue;
-				delete pane.agent;
-				pane.agent_status = "unknown";
-			}
+			// A teardown the very next read is too early to see: the keys landed,
+			// the harness is on its way out, and `quitProbes` reads still find it.
+			if (quitProbes > 0) tearingDown = quitProbes;
+			else dropAgents();
 			return json({ sent: true });
 		}
 		if (command === "agent prompt") {
@@ -170,7 +182,17 @@ export function fakeHerdr({
 			// returned handle's `paneOutput` between samples.
 			return { exitCode: 0, stdout: paneOutput, stderr: "" };
 		}
-		if (command === "pane list") return json({ panes: [...panes] });
+		if (command === "pane list") {
+			// `quitProbes` reads answer with the agent still in the pane, and the
+			// one after them finds it gone: the answer is serialised before the
+			// teardown lands, so the count is exactly how many reads were too early.
+			const answer = json({ panes: [...panes] });
+			if (tearingDown > 0) {
+				tearingDown -= 1;
+				if (tearingDown === 0) dropAgents();
+			}
+			return answer;
+		}
 		return { exitCode: 2, stdout: "", stderr: `fake herdr does not know \`${command}\`` };
 	};
 

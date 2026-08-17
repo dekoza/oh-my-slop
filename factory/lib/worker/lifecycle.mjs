@@ -102,6 +102,58 @@ const PROGRESS_POLL_INTERVAL_MS = 5_000;
  */
 export const SETTLE_GRACE_MS = 2_000;
 
+/**
+ * How long the stop's own outcome is re-probed before the pane is called wedged
+ * (§5.2, §6.6, §13.B).
+ *
+ * The quit is keystrokes into a TUI, and a TUI does not leave on the line after
+ * them: it tears its screen down, flushes its session, and only then releases
+ * the pane. #114's two runs recorded `stopped: false` for every attempt while
+ * the pi workers stopped writing their session files 22 ms and 41 ms after the
+ * `agent-stop` effect resolved. The quit had worked; the single read taken
+ * immediately after it observed a teardown in flight and wrote the race down as
+ * a refusal.
+ *
+ * **What the bound has to cover is the detection lag, not the exit.** The
+ * controller closes no pane (§13.B), so `pane_exited` never fires and the shell
+ * survives — the agent simply stops being detected, on Herdr's own cadence.
+ * Measured directly, with an agent started and never prompted so no model runs:
+ * **claude 729 ms, pi 418 ms** from the quit keys to the agent leaving the pane
+ * record (`tests/live/herdr-agent-stop-latency.mjs`), and the zero-grace probe
+ * reproduced this defect on demand at both. The cumulative reads land at 250,
+ * 750, 1750, 3750, and 7750 ms — roughly 10× headroom over the slower of the
+ * two, with claude's 729 ms close enough to the second read that a loaded
+ * machine resolves it on the third instead.
+ *
+ * Idle is the cheap case, and it is the only one measured: a worker interrupted
+ * mid-turn must abandon its inference before it can exit, which is why
+ * `AGENT_STOP_KEYS` leads with `esc`, and #114 has no clean data point for it.
+ * The bound is therefore sized past its evidence on purpose. Past it the pane
+ * is §13.B's accepted wedge — recorded, never escalated, and reclaimed by
+ * `cleanup-plan` rather than by this path — so a longer bound would only make a
+ * settle wait on a pane nobody here will act on.
+ */
+export const STOP_CONFIRM_BACKOFF_MS = Object.freeze([250, 500, 1_000, 2_000, 4_000]);
+
+/**
+ * What a stop that could not be confirmed is called on the record (§11.2).
+ *
+ * Three different unknowns, because a later reader cannot act on them the same
+ * way. `wedged-pane` is Herdr answering that the agent is *still there* — the
+ * pane §13.B accepts and `cleanup-plan` reclaims. `stop-unconfirmed` is Herdr
+ * not answering at all, which says nothing about the agent and everything about
+ * the observation. `quit-undelivered` is the keys never landing: the pane read
+ * cannot tell it from a wedge, because both leave a live agent sitting there,
+ * but only one of them is a harness ignoring its own quit — the other is this
+ * controller never having asked. Collapsing any of them into one `false` is the
+ * silent guess this constant exists to refuse.
+ */
+export const STOP_ANOMALIES = Object.freeze({
+	wedged: "wedged-pane",
+	unconfirmed: "stop-unconfirmed",
+	undelivered: "quit-undelivered",
+});
+
 /** The agent statuses that mean the turn is over (§6.6's liveness half). */
 const SETTLED_STATUSES = Object.freeze(["idle", "done", "released", "exited"]);
 
@@ -568,6 +620,7 @@ export async function awaitCompletion(
 					liveness,
 					actor,
 					now,
+					sleep,
 				});
 			}
 
@@ -610,7 +663,7 @@ export async function awaitCompletion(
  * @param {string} context.reason why, in the operator's own words
  * @returns {Promise<Readonly<object>>}
  */
-export async function cancelAttempt(store, { hold, identity: minted, herdr, agent, by, reason, actor, now }) {
+export async function cancelAttempt(store, { hold, identity: minted, herdr, agent, by, reason, actor, now, sleep = delay }) {
 	const identity = requireAttemptIdentity(minted);
 	requireLaunched(store, identity);
 
@@ -625,6 +678,7 @@ export async function cancelAttempt(store, { hold, identity: minted, herdr, agen
 		cancellation: { by, reason },
 		actor,
 		now,
+		sleep,
 	});
 }
 
@@ -918,10 +972,25 @@ async function captureTranscript({ herdr, attempt, sleep, now }) {
  */
 async function settle(
 	store,
-	{ hold, identity, herdr, agent, outcome, clock = null, lastProgress = null, outbox, liveness, cancellation = null, actor, now },
+	{
+		hold,
+		identity,
+		herdr,
+		agent,
+		outcome,
+		clock = null,
+		lastProgress = null,
+		outbox,
+		liveness,
+		cancellation = null,
+		actor,
+		now,
+		sleep,
+	},
 ) {
 	const { run, ticket, phase, attempt } = identity;
-	const stopped = await stopAgent(store, { hold, identity, herdr, agent, actor, at: now() });
+	const stopped = await stopAgent(store, { hold, identity, herdr, agent, actor, at: now(), sleep });
+	const anomaly = stopAnomalyOf(stopped);
 	const at = now();
 
 	hold.append({
@@ -947,8 +1016,13 @@ async function settle(
 			result: outbox?.record ?? null,
 			problems: outbox === null ? [] : [...outbox.problems],
 			worker_status: liveness === null ? null : liveness.status,
-			// The wedged pane §13.B accepts: recorded as an anomaly, never escalated.
+			// **Payload v2's promise**: this is an observation, not a race. It is
+			// what the bounded re-probe saw, and `null` where Herdr would not say.
 			agent_stopped: stopped.stopped,
+			// The wedged pane §13.B accepts: recorded as an anomaly naming it, never
+			// escalated — a later reader is told which pane survived the run rather
+			// than left to infer it from a bare false (§11.2).
+			stop_anomaly: anomaly,
 			cancelled_by: cancellation?.by ?? null,
 			cancellation_reason: cancellation?.reason ?? null,
 		},
@@ -962,6 +1036,7 @@ async function settle(
 		problems: outbox === null ? Object.freeze([]) : outbox.problems,
 		worker_status: liveness === null ? null : liveness.status,
 		agent_stopped: stopped.stopped,
+		stop_anomaly: anomaly,
 		cancellation: cancellation === null ? null : Object.freeze({ ...cancellation }),
 	});
 }
@@ -971,7 +1046,7 @@ async function settle(
  * a read of the pane to see whether it went. **It never closes the pane** — the
  * controller stops agents and closes nothing, worker pane or its own.
  */
-async function stopAgent(store, { hold, identity, herdr, agent, actor, at }) {
+async function stopAgent(store, { hold, identity, herdr, agent, actor, at, sleep }) {
 	const { run, ticket, phase, attempt } = identity;
 
 	const requested = requestEffect(store, {
@@ -988,18 +1063,105 @@ async function stopAgent(store, { hold, identity, herdr, agent, actor, at }) {
 	});
 	if (requested.state === "resolved") return requested.result;
 
-	await herdr.stopAgent(agent);
-	const after = await herdr.paneForAttempt(attempt);
-	const stopped = after.ok ? !agentAlive(after.pane) : null;
+	// Whether the keys landed is this call's only answer (`herdr-control.mjs`),
+	// and it is kept rather than discarded: a send that failed and a harness that
+	// ignored the send both leave a live agent in the pane, so the re-probe below
+	// cannot separate them and the record would name the wrong party.
+	const sent = await herdr.stopAgent(agent);
+	const confirmed = await confirmStopped({ herdr, agent, attempt, sleep });
 
 	const resolved = resolveEffect(store, {
 		key: requested.key,
 		actor,
 		fencingGeneration: hold.fence().generation,
-		result: { agent, stopped, pane: after.ok ? (after.pane?.pane_id ?? null) : null },
+		result: { ...confirmed, quit_delivered: sent.ok },
 		at,
 	});
 	return resolved.result;
+}
+
+/**
+ * Whether the quit took, **observed rather than raced** (§5.2).
+ *
+ * The loop reads Herdr until the pane stops hosting a live agent or the bound
+ * above runs out, and it returns on the *first* read that says the agent went —
+ * a stop that took quickly costs one sleep, not the whole budget. What it never
+ * does is treat an early sighting as an answer: the point of the bound is that
+ * "still there" only means something once there was time for it not to be.
+ *
+ * `stopped` keeps three values on purpose. `true` and `false` are observations;
+ * `null` is Herdr declining to answer, which is not evidence that the agent
+ * stayed and must not be written down as though it were (§14.1).
+ *
+ * **A read that fails costs the answer, never the sighting.** The pane id and
+ * status carry over from the last read that succeeded, because a stop whose
+ * final probe went unanswered still knows which pane it was watching — and
+ * §13.B's anomaly is only actionable if it names one.
+ *
+ * @returns {Promise<Readonly<{ stopped: boolean | null, pane: string | null, status: string | null, probes: number, agent: string }>>}
+ */
+async function confirmStopped({ herdr, agent, attempt, sleep }) {
+	let last = { stopped: null, pane: null, status: null, probes: 0 };
+
+	for (const [index, wait] of STOP_CONFIRM_BACKOFF_MS.entries()) {
+		await sleep(wait);
+		const found = await herdr.paneForAttempt(attempt);
+		const probes = index + 1;
+		if (!found.ok) {
+			last = { ...last, stopped: null, probes };
+			continue;
+		}
+
+		last = {
+			stopped: !agentAlive(found.pane),
+			pane: found.pane?.pane_id ?? last.pane,
+			status: found.pane?.agent_status ?? null,
+			probes,
+		};
+		if (last.stopped) break;
+	}
+
+	return Object.freeze({ ...last, agent });
+}
+
+/**
+ * §13.B's wedge, **named on the record instead of left as a bare `false`**.
+ *
+ * A later reader asking "did this attempt leave a pane behind, and which one?"
+ * gets the pane id, the status it was last seen in, and how many reads went
+ * into saying so. Null is the ordinary case — the agent went — because an
+ * anomaly slot that is always populated is a slot nobody scans for.
+ *
+ * **Every slot is defaulted, because the input may be a replay.** `agent-stop`
+ * is idempotent, so a re-entry returns whatever the binary that resolved the
+ * effect wrote — and a pre-#152 result carries no probe count at all. The
+ * missing slots stay null rather than crediting that single raced read with a
+ * bound it never spent, and rather than reaching the append as `undefined`,
+ * which §4.3's canonical serialisation refuses outright. `quit_delivered`
+ * defaults to `true` for the same reason: no pre-#152 result recorded it, and a
+ * replay must not invent an undelivered quit out of a slot that did not exist.
+ */
+function stopAnomalyOf({ stopped, pane = null, status = null, probes = null, agent = null, quit_delivered = true }) {
+	const anomaly = anomalyClassOf({ stopped, quit_delivered });
+	if (anomaly === null) return null;
+
+	return Object.freeze({ anomaly, pane, agent, status, probes, waited_ms: waitedMs(probes) });
+}
+
+/** Which of §13.B's three unknowns this stop is, or null when the agent simply went. */
+function anomalyClassOf({ stopped, quit_delivered }) {
+	// An undelivered quit outranks the pane read, and is an anomaly even when the
+	// agent turns out to be gone: it went for some other reason, and "this
+	// controller stopped it" would be the journal asserting what it never did.
+	if (!quit_delivered) return STOP_ANOMALIES.undelivered;
+	if (stopped === true) return null;
+	return stopped === null ? STOP_ANOMALIES.unconfirmed : STOP_ANOMALIES.wedged;
+}
+
+/** How much of the bound `probes` reads actually spent, or null for a replay that counted none. */
+function waitedMs(probes) {
+	if (probes === null) return null;
+	return STOP_CONFIRM_BACKOFF_MS.slice(0, probes).reduce((total, wait) => total + wait, 0);
 }
 
 /**

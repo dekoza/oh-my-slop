@@ -205,6 +205,15 @@ test("§8.10: a stage result is on payload v2, because v1 had no pass to name", 
 	assert.equal(EVENT_KINDS["stage.resolved"].payloadVersion, 2);
 });
 
+test("§13.B: an ending is on payload v2, because v1's agent_stopped was a race", () => {
+	// #152: v1 wrote the pane read taken on the line after the quit sequence, so
+	// its `false` records a teardown in flight as often as a refusal — #114's two
+	// runs recorded it for every attempt while the workers had in fact gone. From
+	// v2 the value is what a bounded re-probe observed, and a stop that could not
+	// be confirmed names itself in `stop_anomaly` instead of borrowing that false.
+	assert.equal(EVENT_KINDS["attempt.ended"].payloadVersion, 2);
+});
+
 // ── Sources and foreign facts (§4.3, §5.1) ───────────────────────────────────
 
 test("source is mandatory and comes from the closed set", () => {
