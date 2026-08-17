@@ -54,6 +54,11 @@ import { FactoryStateError } from "../state/errors.mjs";
  * @param {(lane: object) => Promise<{ disposition: string }> | { disposition: string }} loop.execute
  *   one ticket execution, from the claim to its terminal disposition. It is
  *   handed the slots the loop acquired **before** the claim (§14.21)
+ * @param {ReadonlyArray<{ ticket: number, slots: object, member?: object }>} [loop.resumed]
+ *   §5.5's adopted lanes: ticket executions a previous controller started, whose
+ *   workers this one proved alive and whose slots it took over rather than
+ *   re-acquiring. They enter **ahead of the first frontier read** — they are not
+ *   claims this loop makes, and a lane already running is never a candidate again
  * @param {() => boolean} [loop.claiming] §3.5's drain: false stops new claims and
  *   lets every in-flight execution run to its terminal disposition
  * @param {() => boolean} [loop.abandoning] §9.6's abandon: in-flight executions
@@ -70,6 +75,7 @@ export async function schedule({
 	frontier,
 	resourceClassOf,
 	execute,
+	resumed = [],
 	claiming = () => true,
 	abandoning = () => false,
 	at = Date.now,
@@ -137,11 +143,28 @@ export async function schedule({
 	function abandon() {
 		for (const [ticket, lane] of lanes) {
 			lane.promise.catch(() => {});
-			lane.slots.model.release({ reason: "abandoned", at: at() });
+			// A resumed lane whose attempt had already ended holds no model slot —
+			// §9.4's model span is one attempt, and its holder gave it back. The
+			// ticket slot is the one that spans the execution and is always there.
+			lane.slots.model?.release({ reason: "abandoned", at: at() });
 			lane.slots.ticket.release({ reason: "abandoned", at: at() });
 			released.push(Object.freeze({ ticket, disposition: "released", abandoned: true }));
 		}
 		lanes.clear();
+	}
+
+	// §5.5's adopted lanes, **before the first frontier read**. They were not
+	// claimed by this loop and are not claimable now — the ticket is already this
+	// factory's, its slots are already held, and the ticket execution is part-way
+	// through §8.1's pipeline. Entering them here rather than in the loop is what
+	// makes that true of the very first decision: `nextClaimable` skips a running
+	// ticket, so an adopted lane cannot be offered a second time even if the
+	// frontier still lists it (§2.1, §15 case 6).
+	for (const lane of resumed) {
+		lanes.set(lane.ticket, {
+			slots: lane.slots,
+			promise: runLane({ member: lane.member ?? { ticket: lane.ticket, labels: [] }, slots: lane.slots, execute, capacity, at }),
+		});
 	}
 
 	while (claiming() && !abandoning()) {
@@ -317,7 +340,10 @@ function runLane({ member, slots, execute, capacity, at }) {
 						: Object.assign(error, { reason: error.reason ?? null }),
 			});
 		} finally {
-			slots.model.release({ reason: "attempt-ended", at: at() });
+			// Optional for the reason `abandon` names: a resumed lane may have been
+			// adopted between two attempts, holding only the row that spans the
+			// execution (§9.4, §5.5).
+			slots.model?.release({ reason: "attempt-ended", at: at() });
 			slots.ticket.release({ reason: "terminal-disposition", at: at() });
 		}
 	})();

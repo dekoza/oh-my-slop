@@ -131,8 +131,9 @@ is the authority; cite the section a change answers to.
   Slots carry **no TTL**: a row records the generation of the **controller lease** that
   took it — never one minted for the row, which a stale-but-live controller would stamp
   above its successor's — and a superseded row is settled by probing its holder
-  (`reclaim`, called once per run; the probe itself ships with the slice that can ask a
-  pane whether it is alive). An expiring slot would free itself while its pane still
+  (`reclaim`, called once per run, over §5.5's adoption probe — the probe ships with
+  `worker/adoption.mjs`, which is the module that can ask a pane whether it is alive).
+  An expiring slot would free itself while its pane still
   talks to the GPU. The ticket slot spans the whole ticket
   execution and the model slot spans one attempt, which is what makes hold-and-wait —
   and therefore deadlock — unconstructible. `factory/lib/capacity/report.mjs` is the one
@@ -318,8 +319,10 @@ is the authority; cite the section a change answers to.
   Then the transcript pointer, polled out of Herdr with backoff and
   never computed; then §6.2's layer-3 recheck, which is why the pin is compared **before** the
   prompt — the prompt is the first thing that spends; then the prompt; then
-  `attempt.correlated`, whose presence is what makes a launch *finished*. A re-entry finishes
-  an uncorrelated attempt and refuses a correlated one (#114 adopts a live worker). Every
+  `attempt.correlated`, whose presence is what makes a launch *finished*, and which carries the
+  agent **kind** on payload v2 so §5.5's third adoption test compares against an observation
+  rather than a derivation. A re-entry finishes an uncorrelated attempt and refuses a correlated
+  one, whose live worker `worker/adoption.mjs` adopts instead. Every
   runtime difference is two values: the Herdr agent kind, and the name `prompt.mjs` turns into
   `/skill:<name>` or `/<plugin>:<name>`.
 - The first prompt is **one renderer parameterised by the role**, not four templates
@@ -340,7 +343,42 @@ is the authority; cite the section a change answers to.
   automation's, §8.10), and a settled worker gets a grace before its silence is called
   silent-completion. **An attempt ends once**: the projector refuses a second `attempt.ended`,
   which is how "late outboxes are ignored for state" gets teeth instead of staying a rule the
-  harvest path has to remember.
+  harvest path has to remember. A **subscription is re-established by pane id** after a Herdr
+  server restart, because §5.1 makes pane ids persistent and never reused: polling covers the
+  gap and stops when the socket takes the question back, so a restart is a gap in the channel
+  rather than a permanent demotion — and the recovery clears the flag that would otherwise
+  charge the automation for the worker's next silence.
+- **Adoption asks §5.5's five tests together and answers three ways**
+  (`worker/adoption.mjs`, #114). Token · pane alive · agent kind · recorded worktree · outbox
+  path intact — each of them able to prevent adoption on its own. Provable and disproved are
+  what the specification names; **the third is what makes them safe**: an unanswerable Herdr
+  read and an unreadable path both taught the process nothing, and "unanswerable" is not
+  "absent" (§5.2, §12.4). The module **mutates nothing and asks about nothing but the pane**:
+  §5.5 settles two controllers with the controller lease and its fencing generation, *not* by
+  killing the worker, so there is no quit sequence and no pid in it, and
+  `factory_worker_adoption.test.mjs` greps for both. What a row may be adopted *for* is
+  re-derived from the journal rather than read off the advisory identity blob: **unfinished and
+  correlated**, because a launch that never finished is one a re-entry finishes (§6.4) and an
+  attempt the projections already settled has ended whatever its pane looks like — a wedged pane
+  passing all five would otherwise reach the projector's refusal of a second ending as an
+  automation failure. Acting on the verdict belongs to the modules that own the writes:
+  `capacity/slots.mjs` moves the row, `worker/lifecycle.mjs`'s `settleUnadoptable` ends the
+  attempt through the same `settle()` every other ending uses — `dead-worker`, §8.10's
+  automation fault — and it **stops no agent**, because identity is exactly what failed and quit
+  keys would act on a pane this controller could not show was its own (§13.B).
+- **A capacity row settles three ways, and a lane is adopted whole or not at all**
+  (`capacity/slots.mjs`'s `reclaim`, §9.4, §15 cases 6–8). A provable holder of the run this
+  controller drives is **transferred** onto its generation on the predecessor's own token —
+  `leases.adoptAll`, one transaction per lane, capacity rows only — because a release-and-retake
+  opens a window a third controller can take the index in while the pane is still using the
+  resource. A disproved holder has **its attempt settled first and its row released second**: a
+  crash between them leaves a row the next controller re-probes, while the other order leaves an
+  unfinished attempt nothing names. An unanswerable read moves nothing at all. The **transfer is
+  gated on `preflight.ok` and on there being an executor**, and whatever a run adopted and never
+  ran is released before it ends — a row fenced to a generation that ends unused is precisely the
+  row no successor may adopt, since adoption requires the row to name the run being driven. What
+  is still held at the end is **named on the report** (`unsettled`), saying that only a later
+  probe can settle it: a pool one index short and nobody told is §9.7's slow run that looks busy.
 - **Herdr has no `agent stop`** — verified against protocol 19, where the whole agent surface is
   list/get/read/send-keys/prompt/rename/focus/wait/attach/start/explain and the socket API has
   no `agent.stop` either. §13.B's "the controller stops agents and never closes panes" — nor

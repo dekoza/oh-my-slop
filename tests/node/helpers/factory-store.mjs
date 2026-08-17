@@ -306,6 +306,7 @@ export function appendLegacyEvent(
  */
 export function manualTimers() {
 	const scheduled = [];
+	const timeouts = [];
 
 	return {
 		api: {
@@ -317,13 +318,36 @@ export function manualTimers() {
 			clearInterval: (handle) => {
 				handle.cleared = true;
 			},
+			// One-shot timers are a **separate list, fired separately**. The watch's
+			// re-subscription backoff (#114) and the degraded poll interval can
+			// coincide on a period, and a `tick` that fired both would make a test
+			// unable to say which clock did the work — the same reason `tick` takes
+			// a period at all.
+			setTimeout: (fn, ms) => {
+				const handle = { fn, ms, cleared: false, fired: false };
+				timeouts.push(handle);
+				return handle;
+			},
+			clearTimeout: (handle) => {
+				handle.cleared = true;
+			},
 		},
 		tick: (ms = null) => {
 			for (const handle of scheduled.filter((live) => !live.cleared && (ms === null || live.ms === ms))) {
 				handle.fn();
 			}
 		},
+		/** Fire the one-shot timers due at `ms` — or every pending one. */
+		fire: (ms = null) => {
+			for (const handle of timeouts.filter(
+				(live) => !live.cleared && !live.fired && (ms === null || live.ms === ms),
+			)) {
+				handle.fired = true;
+				handle.fn();
+			}
+		},
 		intervals: () => scheduled.filter((handle) => !handle.cleared).map((handle) => handle.ms),
+		timeouts: () => timeouts.filter((handle) => !handle.cleared && !handle.fired).map((handle) => handle.ms),
 	};
 }
 

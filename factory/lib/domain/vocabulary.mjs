@@ -212,6 +212,23 @@ export const ATTEMPT_CLOCK_DEADLINE = "deadline";
 export const ATTEMPT_CLOCKS = Object.freeze([ATTEMPT_CLOCK_NO_PROGRESS, ATTEMPT_CLOCK_DEADLINE]);
 
 /**
+ * §5.5's adoption verdict (#114). **Adopt when identity is provable; declare
+ * dead otherwise** — and the third value is what makes those two safe: a Herdr
+ * that would not answer and a path that could not be read taught the process
+ * nothing, and "unanswerable" is not "absent" (§5.2, §12.4).
+ *
+ * Kept here rather than in the module that computes it because two subsystems
+ * read it — `worker/adoption.mjs` answers with it and `capacity/slots.mjs`
+ * settles a row on it — and it rides both `attempt.ended`'s payload and the run
+ * report to the operator's screen, which is this file's criterion.
+ */
+export const ADOPTION_VERDICTS = Object.freeze({
+	provable: "provable",
+	disproved: "disproved",
+	unanswerable: "unanswerable",
+});
+
+/**
  * §6.6, §8.8: the outcomes **only the controller derives**, as the complement of
  * the worker-writable set rather than as a second list beside it.
  *
