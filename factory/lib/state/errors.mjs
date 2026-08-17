@@ -28,6 +28,13 @@ export const STATE_ERROR_REASONS = Object.freeze([
 	/** A hold the holder itself gave up — an orderly end, not §14.6's loss. */
 	"lease-released",
 	/**
+	 * §5.5's adoption finding a row it hoped to move already somebody else's
+	 * (§4.6, §9.4). Deliberately not `lease-lost`: that names *this* controller's
+	 * own hold going away and costs the process exit 6, while here the controller
+	 * is fine and one lane is simply not there to resume.
+	 */
+	"lease-adoption-refused",
+	/**
 	 * A hold asked to stamp an effect before §5.4's startup reconciliation ran
 	 * under it. Resume *is* startup, so the gate is shut until the reconcile
 	 * that settles what the last controller left behind has happened.

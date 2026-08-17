@@ -353,7 +353,13 @@ async function launched(context, { identity, opened, repair, review }) {
 }
 
 async function withAttemptModelSlot(context, opened, attempt, work) {
-	const first = attempt === context.initialAttempt;
+	// The lane's own model slot serves its initial attempt — **unless the lane was
+	// resumed without one** (§5.5). A controller that died between an attempt
+	// ending and its model row going back leaves a lane whose ticket row is
+	// adoptable and whose model row is not, and that lane asks the pool for one
+	// here like any later attempt does. The ticket row is what spans the
+	// execution; the model row is per attempt (§9.4).
+	const first = attempt === context.initialAttempt && context.initialModelSlot !== null;
 	let slot = first ? context.initialModelSlot : null;
 	if (!first) {
 		const profile = namedProfile(context.config.profiles, opened.profile);

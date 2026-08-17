@@ -185,6 +185,61 @@ test("the ticket slot survives repair and fresh-retry, and a newly eligible tick
 	);
 });
 
+// ── §5.5's adopted lanes enter ahead of the first frontier read ──────────────
+
+test("a resumed lane runs before the loop reads a frontier, and is never claimed a second time", async (t) => {
+	const { capacity } = await openPool(t, {
+		plan: plan({ ticketSlots: 2, classes: [{ class: "local", size: 2, profiles: ["builder"] }] }),
+	});
+	const started = [];
+	const reads = [];
+	const adopted = capacity.acquireLane({ ticket: 7, resourceClass: "local", at: T0 });
+
+	const result = await schedule({
+		capacity,
+		// The tracker still lists 7 — its ticket execution is in flight, not
+		// settled — so a loop that offered it again would run one ticket twice.
+		frontier: async () => {
+			reads.push(started.length);
+			return { claimable: [7, 42], members: [{ ticket: 7, labels: [] }, { ticket: 42, labels: [] }] };
+		},
+		resourceClassOf: localClass,
+		resumed: [{ ticket: 7, member: { ticket: 7, labels: [] }, slots: adopted }],
+		execute: ({ ticket }) => {
+			started.push(ticket);
+			return { disposition: "published" };
+		},
+	});
+
+	assert.deepEqual(started, [7, 42], "the adopted lane was running before the first read");
+	assert.equal(reads[0], 1, "§2.1: one ticket execution per ticket, whatever the frontier still says");
+	assert.deepEqual(
+		result.lanes.map((lane) => lane.ticket),
+		[7, 42],
+	);
+});
+
+test("a lane resumed between attempts holds no model slot, and its ticket slot still comes back", async (t) => {
+	const { store, capacity } = await openPool(t);
+	const adopted = capacity.acquireLane({ ticket: 7, resourceClass: "local", at: T0 });
+	// §9.4's model span is one attempt: a controller that died after an attempt
+	// ended may leave only the row that spans the whole execution.
+	adopted.model.release({ reason: "attempt-ended", at: T0 + 1 });
+
+	await schedule({
+		capacity,
+		frontier: frontierOf([]),
+		resourceClassOf: localClass,
+		resumed: [{ ticket: 7, slots: { ticket: adopted.ticket, model: null } }],
+		execute: () => ({ disposition: "published" }),
+	});
+
+	assert.equal(
+		store.read((db) => db.prepare("SELECT COUNT(*) AS rows FROM lease WHERE name LIKE 'capacity:%'").get().rows),
+		0,
+	);
+});
+
 test("after a full run no capacity row is left held", async (t) => {
 	const { store, capacity } = await openPool(t);
 

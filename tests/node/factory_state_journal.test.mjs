@@ -230,6 +230,45 @@ test("a gap in the global sequence is not evidence of tampering (§4.2)", async 
 	assert.equal(next.prev_hash, store.readEvents({ stream: runStream(survivor) })[0].hash);
 });
 
+test("§15's duplicate sequence, injected: the database refuses a second record at a taken seq", async (t) => {
+	const store = await openTestStore(t);
+	const runId = newUlid();
+	const first = store.append(runStarted(runId));
+	const second = store.append(attemptLaunched(runId, 90));
+
+	// The write path cannot produce this — `appendEvent` reads the head and takes
+	// the next number — so the adversarial case needs a forgery: a record
+	// re-using a sequence a committed record already holds, inserted through the
+	// same transaction surface a writer has.
+	const duplicate = refusalOf(() =>
+		store.transaction(({ db }) =>
+			db
+				.prepare(
+					`INSERT INTO event(seq, event_id, envelope_version, kind, payload_version, visibility, stream,
+					 run, ticket, phase, attempt, causal_command_id, source, occurred_at, observed_at,
+					 foreign_source_id, payload, payload_digest, prev_hash, hash)
+					 SELECT ?, ?, envelope_version, kind, payload_version, visibility, stream, run, ticket, phase,
+					 attempt, causal_command_id, source, occurred_at, observed_at, NULL, payload, payload_digest,
+					 prev_hash, hash FROM event WHERE seq = ?`,
+				)
+				.run(second.seq, newUlid(), second.seq),
+		),
+	);
+
+	// `seq INTEGER PRIMARY KEY` is the refusal: a duplicate is unstorable rather
+	// than detected afterwards, which is the same shape §4.5's effect key and
+	// §5.1's dedup index take.
+	assert.match(duplicate.message ?? String(duplicate), /UNIQUE|PRIMARY KEY|constraint/i);
+
+	// The journal is exactly as it was, and the next append continues the count.
+	assert.deepEqual(
+		store.readEvents({}).map((event) => event.seq),
+		[first.seq, second.seq],
+	);
+	assert.equal(store.append(attemptLaunched(runId, 91)).seq, second.seq + 1);
+	assert.equal(store.verifyJournal().ok, true, "a refused forgery leaves no break behind it");
+});
+
 test("reopening a store keeps counting from the recorded head", async (t) => {
 	const agentDir = makeAgentDir(t);
 	const repoRoot = makeRepo(t);
