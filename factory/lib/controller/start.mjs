@@ -8,6 +8,7 @@ import {
 } from "../cli/exit-codes.mjs";
 import {
 	CONTROLLER_EXIT_LEASE_LOST,
+	DISPOSITION_RELEASED,
 	END_REASON_ABANDONED,
 	END_REASON_BASELINE_RED,
 	END_REASON_CAPACITY_EXHAUSTED,
@@ -19,6 +20,8 @@ import {
 } from "../domain/vocabulary.mjs";
 import { circuitBreaker } from "./breaker.mjs";
 import { FactoryEffectError } from "../effects/errors.mjs";
+import { FactoryGitError } from "../git/errors.mjs";
+import { readAttemptBranches, unreadableAttemptBranches } from "../git/parked.mjs";
 import { latestRequest, operatorRequests, requestReport } from "./stop.mjs";
 import { installSignalRequests } from "./signals.mjs";
 import { reconcile } from "../reconcile/engine.mjs";
@@ -30,7 +33,8 @@ import { FactoryStateError } from "../state/errors.mjs";
 import { LEASE_RENEWAL_MS, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
 import { CLAIM_OUTCOMES, claimTicket } from "../tracker/claims.mjs";
-import { attemptIdOf } from "../worker/attempt.mjs";
+import { FactoryTrackerError } from "../tracker/errors.mjs";
+import { attemptIdOf, mintedAttemptBranches } from "../worker/attempt.mjs";
 import { applyDisposition } from "../tracker/disposition.mjs";
 import { readScope } from "../tracker/frontier.mjs";
 import { createGiteaReader } from "../tracker/gitea.mjs";
@@ -447,11 +451,15 @@ async function driveRun(store, hold, context, signals) {
 		const endReason = endReasonOf(checked, requests, breaker, executed);
 		let execution = executionReport(store, entry.run, executed, executionContext);
 		if (endReason !== END_REASON_BASELINE_RED) {
-			execution = settleAtBoundary(store, hold, entry.run, {
+			execution = await settleAtBoundary(store, hold, entry.run, {
 				endReason,
 				at: context.now(),
 				executed,
 				context: executionContext,
+				// #151's read is git's to answer, and the private clone is the green
+				// preflight's handle. A run that never got one carries no evidence
+				// rather than an assumption about what its attempts left behind.
+				clone: checked.production?.clone ?? null,
 			});
 		}
 
@@ -633,7 +641,30 @@ function ticketExecution(store, entry, hold, context) {
 		// §3.3's four refusing outcomes each end the lane having written nothing.
 		// `claimed: false` is what keeps them out of the report's claim count — a
 		// run that touched no ticket must not report one (§9.7).
-		if (!HELD_BY_THIS_RUN.has(claim.outcome)) return { disposition: null, claimed: false, claim };
+		if (!HELD_BY_THIS_RUN.has(claim.outcome)) {
+			// **Three of them write nothing at all; the lost collision is the
+			// exception**, and it is the only way a `ticket_execution` row exists for
+			// a ticket this run does not hold: it assigned and commented before the
+			// re-read told it the claim is somebody else's (§3.3). The row is settled
+			// `released` here — the journal half of §8.9's row and **none of its
+			// tracker half**, since §3.3's loser leaves the field exactly as it is —
+			// because an execution nobody is working on must not sit in §9.6's
+			// in-flight set, where the abandon boundary would drop **the winner's**
+			// claim (#159). It is also what that row has always meant: this run gave
+			// the execution up rather than finishing it.
+			if (claim.outcome === CLAIM_OUTCOMES.lostCollision) {
+				hold.append({
+					kind: "ticket.disposition-changed",
+					source: "controller",
+					run: entry.run,
+					ticket,
+					occurredAt: context.now(),
+					observedAt: context.now(),
+					payload: { disposition: DISPOSITION_RELEASED, reason_class: null, fault: null },
+				});
+			}
+			return { disposition: null, claimed: false, claim };
+		}
 
 		// §11.6's declared numbers travel with the lane rather than being fetched
 		// by whoever composes the walk: the budgets a ticket execution spends and
@@ -848,16 +879,43 @@ function missingSubsystem(context) {
  * durable disposition beside them, which is what the next reconcile reads to
  * tell a stopped run from an abandoned one (§13.A).
  *
- * **It touches no pane, and it touches no tracker.** §9.6's abandon *stops
- * issuing new effects*, so the assignee stays exactly where it is: dropping it
- * here would be a mutation issued by a run that has just declared it is issuing
- * none. The claim a dead run leaves behind is not stranded — §3.3's same-factory
- * staleness proves it from this same durable disposition and takes it over with
- * no waiting period, which is why the record below is the whole obligation. A
- * wedged pane is evidence for the same reason (§13.B, §14.27), and pane
- * reclamation is cleanup-plan's exclusively.
+ * **The disposition is §8.9's, whole** (#159). Recording `released` and stopping
+ * there left the journal and the tracker disagreeing about the same ticket, and
+ * the tracker is the half a human reads: an assignee still standing under a claim
+ * comment nothing answers reads as a run still working. §8.9's table says
+ * `released` drops the claim, states itself, and adds no label, and this path is
+ * reached by ordinary operator action — a second stop or a SIGTERM (§10.5, §15) —
+ * rather than only by a crash. §3.3's staleness still settles a claim whose
+ * controller died mid-settlement, but as the backstop it is rather than as a
+ * timeout standing in for a fact this controller already knew.
+ *
+ * §9.6's abandon *stops issuing new effects* about the **work**: no pane is
+ * touched, no worker is relaunched, nothing new is claimed. A wedged pane is
+ * evidence (§13.B, §14.27) and pane reclamation is cleanup-plan's exclusively.
+ * Giving the claim back is not new work — it is the settlement of work already
+ * done with, and §8.9 has one word for it.
+ *
+ * The lanes are not awaited (§9.6), so one may still be alive in this process and
+ * may still reach its own §8.9 row — and then §4.5's pair is what decides, since
+ * both settlements key the same `comment-post` on the same ticket execution: the
+ * second is a typed payload conflict rather than two disagreeing comments on one
+ * ticket. It lands in a promise nobody awaits, in the moment before the binary
+ * exits; that is the whole of the exposure, and it is the pair doing its job.
+ *
+ * **A tracker refusal is carried, never raised.** Letting it escape would trade
+ * the run's own ending — `run.ended`, the lease release, exit 4 — for a mutation
+ * that has somewhere else to be answered, which is the one thing a settlement
+ * must not do. What that somewhere is, exactly: the disposition is already in the
+ * journal, and the refused mutation is §4.5's *requested* half, so reconcile
+ * re-probes it and §12.4 alarms on it — **reconcile settles the record, it does
+ * not perform the write**. So the claim itself falls back to §3.3's staleness for
+ * that ticket, as it did before this path wrote anything, and the run names the
+ * ticket in `released_unsettled` rather than reporting a release the tracker
+ * refused. The announcement is not posted over a claim that is still standing:
+ * §8.9's order is the eligibility change first, and a comment saying the work was
+ * given up, above an assignee saying it was not, is worse than the silence.
  */
-function settleAtBoundary(store, hold, run, { endReason, at, executed, context }) {
+async function settleAtBoundary(store, hold, run, { endReason, at, executed, context, clone }) {
 	if (endReason !== END_REASON_ABANDONED) {
 		return executionReport(store, run, executed, context);
 	}
@@ -870,6 +928,10 @@ function settleAtBoundary(store, hold, run, { endReason, at, executed, context }
 		.readTicketExecutions(run)
 		.filter((execution) => execution.disposition === null);
 
+	// Every record first, then the tracker: the durable half is what §13.A reads
+	// back and what §3.3 proves a takeover from, and a refusal partway through the
+	// mutations below must not leave some of these executions with no disposition
+	// at all.
 	inFlight.forEach((execution) =>
 		hold.append({
 			kind: "ticket.disposition-changed",
@@ -882,9 +944,39 @@ function settleAtBoundary(store, hold, run, { endReason, at, executed, context }
 			// gave up on the work, and nothing about the ticket or the host failed.
 			// Spelling both nulls rather than omitting them is what keeps a v2
 			// reader from having to tell "no fault" from "an older writer".
-			payload: { disposition: "released", reason_class: null, fault: null },
+			payload: { disposition: DISPOSITION_RELEASED, reason_class: null, fault: null },
 		}),
 	);
+
+	// **Every one of them is a claim this run holds.** §3.3's contest loser is the
+	// one execution that would not be, and un-assigning there would clear *the
+	// winner's* claim — arbitration is only reachable between installs sharing one
+	// tracker identity, so the two claims are one field. That row never reaches
+	// here: the lane records its own `released` the moment it loses, which is what
+	// keeps this loop from needing a rule about whose claim it is settling.
+	const unsettled = [];
+	for (const execution of inFlight) {
+		try {
+			await applyDisposition(store, {
+				writer: context.trackerWriter,
+				hold,
+				run,
+				ticket: execution.ticket,
+				// The identity the claim was made under (§7.3), derived rather than read
+				// back: it is what the ordinary path names on its own disposition, so one
+				// ticket execution reads the same in the journal whichever way it ended.
+				attempt: attemptIdOf({ run, ticket: execution.ticket, ordinal: 1 }),
+				assignee: context.config.tracker.assignee,
+				at,
+				disposition: DISPOSITION_RELEASED,
+				parked: await parkedBranches(store, clone, { run, ticket: execution.ticket }),
+			});
+		} catch (error) {
+			if (isLeaseLoss(error)) throw error;
+			if (!(error instanceof FactoryTrackerError) && !(error instanceof FactoryEffectError)) throw error;
+			unsettled.push(Object.freeze({ ticket: execution.ticket, reason: error.message }));
+		}
+	}
 
 	// Counted by ticket rather than added up: the loop already released the lanes
 	// it was running, and the claim writes a `ticket_execution` row per ticket, so
@@ -899,7 +991,44 @@ function settleAtBoundary(store, hold, run, { endReason, at, executed, context }
 		...executionReport(store, run, executed, context),
 		in_flight: inFlight.length,
 		released: released.size,
+		// Named rather than counted: the operator's next question about a release the
+		// tracker did not take is *which ticket*, and §12.4's alarm on the unresolved
+		// effect is the other half of the answer.
+		released_unsettled: Object.freeze(unsettled),
 	});
+}
+
+/**
+ * #151's evidence for a ticket execution the run is giving up on, as
+ * `git/parked.mjs`'s two halves composed here.
+ *
+ * The composition is at the call site by that module's own design — the journal
+ * says which attempts exist and the clone says what their refs are now, and the
+ * seam between intent and fact stays visible in the signatures. The production
+ * pipeline composes the same two for the dispositions it produces; this is the
+ * one ending that never reaches it, which is exactly why the evidence is most
+ * likely to matter here: an abandon catches a builder mid-work, and §7.7 makes
+ * its branch the only copy of what it committed.
+ *
+ * A run with no green production handles has no clone to ask, and answers `null`
+ * — **"nobody looked", never "nothing was built"** (§11.2).
+ */
+async function parkedBranches(store, clone, { run, ticket }) {
+	if (clone === null) return null;
+
+	try {
+		return await readAttemptBranches(clone, mintedAttemptBranches(store, { run, ticket }));
+	} catch (error) {
+		// The read is evidence about a disposition already decided, so a refusal
+		// costs the evidence and never the settlement — the same carry, and the same
+		// typed refusal, the pipeline's own composition makes of this pair. The read
+		// half never throws by construction; the journal half can, on an identity no
+		// branch name is derivable from. A store that cannot answer is not caught
+		// here and is not meant to be: the `hold.append` above would already have
+		// failed on it, and this function is not where that gets discovered.
+		if (!(error instanceof FactoryGitError)) throw error;
+		return unreadableAttemptBranches(error.message);
+	}
 }
 
 /**

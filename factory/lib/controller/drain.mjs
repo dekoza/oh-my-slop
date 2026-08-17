@@ -118,6 +118,16 @@ export function drainReport({ view = null, executed = null, inFlight = [], missi
 		counts: countByClass(members),
 		in_flight: inFlight.length,
 		released: executed?.released ?? 0,
+		/**
+		 * #159: the releases §9.6's abandon boundary recorded and the tracker would
+		 * not take, each naming its ticket. The boundary is what fills it — every
+		 * other ending settles its tickets through the pipeline's own dispositions —
+		 * and it is on every report rather than only that one, because a `--json`
+		 * consumer branching on a field that sometimes exists is reading the ending
+		 * rather than the answer. Empty here is the truthful zero: no release was
+		 * asked for, so none went unsettled.
+		 */
+		released_unsettled: Object.freeze([]),
 		refused: executed?.refused ?? [],
 		blocked: executed?.blocked ?? [],
 		drained: verdict.drained,
