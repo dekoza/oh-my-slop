@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import test from "node:test";
 
+import { fromFrame } from "../../factory/lib/controller/herdr-events.mjs";
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
 import { ATTEMPT_OUTCOMES } from "../../factory/lib/domain/vocabulary.mjs";
 import { unresolvedEffects } from "../../factory/lib/effects/records.mjs";
@@ -178,6 +179,45 @@ test("the grace is measured from the first settle, not from the latest transitio
 
 	assert.equal(second.settledAt, FIXED_NOW);
 	assert.equal(readLiveness({ status: "working" }, second, FIXED_NOW + 6_000).settledAt, null, "work resets it");
+});
+
+test("a live `pane.agent_status_changed` frame reaches the rows the old matcher made unreachable (§6.6, #149)", () => {
+	// The old matcher dropped the dotted frame, so decideOutcome never saw a
+	// settled worker: its "worker's own status" and "no-result" rows were dead.
+	// A frame off the wire must reach both.
+	const frame = (agentStatus) =>
+		fromFrame(
+			JSON.parse(
+				`{"data":{"agent":"claude","agent_status":"${agentStatus}","pane_id":"w1:p2","workspace_id":"w1"},"event":"pane.agent_status_changed"}`,
+			),
+			"w1:p2",
+		);
+
+	const idle = readLiveness(frame("idle"), { settledAt: null }, FIXED_NOW);
+	assert.equal(idle.alive, false, "idle is a settled worker, not an alive one");
+	assert.equal(idle.settledAt, FIXED_NOW);
+	assert.equal(
+		decideOutcome({
+			outbox: outboxOf("absent"),
+			liveness: idle,
+			at: FIXED_NOW + SETTLE_GRACE_MS,
+			deadline: FIXED_NOW + 60_000,
+		}).outcome,
+		"no-result",
+		"a settled worker with no outbox is silent-completion",
+	);
+
+	const done = readLiveness(frame("done"), { settledAt: null }, FIXED_NOW);
+	assert.equal(
+		decideOutcome({
+			outbox: outboxOf("valid", { status: "worker-failed" }),
+			liveness: done,
+			at: FIXED_NOW,
+			deadline: FIXED_NOW + 60_000,
+		}).outcome,
+		"worker-failed",
+		"a valid outbox from a settled worker yields the worker's own status",
+	);
 });
 
 // ── The wait, end to end ─────────────────────────────────────────────────────
@@ -477,6 +517,31 @@ test("a socket that will not carry the transitions degrades loudly and keeps wat
 	// whose transitions were all sampled from one that was subscribed.
 	const [observed] = context.store.readEvents({ kind: "observation.recorded" });
 	assert.equal(observed.payload.observed_by, "poll");
+});
+
+test("an unrecognised frame for this pane is recorded as a diagnostic, never silent (§5.1)", async (t) => {
+	const context = await waiting(t);
+	context.writeOutbox(completedOutbox(context.identity));
+
+	await context.wait({
+		watch: ({ onTransition, onUnrecognised }) => {
+			onUnrecognised({ pane: "w1:p1", event: "pane.new_event" });
+			onUnrecognised({ pane: "w1:p1", event: "pane.new_event" });
+			onUnrecognised({ pane: "w1:p1", event: "pane.another_event" });
+			onTransition({ status: "done", alive: false, agent: "pi", source: "subscribe", event: null, from: null });
+			return { close: () => {}, degraded: () => false };
+		},
+	});
+
+	const unrecognised = context.store.readEvents({ kind: "observation.unrecognised" });
+	assert.equal(unrecognised.length, 2, "once per distinct wire name, not per frame");
+	assert.equal(unrecognised[0].payload.event, "pane.new_event");
+	assert.equal(unrecognised[0].payload.pane, "w1:p1");
+	assert.equal(unrecognised[0].source, "controller", "our vocabulary gap, not Herdr's fact");
+	assert.deepEqual(
+		unrecognised.map((event) => event.payload.event),
+		["pane.new_event", "pane.another_event"],
+	);
 });
 
 // ── The refusal ──────────────────────────────────────────────────────────────

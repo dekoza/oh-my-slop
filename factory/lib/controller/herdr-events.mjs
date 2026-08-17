@@ -22,14 +22,17 @@ import { createConnection } from "node:net";
  * way in rather than trusted to be ours.
  */
 
-/** The three §5.1 names, in Herdr's two spellings: dotted to subscribe, underscored on the wire. */
+/**
+ * The three §5.1 names, dotted to subscribe. Herdr's wire spelling is
+ * inconsistent — measured live against protocol 19, `pane.exited` and
+ * `pane.agent_detected` arrive underscored while `pane.agent_status_changed`
+ * arrives dotted — so matching is by `EVENT_SPELLINGS` below, never by guessing
+ * one form (#149).
+ */
 export const SUBSCRIBED_EVENTS = Object.freeze(["pane.agent_status_changed", "pane.exited", "pane.agent_detected"]);
 
 /** How often the degraded path samples. Herdr's own tempo, not the tracker's 15s. */
 export const DEGRADED_POLL_INTERVAL_MS = 2_000;
-
-/** A socket that exists and does not answer promptly is not a subscription. */
-const CONNECT_TIMEOUT_MS = 2_000;
 
 /**
  * Watch one pane's lifecycle.
@@ -39,6 +42,9 @@ const CONNECT_TIMEOUT_MS = 2_000;
  * @param {string} input.socket the Herdr socket path
  * @param {(transition: object) => void} input.onTransition one observed change
  * @param {(degradation: object) => void} input.onDegraded the typed fallback notice
+ * @param {(unrecognised: { pane: string, event: string | null }) => void} [input.onUnrecognised]
+ *   a frame for this pane whose event name the build does not know — loud, never
+ *   the same silent null that means "another pane's frame"
  * @param {(socket: string) => object} [input.connect] injectable stream opener
  * @param {(() => Promise<object>) | null} [input.poll] the degraded sampler — the
  *   `paneForAttempt` read, injected so this module holds no CLI knowledge
@@ -51,6 +57,7 @@ export function watchPane({
 	socket,
 	onTransition,
 	onDegraded,
+	onUnrecognised = null,
 	connect = connectToSocket,
 	poll = null,
 	intervalMs = DEGRADED_POLL_INTERVAL_MS,
@@ -98,13 +105,13 @@ export function watchPane({
 	}
 
 	let buffer = "";
-	stream.setTimeout?.(CONNECT_TIMEOUT_MS, () => {
-		if (last === null && !degraded) degrade("socket-silent", `nothing answered within ${CONNECT_TIMEOUT_MS}ms`);
-	});
+	// A quiet socket at subscribe time is a **calm worker**, not a broken one.
+	// There is no "answered within N ms" guard: node's socket timeout can fire
+	// before `connect` when the loop is blocked, which degraded a healthy socket
+	// 80 ms before its first frame in #149's live run. Degradation means the
+	// socket failed — connect error, stream error, close, or a refused
+	// subscription — and nothing else (§5.1).
 	stream.once("connect", () => {
-		// The timeout guarded reaching the server; from here a quiet socket is a
-		// quiet worker, which is the thing this watch exists to keep watching.
-		stream.setTimeout?.(0);
 		stream.write(`${JSON.stringify(subscribeRequest(pane))}\n`);
 	});
 	stream.on("data", (chunk) => {
@@ -120,7 +127,12 @@ export function watchPane({
 				continue;
 			}
 			const observed = fromFrame(frame, pane);
-			if (observed !== null) transition(observed);
+			if (observed === null) continue;
+			if (observed === UNRECOGNISED) {
+				onUnrecognised?.(Object.freeze({ pane, event: frame.event ?? null }));
+				continue;
+			}
+			transition(observed);
 		}
 	});
 	stream.once("error", (error) => degrade("socket-unavailable", error.message));
@@ -159,48 +171,76 @@ export function subscribeRequest(pane) {
 }
 
 /**
- * One frame, as an observation about this pane — or null when it is somebody
- * else's, or an acknowledgement rather than an event.
+ * The three §5.1 events, each in Herdr's two spellings: dotted to subscribe,
+ * and whichever the wire happens to use. Both forms map to the same handler, so
+ * a server that changes one spelling is not a second silent outage (#149).
+ */
+const EVENT_SPELLINGS = Object.freeze({
+	"pane.exited": "pane_exited",
+	"pane.agent_detected": "pane_agent_detected",
+	"pane.agent_status_changed": "pane_agent_status_changed",
+});
+
+/** Every accepted spelling → its canonical dotted name. */
+const KNOWN_EVENTS = new Map(
+	Object.entries(EVENT_SPELLINGS).flatMap(([dotted, underscored]) => [
+		[dotted, dotted],
+		[underscored, dotted],
+	]),
+);
+
+/**
+ * Returned by `fromFrame` for a frame that **is** this pane's but matches no
+ * known event. Distinct from `null`, which is the silent filter for somebody
+ * else's pane and for acknowledgements — the two must never be the same answer
+ * (§5.1, §11.2).
+ */
+export const UNRECOGNISED = Symbol("unrecognised-frame");
+
+/**
+ * One frame, as an observation about this pane — `null` when it is somebody
+ * else's or an acknowledgement rather than an event, and `UNRECOGNISED` when it
+ * is this pane's but matches no known event.
  *
- * `pane_exited` is the one frame that says a worker is gone, and it is the only
+ * `pane.exited` is the one frame that says a worker is gone, and it is the only
  * thing in Herdr's whole API that comes close to a termination signal — it
  * still carries **no exit code** (§5.2), so it says *that* the process ended
  * and never *how*.
  *
  * @param {object} frame
  * @param {string} pane
- * @returns {Readonly<object> | null}
+ * @returns {Readonly<object> | null | typeof UNRECOGNISED}
  */
 export function fromFrame(frame, pane) {
 	const data = frame?.data;
 	if (data?.pane_id !== pane) return null;
 
-	if (frame.event === "pane_exited") {
-		return Object.freeze({ status: "exited", agent: null, alive: false, source: "subscribe", event: frame.event });
+	switch (KNOWN_EVENTS.get(frame?.event)) {
+		case "pane.exited":
+			return Object.freeze({ status: "exited", agent: null, alive: false, source: "subscribe", event: frame.event });
+		case "pane.agent_detected":
+			return Object.freeze({
+				// A detection carrying `released: true` is the agent leaving the pane,
+				// which is what an ordinary quit looks like from outside.
+				status: data.released === true ? "released" : (data.final_status ?? "unknown"),
+				agent: data.agent ?? null,
+				alive: data.released !== true && typeof data.agent === "string",
+				source: "subscribe",
+				event: frame.event,
+			});
+		case "pane.agent_status_changed":
+			return Object.freeze({
+				status: data.agent_status,
+				agent: data.agent ?? null,
+				// Herdr's `unknown` means "an agent is present but unclassified" and its
+				// own documentation says it does not prove completion, so it is alive.
+				alive: typeof data.agent === "string" && data.agent.length > 0,
+				source: "subscribe",
+				event: frame.event,
+			});
+		default:
+			return UNRECOGNISED;
 	}
-	if (frame.event === "pane_agent_detected") {
-		return Object.freeze({
-			// A detection carrying `released: true` is the agent leaving the pane,
-			// which is what an ordinary quit looks like from outside.
-			status: data.released === true ? "released" : (data.final_status ?? "unknown"),
-			agent: data.agent ?? null,
-			alive: data.released !== true && typeof data.agent === "string",
-			source: "subscribe",
-			event: frame.event,
-		});
-	}
-	if (frame.event === "pane_agent_status_changed") {
-		return Object.freeze({
-			status: data.agent_status,
-			agent: data.agent ?? null,
-			// Herdr's `unknown` means "an agent is present but unclassified" and its
-			// own documentation says it does not prove completion, so it is alive.
-			alive: typeof data.agent === "string" && data.agent.length > 0,
-			source: "subscribe",
-			event: frame.event,
-		});
-	}
-	return null;
 }
 
 /** The same observation, read off a sampled `PaneInfo` on the degraded path. */

@@ -104,6 +104,12 @@ export const EVENT_KINDS = Object.freeze({
 	"effect.resolved": { payloadVersion: 1, visibility: "detail" },
 	"observation.recorded": { payloadVersion: 1, visibility: "detail" },
 	"observation.degraded": { payloadVersion: 1, visibility: "operator" },
+	// #149: a frame for our pane whose wire name the build does not know. Loud
+	// rather than the silent null that means "another pane's frame" (§5.1,
+	// §11.2) — but a `diagnostic`, not a degradation: the socket is healthy, the
+	// vocabulary is what fell behind. Herdr states no id for it, so it is
+	// deduped in-memory per attempt rather than by the foreign-id index.
+	"observation.unrecognised": { payloadVersion: 1, visibility: "diagnostic" },
 	"reconcile.concluded": { payloadVersion: 1, visibility: "operator" },
 	"controller.heartbeat": { payloadVersion: 1, visibility: "diagnostic" },
 	"controller.lease-lost": { payloadVersion: 1, visibility: "operator" },

@@ -463,6 +463,7 @@ export async function awaitCompletion(
 		poll: () => herdr.paneForAttempt(identity.attempt),
 		onTransition: (transition) => pending.push({ transition, at: now() }),
 		onDegraded: (degradation) => pending.push({ degradation, at: now() }),
+		onUnrecognised: (unrecognised) => pending.push({ unrecognised, at: now() }),
 	});
 
 	try {
@@ -471,6 +472,10 @@ export async function awaitCompletion(
 				const entry = pending.shift();
 				if (entry.degradation !== undefined) {
 					observer.degraded(entry.degradation, entry.at);
+					continue;
+				}
+				if (entry.unrecognised !== undefined) {
+					observer.unrecognised(entry.unrecognised, entry.at);
 					continue;
 				}
 				liveness = readLiveness(entry.transition, liveness, entry.at);
@@ -890,6 +895,7 @@ function observationRecorder(store, { hold, identity, pane, actor, now }) {
 	const { run, ticket, phase, attempt } = identity;
 	let ordinal = recordedTransitions(store, { run, attempt });
 	let degradedOnce = false;
+	const unrecognisedOnce = new Set();
 
 	return {
 		record(transition, at) {
@@ -936,6 +942,29 @@ function observationRecorder(store, { hold, identity, pane, actor, now }) {
 				occurredAt: at,
 				observedAt: at,
 				payload: { ...degradation, pane, actor },
+			});
+		},
+
+		unrecognised(unrecognised, at) {
+			// Once per distinct wire name per attempt: the diagnostic names what
+			// was seen, and repeating it per frame would bury the transitions it
+			// exists beside. Herdr states no id for the frame, so there is no
+			// foreign id to dedupe on (§4.3).
+			if (unrecognisedOnce.has(unrecognised.event)) return;
+			unrecognisedOnce.add(unrecognised.event);
+			hold.append({
+				kind: "observation.unrecognised",
+				// Our own assertion about our own gap: Herdr sent a valid frame for
+				// this pane, and this build's vocabulary is what does not know its
+				// name — so `controller`, never `herdr` (§5.1).
+				source: "controller",
+				run,
+				ticket,
+				phase,
+				attempt,
+				occurredAt: at,
+				observedAt: at,
+				payload: { pane, event: unrecognised.event, actor },
 			});
 		},
 	};

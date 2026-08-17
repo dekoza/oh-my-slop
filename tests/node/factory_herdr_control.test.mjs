@@ -16,6 +16,7 @@ import {
 	fromPane,
 	SUBSCRIBED_EVENTS,
 	subscribeRequest,
+	UNRECOGNISED,
 	watchPane,
 } from "../../factory/lib/controller/herdr-events.mjs";
 import { manualTimers } from "./helpers/factory-store.mjs";
@@ -229,21 +230,50 @@ test("the subscription filters the status stream by pane and takes the other two
 	assert.deepEqual(SUBSCRIBED_EVENTS, ["pane.agent_status_changed", "pane.exited", "pane.agent_detected"]);
 });
 
-test("a frame becomes an observation only when it is this pane's", () => {
-	const status = {
-		event: "pane_agent_status_changed",
-		data: { type: "pane_agent_status_changed", pane_id: "w1:p2", workspace_id: "w1", agent_status: "blocked", agent: "pi" },
-	};
+test("a frame becomes an observation only when it is this pane's, under the wire name it actually carries (#149)", () => {
+	// Captured verbatim off the socket (tests/live/herdr-subscription-frames.mjs):
+	// `pane.agent_status_changed` arrives **dotted**, and its data is
+	// `{pane_id, workspace_id, agent_status, agent}` — no `type` field.
+	const status = JSON.parse(
+		'{"data":{"agent":"claude","agent_status":"blocked","pane_id":"w1:p2","workspace_id":"w1"},"event":"pane.agent_status_changed"}',
+	);
 
 	assert.deepEqual({ ...fromFrame(status, "w1:p2") }, {
 		status: "blocked",
-		agent: "pi",
+		agent: "claude",
 		alive: true,
 		source: "subscribe",
-		event: "pane_agent_status_changed",
+		event: "pane.agent_status_changed",
 	});
 	assert.equal(fromFrame(status, "w1:p9"), null, "the two server-wide subscriptions carry everyone's panes");
 	assert.equal(fromFrame({ id: "x", result: { type: "subscription_started" } }, "w1:p2"), null);
+});
+
+test("both spellings of each subscribed event are accepted, so a server that changes one is not a second outage (#149)", () => {
+	const pane = "w1:p2";
+	const cases = [
+		// [wire event, data, expected status]
+		["pane.agent_status_changed", { agent_status: "working", agent: "pi", pane_id: pane }, "working"],
+		["pane_agent_status_changed", { agent_status: "working", agent: "pi", pane_id: pane }, "working"],
+		["pane.agent_detected", { agent: "claude", pane_id: pane }, "unknown"],
+		["pane_agent_detected", { agent: "claude", pane_id: pane }, "unknown"],
+		["pane.exited", { pane_id: pane }, "exited"],
+		["pane_exited", { pane_id: pane }, "exited"],
+	];
+
+	for (const [event, data, status] of cases) {
+		const observed = fromFrame({ event, data }, pane);
+		assert.equal(observed.status, status, `${event} was not recognised`);
+		assert.equal(observed.event, event, "the wire spelling is preserved, not normalised away");
+	}
+});
+
+test("a frame for this pane that matches no known event is UNRECOGNISED, never the null of a filter (#149)", () => {
+	const pane = "w1:p2";
+
+	assert.equal(fromFrame({ event: "pane.something_new", data: { pane_id: pane, agent: "pi" } }, pane), UNRECOGNISED);
+	// The silent cases stay silent: another pane's frame, and an acknowledgement.
+	assert.equal(fromFrame({ event: "pane.something_new", data: { pane_id: "w1:p9" } }, pane), null);
 });
 
 test("an exited pane and a released agent are both the worker being gone", () => {
@@ -351,5 +381,74 @@ test("frames arrive line by line, and a refusal degrades rather than going quiet
 	stream.emit("data", '{"error":{"code":"invalid_request","message":"missing field `pane_id`"}}\n');
 	assert.equal(degraded[0].reason, "subscription-refused");
 	assert.match(degraded[0].detail, /pane_id/);
+	watcher.close();
+});
+
+test("a quiet socket at subscribe time is a calm worker, not degradation (§5.1)", () => {
+	// node's socket timeout can fire *before* `connect` when the event loop is
+	// blocked — #149's probe blocked it with the `agent start` spawnSync, and the
+	// old guard degraded a healthy socket 80 ms before its first frame. The watch
+	// must arm no such timeout: after subscribing, silence is the thing it keeps
+	// watching for.
+	const stream = Object.assign(new EventEmitter(), {
+		written: [],
+		timeoutCallback: null,
+		write(line) {
+			this.written.push(line);
+		},
+		setTimeout(ms, callback) {
+			this.timeoutCallback = ms > 0 ? callback : null;
+		},
+		destroy() {},
+	});
+	const degraded = [];
+
+	const watcher = watchPane({
+		pane: "w1:p2",
+		socket: "/run/herdr.sock",
+		connect: () => stream,
+		onTransition: () => {},
+		onDegraded: (degradation) => degraded.push(degradation),
+		timers: manualTimers().api,
+	});
+
+	// The old guard armed an inactivity timeout that node could fire before
+	// `connect`. Triggering whatever is armed (nothing, now) must be a no-op.
+	stream.timeoutCallback?.();
+	stream.emit("connect");
+	assert.equal(JSON.parse(stream.written[0]).method, "events.subscribe");
+
+	assert.equal(stream.timeoutCallback, null, "the watch arms no socket timeout");
+	assert.equal(degraded.length, 0);
+	assert.equal(watcher.degraded(), false);
+	watcher.close();
+});
+
+test("an unrecognised frame for this pane is loud through onUnrecognised, not silent", () => {
+	const stream = Object.assign(new EventEmitter(), {
+		written: [],
+		write(line) {
+			this.written.push(line);
+		},
+		destroy() {},
+	});
+	const unrecognised = [];
+	const transitions = [];
+
+	const watcher = watchPane({
+		pane: "w1:p2",
+		socket: "/run/herdr.sock",
+		connect: () => stream,
+		onTransition: (transition) => transitions.push(transition),
+		onUnrecognised: (frame) => unrecognised.push(frame),
+		onDegraded: () => {},
+		timers: manualTimers().api,
+	});
+
+	stream.emit("connect");
+	stream.emit("data", '{"event":"pane.new_event","data":{"pane_id":"w1:p2","agent":"pi"}}\n');
+
+	assert.deepEqual(unrecognised, [{ pane: "w1:p2", event: "pane.new_event" }]);
+	assert.deepEqual(transitions, [], "an unknown event is not a transition");
 	watcher.close();
 });

@@ -107,6 +107,7 @@ test("the kind enumeration is §4.3's closed, dotted list", () => {
 			"journal.integrity-failed",
 			"observation.degraded",
 			"observation.recorded",
+			"observation.unrecognised",
 			"preflight.checked",
 			"projection.rebuilt",
 			"reconcile.concluded",
