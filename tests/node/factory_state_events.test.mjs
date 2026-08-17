@@ -97,6 +97,8 @@ test("the kind enumeration is §4.3's closed, dotted list", () => {
 			"attempt.ended",
 			"attempt.launched",
 			"attempt.rechecked",
+			"capacity.admitted",
+			"capacity.exhausted",
 			"capacity.granted",
 			"capacity.released",
 			"capacity.waiting",

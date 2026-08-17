@@ -1,4 +1,13 @@
 import { capacityModelSlot, capacityTicketSlot, isSuperseded } from "../state/leases.mjs";
+import {
+	classAvailability,
+	DEFAULT_EXHAUSTION_MEMO_MS,
+	EXHAUSTION_STATES,
+	exhaustionLedger,
+	INCONCLUSIVE_EXHAUSTION_MEMO_MS,
+	recordAdmission,
+	recordExhaustion,
+} from "./exhaustion.mjs";
 import { FactoryCapacityError } from "./errors.mjs";
 import { capacitySnapshot, describeSlot, laneKey } from "./report.mjs";
 
@@ -37,9 +46,13 @@ export const POOLS = Object.freeze({ ticket: "ticket", model: "model" });
  *   which is both the gate on issuing anything and the generation every row is
  *   fenced to
  * @param {() => number} [context.now]
+ * @param {((className: string, context: object) => Promise<{ verdict: string, evidence: object }>) | null} [context.probeClass]
+ *   #154's readmission probe: one cheap completion on the class, answering
+ *   `admitted`, `refused`, or `inconclusive`. Injected like §9.4's pane probe —
+ *   the pool owns the memo, the wiring owns the runtime
  * @returns {Readonly<object>} the pool
  */
-export function openCapacity(store, { leases, plan, run, hold, now = Date.now }) {
+export function openCapacity(store, { leases, plan, run, hold, now = Date.now, probeClass = null }) {
 	/**
 	 * Which lanes have already announced a block, per pool. §9.7 emits
 	 * `capacity.waiting` **once when a lane first blocks on a class, never per
@@ -271,6 +284,82 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now })
 		announced.delete(laneKey({ ticket, resourceClass }));
 	}
 
+	/**
+	 * #154: **the provider-exhaustion memo, as §9's capacity facet.**
+	 *
+	 * A class a provider refused for quota or rate reasons is unavailable until
+	 * the recorded expiry, and the refusal is remembered durably — on the
+	 * `controller` stream, so the next run consults what this one paid to learn.
+	 * Dispatch asks `settle` before it launches into a class; the saturation
+	 * surface reads the same ledger.
+	 */
+	const exhaustion = Object.freeze({
+		/** The memo records, resolved at `at` — the snapshot's and `settle`'s one derivation. */
+		ledger: ({ at = now() } = {}) => exhaustionLedger(store, { at }),
+
+		/** One class's availability at `at`: `available`, `exhausted`, or `probe-due`. */
+		stateOf: (className, { at = now() } = {}) =>
+			classAvailability(exhaustionLedger(store, { at }), className),
+
+		/** Record an observed refusal: the class is unavailable until `until`. */
+		record: (className, { until, at = now(), evidence = {} }) =>
+			recordExhaustion(hold, { class: className, until, at, evidence }),
+
+		/**
+		 * The dispatch gate for one class.
+		 *
+		 * A live memo blocks. An expiry that passed is **settled by probe, never
+		 * by the clock** (§5.2): the probe answers `admitted` — recorded, and the
+		 * class opens — or the memo is renewed from the probe's own verdict, a
+		 * refused refusal on the full window and an inconclusive read on the short
+		 * one. With no probe wired there is no answer, and the class stays blocked
+		 * saying what is missing — §12.4's alarm shape rather than a plausible zero.
+		 *
+		 * @param {string} className
+		 * @param {{ at?: number }} [options]
+		 * @returns {Promise<Readonly<{ state: "available" | "blocked", until: number | null, missing?: string }>>}
+		 */
+		async settle(className, { at = now() } = {}) {
+			const status = classAvailability(exhaustionLedger(store, { at }), className);
+			if (status === EXHAUSTION_STATES.available) {
+				return Object.freeze({ state: "available", until: null });
+			}
+			if (status === EXHAUSTION_STATES.exhausted) {
+				const entry = exhaustionLedger(store, { at }).find((memo) => memo.class === className);
+				return Object.freeze({ state: "blocked", until: entry.until });
+			}
+
+			// Probe-due: the expiry passed, and nothing but a probe may say the
+			// class is back (§5.2).
+			if (probeClass === null) {
+				return Object.freeze({
+					state: "blocked",
+					until: null,
+					missing: "the readmission probe that re-admits an expired exhaustion memo by probe, never by the clock (#154)",
+				});
+			}
+
+			const answer = await probeClass(className, { at });
+			if (answer.verdict === "admitted") {
+				recordAdmission(hold, { class: className, at, evidence: answer.evidence ?? {} });
+				return Object.freeze({ state: "available", until: null });
+			}
+
+			const window =
+				answer.verdict === "refused" ? DEFAULT_EXHAUSTION_MEMO_MS : INCONCLUSIVE_EXHAUSTION_MEMO_MS;
+			const until = at + window;
+			recordExhaustion(hold, { class: className, until, at, evidence: answer.evidence ?? {} });
+			return Object.freeze({ state: "blocked", until });
+		},
+
+		/**
+		 * Announce a lane blocking on the memo — §9.7's `capacity.waiting`, the
+		 * same record a full slot pool announces, because "this lane is blocked on
+		 * this class" is one fact however the class is blocked.
+		 */
+		wait: ({ ticket, resourceClass, at = now() }) => announceWait({ resourceClass, ticket, at }),
+	});
+
 	/** Every capacity row this store holds, decoded. */
 	function rows() {
 		return leases.list("capacity:");
@@ -290,6 +379,7 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now })
 		plan,
 		acquireLane,
 		acquireModel,
+		exhaustion,
 
 		/**
 		 * The rows occupying an index under a **dead generation** — the slots a

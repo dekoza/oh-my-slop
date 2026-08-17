@@ -371,3 +371,104 @@ test("a slot pool blocked by a previous controller's rows ends the loop rather t
 		["capacity:ticket:0"],
 	);
 });
+
+// ── The exhaustion memo gate (#154) ──────────────────────────────────────────
+
+test("a ticket whose class is exhausted is not claimed, while another class proceeds (#154)", async (t) => {
+	const { capacity } = await openPool(t, {
+		plan: plan({
+			ticketSlots: 2,
+			classes: [
+				{ class: "cloud", size: 1, profiles: ["cloud"] },
+				{ class: "local", size: 1, profiles: ["builder"] },
+			],
+			implementClasses: ["cloud", "local"],
+		}),
+	});
+	capacity.exhaustion.record("local", { until: T0 + 3_600_000, at: T0, evidence: {} });
+	const started = [];
+
+	const result = await schedule({
+		capacity,
+		frontier: frontierOf([7, 42]),
+		resourceClassOf: (member) => (member.ticket === 7 ? "local" : "cloud"),
+		execute: ({ ticket }) => {
+			started.push(ticket);
+			return { disposition: "published" };
+		},
+	});
+
+	assert.deepEqual(started, [42], "the exhausted class is not launched into again before its expiry");
+	assert.deepEqual(
+		result.exhausted.map((entry) => [entry.ticket, entry.class]),
+		[[7, "local"]],
+		"and the run says which ticket it could not spend, and why",
+	);
+});
+
+test("every claimable ticket exhausted and no lane running: the loop stops claiming, it does not spin (#154)", async (t) => {
+	const { capacity } = await openPool(t);
+	capacity.exhaustion.record("local", { until: T0 + 3_600_000, at: T0, evidence: {} });
+	const started = [];
+
+	const result = await schedule({
+		capacity,
+		frontier: frontierOf([7, 42]),
+		resourceClassOf: localClass,
+		execute: ({ ticket }) => {
+			started.push(ticket);
+			return { disposition: "published" };
+		},
+	});
+
+	assert.deepEqual(started, []);
+	assert.equal(result.lanes_run, 0);
+	assert.equal(result.exhausted.length, 2, "both claimable tickets were blocked by the memo, not claimed");
+});
+
+test("an expired memo is settled by the injected probe: admitted opens the class (#154, §5.2)", async (t) => {
+	const probed = [];
+	const { capacity } = await openPool(t, {
+		probeClass: async (className) => {
+			probed.push(className);
+			return { verdict: "admitted", evidence: { probe: "print" } };
+		},
+	});
+	capacity.exhaustion.record("local", { until: T0 - 1, at: T0 - 3_600_000, evidence: {} });
+	const started = [];
+
+	await schedule({
+		capacity,
+		frontier: frontierOf([7]),
+		resourceClassOf: localClass,
+		execute: ({ ticket }) => {
+			started.push(ticket);
+			return { disposition: "published" };
+		},
+	});
+
+	assert.deepEqual(probed, ["local"], "the expiry alone admitted nothing — the probe did");
+	assert.deepEqual(started, [7]);
+});
+
+test("an expired memo whose probe is refused again renews the block (#154)", async (t) => {
+	const { capacity } = await openPool(t, {
+		probeClass: async () => ({ verdict: "refused", evidence: { excerpt: "quota exceeded" } }),
+	});
+	capacity.exhaustion.record("local", { until: T0 - 1, at: T0 - 3_600_000, evidence: {} });
+	const started = [];
+
+	const result = await schedule({
+		capacity,
+		frontier: frontierOf([7]),
+		resourceClassOf: localClass,
+		execute: ({ ticket }) => {
+			started.push(ticket);
+			return { disposition: "published" };
+		},
+	});
+
+	assert.deepEqual(started, [], "the rediscovery the memo exists to prevent did not happen as a launch");
+	assert.equal(result.exhausted.length, 1);
+	assert.ok(result.exhausted[0].until > T0, "the renewed memo carries the probe's new expiry");
+});

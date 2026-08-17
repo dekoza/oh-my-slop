@@ -10,6 +10,7 @@ import {
 	CONTROLLER_EXIT_LEASE_LOST,
 	END_REASON_ABANDONED,
 	END_REASON_BASELINE_RED,
+	END_REASON_CAPACITY_EXHAUSTED,
 	END_REASON_CIRCUIT_BREAKER,
 	END_REASON_CONTROLLER_LOST,
 	END_REASON_DRAINED,
@@ -44,6 +45,7 @@ import { preflight } from "./preflight.mjs";
 import { createProductionPipeline } from "../pipeline/production.mjs";
 import { schedule } from "./scheduler.mjs";
 import { describeScope, PARENT_FLAG, parseScope } from "./scope.mjs";
+import { createReadmissionProbe } from "../worker/readmit.mjs";
 
 /**
  * `factory start` (§10.1, §10.3, §10.4).
@@ -366,16 +368,32 @@ async function driveRun(store, hold, context, signals) {
 		// §9.1's pools, opened once the run is green. The numbers are the config's
 		// own: the loop below is parametric in them and reads no ceiling constant,
 		// which is what makes raising the ceiling a one-line change in the loader.
+		const plan = capacityPlan({
+			concurrency: context.config.concurrency,
+			profiles: context.config.profiles,
+			activeRouting: context.activeRouting,
+		});
 		const capacity = openCapacity(store, {
 			leases: context.leases,
-			plan: capacityPlan({
-				concurrency: context.config.concurrency,
-				profiles: context.config.profiles,
-				activeRouting: context.activeRouting,
-			}),
+			plan,
 			run: entry.run,
 			hold,
 			now: context.now,
+			// #154: the memo's expiry is settled by probe, never by the clock (§5.2).
+			// The probe spends one cheap completion on the class under the worker
+			// binding; with no production context there is nothing to probe with,
+			// and the gate answers "blocked, missing the probe" rather than opening
+			// on an assumption.
+			probeClass:
+				checked.production === null
+					? null
+					: createReadmissionProbe({
+							plan,
+							profiles: context.config.profiles,
+							environment: checked.production.worker.environment,
+							repoRoot: context.repoRoot,
+							transport: context.workerTransports?.readmit ?? {},
+						}),
 		});
 
 		// §9.4: a slot a previous controller left held is settled **by probing its
@@ -426,7 +444,7 @@ async function driveRun(store, hold, context, signals) {
 		// cannot say "two consecutive automation failures" beside an end reason
 		// that disagrees.
 		const breaker = circuitBreaker(store, { run: entry.run, threshold: context.config.budgets.circuitBreaker });
-		const endReason = endReasonOf(checked, requests, breaker);
+		const endReason = endReasonOf(checked, requests, breaker, executed);
 		let execution = executionReport(store, entry.run, executed, executionContext);
 		if (endReason !== END_REASON_BASELINE_RED) {
 			execution = settleAtBoundary(store, hold, entry.run, {
@@ -730,7 +748,7 @@ function refuseExecution({ ticket }) {
  * on the report either way, so nothing about the machine's state is hidden by
  * the ordering.
  */
-function endReasonOf(checked, requests, breaker) {
+function endReasonOf(checked, requests, breaker, executed = null) {
 	if (!checked.ok) return END_REASON_BASELINE_RED;
 
 	// The latest request decides: an abandon supersedes the stop that preceded
@@ -740,6 +758,13 @@ function endReasonOf(checked, requests, breaker) {
 	if (latest !== null && latest.kind === "run.abandon-requested") return END_REASON_ABANDONED;
 	if (latest !== null && latest.kind === "run.stop-requested") return END_REASON_STOPPED_BY_OPERATOR;
 	if (breaker.tripped) return END_REASON_CIRCUIT_BREAKER;
+
+	// #154: claimable work the run could not spend, because every class it
+	// routes to is locked by §9's exhaustion memo. This outranks `drained` for
+	// the reason the breaker outranks it: a scope with work left on it is not
+	// done, and exiting 0 over it is §9.7's green-looking run that did nothing.
+	if ((executed?.exhausted?.length ?? 0) > 0) return END_REASON_CAPACITY_EXHAUSTED;
+
 	return END_REASON_DRAINED;
 }
 

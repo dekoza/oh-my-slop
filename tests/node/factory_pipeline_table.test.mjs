@@ -136,3 +136,13 @@ test("a pair the table does not map is a typed refusal, never a fallthrough (§8
 		},
 	);
 });
+
+test("provider-refused routes to a budgetless release, for a builder and for a reviewer (§8.10, #154)", () => {
+	for (const phase of ["implement", "review"]) {
+		const row = routeOutcome(phase, "provider-refused");
+		assert.equal(row.action, "dispose", `${phase}: the execution settles — a refused provider cannot be retried into`);
+		assert.equal(row.disposition, "released", `${phase}: the ticket goes back untouched; the provider failed it, not the work`);
+		assert.equal(row.budget, null, `${phase}: no budget is charged for the provider's fault`);
+		assert.equal(row.reasonClass, null, `${phase}: no reason class — released carries none (§8.9)`);
+	}
+});

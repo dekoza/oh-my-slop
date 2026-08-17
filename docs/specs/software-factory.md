@@ -253,7 +253,12 @@ Fields: `seq` · `event_id` (ULID) · `envelope_version` · `kind` + `payload_ve
   `reconcile.concluded` ·
   `controller.heartbeat` · `controller.lease-lost` · `projection.rebuilt` ·
   `journal.integrity-failed` · `stream.truncated` · `run.expired` · `capacity.granted` ·
-  `capacity.released` · `capacity.waiting`.
+  `capacity.released` · `capacity.waiting` · `capacity.exhausted` · `capacity.admitted`.
+
+  The last two are #154's exhaustion memo (§9.8): a class a provider refused for quota or rate
+  reasons is unavailable until the recorded expiry, and only a probe's admission re-opens it.
+  Both ride the `controller` stream with no run in the envelope — the memo outlives the run that
+  paid for it — and carry the observation they came from in the payload.
 - **The hash covers the whole envelope**: `hash = sha256(prev_hash ‖
   canonical_json(envelope_minus_hash))`, binding seq, event id, identity tuple, causal command
   id, payload digest, and both timestamps. Babysitter's checksum covered only
@@ -487,7 +492,7 @@ A global ranking always ends up asserting something the winning source does not 
 |---|---|
 | **Gitea** | ticket state, labels, assignee, PR existence — **not comment text** |
 | **Git remote, freshly fetched** | what was actually published: branch SHAs, whether a push landed |
-| **Herdr** | two facts: whether a worker process is alive right now, and the pane output it produced |
+| **Herdr** | three facts: whether a worker process is alive right now, the pane output it produced, and a provider refusal observed in that output (#154) |
 | **The attempt outbox** | what the worker *claimed* — evidence, never proof, of a phase outcome |
 | **The journal** | **intent only**; it never establishes an external fact |
 
@@ -701,7 +706,17 @@ wrote-but-hung, and invalid-result **distinct typed outcomes**.
 - `worker-failed` — classification plus explanation.
 
 **Controller-derived outcomes are never worker-writable:** `automation-failure` · `timeout` ·
-`invalid-result` · `no-result` · `dead-worker` · `wrote-but-hung` · `cancelled`.
+`invalid-result` · `no-result` · `dead-worker` · `wrote-but-hung` · `cancelled` ·
+`provider-refused`.
+
+**A provider refusal is its own typed outcome (#154).** A refusal for quota or rate reasons is
+observed in the pane output — a signature vocabulary read off the harnesses' own non-retryable
+limit classification, matched in the output's tail — and it overrides the three silence-based
+verdicts: `no-result`, the no-progress clock, and the hard ceiling all become `provider-refused`
+when the last visible output is a refusal. The outbox still wins, and a pane that died is
+`dead-worker` still. The refusal is recorded as its own `observation.recorded` fact
+(`provider.refusal`, source `herdr`), never inferred from elapsed time, and it becomes §9.8's
+time-boxed class memo rather than a charge against the worker's budget.
 
 **Every attempt has two finite clocks, and both have code-owned defaults.** The **hard
 ceiling** (`attemptTimeoutMs`) bounds the lane whatever the worker is doing; the **no-progress
@@ -1219,7 +1234,8 @@ this" a **checkable claim** rather than a policy statement.
 **Attempt outcome** (one worker run).
 Worker-writable: `completed` · `needs-human` · `worker-failed`.
 Controller-derived: `invalid-result` · `no-result` · `dead-worker` · `timeout` ·
-`wrote-but-hung` · `cancelled` · `automation-failure`.
+`wrote-but-hung` · `cancelled` · `automation-failure` · `provider-refused` (#154 — the
+provider's fault, so §8.10 charges no budget for it).
 
 **Phase results.**
 `harvest` → `passed` | `predicate-failed` ·
@@ -1306,6 +1322,7 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | implement | `wrote-but-hung` | harvest the valid outbox, stop the agent, record the anomaly | — |
 | implement | `dead-worker` | retry | automation |
 | implement | `automation-failure` | retry | automation |
+| implement | `provider-refused` | `released`, §9.8 memo recorded | — |
 | implement | `cancelled` | `released` | — |
 | harvest | `passed` | → verify | — |
 | harvest | `predicate-failed` (dirty tree / 0 commits) | repair | repair |
@@ -1319,6 +1336,7 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | review | `mutation-detected` | `failed` / `review-mutation`, **no retry** | — |
 | review | reviewer attempt `needs-human` | `paused` (worker reason class) | — |
 | review | reviewer attempt `wrote-but-hung` | take its verdict, record the anomaly | — |
+| review | reviewer attempt `provider-refused` | `released`, §9.8 memo recorded | — |
 | review | reviewer attempt `cancelled` | `released` | — |
 | review | reviewer attempt `worker-failed` · `invalid-result` · `no-result` · `dead-worker` · `timeout` · `automation-failure` | retry | automation |
 | integrate | `integrated` | `published` | — |
@@ -1549,6 +1567,45 @@ working or all of them are queued behind rico's single slot:
 - **No monitor amendment is needed** — the monitor is parallel-ready by construction and the
   `(run, ticket)` node already carries multiple live ticket executions.
 
+### 9.8 Provider exhaustion — a time-boxed capacity state (#154)
+
+A provider that refuses for quota or rate reasons is a typed fault of its own, and the refusal is
+remembered with an expiry. Before this, the worker started, was refused, wrote no outbox, and §6.6
+recorded `timeout` or `no-result` — charging the **worker's** repair budget for the **provider's**
+refusal and ending with a `factory:failed` label a human had to clear; the next ticket routed to the
+same class rediscovered the same refusal, spending a launch and an attempt window each time.
+
+**Detection (§6.6).** The refusal is an observed fact, never an inference from elapsed time: the
+pane output is matched against a signature vocabulary read off the harnesses' own non-retryable
+limit classification (quota, rate-limit, usage-limit, available-balance wording — transient faults
+deliberately absent), matched in the output's tail. It is recorded as its own `observation.recorded`
+fact (`provider.refusal`, source `herdr`, §5.2) and becomes the attempt outcome `provider-refused`,
+which overrides the three silence-based verdicts — `no-result`, the no-progress clock, and the hard
+ceiling — when the last visible output is a refusal. A valid outbox still wins, and a pane that died
+is `dead-worker` still.
+
+**The memo belongs to capacity, not to routing.** It is recorded as an unavailability of the
+**resource class**, not a routing preference: an observed fact belongs in the journal, never in the
+config file. Two events, both on the `controller` stream with no run in the envelope, because the cap
+belongs to the provider and outlives any one run: `capacity.exhausted` (the class is unavailable
+until `until`, with the observation in the payload) and `capacity.admitted` (a probe re-admitted it).
+The latest record per class decides, and §9.7's saturation surface carries the memo per class.
+
+**Dispatch consults the memo.** A lane is not launched into an exhausted class before its expiry —
+the scheduler gates each candidate on it before the §9.4 acquisition, and an in-pipeline attempt
+waits on it rather than rediscovering the refusal. **An expiry that has passed re-admits the class
+by probe, never by assumption** (§5.2): one cheap completion on the class under the worker binding
+(#160's rule) answers `admitted`, `refused`, or `inconclusive`. Only an admission clears the memo; a
+refusal renews it for the full window, and an inconclusive read holds the class on a short window
+rather than opening it on nothing observed.
+
+**§8.10 charges no budget for it.** `provider-refused` routes to a budgetless `released` for a
+builder and for a reviewer alike: the ticket goes back to the frontier untouched — no label — and the
+memo is what keeps the next claim out of the exhausted class. A run whose every routable class is
+memo-locked ends `capacity-exhausted` (exit 9), saying so plainly in a classified per-member report
+rather than draining as though the work were done (§9.7's green-looking run that did nothing). The
+memo is the input #155's rerouting consumes; nothing here chooses a different profile.
+
 ---
 
 ## 10. Controller lifecycle and the operator surface
@@ -1610,11 +1667,11 @@ repo is itself the trust act**; no replacement gate is introduced.
 
 **Lifecycle:** `preflight` · `running` · `draining` · `ended`.
 
-**Run outcomes: six run end reasons plus one controller exit outcome.** Every ended run
-carries a mandatory `end_reason` drawn from the six; `lease-lost` is the seventh row of the
+**Run outcomes: seven run end reasons plus one controller exit outcome.** Every ended run
+carries a mandatory `end_reason` drawn from the seven; `lease-lost` is the eighth row of the
 published table because it is a real exit code a caller can receive, but it is the controller
 *process's* own exit outcome and never a run's recorded `end_reason` — the run it leaves
-behind is open. One table publishes all seven rows so a script reading it finds every code:
+behind is open. One table publishes all eight rows so a script reading it finds every code:
 
 | Outcome | Exit code | Meaning |
 |---|---|---|
@@ -1623,11 +1680,15 @@ behind is open. One table publishes all seven rows so a script reading it finds 
 | `stopped-by-operator` | **3** | a `stop` request was honoured at a ticket boundary; in-flight lanes finished |
 | `abandoned` | **4** | a second `stop` or `SIGTERM`; in-flight lanes `released`, panes left alive |
 | `circuit-breaker` | **5** | N consecutive automation failures in terminal-commit order |
+| `capacity-exhausted` | **9** | every routable resource class is §9.8's memo-locked; claimable work the run cannot spend — not a drained scope |
 | `lease-lost` | **6** | **controller exit outcome, not a run end reason**: the controller process lost its lease and exited without reacquiring; the stale process leaves the run open rather than self-authoring an unfenced `run.ended`, so this row is **only** an exit code and never a run's recorded `end_reason` |
 | `controller-lost` | **— (none)** | **asserted only by a different controller or the monitor**, never self-asserted, so it can have no exit code |
 
 Exit code **1 is reserved for usage and config-load failure** — those happen *before* a run
-exists and therefore have no end reason.
+exists and therefore have no end reason. Codes **7** and **8** are verb-level markers for a
+command that never reached a run (`not-implemented`, `refused`), deliberately outside the
+end-reason range so no caller reads one as a run outcome — which is why `capacity-exhausted`
+sits at **9** (#154).
 
 > **This table and the `--json` `schema_version` are published contract, not configuration.**
 > Callers' error handling depends on them, so a config knob would let a config file silently
@@ -2176,7 +2237,8 @@ members), on these grounds:
 **This is additive to the monitor's locked enum**, so the monitor specification is amended in
 place under its §12 protocol rather than reopened.
 
-**Refined by #97's corrections:** the published table keeps its seven rows, but the union is no
+**Refined by #97's corrections:** the published table keeps its eight rows (seven run end
+reasons — #154 added `capacity-exhausted` — plus the controller exit outcome), but the union is no
 longer called an end-reason enum — that name made "mandatory, drawn from the enum" and "never a
 recorded `end_reason`" true of the same collection. §10.3 now distinguishes the **six run end
 reasons** from the **one controller exit outcome**, `lease-lost`, and the vocabulary carries
@@ -2505,3 +2567,4 @@ touching everything twice.
 | 2026-08-17 | #151 makes an **unharvested attempt's branch evidence on its disposition**. §8.10 harvests what an outbox claims; an attempt that never wrote one has still created a branch, and §7.7 makes that branch the only copy of the work on it — so on #114 a complete implementation was recoverable only because an operator read the factory-private clone by hand. §8.9's block gains a fourth element: every attempt of the ticket execution, with its branch, the head **git answers now** (§5.2 — never the outbox's claim nor the mint's record), and its commit count against **its own** base (§7.4). It is read for every disposition and every attempt outcome rather than for the endings that harvest nothing, because a list of which outcomes those are is a list somebody extends without extending — and the failure that permits is the silent one, "nothing was built" reported over work sitting on a branch. Every answer the read can get stays distinguishable and none is spelled as the absence of another (§11.2): commits, no commits, no branch, no answer from git, and no base recorded to count against, with **the attempts not listable** and **no read at all** distinct from all five. The read rides the comment and **not the digested intent** — every other field of the block is a function of durable state, and digesting a branch head would make a §10.4 re-entry that read a moved head a §4.5 payload conflict instead of the comment already posted; the one ending that therefore carries nothing is §9.6's abandon boundary, which writes no comment at all (#159). The **remote is deliberately not consulted** — §7.7 makes an attempt branch absent from it by construction, so an `ls-remote` would answer "absent" for exactly the attempts the read exists for, and §5.4 already names `git-local` for this. The read never throws: a settlement lost to a failed evidence read leaves the ticket claimed with nothing on it, which is the one state §8.9 has no word for. §7.7 and §8.9 corrected in place. | #151 |
 | 2026-08-17 | #160 restores §6.2's probe to proving the session workers actually run. Both runtime adapters passed the skill-delivery flags to the **probe** and not to the **worker session**: every Claude worker launched without the §6.3 plugin (`plugin list` under the live worker binding: "No plugins installed"), every pi worker without the pinned roots — and pi's default discovery, which the probe's `--no-skills` suppressed, loaded four of the operator's personal skills from `~/.agents/skills`, a root `PI_CODING_AGENT_DIR` does not fence, inverting both §6.8 guarantees at once. §6.2 gains the composed-binding rule: the worker session's argument set is the primary object, the probe's is that set plus its probe-only IO flags and nothing else, held by a test at the launch seam (worker argv = probed argv − probe-only flags + profile flags). §6.8 records the measured discovery leak and makes `--no-skills --skill <root>` load-bearing isolation on every pi worker session. A launch whose closure cannot reach the session — no proven plugin directory, no pinned skills roots, a plugin cache wiped since preflight — is a typed automation failure before the attempt spends. §6.7's acceptance matrix (#115) is untouched by construction but noted: anything it proves must run the worker binding. | #160 |
 | 2026-08-17 | #161 corrects §7.5's replay boundary. The rebase used the attempt's **own** base (§7.3) as its upstream, and a repair's own base is the prior attempt's tip (§8.5) — so a repair's replay set excluded the implement commit it builds on. The lucky outcome was #114's rebase conflict over sound, already-verified work: the repair edited a file the implement commit created, which does not exist at the fresh tip. The dangerous one was a repair touching only files the implement did not create, which replays **cleanly** and yields a branch carrying the repair without the work it repairs — verified, attested and published, since §14.13 measures the commit being published and attestation compares heads, and both are satisfied by a branch that quietly lost a commit. §7.5's upstream is now **the fresh tip itself**, so the replay set is every commit the ticket execution produced that is not already on the base branch, whatever attempt chain produced it; whether the base moved is read off the graph — is the branch already sitting on the fresh tip — never off a recorded base, which a §9.5 re-rebase has already made stale once; and a rebase whose result carries fewer non-base commits than its input is refused as a typed `rebase-dropped-commits` failure and never adopted — the guard that makes the silent case impossible rather than unlikely (§11.2), whatever the drop's mechanism, including git dropping a commit whose patch a human already cherry-picked upstream. §7.3 separates the two meanings the one value conflated: what an attempt branched from and the boundary of what §7.5 replays coincide only for a single-attempt execution, and neither is inferred from the other. §7.3 and §7.5 corrected in place. | #161 |
+| 2026-08-17 | #154 makes **provider exhaustion a typed fault with a time-boxed memo**. §6.6 gains the `provider-refused` outcome: a refusal for quota or rate reasons is observed in the pane output — a signature vocabulary read off the harnesses' own non-retryable limit classification, matched in the output's tail — recorded as its own `observation.recorded` fact (`provider.refusal`, §5.2's herdr row widened to three facts), and overriding the three silence-based verdicts (`no-result`, the no-progress clock, the hard ceiling); a valid outbox still wins and a dead pane is `dead-worker` still. §9 gains **§9.8**: the refusal is remembered as a `capacity.exhausted` memo naming the resource class and an expiry, on the `controller` stream with no run in the envelope so it outlives its author; dispatch consults it before launch, and **an expiry re-admits by probe, never by the clock** — one cheap completion under the worker binding answers `admitted`/`refused`/`inconclusive`, and only an admission writes `capacity.admitted`. §8.10 gains two budgetless `released` rows (builder and reviewer) — before this, the same refusal arrived as a repair-charged `no-result` with a `factory:failed` label — and §10.3 gains the `capacity-exhausted` end reason (exit 9), so a run whose routable classes are all memo-locked says so plainly in the §3.5 report instead of draining as though the work were done. §4.3's kind enumeration gains the two memo kinds. Rerouting that consumes the memo is #155; nothing here chooses a different profile. | #154 |

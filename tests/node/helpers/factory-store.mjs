@@ -340,7 +340,7 @@ export function capacityPlanOf({
  * @param {import("node:test").TestContext} t
  * @param {{ plan?: object, now?: () => number }} [options]
  */
-export async function openCapacityPool(t, { plan = capacityPlanOf(), now = () => FIXED_NOW } = {}) {
+export async function openCapacityPool(t, { plan = capacityPlanOf(), now = () => FIXED_NOW, probeClass = null } = {}) {
 	const store = await openTestStore(t);
 	const timers = manualTimers();
 	const leases = openLeases(store, { now });
@@ -351,7 +351,7 @@ export async function openCapacityPool(t, { plan = capacityPlanOf(), now = () =>
 	hold.recordStartupReconcile();
 	hold.adopt(run);
 
-	return { store, run, hold, leases, capacity: openCapacity(store, { leases, plan, run, hold, now }) };
+	return { store, run, hold, leases, capacity: openCapacity(store, { leases, plan, run, hold, now, probeClass }) };
 }
 
 /**

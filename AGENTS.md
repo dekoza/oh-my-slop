@@ -104,7 +104,8 @@ is the authority; cite the section a change answers to.
   no runtime parse and no automated agreement check — that would need the parser §8.2 ruled
   out. Thereafter this document and `checks` are kept in step by hand.
 - Exit code `1` means usage or config-load failure and nothing else; `0` and `2`–`6`
-  belong to the run end-reason table.
+  and `9` belong to the run end-reason table (`9` is #154's `capacity-exhausted`;
+  `7` and `8` are verb-level markers that exist before any run does).
 - Defaults exist only in `factory/lib/config/defaults.mjs` (`budgets`, `retention`),
   where an upstream decision already fixed the value. Everywhere else absence refuses —
   a policy the loader fills in is a policy nobody can read on disk. The one thing that
@@ -138,6 +139,21 @@ is the authority; cite the section a change answers to.
   derivation of §9.7's numbers, so `status`, `doctor`, and a live run cannot disagree
   about saturation; `held` is the rows and `waiting` is a walk over the journal, never a
   second tally.
+- **Provider exhaustion is a time-boxed capacity state, not a routing preference**
+  (#154, §9.8). A provider refusal for quota or rate reasons is observed in the pane
+  output (`matchRefusal` in `factory/lib/capacity/exhaustion.mjs` — the signature set is
+  the harnesses' own non-retryable limit wording, matched in the tail, transient faults
+  deliberately absent) and typed as `provider-refused`, overriding the three
+  silence-based verdicts while a valid outbox still wins. The refusal becomes a
+  `capacity.exhausted` memo naming the **resource class** and an expiry, on the
+  `controller` stream with no run in the envelope so it outlives its author; dispatch
+  gates on it before launch (scheduler and the in-pipeline model-slot wait alike), and
+  **an expiry re-admits by probe, never by the clock** — `worker/readmit.mjs` spends one
+  cheap completion under the worker binding and answers
+  `admitted`/`refused`/`inconclusive`, and only an admission writes `capacity.admitted`.
+  §8.10 charges no budget for it (budgetless `released`, builder and reviewer), and a run
+  whose routable classes are all memo-locked ends `capacity-exhausted` (exit 9) rather
+  than draining. Rerouting that consumes the memo is #155.
 - The scheduler (`factory/lib/controller/scheduler.mjs`) is §9.6's loop and nothing
   more: **no queue object, no ready-queue, no aging, no priority.** It re-reads the
   frontier at every scheduling decision, takes the lowest-numbered claimable ticket,

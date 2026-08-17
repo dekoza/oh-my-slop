@@ -60,7 +60,7 @@ test("status prints the declared ceiling, the effective concurrency, and per cla
 	assert.equal(value.report.capacity.declared_ceiling, 1);
 	assert.equal(value.report.capacity.effective_concurrency, 1);
 	assert.deepEqual(value.report.capacity.classes, [
-		{ class: "local", size: 1, held: 0, waiting: 0, superseded: 0 },
+		{ class: "local", size: 1, held: 0, waiting: 0, superseded: 0, exhaustion: null },
 	]);
 });
 

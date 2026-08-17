@@ -129,6 +129,15 @@ export const EVENT_KINDS = Object.freeze({
 	"capacity.granted": { payloadVersion: 1, visibility: "detail" },
 	"capacity.released": { payloadVersion: 1, visibility: "detail" },
 	"capacity.waiting": { payloadVersion: 1, visibility: "detail" },
+	// #154: §9's time-boxed provider-exhaustion memo. A class a provider refused
+	// for quota or rate reasons is unavailable until the recorded expiry, and the
+	// pair is the state: an exhaustion whose expiry passed is re-admitted **only**
+	// by a probe's admission record, never by the clock (§5.2). Both ride the
+	// `controller` stream with no run in the envelope — the memo outlives the run
+	// that observed the refusal and is consulted by the next one — with the
+	// observation it came from carried in the payload.
+	"capacity.exhausted": { payloadVersion: 1, visibility: "operator" },
+	"capacity.admitted": { payloadVersion: 1, visibility: "operator" },
 });
 
 /**

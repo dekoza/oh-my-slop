@@ -1,6 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 
 import { FactoryCapacityError } from "../capacity/errors.mjs";
+import { DEFAULT_EXHAUSTION_MEMO_MS } from "../capacity/exhaustion.mjs";
 import { resourceClassOf } from "../config/profiles.mjs";
 import { PHASE_IMPLEMENT } from "../domain/vocabulary.mjs";
 import { createAttemptWorktree } from "../git/attempt.mjs";
@@ -259,13 +260,46 @@ async function review(context, { run, ticket, attempt }) {
 
 async function runWorker(context, { identity, opened, repair, review }) {
 	const ended = endedAttempt(context.store, identity.run, identity.attempt);
-	if (ended !== null) return outcomeFromEnd(ended);
+	const result = ended !== null ? outcomeFromEnd(ended) : await launched(context, { identity, opened, repair, review });
 
+	// #154: the refusal the wait observed becomes §9's memo the moment the
+	// attempt ends on it — before the walk routes, before the scheduler asks
+	// about the class again. The class, not the ticket or the attempt, is what
+	// is unavailable, and the memo rides the controller stream so the next run
+	// consults what this one paid to learn. **A re-entry finds the ending and
+	// guarantees the memo beside it**: a controller that died between the two
+	// records must not leave the class unprotected, so the check is "does this
+	// attempt's memo exist" rather than "did this call just record it".
+	if (result.outcome === "provider-refused") {
+		const profile = namedProfile(context.config.profiles, opened.profile);
+		const className = resourceClassOf(profile);
+		const recorded = context.store
+			.readEvents({ kind: "capacity.exhausted" })
+			.some((event) => event.payload.evidence?.attempt === identity.attempt);
+		if (!recorded) {
+			const at = context.now();
+			context.capacity.exhaustion.record(className, {
+				until: at + DEFAULT_EXHAUSTION_MEMO_MS,
+				at,
+				evidence: {
+					run: identity.run,
+					ticket: identity.ticket,
+					attempt: identity.attempt,
+					signatures: result.refusal?.signatures ?? [],
+					excerpt: result.refusal?.excerpt ?? null,
+				},
+			});
+		}
+	}
+
+	return result;
+}
+
+async function launched(context, { identity, opened, repair, review }) {
 	const role = roleFor(context.worker.roles, opened.role);
 	const profile = namedProfile(context.config.profiles, opened.profile);
 	const adapter = context.adapters[profile.kind];
-	const binding = context.worker.environment.binding({ kind: profile.kind, posture: postureOf(role) });
-	const common = {
+	const binding = context.worker.environment.binding({ kind: profile.kind, posture: postureOf(role) });	const common = {
 		store: context.store,
 		hold: context.hold,
 		identity,
@@ -297,14 +331,14 @@ async function runWorker(context, { identity, opened, repair, review }) {
 
 	try {
 		const correlated = correlatedAttempt(context.store, identity.run, identity.attempt);
-		const launched =
+		const launchedPane =
 			correlated === null
 				? await adapter.launch({ ...common, plugin: pluginName(context.worker.runtimes[profile.kind]) })
 				: {
 						pane: correlated.payload.herdr.pane,
 						agent: correlated.payload.herdr.agent,
 					};
-		return await adapter.awaitCompletion({ ...common, ...launched });
+		return await adapter.awaitCompletion({ ...common, ...launchedPane });
 	} catch (error) {
 		if (!(error instanceof FactoryWorkerError)) throw error;
 		return Object.freeze({
@@ -321,6 +355,23 @@ async function withAttemptModelSlot(context, opened, attempt, work) {
 		const profile = namedProfile(context.config.profiles, opened.profile);
 		const className = resourceClassOf(profile);
 		while (slot === null) {
+			// #154: an exhausted class is not launched into again before its
+			// expiry, and the expiry is settled by probe, never by the clock —
+			// so an in-pipeline attempt waits here rather than rediscovering the
+			// refusal the previous attempt already paid for. The wait announces
+			// itself like a slot wait: "this lane is blocked on this class" is
+			// one fact however the class is blocked (§9.7).
+			const gate = await context.capacity.exhaustion.settle(className, { at: context.now() });
+			if (gate.state === "blocked") {
+				context.capacity.exhaustion.wait({
+					ticket: context.ticketSnapshot.number,
+					resourceClass: className,
+					at: context.now(),
+				});
+				const remaining = gate.until === null ? 15_000 : gate.until - context.now();
+				await delay(Math.max(250, Math.min(15_000, remaining)));
+				continue;
+			}
 			slot = context.capacity.acquireModel({
 				ticket: context.ticketSnapshot.number,
 				resourceClass: className,
@@ -442,7 +493,7 @@ function endedAttempt(store, run, attempt) {
 }
 
 function outcomeFromEnd(event) {
-	return Object.freeze({ outcome: event.payload.outcome, record: event.payload.result });
+	return Object.freeze({ outcome: event.payload.outcome, record: event.payload.result, refusal: event.payload.refusal ?? null });
 }
 
 function roleFor(roles, name) {

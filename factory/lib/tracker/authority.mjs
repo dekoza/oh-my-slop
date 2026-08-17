@@ -87,13 +87,16 @@ export const AUTHORITY_TABLE = Object.freeze([
 	Object.freeze({
 		source: "herdr",
 		strength: FACT_STRENGTHS.proof,
-		// Two facts, and §5.2 says so outright: Herdr exposes no exit code
+		// Three facts, and §5.2 says so outright: Herdr exposes no exit code
 		// anywhere in its API schema, so it can never say *how* something ended.
-		// What it can establish is whether a worker is alive right now, and what
-		// output that worker has put on the pane's terminal — the two observations
-		// that feed §6.6's progress clock (#150).
-		authoritativeFor: Object.freeze(["worker.alive", "worker.output"]),
-		note: "whether a worker process is alive right now, and the pane output it produced",
+		// What it can establish is whether a worker is alive right now, what
+		// output that worker has put on the pane's terminal — the two
+		// observations that feed §6.6's progress clock (#150) — and, read off
+		// that same output, a provider's refusal for quota or rate reasons
+		// (#154): the pane is where the refusal becomes visible, so the pane is
+		// the source that owns it.
+		authoritativeFor: Object.freeze(["worker.alive", "worker.output", "provider.refusal"]),
+		note: "whether a worker process is alive right now, the pane output it produced, and a provider refusal observed in that output",
 	}),
 	Object.freeze({
 		source: "outbox",

@@ -80,6 +80,14 @@ export async function schedule({
 	const refused = [];
 	const released = [];
 	/**
+	 * The tickets a memo blocked at the loop's last scheduling decision (#154),
+	 * and the class that blocked each. Claimable on the tracker and unspendable
+	 * by this run — the pair the end reason and the drain report are built from,
+	 * so a run stopped by an exhausted class says so plainly instead of draining
+	 * as though the work were done.
+	 */
+	let exhaustedAtDecision = [];
+	/**
 	 * The frontier as of the last scheduling decision this loop made. §3.5's drain
 	 * report is a statement about *that* instant, and re-reading the tracker after
 	 * the loop to build it would report a different one.
@@ -146,7 +154,15 @@ export async function schedule({
 		// before either claiming another ticket or waiting on a lane: abandon is a
 		// request to stop waiting, and the boundary settlement records `released`.
 		if (abandoning()) break;
-		const candidate = nextClaimable(view, {
+
+		/**
+		 * Tickets this pass could not spend because their class is memo-blocked
+		 * (#154). Per-pass rather than permanent: a memo expires and a probe
+		 * re-admits, so a blocked ticket is merely unclaimable *now* — nothing
+		 * like §11.5's routing refusal, which the run remembers for good.
+		 */
+		const memoBlocked = new Map();
+		let candidate = nextClaimable(view, {
 			running: lanes.keys(),
 			// §2.1: a run has **one** ticket execution per ticket, so a ticket this
 			// run already executed is not a candidate again — whatever the tracker
@@ -154,27 +170,63 @@ export async function schedule({
 			// frontier, and this is the identity rule that holds while they land.
 			executed: [...settled, ...released].map((lane) => lane.ticket),
 			refused: refused.map((entry) => entry.ticket),
+			blocked: memoBlocked.keys(),
 		});
+
+		// Walk past candidates whose class the memo gates, lowest number first,
+		// without re-reading the frontier per step: one view, one pass.
+		let resourceClass = null;
+		while (candidate !== null) {
+			try {
+				resourceClass = resourceClassOf(candidate);
+			} catch (error) {
+				if (!(error instanceof FactoryCapacityError)) throw error;
+				// §11.5's ticket-scoped conflict, raised **before any work**: the ticket
+				// is not claimed, and it is remembered as refused so the loop does not
+				// meet it again on the next poll and spin.
+				refused.push(
+					Object.freeze({ ticket: candidate.ticket, reason: error.reason, message: error.message, ...error.details }),
+				);
+				candidate = nextClaimable(view, {
+					running: lanes.keys(),
+					executed: [...settled, ...released].map((lane) => lane.ticket),
+					refused: refused.map((entry) => entry.ticket),
+					blocked: memoBlocked.keys(),
+				});
+				continue;
+			}
+
+			// #154: the dispatch gate. A live memo blocks the launch; an expiry is
+			// settled by probe right here, before any claim — which is how a class
+			// is re-admitted by probe and never by assumption (§5.2), and how the
+			// rediscovery every ticket used to pay for stops happening.
+			const gate =
+				capacity.exhaustion === undefined
+					? Object.freeze({ state: "available", until: null })
+					: await capacity.exhaustion.settle(resourceClass, { at: at() });
+			if (gate.state === "blocked") {
+				memoBlocked.set(
+					candidate.ticket,
+					Object.freeze({ ticket: candidate.ticket, class: resourceClass, until: gate.until ?? null }),
+				);
+				candidate = nextClaimable(view, {
+					running: lanes.keys(),
+					executed: [...settled, ...released].map((lane) => lane.ticket),
+					refused: refused.map((entry) => entry.ticket),
+					blocked: memoBlocked.keys(),
+				});
+				continue;
+			}
+
+			break;
+		}
 
 		if (candidate === null) {
 			// Nothing claimable now. With lanes running, one terminating may change
 			// that; with none, the scope is drained as far as this loop can take it.
+			exhaustedAtDecision = [...memoBlocked.values()];
 			if (lanes.size === 0) break;
 			await awaitOne();
-			continue;
-		}
-
-		let resourceClass;
-		try {
-			resourceClass = resourceClassOf(candidate);
-		} catch (error) {
-			if (!(error instanceof FactoryCapacityError)) throw error;
-			// §11.5's ticket-scoped conflict, raised **before any work**: the ticket
-			// is not claimed, and it is remembered as refused so the loop does not
-			// meet it again on the next poll and spin.
-			refused.push(
-				Object.freeze({ ticket: candidate.ticket, reason: error.reason, message: error.message, ...error.details }),
-			);
 			continue;
 		}
 
@@ -182,6 +234,7 @@ export async function schedule({
 		// **together, before the claim**. A null answer is the backpressure.
 		const slots = capacity.acquireLane({ ticket: candidate.ticket, resourceClass, at: at() });
 		if (slots === null) {
+			exhaustedAtDecision = [...memoBlocked.values()];
 			if (lanes.size === 0) break;
 			await awaitOne();
 			continue;
@@ -218,6 +271,12 @@ export async function schedule({
 		lanes_run: settled.length + released.length,
 		lanes: Object.freeze(lanesRun),
 		refused: Object.freeze(refused),
+		/**
+		 * #154: the claimable tickets the exhaustion memo held at the loop's last
+		 * decision — the fact a `capacity-exhausted` end reason and the drain
+		 * report are made of. Empty when nothing was blocked.
+		 */
+		exhausted: Object.freeze(exhaustedAtDecision),
 		released: released.length,
 		/** Slots a previous controller left held; §9.4 settles them by probe. */
 		blocked: capacity.blocked(),
@@ -230,9 +289,13 @@ export async function schedule({
  * The lowest-numbered claimable ticket this run has not already taken. §3.2's
  * order is the frontier's own, so this is a scan rather than a sort: re-ordering
  * it here would be the priority mechanism §9.6 refuses.
+ *
+ * `blocked` is #154's per-pass set: tickets a memo is holding. They are
+ * skipped, never refused — the memo expires and a probe re-admits, so the same
+ * ticket is claimable at a later decision.
  */
-function nextClaimable(view, { running, executed, refused }) {
-	const skip = new Set([...running, ...executed, ...refused]);
+function nextClaimable(view, { running, executed, refused, blocked = [] }) {
+	const skip = new Set([...running, ...executed, ...refused, ...blocked]);
 	const ticket = view.claimable.find((candidate) => !skip.has(candidate));
 	if (ticket === undefined) return null;
 
