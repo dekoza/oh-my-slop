@@ -332,12 +332,19 @@ is the authority; cite the section a change answers to.
   whole binding — env, flags, settings file — comes from it, including the preflight probes':
   a probe run under the operator's config proves a world no worker will ever see. Three closed
   lists cross in and nothing else: **capability artifacts** (credentials, the model
-  catalogue), the **declared worker-context file** (§6.8's second migration channel, installed
-  as each runtime's user-memory file and hash-recorded in the run manifest), and **declared pi
-  extensions**. Isolation is what makes that last one necessary and is worth knowing before
-  you delete it: the `local` resource class's models come from an operator extension, so an
-  empty agent directory silently removes the class — and §6.5's transcript pointer with it.
-  Promotion is declared and recorded; live inheritance is never a channel.
+  catalogue, and §6.5's **agent-state integration** — the herdr-managed hook (Claude) and
+  extension (pi) that push the transcript pointer, copied into the run's roots, digested, and
+  version-observed out of the file's own `HERDR_INTEGRATION_*` header rather than assumed),
+  the **declared worker-context file** (§6.8's second migration channel, installed as each
+  runtime's user-memory file and hash-recorded in the run manifest), and **declared pi
+  extensions**. Isolation is what makes the capability lists necessary and is worth knowing
+  before you delete them: the `local` resource class's models come from an operator
+  extension, so an empty agent directory silently removes the class — and the pointer's
+  integration with it. **`worker-agent-state` is the red that keeps that loss named**
+  (`worker/preflight.mjs`): missing, unversioned, mis-identified, or outdated is a named red
+  ending the run `baseline-red` before the first claim, per runtime the active routing can
+  dispatch to — so `no-transcript-pointer` is an anomaly, never 15/15 nulls. Promotion is
+  declared and recorded; live inheritance is never a channel.
 - **Permissions derive from the role's posture, never from a profile** (§6.8, §11.4).
   `worker/permissions.mjs` is the one home for the deny floor (`git push`, `tea`, `gh`, in
   every spelling the matcher accepts), the builder binding (`dontAsk` + broad tool-family

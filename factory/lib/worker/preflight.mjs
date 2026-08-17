@@ -4,7 +4,7 @@ import { CLAUDE_RESOURCE_CLASS, resourceClassOf } from "../config/profiles.mjs";
 import { privateClonePath, worktreesRoot } from "../git/isolation.mjs";
 import { createClaudeAdapter } from "./claude.mjs";
 import { readSkillInventory, skillClosure, validateClosureReferences } from "./closure.mjs";
-import { prepareWorkerEnvironment } from "./environment.mjs";
+import { AGENT_STATE_INTEGRATION, prepareWorkerEnvironment } from "./environment.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
 import { DENY_FLOOR, NO_MID_ATTEMPT_APPROVALS, PI_GATING_CAVEAT, WORKER_POSTURES } from "./permissions.mjs";
 import { createPiAdapter } from "./pi.mjs";
@@ -28,6 +28,11 @@ import { claudeTrustDecision, piTrustDecision, readClaudeConfigState, readPiTrus
  * - **`skill-closure`** — the §6.1 roles the active routing puts in play, each
  *   closed over `requires:` frontmatter from the pinned revision, with §6.8's
  *   conflict predicate and reference validation.
+ * - **`worker-agent-state`** — §6.5's agent-state integration, the capability
+ *   that pushes the transcript pointer, observed out of the environment the
+ *   workers get: present, identifiable, and current, per runtime in play. A
+ *   run that could not carry the pointer ends red here, named — not with a
+ *   silent `null` on every `attempt.correlated` (§6.5, §6.8).
  *
  * Then, in the probe section:
  *
@@ -58,8 +63,8 @@ import { claudeTrustDecision, piTrustDecision, readClaudeConfigState, readPiTrus
  * @param {{ pi?: object, claude?: object }} [input.transports] per-runtime IO
  *   overrides, so a test drives every verdict without a harness on the machine
  * @returns {{ isolationCheck: () => object, permissionsCheck: () => object,
- *   trustCheck: () => object, closureCheck: () => object, runtimeCheck: () => Promise<object>,
- *   productionContext: () => object | null }}
+ *   trustCheck: () => object, closureCheck: () => object, agentStateCheck: () => object,
+ *   runtimeCheck: () => Promise<object>, productionContext: () => object | null }}
  */
 export function createWorkerPreflight({ handshake, config, activeRouting, cacheRoot, repoRoot, env = {}, transports = {} }) {
 	let computed = null;
@@ -292,6 +297,120 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 					state.roles.map((role) => `${role.name} (${role.closure.length} skills)`).join(", ") +
 					".",
 				detail: { revision: handshake.tree.digest, roles: reportedRoles(state.roles) },
+			});
+		},
+
+		/**
+		 * §6.5's transcript pointer, promoted rather than inherited (§6.8): the
+		 * herdr-managed integration that pushes it, observed out of the operator's
+		 * config root the environment read it from. The environment only records
+		 * facts — installed, digest, version — and this check is where those facts
+		 * become a verdict: a missing, unidentifiable, unversioned, or outdated
+		 * integration is a named red, because the pointer has no other channel and
+		 * every attempt of that runtime would otherwise correlate with
+		 * `transcript: null`, which is the plausible zero §6.5 says to refuse.
+		 *
+		 * The gate is per runtime the **active routing** can dispatch to — not per
+		 * runtime the host has installed — for the same reason the permissions
+		 * check's caveat is: a verdict about this run, not a survey of the host.
+		 * And the version is **observed** out of the file's own header and compared
+		 * against the one in `AGENT_STATE_INTEGRATION` — the number the factory is
+		 * written against — so a file herdr left outdated, or updated ahead of the
+		 * factory, is a finding naming both rather than an assumption either way
+		 * (§11.2: measured, not assumed).
+		 */
+		agentStateCheck() {
+			const state = closure();
+			if (state.unresolved) return unpinned("worker-agent-state", "static");
+
+			const built = environment();
+			if (!built.ok) return dependsOnIsolation("worker-agent-state");
+
+			const kinds = runtimeKinds(state.roles, config.profiles);
+			const findings = [];
+			const runtimes = {};
+			for (const kind of [...kinds.keys()].sort()) {
+				const observed = built.handle.agentState[kind];
+				const expected = AGENT_STATE_INTEGRATION[kind].version;
+				// The digest is not repeated here: it rides the worker-isolation
+				// check's facts one line up the same stream, and a check that
+				// re-records its neighbour's evidence is a second tally.
+				runtimes[kind] = {
+					installed: observed.installed,
+					source: observed.source,
+					observed_version: observed.version,
+					expected_version: expected,
+				};
+
+				if (!observed.installed) {
+					findings.push({
+						reason: "agent-state-missing",
+						runtime: kind,
+						source: observed.source,
+						message:
+							`The ${kind} agent-state integration — the capability that pushes §6.5's transcript ` +
+							`pointer — is not installed at ${observed.source}, and the pointer has no other channel: ` +
+							`every ${kind} attempt of this run would correlate with no transcript. Install herdr's ` +
+							`${kind} integration (§6.5, §6.8).`,
+						});
+					continue;
+				}
+				if (observed.version === null) {
+					findings.push({
+						reason: "agent-state-unversioned",
+						runtime: kind,
+						source: observed.source,
+						message:
+							`The ${kind} agent-state integration at ${observed.source} carries no readable ` +
+							`HERDR_INTEGRATION_VERSION header, so the version a run would observe cannot be stated ` +
+							`(§11.2). Reinstall it so the integration states its own identity (§6.5).`,
+						});
+					continue;
+				}
+				if (observed.id !== kind) {
+					findings.push({
+						reason: "agent-state-mismatch",
+						runtime: kind,
+						source: observed.source,
+						message:
+							`The ${kind} agent-state slot at ${observed.source} is identified as ` +
+							`${JSON.stringify(observed.id)} — not the ${kind} integration. Reinstall it so the ` +
+							`right integration lands in the right slot (§6.5).`,
+						});
+					continue;
+				}
+				if (observed.version !== expected) {
+					findings.push({
+						reason: "agent-state-version-mismatch",
+						runtime: kind,
+						source: observed.source,
+						observed_version: observed.version,
+						expected_version: expected,
+						message:
+							`The ${kind} agent-state integration at ${observed.source} observes as version ` +
+							`${observed.version}; the factory is written against ${expected}. The number comes from ` +
+							`the file's own header — observed, not assumed (§6.5, §11.2). Update the integration or ` +
+							`the factory against it, deliberately.`,
+						});
+				}
+			}
+
+			if (findings.length > 0) {
+				return check("worker-agent-state", "static", "failed", {
+					message: `The §6.5 agent-state integration is not current for this run: ${findings.map((entry) => entry.message).join(" ")}`,
+					detail: { findings, runtimes },
+				});
+			}
+
+			return check("worker-agent-state", "static", "passed", {
+				message:
+					`The §6.5 agent-state integration is installed and current for ` +
+					Object.entries(runtimes)
+					.map(([kind, entry]) => `${kind} (observed ${entry.observed_version})`)
+					.join(", ") +
+					`, promoted into the run's own config environment — the transcript pointer is a ` +
+					`capability, not an accident of the operator's home (§6.5, §6.8).`,
+				detail: { runtimes },
 			});
 		},
 
