@@ -3,8 +3,9 @@ import { spawn } from "node:child_process";
 import { BINARY } from "./herdr.mjs";
 
 /**
- * The commands the attempt path issues against Herdr: open a pane, stamp it,
- * start an agent, prompt it, list panes, stop an agent.
+ * The commands the run and its attempts issue against Herdr: open the run's
+ * workspace, open a tab in it, stamp that tab's pane, start an agent, prompt it,
+ * list panes, stop an agent.
  *
  * It is separate from `herdr.mjs` on purpose. That module is §10.3's
  * availability *probe*, and the checkable form of "the factory checks the
@@ -128,15 +129,20 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 
 	return Object.freeze({
 		/**
-		 * A workspace of its own per attempt, opened at the attempt's worktree.
+		 * **The run's** workspace, opened once and shared by every attempt of that
+		 * run (#156).
 		 *
 		 * A workspace rather than a split of whatever pane the controller happens
 		 * to be in: `factory start --foreground` runs in a terminal that may not be
 		 * a Herdr pane at all, and a topology that only works when the controller
 		 * was launched detached is a topology that fails on the operator's second
-		 * invocation. `--no-focus`, because the operator is watching something else.
+		 * invocation. That argument rules out the controller's own pane; it never
+		 * argued for one workspace *per attempt*, and the workspace list is the
+		 * operator's top-level navigation — four workspaces for one ticket, filed
+		 * among their real projects, is what the run-scoped one replaces.
+		 * `--no-focus`, because the operator is watching something else.
 		 */
-		async openPane({ cwd, label }) {
+		async openWorkspace({ cwd, label }) {
 			const created = await call(["workspace", "create", "--cwd", cwd, "--label", label, "--no-focus"]);
 			if (created.exitCode !== 0) return failed("workspace create", created);
 
@@ -152,6 +158,68 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 				pane: result.root_pane.pane_id,
 				label,
 			});
+		},
+
+		/**
+		 * One attempt's pane: **a tab in the run's workspace**, at the attempt's
+		 * worktree (§6.4, #156).
+		 *
+		 * The answer shape is the installed Herdr's own, read off a live
+		 * `tab create` (0.8.0): a `tab` and its `root_pane`, and no `workspace` —
+		 * the tab was created in one. A workspace this controller no longer has is
+		 * exit 1 with `workspace_not_found`, and that is reported rather than
+		 * repaired: an operator who closed the run's workspace ends its live lanes,
+		 * which is #156's stated cost, and opening a replacement behind their back
+		 * would re-create the topology they closed.
+		 */
+		async openTab({ workspace, cwd, label }) {
+			const created = await call([
+				"tab",
+				"create",
+				"--workspace",
+				workspace,
+				"--cwd",
+				cwd,
+				"--label",
+				label,
+				"--no-focus",
+			]);
+			if (created.exitCode !== 0) return failed("tab create", created);
+
+			const result = herdrResult(created.stdout);
+			if (result?.tab?.tab_id === undefined || result?.root_pane?.pane_id === undefined) {
+				return unreadable("tab create", created);
+			}
+
+			return Object.freeze({
+				ok: true,
+				workspace,
+				tab: result.tab.tab_id,
+				pane: result.root_pane.pane_id,
+				label,
+			});
+		},
+
+		/**
+		 * The workspace carrying a given label, or `null` when none does — which is
+		 * what a workspace the operator closed looks like.
+		 *
+		 * The label is how a run's workspace is recognised at all: Herdr's answers
+		 * carry no metadata tokens on a workspace the way they do on a pane, so the
+		 * deterministic label is the only handle a probe has on a workspace whose
+		 * id was never recorded (§5.3). The list is asked for and filtered here
+		 * rather than handed out, because that identity question is the only one
+		 * anything has of the workspace list.
+		 */
+		async workspaceLabelled(label) {
+			const listed = await call(["workspace", "list"]);
+			if (listed.exitCode !== 0) return failed("workspace list", listed);
+
+			const result = herdrResult(listed.stdout);
+			const found = result?.workspaces ?? result;
+			if (!Array.isArray(found)) return unreadable("workspace list", listed);
+
+			return Object.freeze({ ok: true, workspace: found.find((entry) => entry?.label === label) ?? null });
 		},
 
 		/**

@@ -46,6 +46,7 @@ export const PROBE_CALLS = Object.freeze([
 	"git.ls-remote",
 	"git.worktree-list",
 	"herdr.pane-list",
+	"herdr.workspace-list",
 	"artifact.blob",
 ]);
 
@@ -140,6 +141,11 @@ export const PROBE_CATALOGUE = Object.freeze({
 	// is alive right now.
 	"agent-start": probe("harness", "herdr.pane-list", "token-matches"),
 	"agent-stop": probe("harness", "herdr.pane-list", "agent-stopped"),
+	// #156's run-scoped workspace. It is probed by the run's **label**, because
+	// Herdr carries no metadata tokens on a workspace the way it does on a pane —
+	// so an open whose resolution never committed is recognisable only by the name
+	// this factory gave it, and the probe is what recovers the id.
+	"workspace-open": probe("harness", "herdr.workspace-list", "present"),
 
 	// ── Artifact writes ─────────────────────────────────────────────────────
 	"artifact-write": probe("artifact", "artifact.blob", "digest-rehash"),

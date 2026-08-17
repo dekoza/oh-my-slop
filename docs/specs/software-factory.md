@@ -294,8 +294,8 @@ executions reverse index) · `run_digest` (tier 2, permanent).
 
 **Every mutation outside the database is an effect** with a `requested` / `resolved` pair:
 Gitea writes (assign, claim comment, label add/remove, close, PR create, PR body update), Git
-writes (branch create, push, evidence ref, worktree create/delete), Herdr writes (agent start,
-agent stop), artifact and attestation writes, and cleanup deletions. **Reads are not
+writes (branch create, push, evidence ref, worktree create/delete), Herdr writes (workspace open,
+agent start, agent stop), artifact and attestation writes, and cleanup deletions. **Reads are not
 effects** — they get durable observation cursors.
 
 **Key grammar:**
@@ -349,6 +349,7 @@ invariant; without it the invariant is a code-review convention.
 | push | `git ls-remote`, compare SHA |
 | branch create | `git rev-parse` |
 | worktree create | `git worktree list` plus path exists |
+| workspace open | `workspace list` matching the run's label (§6.4) |
 | agent start | `pane list` matching the `FACTORY_ATTEMPT` token |
 | artifact write | file exists and re-hashes to its digest |
 | cleanup delete | does the path / ref / pane still exist |
@@ -642,6 +643,33 @@ and so must be held by tests rather than by care:
 
 **All worker attempts run as interactive Herdr panes**; headless is reserved for disposable
 probes.
+
+**One workspace per run, and a tab in it per attempt.** A workspace rather than a split of
+whatever pane the controller happens to be in: `factory start --foreground` may run in a terminal
+that is not a Herdr pane at all, and a topology that only works when the controller was launched
+detached fails on the operator's second invocation. That argument rules out the controller's own
+pane; it never argued for a workspace *per attempt*. The workspace list is the operator's
+top-level navigation, and one run on one ticket filed four workspaces into it, interleaved with
+the operator's real projects. Watching a worker is a tab switch.
+
+The workspace is **run-scoped, not persistent**. It is a `workspace-open` effect keyed by the
+run, so it is opened exactly once, adopted by every later attempt and by every controller that
+re-enters the run (§10.4), and settled after a crash by probing Herdr's workspace list for the
+run's own deterministic label — Herdr carries no metadata token on a workspace the way
+`pane report-metadata` does on a pane, so the label is the only handle a probe has. A workspace
+that outlived its run would accumulate tabs across runs and would need its own reconciliation
+question — *is this workspace mine, or a dead run's?* — and it gives §12.8's cleanup one anchor
+per run instead of one per attempt. It is opened by the first attempt that needs one: a run that
+launches no worker leaves nothing behind, and Herdr refusing the command is that attempt's
+`worker-launch-failed` automation failure (§8.10), which is where a launch failure already has a
+home and a budget.
+
+**The cost is accepted explicitly:** an operator who closed the factory workspace used to lose
+one attempt and now loses every live lane of that run at once. Each pane's loss is still §6.6's
+`dead-worker` and §5.5's adoption makes re-entry cheap, so it is recoverable — but it is a real
+robustness cost traded for the navigation, and the controller does not repair it: a `tab create`
+against a workspace that is gone is reported, never answered by opening a replacement behind the
+operator's back.
 
 The controller composes the first prompt from a **deterministic per-role template**: the native
 invocation (`/skill:<name>` for pi, `/oh-my-slop:<name>` for Claude) plus a typed context block
@@ -2187,6 +2215,10 @@ survives the run. That pane is recorded as an anomaly and reclaimed later throug
 controller's own pane (closing it destroys the classified drain report an operator looks at
 first) applies identically to workers: **a wedged pane is evidence.**
 
+The same holds one level up. §6.4's run-scoped workspace and the attempt tabs inside it are
+**left exactly as found**: the controller closes no pane, no tab, and no workspace, and the run's
+workspace survives its run for the operator to read and for `cleanup-plan` to reclaim.
+
 ### 13.C The effect-key grammar — widened, not contradicted
 
 #79 fixed the key as `<run>/<ticket>/<phase>/<attempt>/<operation>[/<operand>]` with `phase` a
@@ -2491,4 +2523,5 @@ touching everything twice.
 | 2026-08-17 | #150 replaces §6.6's single wall-clock deadline with **two clocks**. The **hard ceiling** (`attemptTimeoutMs`) still bounds the lane, and is now anchored to the launch completion so a controller that died and adopted a live worker does not reset it; the **no-progress timeout** (`noProgressTimeoutMs`) ends an attempt that has stopped producing anything observable. **Progress is an observed fact, never the controller's clock**: a status transition and a changed pane-output snapshot are recorded as `observation.recorded` facts — `worker.alive` and the new `worker.output`, both source `herdr` — and the no-progress clock reads the latest of them. Pane output is sampled through `pane read` because Herdr exposes no output stream; a degraded observation channel makes a no-progress verdict `automation-failure`, never a worker-tier timeout. `attempt.ended` gains `clock` and `last_progress` so the operator reads which clock fired and what the last progress was rather than reading elapsed time as a diagnosis. §5.2's Herdr row widens from one fact to two (`worker.alive` · `worker.output`); §11.4's profiles gain `noProgressTimeoutMs`; both clocks carry code-owned defaults, calibrated against #114's measured 17- and 86-minute completions. | #150 |
 | 2026-08-17 | #152 makes §6.6's recorded stop outcome an observation rather than a race. `stopAgent` sent the quit sequence and read the pane on the very next line, so **`agent_stopped` recorded a teardown in flight as a refusal** — across #114's two runs every attempt recorded `false` while the workers had in fact gone, and nothing re-checked it. The outcome now comes from a **bounded re-probe** whose budget covers Herdr's *detection* lag rather than the process exit: the controller closes no pane (§13.B), so `pane_exited` never fires and the agent merely stops being detected, measured at 729 ms (claude) and 418 ms (pi) on an idle session. `agent_stopped` keeps three values — `true`/`false` are observations, `null` is Herdr declining to answer, which §14.1 forbids writing down as though it were evidence the agent stayed. A stop that could not be confirmed records a named **`stop_anomaly`** on `attempt.ended` carrying the surviving pane, the status it was last seen in, and how much of the bound was spent, in one of three classes: `wedged-pane` (§13.B's accepted wedge, `cleanup-plan`'s to reclaim), `stop-unconfirmed` (Herdr silent), and `quit-undelivered` (the keys never landed, which the pane read cannot distinguish from a wedge because both leave a live agent). §11.2's no-silent-guessing is what forbids collapsing the three into one `false`. `attempt.ended` moves to payload v2 accordingly (§4.3). Nothing on this path closes a pane. | #152 |
 | 2026-08-17 | #151 makes an **unharvested attempt's branch evidence on its disposition**. §8.10 harvests what an outbox claims; an attempt that never wrote one has still created a branch, and §7.7 makes that branch the only copy of the work on it — so on #114 a complete implementation was recoverable only because an operator read the factory-private clone by hand. §8.9's block gains a fourth element: every attempt of the ticket execution, with its branch, the head **git answers now** (§5.2 — never the outbox's claim nor the mint's record), and its commit count against **its own** base (§7.4). It is read for every disposition and every attempt outcome rather than for the endings that harvest nothing, because a list of which outcomes those are is a list somebody extends without extending — and the failure that permits is the silent one, "nothing was built" reported over work sitting on a branch. Every answer the read can get stays distinguishable and none is spelled as the absence of another (§11.2): commits, no commits, no branch, no answer from git, and no base recorded to count against, with **the attempts not listable** and **no read at all** distinct from all five. The read rides the comment and **not the digested intent** — every other field of the block is a function of durable state, and digesting a branch head would make a §10.4 re-entry that read a moved head a §4.5 payload conflict instead of the comment already posted; the one ending that therefore carries nothing is §9.6's abandon boundary, which writes no comment at all (#159). The **remote is deliberately not consulted** — §7.7 makes an attempt branch absent from it by construction, so an `ls-remote` would answer "absent" for exactly the attempts the read exists for, and §5.4 already names `git-local` for this. The read never throws: a settlement lost to a failed evidence read leaves the ticket claimed with nothing on it, which is the one state §8.9 has no word for. §7.7 and §8.9 corrected in place. | #151 |
+| 2026-08-17 | #156 replaces §6.4's workspace-per-attempt with **one workspace per run and a tab per attempt**. The original reasoning — a workspace rather than a split of the controller's own pane, because a `--foreground` start may not be in a Herdr pane at all — rules out the controller's pane and never argued for one workspace *per attempt*; the workspace list is the operator's top-level navigation, and run `01M06G9WM4J389YE9AQ317GK0B` on #114 filed four of them (w2C–w2F) for one ticket among the operator's real projects. The workspace is a **`workspace-open` effect keyed by the run** (§4.5), so it is opened exactly once and a re-entering controller adopts the committed one instead of opening a second; its probe reads Herdr's workspace list for the run's **deterministic label**, because Herdr carries no metadata token on a workspace the way `pane report-metadata` does on a pane, and that probe is what recovers an id a crash left only in Herdr. It is opened by the first attempt that needs one rather than during run startup: a refusal then is an attempt's `worker-launch-failed` (§8.10), which is budgeted and counted, while the same refusal during startup would have no §10.3 end reason to be reported as — and a run that launches no worker leaves no workspace behind. Correlation is untouched: a pane is still found by its `FACTORY_ATTEMPT` token and never by its workspace or tab (§5.5). §13.B extends by construction — the controller closes no tab and no workspace either — and the **accepted cost is recorded in §6.4**: closing the factory workspace now ends every live lane of that run at once, recoverable through §6.6's `dead-worker` and §5.5's adoption, and never repaired by opening a replacement. `tab create --workspace --cwd --label --no-focus` and its answer shape were read off the installed Herdr 0.8.0 rather than assumed. | #156 |
 | 2026-08-17 | #160 restores §6.2's probe to proving the session workers actually run. Both runtime adapters passed the skill-delivery flags to the **probe** and not to the **worker session**: every Claude worker launched without the §6.3 plugin (`plugin list` under the live worker binding: "No plugins installed"), every pi worker without the pinned roots — and pi's default discovery, which the probe's `--no-skills` suppressed, loaded four of the operator's personal skills from `~/.agents/skills`, a root `PI_CODING_AGENT_DIR` does not fence, inverting both §6.8 guarantees at once. §6.2 gains the composed-binding rule: the worker session's argument set is the primary object, the probe's is that set plus its probe-only IO flags and nothing else, held by a test at the launch seam (worker argv = probed argv − probe-only flags + profile flags). §6.8 records the measured discovery leak and makes `--no-skills --skill <root>` load-bearing isolation on every pi worker session. A launch whose closure cannot reach the session — no proven plugin directory, no pinned skills roots, a plugin cache wiped since preflight — is a typed automation failure before the attempt spends. §6.7's acceptance matrix (#115) is untouched by construction but noted: anything it proves must run the worker binding. | #160 |

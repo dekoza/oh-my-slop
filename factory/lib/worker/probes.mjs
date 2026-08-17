@@ -1,5 +1,6 @@
 import { agentAlive, FACTORY_ATTEMPT_TOKEN } from "../controller/herdr-control.mjs";
 import { createProbeRegistry } from "../reconcile/probes.mjs";
+import { runWorkspaceLabel } from "./workspace.mjs";
 
 /**
  * §5.3: each effect kind's probe ships with the subsystem that introduces the
@@ -65,6 +66,47 @@ export function herdrPaneListProbe({ herdr }) {
 }
 
 /**
+ * The `herdr.workspace-list` implementation: **does this run's workspace exist**
+ * (#156)?
+ *
+ * The target is recomputed from the key's run segment, exactly as the pane probe
+ * recomputes its attempt — and it has to be, because the thing an unresolved
+ * open is missing *is* the workspace id. What the world is asked for is the
+ * label, which is derived from the run and nothing else, and the answer carries
+ * the id back so the settled effect names the workspace every later attempt will
+ * open a tab in.
+ *
+ * @param {{ herdr: object }} where
+ * @returns {Function} the probe
+ */
+export function herdrWorkspaceListProbe({ herdr }) {
+	return async ({ effect, probe }) => {
+		if (probe.match !== "present") {
+			throw new Error(`"${probe.match}" is not a match herdr.workspace-list can answer; it reports existence.`);
+		}
+
+		const label = runWorkspaceLabel(effect.run_id);
+		const listed = await herdr.workspaceLabelled(label);
+		if (!listed.ok) {
+			// §12.4 again: a multiplexer that will not answer taught this process
+			// nothing, and "unanswerable" is not "absent".
+			throw new Error(`${listed.message} The run's workspace is unanswerable, not absent (§5.2).`);
+		}
+
+		const workspace = listed.workspace?.workspace_id ?? null;
+		return {
+			matched: workspace !== null,
+			result: workspace === null ? null : { workspace, label },
+			// The fact rather than the object, for the reason the pane probe names:
+			// keyed on the run alone, the first reading would suppress every later
+			// one through §5.1's dedup index.
+			foreignSourceId: `herdr:workspace:${label}:${workspace ?? "absent"}`,
+			detail: { run: effect.run_id, label, workspace },
+		};
+	};
+}
+
+/**
  * `base`'s probes plus Herdr's, in a registry of their own — the tracker
  * probes' shape, and for the same reason: the implementation closes over a
  * control surface bound to one environment, so registering it into the module
@@ -78,6 +120,7 @@ export function withHerdrProbes(base, { herdr }) {
 	const registry = createProbeRegistry();
 	for (const call of base.calls) registry.register(call, base.implementationFor(call));
 	registry.register("herdr.pane-list", herdrPaneListProbe({ herdr }));
+	registry.register("herdr.workspace-list", herdrWorkspaceListProbe({ herdr }));
 	return registry;
 }
 

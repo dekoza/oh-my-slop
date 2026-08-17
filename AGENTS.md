@@ -275,6 +275,11 @@ is the authority; cite the section a change answers to.
   topology** so §12.7's eager deletion cannot take a result with it. Then `attempt.launched`,
   the **mint**, because the projections refuse an attempt-scoped record for a tuple nothing
   minted; then one `agent-start` effect covering pane, stamp, identity variables, and agent,
+  whose pane is a **tab in the run's own workspace** (`worker/workspace.mjs`) — one
+  `workspace-open` effect keyed by the *run*, so it is opened once, adopted by every later
+  attempt and by every controller that re-enters the run, probed by the run's deterministic
+  label because Herdr stamps no token on a workspace, and opened by the first attempt that needs
+  one so a refusal is a budgeted `worker-launch-failed` rather than a run with no end reason,
   with the `FACTORY_ATTEMPT` token stamped **before** the agent so a crash in between leaves a
   pane reconcile can still recognise — the probe asks for the token *and* a live agent, so an
   early stamp cannot fake a start. §6.5's identity travels on **two channels**: the prompt, and
@@ -308,9 +313,10 @@ is the authority; cite the section a change answers to.
   harvest path has to remember.
 - **Herdr has no `agent stop`** — verified against protocol 19, where the whole agent surface is
   list/get/read/send-keys/prompt/rename/focus/wait/attach/start/explain and the socket API has
-  no `agent.stop` either. §13.B's "the controller stops agents and never closes panes" is
-  therefore `agent send-keys` with the harness's own quit sequence, and a harness that ignores
-  it leaves a wedged pane **recorded as an anomaly and never escalated**. The availability probe
+  no `agent.stop` either. §13.B's "the controller stops agents and never closes panes" — nor
+  tabs, nor the run's workspace — is therefore `agent send-keys` with the harness's own quit
+  sequence, and a harness that ignores it leaves a wedged pane **recorded as an anomaly and never
+  escalated**. The availability probe
   (`controller/herdr.mjs`) and the commands (`controller/herdr-control.mjs`) are two modules
   because "the factory checks the multiplexer, it does not manage one" is checkable only as
   *the probe imports nothing that can start a process*.

@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { createHerdrControl } from "../../../factory/lib/controller/herdr-control.mjs";
+import { createHerdrControl, FACTORY_ATTEMPT_TOKEN } from "../../../factory/lib/controller/herdr-control.mjs";
 import { readSkillInventory } from "../../../factory/lib/worker/closure.mjs";
 
 /**
@@ -105,7 +105,8 @@ export function fakeHerdr({
 } = {}) {
 	const calls = [];
 	const panes = [];
-	let nextPane = 1;
+	const workspaces = [];
+	let nextWorkspace = 1;
 	let prompts = 0;
 	let tearingDown = 0;
 
@@ -124,7 +125,7 @@ export function fakeHerdr({
 		if (refused !== undefined) return { exitCode: refused.exitCode, stdout: "", stderr: refused.stderr ?? "" };
 
 		if (command === "workspace create") {
-			const id = `w${nextPane}`;
+			const id = `w${nextWorkspace}`;
 			const pane = {
 				pane_id: `${id}:p1`,
 				workspace_id: id,
@@ -134,8 +135,41 @@ export function fakeHerdr({
 				tokens: {},
 			};
 			panes.push(pane);
-			nextPane += 1;
+			// `next` is the ordinal the workspace's next tab takes, because Herdr
+			// numbers panes and tabs **within** a workspace: the live server answered
+			// `w33:p1`/`w33:t1` for the root and `w33:p2`/`w33:t2` for the tab after it.
+			workspaces.push({
+				workspace_id: id,
+				label: args[args.indexOf("--label") + 1],
+				active_tab_id: pane.tab_id,
+				next: 2,
+			});
+			nextWorkspace += 1;
 			return json({ workspace: { workspace_id: id }, tab: { tab_id: pane.tab_id }, root_pane: { pane_id: pane.pane_id } });
+		}
+		if (command === "workspace list") {
+			return json({ workspaces: [...workspaces] });
+		}
+		if (command === "tab create") {
+			// The installed Herdr's own shape (0.8.0), read off a live `tab create`:
+			// `tab` and `root_pane`, and no `workspace` — the tab is in one already.
+			// A workspace it does not have is exit 1, which is the operator having
+			// closed the run's workspace out from under a live run (#156).
+			const id = args[args.indexOf("--workspace") + 1];
+			const workspace = workspaces.find((entry) => entry.workspace_id === id);
+			if (workspace === undefined) return { exitCode: 1, stdout: "", stderr: `workspace ${id} not found` };
+
+			const pane = {
+				pane_id: `${id}:p${workspace.next}`,
+				workspace_id: id,
+				tab_id: `${id}:t${workspace.next}`,
+				cwd: args[args.indexOf("--cwd") + 1],
+				agent_status: "unknown",
+				tokens: {},
+			};
+			panes.push(pane);
+			workspace.next += 1;
+			return json({ tab: { tab_id: pane.tab_id }, root_pane: { pane_id: pane.pane_id } });
 		}
 		if (command === "pane report-metadata") {
 			const pane = panes.find((entry) => entry.pane_id === args[2]);
@@ -206,6 +240,12 @@ export function fakeHerdr({
 		},
 		/** The argv words of every command issued, joined — for order assertions. */
 		commands: () => calls.map((args) => args.slice(0, 2).join(" ")),
+		/**
+		 * The pane an attempt's tab opened, found the way §5.5 finds it: by its
+		 * token. Since #156 a run's workspace has a root pane of its own, so
+		 * "the first pane" is the workspace's, not any attempt's.
+		 */
+		paneFor: (attempt) => panes.find((pane) => pane.tokens[FACTORY_ATTEMPT_TOKEN] === attempt) ?? null,
 		control: createHerdrControl({ run }),
 		/** Move the started agent to another status, as a transition would. */
 		settle(status) {

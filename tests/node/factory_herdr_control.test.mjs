@@ -53,7 +53,7 @@ test("a Herdr answer is `{id, result}`, and an unreadable one is not a result", 
 
 // ── The commands (§6.4, §5.5, §13.B) ─────────────────────────────────────────
 
-test("a pane is opened as its own workspace at the attempt's worktree", async () => {
+test("the run's workspace is one `workspace create`, labelled for the operator's list", async () => {
 	const io = runner({
 		"workspace create": {
 			exitCode: 0,
@@ -64,28 +64,90 @@ test("a pane is opened as its own workspace at the attempt's worktree", async ()
 		},
 	});
 
-	const opened = await createHerdrControl({ run: io.run }).openPane({ cwd: "/state/worktrees/a", label: "factory-a" });
+	const opened = await createHerdrControl({ run: io.run }).openWorkspace({ cwd: "/state", label: "factory-run-R" });
 
-	assert.deepEqual({ ...opened }, { ok: true, workspace: "w7", tab: "w7:t1", pane: "w7:p1", label: "factory-a" });
+	assert.deepEqual({ ...opened }, { ok: true, workspace: "w7", tab: "w7:t1", pane: "w7:p1", label: "factory-run-R" });
+	assert.deepEqual(io.calls[0], ["workspace", "create", "--cwd", "/state", "--label", "factory-run-R", "--no-focus"]);
+});
+
+test("exit 0 with no readable result is its own failure, and it names it", async () => {
+	const io = runner({ "workspace create": { exitCode: 0, stdout: "{}", stderr: "" } });
+
+	const opened = await createHerdrControl({ run: io.run }).openWorkspace({ cwd: "/w", label: "l" });
+
+	assert.equal(opened.ok, false);
+	assert.match(opened.message, /learned nothing/);
+	assert.match(opened.message, /closes anything/, "and it says what it did not do");
+});
+
+test("an attempt gets a tab in the run's workspace, never a workspace of its own (#156)", async () => {
+	// The shape is the installed Herdr's (0.8.0), read off a live `tab create`:
+	// `tab` and `root_pane`, and no `workspace` — the tab is in one already.
+	const io = runner({
+		"tab create": {
+			exitCode: 0,
+			stdout: JSON.stringify({
+				result: { type: "tab_created", tab: { tab_id: "w7:t2" }, root_pane: { pane_id: "w7:p2" } },
+			}),
+			stderr: "",
+		},
+	});
+
+	const opened = await createHerdrControl({ run: io.run }).openTab({
+		workspace: "w7",
+		cwd: "/state/worktrees/a",
+		label: "factory-a",
+	});
+
+	assert.deepEqual({ ...opened }, { ok: true, workspace: "w7", tab: "w7:t2", pane: "w7:p2", label: "factory-a" });
 	assert.deepEqual(io.calls[0], [
-		"workspace",
+		"tab",
 		"create",
+		"--workspace",
+		"w7",
 		"--cwd",
 		"/state/worktrees/a",
 		"--label",
 		"factory-a",
 		"--no-focus",
 	]);
+	assert.equal(
+		io.calls.some((args) => args[0] === "workspace"),
+		false,
+		"a second workspace per attempt is exactly what #156 removed",
+	);
 });
 
-test("exit 0 with no readable result is its own failure, and it names it", async () => {
-	const io = runner({ "workspace create": { exitCode: 0, stdout: "{}", stderr: "" } });
+test("a tab in a workspace Herdr no longer has is a typed failure naming the command", async () => {
+	// Live: `herdr tab create --workspace w99` exits 1 with `workspace_not_found`.
+	// That is the operator having closed the run's workspace, and it is the lane's
+	// failure to report rather than a second workspace to open behind their back.
+	const io = runner({
+		"tab create": { exitCode: 1, stdout: "", stderr: `{"error":{"code":"workspace_not_found"}}` },
+	});
 
-	const opened = await createHerdrControl({ run: io.run }).openPane({ cwd: "/w", label: "l" });
+	const opened = await createHerdrControl({ run: io.run }).openTab({ workspace: "w99", cwd: "/w", label: "l" });
 
 	assert.equal(opened.ok, false);
-	assert.match(opened.message, /learned nothing/);
-	assert.match(opened.message, /closes anything/, "and it says what it did not do");
+	assert.equal(opened.command, "tab create");
+	assert.match(opened.message, /workspace_not_found/);
+});
+
+test("the run's workspace is found by its label, and a closed one is an answer rather than a failure", async () => {
+	const workspaces = [
+		{ workspace_id: "w1", label: "oh-my-slop" },
+		{ workspace_id: "w7", label: "factory-run-R" },
+	];
+	const io = runner({
+		"workspace list": { exitCode: 0, stdout: JSON.stringify({ result: { workspaces } }), stderr: "" },
+	});
+	const herdr = createHerdrControl({ run: io.run });
+
+	assert.equal((await herdr.workspaceLabelled("factory-run-R")).workspace.workspace_id, "w7");
+	const missing = await herdr.workspaceLabelled("factory-run-GONE");
+	assert.equal(missing.ok, true);
+	assert.equal(missing.workspace, null, "an absent workspace is an answer, not a failure");
+	assert.deepEqual(io.calls[0], ["workspace", "list"]);
 });
 
 test("the stamp is one metadata call carrying the token and the derived title", async () => {

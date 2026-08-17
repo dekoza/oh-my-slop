@@ -19,9 +19,12 @@ const ATTEMPT = "01JRUN0000000000000000000A-t42-a1";
 /** A Herdr with one pane carrying the attempt's token and a live agent in it. */
 async function withPane({ started = true } = {}) {
 	const herdr = fakeHerdr();
-	await herdr.control.openPane({ cwd: "/w", label: "factory" });
-	await herdr.control.stamp("w1:p1", { attempt: ATTEMPT, title: "factory" });
-	if (started) await herdr.control.startAgent({ name: "fa1t42a1", kind: "pi", pane: "w1:p1" });
+	// The topology a launch leaves since #156: the run's workspace, and the
+	// attempt's own tab inside it.
+	const workspace = await herdr.control.openWorkspace({ cwd: "/w", label: "factory-run-R" });
+	const tab = await herdr.control.openTab({ workspace: workspace.workspace, cwd: "/w", label: "factory" });
+	await herdr.control.stamp(tab.pane, { attempt: ATTEMPT, title: "factory" });
+	if (started) await herdr.control.startAgent({ name: "fa1t42a1", kind: "pi", pane: tab.pane });
 	return herdr;
 }
 
@@ -62,7 +65,7 @@ test("agent-stop matched means no live agent, whether or not the pane went (§13
 test("the answer carries the liveness and dates nothing", async () => {
 	const answer = await ask(await withPane(), "token-matches");
 
-	assert.equal(answer.result.pane, "w1:p1");
+	assert.equal(answer.result.pane, "w1:p2", "the attempt's tab, inside the run's workspace");
 	assert.equal(answer.result.alive, true);
 	assert.equal(answer.detail.status, "working");
 	assert.match(answer.foreignSourceId, /^herdr:FACTORY_ATTEMPT:/);
@@ -102,6 +105,6 @@ test("the probes join a registry of their own, never the shipped singleton", asy
 
 	const registry = withHerdrProbes(base, { herdr: (await withPane()).control });
 
-	assert.deepEqual([...registry.calls].sort(), ["git.rev-parse", "herdr.pane-list"]);
+	assert.deepEqual([...registry.calls].sort(), ["git.rev-parse", "herdr.pane-list", "herdr.workspace-list"]);
 	assert.equal(base.implementationFor("herdr.pane-list"), null, "one run's multiplexer never answers another's probes");
 });
