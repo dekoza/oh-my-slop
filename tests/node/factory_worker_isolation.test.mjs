@@ -8,7 +8,8 @@ import { worktreesRoot } from "../../factory/lib/git/isolation.mjs";
 import { workerConfigRoots } from "../../factory/lib/worker/environment.mjs";
 import { DENY_FLOOR } from "../../factory/lib/worker/permissions.mjs";
 import { createWorkerPreflight } from "../../factory/lib/worker/preflight.mjs";
-import { herdrIntegration, makeTree, skillMarkdown } from "./helpers/factory-package.mjs";
+import { herdrIntegration, makeTree, realGeneratorFiles, skillMarkdown } from "./helpers/factory-package.mjs";
+import { claudeTransport } from "./helpers/factory-worker.mjs";
 
 /**
  * §6.8's three preflight obligations as the checks the controller records:
@@ -25,7 +26,7 @@ const ROUTING = Object.freeze({
 	rules: [],
 });
 
-function lab(t, { worker = NO_OVERRIDES, profiles, pinned = true } = {}) {
+function lab(t, { worker = NO_OVERRIDES, profiles, pinned = true, transports = {}, withGenerator = false } = {}) {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "factory-isolation-")));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 
@@ -34,6 +35,7 @@ function lab(t, { worker = NO_OVERRIDES, profiles, pinned = true } = {}) {
 		"skills/workflow/implement/SKILL.md": skillMarkdown("implement"),
 		"skills/practice/review-standards/SKILL.md": skillMarkdown("review-standards"),
 		"skills/practice/review-spec/SKILL.md": skillMarkdown("review-spec"),
+		...(withGenerator ? realGeneratorFiles() : {}),
 	});
 
 	const storeDir = join(root, "store");
@@ -76,6 +78,7 @@ function lab(t, { worker = NO_OVERRIDES, profiles, pinned = true } = {}) {
 			cacheRoot: storeDir,
 			repoRoot,
 			env: { HOME: home },
+			transports,
 		}),
 		home,
 	};
@@ -172,6 +175,27 @@ test("a trust store that cannot be written is this check's red, never a crash mi
 	chmodSync(roots.pi, 0o700);
 	assert.equal(checked.result, "failed");
 	assert.match(checked.message, /would meet the trust dialog and hang there/);
+});
+
+test("the runtime check records what it proved about §6.8's discovery fence, not merely that it passed", async (t) => {
+	// #163: a green probe that says nothing about the fence cannot be told from
+	// one that never proved it, so the fact rides the recorded check.
+	const claude = claudeTransport({ skills: ["implement", "review-standards", "review-spec"] });
+	const context = lab(t, {
+		withGenerator: true,
+		transports: { claude: claude.transport },
+		profiles: { builder: { kind: "claude", model: "opus" }, reviewer: { kind: "claude", model: "opus" } },
+	});
+	context.preflight.isolationCheck();
+
+	const checked = await context.preflight.runtimeCheck();
+
+	assert.equal(checked.result, "passed", checked.message);
+	assert.deepEqual(checked.detail.runtimes.claude.discovery, {
+		fence: ["--setting-sources", "user"],
+		canary: "factory-discovery-canary",
+		proven: true,
+	});
 });
 
 test("every later check names the isolation check rather than repeating its diagnosis", (t) => {

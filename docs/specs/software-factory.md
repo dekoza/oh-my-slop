@@ -591,7 +591,13 @@ factory.
      `claude --plugin-dir <path> plugin details` expected-vs-actual component diff, then the
      authoritative **`initialize` control-request probe** over stream-json, which returns the
      session's structured `commands` array (including `<plugin>:<skill>` records) at zero model
-     cost. Verified live. The probe must use the production flag set.
+     cost. Verified live. The probe must use the production flag set. A **fourth step proves
+     §6.8's discovery fence from both sides** (#163): a canary project skill planted in the
+     probe's own working directory must be absent from that session's `commands`, *and* one
+     deliberately unfenced control session — the worker binding minus the fence flags, nothing
+     else — must register it. Claude's command records carry names, not source paths, so pi's
+     converse check has no direct analogue; the canary is what makes the fenced session's
+     silence evidence rather than an untested assumption.
 3. **A cheap static recheck per attempt** — no fresh probe.
 
 **The probe must execute the production path, not merely inspect registration.** The audited
@@ -610,6 +616,52 @@ minus the probe-only flags plus the profile's. A launch whose closure cannot rea
 (no proven plugin directory, no pinned skills root, a plugin cache wiped since preflight) is a
 typed automation failure before the attempt spends, never a worker that quietly reads skill
 files instead of invoking them.
+
+**The profile's own flags sit outside that composed binding, and are proven by a check of their
+own** (#164). §11.4's `model` and the optional `effort` / `thinking` are appended to the worker
+binding at launch, and this probe cannot absorb them: it is role- **and profile-independent**,
+memoized once per pinned revision, while profiles vary per role *and* per routing rule — so
+exercising each one inside it would change the probe's **cardinality** rather than its argv, which
+is a different design and must be chosen rather than drifted into. Instead:
+
+- **`profile-flags` is a separate preflight check, one live session per *distinct* profile the
+  active routing can dispatch.** A routing table naming one profile in every role and in a rule
+  costs one session, because flag spelling is a property of the profile and not of the role that
+  reached it. **§6.2's runtime probe keeps its own cardinality — one per pinned revision.**
+- **Each session runs that profile's own launch argv plus the probe-only IO flags and nothing
+  else**, and it is judged on the answer the probe already reads: pi's RPC response, Claude's
+  `initialize` control-response. **No model call is made** — spelling is a parse-level fact, and
+  proving it must not spend tokens.
+- **The verdict is that answer, never an exit status.** Measured on the development machine, `pi
+  list` exits 1 over a stale OAuth token while pi's RPC session answers perfectly, so a side
+  subcommand's exit code is not a spelling verdict. **`--version` is measured useless**: against
+  Claude 2.1.233 it short-circuits *before* argument parsing and accepts `--nonsense-flag` with
+  exit 0. What both binaries do offer is that a session which starts has parsed its argv, and a
+  misspelling is refused by name before one does — `error: unknown option '--efffort'`, with
+  `(Did you mean --effort?)` on the line after it, and `Error: Unknown option: --thinnking` from
+  pi. **The quoted line is the one naming a flag the profile passed, matched whole-word**, not
+  the last line: the hint trails the diagnosis, and `--model` occurs inside pi's unrelated
+  `--models`.
+- **The check runs behind the runtime probe and only on a green one.** The probe starts the same
+  kind of session *without* the profile's flags, so a green probe and a refused spelling session
+  differ by exactly those flags — that ordering is what makes the verdict a statement about the
+  spelling rather than a guess about a broken harness. With no green probe there is nothing to
+  attribute against, so the check fails citing `runtime-probe` rather than answering.
+- **A binary that could not be spawned at all is §11.7's unreachable runtime, not a rejected
+  flag.** It was never asked about a spelling, and blaming the profile would point the operator at
+  their config over a missing executable (§11.2).
+- **The cost is stated rather than capped by a new knob**: the sessions are serial at the
+  runtime's own probe timeout, so preflight's worst case grows by the number of distinct profiles
+  times that timeout before the first claim. Measured, an accepted spelling answers in ~1.8 s
+  (Claude) and ~0.7 s (pi), and §9.7's ordering still puts the expensive baseline last.
+- **A refusal names the profile, its flags, the binary and the binary's own diagnostic**, as a
+  §11.2 preflight failure before a branch, a worktree, a pane or a tracker claim exists. Without
+  it a renamed flag surfaces as `worker-launch-failed` *after* all four — the one binding that
+  escaped §6.2's purpose of refusing before an attempt spends.
+
+The reviewer binding is not spelled out a second time for this check, for the reason the probe
+already gives: it differs only by flags the same binary has accepted, and a profile's own flags
+are identical under both postures.
 
 **The capacity probe folds into this same per-runtime probe** (§9.7): one request yielding both
 model inventory and `max_instances`, so no second place can disagree about whether the runtime
@@ -852,7 +904,37 @@ hooks.** The config directory alone does not close pi's skills channel — measu
 pi's default discovery reaches roots `PI_CODING_AGENT_DIR` does not fence: a worker session
 with discovery on loaded four of the operator's personal skills from `~/.agents/skills` while
 loading none of the pinned 65. Every pi worker session therefore passes `--no-skills` plus the
-pinned `--skill` roots explicitly; the flags are load-bearing isolation, not probe hygiene. Procedurally valuable personal rules migrate through exactly two channels:
+pinned `--skill` roots explicitly; the flags are load-bearing isolation, not probe hygiene.
+
+**The same is true of Claude, from the other end — the session's own working directory.**
+Measured live on Claude Code 2.1.233 (#163), at zero model cost, in a scratch project shipping
+`.claude/skills/leaktest/SKILL.md`: an `initialize` control-request under an **empty** isolated
+`CLAUDE_CONFIG_DIR` answered 44 commands including a bare `leaktest`, and a project
+`.claude/commands/` file registered the same way. A worker's cwd is the attempt worktree — the
+operator's repository at the pinned commit — so on any target repository shipping project
+skills, every Claude worker would load skills from outside the pinned package root.
+`--setting-sources user` closes it: the same request answered 43 commands with no `leaktest`,
+and neither the project skill nor the project command registered in the run that shipped both,
+while the §6.3 plugin's `<plugin>:<skill>` records, the injected `--settings` file, and
+`--permission-mode dontAsk` were all untouched — the flag drops the `project` and `local`
+*sources*, which is also what stops a target repository's own settings file from reaching a
+worker, and never the settings the controller passes explicitly. Every Claude worker session
+therefore carries those two arguments; like pi's, they are load-bearing isolation and belong to
+the **worker** binding, never to the probe alone (§6.2's composed binding). What a run proved is
+recorded on the `runtime-probe` check beside the version, since a green check saying nothing
+about the fence cannot be told from one that never proved it.
+
+**One consequence of that fence is stated rather than discovered later: the target repository's
+own `CLAUDE.md` stops being auto-loaded too** — measured in the same pass (a one-turn session in
+a project whose `CLAUDE.md` carried a marker word answered it unfenced and did not answer it
+fenced). This is the channel list applied, not an accident: rules reach a worker through package
+skills and the declared worker-context file, and a repository's own memory file was never one of
+the two. The declared file is unaffected — it is installed in the **user** scope the fence
+keeps — and the repository's conventions remain readable in the worktree as ordinary files. An
+operator who wants a target repo's standing rules in every worker declares them through
+`worker.contextFile`.
+
+Procedurally valuable personal rules migrate through exactly two channels:
 
 1. **Package skills** — the preferred home for engineering discipline. *Migration note:* the
    `tee`-over-`head`/`tail` output-capture rule belongs in this package's discipline skills.
@@ -885,7 +967,14 @@ cross in:
 root: the live probe requires every `skill:<name>` command record in the session — not merely
 the closure's — to resolve inside that root, so a promoted extension that registers a skill is
 the same typed failure as a shadowed one. A promoted extension may add tools and providers; it
-may not add skills, and it is never a route for personal rules.
+may not add skills, and it is never a route for personal rules. **Each runtime is held to that
+limit by what its records can carry**: pi's command records name a source path, so its probe
+judges the converse directly; Claude's name only the command, so its probe judges the same limit
+by planting a canary project skill in the directory it probes in and requiring the fenced
+session not to register it while an unfenced control session does. A canary that survives the
+fence is `skill-shadowed`, naming the offending source; a control session that cannot see it is
+`discovery-fence-unproven`, because a probe that could not have observed the leak is not
+evidence of its absence.
 
 **Skill conflicts — one predicate, fail closed.** Every required skill must resolve uniquely
 and verifiably to the pinned package revision. Shadowed, duplicated, disabled, or missing are
@@ -2427,7 +2516,8 @@ crash.
 
 **Configuration and migration.** multiple global/user installations · `PATH` shadowing · stale
 generated adapter artifacts · package revision change · a bridge present-but-nonfunctional ·
-overlapping `labelsAny` rules · a ticket matching two rules for one role · Opus/Fable on pi.
+overlapping `labelsAny` rules · a ticket matching two rules for one role · Opus/Fable on pi · **a
+profile flag the installed binary no longer accepts under that spelling** (#164).
 
 **Skill loading.** A **one-time acceptance matrix** per (harness version × model × package
 revision) proving that Opus and Fable actually load and follow skill bodies — discharging the
@@ -2588,4 +2678,6 @@ touching everything twice.
 | 2026-08-17 | #161 corrects §7.5's replay boundary. The rebase used the attempt's **own** base (§7.3) as its upstream, and a repair's own base is the prior attempt's tip (§8.5) — so a repair's replay set excluded the implement commit it builds on. The lucky outcome was #114's rebase conflict over sound, already-verified work: the repair edited a file the implement commit created, which does not exist at the fresh tip. The dangerous one was a repair touching only files the implement did not create, which replays **cleanly** and yields a branch carrying the repair without the work it repairs — verified, attested and published, since §14.13 measures the commit being published and attestation compares heads, and both are satisfied by a branch that quietly lost a commit. §7.5's upstream is now **the fresh tip itself**, so the replay set is every commit the ticket execution produced that is not already on the base branch, whatever attempt chain produced it; whether the base moved is read off the graph — is the branch already sitting on the fresh tip — never off a recorded base, which a §9.5 re-rebase has already made stale once; and a rebase whose result carries fewer non-base commits than its input is refused as a typed `rebase-dropped-commits` failure and never adopted — the guard that makes the silent case impossible rather than unlikely (§11.2), whatever the drop's mechanism, including git dropping a commit whose patch a human already cherry-picked upstream. §7.3 separates the two meanings the one value conflated: what an attempt branched from and the boundary of what §7.5 replays coincide only for a single-attempt execution, and neither is inferred from the other. §7.3 and §7.5 corrected in place. | #161 |
 | 2026-08-17 | #165 corrects §8.4's review boundary — #161's conflation one phase earlier. `reviewPhase`'s contract said the base a review measures against is never a repairing attempt's own tip, and the caller violated it: the axes were prompted with the **walking attempt's own §7.3 base**, which for a repair is the prior attempt's tip (§8.5) — so on a repair chain both reviewers read only the repair's delta while their two approved verdicts gated the publication of the whole chain, and §8.7 recorded approvals whose scope is a subset of the published change. The exegesis is settled for **the publishable diff**, on §8.4's own structure: a failed verify goes straight to repair, so a repair after one has *no* previously reviewed state — the "delta since last reviewed" reading leaves the implement commit reviewed by nobody. **Both ends of the diff are the passing verify record's** — its `base_commit` is the fresh base-branch tip the branch sits on after §7.5's step-1 rebase, its `head` the exact commit §8.2's checks passed at — which also retires the harvest-head read that went stale whenever verify rebased, and makes the review and the checks measure one value (§14.13) — after a §9.5 re-rebase the verdicts keep naming the boundary they were rendered against rather than implying they covered the moved one. Neither end is a parameter: the attempt's own base cannot reach the phase at all, the same separation-by-removal #161 applied to §7.5. Each axis's durable result and §8.7's attestation now name the base and head the verdict was rendered against, so an approval's scope is a checkable claim. §7.3, §8.4 and §8.7 corrected in place. | #165 |
 | 2026-08-17 | #153: the worker's session identity never reached Herdr. §6.5's transcript pointer is pushed by herdr's **agent-state integration** — a Claude `SessionStart` hook and a pi extension — which lived only in the operator's config root, so §6.8's config isolation removed it from every worker session and 15/15 `attempt.correlated` records carried `transcript: null`. The integration crosses in as a **fixed capability artifact named in code per runtime** (first closed list, beside credentials and the model catalogue): copied from the operator's config root into the run's own root, digested, and **version-observed** out of the file's own `HERDR_INTEGRATION_*` header rather than assumed. A new static preflight check, `worker-agent-state`, gates its presence and currency **per runtime the active routing can dispatch to** — missing, unversioned, mis-identified, or outdated is a named red ending the run `baseline-red` before the first claim, so `no-transcript-pointer` is an anomaly rather than the expected residue. The run manifest records it by declared path, content digest, and observed version per runtime, and records a named absence when the environment did not build. | #153 |
+| 2026-08-17 | #164 closes #160's defect one argument set down: **a profile's own flags reached a live worker having never been handed to the installed binary.** `--model`, and Claude's `--effort` / pi's `--thinking`, are appended at launch and were exercised by nothing, so a renamed or dropped flag surfaced as `worker-launch-failed` — a pane that will not come up — *after* a branch, a worktree, a pane and the tracker claim already existed, which is the one binding that escaped §6.2's purpose of refusing before an attempt spends. §6.2 gains a **`profile-flags` check whose cardinality is the profile's, not the revision's**: one live session per **distinct** profile the active routing can dispatch, so a routing table naming one profile five times costs one session, while the runtime probe keeps its own one-per-pinned-revision cardinality — folding profiles into a probe that is *role- and profile-independent by design* would have changed that number rather than its argv, and that is a different design. Each session runs the profile's launch argv plus the probe-only IO flags and nothing else, and is judged on the answer the probe already reads — pi's RPC response, Claude's `initialize` control-response — at **zero model cost**, since spelling is a parse-level fact. Three measurements decided the mechanism rather than taste: **`--version` short-circuits before argument parsing** (Claude 2.1.233 accepts `--nonsense-flag` with exit 0), so it proves nothing; **a side subcommand's exit status is not a spelling verdict** (`pi list` exits 1 over a stale OAuth token on the development machine while the RPC session answers perfectly); and **a misspelling is refused by name before a session starts** (`unknown option '--efffort' (Did you mean --effort?)`, `Error: Unknown option: --thinnking`), so *a session that answers* is the proof and *one that never does* is the refusal, with no text parsing and no exit code in the judgement. The check runs **behind** the runtime probe and only on a green one, which is what makes it a spelling verdict at all: the probe starts the same session without the profile's flags, so the two differ by exactly those flags. A refusal names the profile, its flags, the binary and the binary's own diagnostic; an unproven spelling composes no production context, exactly as an unproven runtime does not. A binary that could not be spawned at all stays §11.7's `runtime-unreachable` rather than a rejected flag — it was never asked about a spelling. The profile-argument builders are exported so the launch and the proof share one definition by construction (#160's rule, applied one argument set down). **§15's configuration obligations gain the case by name**, and the cost is recorded rather than capped: the sessions are serial at the runtime's own probe timeout, so the worst case grows by distinct profiles × that timeout ahead of §9.7's expensive baseline, against a measured ~1.8 s (Claude) / ~0.7 s (pi) for an accepted spelling. | #164 |
+| 2026-08-17 | #163 closes #160's leak class in the other runtime. **Claude registers the project skills its own working directory ships**, and an isolated `CLAUDE_CONFIG_DIR` does not fence them — measured live on Claude Code 2.1.233 at zero model cost: an `initialize` control-request in a scratch project shipping `.claude/skills/leaktest/SKILL.md`, under an *empty* isolated config dir, answered 44 commands including a bare `leaktest`, and a project `.claude/commands/` file registered the same way. A worker's cwd is the attempt worktree, so on any target repository shipping `.claude/skills/` every Claude worker would load skills from outside the pinned package root, and §6.8's "skills reach a worker only from the pinned package root" would be false again. §6.8 records the fact and makes **`--setting-sources user`** load-bearing isolation on every Claude **worker** session — measured in the same pass to drop the project skill and the project command (it drops the `project` and `local` setting *sources*) while leaving the §6.3 plugin's records, the injected `--settings` file, and `--permission-mode dontAsk` untouched. §6.2's Claude probe gains a **fourth step**, because Claude's command records carry names and no source path, so pi's converse check has no analogue: the probe plants a canary project skill in the directory it probes in, requires the fenced session not to register it, and requires one deliberately unfenced control session — the worker binding minus the fence, nothing else — to register it. A canary that survives the fence is `skill-shadowed` naming its source; a control session blind to it is the new `discovery-fence-unproven`, since a probe that could not have observed the leak is not evidence of its absence. The canary is planted and removed by the probe, and what a run proved is recorded on the `runtime-probe` check. One consequence is recorded rather than left to be discovered: the fence also stops the **target repository's own `CLAUDE.md`** from being auto-loaded (measured — a marker word in a project `CLAUDE.md` was answered unfenced and not fenced), which is §6.8's two rule channels applied rather than an accident; the declared worker-context file is installed in the user scope the fence keeps, and `worker.contextFile` is where a target repo's standing rules are declared. | #163 |
 | 2026-08-17 | #157 moves §6.5's environment channel from **typed at the pane** to **declared to the multiplexer**. `startedAgent` sent `export FACTORY_ATTEMPT='…' CLAUDE_CONFIG_DIR='…' …` through `pane run`, justified by "neither `workspace create` nor `agent start` takes an environment" — **half of which stopped being true at Herdr 0.8.0**, which offers `--env KEY=VALUE` on `workspace create` and `tab create` and only leaves `agent start` without one. The typed path put every worker's config-directory paths and attempt identity into pane scrollback — the one place §6.8's closed pane set was meant not to widen — made the factory carry POSIX single-quoting for values it derived itself, and made a failure to type the exports indistinguishable from a shell that was not ready. The binding is now one `--env` set per name on the attempt's `tab create` (#156's tab), assembled at the tab because that is the last command before the agent that accepts an environment; identity is applied last so no declared value can shadow it, and one variable per name so no argument parser decides a winner. This is not inheritance returning through another door: the pane's shell still belongs to the multiplexer server, and the same closed set crosses — declared rather than typed. **That the variables reach the agent *process* and not merely the shell was established live before the typed path was removed** (`tests/live/herdr-tab-env-reaches-agent.mjs`, reading `/proc/<pid>/environ` on both hops): Herdr's own help says `--env` sets a variable for "the launched process", and the launched process is the shell. The same probe showed a value carrying a space and an apostrophe crossing byte for byte as one argv element, so `shellQuote` went with the path it existed for. | #157 |
