@@ -120,6 +120,48 @@ test("an attempt gets a tab in the run's workspace, never a workspace of its own
 	);
 });
 
+test("the attempt's environment is declared on the tab, never typed into its shell (#157)", async () => {
+	const io = runner({
+		"tab create": {
+			exitCode: 0,
+			stdout: JSON.stringify({ result: { tab: { tab_id: "w7:t2" }, root_pane: { pane_id: "w7:p2" } } }),
+			stderr: "",
+		},
+	});
+
+	await createHerdrControl({ run: io.run }).openTab({
+		workspace: "w7",
+		cwd: "/state/worktrees/a",
+		label: "factory-a",
+		env: {
+			FACTORY_ATTEMPT: "R-t42-a1",
+			// A path with a space and an apostrophe: the CLI takes the value as one
+			// argv element, so the factory's own POSIX quoting is not merely
+			// unnecessary here — it would embed the quotes in the value.
+			FACTORY_WORKTREE: "/state/my worktrees/it's",
+			FACTORY_TICKET: 42,
+		},
+	});
+
+	assert.deepEqual(io.calls[0], [
+		"tab",
+		"create",
+		"--workspace",
+		"w7",
+		"--cwd",
+		"/state/worktrees/a",
+		"--label",
+		"factory-a",
+		"--env",
+		"FACTORY_ATTEMPT=R-t42-a1",
+		"--env",
+		"FACTORY_WORKTREE=/state/my worktrees/it's",
+		"--env",
+		"FACTORY_TICKET=42",
+		"--no-focus",
+	]);
+});
+
 test("a tab in a workspace Herdr no longer has is a typed failure naming the command", async () => {
 	// Live: `herdr tab create --workspace w99` exits 1 with `workspace_not_found`.
 	// That is the operator having closed the run's workspace, and it is the lane's
@@ -170,32 +212,17 @@ test("the stamp is one metadata call carrying the token and the derived title", 
 	]);
 });
 
-test("identity is exported into the pane's own shell, quoted so a path with a space survives", async () => {
-	const io = runner();
+test("the environment is a tab-create option and nothing in this surface types into a shell (#157)", async () => {
+	const surface = createHerdrControl({ run: runner().run });
 
-	await createHerdrControl({ run: io.run }).exportIdentity("w1:p1", {
-		FACTORY_ATTEMPT: "R-t42-a1",
-		FACTORY_WORKTREE: "/state/my worktrees/R-t42-a1",
-		FACTORY_TICKET: 42,
-	});
-
-	// Neither `workspace create` nor `agent start` takes an environment, so the
-	// exports are typed into the shell before the agent occupies the pane —
-	// which is also what puts them in front of everything the worker starts.
-	assert.deepEqual(io.calls[0], [
-		"pane",
-		"run",
-		"w1:p1",
-		"export FACTORY_ATTEMPT='R-t42-a1' FACTORY_WORKTREE='/state/my worktrees/R-t42-a1' FACTORY_TICKET='42'",
-	]);
-});
-
-test("a single quote in a value is escaped rather than closing the quoting", async () => {
-	const io = runner();
-
-	await createHerdrControl({ run: io.run }).exportIdentity("w1:p1", { FACTORY_WORKTREE: "/state/it's/here" });
-
-	assert.equal(io.calls[0][3], `export FACTORY_WORKTREE='/state/it'\\''s/here'`);
+	// The typed path is gone, not merely unused: a second way to put a variable
+	// in front of a worker is a second thing to keep in step with §6.8's closed
+	// set, and the one that types leaves it in the scrollback.
+	assert.equal(surface.exportIdentity, undefined);
+	assert.equal(
+		Object.keys(surface).some((name) => /export|quote/i.test(name)),
+		false,
+	);
 });
 
 test("the agent starts in an existing pane, with the session flags after `--`", async () => {

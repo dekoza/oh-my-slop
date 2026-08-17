@@ -4,8 +4,14 @@ import { BINARY } from "./herdr.mjs";
 
 /**
  * The commands the run and its attempts issue against Herdr: open the run's
- * workspace, open a tab in it, stamp that tab's pane, start an agent, prompt it,
- * list panes, stop an agent.
+ * workspace, open a tab in it under the worker's environment, stamp that tab's
+ * pane, start an agent, prompt it, list panes, stop an agent.
+ *
+ * **Only two of them take an environment.** `workspace create` and `tab create`
+ * carry `--env KEY=VALUE` in Herdr 0.8.0; `agent start` has none, in the CLI or
+ * in the socket API. That is the whole reason the worker's binding is assembled
+ * at the tab (#157) — it is the last point before the agent at which anything
+ * can be put in front of it.
  *
  * It is separate from `herdr.mjs` on purpose. That module is §10.3's
  * availability *probe*, and the checkable form of "the factory checks the
@@ -181,8 +187,18 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 		 * repaired: an operator who closed the run's workspace ends its live lanes,
 		 * which is #156's stated cost, and opening a replacement behind their back
 		 * would re-create the topology they closed.
+		 *
+		 * **`env` is §6.5's identity and §6.8's session binding, declared to the
+		 * server rather than typed at the pane** (#157). Herdr 0.8.0 sets them on
+		 * the shell it launches for the tab, and an agent `agent start` puts in that
+		 * shell later inherits them — established live before this path replaced the
+		 * typed one (`tests/live/herdr-tab-env-reaches-agent.mjs`), because whether
+		 * the agent *process* or only the shell sees them is exactly the assumption
+		 * this repository probes rather than believes. Each value crosses as one
+		 * argv element, so nothing here quotes anything: a space or an apostrophe in
+		 * a path is the CLI's problem, and it does not have one.
 		 */
-		async openTab({ workspace, cwd, label }) {
+		async openTab({ workspace, cwd, label, env = {} }) {
 			const created = await call([
 				"tab",
 				"create",
@@ -192,6 +208,7 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 				cwd,
 				"--label",
 				label,
+				...Object.entries(env).flatMap(([name, value]) => ["--env", `${name}=${value}`]),
 				"--no-focus",
 			]);
 			if (created.exitCode !== 0) return failed("tab create", created);
@@ -253,36 +270,6 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 				title,
 			]);
 			return stamped.exitCode === 0 ? Object.freeze({ ok: true, pane }) : failed("pane report-metadata", stamped);
-		},
-
-		/**
-		 * §6.5's second identity channel: **environment variables in the pane the
-		 * agent will run in.**
-		 *
-		 * `agent start` takes no environment, so the exports are typed into the
-		 * pane's own shell before the agent occupies it — which is also why they
-		 * survive into everything the worker starts, rather than only into the
-		 * harness process. The prompt carries the same tuple; two channels because
-		 * a worker that lost track of the prompt can still read `$FACTORY_ATTEMPT`,
-		 * and a script it writes can too.
-		 *
-		 * Herdr 0.8.0 does offer `--env KEY=VALUE` on `workspace create` and
-		 * `tab create`, so half the original reason for typing them is gone;
-		 * declaring them to the server instead is #157's, and it has a live
-		 * question to settle first — whether a variable set that way reaches the
-		 * agent process `agent start` launches later, or only the pane's shell.
-		 *
-		 * Every value is single-quoted with the shell's own escape for an embedded
-		 * quote. The identity segments are §2.1-charset by construction and the
-		 * paths are controller-derived, so this guards against a repository path
-		 * with a space in it rather than against a hostile value.
-		 */
-		async exportIdentity(pane, variables) {
-			const exports = Object.entries(variables)
-				.map(([name, value]) => `${name}=${shellQuote(String(value))}`)
-				.join(" ");
-			const exported = await call(["pane", "run", pane, `export ${exports}`]);
-			return exported.exitCode === 0 ? Object.freeze({ ok: true, exported }) : failed("pane run", exported);
 		},
 
 		/**
@@ -396,11 +383,6 @@ export function transcriptPointerOf(pane) {
 export function agentAlive(pane) {
 	if (pane === null || pane === undefined) return false;
 	return typeof pane.agent === "string" && pane.agent.length > 0;
-}
-
-/** POSIX single-quoting: everything is literal inside, and `'` closes-escapes-reopens. */
-function shellQuote(value) {
-	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 function failed(command, answer) {

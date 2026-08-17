@@ -23,6 +23,7 @@ somebody wrote to match it).
 | `herdr-subscription-frames.mjs` | no | Which event names does the socket actually deliver, and does the factory's subscription request accept them? |
 | `herdr-pane-exit-frame.mjs` | no | Does closing a pane emit a frame, and under which name? |
 | `herdr-isolated-worker-status.mjs` | **yes** | Does a worker pane launched under §6.8 isolation report an agent status to Herdr? |
+| `herdr-tab-env-reaches-agent.mjs` | no | Does a variable set with `tab create --env` reach the agent process `agent start` launches later, or only the pane's shell? |
 
 `herdr-isolated-worker-status.mjs` starts a real Claude session and prompts it. Keep the prompt
 trivial and expect it to cost what one short turn costs.
@@ -52,3 +53,19 @@ tests for.**
   the engine's default when nothing matches (`matched_rule: null`). For pi, "idle" is therefore
   *no evidence of anything on screen*, not evidence of a finished turn — which is why a deadline
   fed by status alone is not enough (#150).
+
+Against Herdr 0.8.0 on 2026-08-17 (#157):
+
+**`tab create --env` reaches the agent process, not merely the pane's shell.** Herdr's help says
+`--env` sets "an environment variable for the launched process", and the launched process is the
+shell — so whether the agent inherits it was the open question, and it does. Read out of
+`/proc/<pid>/environ` on both hops: the tab's shell, then the `pi` process `agent start` put in
+that shell afterwards. Both carried `FACTORY_WORKTREE=/state/my worktrees/it's` byte for byte,
+so a value with a space and an apostrophe in it crosses as one argv element and needs no
+quoting of ours. The pane's scrollback contained neither value. That is what let §6.5's identity
+and §6.8's binding move off `pane run export …`, and with them the factory's POSIX quoting
+helper.
+
+**`agent start` still takes no environment** — not in the CLI (`<NAME> --kind --pane --timeout
+[-- AGENT_ARG...]`) and not in the socket API. `workspace create` and `tab create` are the only
+two of the three that do, which is why the binding is assembled at the tab.

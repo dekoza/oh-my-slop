@@ -166,6 +166,16 @@ export function fakeHerdr({
 				cwd: args[args.indexOf("--cwd") + 1],
 				agent_status: "unknown",
 				tokens: {},
+				// What the server sets on the shell it launches for this tab, and
+				// therefore what the agent started in it later inherits (#157). Herdr
+				// itself does not report it back; the fixture keeps it so a test can
+				// read the environment a worker would actually have.
+				env: Object.fromEntries(
+					args
+						.map((value, index) => (args[index - 1] === "--env" ? value : null))
+						.filter((pair) => pair !== null)
+						.map((pair) => [pair.slice(0, pair.indexOf("=")), pair.slice(pair.indexOf("=") + 1)]),
+				),
 			};
 			panes.push(pane);
 			workspace.next += 1;
@@ -177,13 +187,6 @@ export function fakeHerdr({
 			pane.tokens[token[0]] = token[1];
 			pane.title = args[args.indexOf("--title") + 1];
 			return json({ pane_id: pane.pane_id });
-		}
-		if (command === "pane run") {
-			// The pane's own shell takes the exports, so the fixture keeps them
-			// where a test can read what a worker's environment would carry.
-			const pane = panes.find((entry) => entry.pane_id === args[2]);
-			pane.exported = args[3];
-			return json({ ran: true });
 		}
 		if (command === "agent start") {
 			const pane = panes.find((entry) => entry.pane_id === args[args.indexOf("--pane") + 1]);

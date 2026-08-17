@@ -283,9 +283,15 @@ is the authority; cite the section a change answers to.
   with the `FACTORY_ATTEMPT` token stamped **before** the agent so a crash in between leaves a
   pane reconcile can still recognise — the probe asks for the token *and* a live agent, so an
   early stamp cannot fake a start. §6.5's identity travels on **two channels**: the prompt, and
-  `FACTORY_*` exports typed into the pane's shell before the agent occupies it (neither
-  `workspace create` nor `agent start` takes an environment), so the tuple is reachable from
-  everything the worker starts. Then the transcript pointer, polled out of Herdr with backoff and
+  `FACTORY_*` variables **declared on the attempt's `tab create`** rather than typed at its shell
+  (#157), so the tuple reaches everything the worker starts without entering the scrollback §6.8's
+  closed pane set was meant not to widen. Of the three launch commands `workspace create` and
+  `tab create` take `--env` and **`agent start` takes none**, which is what puts the binding at the
+  tab; that the variables reach the agent *process* and not merely the shell Herdr launches for it
+  was read out of `/proc/<pid>/environ` live (`tests/live/herdr-tab-env-reaches-agent.mjs`) before
+  the typed path was deleted, and the same probe is why no quoting helper survives here — a value
+  crosses as one argv element. Identity is applied last, so a declared binding cannot shadow it.
+  Then the transcript pointer, polled out of Herdr with backoff and
   never computed; then §6.2's layer-3 recheck, which is why the pin is compared **before** the
   prompt — the prompt is the first thing that spends; then the prompt; then
   `attempt.correlated`, whose presence is what makes a launch *finished*. A re-entry finishes

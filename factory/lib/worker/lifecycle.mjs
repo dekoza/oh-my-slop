@@ -848,10 +848,24 @@ async function startedAgent(
 	const workspace = await openRunWorkspace(store, { hold, run, herdr, cwd: store.storeDir, actor, at });
 	if (!workspace.ok) throw launchFailure(workspace, identity);
 
+	// §6.5's second identity channel and §6.8's session binding, **declared to
+	// the multiplexer with the tab rather than typed into its shell** (#157). Of
+	// the three commands a launch issues, `workspace create` and `tab create`
+	// take `--env` and **`agent start` takes none** — so the tab is the last
+	// point at which anything can be put in front of the agent, and the binding
+	// is assembled here because this is where that opportunity is. Herdr sets it
+	// on the shell it launches for the tab, and the agent started in that shell
+	// inherits it, which is why it still reaches everything the worker starts
+	// and not only the harness process (proved live, `tests/live/`).
+	//
+	// One object, so identity is spread **last** and no declared value may shadow
+	// it: a `--env` repeated for one name would leave that to Herdr's argument
+	// parser instead.
 	const opened = await herdr.openTab({
 		workspace: workspace.workspace,
 		cwd: worktreePath,
 		label: herdrTabLabel(attempt),
+		env: { ...sessionEnv, ...attemptEnvironment({ identity, payload }) },
 	});
 	if (!opened.ok) throw workspaceTabFailure(opened, identity, workspace.workspace);
 
@@ -861,19 +875,6 @@ async function startedAgent(
 	// so an early stamp cannot make an unstarted agent look started.
 	const stamped = await herdr.stamp(opened.pane, { attempt, title: herdrPaneTitle(attempt) });
 	if (!stamped.ok) throw launchFailure(stamped, identity);
-
-	// §6.5's second identity channel, into the shell the agent is about to
-	// occupy — so the tuple is reachable from every process the worker starts
-	// and not only from the prompt it was handed once. §6.8's session binding
-	// rides the same export: the pane's shell is the multiplexer server's, not
-	// this controller's, so the controller-owned config roots reach the worker
-	// only by being written here. Identity is spread last — no declared value
-	// may shadow it.
-	const exported = await herdr.exportIdentity(opened.pane, {
-		...sessionEnv,
-		...attemptEnvironment({ identity, payload }),
-	});
-	if (!exported.ok) throw launchFailure(exported, identity);
 
 	const started = await herdr.startAgent({
 		name: agent,
