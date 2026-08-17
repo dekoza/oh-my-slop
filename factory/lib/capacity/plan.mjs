@@ -1,5 +1,5 @@
 import { classesReachedBy } from "../config/profiles.mjs";
-import { profilesReachedBy } from "../config/routing.mjs";
+import { profilesForRole, profilesReachedBy } from "../config/routing.mjs";
 import { dispatchOrder, selectRoute } from "../worker/dispatch.mjs";
 import { FactoryWorkerError } from "../worker/errors.mjs";
 import { FactoryCapacityError } from "./errors.mjs";
@@ -55,9 +55,11 @@ export function capacityPlan({ concurrency, profiles, activeRouting }) {
 
 	const resourceSlots = classes.reduce((total, entry) => total + entry.size, 0);
 	// §9.4 acquires the **implement** attempt's model slot before the Gitea claim,
-	// so those pools alone decide how many ticket executions can ever be started.
+	// so those pools alone decide how many ticket executions can ever be started —
+	// the fallback pools included, since #155 starts a rerouted implement attempt
+	// from one of those and leaving them out would understate §9.2 by the reroute.
 	const implementSlots = [
-		...classesReachedBy(profiles, rolesReaching(activeRouting, "implement")).keys(),
+		...classesReachedBy(profiles, profilesForRole(activeRouting, "implement")).keys(),
 	].reduce((total, className) => total + concurrency.resources[className], 0);
 
 	return Object.freeze({
@@ -138,23 +140,3 @@ function implementOrder(activeRouting, { ticket = null, labels = [] }) {
 		);
 	}
 }
-
-/**
- * Every profile a role can dispatch to: its declared value, its rules', and its
- * **reroute order's** (#155).
- *
- * The order counts because a rerouted implement attempt takes its slot from the
- * fallback's pool — so those slots are as much a bound on how many ticket
- * executions can be started as the declared profile's are, and leaving them out
- * would understate §9.2's effective concurrency by exactly the reroute.
- */
-function rolesReaching(activeRouting, role) {
-	const reached = new Set([activeRouting.roles[role]].flat());
-	for (const rule of activeRouting.rules) {
-		if (rule.role === role) for (const profile of [rule.profile].flat()) reached.add(profile);
-	}
-	for (const profile of (activeRouting.fallbacks?.[role] ?? []).flat()) reached.add(profile);
-
-	return reached;
-}
-

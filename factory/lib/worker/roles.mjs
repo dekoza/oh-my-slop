@@ -1,3 +1,4 @@
+import { profilesForRole } from "../config/routing.mjs";
 import { REVIEW_VERDICTS, WORKER_WRITABLE_OUTCOMES } from "../domain/vocabulary.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
 import { WORKER_POSTURES } from "./permissions.mjs";
@@ -116,14 +117,12 @@ function declare(name, { entrySkill, routingRole, expectations }) {
  */
 export function rolesInPlay(activeRouting) {
 	return Object.freeze(
-		PIPELINE_ROLES.map((role) => {
-			const reached = new Set([activeRouting.roles[role.routingRole]].flat());
-			for (const rule of activeRouting.rules) {
-				if (rule.role === role.routingRole) for (const profile of [rule.profile].flat()) reached.add(profile);
-			}
-			for (const profile of (activeRouting.fallbacks?.[role.routingRole] ?? []).flat()) reached.add(profile);
-			return Object.freeze({ ...role, profiles: Object.freeze([...reached].sort()) });
-		}),
+		PIPELINE_ROLES.map((role) =>
+			Object.freeze({
+				...role,
+				profiles: Object.freeze([...profilesForRole(activeRouting, role.routingRole)].sort()),
+			}),
+		),
 	);
 }
 

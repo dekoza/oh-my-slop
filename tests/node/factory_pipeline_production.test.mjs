@@ -407,9 +407,16 @@ test("#155: a refused provider costs the ticket a relaunch, not the ticket — i
 	// cannot behave differently from what was declared. A substitution the record
 	// does not name is exactly that difference, so the mint carries the decision.
 	assert.equal(builders[1].payload.routing.declared, "builder");
-	assert.equal(builders[1].payload.routing.profile, "reserve");
 	assert.equal(builders[1].payload.routing.rerouted, true);
 	assert.match(builders[1].payload.routing.reason, /builder on local/);
+	assert.equal(
+		builders[1].payload.routing.profile,
+		undefined,
+		"what ran is the payload's own field: one value with two homes in one record is a disagreement waiting to happen",
+	);
+	// The pinned rows say so by carrying no decision at all, rather than by
+	// claiming to have declared what they were pinned to.
+	assert.equal(builders[0].payload.routing.rerouted, false);
 
 	const spend = store
 		.readEvents({ kind: "stage.resolved" })

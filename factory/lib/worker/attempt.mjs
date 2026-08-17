@@ -4,6 +4,7 @@ import { PHASES } from "../domain/vocabulary.mjs";
 import { attemptBranch, attemptWorktreePath } from "../git/isolation.mjs";
 import { containPath, PATH_REFUSALS } from "../identity/paths.mjs";
 import { canonicalJson, runStream } from "../state/events.mjs";
+import { routeSummary } from "./dispatch.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
 
 /**
@@ -180,24 +181,57 @@ export function requireAttemptIdentity({ run, ticket, phase, attempt }) {
  */
 export function dispatchedAttempts(store, { run, ticket }) {
 	return Object.freeze(
-		store
-			.readEvents({ stream: runStream(run), kind: "attempt.launched" })
-			.filter((record) => record.ticket === ticket)
-			.map((record) =>
-				Object.freeze({
-					attempt: record.attempt,
-					role: record.payload.role,
-					profile: record.payload.profile ?? null,
-					// `null` on a **pinned** attempt rather than a copy of the profile:
-					// §8.5's repair and §8.10's automation retry made no dispatch
-					// decision, and saying they declared what they ran would read as a
-					// routing that happened to land where the pin already was.
-					declared: record.payload.routing?.declared ?? null,
-					rerouted: record.payload.routing?.rerouted ?? false,
-					reason: record.payload.routing?.reason ?? null,
-				}),
-			),
+		mints(store, { run, ticket }).map((record) =>
+			Object.freeze({
+				attempt: record.attempt,
+				role: record.payload.role,
+				profile: record.payload.profile ?? null,
+				// `null` on a **pinned** attempt rather than a copy of the profile:
+				// §8.5's repair and §8.10's automation retry made no dispatch
+				// decision, and saying they declared what they ran would read as a
+				// routing that happened to land where the pin already was.
+				declared: record.payload.routing?.declared ?? null,
+				rerouted: record.payload.routing?.rerouted ?? false,
+				reason: record.payload.routing?.reason ?? null,
+			}),
+		),
 	);
+}
+
+/**
+ * **What one attempt was actually minted to run** — the profile and, where a
+ * dispatch decision was made, the decision itself.
+ *
+ * Read back rather than carried forward, because `mintAttempt` leaves an
+ * existing record exactly as it is: a controller that died between the mint and
+ * the work re-enters, re-derives §11.5's dispatch against a memo that has since
+ * moved, and would otherwise launch under a profile the record does not name.
+ * The mint is the answer to *what is this attempt*, so it is what a launch reads
+ * (§14.1) — the same rule the builder path already follows through its own
+ * launch record.
+ *
+ * @param {object} store an open store
+ * @param {{ run: string, ticket: number, attempt: string }} where
+ * @returns {Readonly<{ profile: string | null, routing: Readonly<object> | null }> | null}
+ */
+export function mintedDispatch(store, { run, ticket, attempt }) {
+	const record = mints(store, { run, ticket }).find((entry) => entry.attempt === attempt);
+	if (record === undefined) return null;
+
+	const profile = record.payload.profile ?? null;
+	// The profile is put back on the decision here and nowhere else: the record
+	// stores it once, and every consumer of a *route* wants the whole of one.
+	return Object.freeze({
+		profile,
+		routing: record.payload.routing === null ? null : Object.freeze({ ...record.payload.routing, profile }),
+	});
+}
+
+/** One ticket execution's mints, in journal order — the one read both above use. */
+function mints(store, { run, ticket }) {
+	return store
+		.readEvents({ stream: runStream(run), kind: "attempt.launched" })
+		.filter((record) => record.ticket === ticket);
 }
 
 /**
@@ -348,7 +382,10 @@ function mintsPurpose(payload, purpose) {
  *   It rides the mint rather than a record of its own because §6.5 re-asserts a
  *   *declared* model against the observed one, and the mint is where the declared
  *   one is written down. A substitution recorded somewhere else would be a second
- *   answer to "what ran", which is the question this exists to keep answerable
+ *   answer to "what ran", which is the question this exists to keep answerable.
+ *   It is stored as `routeSummary`'s projection, which drops the profile: that
+ *   is the field beside it, and one value with two homes in one record is a
+ *   disagreement waiting to be written
  * @param {string} context.baseCommit the commit its branch starts at
  * @param {object} context.purpose **why this attempt exists**, in the minter's own
  *   words — §8.5's tier and the attempt it answers, or §8.4's axis, work and try.
@@ -372,7 +409,7 @@ export function mintAttempt(store, { hold, identity, role, profile, routing = nu
 		payload: {
 			role,
 			profile,
-			routing,
+			routing: routing === null ? null : routeSummary(routing),
 			...purpose,
 			base_commit: baseCommit,
 			// The three derived paths cost nothing to compute and are what an

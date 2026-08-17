@@ -1,13 +1,13 @@
 import { BASE_KINDS, RETRY_TIERS, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
-import { PIPELINE_ROLES } from "../worker/roles.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 import {
-	dispatchedProfiles,
+	FRESH_RETRY_ROLE,
 	openRetryAttempt,
 	originatingAttempt,
 	planAutomationRetry,
 	planReroute,
 	planRetry,
+	refusedProfiles,
 } from "./repair.mjs";
 
 /**
@@ -103,8 +103,10 @@ export function createRetrySeam(
 	 * **fresh-retry** re-dispatches the `freshRetry` role from scratch, so its
 	 * order starts fresh too — discarding the work is the point, and refusing the
 	 * profile that built it would be a rule §11.5 does not have. A **reroute**
-	 * keeps the role it is on and excludes what this ticket execution has already
-	 * dispatched for it, which is the bound that makes the chain finite.
+	 * keeps the role it is on and excludes the profiles this ticket execution has
+	 * already had *refused* for it, which is the bound that makes the chain
+	 * finite — read from the journal, so a re-entry after a crash bounds the same
+	 * way rather than starting the chain again.
 	 */
 	async function planned({ prior, failure, priorResult }) {
 		const action = failure.row?.action;
@@ -116,7 +118,7 @@ export function createRetrySeam(
 				priorResult,
 				route: await routed({
 					role: prior.role,
-					dispatched: dispatchedProfiles(store, { run, ticket, role: prior.role }),
+					dispatched: refusedProfiles(store, { run, ticket, role: prior.role }),
 					action,
 					failure,
 				}),
@@ -166,9 +168,6 @@ export function createRetrySeam(
 		);
 	}
 }
-
-/** §8.5's fresh-retry role, read from the inventory that owns role names (§6.1). */
-const FRESH_RETRY_ROLE = PIPELINE_ROLES.find((role) => role.routingRole === "freshRetry");
 
 /** What the order tried, for the sentence a released ticket is explained by. */
 function describeRoutes(route) {

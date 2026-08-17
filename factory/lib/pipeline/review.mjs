@@ -1,9 +1,11 @@
 import { CHECK_RESULTS, FINDING_SEVERITIES, PHASE_REVIEW, PHASE_VERIFY, REVIEW_VERDICTS, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
 import { createAttemptWorktree } from "../git/attempt.mjs";
 import { assessMutation, captureWorktreeState } from "../git/attestation.mjs";
-import { allocateAttempt, mintAttempt, requireAttemptIdentity } from "../worker/attempt.mjs";
+import { allocateAttempt, mintAttempt, mintedDispatch, requireAttemptIdentity } from "../worker/attempt.mjs";
+import { routeSummary } from "../worker/dispatch.mjs";
 import { postureOf, REVIEW_ROLES } from "../worker/roles.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
+import { refusedProfiles } from "./repair.mjs";
 import { FIRST_TRY, recordedStage, resolveStage, stageResults } from "./stages.mjs";
 import { routeOutcome } from "./table.mjs";
 
@@ -217,27 +219,25 @@ function verifiedBoundary(store, { run, ticket, attempt }) {
 async function walkAxis(store, clone, context) {
 	const { hold, run, ticket, axis, index, routeAxis, actor, now } = context;
 	let tryNumber = 1;
-	/**
-	 * The profiles **this axis** has spent on a *reroute*, which is what bounds
-	 * its reroutes and what keeps §8.4's two axes independent under one: the other
-	 * axis's spend is not in this list, so an exhausted class walks each axis down
-	 * its own declared order rather than one axis's choices constraining the
-	 * other's.
-	 *
-	 * **An automation retry adds nothing to it.** A reviewer whose pane died says
-	 * nothing about its provider, and §8.10 relaunches the same work rather than
-	 * moving it: excluding its profile would turn every infra flake into a silent
-	 * model change, and on a routing with no fallback into a released ticket.
-	 */
-	const spent = [];
 
 	for (;;) {
 		// #155: dispatched per pass, not once per axis, because a pass is entered
 		// again exactly when the last profile stopped being spendable — a provider
 		// refused it, and the memo has moved since. Selecting once up front would
 		// relaunch into the refusal.
-		const route = await routeAxis({ axis: axis.name, index, dispatched: spent });
-		if (typeof route?.profile !== "string") return unroutableAxis({ axis, route, tryNumber });
+		//
+		// **The bound is read from the journal, not carried in this loop.** An
+		// in-memory list would be lost by a controller that died mid-chain, and the
+		// axis would re-dispatch a profile the provider has already refused. It is
+		// keyed on **this axis's own role**, which is what keeps §8.4's two axes
+		// independent under a reroute: the other axis's refusals are not in it, so
+		// an exhausted class walks each down its own declared order.
+		const route = await routeAxis({
+			axis: axis.name,
+			index,
+			dispatched: refusedProfiles(store, { run, ticket, role: axis.name }),
+		});
+		if (typeof route?.profile !== "string") throw axisOutOfRoutes({ axis, route, tryNumber });
 
 		const opened = await openAxisAttempt(store, clone, { ...context, route, tryNumber });
 		// An axis's retry is a **fresh axis attempt** (§8.4's `try` rides the mint's
@@ -246,7 +246,7 @@ async function walkAxis(store, clone, context) {
 		const recorded = recordedStage(store, { run, ticket, phase: PHASE_REVIEW, attempt: opened.attempt, try: FIRST_TRY });
 		const answer =
 			recorded === null
-				? await attemptAxis(clone, { ...context, ...opened, route, tryNumber })
+				? await attemptAxis(clone, { ...context, ...opened, tryNumber })
 				: { outcome: recorded.payload.outcome, detail: recorded.payload.detail };
 
 		const resolved = resolveStage(store, {
@@ -273,8 +273,13 @@ async function walkAxis(store, clone, context) {
 		// automation budget would let two quota blips fail a ticket whose review
 		// never started.
 		if (resolved.row.action === STAGE_ACTIONS.reroute) {
-			spent.push(route.profile);
-			tryNumber = nextAxisTry(store, { ...context, tryNumber });
+			// Nothing is recorded here, and nothing needs to be. The bound is the
+			// resolution just committed — `refusedProfiles` reads it on the next
+			// pass — and the next pass's attempt id comes from `openAxisAttempt`
+			// allocating against the same purpose, which is a derivation and not a
+			// reservation. A call here to "take" the ordinal would write nothing and
+			// answer a question the next line asks again.
+			tryNumber += 1;
 			continue;
 		}
 
@@ -285,7 +290,7 @@ async function walkAxis(store, clone, context) {
 				action: resolved.row.action,
 				outcome: resolved.outcome,
 				detail: resolved.detail,
-				routing: opened.routing,
+				routing: opened.route,
 			});
 		}
 
@@ -327,6 +332,14 @@ async function openAxisAttempt(
 		at: now(),
 	});
 
+	// **The mint decides, not the caller.** A record already there is left exactly
+	// as it is, so a re-entry after a crash finds the decision the previous
+	// controller committed — and §11.5 re-resolved against a memo that has since
+	// moved would launch this axis under a profile the record does not name, which
+	// is precisely the disagreement between "what ran" and "what the disposition
+	// says ran" that #155 exists to close (§6.5, §8.9).
+	const minted = mintedDispatch(store, { run, ticket, attempt: identity.attempt }) ?? { routing: route };
+
 	const created = await createAttemptWorktree(store, clone, {
 		hold,
 		run,
@@ -348,25 +361,12 @@ async function openAxisAttempt(
 		identity,
 		branch: created.branch,
 		worktreePath: created.worktreePath,
-		routing: route,
+		// The mint's answer, so everything downstream — the launch, the axis's
+		// stage detail, §8.7's attestation — reads one value.
+		route: minted.routing ?? route,
 	});
 }
 
-/**
- * The next pass's try number for a **reroute**, which mints no attempt here and
- * spends nothing.
- *
- * It is `allocateAttempt`'s question rather than an increment: the purpose keys
- * the axis attempt, so a re-entry after a crash lands on the attempt the
- * previous controller already opened for this try instead of taking a second
- * ordinal for the same pass. Nothing is charged and nothing is asked, which is
- * the whole difference from `grantedRetry` beside it.
- */
-function nextAxisTry(store, { run, ticket, axis, builderAttempt, tryNumber }) {
-	const nextTry = tryNumber + 1;
-	allocateAttempt(store, { run, ticket, purpose: axisPurpose({ axis, builderAttempt, tryNumber: nextTry }) });
-	return nextTry;
-}
 
 /**
  * An axis with nowhere to run: every profile §11.5's order names for it belongs
@@ -374,28 +374,30 @@ function nextAxisTry(store, { run, ticket, axis, builderAttempt, tryNumber }) {
  *
  * **No attempt is minted**, which is the point of asking before opening: an
  * attempt row with no pane behind it would be a launch this run never made, and
- * §8.9's branch evidence would then name a branch nothing ever wrote to. The
- * axis answers `routes-exhausted` and §8.10 releases the ticket execution — the
- * ticket goes back to the frontier untouched, and the memo keeps the next claim
- * out until a probe re-admits a class.
+ * §8.9's branch evidence would then name a branch nothing ever wrote to.
+ *
+ * It is **thrown rather than answered**, for the reason §8.6's exhaustion is: the
+ * fan-out decides an axis's dispatch *inside* the phase executor, and an
+ * executor's only ways out are a phase result and a throw. Answering with one
+ * would mean inventing a `review` phase result for "the run is out of providers"
+ * — a capacity fact wearing a verdict's clothes — and §8.10's row for it is
+ * phase-less precisely because it belongs to no phase's outcome domain.
  */
-function unroutableAxis({ axis, route, tryNumber }) {
-	return Object.freeze({
-		axis: axis.name,
-		attempt: null,
-		action: STAGE_ACTIONS.dispose,
-		outcome: "routes-exhausted",
-		detail: Object.freeze({
+function axisOutOfRoutes({ axis, route, tryNumber }) {
+	return new FactoryPipelineError(
+		"routes-exhausted",
+		`Every profile §11.5's order names for review axis ${axis.name} belongs to a resource class §9.8's memo has ` +
+			`recorded unavailable, so this axis cannot be run and no attempt is minted for it. The ticket goes back to ` +
+			`the frontier untouched: no reviewer failed, no budget is owed, and the memo keeps the next claim out until ` +
+			`a probe re-admits a class.`,
+		{
+			at: "route",
 			axis: axis.name,
 			try: tryNumber,
 			declared: route?.declared ?? null,
-			considered: Object.freeze(route?.considered ?? []),
-			problem:
-				`every profile §11.5's order names for axis ${axis.name} belongs to a resource class §9.8's memo has ` +
-				`recorded unavailable`,
-		}),
-		routing: route ?? null,
-	});
+			considered: route?.considered ?? [],
+		},
+	);
 }
 
 /**
@@ -677,13 +679,15 @@ function decideReview(axes) {
  * arriving there on its own.
  */
 function axisRouting(axes) {
-	const ran = axes.map((axis) => Object.freeze({
-		axis: axis.axis,
-		declared: axis.routing?.declared ?? null,
-		profile: axis.routing?.profile ?? null,
-		rerouted: axis.routing?.rerouted ?? false,
-		reason: axis.routing?.reason ?? null,
-	}));
+	const ran = axes.map((axis) => {
+		// The candidates a verdict does not carry: what an operator reads here is
+		// which model rendered it, and the walk past the exhausted ones is on the
+		// axis's own durable result. Dropped rather than set to `undefined`,
+		// because §4.3's records are canonicalised and an undefined field has no
+		// JSON representation to canonicalise.
+		const { considered, ...summary } = routeSummary(axis.routing);
+		return Object.freeze({ axis: axis.axis, profile: axis.routing?.profile ?? null, ...summary });
+	});
 
 	const profiles = ran.map((axis) => axis.profile);
 	const declared = ran.map((axis) => axis.declared);

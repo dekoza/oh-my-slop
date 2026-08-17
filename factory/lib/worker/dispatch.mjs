@@ -1,4 +1,5 @@
 import { resourceClassOf } from "../config/profiles.mjs";
+import { fallbacksOf } from "../config/routing.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
 import { profileForRole, REVIEW_ROUTING_ROLE } from "./roles.mjs";
 
@@ -54,10 +55,9 @@ import { profileForRole, REVIEW_ROUTING_ROLE } from "./roles.mjs";
  */
 export function dispatchOrder(activeRouting, { role, labels = [], axis = null }) {
 	const dispatched = profileForRole(activeRouting, { role, labels });
-	const fallbacks = activeRouting.fallbacks ?? NO_FALLBACKS;
 
 	if (role !== REVIEW_ROUTING_ROLE) {
-		return dedupe([dispatched, ...(fallbacks[role] ?? [])]);
+		return dedupe([dispatched, ...fallbacksOf(activeRouting, role)]);
 	}
 
 	const pair = Array.isArray(dispatched) ? dispatched : [dispatched];
@@ -71,7 +71,7 @@ export function dispatchOrder(activeRouting, { role, labels = [], axis = null })
 		);
 	}
 
-	return dedupe([pair[axis], ...(fallbacks[role]?.[axis] ?? [])]);
+	return dedupe([pair[axis], ...(fallbacksOf(activeRouting, role)[axis] ?? [])]);
 }
 
 /**
@@ -129,17 +129,6 @@ export async function selectRoute({ order, profiles, exhaustion, dispatched = []
 	return route({ profile: null, class: null, declared, considered });
 }
 
-/**
- * §11.5's reroute order for a routing built before this existed — the same empty
- * addition the loader writes, so a hand-composed routing needs no `fallbacks`
- * key to be dispatched from and no consumer branches on `undefined`.
- */
-const NO_FALLBACKS = Object.freeze({
-	implement: Object.freeze([]),
-	freshRetry: Object.freeze([]),
-	review: Object.freeze([Object.freeze([]), Object.freeze([])]),
-});
-
 function route({ profile, class: className, declared, considered }) {
 	const rerouted = profile !== null && profile !== declared;
 
@@ -168,6 +157,33 @@ function passedOver(considered, chosen) {
 				: `${seen.profile} on ${seen.class} was already dispatched for this ticket`,
 		)
 		.join("; ");
+}
+
+/**
+ * A route as a **record**, without the class the caller took its slot from —
+ * the form that rides an `attempt.launched` payload and §8.9's block (#155).
+ *
+ * The profile is deliberately absent: the mint writes it as a field of its
+ * own, which every consumer already reads, and a second copy inside the
+ * decision would be one value with two homes in one record. What is left is
+ * exactly what the profile alone cannot say — what §11.5 declared, whether
+ * that is what ran, and why not.
+ *
+ * One projection because two readers summarise a route — the mint's, and
+ * §8.4's per-axis verdict — and two spellings of *what a route says about
+ * itself* are two things to keep in step.
+ *
+ * @param {Readonly<object> | null} route `selectRoute`'s answer, or null
+ *   where the row was pinned rather than routed
+ * @returns {Readonly<object>}
+ */
+export function routeSummary(route) {
+	return Object.freeze({
+		declared: route?.declared ?? null,
+		rerouted: route?.rerouted ?? false,
+		reason: route?.reason ?? null,
+		considered: Object.freeze(route?.considered ?? []),
+	});
 }
 
 function entry(seen) {

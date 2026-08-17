@@ -820,3 +820,26 @@ test("a reroute with nowhere left to go releases the ticket untouched, as its ow
 		automation: 0,
 	});
 });
+
+test("running out of routes settles the same way from a controller phase, where no attempt outcome exists (§8.10, #155)", async (t) => {
+	// §11.5's fresh-retry is routed, so it is the second row that can run out of
+	// profiles — and it is reached from `verify` and `integrate`, which have no
+	// worker and therefore no attempt outcome for the refusal to be one of (§8.8).
+	// The row is phase-less for exactly that reason.
+	const context = await executing(t);
+	const { phases } = answering({ implement: "completed", harvest: "passed", verify: "rebase-conflict" });
+
+	const settled = await context.walk(phases, {
+		nextAttempt: async () => {
+			throw new FactoryPipelineError("routes-exhausted", "every routable profile for role fresh-retry is memo-locked", {
+				at: "route",
+				role: "fresh-retry",
+			});
+		},
+	});
+
+	assert.equal(settled.disposition, "released", "a provider's cap is not a human's investigation, whichever phase met it");
+	assert.equal(settled.outcome, "routes-exhausted");
+	assert.equal(settled.phase, "verify", "and the record still says where the run ran out");
+	assert.equal(settled.fault, null, "§8.6's breaker counts neither a product nor an automation failure");
+});

@@ -5,12 +5,13 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
+import { allocateAttempt, mintAttempt, requireAttemptIdentity } from "../../factory/lib/worker/attempt.mjs";
 import { createAttemptWorktree } from "../../factory/lib/git/attempt.mjs";
 import { dispositionOf } from "../../factory/lib/pipeline/dispositions.mjs";
 import { openRetryAttempt, originatingAttempt, planRetry } from "../../factory/lib/pipeline/repair.mjs";
 import { reviewPhase } from "../../factory/lib/pipeline/review.mjs";
 import { outcomeChain, resolveStage, walkStages } from "../../factory/lib/pipeline/stages.mjs";
-import { routeOutcome } from "../../factory/lib/pipeline/table.mjs";
+import { routeOutcome, TABLE_WIDE } from "../../factory/lib/pipeline/table.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { dispatchOrder, selectRoute } from "../../factory/lib/worker/dispatch.mjs";
 import { REVIEW_ROLES } from "../../factory/lib/worker/roles.mjs";
@@ -404,15 +405,120 @@ test("an axis with no routable profile left releases the ticket untouched, minti
 		blocked: { local: { state: "blocked", until: 900 } },
 	});
 
-	const answered = await run();
+	// Thrown rather than answered, exactly as §8.6's exhaustion crosses the same
+	// seam: an executor's only ways out are a phase result and a throw, and "the
+	// run is out of providers" is not a review verdict. §8.10's row for it is
+	// phase-less, and `walkStages` is what turns the refusal into the release.
+	await assert.rejects(run, (error) => {
+		assert.equal(error.reason, "routes-exhausted");
+		assert.equal(error.details.axis, "review-standards");
+		assert.equal(dispositionOf(routeOutcome(TABLE_WIDE, error.reason)).disposition, "released");
+		return true;
+	});
 
-	assert.equal(answered.outcome, "routes-exhausted");
-	assert.equal(dispositionOf(routeOutcome("review", answered.outcome)).disposition, "released");
 	assert.deepEqual(seam.asked, [], "no reviewer was launched into a class a provider had already refused");
 	assert.deepEqual(
 		context.store.readEvents({ kind: "attempt.launched" }).filter((event) => event.phase === "review"),
 		[],
 		"and no axis attempt was minted for a launch that could not happen",
+	);
+});
+
+test("an axis's reroute bound is read from the journal, so a re-entry does not re-dispatch a refused profile (#155)", async (t) => {
+	const context = await reviewable(t);
+	let standardsTurn = 0;
+	const { routed, run } = review(context, {
+		routing: routing(["reader-a", "reader-b"], [["cloud-reader"], []]),
+		answers: {
+			"review-standards": () => (standardsTurn++ === 0 ? { outcome: "provider-refused", record: null } : APPROVING),
+			"review-spec": APPROVING,
+		},
+	});
+
+	await run();
+
+	// The second pass excludes what the first had refused — and it reads that off
+	// the resolution the first pass committed, not off a list this loop carried.
+	// A controller that died between the two would read the same answer back.
+	assert.deepEqual(
+		routed.filter((call) => call.axis === "review-standards").map((call) => call.dispatched),
+		[[], ["reader-a"]],
+	);
+});
+
+test("a re-entered axis runs the profile its mint names, not the one today's memo would pick (#155)", async (t) => {
+	const context = await reviewable(t);
+
+	// A previous controller minted this axis attempt on `reader-a` and died before
+	// resolving its stage. This controller re-enters with `local` since gone into
+	// §9.8's memo, so re-resolving §11.5 now would answer `cloud-reader` instead —
+	// and launching under *that* would run a profile the record does not name,
+	// which is the disagreement §8.9's block exists to make impossible.
+	const allocated = allocateAttempt(context.store, {
+		run: context.run,
+		ticket: context.ticket,
+		purpose: { review: { axis: "review-standards", of: context.attempt, try: 1 } },
+	});
+	mintAttempt(context.store, {
+		hold: context.hold,
+		identity: requireAttemptIdentity({
+			run: context.run,
+			ticket: context.ticket,
+			phase: "review",
+			attempt: allocated.attempt,
+		}),
+		role: "review-standards",
+		profile: "reader-a",
+		routing: { declared: "reader-a", profile: "reader-a", class: "local", rerouted: false, reason: null, considered: [] },
+		baseCommit: context.reviewedCommit,
+		purpose: { review: { axis: "review-standards", of: context.attempt, try: 1 } },
+		at: FIXED_NOW,
+	});
+
+	const { seam, run } = review(context, {
+		answers: bothAnswering(APPROVING),
+		routing: routing(["reader-a", "reader-b"], [["cloud-reader"], ["cloud-reader"]]),
+		blocked: { local: { state: "blocked", until: 900 } },
+	});
+
+	await run();
+
+	const minted = context.store
+		.readEvents({ kind: "attempt.launched" })
+		.filter((event) => event.payload.role === "review-standards");
+
+	assert.equal(minted.length, 1, "the re-entry found the attempt the first pass already opened");
+	assert.equal(minted[0].payload.profile, "reader-a");
+	assert.deepEqual(
+		seam.asked.filter((request) => request.axis.name === "review-standards").map((request) => request.profile),
+		["reader-a"],
+		"the launch reads the mint, so what ran and what the record says ran are one value",
+	);
+});
+
+test("an axis retried for a dead pane keeps its profile: a flake is not a reroute (§8.6, #155)", async (t) => {
+	const context = await reviewable(t);
+	let standardsTurn = 0;
+	const { seam, routed, run } = review(context, {
+		routing: routing(["reader-a", "reader-b"], [["cloud-reader"], []]),
+		answers: {
+			"review-standards": () => (standardsTurn++ === 0 ? { outcome: "dead-worker", record: null } : APPROVING),
+			"review-spec": APPROVING,
+		},
+	});
+
+	const answered = await run({ automationRetry: async () => {} });
+
+	assert.equal(answered.outcome, "approved");
+	assert.deepEqual(
+		routed.filter((call) => call.axis === "review-standards").map((call) => call.dispatched),
+		[[], []],
+		"a pane that died says nothing about its provider, so nothing is excluded",
+	);
+	assert.deepEqual(
+		seam.asked.filter((request) => request.axis.name === "review-standards").map((request) => request.profile),
+		["reader-a", "reader-a"],
+		"and the relaunch runs the same model rather than silently changing it",
 	);
 });
 

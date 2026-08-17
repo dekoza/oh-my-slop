@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
 import { createRetrySeam } from "../../factory/lib/pipeline/retry.mjs";
-import { outcomeChain, walkStages } from "../../factory/lib/pipeline/stages.mjs";
+import { outcomeChain, resolveStage, walkStages } from "../../factory/lib/pipeline/stages.mjs";
 import { routeOutcome } from "../../factory/lib/pipeline/table.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { workedAttempt } from "./helpers/factory-git.mjs";
@@ -233,6 +233,20 @@ test("#155: a provider-refused attempt is rerouted onto a profile this execution
 				],
 			};
 		},
+	});
+
+	// The walk resolves the failing stage **before** it asks the seam, and that
+	// resolution is what the bound is read from (#155) — so the fixture commits it
+	// too, rather than asking the seam about a refusal nothing recorded.
+	resolveStage(context.store, {
+		hold: context.hold,
+		run: context.run,
+		ticket: context.ticket,
+		phase: "implement",
+		attempt: context.attempt,
+		outcome: "provider-refused",
+		actor: "controller",
+		at: FIXED_NOW,
 	});
 
 	const answered = await context.ask(asking("implement", "provider-refused", { attempt: context.attempt }));

@@ -68,7 +68,7 @@ import { FactoryPipelineError } from "./errors.mjs";
  */
 
 /** §8.5's fresh-retry role, read from the inventory that owns role names (§6.1). */
-const FRESH_RETRY_ROLE = PIPELINE_ROLES.find((role) => role.routingRole === "freshRetry");
+export const FRESH_RETRY_ROLE = PIPELINE_ROLES.find((role) => role.routingRole === "freshRetry");
 
 /**
  * Whose words a phase's evidence is, where §8.10's row marks it untrusted.
@@ -372,27 +372,52 @@ export function planReroute({ prior, failure, route, priorResult = null }) {
 }
 
 /**
- * The profiles this ticket execution has already dispatched for one role.
+ * The profiles this ticket execution has had **refused** for one role — the
+ * attempts whose stage §8.10 routed to a `reroute`.
  *
- * **This is what bounds a reroute** (§9): each routable profile is spent at most
- * once, so the chain is at most as long as §11.5's declared order and there is
- * no counter to declare, compare, or forget to increment. It is read off the
- * mints rather than counted, for the same reason §8.6's budgets are: the bound
- * and the spend are one expression, and a re-entry after a crash reads the same
- * answer back.
+ * **This is what bounds a reroute** (§9.9): each routable profile is refused at
+ * most once, so the chain is at most as long as §11.5's declared order and there
+ * is no counter to declare, compare, or forget to increment. It is derived from
+ * the journal for the same reason §8.6's budgets are: the bound and the spend
+ * are one expression, and a re-entry after a crash reads the same answer back —
+ * an in-memory list would let a controller that died mid-chain re-dispatch a
+ * profile the provider has already refused.
+ *
+ * **Refused, not merely dispatched**, and the difference is a whole failure
+ * mode. §8.10's automation retry relaunches the same work on the same pinned
+ * profile — a pane that died says nothing about its provider — so a profile a
+ * retry ran is not spent. Excluding it would turn every infra flake into a
+ * silent model change, and on a routing with no fallback into a released ticket.
+ * The attempt being rerouted *now* is included by construction: its stage is
+ * resolved before the seam is asked.
  *
  * @param {object} store an open store, controller or read-only
- * @param {{ run: string, ticket: number, role: string }} where
+ * @param {{ run: string, ticket: number, role: string }} where the role is a
+ *   §6.1 pipeline role name, which is what the mint records
  * @returns {ReadonlyArray<string>}
  */
-export function dispatchedProfiles(store, { run, ticket, role }) {
+export function refusedProfiles(store, { run, ticket, role }) {
+	const profiles = new Map(
+		dispatchedAttempts(store, { run, ticket })
+			.filter((entry) => entry.role === role && typeof entry.profile === "string")
+			.map((entry) => [entry.attempt, entry.profile]),
+	);
+
 	return Object.freeze([
 		...new Set(
-			dispatchedAttempts(store, { run, ticket })
-				.filter((entry) => entry.role === role && typeof entry.profile === "string")
-				.map((entry) => entry.profile),
+			rerouted(store, { run, ticket })
+				.map((attempt) => profiles.get(attempt))
+				.filter((profile) => profile !== undefined),
 		),
 	]);
+}
+
+/** The attempts §8.10 routed to a reroute, in the order the journal holds them. */
+function rerouted(store, { run, ticket }) {
+	return store
+		.readEvents({ stream: runStream(run), kind: "stage.resolved" })
+		.filter((record) => record.ticket === ticket && record.payload.action === STAGE_ACTIONS.reroute)
+		.map((record) => record.attempt);
 }
 
 /** Why a phase other than `implement` gets no automation-retry plan (§8.4, §8.8). */

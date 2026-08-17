@@ -38,6 +38,32 @@ const NO_FALLBACKS = Object.freeze({
 });
 
 /**
+ * One routing's reroute order, whether or not it declared one — **the one place
+ * the absent form is spelled**, so no consumer branches on `undefined`.
+ *
+ * Every reader of `fallbacks` goes through here: the loader's own reachability
+ * walk, §9.1's capacity plan, §6.2's roles-in-play, and §9.9's dispatch. A reader
+ * that reached for `routing.fallbacks?.[role] ?? []` instead would be a second
+ * statement of what absence means, in a file with no other reason to have an
+ * opinion about it.
+ *
+ * It also accepts a routing composed by hand — a test's, a caller's — for the
+ * same reason: the answer for a routing with no key is the answer this constant
+ * is, and making that a special case at four call sites is how the four come to
+ * disagree.
+ *
+ * @param {{ fallbacks?: object }} routing one validated routing, or a bare one
+ * @param {string} [role] a §11.5 routing role; omitted, the whole block
+ * @returns {Readonly<object> | ReadonlyArray<string> | ReadonlyArray<ReadonlyArray<string>>}
+ */
+export function fallbacksOf(routing, role = null) {
+	const declared = routing?.fallbacks ?? NO_FALLBACKS;
+	if (role === null) return declared;
+
+	return declared[role] ?? NO_FALLBACKS[role] ?? Object.freeze([]);
+}
+
+/**
  * @param {object} routing the `routing` block
  * @param {Record<string, object>} profiles the validated profile table
  * @param {string | null} selected the named set this run selects, or null for the declared default
@@ -341,16 +367,35 @@ function requireProfileName(value, profiles, at, configPath) {
  *   one validated routing — the default or a named set
  * @returns {Set<string>}
  */
-export function profilesReachedBy({ roles, rules, fallbacks = NO_FALLBACKS }) {
-	const reached = new Set([roles.implement, roles.freshRetry, ...roles.review]);
-	for (const rule of rules) {
-		for (const profile of Array.isArray(rule.profile) ? rule.profile : [rule.profile]) {
-			reached.add(profile);
-		}
+export function profilesReachedBy(routing) {
+	return new Set(ROUTING_ROLES.flatMap((role) => [...profilesForRole(routing, role)]));
+}
+
+/**
+ * Every profile **one role** can dispatch to under one routing: its declared
+ * value, every rule that names it, and every entry in its reroute order.
+ *
+ * The primitive the three reachability questions are asked through, because
+ * they are one question asked at three grains — the loader asks it of every
+ * role to size the classes, §9.1's plan asks it of `implement` to bound the
+ * lanes, and §6.2's preflight asks it per pipeline role to size its proof.
+ * Three walks would need the same one-line edit every time the routing grows a
+ * way to reach a profile, which is exactly how one of them comes to be missed.
+ *
+ * `review` answers with the **whole** pair's reach rather than one axis's:
+ * §11.5 binds the pair to the phase, and which axis lands on which profile is
+ * dispatch's decision rather than a reachability fact.
+ *
+ * @param {{ roles: object, rules: ReadonlyArray<object>, fallbacks?: object }} routing
+ * @param {string} role a §11.5 routing role
+ * @returns {Set<string>}
+ */
+export function profilesForRole(routing, role) {
+	const reached = new Set([routing.roles[role]].flat());
+	for (const rule of routing.rules) {
+		if (rule.role === role) for (const profile of [rule.profile].flat()) reached.add(profile);
 	}
-	for (const order of [fallbacks.implement, fallbacks.freshRetry, ...fallbacks.review]) {
-		for (const profile of order) reached.add(profile);
-	}
+	for (const profile of [fallbacksOf(routing, role)].flat(2)) reached.add(profile);
 
 	return reached;
 }

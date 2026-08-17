@@ -197,20 +197,12 @@ export const ATTEMPT_OUTCOMES = Object.freeze([
 	 * rather than as anything the worker did.
 	 */
 	"provider-refused",
-	/**
-	 * #155: **every profile this role can route to belongs to a class §9.8's memo
-	 * has locked.** Not a worker outcome at all — no worker ran, and none can
-	 * until a memo expires and a probe re-admits its class — but it is an attempt
-	 * outcome because it is what the walk answers *instead of* minting the next
-	 * attempt, and §8.10 has to route it somewhere.
-	 *
-	 * It is its own word rather than a second `provider-refused` because the two
-	 * ask for different things: a refusal says *this provider is out*, and this
-	 * says *the run is out of providers for this role*. The first is answered by
-	 * rerouting and the second is answered by waiting, and an operator reading
-	 * one as the other would go looking at the wrong provider.
-	 */
-	"routes-exhausted",
+	// #155's `routes-exhausted` is deliberately **not** here: no attempt has it,
+	// because it is what the walk answers *instead of* minting one. It is one of
+	// §8.10's phase-less rows, beside the two budget exhaustions it is shaped like
+	// — "the run ran out of something this ticket needed" — which is also what
+	// makes it reachable from `verify` and `integrate`, whose fresh-retry is
+	// routed while they have no attempt for an outcome to belong to (§8.8).
 ]);
 
 /**

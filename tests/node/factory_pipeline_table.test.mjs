@@ -147,16 +147,28 @@ test("provider-refused reroutes, budgetlessly, for a builder and for a reviewer 
 });
 
 test("routes-exhausted is a budgetless release of its own, distinguishable from a worker that failed (§8.10, #155)", () => {
-	for (const phase of ["implement", "review"]) {
-		const row = routeOutcome(phase, "routes-exhausted");
-		assert.equal(row.action, "dispose", `${phase}: the run has nowhere to send this work`);
-		assert.equal(row.disposition, "released", `${phase}: the ticket goes back untouched; no provider was available, and no label is owed`);
-		assert.equal(row.budget, null, `${phase}: no budget is charged for the providers' caps`);
-		assert.equal(row.reasonClass, null, `${phase}: no reason class — released carries none (§8.9)`);
-		assert.notEqual(
-			row.outcome,
-			routeOutcome(phase, "worker-failed").outcome,
-			`${phase}: a worker that failed and a run out of routes are different facts`,
+	const row = routeOutcome(TABLE_WIDE, "routes-exhausted");
+
+	assert.equal(row.action, "dispose", "the run has nowhere to send this work");
+	assert.equal(row.disposition, "released", "the ticket goes back untouched; no provider was available, and no label is owed");
+	assert.equal(row.budget, null, "no budget is charged for the providers' caps");
+	assert.equal(row.reasonClass, null, "no reason class — released carries none (§8.9)");
+	assert.notEqual(
+		row.outcome,
+		routeOutcome("implement", "worker-failed").outcome,
+		"a worker that failed and a run out of routes are different facts",
+	);
+});
+
+test("routes-exhausted names no phase, because no attempt ever had it as an outcome (§8.8, #155)", () => {
+	// §11.5's fresh-retry is routed and `verify` and `integrate` both route to it,
+	// so the row has to be reachable from phases that have no worker at all — and
+	// an attempt-level outcome there would be an outcome with nothing to belong to.
+	assert.ok(TABLE_WIDE_OUTCOMES.includes("routes-exhausted"));
+	for (const phase of Object.keys(PHASE_OUTCOME_DOMAINS)) {
+		assert.ok(
+			!PHASE_OUTCOME_DOMAINS[phase].includes("routes-exhausted"),
+			`${phase} claims an outcome no attempt of it ever had`,
 		);
 	}
 });

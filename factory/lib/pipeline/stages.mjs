@@ -261,31 +261,31 @@ export async function walkStages(
 				});
 			}
 
-				// #155: **the same work, on the next routable profile, charged to
-				// nothing.** It is placed before the budget branch and deliberately
-				// outside it: a reroute spends no declared number, and `requireBudget`
-				// is what makes an unbounded retry unconstructible, so a reroute that
-				// passed through it would have to be given a budget to be free of one.
-				// What bounds it instead is the seam — each routable profile is
-				// dispatched at most once per ticket execution, and running out is
-				// `routes-exhausted` below rather than another lap.
-				//
-				// It re-enters the phase it left, like §8.10's automation retry and
-				// unlike §8.5's tiers: nothing about the work was judged, so there is
-				// nothing to rebuild from the top.
-				if (resolved.row.action === STAGE_ACTIONS.reroute) {
-					attempt = await retried(nextAttempt, {
-						attempt,
-						phase,
-						outcome: resolved.outcome,
-						detail: resolved.detail,
-						row: resolved.row,
-					});
-					tryNumber = FIRST_TRY;
-					continue;
-				}
+			// #155: **the same work, on the next routable profile, charged to
+			// nothing.** It is placed before the budget branch and deliberately
+			// outside it: a reroute spends no declared number, and `requireBudget`
+			// is what makes an unbounded retry unconstructible, so a reroute that
+			// passed through it would have to be given a budget to be free of one.
+			// What bounds it instead is the seam — each routable profile is
+			// dispatched at most once per ticket execution, and running out is
+			// `routes-exhausted` below rather than another lap.
+			//
+			// It re-enters the phase it left, like §8.10's automation retry and
+			// unlike §8.5's tiers: nothing about the work was judged, so there is
+			// nothing to rebuild from the top.
+			if (resolved.row.action === STAGE_ACTIONS.reroute) {
+				attempt = await retried(nextAttempt, {
+					attempt,
+					phase,
+					outcome: resolved.outcome,
+					detail: resolved.detail,
+					row: resolved.row,
+				});
+				tryNumber = FIRST_TRY;
+				continue;
+			}
 
-				if (Object.hasOwn(BUDGET_KEY_FOR_ACTION, resolved.row.action)) {
+			if (Object.hasOwn(BUDGET_KEY_FOR_ACTION, resolved.row.action)) {
 				// §8.6, **before the seam is asked**: the resolution that routed here
 				// is itself the charge, so the count this reads already includes it.
 				// Asking after the mint would spend on a chain the budget had already
@@ -348,13 +348,23 @@ export async function walkStages(
 			// refused under are one value.
 			if (error.reason === "budget-exhausted") return exhausted(store, { run, ticket, phase, details: error.details });
 
-			// #155's exhaustion, and it arrives the same way for the same reason:
-			// the reroute has nowhere left to send the work, and that is §8.10's
-			// own row rather than a crash. It settles through `settle` and not
-			// through `exhausted` because the verdict is the row's — a budgetless
-			// `released` — while a spent budget's verdict is carried on the refusal.
+			// #155's exhaustion, and it arrives the same way and for the same
+			// reason: the reroute has nowhere left to send the work, and that is
+			// §8.10's own row rather than a crash. The row is **phase-less** — a
+			// routed fresh-retry is reachable from `verify` and `integrate`, which
+			// have no attempt for an outcome to belong to — so the outcome is read
+			// from the table's phase-less rows while the **phase** stays the one
+			// the run ran out in, exactly as `exhausted` above pairs them.
 			if (error.reason === "routes-exhausted") {
-				return settle(phase, "routes-exhausted", { store, run, ticket, summary: error.message });
+				return disposed({
+					store,
+					run,
+					ticket,
+					phase,
+					outcome: "routes-exhausted",
+					verdict: dispositionOf(routeOutcome(TABLE_WIDE, "routes-exhausted")),
+					summary: error.message,
+				});
 			}
 
 			throw error;

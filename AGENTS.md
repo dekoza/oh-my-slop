@@ -164,11 +164,17 @@ is the authority; cite the section a change answers to.
   There is **one** implementation of §11.5's resolution — `capacity/plan.mjs` translates
   its refusal into a capacity one and adds nothing. The decision rides every mint
   (`attempt.launched`'s `routing`, `null` where the row is pinned to the originating
-  attempt) and §8.9's block, so a green ticket can answer *what wrote this?*. §8.10's
-  `provider-refused` rows route to a **`reroute`** action that spends no budget and is
-  bounded by each routable profile being dispatched at most once per ticket execution,
-  read back from the mints — never a counter; running out is `routes-exhausted`, a
-  budgetless `released` typed apart from `provider-refused`. The two review axes reroute
+  attempt) and §8.9's block, so a green ticket can answer *what wrote this?* — and a
+  **launch reads the mint back** rather than the decision it just made, or a re-entry
+  would run a profile the record does not name. §8.10's `provider-refused` rows route
+  to a **`reroute`** action that spends no budget and is bounded by each routable
+  profile being **refused** at most once per ticket execution, derived from the
+  attempts whose stage routed to a reroute — never a counter, and never merely
+  *dispatched*, since an automation retry relaunches the same pinned profile and
+  excluding it would make every infra flake a silent model change. Running out is
+  `routes-exhausted`, one of §8.10's **phase-less** rows beside the two budget
+  exhaustions — no attempt has it, and a routed fresh-retry reaches it from `verify`
+  and `integrate`, which have no attempt for an outcome to belong to. The two review axes reroute
   down their own declared orders, an axis with none releases without minting, and a
   fan-out left on one profile says so in its verdict. **A route is decided by the memo
   alone** — never by the preflight, which proves a profile's flag *spelling* and not that
