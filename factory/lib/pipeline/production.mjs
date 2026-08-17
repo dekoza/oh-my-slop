@@ -225,14 +225,17 @@ async function implement(context, identity) {
 	return { outcome: result.outcome, detail: result.record };
 }
 
+// The attempt's own base (§7.3) deliberately does not ride along here either:
+// for a repair it is the prior attempt's tip, and handing it to the review as
+// though it were the diff's boundary briefed both axes on the repair's delta
+// while their verdicts gated the publication of the whole chain (#165). The
+// phase reads both ends of the diff off the passing verify record.
 async function review(context, { run, ticket, attempt }) {
-	const opened = attemptRecord(context.store, { run, attempt });
 	return reviewPhase(context.store, context.clone, {
 		hold: context.hold,
 		run,
 		ticket,
 		attempt,
-		baseCommit: opened.baseCommit,
 		routing: context.activeRouting,
 		labels: context.labels,
 		workerConfig: context.worker.environment,

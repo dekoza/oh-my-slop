@@ -13,7 +13,7 @@ import { outcomeChain, resolveStage, walkStages } from "../../factory/lib/pipeli
 import { routeOutcome } from "../../factory/lib/pipeline/table.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { REVIEW_ROLES } from "../../factory/lib/worker/roles.mjs";
-import { mintedAttempt } from "./helpers/factory-git.mjs";
+import { mintedAttempt, repairAttempt, workedAttempt } from "./helpers/factory-git.mjs";
 import { FIXED_NOW, manualTimers } from "./helpers/factory-store.mjs";
 
 /**
@@ -76,10 +76,11 @@ async function reviewable(t) {
 	execFileSync("git", ["-C", built.worktreePath, "add", "-A"]);
 	execFileSync("git", ["-C", built.worktreePath, "commit", "-m", "the work"]);
 
-	// §7.4's harvest, resolved as the walk would resolve it. The fan-out reads the
-	// commit under review off this record rather than taking one from its caller
-	// (§14.13), so a fixture without it is a ticket execution that never measured
-	// anything — which is exactly what the phase refuses.
+	// §7.4's harvest and §8.1's verify, resolved as the walk would resolve them.
+	// The fan-out reads **both ends of the diff** off the passing verify record
+	// rather than taking either from its caller (§14.13, #165), so a fixture
+	// without one is a ticket execution that never measured anything — which is
+	// exactly what the phase refuses.
 	const reviewedCommit = execFileSync("git", ["-C", built.worktreePath, "rev-parse", "HEAD"], {
 		encoding: "utf8",
 	}).trim();
@@ -91,6 +92,17 @@ async function reviewable(t) {
 		attempt: context.attempt,
 		outcome: "passed",
 		detail: { head: reviewedCommit, commits_ahead: 1 },
+		actor: "controller",
+		at: FIXED_NOW,
+	});
+	resolveStage(context.store, {
+		hold,
+		run: context.run,
+		ticket: context.ticket,
+		phase: "verify",
+		attempt: context.attempt,
+		outcome: "passed",
+		detail: { base_commit: context.base.commit, head: reviewedCommit, rebased: false, checks: [], commits: [] },
 		actor: "controller",
 		at: FIXED_NOW,
 	});
@@ -139,7 +151,6 @@ function review(context, { answers, routing: active = routing(), ...overrides } 
 				run: context.run,
 				ticket: context.ticket,
 				attempt: context.attempt,
-				baseCommit: context.base.commit,
 				routing: active,
 				labels: [],
 				workerConfig: context.workerConfig,
@@ -670,6 +681,98 @@ test("a rejected review routes to a repair whose attempt is past both reviewers'
 		planned[0].brief.untrusted.some((entry) => entry.text.includes(BLOCKING.statement)),
 		"and the blocking finding is in it",
 	);
+});
+
+// ── The boundary a review measures (§8.4, #165) ──────────────────────────────
+
+/**
+ * A real §8.5 repair chain, at the point the walk reaches review: an implement
+ * attempt whose branch carries one commit, a repair attempt branched from its
+ * tip carrying another, and the repair's harvest and passing verify resolved
+ * the way the walk resolves them. #165's defect is only observable here —
+ * an attempt whose own base is another attempt's tip rather than the run's pin.
+ */
+async function reviewableChain(t) {
+	const built = await workedAttempt(t, { files: { "worker.txt": "the implement\n" } });
+	const chain = await repairAttempt(built, { ordinal: 2, files: { "repair.txt": "the repair\n" } });
+
+	const leases = openLeases(chain.store, { now: () => FIXED_NOW });
+	const hold = holdControllerLease({ store: chain.store, leases, timers: manualTimers().api });
+	hold.recordStartupReconcile();
+	hold.adopt(chain.run);
+
+	for (const [phase, detail] of [
+		["harvest", { head: chain.head, commits_ahead: 1 }],
+		// What §8.1's verify resolved: the base never moved, so the branch already
+		// sits on the run's pin and the head is the chain's tip, both commits deep.
+		["verify", { base_commit: chain.base.commit, head: chain.head, rebased: false, checks: [], commits: [] }],
+	]) {
+		resolveStage(chain.store, {
+			hold,
+			run: chain.run,
+			ticket: chain.ticket,
+			phase,
+			attempt: chain.attempt,
+			outcome: "passed",
+			detail,
+			actor: "controller",
+			at: FIXED_NOW,
+		});
+	}
+
+	return { ...chain, hold };
+}
+
+/** The phase, called on the new contract: no caller-supplied base at all. */
+function reviewChain(chain, seam) {
+	return reviewPhase(chain.store, chain.clone, {
+		hold: chain.hold,
+		run: chain.run,
+		ticket: chain.ticket,
+		attempt: chain.attempt,
+		routing: routing(),
+		labels: [],
+		workerConfig: chain.workerConfig,
+		runAxis: seam.runAxis,
+		actor: "controller",
+		now: () => FIXED_NOW,
+	});
+}
+
+test("a repair chain's re-review measures the publishable diff, never the repair's own delta (§8.4, #165)", async (t) => {
+	const chain = await reviewableChain(t);
+	const seam = reviewers(bothAnswering(APPROVING));
+
+	const answered = await reviewChain(chain, seam);
+
+	assert.equal(answered.outcome, "approved");
+	for (const request of seam.asked) {
+		assert.equal(
+			request.baseCommit,
+			chain.base.commit,
+			"the review base is the base-branch boundary the verify record pinned, sourced from no caller",
+		);
+		assert.notEqual(
+			request.baseCommit,
+			chain.ownBase,
+			"and never the repair attempt's own base — the prior attempt's tip (§7.3)",
+		);
+		assert.equal(request.reviewedCommit, chain.head, "the reviewed commit is the one verify passed on (§14.13)");
+
+		const seen = execFileSync(
+			"git",
+			["-C", request.worktreePath, "diff", "--name-only", `${request.baseCommit}...HEAD`],
+			{ encoding: "utf8" },
+		)
+			.trim()
+			.split("\n")
+			.sort();
+		assert.deepEqual(
+			seen,
+			["repair.txt", "worker.txt"],
+			"the diff each axis is briefed on carries the whole chain — implement and repair — not the repair's delta",
+		);
+	}
 });
 
 test("the axis mint says why the attempt exists: which axis, whose work, which try (§6.5)", async (t) => {
