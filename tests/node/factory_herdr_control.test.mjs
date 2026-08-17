@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import test from "node:test";
 
 import {
-	AGENT_STOP_KEYS,
+	AGENT_STOP_SETTLE_MS,
 	agentAlive,
 	createHerdrControl,
 	FACTORY_ATTEMPT_TOKEN,
@@ -260,17 +260,47 @@ test("the prompt is submitted through the agent surface, and never waits", async
 	assert.deepEqual(io.calls[0], ["agent", "prompt", "fabcdt42a1", "/skill:implement\n\ncontext"]);
 });
 
-test("stopping an agent sends its own quit keys and closes nothing (§13.B)", async () => {
+test("stopping an agent interrupts in one call and exits in the next, closing nothing (§13.B)", async () => {
 	const io = runner();
+	const waits = [];
 
-	await createHerdrControl({ run: io.run }).stopAgent("fabcdt42a1");
+	const stopped = await createHerdrControl({ run: io.run, sleep: async (ms) => void waits.push(ms) }).stopAgent("fabcdt42a1");
 
 	// Verified against the installed Herdr: there is no `agent stop` in the CLI
 	// and no `agent.stop` in the socket API, so the escalation §13.B supersedes
 	// is not even reachable — what exists is send-keys.
-	assert.deepEqual(io.calls[0], ["agent", "send-keys", "fabcdt42a1", ...AGENT_STOP_KEYS]);
-	assert.equal(AGENT_STOP_KEYS[0], "esc", "interrupt the turn before asking the harness to exit");
-	assert.equal(io.calls.some((args) => args.includes("close")), false);
+	//
+	// **Two calls, and the split is measured rather than stylistic**
+	// (`tests/live/herdr-agent-quit-sequence.mjs`). All three keys in one call
+	// quit an *idle* Claude in 721 ms and are absorbed as a bare turn interrupt
+	// by a *working* one, which is the wedge run 01M0859CJAA1Z8XK41756H5Y30 left
+	// on three attempts. `esc` in its own call quits both states.
+	// The two `ctrl+c` in one call is the half a flat key list cannot express: the
+	// exit affordance is a double press with a window under a second, and the same
+	// two keys 1000 ms apart left both an idle and a working Claude sitting there
+	// for as long as the probe watched.
+	assert.equal(stopped.ok, true);
+	assert.deepEqual(io.calls, [
+		["agent", "send-keys", "fabcdt42a1", "esc"],
+		["agent", "send-keys", "fabcdt42a1", "ctrl+c", "ctrl+c"],
+	]);
+	assert.deepEqual(waits, [AGENT_STOP_SETTLE_MS], "the interrupt is given time to land before the exit is asked for");
+	assert.equal(
+		io.calls.some((args) => args.includes("close")),
+		false,
+	);
+});
+
+test("a quit whose first call is refused does not send the second, and says so", async () => {
+	const io = runner({ "agent send-keys": { exitCode: 1, stdout: "", stderr: "no such agent" } });
+
+	const stopped = await createHerdrControl({ run: io.run, sleep: async () => {} }).stopAgent("fabcdt42a1");
+
+	// §11.2: an undelivered quit is its own anomaly class, and it is only that if
+	// the failure is reported. Sending the exit keys at an agent Herdr just said
+	// it cannot reach would turn one refusal into two and report the second.
+	assert.equal(stopped.ok, false);
+	assert.equal(io.calls.length, 1, "the interrupt failed; there is nothing to follow it with");
 });
 
 test("a pane is found by its token, and a pane that is gone is null rather than an error", async () => {
