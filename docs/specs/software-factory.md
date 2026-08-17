@@ -676,13 +676,20 @@ Herdr agent and pane ids), runtime, exact model, skill source, and package revis
 
 **The transcript pointer is captured from Herdr, not computed.** Herdr persists
 `AgentSessionInfo {kind: "id"|"path", value}` per pane, pushed by the agent's own `SessionStart`
-hook — Claude reports a session id, pi reports a literal `.jsonl` path. Record
+hook — Claude reports a session id, pi reports a literal `.jsonl` path. That hook is herdr's
+**agent-state integration**, installed in the operator's config root and reaching the worker
+through §6.8's capability promotion: config isolation removes the operator's copy, so the
+integration crosses in as a fixed, digested, **version-observed** artifact, and a per-runtime
+preflight check gates its presence before the first claim — a run that could not carry the
+pointer is a named red, not a pointer that will not arrive. Record
 `{worker_kind, transcript_kind, transcript_value, captured_at}` on the attempt, polling with
 backoff for a few seconds after launch. One seam covers both runtimes, and because worker and
 reviewer are *different panes* it disambiguates them **as a fact**; computing the path cannot,
 since pi keys sessions on cwd and both roles share a worktree. If the pointer never arrives,
-record `no-transcript-pointer`. **No later heuristic can recover this** — Herdr drops the
-reference at pane close and integration deletes the worktree the pi path is keyed on.
+record `no-transcript-pointer` — with the gate above, that record is an anomaly an operator
+investigates, not the expected residue of isolation. **No later heuristic can recover this** —
+Herdr drops the reference at pane close and integration deletes the worktree the pi path is
+keyed on.
 
 ### 6.6 Typed completion — hybrid authority
 
@@ -810,11 +817,18 @@ pinned `--skill` roots explicitly; the flags are load-bearing isolation, not pro
 govern *rules*; an empty config environment also removes things that are not rules and that the
 factory's own model depends on — measured, not assumed: pi's `local` models are supplied by an
 operator **extension**, so an isolated agent directory deletes a §9.1 resource class outright,
-and §6.5's transcript pointer arrives through another. Two closed lists therefore cross in:
+and §6.5's transcript pointer goes with the hook that pushes it. Two closed lists therefore
+cross in:
 
-- **Fixed capability artifacts**, named in code per runtime — credentials and the model
-  catalogue. Nothing here carries behaviour, and this section already records that credentials
-  are ambient on this host.
+- **Fixed capability artifacts**, named in code per runtime — credentials, the model
+  catalogue, and §6.5's **agent-state integration**: the herdr-managed hook (Claude) and
+  extension (pi) that push the transcript pointer. Nothing here carries behaviour, and this
+  section already records that credentials are ambient on this host. The integration is
+  recorded in the run manifest by declared path and content digest **and by the version
+  observed out of the file's own header** — observed, not assumed — and its absence, missing
+  version, or staleness is a **named preflight red per runtime in play**: the pointer has no
+  other channel, so a run that could not carry it ends red before the first claim rather than
+  null on every attempt.
 - **Declared runtime extensions** (`worker.piExtensions`), defaulting to **none**, recorded in
   the run manifest by declared path **and content digest**, so what a run loaded is evidence
   rather than a claim about intent.
@@ -2505,3 +2519,4 @@ touching everything twice.
 | 2026-08-17 | #151 makes an **unharvested attempt's branch evidence on its disposition**. §8.10 harvests what an outbox claims; an attempt that never wrote one has still created a branch, and §7.7 makes that branch the only copy of the work on it — so on #114 a complete implementation was recoverable only because an operator read the factory-private clone by hand. §8.9's block gains a fourth element: every attempt of the ticket execution, with its branch, the head **git answers now** (§5.2 — never the outbox's claim nor the mint's record), and its commit count against **its own** base (§7.4). It is read for every disposition and every attempt outcome rather than for the endings that harvest nothing, because a list of which outcomes those are is a list somebody extends without extending — and the failure that permits is the silent one, "nothing was built" reported over work sitting on a branch. Every answer the read can get stays distinguishable and none is spelled as the absence of another (§11.2): commits, no commits, no branch, no answer from git, and no base recorded to count against, with **the attempts not listable** and **no read at all** distinct from all five. The read rides the comment and **not the digested intent** — every other field of the block is a function of durable state, and digesting a branch head would make a §10.4 re-entry that read a moved head a §4.5 payload conflict instead of the comment already posted; the one ending that therefore carries nothing is §9.6's abandon boundary, which writes no comment at all (#159). The **remote is deliberately not consulted** — §7.7 makes an attempt branch absent from it by construction, so an `ls-remote` would answer "absent" for exactly the attempts the read exists for, and §5.4 already names `git-local` for this. The read never throws: a settlement lost to a failed evidence read leaves the ticket claimed with nothing on it, which is the one state §8.9 has no word for. §7.7 and §8.9 corrected in place. | #151 |
 | 2026-08-17 | #160 restores §6.2's probe to proving the session workers actually run. Both runtime adapters passed the skill-delivery flags to the **probe** and not to the **worker session**: every Claude worker launched without the §6.3 plugin (`plugin list` under the live worker binding: "No plugins installed"), every pi worker without the pinned roots — and pi's default discovery, which the probe's `--no-skills` suppressed, loaded four of the operator's personal skills from `~/.agents/skills`, a root `PI_CODING_AGENT_DIR` does not fence, inverting both §6.8 guarantees at once. §6.2 gains the composed-binding rule: the worker session's argument set is the primary object, the probe's is that set plus its probe-only IO flags and nothing else, held by a test at the launch seam (worker argv = probed argv − probe-only flags + profile flags). §6.8 records the measured discovery leak and makes `--no-skills --skill <root>` load-bearing isolation on every pi worker session. A launch whose closure cannot reach the session — no proven plugin directory, no pinned skills roots, a plugin cache wiped since preflight — is a typed automation failure before the attempt spends. §6.7's acceptance matrix (#115) is untouched by construction but noted: anything it proves must run the worker binding. | #160 |
 | 2026-08-17 | #161 corrects §7.5's replay boundary. The rebase used the attempt's **own** base (§7.3) as its upstream, and a repair's own base is the prior attempt's tip (§8.5) — so a repair's replay set excluded the implement commit it builds on. The lucky outcome was #114's rebase conflict over sound, already-verified work: the repair edited a file the implement commit created, which does not exist at the fresh tip. The dangerous one was a repair touching only files the implement did not create, which replays **cleanly** and yields a branch carrying the repair without the work it repairs — verified, attested and published, since §14.13 measures the commit being published and attestation compares heads, and both are satisfied by a branch that quietly lost a commit. §7.5's upstream is now **the fresh tip itself**, so the replay set is every commit the ticket execution produced that is not already on the base branch, whatever attempt chain produced it; whether the base moved is read off the graph — is the branch already sitting on the fresh tip — never off a recorded base, which a §9.5 re-rebase has already made stale once; and a rebase whose result carries fewer non-base commits than its input is refused as a typed `rebase-dropped-commits` failure and never adopted — the guard that makes the silent case impossible rather than unlikely (§11.2), whatever the drop's mechanism, including git dropping a commit whose patch a human already cherry-picked upstream. §7.3 separates the two meanings the one value conflated: what an attempt branched from and the boundary of what §7.5 replays coincide only for a single-attempt execution, and neither is inferred from the other. §7.3 and §7.5 corrected in place. | #161 |
+| 2026-08-17 | #153: the worker's session identity never reached Herdr. §6.5's transcript pointer is pushed by herdr's **agent-state integration** — a Claude `SessionStart` hook and a pi extension — which lived only in the operator's config root, so §6.8's config isolation removed it from every worker session and 15/15 `attempt.correlated` records carried `transcript: null`. The integration crosses in as a **fixed capability artifact named in code per runtime** (first closed list, beside credentials and the model catalogue): copied from the operator's config root into the run's own root, digested, and **version-observed** out of the file's own `HERDR_INTEGRATION_*` header rather than assumed. A new static preflight check, `worker-agent-state`, gates its presence and currency **per runtime the active routing can dispatch to** — missing, unversioned, mis-identified, or outdated is a named red ending the run `baseline-red` before the first claim, so `no-transcript-pointer` is an anomaly rather than the expected residue. The run manifest records it by declared path, content digest, and observed version per runtime, and records a named absence when the environment did not build. | #153 |
