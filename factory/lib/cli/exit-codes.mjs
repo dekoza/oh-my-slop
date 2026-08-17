@@ -52,10 +52,11 @@ export const OUTCOME_EXIT_CODES = Object.freeze({
 	"circuit-breaker": 5,
 	"lease-lost": 6,
 	/**
-	 * #154: every routable class locked by §9's exhaustion memo — the run
-	 * stopped claiming because nothing can be spent, not because the scope
-	 * drained. Non-zero so `factory start && next-thing` cannot read it as a
-	 * finished scope; 7 and 8 are the verb-level markers below.
+	 * #154: claimable work remained whose every route §9's exhaustion memo
+	 * locked at the final scheduling decision — the run stopped claiming
+	 * because the rest cannot be spent, not because the scope drained. Non-zero
+	 * so `factory start && next-thing` cannot read it as a finished scope; 7
+	 * and 8 are the verb-level markers below.
 	 */
 	"capacity-exhausted": 9,
 	"controller-lost": null,

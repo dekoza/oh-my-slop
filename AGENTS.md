@@ -152,8 +152,9 @@ is the authority; cite the section a change answers to.
   cheap completion under the worker binding and answers
   `admitted`/`refused`/`inconclusive`, and only an admission writes `capacity.admitted`.
   §8.10 charges no budget for it (budgetless `released`, builder and reviewer), and a run
-  whose routable classes are all memo-locked ends `capacity-exhausted` (exit 9) rather
-  than draining. Rerouting that consumes the memo is #155.
+  left holding claimable work whose every route is memo-locked at the final scheduling
+  decision ends `capacity-exhausted` (exit 9) rather than draining — work other classes
+  finished does not soften it. Rerouting that consumes the memo is #155.
 - The scheduler (`factory/lib/controller/scheduler.mjs`) is §9.6's loop and nothing
   more: **no queue object, no ready-queue, no aging, no priority.** It re-reads the
   frontier at every scheduling decision, takes the lowest-numbered claimable ticket,

@@ -1601,9 +1601,10 @@ rather than opening it on nothing observed.
 
 **§8.10 charges no budget for it.** `provider-refused` routes to a budgetless `released` for a
 builder and for a reviewer alike: the ticket goes back to the frontier untouched — no label — and the
-memo is what keeps the next claim out of the exhausted class. A run whose every routable class is
-memo-locked ends `capacity-exhausted` (exit 9), saying so plainly in a classified per-member report
-rather than draining as though the work were done (§9.7's green-looking run that did nothing). The
+memo is what keeps the next claim out of the exhausted class. A run left holding claimable work
+whose every route is memo-locked at its final scheduling decision ends `capacity-exhausted` (exit
+9) — even when other classes finished their tickets — saying so plainly in a classified per-member
+report rather than draining as though the work were done (§9.7's green-looking run that did nothing). The
 memo is the input #155's rerouting consumes; nothing here chooses a different profile.
 
 ---
@@ -1680,7 +1681,7 @@ behind is open. One table publishes all eight rows so a script reading it finds 
 | `stopped-by-operator` | **3** | a `stop` request was honoured at a ticket boundary; in-flight lanes finished |
 | `abandoned` | **4** | a second `stop` or `SIGTERM`; in-flight lanes `released`, panes left alive |
 | `circuit-breaker` | **5** | N consecutive automation failures in terminal-commit order |
-| `capacity-exhausted` | **9** | every routable resource class is §9.8's memo-locked; claimable work the run cannot spend — not a drained scope |
+| `capacity-exhausted` | **9** | claimable work remained whose every route is §9.8's memo-locked at the final scheduling decision — work the run cannot spend, not a drained scope, whatever other classes finished |
 | `lease-lost` | **6** | **controller exit outcome, not a run end reason**: the controller process lost its lease and exited without reacquiring; the stale process leaves the run open rather than self-authoring an unfenced `run.ended`, so this row is **only** an exit code and never a run's recorded `end_reason` |
 | `controller-lost` | **— (none)** | **asserted only by a different controller or the monitor**, never self-asserted, so it can have no exit code |
 
