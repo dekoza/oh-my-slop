@@ -590,7 +590,13 @@ factory.
      `claude --plugin-dir <path> plugin details` expected-vs-actual component diff, then the
      authoritative **`initialize` control-request probe** over stream-json, which returns the
      session's structured `commands` array (including `<plugin>:<skill>` records) at zero model
-     cost. Verified live. The probe must use the production flag set.
+     cost. Verified live. The probe must use the production flag set. A **fourth step proves
+     §6.8's discovery fence from both sides** (#163): a canary project skill planted in the
+     probe's own working directory must be absent from that session's `commands`, *and* one
+     deliberately unfenced control session — the worker binding minus the fence flags, nothing
+     else — must register it. Claude's command records carry names, not source paths, so pi's
+     converse check has no direct analogue; the canary is what makes the fenced session's
+     silence evidence rather than an untested assumption.
 3. **A cheap static recheck per attempt** — no fresh probe.
 
 **The probe must execute the production path, not merely inspect registration.** The audited
@@ -797,7 +803,37 @@ hooks.** The config directory alone does not close pi's skills channel — measu
 pi's default discovery reaches roots `PI_CODING_AGENT_DIR` does not fence: a worker session
 with discovery on loaded four of the operator's personal skills from `~/.agents/skills` while
 loading none of the pinned 65. Every pi worker session therefore passes `--no-skills` plus the
-pinned `--skill` roots explicitly; the flags are load-bearing isolation, not probe hygiene. Procedurally valuable personal rules migrate through exactly two channels:
+pinned `--skill` roots explicitly; the flags are load-bearing isolation, not probe hygiene.
+
+**The same is true of Claude, from the other end — the session's own working directory.**
+Measured live on Claude Code 2.1.233 (#163), at zero model cost, in a scratch project shipping
+`.claude/skills/leaktest/SKILL.md`: an `initialize` control-request under an **empty** isolated
+`CLAUDE_CONFIG_DIR` answered 44 commands including a bare `leaktest`, and a project
+`.claude/commands/` file registered the same way. A worker's cwd is the attempt worktree — the
+operator's repository at the pinned commit — so on any target repository shipping project
+skills, every Claude worker would load skills from outside the pinned package root.
+`--setting-sources user` closes it: the same request answered 43 commands with no `leaktest`,
+and neither the project skill nor the project command registered in the run that shipped both,
+while the §6.3 plugin's `<plugin>:<skill>` records, the injected `--settings` file, and
+`--permission-mode dontAsk` were all untouched — the flag drops the `project` and `local`
+*sources*, which is also what stops a target repository's own settings file from reaching a
+worker, and never the settings the controller passes explicitly. Every Claude worker session
+therefore carries those two arguments; like pi's, they are load-bearing isolation and belong to
+the **worker** binding, never to the probe alone (§6.2's composed binding). What a run proved is
+recorded on the `runtime-probe` check beside the version, since a green check saying nothing
+about the fence cannot be told from one that never proved it.
+
+**One consequence of that fence is stated rather than discovered later: the target repository's
+own `CLAUDE.md` stops being auto-loaded too** — measured in the same pass (a one-turn session in
+a project whose `CLAUDE.md` carried a marker word answered it unfenced and did not answer it
+fenced). This is the channel list applied, not an accident: rules reach a worker through package
+skills and the declared worker-context file, and a repository's own memory file was never one of
+the two. The declared file is unaffected — it is installed in the **user** scope the fence
+keeps — and the repository's conventions remain readable in the worktree as ordinary files. An
+operator who wants a target repo's standing rules in every worker declares them through
+`worker.contextFile`.
+
+Procedurally valuable personal rules migrate through exactly two channels:
 
 1. **Package skills** — the preferred home for engineering discipline. *Migration note:* the
    `tee`-over-`head`/`tail` output-capture rule belongs in this package's discipline skills.
@@ -823,7 +859,14 @@ and §6.5's transcript pointer arrives through another. Two closed lists therefo
 root: the live probe requires every `skill:<name>` command record in the session — not merely
 the closure's — to resolve inside that root, so a promoted extension that registers a skill is
 the same typed failure as a shadowed one. A promoted extension may add tools and providers; it
-may not add skills, and it is never a route for personal rules.
+may not add skills, and it is never a route for personal rules. **Each runtime is held to that
+limit by what its records can carry**: pi's command records name a source path, so its probe
+judges the converse directly; Claude's name only the command, so its probe judges the same limit
+by planting a canary project skill in the directory it probes in and requiring the fenced
+session not to register it while an unfenced control session does. A canary that survives the
+fence is `skill-shadowed`, naming the offending source; a control session that cannot see it is
+`discovery-fence-unproven`, because a probe that could not have observed the leak is not
+evidence of its absence.
 
 **Skill conflicts — one predicate, fail closed.** Every required skill must resolve uniquely
 and verifiably to the pinned package revision. Shadowed, duplicated, disabled, or missing are
@@ -2492,3 +2535,4 @@ touching everything twice.
 | 2026-08-17 | #152 makes §6.6's recorded stop outcome an observation rather than a race. `stopAgent` sent the quit sequence and read the pane on the very next line, so **`agent_stopped` recorded a teardown in flight as a refusal** — across #114's two runs every attempt recorded `false` while the workers had in fact gone, and nothing re-checked it. The outcome now comes from a **bounded re-probe** whose budget covers Herdr's *detection* lag rather than the process exit: the controller closes no pane (§13.B), so `pane_exited` never fires and the agent merely stops being detected, measured at 729 ms (claude) and 418 ms (pi) on an idle session. `agent_stopped` keeps three values — `true`/`false` are observations, `null` is Herdr declining to answer, which §14.1 forbids writing down as though it were evidence the agent stayed. A stop that could not be confirmed records a named **`stop_anomaly`** on `attempt.ended` carrying the surviving pane, the status it was last seen in, and how much of the bound was spent, in one of three classes: `wedged-pane` (§13.B's accepted wedge, `cleanup-plan`'s to reclaim), `stop-unconfirmed` (Herdr silent), and `quit-undelivered` (the keys never landed, which the pane read cannot distinguish from a wedge because both leave a live agent). §11.2's no-silent-guessing is what forbids collapsing the three into one `false`. `attempt.ended` moves to payload v2 accordingly (§4.3). Nothing on this path closes a pane. | #152 |
 | 2026-08-17 | #151 makes an **unharvested attempt's branch evidence on its disposition**. §8.10 harvests what an outbox claims; an attempt that never wrote one has still created a branch, and §7.7 makes that branch the only copy of the work on it — so on #114 a complete implementation was recoverable only because an operator read the factory-private clone by hand. §8.9's block gains a fourth element: every attempt of the ticket execution, with its branch, the head **git answers now** (§5.2 — never the outbox's claim nor the mint's record), and its commit count against **its own** base (§7.4). It is read for every disposition and every attempt outcome rather than for the endings that harvest nothing, because a list of which outcomes those are is a list somebody extends without extending — and the failure that permits is the silent one, "nothing was built" reported over work sitting on a branch. Every answer the read can get stays distinguishable and none is spelled as the absence of another (§11.2): commits, no commits, no branch, no answer from git, and no base recorded to count against, with **the attempts not listable** and **no read at all** distinct from all five. The read rides the comment and **not the digested intent** — every other field of the block is a function of durable state, and digesting a branch head would make a §10.4 re-entry that read a moved head a §4.5 payload conflict instead of the comment already posted; the one ending that therefore carries nothing is §9.6's abandon boundary, which writes no comment at all (#159). The **remote is deliberately not consulted** — §7.7 makes an attempt branch absent from it by construction, so an `ls-remote` would answer "absent" for exactly the attempts the read exists for, and §5.4 already names `git-local` for this. The read never throws: a settlement lost to a failed evidence read leaves the ticket claimed with nothing on it, which is the one state §8.9 has no word for. §7.7 and §8.9 corrected in place. | #151 |
 | 2026-08-17 | #160 restores §6.2's probe to proving the session workers actually run. Both runtime adapters passed the skill-delivery flags to the **probe** and not to the **worker session**: every Claude worker launched without the §6.3 plugin (`plugin list` under the live worker binding: "No plugins installed"), every pi worker without the pinned roots — and pi's default discovery, which the probe's `--no-skills` suppressed, loaded four of the operator's personal skills from `~/.agents/skills`, a root `PI_CODING_AGENT_DIR` does not fence, inverting both §6.8 guarantees at once. §6.2 gains the composed-binding rule: the worker session's argument set is the primary object, the probe's is that set plus its probe-only IO flags and nothing else, held by a test at the launch seam (worker argv = probed argv − probe-only flags + profile flags). §6.8 records the measured discovery leak and makes `--no-skills --skill <root>` load-bearing isolation on every pi worker session. A launch whose closure cannot reach the session — no proven plugin directory, no pinned skills roots, a plugin cache wiped since preflight — is a typed automation failure before the attempt spends. §6.7's acceptance matrix (#115) is untouched by construction but noted: anything it proves must run the worker binding. | #160 |
+| 2026-08-17 | #163 closes #160's leak class in the other runtime. **Claude registers the project skills its own working directory ships**, and an isolated `CLAUDE_CONFIG_DIR` does not fence them — measured live on Claude Code 2.1.233 at zero model cost: an `initialize` control-request in a scratch project shipping `.claude/skills/leaktest/SKILL.md`, under an *empty* isolated config dir, answered 44 commands including a bare `leaktest`, and a project `.claude/commands/` file registered the same way. A worker's cwd is the attempt worktree, so on any target repository shipping `.claude/skills/` every Claude worker would load skills from outside the pinned package root, and §6.8's "skills reach a worker only from the pinned package root" would be false again. §6.8 records the fact and makes **`--setting-sources user`** load-bearing isolation on every Claude **worker** session — measured in the same pass to drop the project skill and the project command (it drops the `project` and `local` setting *sources*) while leaving the §6.3 plugin's records, the injected `--settings` file, and `--permission-mode dontAsk` untouched. §6.2's Claude probe gains a **fourth step**, because Claude's command records carry names and no source path, so pi's converse check has no analogue: the probe plants a canary project skill in the directory it probes in, requires the fenced session not to register it, and requires one deliberately unfenced control session — the worker binding minus the fence, nothing else — to register it. A canary that survives the fence is `skill-shadowed` naming its source; a control session blind to it is the new `discovery-fence-unproven`, since a probe that could not have observed the leak is not evidence of its absence. The canary is planted and removed by the probe, and what a run proved is recorded on the `runtime-probe` check. One consequence is recorded rather than left to be discovered: the fence also stops the **target repository's own `CLAUDE.md`** from being auto-loaded (measured — a marker word in a project `CLAUDE.md` was answered unfenced and not fenced), which is §6.8's two rule channels applied rather than an accident; the declared worker-context file is installed in the user scope the fence keeps, and `worker.contextFile` is where a target repo's standing rules are declared. | #163 |

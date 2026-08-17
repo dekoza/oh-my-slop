@@ -20,6 +20,14 @@ export const PROBE_FINDING_REASONS = Object.freeze([
 	 * §6.8's shadowing, observed live rather than statically.
 	 */
 	"skill-shadowed",
+	/**
+	 * §6.8's discovery fence, unproven rather than broken: the probe's control
+	 * session — the worker binding with the fence taken out — did not register
+	 * the canary project skill the probe planted, so the fenced session's silence
+	 * is no evidence. A probe that could not have seen the leak proves nothing
+	 * about its absence (§6.2).
+	 */
+	"discovery-fence-unproven",
 	/** A declared model the probed runtime's inventory does not carry. */
 	"model-unavailable",
 	/**

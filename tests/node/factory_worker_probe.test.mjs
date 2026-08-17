@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
 import { createClaudeAdapter, probeClaudeRuntime, proveClaudeClosure } from "../../factory/lib/worker/claude.mjs";
 import { createPiAdapter, probePiRuntime, provePiClosure } from "../../factory/lib/worker/pi.mjs";
-import { runCommand } from "../../factory/lib/worker/transports.mjs";
 import { makeTree, realGeneratorFiles, skillMarkdown } from "./helpers/factory-package.mjs";
-import { piTransport, skillCommandsOf } from "./helpers/factory-worker.mjs";
+import { claudeTransport, piTransport, skillCommandsOf } from "./helpers/factory-worker.mjs";
 
 /**
  * §6.2's layer 2: the live per-runtime probe over the production path, with
@@ -243,61 +242,19 @@ test("the pi adapter memoizes the probe per revision and proves each role agains
 
 // ── Claude: validate, diff, initialize (§6.2, §6.3) ──────────────────────────
 
-/**
- * A Claude transport whose plugin build is the real generator and whose
- * `claude` answers are canned in the live-captured shapes.
- */
-function claudeTransport({ skills, validate = { status: 0, stdout: "✔ Validation passed", stderr: "" }, details, commands, models } = {}) {
-	const registered = commands ?? skills.map((name) => ({ name: `oh-my-slop:${name}` }));
-	const inventoryLine =
-		details ?? { status: 0, stdout: `Component inventory\n  Skills (${skills.length})  ${skills.join(", ")}\n`, stderr: "" };
-	const calls = { runCommand: [], lineSession: [] };
-
-	return {
-		calls,
-		transport: {
-			runCommand: async (command, args, options) => {
-				calls.runCommand.push([command, ...args]);
-				if (command !== "claude") return runCommand(command, args, options); // the generator, for real
-				if (args[0] === "--version") return { status: 0, stdout: "2.1.233-test", stderr: "" };
-				if (args[0] === "plugin" && args[1] === "validate") return validate;
-				return inventoryLine;
-			},
-			lineSession: async (session) => {
-				calls.lineSession.push(session);
-				const request = JSON.parse(session.input[0]);
-				return {
-					status: 0,
-					timedOut: false,
-					stderr: "",
-					lines: [
-						JSON.stringify({ type: "system", subtype: "hook_started" }),
-						JSON.stringify({
-							type: "control_response",
-							response: {
-								subtype: "success",
-								request_id: request.request_id,
-								response: {
-									commands: registered,
-									models: models ?? [{ value: "opus", resolvedModel: "claude-opus-5-test" }],
-								},
-							},
-						}),
-					],
-				};
-			},
-		},
-	};
-}
 
 function claudeContext(t, transport) {
 	const packageRoot = fixturePackage(t, { withGenerator: true });
+	const cacheRoot = makeTree(t, {});
 	return {
 		packageRoot,
 		packageRev: "rev-1",
-		cacheRoot: makeTree(t, {}),
+		cacheRoot,
 		expectedSkills: ["implement", "tdd"],
 		declaredSize: 2,
+		// Every Claude probe runs in a working directory, because every Claude
+		// probe in production does — and #163's fence proof is planted in it.
+		session: { cwd: cacheRoot },
 		transport,
 	};
 }
@@ -330,6 +287,8 @@ test("a green Claude probe validates strictly, diffs components, and proves the 
 	assert.deepEqual(claudeCalls[2].slice(3), ["plugin", "details", "oh-my-slop"]);
 	const [session] = fake.calls.lineSession;
 	assert.deepEqual(session.args.slice(2), [
+		"--setting-sources",
+		"user",
 		"--input-format",
 		"stream-json",
 		"--output-format",
@@ -407,7 +366,9 @@ test("the Claude adapter memoizes per revision, and a fresh revision rebuilds no
 	await adapter.preflight({ ...role, name: "fresh-retry" }, "rev-1");
 
 	assert.equal(first.ok, true);
-	assert.equal(fake.calls.lineSession.length, 1, "one revision, one initialize probe");
+	// One revision, one probe pass: the production session and the fence proof's
+	// control session, and no second pass for the second role.
+	assert.equal(fake.calls.lineSession.length, 2, "a second role re-probed the same revision");
 });
 
 // ── §6.8's binding rides the probe (§6.2's production path) ──────────────────
@@ -449,15 +410,111 @@ test("the Claude probe runs the posture's own flags, so the installed binary is 
 	});
 
 	const [session] = fake.calls.lineSession;
-	// The worker binding first — plugin dir, then the posture's flags — with the
-	// probe-only IO flags after it (#160's restored invariant).
-	assert.deepEqual(session.args.slice(2, 6), [
+	// The worker binding first — plugin dir, the discovery fence, then the
+	// posture's flags — with the probe-only IO flags after it (#160's restored
+	// invariant, #163's fence inside it).
+	assert.deepEqual(session.args.slice(2, 8), [
+		"--setting-sources",
+		"user",
 		"--settings",
 		"/state/settings-builder.json",
 		"--permission-mode",
 		"dontAsk",
 	]);
 	assert.equal(session.env.CLAUDE_CONFIG_DIR, context.cacheRoot);
+});
+
+// ── §6.8's discovery fence, proven live in the probe's own cwd (#163) ────────
+
+/**
+ * #163: a Claude session registers the project skills its cwd ships, and an
+ * isolated `CLAUDE_CONFIG_DIR` does not fence them — the same leak class #160
+ * closed for pi. The worker binding fences them; the probe proves the fence
+ * held **and** that it would have noticed a leak, by planting a canary project
+ * skill in its own cwd and running one deliberately unfenced control session.
+ */
+function canaryPath(cwd) {
+	return join(cwd, ".claude", "skills", "factory-discovery-canary", "SKILL.md");
+}
+
+test("the fence proof plants a canary in the probe's cwd, proves both sides, and takes it away again", async (t) => {
+	const fake = claudeTransport({ skills: ["implement", "tdd"] });
+	const context = claudeContext(t, fake.transport);
+	const cwd = context.cacheRoot;
+
+	const probed = await probeClaudeRuntime({ ...context, session: { cwd } });
+
+	assert.equal(probed.ok, true, JSON.stringify(probed.failures));
+	assert.equal(fake.calls.lineSession.length, 2, "the fence proof needs its control session");
+
+	// The production session carries the fence; the control is that same binding
+	// with the fence taken out, and it is the only unfenced session the factory
+	// ever runs.
+	const [production, control] = fake.calls.lineSession;
+	assert.ok(production.args.includes("--setting-sources"));
+	assert.ok(!control.args.includes("--setting-sources"));
+	assert.deepEqual(production.args.slice(2, 4), ["--setting-sources", "user"]);
+	assert.deepEqual(control.args, [...production.args.slice(0, 2), ...production.args.slice(4)]);
+	assert.equal(control.cwd, cwd);
+
+	// The canary is the controller's, not the repository's: it does not outlive
+	// the probe that planted it.
+	assert.equal(existsSync(canaryPath(cwd)), false, "the probe left its canary behind");
+
+	// And the proof is recorded, not merely performed: a green probe that says
+	// nothing about the fence cannot be told from one that never proved it.
+	assert.deepEqual(probed.discovery, {
+		fence: ["--setting-sources", "user"],
+		canary: "factory-discovery-canary",
+		proven: true,
+	});
+});
+
+test("a project skill that survives the fence is a typed shadowed-skill finding naming its source", async (t) => {
+	// The harness's fence stopped working — the flag is accepted and ignored.
+	const fake = claudeTransport({ skills: ["implement", "tdd"], discovery: "leaking" });
+	const context = claudeContext(t, fake.transport);
+
+	const probed = await probeClaudeRuntime({ ...context, session: { cwd: context.cacheRoot } });
+
+	assert.equal(probed.ok, false, "a project skill reached the probed session and the probe passed");
+	const finding = probed.failures.find((entry) => entry.reason === "skill-shadowed");
+	assert.equal(finding.skill, "factory-discovery-canary");
+	assert.equal(finding.source, join(context.cacheRoot, ".claude", "skills", "factory-discovery-canary"));
+	assert.match(finding.message, /only from the pinned package/);
+	assert.equal(probed.discovery.proven, false);
+});
+
+test("a control session blind to the canary leaves the fence unproven rather than proven", async (t) => {
+	// Nothing registers project skills here, so the absence of the canary from
+	// the production session is no evidence at all (§6.2's probe that proves
+	// nothing).
+	const fake = claudeTransport({ skills: ["implement", "tdd"], discovery: "blind" });
+	const context = claudeContext(t, fake.transport);
+
+	const probed = await probeClaudeRuntime({ ...context, session: { cwd: context.cacheRoot } });
+
+	assert.equal(probed.ok, false);
+	const finding = probed.failures.find((entry) => entry.reason === "discovery-fence-unproven");
+	assert.match(finding.message, /control session/);
+	assert.equal(finding.canary, "factory-discovery-canary");
+	// The recorded fact and the verdict agree: an unproven fence never reads as
+	// a proven one, and never as a missing field either.
+	assert.equal(probed.discovery.proven, false);
+});
+
+test("a binding with no cwd has nowhere safe to plant, so the fence is unproven rather than assumed", async (t) => {
+	// The session would inherit the controller's own directory — the operator's
+	// repository — and the factory plants nothing there.
+	const fake = claudeTransport({ skills: ["implement", "tdd"] });
+
+	const probed = await probeClaudeRuntime({ ...claudeContext(t, fake.transport), session: {} });
+
+	assert.equal(probed.ok, false);
+	const finding = probed.failures.find((entry) => entry.reason === "discovery-fence-unproven");
+	assert.equal(finding.at, null);
+	assert.equal(probed.discovery.proven, false);
+	assert.equal(fake.calls.lineSession.length, 1, "nothing was planted, so there is no control session to run");
 });
 
 test("a project the probed session recorded but nobody pre-trusted is a typed finding, not a later hang", async (t) => {

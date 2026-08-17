@@ -1,7 +1,9 @@
+import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { createHerdrControl } from "../../../factory/lib/controller/herdr-control.mjs";
 import { readSkillInventory } from "../../../factory/lib/worker/closure.mjs";
+import { runCommand } from "../../../factory/lib/worker/transports.mjs";
 
 /**
  * Fake runtime transports for the §6.2 probes: dumb IO answering with the
@@ -20,6 +22,103 @@ export function skillCommandsOf(packageRoot) {
 		source: "skill",
 		sourceInfo: { path: skill.skillMd, baseDir: skill.dir },
 	}));
+}
+
+/**
+ * The measured discovery channel a Claude fake has to have, or its probe proves
+ * a harness nobody runs (#163): a session registers the project skills its own
+ * **cwd** ships, under bare names, unless the binding fences them off.
+ *
+ * `mode` picks which harness the fake is: `fenced` honours the fence flags,
+ * `leaking` ignores them — a harness where the fence stopped working — and
+ * `blind` discovers nothing at all, which is the fake whose *control* session
+ * proves nothing.
+ *
+ * @param {{ args: ReadonlyArray<string>, cwd?: string }} session
+ * @param {"fenced" | "leaking" | "blind"} [mode]
+ * @returns {Array<{ name: string }>}
+ */
+export function claudeProjectSkills(session, mode = "fenced") {
+	if (mode === "blind") return [];
+	if (mode === "fenced" && session.args.includes("--setting-sources")) return [];
+
+	try {
+		return readdirSync(join(session.cwd ?? "", ".claude", "skills"), { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => ({ name: entry.name }));
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * A Claude transport answering like the live harness: `--version`, strict
+ * plugin validation, the `plugin details` component inventory, and the
+ * `initialize` control-request — with the §6.3 plugin built by the **real**
+ * generator, so anything that is not `claude` runs for real.
+ *
+ * Every answer is overridable, and every call is recorded.
+ *
+ * @param {object} input
+ * @param {ReadonlyArray<string>} input.skills what the built plugin registers
+ * @param {object} [input.validate] what `plugin validate --strict` answers
+ * @param {object} [input.details] what `plugin details` answers
+ * @param {ReadonlyArray<object>} [input.commands] the initialize command records,
+ *   when a test needs something other than the plugin's own
+ * @param {ReadonlyArray<object>} [input.models] the initialize model inventory
+ * @param {"fenced" | "leaking" | "blind"} [input.discovery] which discovery
+ *   behaviour this harness has (#163)
+ */
+export function claudeTransport({
+	skills,
+	validate = { status: 0, stdout: "✔ Validation passed", stderr: "" },
+	details,
+	commands,
+	models,
+	discovery = "fenced",
+} = {}) {
+	const registered = commands ?? skills.map((name) => ({ name: `oh-my-slop:${name}` }));
+	const inventory =
+		details ?? { status: 0, stdout: `Component inventory\n  Skills (${skills.length})  ${skills.join(", ")}\n`, stderr: "" };
+	const calls = { runCommand: [], lineSession: [] };
+
+	return {
+		calls,
+		transport: {
+			runCommand: async (command, args, options) => {
+				calls.runCommand.push([command, ...args]);
+				if (command !== "claude") return runCommand(command, args, options); // the generator, for real
+				if (args[0] === "--version") return { status: 0, stdout: "2.1.233-test", stderr: "" };
+				if (args[0] === "plugin" && args[1] === "validate") return validate;
+				return inventory;
+			},
+			lineSession: async (session) => {
+				calls.lineSession.push(session);
+				const request = JSON.parse(session.input[0]);
+				return {
+					status: 0,
+					timedOut: false,
+					stderr: "",
+					lines: [
+						JSON.stringify({ type: "system", subtype: "hook_started" }),
+						JSON.stringify({
+							type: "control_response",
+							response: {
+								subtype: "success",
+								request_id: request.request_id,
+								response: {
+									// What the binding would register: the plugin's skills, plus
+									// whatever project skills the cwd ships and the fence let in.
+									commands: [...registered, ...claudeProjectSkills(session, discovery)],
+									models: models ?? [{ value: "opus", resolvedModel: "claude-opus-5-test" }],
+								},
+							},
+						}),
+					],
+				};
+			},
+		},
+	};
 }
 
 /**

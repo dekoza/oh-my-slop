@@ -7,6 +7,7 @@ import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mj
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { validateRole } from "../../factory/lib/worker/adapter.mjs";
 import {
+	CLAUDE_DISCOVERY_FENCE,
 	CLAUDE_PROBE_ONLY_FLAGS,
 	claudeProbeArguments,
 	claudeWorkerArguments,
@@ -21,10 +22,9 @@ import {
 import { claudeSessionArguments } from "../../factory/lib/worker/permissions.mjs";
 import { pluginCachePath } from "../../factory/lib/worker/plugin.mjs";
 import { PIPELINE_ROLES } from "../../factory/lib/worker/roles.mjs";
-import { runCommand } from "../../factory/lib/worker/transports.mjs";
 import { makeTree, realGeneratorFiles, skillMarkdown } from "./helpers/factory-package.mjs";
 import { FIXED_NOW, manualTimers, openTestStore, runStarted } from "./helpers/factory-store.mjs";
-import { fakeHerdr, piTransport, skillCommandsOf } from "./helpers/factory-worker.mjs";
+import { claudeTransport, fakeHerdr, piTransport, skillCommandsOf } from "./helpers/factory-worker.mjs";
 
 /**
  * #160: the probe and the worker session run the **same** binding. The probe
@@ -66,8 +66,34 @@ test("the pi probe runs the worker binding plus its two disposability flags, and
 test("a Claude worker session loads the §6.3 plugin — the closure's only delivery channel", () => {
 	assert.deepEqual(
 		claudeWorkerArguments("/store/plugins/rev-1", ["--settings", "/cfg/settings-builder.json"]),
-		["--plugin-dir", "/store/plugins/rev-1", "--settings", "/cfg/settings-builder.json"],
+		[
+			"--plugin-dir",
+			"/store/plugins/rev-1",
+			"--setting-sources",
+			"user",
+			"--settings",
+			"/cfg/settings-builder.json",
+		],
 	);
+});
+
+/**
+ * #163: the Claude half of #160's leak. A worker's cwd is the attempt worktree,
+ * and project-level `.claude/skills` from that cwd registers under an isolated
+ * `CLAUDE_CONFIG_DIR` — so the fence is worker-session isolation, exactly as
+ * pi's `--no-skills` is, and never a flag the probe carries alone.
+ */
+test("a Claude worker session fences the project skill discovery its cwd would otherwise supply", () => {
+	assert.deepEqual(CLAUDE_DISCOVERY_FENCE, ["--setting-sources", "user"]);
+	const worker = claudeWorkerArguments("/store/plugins/rev-1");
+	assert.deepEqual(worker.slice(2), [...CLAUDE_DISCOVERY_FENCE]);
+
+	// The one session the factory runs unfenced is the fence proof's own control
+	// (§6.2), and it is a probe, never a worker.
+	assert.deepEqual(claudeWorkerArguments("/store/plugins/rev-1", [], { fenced: false }), [
+		"--plugin-dir",
+		"/store/plugins/rev-1",
+	]);
 });
 
 test("the Claude probe runs the worker binding plus its stream-json flags, and nothing else", () => {
@@ -193,53 +219,10 @@ test("a pi worker is started with exactly the binding the probe proved, plus the
 	]);
 });
 
-/** A Claude transport whose plugin build is the real generator (probe test's shape). */
-function claudeTransport(skills) {
-	const calls = { runCommand: [], lineSession: [] };
-	return {
-		calls,
-		transport: {
-			runCommand: async (command, args, options) => {
-				calls.runCommand.push([command, ...args]);
-				if (command !== "claude") return runCommand(command, args, options);
-				if (args[0] === "--version") return { status: 0, stdout: "2.1.233-test", stderr: "" };
-				if (args[0] === "plugin" && args[1] === "validate") return { status: 0, stdout: "✔", stderr: "" };
-				return {
-					status: 0,
-					stdout: `Component inventory\n  Skills (${skills.length})  ${skills.join(", ")}\n`,
-					stderr: "",
-				};
-			},
-			lineSession: async (session) => {
-				calls.lineSession.push(session);
-				const request = JSON.parse(session.input[0]);
-				return {
-					status: 0,
-					timedOut: false,
-					stderr: "",
-					lines: [
-						JSON.stringify({
-							type: "control_response",
-							response: {
-								subtype: "success",
-								request_id: request.request_id,
-								response: {
-									commands: skills.map((name) => ({ name: `oh-my-slop:${name}` })),
-									models: [{ value: "opus", resolvedModel: "claude-opus-5-test" }],
-								},
-							},
-						}),
-					],
-				};
-			},
-		},
-	};
-}
-
 test("a Claude worker is started with exactly the binding the probe proved, plus the profile flags", async (t) => {
 	const packageRoot = fixturePackage(t, { withGenerator: true });
 	const cacheRoot = makeTree(t, {});
-	const fake = claudeTransport(["implement", "tdd"]);
+	const fake = claudeTransport({ skills: ["implement", "tdd"] });
 	const herdr = fakeHerdr();
 	const sessionArgs = ["--settings", "/cfg/settings-builder.json", "--permission-mode", "dontAsk"];
 	const adapter = createClaudeAdapter({
@@ -248,7 +231,8 @@ test("a Claude worker is started with exactly the binding the probe proved, plus
 		expectedSkills: ["implement", "tdd"],
 		declaredSize: 2,
 		pluginDir: pluginCachePath({ cacheRoot, treeDigest: "rev-1" }),
-		session: { sessionArgs },
+		// The cwd the probe plants #163's canary in — every production probe has one.
+		session: { sessionArgs, cwd: cacheRoot },
 		transport: fake.transport,
 	});
 
@@ -274,7 +258,7 @@ test("a Claude worker is started with exactly the binding the probe proved, plus
 test("a Claude reviewer gets the plugin and still gets its withheld tools", async (t) => {
 	const packageRoot = fixturePackage(t, { withGenerator: true });
 	const cacheRoot = makeTree(t, {});
-	const fake = claudeTransport(["implement", "tdd"]);
+	const fake = claudeTransport({ skills: ["implement", "tdd"] });
 	const herdr = fakeHerdr();
 	const pluginDir = pluginCachePath({ cacheRoot, treeDigest: "rev-1" });
 	const adapter = createClaudeAdapter({
