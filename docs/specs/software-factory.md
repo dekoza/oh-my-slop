@@ -861,6 +861,62 @@ Opus/Fable actually load and follow skill bodies is a **one-time acceptance matr
 (harness version × model × package revision) during implementation, with §8's independent
 review gate judging worker output at every integration.
 
+**The matrix is a receipt against a fresh nonce, not a transcript** (#115). The package ships one
+skill — `skills/meta/skill-loading-proof` — whose body declares a **marker, a token, and a
+transform** in a machine-readable block and asks its reader for a single line applying that
+transform to a nonce the prompt supplies. **No prompt carries the token, the transform, or the
+answer**, so a receipt line is a body that reached the model and a correct one is a body it
+followed; the judge reads the contract out of the *same shipped bytes the model was given*, so
+there is no second copy of the token for the package to drift from.
+
+**The proof skill ships in the pinned revision rather than being planted for the run**, and that
+is the trade deliberately taken: a body planted outside the revision would be delivered through a
+plugin the generator did not build from the pin, and would prove a package no worker runs. The
+cost is one skill in a catalogue of sixty-six, whose description narrows it to this matrix and
+which nothing else invokes; it is discovered by the closure walk, flattened by §6.3's generator,
+and counted in §6.2's expected component inventory exactly like every other — which is the point.
+
+Three cells per model, because the survey's two claims are separate — "success in one does not
+prove the other" — and because a proof that could not have observed the failure it rules out is
+not a proof:
+
+- **direct invocation** — the `<plugin>:<skill>` command §6.4 puts at the head of every worker
+  prompt;
+- **model invocation** — natural language naming no skill, so the `description` is what has to
+  work;
+- **trace control** — a cell deliberately told to read the body off disk. Its `read-not-loaded`
+  outcome is what makes the other two cells' *empty tool trace* evidence of native loading rather
+  than an untested assumption, exactly as #163's unfenced control session does for the discovery
+  fence. A control that shows no read leaves the trace question open, however green the rest is.
+
+**Every cell runs the worker binding** — the argv a worker pane receives, plus the probe-only IO
+flags and nothing else (#160's composed-binding rule). A cell proven under any other flag set
+proves a session no worker runs in.
+
+**That "plus" is also the matrix's own limit, recorded rather than glossed.** The probe-only IO
+flags make a cell a `--print` session, and §6.4 runs every real worker attempt in an interactive
+pane. The matrix therefore covers the **headless** end of that axis and cannot reach the other,
+which is why the survey claim naming "interactive versus headless" stays unverified here however
+green the cells are — the untested half is the one every attempt actually runs in.
+
+**A claim is evidence about every axis its own sentence names, or about nothing.** The recorded
+status of each survey claim is derived from the cells that ran, never narrated: a claim naming Opus
+and Fable stays unverified on a matrix that ran neither, one naming an interactive worker stays
+unverified on a headless run, and one naming consistency *across harness versions* is unreachable
+from a single document by construction — it is discharged, if ever, by comparing two of them. A
+caveat attached to a green claim is narration, and the silent-wrong-answer class §15 calls
+load-bearing. What a matrix *did* establish toward such a claim is stated beneath it, so honesty
+costs the reader no evidence.
+
+The result is a durable artifact under `docs/proofs/`, one document per (version × revision),
+citing the exact harness version, the **observed resolved model id** (§11.7), the package tree
+digest — the working tree as it stood when the cells ran, which is before the document existed —
+and §11.7's checkout metadata beside it, without which a digest of a tree that no longer exists
+is unreconstructable. The runner is `tests/live/prove-skill-loading.mjs`, which lives there for
+the reason every script in that directory does: it spends real turns and must never become a
+suite. The judgement, the claim assessment and the document are `factory/lib/proof/`, held by
+`tests/node/factory_proof_*.test.mjs`; what the runner itself owns is the wiring and the spending.
+
 ### 6.8 Trust, permissions, and isolation
 
 **Trust.** The controller pre-trusts its own worktrees mechanically, per attempt — a factory
@@ -2108,10 +2164,14 @@ validate:
 - canonical executable path (for the binary: the resolved `PATH` entry **and** its realpath),
   resolved package root, package name plus declared version;
 - a **deterministic tree digest** — sorted relative paths plus content hashes over the package's
-  own files, excluding `node_modules`, `__pycache__`, and VCS dirs (derived trees that belong to
-  the installer, the interpreter, and the VCS, not to the package) — **authoritative uniformly
-  for every install shape**, with git commit and a dirty-worktree flag recorded as
+  own files, excluding `node_modules`, `.venv`, `__pycache__`, and VCS dirs (derived trees that
+  belong to the installer, the interpreter, and the VCS, not to the package) — **authoritative
+  uniformly for every install shape**, with git commit and a dirty-worktree flag recorded as
   **metadata only**.
+  `.venv` is `node_modules` under uv's name, and is listed for one measured reason (#115):
+  `uv run pytest` — a mandatory command in this repository's own `AGENTS.md` — took the digested
+  file count from 862 to 6525, so an agent who had run the suite pinned a different revision than
+  one who had not, for byte-identical package files.
   Special-casing checkouts would make dev runs incomparable to installed runs, and dirty
   checkouts are the common case;
 - **live-probed** runtime/harness version, effective production flags, adapter/bridge identity,
@@ -2584,7 +2644,12 @@ profile flag the installed binary no longer accepts under that spelling** (#164)
 
 **Skill loading.** A **one-time acceptance matrix** per (harness version × model × package
 revision) proving that Opus and Fable actually load and follow skill bodies — discharging the
-survey's explicitly unverified claims.
+survey's explicitly unverified claims. Discharged by §6.7's mechanism (#115): a receipt against a
+per-cell nonce whose token and transform live only in the shipped body, three cells per model
+(direct invocation · model invocation · trace control), every cell under the **worker** binding,
+and one recorded document per (version × revision) under `docs/proofs/` naming which survey claims
+it discharges and which remain unverified. **The claims it does not discharge are named there too**
+— a matrix that only listed its wins would be the survey's own omission repeated.
 
 ---
 
@@ -2745,3 +2810,4 @@ touching everything twice.
 | 2026-08-17 | #163 closes #160's leak class in the other runtime. **Claude registers the project skills its own working directory ships**, and an isolated `CLAUDE_CONFIG_DIR` does not fence them — measured live on Claude Code 2.1.233 at zero model cost: an `initialize` control-request in a scratch project shipping `.claude/skills/leaktest/SKILL.md`, under an *empty* isolated config dir, answered 44 commands including a bare `leaktest`, and a project `.claude/commands/` file registered the same way. A worker's cwd is the attempt worktree, so on any target repository shipping `.claude/skills/` every Claude worker would load skills from outside the pinned package root, and §6.8's "skills reach a worker only from the pinned package root" would be false again. §6.8 records the fact and makes **`--setting-sources user`** load-bearing isolation on every Claude **worker** session — measured in the same pass to drop the project skill and the project command (it drops the `project` and `local` setting *sources*) while leaving the §6.3 plugin's records, the injected `--settings` file, and `--permission-mode dontAsk` untouched. §6.2's Claude probe gains a **fourth step**, because Claude's command records carry names and no source path, so pi's converse check has no analogue: the probe plants a canary project skill in the directory it probes in, requires the fenced session not to register it, and requires one deliberately unfenced control session — the worker binding minus the fence, nothing else — to register it. A canary that survives the fence is `skill-shadowed` naming its source; a control session blind to it is the new `discovery-fence-unproven`, since a probe that could not have observed the leak is not evidence of its absence. The canary is planted and removed by the probe, and what a run proved is recorded on the `runtime-probe` check. One consequence is recorded rather than left to be discovered: the fence also stops the **target repository's own `CLAUDE.md`** from being auto-loaded (measured — a marker word in a project `CLAUDE.md` was answered unfenced and not fenced), which is §6.8's two rule channels applied rather than an accident; the declared worker-context file is installed in the user scope the fence keeps, and `worker.contextFile` is where a target repo's standing rules are declared. | #163 |
 | 2026-08-17 | #157 moves §6.5's environment channel from **typed at the pane** to **declared to the multiplexer**. `startedAgent` sent `export FACTORY_ATTEMPT='…' CLAUDE_CONFIG_DIR='…' …` through `pane run`, justified by "neither `workspace create` nor `agent start` takes an environment" — **half of which stopped being true at Herdr 0.8.0**, which offers `--env KEY=VALUE` on `workspace create` and `tab create` and only leaves `agent start` without one. The typed path put every worker's config-directory paths and attempt identity into pane scrollback — the one place §6.8's closed pane set was meant not to widen — made the factory carry POSIX single-quoting for values it derived itself, and made a failure to type the exports indistinguishable from a shell that was not ready. The binding is now one `--env` set per name on the attempt's `tab create` (#156's tab), assembled at the tab because that is the last command before the agent that accepts an environment; identity is applied last so no declared value can shadow it, and one variable per name so no argument parser decides a winner. This is not inheritance returning through another door: the pane's shell still belongs to the multiplexer server, and the same closed set crosses — declared rather than typed. **That the variables reach the agent *process* and not merely the shell was established live before the typed path was removed** (`tests/live/herdr-tab-env-reaches-agent.mjs`, reading `/proc/<pid>/environ` on both hops): Herdr's own help says `--env` sets a variable for "the launched process", and the launched process is the shell. The same probe showed a value carrying a space and an apostrophe crossing byte for byte as one argv element, so `shellQuote` went with the path it existed for. | #157 |
 | 2026-08-17 | #154 makes **provider exhaustion a typed fault with a time-boxed memo**. §6.6 gains the `provider-refused` outcome: a refusal for quota or rate reasons is observed in the pane output — a signature vocabulary read off the harnesses' own non-retryable limit classification, matched in the output's tail — recorded as its own `observation.recorded` fact (`provider.refusal`, §5.2's herdr row widened to three facts), and overriding the three silence-based verdicts (`no-result`, the no-progress clock, the hard ceiling); a valid outbox still wins and a dead pane is `dead-worker` still. §9 gains **§9.8**: the refusal is remembered as a `capacity.exhausted` memo naming the resource class and an expiry, on the `controller` stream with no run in the envelope so it outlives its author; dispatch consults it before launch, and **an expiry re-admits by probe, never by the clock** — one cheap completion under the worker binding answers `admitted`/`refused`/`inconclusive`, and only an admission writes `capacity.admitted`. §8.10 gains two budgetless `released` rows (builder and reviewer) — before this, the same refusal arrived as a repair-charged `no-result` with a `factory:failed` label — and §10.3 gains the `capacity-exhausted` end reason (exit 9), so a run left holding claimable work whose every route is memo-locked says so plainly in the §3.5 report instead of draining as though the work were done. §4.3's kind enumeration gains the two memo kinds. Rerouting that consumes the memo is #155; nothing here chooses a different profile. | #154 |
+| 2026-08-18 | #115 discharges §6.7's acceptance matrix, and it is a **mechanism** rather than a transcript. The package now ships `skills/meta/skill-loading-proof`, whose body declares a marker, a token and a transform in one machine-readable block and asks for a single receipt line applying that transform to a **nonce the prompt supplies**; no prompt carries the token, the transform or the answer, so a receipt is a body that reached the model and a correct one is a body it followed — the gap between that and §6.2's registration-and-echo probe being exactly what §6.7 exists to close. The judge reads the contract out of the *same shipped bytes the model was given* (`factory/lib/proof/receipt.mjs`), so a package whose skill said something else could not go on passing; the skill ships in the pinned revision rather than being planted, because a planted body would be delivered through a plugin the generator did not build from the pin and would prove a package no worker runs. Three cells per model, because the survey names direct invocation and natural-language triggering as separate cases and asks separately whether a trace distinguishes native loading from a path read: **direct invocation**, **model invocation**, and a **trace control** deliberately told to read the body off disk — whose `read-not-loaded` outcome makes the other cells' empty tool trace evidence rather than an assumption (#163's control-session pattern, one layer up), and whose silence withdraws the trace claim however green the rest is. Every cell runs the **worker** binding by calling the argv builder §6.2's spelling proof already composes (#160's rule). **A claim is evidence about every axis its own sentence names, or about nothing** — the rule two review passes were needed to get right: a first cut counted verdicts and not whose, so a green haiku-only run reported "Opus and Fable actually load and follow" as discharged; a second still discharged "interactive versus headless" from headless-only cells and "across Claude Code versions" from one version, demoting the untested half to a caveat. A caveat on a green claim is narration, and all three are the silent-wrong-answer class §15 calls load-bearing; what a matrix *did* establish toward an unverified claim is now stated beneath it instead. §11.7's exclusion list gains **`.venv`** for a measured reason found here: `uv run pytest` — one of this repository's own mandatory commands — took the digested file count from 862 to 6525, so an agent who had run the suite pinned a different revision than one who had not, for byte-identical package files. Taken live against Claude Code **2.1.233**, revision `sha256:7505b5cae67e…` at commit `aef7a3c` (dirty): all four invoked cells `followed` under resolved ids `claude-opus-5` and `claude-fable-5`, both controls `read-not-loaded`. Three survey claims discharged; three recorded unverified — the interactive surface, cross-version consistency, and role closure. Also measured, zero cost: `claude --model nonsense-model` still answers the `initialize` control-request with exit 0, so #164's check proves flag *spelling* and never that a model **value** resolves; only a real turn does, which is what this matrix adds. The result lives at `docs/proofs/skill-loading-claude-2.1.233-7505b5cae67e.md`, and `tests/live/prove-skill-loading.mjs` re-takes it — by hand, one short turn per cell, beside the probe that spends a session for the same kind of reason. | #115 |

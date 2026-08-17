@@ -30,6 +30,12 @@ Run these commands when you touch the related areas. Do not skip them.
 one of them starts a paid model session. Run them by hand, never from a suite — see
 `tests/live/README.md`.
 
+`tests/live/prove-skill-loading.mjs` is one of them: it spends one short model turn per cell to
+take §6.7's skill-loading acceptance matrix, and records the result under `docs/proofs/`. What the
+matrix *concludes* — the contract, the judgement, the claim assessment, the document — is
+`factory/lib/proof/`, held by `tests/node/factory_proof_*.test.mjs`; the runner itself is wiring
+and spending, and is not covered by a test.
+
 Targeted minimums:
 
 - Any change under `skills/` or to markdown references: `uv run pytest tests/test_validate_refs.py tests/test_skill_frontmatter.py`
@@ -106,6 +112,12 @@ is the authority; cite the section a change answers to.
 - Exit code `1` means usage or config-load failure and nothing else; `0` and `2`–`6`
   and `9` belong to the run end-reason table (`9` is #154's `capacity-exhausted`;
   `7` and `8` are verb-level markers that exist before any run does).
+- `factory/lib/proof/` is the **only** area not reachable from the binary, and deliberately:
+  it is §6.7's acceptance matrix — the deep proof that a model loads and *follows* a skill
+  body — which runs by hand from `tests/live/prove-skill-loading.mjs` and spends real turns.
+  Preflight (§6.2) proves registration and invocation echo per run at zero model cost; this
+  proves following, per (harness version × model × package revision), and records it under
+  `docs/proofs/`. Nothing in a run may come to depend on it.
 - Defaults exist only in `factory/lib/config/defaults.mjs` (`budgets`, `retention`),
   where an upstream decision already fixed the value. Everywhere else absence refuses —
   a policy the loader fills in is a policy nobody can read on disk. The one thing that

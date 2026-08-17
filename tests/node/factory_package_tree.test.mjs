@@ -92,6 +92,26 @@ test("python bytecode caches are excluded: the interpreter's tree is not the pac
 	assert.equal(treeDigest(cached).files, 1);
 });
 
+test("a python virtualenv is excluded: the installer's tree is not the package's (§11.7)", (t) => {
+	const clean = makeTree(t, { "pyproject.toml": "[project]\n" });
+	const installed = makeTree(t, { "pyproject.toml": "[project]\n" });
+
+	// Measured in this repository: `uv run pytest` — one of AGENTS.md's own
+	// mandatory commands — creates `.venv/` in the package root and takes the
+	// digested file count from 862 to 6525. An agent following the repo's
+	// instructions would therefore pin a different revision than one who had
+	// not yet run the suite, for a package whose own files are byte-identical.
+	// It is the same class as `node_modules`: the installer's tree, named
+	// separately only because uv writes it under a different name.
+	writeTree(installed, {
+		".venv/pyvenv.cfg": "home = /usr/bin\n",
+		".venv/lib/python3.13/site-packages/pytest/__init__.py": "x",
+	});
+
+	assert.equal(treeDigest(installed).digest, treeDigest(clean).digest);
+	assert.equal(treeDigest(installed).files, 1);
+});
+
 test("a symlink is hashed as its target string, and never followed", (t) => {
 	const root = makeTree(t, { "real.txt": "content", "alias.txt": { symlink: "real.txt" } });
 

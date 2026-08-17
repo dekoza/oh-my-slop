@@ -1,11 +1,20 @@
-# Live probes
+# Live probes and proofs
 
-Scripts that answer a question about a **running** Herdr server by talking to it, rather than
-about this repository's code by importing it.
+Scripts that answer a question by talking to something **real and running** — a Herdr server, an
+installed harness binary — rather than about this repository's code by importing it.
 
 **They are not part of any suite and must not become one.** `node --test tests/node/*.mjs` globs
-every `.mjs` under `tests/node/`, so a probe placed there would create workspaces — and in one
-case start a paid model session — on every full test run. That is why they live here.
+every `.mjs` under `tests/node/`, so one placed there would create workspaces — and in some cases
+start paid model sessions — on every full test run. That is why they live here.
+
+Two kinds share the directory, because they share that hazard and that rule:
+
+- **Probes** answer an open question and leave a transcript. The transcript is the deliverable, and
+  a captured frame is the right fixture for a unit test written afterwards (§5.1's parser is
+  exactly the thing that cannot be tested against frames somebody wrote to match it).
+- **Proofs** discharge a standing acceptance obligation and write a durable artifact under
+  [`docs/proofs/`](../../docs/proofs/). What they *conclude* lives in `factory/lib/` and is
+  unit-tested under `tests/node/`; what lives here is the wiring and the spending.
 
 Run one by hand, when you need the answer:
 
@@ -13,20 +22,23 @@ Run one by hand, when you need the answer:
 node tests/live/herdr-subscription-frames.mjs
 ```
 
-Each probe cleans up the workspaces it creates. Each prints a timestamped transcript of what it
-saw; the transcript is the deliverable, and a captured frame is the right fixture for a unit test
-written afterwards (§5.1's parser is exactly the thing that cannot be tested against frames
-somebody wrote to match it).
+Each probe cleans up the workspaces it creates, and each prints a timestamped transcript of what
+it saw.
 
-| Probe | Costs a model session | Answers |
-|---|---|---|
-| `herdr-subscription-frames.mjs` | no | Which event names does the socket actually deliver, and does the factory's subscription request accept them? |
-| `herdr-pane-exit-frame.mjs` | no | Does closing a pane emit a frame, and under which name? |
-| `herdr-isolated-worker-status.mjs` | **yes** | Does a worker pane launched under §6.8 isolation report an agent status to Herdr? |
-| `herdr-tab-env-reaches-agent.mjs` | no | Does a variable set with `tab create --env` reach the agent process `agent start` launches later, or only the pane's shell? |
+| Script | Kind | Costs a model session | Answers |
+|---|---|---|---|
+| `herdr-subscription-frames.mjs` | probe | no | Which event names does the socket actually deliver, and does the factory's subscription request accept them? |
+| `herdr-pane-exit-frame.mjs` | probe | no | Does closing a pane emit a frame, and under which name? |
+| `herdr-isolated-worker-status.mjs` | probe | **yes** | Does a worker pane launched under §6.8 isolation report an agent status to Herdr? |
+| `herdr-tab-env-reaches-agent.mjs` | probe | no | Does a variable set with `tab create --env` reach the agent process `agent start` launches later, or only the pane's shell? |
+| `prove-skill-loading.mjs` | proof | **yes** | §6.7 / §15 — do Opus and Fable *load and follow* a skill body, or merely register its name? Writes `docs/proofs/skill-loading-<version>-<digest>.md`. |
 
 `herdr-isolated-worker-status.mjs` starts a real Claude session and prompts it. Keep the prompt
 trivial and expect it to cost what one short turn costs.
+
+`prove-skill-loading.mjs` spends one short turn per cell — three cells per model, two models by
+default. Run `--dry-run` first to see the plan, the argv and the prompts without spending
+anything.
 
 ## What they established
 
