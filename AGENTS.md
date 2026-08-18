@@ -447,7 +447,12 @@ is the authority; cite the section a change answers to.
   no `agent.stop` either. §13.B's "the controller stops agents and never closes panes" — nor
   tabs, nor the run's workspace — is therefore `agent send-keys` with the harness's own quit
   sequence, and a harness that ignores it leaves a wedged pane **recorded as an anomaly and never
-  escalated**. The availability probe
+  escalated**. That sequence is **two calls, and the grouping is load-bearing** (#158,
+  `AGENT_STOP_KEY_CALLS`): `esc` alone, a settle, then `ctrl+c ctrl+c` together. Sent as one
+  call it is absorbed by a *working* Claude as a bare turn interrupt and the agent stays;
+  spaced apart the double-press exit never composes and nothing quits at all. Both halves are
+  measured in `tests/live/herdr-agent-quit-sequence.mjs`, and a change to either is a claim
+  about somebody else's TUI — re-run the probe rather than reasoning about it. The availability probe
   (`controller/herdr.mjs`) and the commands (`controller/herdr-control.mjs`) are two modules
   because "the factory checks the multiplexer, it does not manage one" is checkable only as
   *the probe imports nothing that can start a process*.

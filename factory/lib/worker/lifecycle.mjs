@@ -128,13 +128,21 @@ export const SETTLE_GRACE_MS = 2_000;
  * two, with claude's 729 ms close enough to the second read that a loaded
  * machine resolves it on the third instead.
  *
- * Idle is the cheap case, and it is the only one measured: a worker interrupted
- * mid-turn must abandon its inference before it can exit, which is why
- * `AGENT_STOP_KEYS` leads with `esc`, and #114 has no clean data point for it.
- * The bound is therefore sized past its evidence on purpose. Past it the pane
- * is §13.B's accepted wedge — recorded, never escalated, and reclaimed by
- * `cleanup-plan` rather than by this path — so a longer bound would only make a
- * settle wait on a pane nobody here will act on.
+ * **The mid-turn case is measured now too, and it does not move this bound**
+ * (#158, `tests/live/herdr-agent-quit-sequence.mjs`). Across five runs, a Claude
+ * interrupted mid-inference or with a tool running left the pane record 412 to
+ * 723 ms after the exit keys — the same order as idle, because what is being
+ * waited on is Herdr's detection cycle either way, and the harness's teardown is
+ * not the slow part. The bound is therefore **confirmed rather than resized**.
+ *
+ * What the mid-turn probe did find was a stop that never happened at all — the
+ * pre-#158 sequence, sent as one `send-keys` call, was absorbed by a working
+ * Claude as a bare turn interrupt, leaving the agent resident indefinitely. No
+ * bound answers that, which is why the fix was §13.B's sequence
+ * (`AGENT_STOP_KEY_CALLS`) and not a number here. A harness that still ignores
+ * the corrected sequence leaves §13.B's accepted wedge — recorded, never
+ * escalated, and reclaimed by `cleanup-plan` rather than by this path — so a
+ * longer bound would only make a settle wait on a pane nobody here will act on.
  */
 export const STOP_CONFIRM_BACKOFF_MS = Object.freeze([250, 500, 1_000, 2_000, 4_000]);
 
@@ -1282,6 +1290,17 @@ async function stopAgent(store, { hold, identity, herdr, agent, actor, at, sleep
  * `stopped` keeps three values on purpose. `true` and `false` are observations;
  * `null` is Herdr declining to answer, which is not evidence that the agent
  * stayed and must not be written down as though it were (§14.1).
+ *
+ * **A `true` here cannot be a screen artefact.** `pane.agent` follows the pane's
+ * foreground process, not its screen — established live in
+ * `tests/live/herdr-agent-presence-source.mjs`, where a bare `sleep` renamed
+ * `claude` reports an agent with a blank screen and no rule matched, and where
+ * neither `release-agent` nor a foreign `report-agent` removes the field from a
+ * live one (§5.2). So a mid-turn screen that stops matching Herdr's detection
+ * rules cannot manufacture the absence this loop is looking for; 487 reads
+ * across two working turns with a tool running recorded none. The signal's error
+ * runs the other way — a process merely wearing the name reads as present — and
+ * that direction ends as `wedged-pane`, never as a confirmed stop.
  *
  * **A read that fails costs the answer, never the sighting.** The pane id and
  * status carry over from the last read that succeeded, because a stop whose
