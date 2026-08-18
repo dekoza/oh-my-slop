@@ -14,13 +14,14 @@ import { attemptBranch } from "../git/isolation.mjs";
 import { runStream } from "../state/events.mjs";
 import {
 	allocateAttempt,
+	dispatchedAttempts,
 	mintAttempt,
 	ordinalOf,
 	requireAttemptIdentity,
 	runOf,
 	ticketOf,
 } from "../worker/attempt.mjs";
-import { PIPELINE_ROLES, profileForRole } from "../worker/roles.mjs";
+import { PIPELINE_ROLES } from "../worker/roles.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 
 /**
@@ -35,6 +36,12 @@ import { FactoryPipelineError } from "./errors.mjs";
  * |---|---|---|---|
  * | **repair** | the prior attempt's tip | preserved | the originating attempt's, pinned |
  * | **fresh-retry** | the pinned base | discarded | routed, and the one place routing is tier-dependent |
+ *
+ * **#155's `reroute` is a third planner here and is not a tier** (`planReroute`):
+ * it branches from the prior tip and keeps the role, like a repair, and changes
+ * the profile, like a fresh-retry — because it is neither question. Nothing was
+ * judged; a provider refused to serve the attempt, and the work has to happen
+ * somewhere else.
  *
  * They answer different failures. A failing test is usually a small fix on top
  * of good work; a worker that flailed should not have its flailing inherited.
@@ -61,7 +68,7 @@ import { FactoryPipelineError } from "./errors.mjs";
  */
 
 /** §8.5's fresh-retry role, read from the inventory that owns role names (§6.1). */
-const FRESH_RETRY_ROLE = PIPELINE_ROLES.find((role) => role.routingRole === "freshRetry");
+export const FRESH_RETRY_ROLE = PIPELINE_ROLES.find((role) => role.routingRole === "freshRetry");
 
 /**
  * Whose words a phase's evidence is, where §8.10's row marks it untrusted.
@@ -151,20 +158,19 @@ export function originatingAttempt(store, { run, ticket, attempt }) {
  * @param {Readonly<object>} context.failure.row §8.10's row, whose action is the tier
  * @param {Readonly<object> | null} [context.priorResult] the prior attempt's
  *   outbox record, where it wrote one (§6.6) — its prose is untrusted material
- * @param {{ roles: object, rules: ReadonlyArray<object> }} [context.routing] the
- *   active routing. **Required for fresh-retry and unread for repair**
- * @param {ReadonlyArray<string>} [context.labels] the ticket's labels, as the
- *   claim-time snapshot has them
+ * @param {Readonly<object>} [context.route] `worker/dispatch.mjs`'s route record
+ *   for the fresh-retry role, already settled against §9.8's memo.
+ *   **Required for fresh-retry and unread for repair** — which is what makes
+ *   "repair is not routable" a property of this function's shape rather than a
+ *   branch somebody could later make read the routing "just for the model"
  * @returns {Readonly<{ tier: string, priorAttempt: string,
  *   role: string, routingRole: string | null, profile: string, routed: boolean,
  *   from: Readonly<{ kind: string, of: string | null }>, inheritsWork: boolean,
  *   brief: Readonly<object> }>} **no attempt id**: §2.1's ordinal is allocated
  *   against the record, which is `openRetryAttempt`'s to do — see `allocateAttempt`
  * @throws {FactoryPipelineError} `retry-unplannable`
- * @throws {FactoryWorkerError} `routing-ambiguous` — §11.5's dispatch is the
- *   worker module's, and a fresh-retry is the one tier that asks it
  */
-export function planRetry({ prior, failure, priorResult = null, routing = null, labels = [] }) {
+export function planRetry({ prior, failure, priorResult = null, route = null }) {
 	const tier = failure?.row?.action;
 	if (!Object.hasOwn(RETRY_BASES, tier)) {
 		// §8.10's `retry` is the near miss worth naming, because it *is* a retry and
@@ -203,13 +209,14 @@ export function planRetry({ prior, failure, priorResult = null, routing = null, 
 		return pinnedToPrior({ ...shared, action: tier, prior });
 	}
 
-	if (routing === null) {
+	if (typeof route?.profile !== "string") {
 		throw unplannable(
-			"routing",
-			"A fresh-retry is the one tier-dependent routing point (§11.5), so it is planned with the active routing in " +
-				"hand. Planning one without it could only mean guessing the profile, and the guess with a plausible " +
-				"defence — the implement role's — is exactly the implicit freshRetry §11.5 says does not exist.",
-			{ tier },
+			"route",
+			"A fresh-retry is the one tier-dependent routing point (§11.5), so it is planned with the dispatch decision " +
+				"for that role in hand — §11.5's answer, read under §9.8's memo. Planning one without it could only mean " +
+				"guessing the profile, and the guess with a plausible defence — the implement role's — is exactly the " +
+				"implicit freshRetry §11.5 says does not exist.",
+			{ tier, found: route?.profile ?? null },
 		);
 	}
 
@@ -217,8 +224,9 @@ export function planRetry({ prior, failure, priorResult = null, routing = null, 
 		...shared,
 		role: FRESH_RETRY_ROLE.name,
 		routingRole: FRESH_RETRY_ROLE.routingRole,
-		profile: profileForRole(routing, { role: FRESH_RETRY_ROLE.routingRole, labels }),
+		profile: route.profile,
 		routed: true,
+		routing: route,
 		from: Object.freeze({ kind: RETRY_BASES[tier], of: null }),
 		inheritsWork: false,
 	});
@@ -291,6 +299,127 @@ export function planAutomationRetry({ prior, failure, priorResult = null }) {
 	});
 }
 
+/**
+ * Plan #155's `reroute`: **the same work, on the next profile §11.5's declared
+ * order names** (§8.10, §9).
+ *
+ * A third planner rather than a branch in either of the other two, because it
+ * answers a third question. A tier asks *is the prior attempt's work worth
+ * keeping*; an automation retry asks nothing and pins everything; this asks
+ * *where else may this run?* and takes exactly one answer from the caller — the
+ * route — while pinning everything else to the attempt it replaces.
+ *
+ * **The branch starts at the prior tip.** The refused attempt itself committed
+ * nothing (a provider that refuses serves no tokens), but the attempt it is
+ * repairing or retrying from may have, and discarding that chain would turn a
+ * quota blip into a lost repair — which is the same failure this ticket exists
+ * to remove, one tier down.
+ *
+ * **Nothing about the role changes.** A reroute of a builder is a builder and a
+ * reroute of a review axis is that axis: §11.5's order is per role, and a
+ * reroute that also changed the role would be answering a question nobody asked
+ * about work nobody judged.
+ *
+ * @param {object} context
+ * @param {Readonly<object>} context.prior the originating attempt (`originatingAttempt`)
+ * @param {object} context.failure the resolved stage that routed here
+ * @param {Readonly<object>} context.route `worker/dispatch.mjs`'s route record,
+ *   already settled against the memo. **Required, and required to name a
+ *   profile**: a planner that selected one itself would be a second dispatch
+ *   decision beside the one the caller has already recorded
+ * @param {Readonly<object> | null} [context.priorResult]
+ * @returns {Readonly<object>} the plan shape `openRetryAttempt` opens
+ * @throws {FactoryPipelineError} `retry-unplannable`
+ */
+export function planReroute({ prior, failure, route, priorResult = null }) {
+	const action = failure?.row?.action;
+	if (action !== STAGE_ACTIONS.reroute) {
+		throw unplannable(
+			"action",
+			`${JSON.stringify(action ?? null)} is not §8.10's reroute; §8.5's two tiers are \`planRetry\`'s and the ` +
+				"automation retry is `planAutomationRetry`'s.",
+			{ action: action ?? null, expected: STAGE_ACTIONS.reroute },
+		);
+	}
+
+	if (typeof route?.profile !== "string") {
+		throw unplannable(
+			"route",
+			"A reroute runs the profile the dispatch decision selected (§11.5, §9), and this caller passed none. Choosing " +
+				"one here would be a second dispatch decision beside the recorded one, and the two would eventually name " +
+				"different providers for the one attempt.",
+			{ action, found: route?.profile ?? null },
+		);
+	}
+
+	requirePriorAttempt(prior);
+
+	return Object.freeze({
+		tier: action,
+		priorAttempt: prior.attempt,
+		role: prior.role,
+		routingRole: null,
+		profile: route.profile,
+		routed: true,
+		// The whole decision, carried onto the mint: §6.5 re-asserts a *declared*
+		// model against the observed one, and a substitution the record does not
+		// name is precisely the difference that re-assertion exists to catch.
+		routing: route,
+		from: Object.freeze({ kind: BASE_KINDS.priorTip, of: prior.branch }),
+		inheritsWork: true,
+		brief: repairBrief({ tier: action, prior, priorResult, ...failure }),
+	});
+}
+
+/**
+ * The profiles this ticket execution has had **refused** for one role — the
+ * attempts whose stage §8.10 routed to a `reroute`.
+ *
+ * **This is what bounds a reroute** (§9.9): each routable profile is refused at
+ * most once, so the chain is at most as long as §11.5's declared order and there
+ * is no counter to declare, compare, or forget to increment. It is derived from
+ * the journal for the same reason §8.6's budgets are: the bound and the spend
+ * are one expression, and a re-entry after a crash reads the same answer back —
+ * an in-memory list would let a controller that died mid-chain re-dispatch a
+ * profile the provider has already refused.
+ *
+ * **Refused, not merely dispatched**, and the difference is a whole failure
+ * mode. §8.10's automation retry relaunches the same work on the same pinned
+ * profile — a pane that died says nothing about its provider — so a profile a
+ * retry ran is not spent. Excluding it would turn every infra flake into a
+ * silent model change, and on a routing with no fallback into a released ticket.
+ * The attempt being rerouted *now* is included by construction: its stage is
+ * resolved before the seam is asked.
+ *
+ * @param {object} store an open store, controller or read-only
+ * @param {{ run: string, ticket: number, role: string }} where the role is a
+ *   §6.1 pipeline role name, which is what the mint records
+ * @returns {ReadonlyArray<string>}
+ */
+export function refusedProfiles(store, { run, ticket, role }) {
+	const profiles = new Map(
+		dispatchedAttempts(store, { run, ticket })
+			.filter((entry) => entry.role === role && typeof entry.profile === "string")
+			.map((entry) => [entry.attempt, entry.profile]),
+	);
+
+	return Object.freeze([
+		...new Set(
+			rerouted(store, { run, ticket })
+				.map((attempt) => profiles.get(attempt))
+				.filter((profile) => profile !== undefined),
+		),
+	]);
+}
+
+/** The attempts §8.10 routed to a reroute, in the order the journal holds them. */
+function rerouted(store, { run, ticket }) {
+	return store
+		.readEvents({ stream: runStream(run), kind: "stage.resolved" })
+		.filter((record) => record.ticket === ticket && record.payload.action === STAGE_ACTIONS.reroute)
+		.map((record) => record.attempt);
+}
+
 /** Why a phase other than `implement` gets no automation-retry plan (§8.4, §8.8). */
 function phaseComplaint({ phase, outcome }, action) {
 	const because = AGENT_BORNE_PHASES.includes(phase)
@@ -333,6 +462,12 @@ function pinnedToPrior({ action, prior, ...plan }) {
 		role: prior.role,
 		profile: prior.profile,
 		routed: false,
+		// No dispatch decision was made, and `null` says exactly that rather than
+		// a record whose `declared` and `profile` agree because nobody chose
+		// either. §11.5 pins these two rows to the originating attempt, and a
+		// routing record on them would read as a routing that happened to land
+		// where the pin already was.
+		routing: null,
 		from: Object.freeze({ kind: BASE_KINDS.priorTip, of: prior.branch }),
 		inheritsWork: true,
 	});
@@ -380,7 +515,16 @@ export async function openRetryAttempt(
 	const identity = requireAttemptIdentity({ run, ticket, phase: PHASE_IMPLEMENT, attempt: allocated.attempt });
 	const baseCommit = await retryBaseCommit(clone, { plan, base });
 
-	mintAttempt(store, { hold, identity, role: plan.role, profile: plan.profile, baseCommit, purpose, at });
+	mintAttempt(store, {
+		hold,
+		identity,
+		role: plan.role,
+		profile: plan.profile,
+		routing: plan.routing ?? null,
+		baseCommit,
+		purpose,
+		at,
+	});
 
 	const created = await createAttemptWorktree(store, clone, {
 		hold,

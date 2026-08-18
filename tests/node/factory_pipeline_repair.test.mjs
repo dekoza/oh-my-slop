@@ -45,12 +45,34 @@ const SNAPSHOT = Object.freeze({
 	comments: Object.freeze([]),
 });
 
-/** A routing whose every rule and role names something other than the prior profile. */
-function routing() {
+/**
+ * A dispatch decision, as `worker/dispatch.mjs` answers one — the input the two
+ * routed rows take and the two pinned ones ignore (§11.5, #155).
+ */
+function route(profile, overrides = {}) {
 	return {
-		roles: { implement: "builder", freshRetry: "big-builder", review: ["reader", "reader"] },
-		rules: [{ labelsAny: ["risk:high"], role: "freshRetry", profile: "opus" }],
+		declared: profile,
+		profile,
+		class: "local",
+		rerouted: false,
+		reason: null,
+		considered: [{ profile, class: "local", state: "available", until: null }],
+		...overrides,
 	};
+}
+
+/** The reroute of an exhausted class: a different profile, and the record of why. */
+function rerouteTo(profile, declared) {
+	return route(profile, {
+		declared,
+		class: "claude-code",
+		rerouted: true,
+		reason: "local exhausted (§9.8)",
+		considered: [
+			{ profile: declared, class: "local", state: "blocked", until: 900 },
+			{ profile, class: "claude-code", state: "available", until: null },
+		],
+	});
 }
 
 /**
@@ -88,7 +110,7 @@ test("repair keeps the prior attempt's work: it branches from that attempt's tip
 });
 
 test("fresh-retry discards the work: it branches from the pinned base (§8.5)", () => {
-	const plan = planRetry({ prior: prior(), failure: FRESH_RETRIES, routing: routing(), labels: [] });
+	const plan = planRetry({ prior: prior(), failure: FRESH_RETRIES, route: route("big-builder") });
 
 	assert.equal(plan.from.kind, RETRY_BASES["fresh-retry"]);
 	assert.equal(plan.from.of, null, "the base is the run's pin, not any attempt's branch");
@@ -97,7 +119,7 @@ test("fresh-retry discards the work: it branches from the pinned base (§8.5)", 
 
 test("a plan names no attempt: §2.1's ordinal is allocated against the record (§8.5)", () => {
 	for (const failure of [REPAIRS, FRESH_RETRIES]) {
-		const plan = planRetry({ prior: prior({ attempt: `${RUN}-t${TICKET}-a2` }), failure, routing: routing() });
+		const plan = planRetry({ prior: prior({ attempt: `${RUN}-t${TICKET}-a2` }), failure, route: route("big-builder") });
 
 		assert.equal(plan.attempt, undefined);
 		assert.equal(plan.priorAttempt, `${RUN}-t${TICKET}-a2`, "what it names is the attempt it answers");
@@ -116,9 +138,10 @@ test("a prior that is not a §2.1 attempt id is refused while the plan is still 
 });
 
 test("repair is not routable: it is pinned to the originating attempt's profile (§11.5)", () => {
-	// The routing handed in routes `freshRetry` to a different profile for exactly
-	// these labels. A repair that consulted it would come back re-routed.
-	const plan = planRetry({ prior: prior(), failure: REPAIRS, routing: routing(), labels: ["risk:high"] });
+	// A dispatch decision naming a different profile is handed in on purpose. A
+	// repair that read it would come back re-routed — and there is no reading of
+	// §11.5 under which a repair leaves the working line it is continuing.
+	const plan = planRetry({ prior: prior(), failure: REPAIRS, route: route("opus") });
 
 	assert.equal(plan.profile, "builder");
 	assert.equal(plan.routed, false);
@@ -127,32 +150,26 @@ test("repair is not routable: it is pinned to the originating attempt's profile 
 });
 
 test("fresh-retry is the one tier-dependent routing point (§11.5)", () => {
-	const plan = planRetry({ prior: prior(), failure: FRESH_RETRIES, routing: routing(), labels: ["risk:high"] });
+	const plan = planRetry({ prior: prior(), failure: FRESH_RETRIES, route: route("opus") });
 
 	assert.equal(plan.routed, true);
 	assert.equal(plan.routingRole, "freshRetry");
-	assert.equal(plan.profile, "opus", "the rule for these labels re-routes it to a different model");
+	assert.equal(plan.profile, "opus", "the dispatch decision for this role names a different model");
 	assert.equal(plan.role, "fresh-retry");
 });
 
-test("an implicit freshRetry = implement does not exist (§11.5)", () => {
-	const active = routing();
-	active.rules = [];
-	delete active.roles.freshRetry;
+test("a fresh-retry carries the dispatch decision that chose its profile onto the plan (#155)", () => {
+	const plan = planRetry({ prior: prior(), failure: FRESH_RETRIES, route: rerouteTo("opus", "big-builder") });
 
-	assert.throws(
-		() => planRetry({ prior: prior(), failure: FRESH_RETRIES, routing: active }),
-		(error) => {
-			assert.equal(error.reason, "routing-ambiguous");
-			assert.doesNotMatch(error.message, /"builder"/);
-			return true;
-		},
-	);
+	assert.equal(plan.profile, "opus");
+	assert.equal(plan.routing.declared, "big-builder", "what §11.5 declared is recorded beside what will run");
+	assert.equal(plan.routing.rerouted, true);
+	assert.match(plan.routing.reason, /local/, "and why they differ names the class that was out");
 });
 
 test("a repair with no recorded profile is refused, never routed instead (§11.5)", () => {
 	assert.throws(
-		() => planRetry({ prior: prior({ profile: null }), failure: REPAIRS, routing: routing() }),
+		() => planRetry({ prior: prior({ profile: null }), failure: REPAIRS }),
 		(error) => {
 			assert.equal(error.reason, "retry-unplannable");
 			assert.equal(error.details.at, "profile");
@@ -161,12 +178,13 @@ test("a repair with no recorded profile is refused, never routed instead (§11.5
 	);
 });
 
-test("fresh-retry declares its routing: a plan without one is refused, never defaulted (§11.5)", () => {
+test("fresh-retry declares its route: a plan without one is refused, never defaulted (§11.5)", () => {
 	assert.throws(
 		() => planRetry({ prior: prior(), failure: FRESH_RETRIES }),
 		(error) => {
 			assert.equal(error.reason, "retry-unplannable");
-			assert.equal(error.details.at, "routing");
+			assert.equal(error.details.at, "route");
+			assert.doesNotMatch(error.message, /"builder"/, "an implicit freshRetry = implement does not exist");
 			return true;
 		},
 	);
@@ -176,7 +194,7 @@ test("a row whose action is not a tier is refused (§8.10)", () => {
 	// `dead-worker` routes to §8.10's automation `retry`, which is a relaunch of
 	// the same work rather than either tier's answer to a failure of it.
 	assert.throws(
-		() => planRetry({ prior: prior(), failure: failing("implement", "dead-worker"), routing: routing() }),
+		() => planRetry({ prior: prior(), failure: failing("implement", "dead-worker"), route: route("big-builder") }),
 		(error) => {
 			assert.equal(error.reason, "retry-unplannable");
 			assert.equal(error.details.at, "tier");
@@ -259,7 +277,7 @@ test("a rebase conflict consumes a fresh-retry, not a repair — the prior tip i
 	assert.equal(row.action, "fresh-retry");
 	assert.equal(row.budget, "repair");
 	assert.equal(
-		planRetry({ prior: prior(), failure: failing("integrate", "rebase-conflict"), routing: routing() }).from.kind,
+		planRetry({ prior: prior(), failure: failing("integrate", "rebase-conflict"), route: route("big-builder") }).from.kind,
 		RETRY_BASES["fresh-retry"],
 		"a repair would branch from precisely the tip that failed to rebase",
 	);
@@ -384,7 +402,7 @@ test("a fresh-retry branches at the pinned base, and inherits none of the prior 
 	const plan = planRetry({
 		prior: prior({ attempt: context.attempt, branch: first.branch }),
 		failure: FRESH_RETRIES,
-		routing: routing(),
+		route: route("big-builder"),
 	});
 
 	const opened = await openRetryAttempt(context.store, context.clone, {
@@ -411,7 +429,7 @@ test("a fresh-retry branches at the pinned base, and inherits none of the prior 
 
 test("a fresh-retry with no pinned base is refused rather than guessing one (§7.2)", async (t) => {
 	const context = await executing(t);
-	const plan = planRetry({ prior: prior({ attempt: context.attempt }), failure: FRESH_RETRIES, routing: routing() });
+	const plan = planRetry({ prior: prior({ attempt: context.attempt }), failure: FRESH_RETRIES, route: route("big-builder") });
 
 	await assert.rejects(
 		() =>

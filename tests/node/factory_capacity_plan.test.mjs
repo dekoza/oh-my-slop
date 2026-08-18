@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import {
 	capacityPlan,
-	implementResourceClass,
+	implementDispatch,
 	MAX_PANES_PER_TICKET,
 } from "../../factory/lib/capacity/plan.mjs";
 import { CONCURRENCY_KEYS } from "../../factory/lib/config/concurrency.mjs";
@@ -174,31 +174,63 @@ test("no configuration key anywhere bounds panes", (t) => {
 	);
 });
 
-// ── The class an implement attempt draws from (§9.4, §11.5) ──────────────────
+// ── The route an implement attempt runs (§9.4, §11.5, §9.8) ──────────────────
 
-test("the implement class comes from the role's profile when no rule matches the ticket", (t) => {
+/** The memo facet, reduced to the one question a route asks of it (#154). */
+function memo(blocked = {}) {
+	return { settle: async (className) => blocked[className] ?? { state: "available", until: null } };
+}
+
+test("the implement route is the role's own profile when no rule matches the ticket", async (t) => {
 	const { config, activeRouting } = loaded(t);
 
-	assert.equal(
-		implementResourceClass({ profiles: config.profiles, activeRouting }, { labels: ["workflow:implement"] }),
-		"local",
+	const route = await implementDispatch(
+		{ profiles: config.profiles, activeRouting },
+		{ labels: ["workflow:implement"] },
+		{ exhaustion: memo() },
 	);
+
+	assert.equal(route.profile, "builder");
+	assert.equal(route.class, "local");
+	assert.equal(route.rerouted, false);
 });
 
-test("a matching rule routes the ticket to its own profile's class", (t) => {
+test("a matching rule routes the ticket to its own profile's class", async (t) => {
 	const { config, activeRouting } = loaded(t, (config) => {
 		config.profiles.cloud = { kind: "claude", model: "opus" };
 		config.routing.rules = [{ labelsAny: ["area:ui"], role: "implement", profile: "cloud" }];
 		config.concurrency.resources["claude-code"] = 1;
 	});
 
-	assert.equal(
-		implementResourceClass({ profiles: config.profiles, activeRouting }, { labels: ["area:ui"] }),
-		"claude-code",
+	const route = await implementDispatch(
+		{ profiles: config.profiles, activeRouting },
+		{ labels: ["area:ui"] },
+		{ exhaustion: memo() },
 	);
+
+	assert.equal(route.class, "claude-code");
 });
 
-test("a ticket matching two implement rules is refused before any work, naming both rules", (t) => {
+test("an exhausted class steps the ticket onto the declared fallback, before any claim (#155)", async (t) => {
+	const { config, activeRouting } = loaded(t, (config) => {
+		config.profiles.cloud = { kind: "claude", model: "opus" };
+		config.routing.fallbacks = { implement: ["cloud"] };
+		config.concurrency.resources["claude-code"] = 1;
+	});
+
+	const route = await implementDispatch(
+		{ profiles: config.profiles, activeRouting },
+		{ ticket: 42, labels: [] },
+		{ exhaustion: memo({ local: { state: "blocked", until: 900 } }) },
+	);
+
+	assert.equal(route.declared, "builder");
+	assert.equal(route.profile, "cloud");
+	assert.equal(route.class, "claude-code");
+	assert.equal(route.rerouted, true);
+});
+
+test("a ticket matching two implement rules is refused before any work, naming both rules", async (t) => {
 	const { config, activeRouting } = loaded(t, (config) => {
 		config.profiles.cloud = { kind: "claude", model: "opus" };
 		config.routing.rules = [
@@ -208,17 +240,18 @@ test("a ticket matching two implement rules is refused before any work, naming b
 		config.concurrency.resources["claude-code"] = 1;
 	});
 
-	assert.throws(
+	await assert.rejects(
 		() =>
-			implementResourceClass(
+			implementDispatch(
 				{ profiles: config.profiles, activeRouting },
 				{ ticket: 42, labels: ["area:ui", "area:api"] },
+				{ exhaustion: memo() },
 			),
 		(error) => {
 			assert.equal(error.reason, "routing-ambiguous");
 			assert.equal(error.details.role, "implement");
 			assert.equal(error.details.ticket, 42);
-			assert.deepEqual(error.details.profiles, ["builder", "cloud"]);
+			assert.deepEqual([...error.details.profiles].sort(), ["builder", "cloud"]);
 			return true;
 		},
 	);

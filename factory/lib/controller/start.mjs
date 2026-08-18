@@ -1,4 +1,4 @@
-import { capacityPlan, implementResourceClass } from "../capacity/plan.mjs";
+import { capacityPlan, implementDispatch } from "../capacity/plan.mjs";
 import { openCapacity } from "../capacity/slots.mjs";
 import {
 	EXIT_LEASE_LOST,
@@ -31,6 +31,8 @@ import { LEASE_RENEWAL_MS, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
 import { CLAIM_OUTCOMES, claimTicket } from "../tracker/claims.mjs";
 import { attemptIdOf } from "../worker/attempt.mjs";
+import { createAdoptionProbe } from "../worker/adoption.mjs";
+import { settleUnadoptable } from "../worker/lifecycle.mjs";
 import { applyDisposition } from "../tracker/disposition.mjs";
 import { readScope } from "../tracker/frontier.mjs";
 import { createGiteaReader } from "../tracker/gitea.mjs";
@@ -396,12 +398,53 @@ async function driveRun(store, hold, context, signals) {
 						}),
 		});
 
+		// The composition this run would execute a lane with, decided **before** the
+		// reclaim below: §5.5's adoption is only worth doing for a run that can
+		// actually resume the lane it adopts.
+		const scheduling =
+			checked.ok && context.pipeline === undefined
+				? {
+						...context,
+						pipeline: createProductionPipeline(store, {
+							hold,
+							leases: context.leases,
+							config: context.config,
+							activeRouting: context.activeRouting,
+							tracker: context.tracker,
+							trackerWriter: context.trackerWriter,
+							herdr: context.herdrControl,
+							preflight: checked.production,
+							executable: context.executable,
+							env: context.env,
+							now: context.now,
+						}),
+					}
+				: context;
+		const executor = checked.ok ? executorFor(store, entry, hold, scheduling) : null;
+
 		// §9.4: a slot a previous controller left held is settled **by probing its
-		// holder, never by waiting for a clock**. The probe belongs to the slice
-		// that can ask a pane whether it is still there (#114, #107); until then
-		// this call is what reports the rows nothing can settle, rather than a
-		// silent pool one index short.
-		const reclaimed = capacity.reclaim({ probe: context.slotProbe ?? null, at: context.now() });
+		// holder, never by waiting for a clock** — and §5.5's adoption is that same
+		// probe's other answer. A provable worker of this run comes back as a lane
+		// to resume; a disproved one has its attempt settled and its row released;
+		// an unanswerable read moves nothing and is accounted for when the run ends.
+		//
+		// **The transfer is gated on there being a run to transfer into.** A red
+		// preflight, or a package with nothing to execute a lane with, adopts
+		// nothing: a row moved onto a generation that ends without using it is
+		// exactly the row no successor can settle.
+		const reclaimed = await capacity.reclaim({
+			probe: createAdoptionProbe({ store, herdr: context.herdrControl }),
+			adopt: executor !== null,
+			settleAttempt: (answer) =>
+				settleUnadoptable(store, {
+					hold,
+					identity: { run: answer.run, ticket: answer.ticket, phase: answer.phase, attempt: answer.attempt },
+					adoption: adoptionEvidence(answer),
+					actor: "controller",
+					now: context.now,
+				}),
+			at: context.now(),
+		});
 
 		// Only a green run reaches `running`: a red required preflight ends the run
 		// with `baseline-red` without a lane ever being offered a slot.
@@ -409,31 +452,22 @@ async function driveRun(store, hold, context, signals) {
 		let executionContext = context;
 		if (checked.ok) {
 			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.running, { at: context.now() });
-			const scheduling =
-				context.pipeline === undefined
-					? {
-							...context,
-							pipeline: createProductionPipeline(store, {
-								hold,
-								leases: context.leases,
-								config: context.config,
-								activeRouting: context.activeRouting,
-								tracker: context.tracker,
-								trackerWriter: context.trackerWriter,
-								herdr: context.herdrControl,
-								preflight: checked.production,
-								executable: context.executable,
-								env: context.env,
-								now: context.now,
-							}),
-						}
-					: context;
 			executionContext = scheduling;
-			executed = await runScheduler(store, capacity, entry, hold, scheduling);
+			executed = await runScheduler(store, capacity, entry, hold, scheduling, {
+				executor,
+				resumed: reclaimed.resumed,
+			});
 			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.draining, { at: context.now() });
 		}
 
 		if (hold.lost) return leaseLostAnswer(store, hold);
+
+		// Anything this run adopted and never ran is given back before it ends. Its
+		// generation is superseded the moment the run is over, and a row held under
+		// a generation nobody drives is a row no successor may adopt (§5.5) — so a
+		// lane the loop never reached, because a stop was already pending or an
+		// abandon came first, must not leave an index quietly one short.
+		const releasedAdopted = capacity.releaseAdopted({ at: context.now() });
 
 		// §10.3's mandatory reason, read **after** the loop: a stop that arrived
 		// mid-run was honoured at a ticket boundary, and the record of it is what
@@ -496,7 +530,16 @@ async function driveRun(store, hold, context, signals) {
 			// all of them are queued behind one slot, so the run says which — and
 			// beside it, what the last controller left that this one could not
 			// settle.
-			capacity: { ...capacity.snapshot({ at: endedAt }), reclaim: reclaimed },
+			capacity: {
+				...capacity.snapshot({ at: endedAt }),
+				reclaim: reclaimReport(reclaimed),
+				released_adopted: releasedAdopted,
+				// §5.5, §12.4: what this run could not settle, said out loud rather
+				// than left as a pool one index short. A row an unanswerable probe left
+				// behind is not adoptable by anyone — the run that took it is over —
+				// so the report names it and what will settle it.
+				unsettled: capacity.unsettled({ at: endedAt }),
+			},
 			execution,
 			monitor: {
 				// The trigger is a property of the launch surface, not of the run:
@@ -534,17 +577,20 @@ async function driveRun(store, hold, context, signals) {
  * missing, is how a run ends up reading a live frontier with nothing able to
  * execute against it.
  */
-function runScheduler(store, capacity, entry, hold, context) {
+function runScheduler(store, capacity, entry, hold, context, { executor, resumed = [] }) {
 	const run = entry.run;
-	const executor = executorFor(store, entry, hold, context);
 
 	return schedule({
 		capacity,
 		frontier: executor === null ? emptyFrontier : (context.frontier ?? liveFrontier(entry, context)),
-		resourceClassOf: (member) =>
-			implementResourceClass(
+		// §5.5's adopted lanes, entered ahead of the first frontier read. They are
+		// empty unless a previous controller left a worker this one could prove.
+		resumed,
+		dispatch: (member, { at }) =>
+			implementDispatch(
 				{ profiles: context.config.profiles, activeRouting: context.activeRouting },
 				member,
+				{ exhaustion: capacity.exhaustion, at },
 			),
 		execute: executor ?? refuseExecution,
 		// §10.5: the stop request is **polled at ticket boundaries**, which is
@@ -564,6 +610,38 @@ function runScheduler(store, capacity, entry, hold, context) {
 		abandoning: () => latestRequest(operatorRequests(store, run))?.kind === "run.abandon-requested",
 		at: context.now,
 	});
+}
+
+/**
+ * The reclaim, as the **report** carries it.
+ *
+ * `resumed` hands the scheduler live slot holds, and a hold is a capability
+ * rather than a fact: a report is printed, serialised, and read by the monitor,
+ * and none of those is something to do with one. The lanes are named instead —
+ * their ticket, the attempt the probe proved, the rows they hold, and the
+ * evidence that authorised the move.
+ */
+function reclaimReport(reclaimed) {
+	return {
+		...reclaimed,
+		resumed: reclaimed.resumed.map((lane) => ({
+			ticket: lane.ticket,
+			attempt: lane.attempt,
+			slots: [lane.slots.ticket.name, ...(lane.slots.model === null ? [] : [lane.slots.model.name])],
+			evidence: lane.evidence,
+		})),
+	};
+}
+
+/**
+ * §5.5's verdict, as the ending of a disproved attempt records it.
+ *
+ * The whole probe answer minus the identity the record already carries: an
+ * `attempt.ended` naming its own run, ticket, and attempt a second time inside
+ * its payload is noise in the one record an operator reads first.
+ */
+function adoptionEvidence(answer) {
+	return Object.freeze({ verdict: answer.verdict, tests: answer.tests ?? {}, evidence: answer.detail ?? {} });
 }
 
 /**
@@ -615,7 +693,7 @@ function liveFrontier(entry, context) {
  * report a lane it finished as still in flight.
  */
 function ticketExecution(store, entry, hold, context) {
-	return async ({ ticket, member, slots, capacity }) => {
+	return async ({ ticket, member, slots, capacity, route }) => {
 		// §7.3's deterministic identity, so a re-entered run rebuilds the same one
 		// and §4.5's duplicate check returns the claim already committed.
 		const attempt = attemptIdOf({ run: entry.run, ticket, ordinal: 1 });
@@ -647,6 +725,12 @@ function ticketExecution(store, entry, hold, context) {
 			attempt,
 			claim,
 			capacity,
+			// §11.5's dispatch decision, made before the claim and against §9.8's
+			// memo (#155). It travels with the lane for the same reason §11.6's
+			// budgets do: the route this lane's model slot was taken for and the
+			// route its first attempt is minted under are the one decision, and a
+			// composer resolving it again would be a second place it could differ.
+			route,
 			budgets: context.config.budgets,
 		});
 		const disposition = outcome?.disposition ?? null;
