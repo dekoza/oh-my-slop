@@ -1,7 +1,7 @@
 import { PROBE_SOURCES } from "../effects/catalogue.mjs";
 import { resolveEffectIn, unresolvedEffects } from "../effects/records.mjs";
 import { EFFECT_REGISTRY } from "../effects/registry.mjs";
-import { EVENT_SOURCES, FOREIGN_TIMESTAMP_KEY } from "../state/events.mjs";
+import { EVENT_SOURCES, FOREIGN_TIMESTAMP_KEY, sourceForActor } from "../state/events.mjs";
 import { evidenceEntry, reconcileConclusion } from "./conclusions.mjs";
 import { FactoryReconcileError } from "./errors.mjs";
 import { PROBES } from "./probes.mjs";
@@ -380,7 +380,7 @@ function commit(store, entity, readings, concluded, { actor, fencingGeneration, 
 
 		tx.appendEvent({
 			kind: "reconcile.concluded",
-			source: actor === "controller" ? "controller" : "operator",
+			source: sourceForActor(actor),
 			run: entity.identity.run,
 			ticket: entity.identity.ticket,
 			occurredAt: at,
