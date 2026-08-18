@@ -179,10 +179,16 @@ export const EVENT_SOURCES = Object.freeze({
  * The actor grammar is `controller` or `operator:<verb>` (monitor O6, §13.D) and
  * the source vocabulary is the six above, so the mapping is a collapse: every
  * operator verb writes as `operator`. It lives here, with `EVENT_SOURCES`,
- * because three callers need it from two layers — the effect pair, the
- * truncation primitive, and §12.6's expiry — and the state layer cannot import
- * from `effects/`. Three copies of one ternary is how the day arrives that a
- * record from `operator:cleanup-execute` is attributed to the controller.
+ * because five callers need it from four layers — the effect pair, the
+ * truncation primitive, §12.6's expiry, §10.3's preflight stage and §5.3's
+ * reconcile conclusion — and the state layer cannot import from `effects/`.
+ * Copies of one ternary are how the day arrives that a record from
+ * `operator:cleanup-execute` is attributed to the controller.
+ *
+ * **The last two arrived late** (#176): the extraction converted three call
+ * sites and left two writing the expression out, which reads as finished from
+ * everywhere except a search for the expression rather than the name. That is
+ * what `factory_state_events` now asserts structurally.
  *
  * It does not validate: the grammar's refusal is §4.5's, at the one place an
  * actor enters a pair.
