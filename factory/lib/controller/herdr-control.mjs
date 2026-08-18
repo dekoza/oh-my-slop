@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { BINARY } from "./herdr.mjs";
 
@@ -88,7 +89,8 @@ export const FACTORY_ATTEMPT_TOKEN = "FACTORY_ATTEMPT";
 export const METADATA_SOURCE = "software-factory";
 
 /**
- * How the controller stops an **agent** without closing its **pane** (§13.B).
+ * How the controller stops an **agent** without closing its **pane** (§13.B):
+ * **two `send-keys` calls, and the grouping is the whole point.**
  *
  * Verified against the installed Herdr (protocol 19): there is no `agent stop`
  * in the CLI and no `agent.stop` in the socket API — `exit_code` aside, the
@@ -99,21 +101,47 @@ export const METADATA_SOURCE = "software-factory";
  * superseded, so an agent that ignores these keys leaves a wedged pane, and a
  * wedged pane is evidence reclaimed later by `cleanup-plan`.
  *
- * `esc` first: both runtimes treat it as "interrupt the current turn", and a
- * `ctrl+c` arriving mid-turn is interpreted by neither as "exit".
+ * `esc` first, because both runtimes treat it as "interrupt the current turn".
+ * It rides **its own call**: sent together with the two `ctrl+c`, the whole
+ * sequence is absorbed as a bare turn interrupt by a Claude that is working —
+ * the turn stops, the prompt is restored to the input box, and the agent stays
+ * resident. That is the wedge run `01M0859CJAA1Z8XK41756H5Y30` recorded on
+ * three attempts, and it is why the sequence rather than #152's re-probe budget
+ * is what #158 changed.
+ *
+ * The two `ctrl+c` ride **one** call for the opposite reason: the exit
+ * affordance is a double press with a window under a second, so spaced a second
+ * apart they quit nothing at all — not an idle harness either. Both halves were
+ * measured with `tests/live/herdr-agent-quit-sequence.mjs`, whose run table is
+ * in `tests/live/README.md`; pi quits under either shape, so one sequence still
+ * serves both harnesses.
  */
-export const AGENT_STOP_KEYS = Object.freeze(["esc", "ctrl+c", "ctrl+c"]);
+export const AGENT_STOP_KEY_CALLS = Object.freeze([Object.freeze(["esc"]), Object.freeze(["ctrl+c", "ctrl+c"])]);
+
+/**
+ * How long the interrupt is given before the exit keys follow.
+ *
+ * **The call boundary is what the harness needs, not the delay**: the two calls
+ * back to back — 8 ms apart, as fast as two CLI invocations can be — quit a
+ * working Claude just as well as 1500 ms apart did. The wait is here for the
+ * loaded machine that boundary alone does not cover, and 250 ms is bracketed by
+ * measurements on both sides rather than picked: the probe quit a worker whose
+ * tool was running at 0, 250, and 1500 ms.
+ */
+export const AGENT_STOP_SETTLE_MS = 250;
 
 /**
  * The typed operations the attempt path performs against Herdr.
  *
  * `run` is injected so a test drives every answer without a multiplexer on the
- * machine — the pattern the runtime probes' transports use one layer down.
+ * machine — the pattern the runtime probes' transports use one layer down, and
+ * `sleep` for the same reason: §13.B's settle is part of the stop's shape, so a
+ * suite has to be able to assert it was waited without waiting it.
  *
- * @param {{ binary?: string, env?: object, run?: Function }} [io]
+ * @param {{ binary?: string, env?: object, run?: Function, sleep?: Function }} [io]
  * @returns {Readonly<object>}
  */
-export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}) {
+export function createHerdrControl({ binary = BINARY, env, run = runHerdr, sleep = delay } = {}) {
 	const call = (args) => run(args, { env, binary });
 
 	/**
@@ -351,10 +379,19 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 		 * delivered or they are not, and *aliveness afterwards* is read back from
 		 * `paneForAttempt`, because a harness that ignores its own quit keys is
 		 * precisely the case §13.B accepts and records.
+		 *
+		 * The sequence is played as `AGENT_STOP_KEY_CALLS` groups it, with the
+		 * settle between them, and **a refused call ends the sequence**: keys sent
+		 * after Herdr has said it cannot reach this agent would replace one honest
+		 * refusal with a second one about the same thing (§11.2).
 		 */
 		async stopAgent(target) {
-			const sent = await call(["agent", "send-keys", target, ...AGENT_STOP_KEYS]);
-			return sent.exitCode === 0 ? Object.freeze({ ok: true }) : failed("agent send-keys", sent);
+			for (const [index, keys] of AGENT_STOP_KEY_CALLS.entries()) {
+				if (index > 0) await sleep(AGENT_STOP_SETTLE_MS);
+				const sent = await call(["agent", "send-keys", target, ...keys]);
+				if (sent.exitCode !== 0) return failed("agent send-keys", sent);
+			}
+			return Object.freeze({ ok: true });
 		},
 	});
 }

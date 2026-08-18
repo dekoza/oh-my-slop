@@ -31,10 +31,19 @@ it saw.
 | `herdr-pane-exit-frame.mjs` | probe | no | Does closing a pane emit a frame, and under which name? |
 | `herdr-isolated-worker-status.mjs` | probe | **yes** | Does a worker pane launched under §6.8 isolation report an agent status to Herdr? |
 | `herdr-tab-env-reaches-agent.mjs` | probe | no | Does a variable set with `tab create --env` reach the agent process `agent start` launches later, or only the pane's shell? |
+| `herdr-agent-stop-latency.mjs` | probe | no | How long after §13.B's quit keys does Herdr stop reporting an agent in the pane — the lag #152's bound has to cover? |
+| `herdr-agent-quit-sequence.mjs` | probe | **yes**, unless `--no-prompt` | Does §13.B's quit sequence quit **at all**, key by key and call by call, against a worker that is mid-turn rather than idle? |
+| `herdr-agent-presence-source.mjs` | probe | no | What is `pane.agent` — the one fact §5.2 trusts — derived from: the screen, the process, or somebody reporting it? |
 | `prove-skill-loading.mjs` | proof | **yes** | §6.7 / §15 — do Opus and Fable *load and follow* a skill body, or merely register its name? Writes `docs/proofs/skill-loading-<version>-<digest>.md`. |
 
 `herdr-isolated-worker-status.mjs` starts a real Claude session and prompts it. Keep the prompt
 trivial and expect it to cost what one short turn costs.
+
+`herdr-agent-quit-sequence.mjs` costs the same — one short turn, on `--model haiku` by default,
+whose only work is to run a script that waits. `--no-prompt` skips the prompt and costs nothing,
+which is the idle control for the same send plan. Its `--keys` flag is the send plan itself:
+spaces separate `send-keys` **calls**, commas separate keys **within** a call, so
+`esc,ctrl+c,ctrl+c` is the pre-#158 single call and `esc ctrl+c,ctrl+c` is what ships now.
 
 `prove-skill-loading.mjs` spends one short turn per cell — three cells per model, two models by
 default. Run `--dry-run` first to see the plan, the argv and the prompts without spending
@@ -81,3 +90,96 @@ helper.
 **`agent start` still takes no environment** — not in the CLI (`<NAME> --kind --pane --timeout
 [-- AGENT_ARG...]`) and not in the socket API. `workspace create` and `tab create` are the only
 two of the three that do, which is why the binding is assembled at the tab.
+
+Against Herdr 0.8.0, protocol 19, Claude Code 2.1.233, on 2026-08-18 (#158):
+
+**§13.B's quit sequence was not a sequence of keys but a sequence of *calls*, and the grouping
+decided whether a worker quit at all.** Every row below is one
+`herdr-agent-quit-sequence.mjs` run; "gone" is the agent leaving the pane record, timed from
+the last `send-keys` call. The idle rows are **controls for the send plan, not a re-measurement
+of the discharged latency** — claude 729 ms and pi 418 ms stand as #152 recorded them, cited
+where the bound is defined (`STOP_CONFIRM_BACKOFF_MS`); these rows exist only to show one send
+plan getting a different answer from a working harness than from an idle one.
+
+| state when the keys were sent | send plan | result |
+|---|---|---|
+| idle, never prompted | `esc ctrl+c ctrl+c` — one call | gone in 721 ms |
+| idle | `esc` · `ctrl+c` · `ctrl+c` — three calls, 500 ms apart | gone ~620 ms after the last call (1635 ms from the first) |
+| idle | three calls, 1000 ms apart | **never** — still there after 15 s |
+| idle | three calls, 1500 ms apart | **never** — still there after 30 s |
+| idle | `esc` · `ctrl+c ctrl+c` — two calls, 1500 ms apart | gone in 621 ms |
+| turn just ended, empty input box | one call | gone in 430 ms |
+| working, mid-inference | one call | **never** — interrupted, agent resident |
+| working, tool running (`esc to interrupt` on screen) | one call | **never** — interrupted, agent resident |
+| working, tool running | `esc` · `ctrl+c` · `ctrl+c` — three calls, 1000 ms apart | **never** — still there after 15 s |
+| working, mid-inference | two calls, 1500 ms apart | gone in 723 ms |
+| working, tool running | two calls, at 0 ms, 250 ms and 1500 ms apart | gone in 723, 419 and 412 ms |
+
+A further run, made after the change landed and reading its send plan straight out of
+`AGENT_STOP_KEY_CALLS` and `AGENT_STOP_SETTLE_MS`, quit a worker whose tool was running in
+423 ms — the shipped configuration, end to end.
+
+Two independent facts fall out, and the shipped sequence needs both:
+
+- **The two `ctrl+c` must ride one call.** Claude's exit affordance is a double press with a
+  window somewhere between 500 ms and 1000 ms; spaced beyond it, the presses never compose into
+  an exit and nothing quits — not even an idle harness.
+- **`esc` must not ride with them.** Sent in the same call at a working Claude, the whole
+  sequence is consumed as a bare turn interrupt: the turn stops, the interrupted prompt is
+  restored to the input box, and the agent stays. This is the wedge run
+  `01M0859CJAA1Z8XK41756H5Y30` left on three attempts of #114, reproduced here on demand.
+  Splitting `esc` into its own call fixes it, and **the call boundary is what matters, not the
+  delay** — two calls 8 ms apart quit a working worker as reliably as 1500 ms apart.
+
+**The stop-confirmation bound was never the problem** (#152's `STOP_CONFIRM_BACKOFF_MS`). Once
+the sequence is right, a mid-turn stop is observed at 412–723 ms, the same order as the idle
+729 ms already recorded — Herdr's detection cycle dominates, and the harness's teardown does
+not. The bound is confirmed unchanged; what changed is the sequence.
+
+**pi quits under either shape** (106 ms and 209 ms idle), so one sequence still serves both
+harnesses. pi's mid-turn case is unmeasured: #158 scoped the paid measurement to Claude, which
+is the runtime whose interrupt affordance absorbed the sequence.
+
+**`pane.agent` follows the pane's foreground process, not its screen**
+(`herdr-agent-presence-source.mjs`, no model cost). This is the signal `agentAlive` reads, so
+every confirmed stop is an absence of it, and the question was whether a mid-turn screen that
+stopped matching the detection rules could manufacture that absence. It cannot:
+
+| what was in the pane | `pane.agent` | `agent explain` |
+|---|---|---|
+| a shell, nothing else | `null` | no agent, no rules evaluated |
+| `claude` launched **at the shell**, never `agent start`ed | `claude` | `idle`, rule `live_prompt_box` |
+| a bare `sleep` whose argv names it `claude`, **blank screen** | `claude` | `idle`, **`matched_rule: null`**, 12 rules evaluated |
+| `claude` through `agent start`, first-run dialog on screen | `claude` | `idle`, `matched_rule: null` |
+| the same, after `pane release-agent` | `claude` — unchanged | unchanged |
+| the same, after a foreign `pane report-agent … --state working` | `claude`, and `agent_status` **moved to `working`** | still `idle` from the screen |
+
+So the rules decide **state**; presence is the process. Two consequences the factory depends on:
+
+- **No false absence.** A screen matching nothing leaves presence intact, which is why
+  `stopped: true` cannot be written about a worker that is still working. Measured directly as
+  well as structurally: across two held turns with a tool running, 292/292 and 195/195 reads of
+  the pane record saw the agent, none saw absence.
+- **A false *presence* is constructible** — anything whose argv wears the harness's name reads
+  as an agent. That is the conservative direction: it produces §13.B's `wedged-pane`, never a
+  confirmation.
+
+Agent **status** carries no such guarantee. A `pane report-agent` from a source that owns
+nothing moved `agent_status` to `working` while the screen still read `idle`, so the two can be
+made to disagree — worth knowing wherever status, rather than presence, is what a decision rests
+on (§6.6, #150).
+
+**Aside, not #158's to fix:** with the binding correctly declared on the tab, a session under a
+fresh isolated `CLAUDE_CONFIG_DIR` still came up on a first-run dialog asking about browser
+access, waiting on a keypress a worker has nobody to supply — and Herdr read that screen as
+`idle` with `matched_rule: null`, so a deadline fed by status would see a settled agent rather
+than a stuck one. (A folder-trust dialog also appeared once, but that was the probe's own bug:
+its tab carried no binding, so the session ran on the operator's config. §6.8's pre-trust was
+never in question.) §6.8 proves no *trust* dialog can reach a worker pane; a first-run prompt
+about something else is a different door into the same hang.
+
+**An operator hook can reach an isolated worker.** A first run of the probe held its turn open
+with `sleep 240` and had it refused by a hook — with the refusal, the turn ended, and the
+"mid-turn" measurement was in fact a measurement of a finished one. What holds a probe's turn
+open must be something no hook has an opinion about; this one commits a script and asks the
+worker to run it.

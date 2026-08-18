@@ -295,7 +295,14 @@ export function fakeHerdr({
 			return json({ agent: { name: args[2] } });
 		}
 		if (command === "agent send-keys") {
-			if (ignoresQuitKeys) return json({ sent: true });
+			// **Only the harness's own exit affordance takes the agent out**, and it is
+			// spelled out here rather than read from `AGENT_STOP_KEY_CALLS`: keying the
+			// fake on our constant would make it agree with whatever that constant says,
+			// including a revert to the single call that was measured *not* to quit a
+			// working Claude (#158). The literal is Claude's double `ctrl+c`, and `esc`
+			// alone leaves the harness sitting at its prompt exactly as it does live.
+			const exiting = args.slice(3).join(" ") === "ctrl+c ctrl+c";
+			if (ignoresQuitKeys || !exiting) return json({ sent: true });
 			// A teardown the very next read is too early to see: the keys landed,
 			// the harness is on its way out, and `quitProbes` reads still find it.
 			if (quitProbes > 0) tearingDown = quitProbes;
@@ -355,7 +362,10 @@ export function fakeHerdr({
 		 * "the first pane" is the workspace's, not any attempt's.
 		 */
 		paneFor: (attempt) => panes.find((pane) => pane.tokens[FACTORY_ATTEMPT_TOKEN] === attempt) ?? null,
-		control: createHerdrControl({ run }),
+		// §13.B's settle between the quit calls is real time nobody's suite should
+		// spend: the ordering it protects is asserted in `factory_herdr_control`,
+		// where the wait itself is the thing under test.
+		control: createHerdrControl({ run, sleep: async () => {} }),
 		/** Move the started agent to another status, as a transition would. */
 		settle(status) {
 			for (const pane of panes) if (pane.agent !== undefined) pane.agent_status = status;
