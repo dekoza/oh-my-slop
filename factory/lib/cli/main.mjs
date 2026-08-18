@@ -1,3 +1,4 @@
+import { registerArtifactProbes } from "../artifacts/probes.mjs";
 import { FactoryConfigError } from "../config/errors.mjs";
 import { loadFactoryConfig } from "../config/load.mjs";
 import { registerGitProbes } from "../git/probes.mjs";
@@ -16,6 +17,7 @@ export { VERBS } from "./verbs.mjs";
 // module gets an empty default registry and must register (or inject) its own,
 // which the engine surfaces as `probe-unavailable` rather than hiding.
 registerGitProbes(PROBES);
+registerArtifactProbes(PROBES);
 
 /**
  * The operator surface: one deterministic binary, one structured value per
@@ -77,6 +79,36 @@ async function dispatch(parsed, context) {
 		return failure(
 			parsed.verb,
 			{ kind: "usage", message: `Unknown flag "${unknownFlag}".`, flag: unknownFlag },
+			EXIT_USAGE,
+			{ usage: shortUsage() },
+		);
+	}
+
+	// A flag's *shape* is judged with the flag, and before the verb runs: a
+	// `--run` typed without its value would otherwise reach a handler as "no run
+	// was named", which is a different invocation — the whole repository instead
+	// of one run — and the operator would read the answer to a question they did
+	// not ask.
+	const misshapen = parsed.flags
+		.map((flag) => [flag, verb?.flags?.[flag]])
+		.find(([flag, declared]) => {
+			if (declared === undefined) return false;
+			// The two mistakes are one rule read in both directions: a flag that
+			// declares a value must carry one, and a flag that declares none must not.
+			return (declared.value !== undefined) !== parsed.values.has(flag);
+		});
+	if (misshapen !== undefined) {
+		const [flag, declared] = misshapen;
+		return failure(
+			parsed.verb,
+			{
+				kind: "usage",
+				message:
+					declared.value === undefined
+						? `"${flag}" takes no value.`
+						: `"${flag}" takes its value as ${flag}=<${declared.value}>.`,
+				flag,
+			},
 			EXIT_USAGE,
 			{ usage: shortUsage() },
 		);
@@ -176,6 +208,10 @@ async function run(parsed, verb, loaded, context) {
 		expect: loaded?.config.package?.expect ?? null,
 		args: parsed.args,
 		flags: new Set(parsed.flags),
+		// The values beside the flags rather than folded into them, so a handler
+		// asking "was this flag given" and one asking "what did it say" read two
+		// different structures and cannot confuse an absent flag with an empty one.
+		flagValues: parsed.values,
 	});
 
 	if (answered.error !== undefined) {
@@ -258,6 +294,7 @@ export function renderHuman(value) {
 function parseArgv(argv) {
 	const args = [];
 	const flags = [];
+	const values = new Map();
 	const json = argv.includes("--json");
 	let verb = null;
 	let help = false;
@@ -279,7 +316,16 @@ function parseArgv(argv) {
 			// Which flags are legal depends on the verb, and the verb may follow
 			// them on the line — so they are collected here and judged once the
 			// verb is known.
-			flags.push(token);
+			//
+			// A value rides the flag as `--name=value` rather than as the next
+			// token, because the verb is not known yet and a flag that consumed
+			// whatever followed it would have to guess whether that word was its
+			// value or the verb's argument — and `cleanup-execute <digest> --run=…`
+			// is exactly a line where both are present.
+			const split = token.indexOf("=");
+			const name = split === -1 ? token : token.slice(0, split);
+			flags.push(name);
+			if (split !== -1) values.set(name, token.slice(split + 1));
 			if (token === "--help" || token === "-h") help = true;
 			continue;
 		}
@@ -288,7 +334,7 @@ function parseArgv(argv) {
 		else args.push(token);
 	}
 
-	return { json, verb, args, flags, help };
+	return { json, verb, args, flags, values, help };
 }
 
 function help() {
@@ -307,10 +353,18 @@ function help() {
 				),
 				// A flag an operator can type is a flag `--help` names. Only the
 				// verbs that take one appear here.
+				// Rendered as an operator would type them, values included: a help
+				// listing that printed a bare `--run` for a flag that refuses the bare
+				// form is a help listing that teaches the refusal.
 				flags: Object.fromEntries(
 					Object.entries(VERB_TABLE)
 						.filter(([, verb]) => verb.flags !== undefined)
-						.map(([name, verb]) => [name, Object.keys(verb.flags)]),
+						.map(([name, verb]) => [
+							name,
+							Object.entries(verb.flags).map(([flag, declared]) =>
+								declared.value === undefined ? flag : `${flag}=<${declared.value}>`,
+							),
+						]),
 				),
 			},
 		},

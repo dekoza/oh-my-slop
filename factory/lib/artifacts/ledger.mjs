@@ -213,6 +213,33 @@ export function readArtifact(store, address) {
 }
 
 /**
+ * Every address the ledger has **ever** recorded, tombstoned rows included —
+ * §12.8's orphan scan, as a question the ledger answers about itself.
+ *
+ * The tombstones matter, and they are why this is not a `WHERE expired_at IS
+ * NULL`. A tombstoned row is a blob expiry has already claimed and re-attempts
+ * to unlink on every pass (§12.5); treating it as an orphan would give one
+ * deletion two mechanisms and two records. **An orphan is a blob with no row at
+ * all** — under the controller lease, unambiguously a crash leftover (§12.8).
+ *
+ * It lives here because the `artifact` table is this module's, and a `SELECT`
+ * over it from a subsystem that does not own it is a second place that decides
+ * what a row means.
+ *
+ * @param {object} store an open store, controller or read-only
+ * @returns {ReadonlySet<string>} `<algorithm>:<digest>`, the spelling a caller compares on
+ */
+export function recordedArtifactAddresses(store) {
+	return Object.freeze(
+		new Set(
+			store
+				.read((db) => db.prepare("SELECT algorithm, digest FROM artifact").all())
+				.map((row) => `${row.algorithm}:${row.digest}`),
+		),
+	);
+}
+
+/**
  * §12.10's per-class accounting: **it falls out of the ledger**, because the row
  * already carries the byte count and the class. There is nothing else to keep in
  * step, and therefore nothing that can disagree.

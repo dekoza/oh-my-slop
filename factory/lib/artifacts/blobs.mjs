@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { FactoryArtifactError } from "./errors.mjs";
@@ -197,6 +197,89 @@ export function deleteArtifactBlob(stateRoot, address) {
 
 	rmSync(path, { force: true });
 	return true;
+}
+
+/**
+ * Every blob **on disk**, as addresses — §12.8's orphan scan and nothing else.
+ *
+ * It answers in addresses rather than paths, so §14.28 survives the one
+ * question that has to start from the filesystem: *which bytes are here that
+ * the ledger has never heard of?* A path-returning walk would hand its caller
+ * exactly the value the rest of this module refuses to produce.
+ *
+ * A file whose name is not a digest of its directory's algorithm is **not
+ * reported**: the store's layout is derived from the address, so anything else
+ * under the root was put there by something that is not this factory, and
+ * §12.8's whitelist has no entry for it. The in-flight temporaries
+ * `writeArtifactBlob` renames from are the case that actually occurs, and they
+ * live directly under the artifacts root rather than in an algorithm directory.
+ *
+ * @param {string} stateRoot the per-repo state root (§4.1)
+ * @returns {ReadonlyArray<Readonly<{ algorithm: string, digest: string, bytes: number }>>}
+ */
+export function listArtifactBlobs(stateRoot) {
+	const found = [];
+
+	for (const algorithm of ARTIFACT_ALGORITHMS) {
+		const root = join(stateRoot, ARTIFACTS_SEGMENT, algorithm);
+		for (const fanout of entriesOf(root)) {
+			if (!fanout.isDirectory() || fanout.name.length !== FANOUT) continue;
+
+			for (const blob of entriesOf(join(root, fanout.name))) {
+				if (!blob.isFile() || !DIGEST_SHAPES[algorithm].test(blob.name)) continue;
+				if (!blob.name.startsWith(fanout.name)) continue;
+
+				const bytes = blobBytes(join(root, fanout.name, blob.name));
+				if (bytes !== null) found.push(Object.freeze({ algorithm, digest: blob.name, bytes }));
+			}
+		}
+	}
+
+	return Object.freeze(found.sort((left, right) => (left.digest < right.digest ? -1 : 1)));
+}
+
+/**
+ * An address as an effect **operand** (§4.5), and back.
+ *
+ * A blob's digest *is* its name — §12.1 is content-addressed and §14.28 gives a
+ * reader no other handle — so the operand has to carry it, and the algorithm
+ * with it, because the address is the pair. That is not §14.4's forbidden move:
+ * what §14.4 keeps out of a key is a hash **of the effect's own payload**, whose
+ * presence would turn a conflicting duplicate into a different key instead of a
+ * typed conflict. Here the digest is the subject's identity, which is exactly the
+ * "natural discriminator" §4.5 asks an operand to be — and `keys.mjs` still
+ * refuses a *bare* sha256, which is the spelling the forbidden move takes.
+ *
+ * @param {{ algorithm?: string, digest: string }} address
+ * @returns {string} `<algorithm>/<digest>`
+ */
+export function artifactOperand(address) {
+	const resolved = artifactAddress(address);
+	return `${resolved.algorithm}/${resolved.digest}`;
+}
+
+/**
+ * @param {string} operand as `artifactOperand` built it
+ * @returns {Readonly<{ algorithm: string, digest: string }>}
+ * @throws {FactoryArtifactError} `artifact-address-invalid`
+ */
+export function addressFromOperand(operand) {
+	const [algorithm, ...rest] = String(operand ?? "").split("/");
+	return artifactAddress({ algorithm, digest: rest.join("/") });
+}
+
+/**
+ * One directory's entries, or none where there is no directory. A store that has
+ * never held a blob of some algorithm is not an error — it is the ordinary state
+ * of a repository nothing has run in yet.
+ */
+function entriesOf(path) {
+	try {
+		return readdirSync(path, { withFileTypes: true });
+	} catch (error) {
+		if (error?.code === "ENOENT") return [];
+		throw error;
+	}
 }
 
 /**
