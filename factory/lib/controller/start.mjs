@@ -1,4 +1,4 @@
-import { capacityPlan, implementResourceClass } from "../capacity/plan.mjs";
+import { capacityPlan, implementDispatch } from "../capacity/plan.mjs";
 import { openCapacity } from "../capacity/slots.mjs";
 import {
 	EXIT_LEASE_LOST,
@@ -586,10 +586,11 @@ function runScheduler(store, capacity, entry, hold, context, { executor, resumed
 		// §5.5's adopted lanes, entered ahead of the first frontier read. They are
 		// empty unless a previous controller left a worker this one could prove.
 		resumed,
-		resourceClassOf: (member) =>
-			implementResourceClass(
+		dispatch: (member, { at }) =>
+			implementDispatch(
 				{ profiles: context.config.profiles, activeRouting: context.activeRouting },
 				member,
+				{ exhaustion: capacity.exhaustion, at },
 			),
 		execute: executor ?? refuseExecution,
 		// §10.5: the stop request is **polled at ticket boundaries**, which is
@@ -692,7 +693,7 @@ function liveFrontier(entry, context) {
  * report a lane it finished as still in flight.
  */
 function ticketExecution(store, entry, hold, context) {
-	return async ({ ticket, member, slots, capacity }) => {
+	return async ({ ticket, member, slots, capacity, route }) => {
 		// §7.3's deterministic identity, so a re-entered run rebuilds the same one
 		// and §4.5's duplicate check returns the claim already committed.
 		const attempt = attemptIdOf({ run: entry.run, ticket, ordinal: 1 });
@@ -724,6 +725,12 @@ function ticketExecution(store, entry, hold, context) {
 			attempt,
 			claim,
 			capacity,
+			// §11.5's dispatch decision, made before the claim and against §9.8's
+			// memo (#155). It travels with the lane for the same reason §11.6's
+			// budgets do: the route this lane's model slot was taken for and the
+			// route its first attempt is minted under are the one decision, and a
+			// composer resolving it again would be a second place it could differ.
+			route,
 			budgets: context.config.budgets,
 		});
 		const disposition = outcome?.disposition ?? null;

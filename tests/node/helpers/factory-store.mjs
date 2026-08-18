@@ -199,7 +199,7 @@ export function attemptLaunched(
 	runId,
 	ticket,
 	ordinal = 1,
-	{ at = 1_770_000_100_000, phase = "implement", role = "implement", profile = "builder" } = {},
+	{ at = 1_770_000_100_000, phase = "implement", role = "implement", profile = "builder", routing = null } = {},
 ) {
 	return {
 		kind: "attempt.launched",
@@ -212,8 +212,10 @@ export function attemptLaunched(
 		observedAt: at,
 		// The profile is on it because the claim always records one, and §8.5 pins a
 		// repair to the originating attempt's: a fixture that left it out would make
-		// every repair unplannable for a reason production never has.
-		payload: { role, profile },
+		// every repair unplannable for a reason production never has. The routing
+		// beside it is #155's dispatch decision, `null` where none was made — which
+		// is what a pinned attempt records and what a fixture defaults to.
+		payload: { role, profile, routing },
 	};
 }
 

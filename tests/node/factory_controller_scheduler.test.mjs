@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { FactoryCapacityError } from "../../factory/lib/capacity/errors.mjs";
 import { schedule } from "../../factory/lib/controller/scheduler.mjs";
+import { selectRoute } from "../../factory/lib/worker/dispatch.mjs";
 import {
 	capacityPlanOf as plan,
 	FIXED_NOW as T0,
@@ -49,7 +50,15 @@ function frontierOf(tickets, labels = {}) {
 	});
 }
 
-const localClass = () => "local";
+/** A dispatch seam: one route, on the class the test names (#155). */
+const routeTo = (className, profile = "builder") => async () =>
+	Object.freeze({ declared: profile, profile, class: className, rerouted: false, reason: null, considered: [] });
+
+/** The memo's answer when a class has no route left: every candidate blocked. */
+const noRoute = (considered) =>
+	Object.freeze({ declared: considered[0].profile, profile: null, class: null, rerouted: false, reason: null, considered });
+
+const localRoute = routeTo("local");
 
 // ── Order, and nothing but order (§3.2, §9.6) ────────────────────────────────
 
@@ -60,7 +69,7 @@ test("the lowest-numbered claimable ticket is taken first, with no priority mech
 	const result = await schedule({
 		capacity,
 		frontier: frontierOf([91, 7, 42]),
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		execute: ({ ticket }) => {
 			started.push(ticket);
 			return { disposition: "published" };
@@ -79,7 +88,7 @@ test("at capacity 1, a second ticket is never claimed while the first holds the 
 	const loop = schedule({
 		capacity,
 		frontier: frontierOf([7, 42]),
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		execute: async ({ ticket }) => {
 			inFlight.push(ticket);
 			if (ticket === 7) await first.promise;
@@ -105,7 +114,7 @@ test("at capacity 2 with a two-slot class, two lanes run at once", async (t) => 
 	const loop = schedule({
 		capacity,
 		frontier: frontierOf([7, 42, 91]),
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		execute: async ({ ticket }) => {
 			live.push(ticket);
 			await gate.promise;
@@ -130,7 +139,7 @@ test("a size-1 class holds the run to one lane whatever the declared ceiling say
 	const loop = schedule({
 		capacity,
 		frontier: frontierOf([7, 42]),
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		execute: async ({ ticket }) => {
 			live.push(ticket);
 			await gate.promise;
@@ -159,7 +168,7 @@ test("the ticket slot survives repair and fresh-retry, and a newly eligible tick
 			claimable: [...eligible],
 			members: eligible.map((ticket) => ({ ticket, labels: [] })),
 		}),
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		execute: async ({ ticket, slots }) => {
 			// A second attempt: the model slot goes back between attempts, the
 			// ticket slot does not.
@@ -203,7 +212,7 @@ test("a resumed lane runs before the loop reads a frontier, and is never claimed
 			reads.push(started.length);
 			return { claimable: [7, 42], members: [{ ticket: 7, labels: [] }, { ticket: 42, labels: [] }] };
 		},
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		resumed: [{ ticket: 7, member: { ticket: 7, labels: [] }, slots: adopted }],
 		execute: ({ ticket }) => {
 			started.push(ticket);
@@ -229,7 +238,7 @@ test("a lane resumed between attempts holds no model slot, and its ticket slot s
 	await schedule({
 		capacity,
 		frontier: frontierOf([]),
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		resumed: [{ ticket: 7, slots: { ticket: adopted.ticket, model: null } }],
 		execute: () => ({ disposition: "published" }),
 	});
@@ -246,7 +255,7 @@ test("after a full run no capacity row is left held", async (t) => {
 	await schedule({
 		capacity,
 		frontier: frontierOf([7, 42]),
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		execute: () => ({ disposition: "published" }),
 	});
 
@@ -263,7 +272,7 @@ test("a lane that leaves its own slots held still frees them at its terminal dis
 	await schedule({
 		capacity,
 		frontier: frontierOf([7]),
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		execute: () => ({ disposition: "failed" }),
 	});
 
@@ -284,7 +293,7 @@ test("membership is recomputed at every scheduling decision", async (t) => {
 			polls.push([...eligible]);
 			return { claimable: [...eligible], members: eligible.map((ticket) => ({ ticket, labels: [] })) };
 		},
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		execute: ({ ticket }) => {
 			started.push(ticket);
 			// 42 stops being claimable while 7 runs — a human took it, or a blocker
@@ -306,7 +315,7 @@ test("a ticket that becomes claimable mid-run is picked up without any requeue",
 	await schedule({
 		capacity,
 		frontier: async () => ({ claimable: [...eligible], members: eligible.map((ticket) => ({ ticket, labels: [] })) }),
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		execute: ({ ticket }) => {
 			started.push(ticket);
 			if (ticket === 7) eligible = [42];
@@ -328,7 +337,7 @@ test("draining stops claiming and lets every in-flight lane reach its dispositio
 	const loop = schedule({
 		capacity,
 		frontier: frontierOf([7, 42]),
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		claiming: () => claiming,
 		execute: async ({ ticket }) => {
 			started.push(ticket);
@@ -358,7 +367,7 @@ test("abandon releases in-flight lanes and their slots, and waits for nothing", 
 	const loop = schedule({
 		capacity,
 		frontier: frontierOf([7]),
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		abandoning: () => abandoning,
 		execute: async () => {
 			abandoning = true;
@@ -390,11 +399,11 @@ test("a ticket matching two routing rules is refused without being claimed, and 
 	const result = await schedule({
 		capacity,
 		frontier: frontierOf([7, 42]),
-		resourceClassOf: ({ ticket }) => {
+		dispatch: async ({ ticket }) => {
 			if (ticket === 7) {
 				throw new FactoryCapacityError("routing-ambiguous", `Ticket ${ticket} matches two rules.`, { ticket });
 			}
-			return "local";
+			return routeTo("local")();
 		},
 		execute: ({ ticket }) => {
 			started.push(ticket);
@@ -416,7 +425,7 @@ test("a slot pool blocked by a previous controller's rows ends the loop rather t
 	const result = await schedule({
 		capacity,
 		frontier: frontierOf([7]),
-		resourceClassOf: localClass,
+		dispatch: localRoute,
 		execute: () => assert.fail("nothing may run on a slot this controller does not hold"),
 	});
 
@@ -427,26 +436,43 @@ test("a slot pool blocked by a previous controller's rows ends the loop rather t
 	);
 });
 
-// ── The exhaustion memo gate (#154) ──────────────────────────────────────────
+// ── The exhaustion memo gate, and the reroute past it (#154, #155) ───────────
+
+/** Two profiles, two classes — the smallest config a reroute is visible in. */
+const REROUTE_PROFILES = Object.freeze({
+	builder: { kind: "pi", model: "local/qwen3" },
+	cloud: { kind: "claude", model: "opus" },
+	sibling: { kind: "pi", model: "local/glm" },
+});
+
+/**
+ * The real dispatch seam: §11.5's order for this ticket, settled against the
+ * pool's own memo. The tests below drive the production composition rather than
+ * a stub, because what they are about is the memo deciding the route.
+ */
+function dispatchOf(capacity, orderOf, profiles = REROUTE_PROFILES) {
+	return (member, { at }) =>
+		selectRoute({ order: orderOf(member), profiles, exhaustion: capacity.exhaustion, at });
+}
+
+const twoClassPlan = plan({
+	ticketSlots: 2,
+	classes: [
+		{ class: "claude-code", size: 1, profiles: ["cloud"] },
+		{ class: "local", size: 1, profiles: ["builder", "sibling"] },
+	],
+	implementClasses: ["claude-code", "local"],
+});
 
 test("a ticket whose class is exhausted is not claimed, while another class proceeds (#154)", async (t) => {
-	const { capacity } = await openPool(t, {
-		plan: plan({
-			ticketSlots: 2,
-			classes: [
-				{ class: "cloud", size: 1, profiles: ["cloud"] },
-				{ class: "local", size: 1, profiles: ["builder"] },
-			],
-			implementClasses: ["cloud", "local"],
-		}),
-	});
+	const { capacity } = await openPool(t, { plan: twoClassPlan });
 	capacity.exhaustion.record("local", { until: T0 + 3_600_000, at: T0, evidence: {} });
 	const started = [];
 
 	const result = await schedule({
 		capacity,
 		frontier: frontierOf([7, 42]),
-		resourceClassOf: (member) => (member.ticket === 7 ? "local" : "cloud"),
+		dispatch: dispatchOf(capacity, ({ ticket }) => (ticket === 7 ? ["builder"] : ["cloud"])),
 		execute: ({ ticket }) => {
 			started.push(ticket);
 			return { disposition: "published" };
@@ -469,7 +495,7 @@ test("every claimable ticket exhausted and no lane running: the loop stops claim
 	const result = await schedule({
 		capacity,
 		frontier: frontierOf([7, 42]),
-		resourceClassOf: localClass,
+		dispatch: dispatchOf(capacity, () => ["builder"]),
 		execute: ({ ticket }) => {
 			started.push(ticket);
 			return { disposition: "published" };
@@ -495,7 +521,7 @@ test("an expired memo is settled by the injected probe: admitted opens the class
 	await schedule({
 		capacity,
 		frontier: frontierOf([7]),
-		resourceClassOf: localClass,
+		dispatch: dispatchOf(capacity, () => ["builder"]),
 		execute: ({ ticket }) => {
 			started.push(ticket);
 			return { disposition: "published" };
@@ -516,7 +542,7 @@ test("an expired memo whose probe is refused again renews the block (#154)", asy
 	const result = await schedule({
 		capacity,
 		frontier: frontierOf([7]),
-		resourceClassOf: localClass,
+		dispatch: dispatchOf(capacity, () => ["builder"]),
 		execute: ({ ticket }) => {
 			started.push(ticket);
 			return { disposition: "published" };
@@ -526,4 +552,87 @@ test("an expired memo whose probe is refused again renews the block (#154)", asy
 	assert.deepEqual(started, [], "the rediscovery the memo exists to prevent did not happen as a launch");
 	assert.equal(result.exhausted.length, 1);
 	assert.ok(result.exhausted[0].until > T0, "the renewed memo carries the probe's new expiry");
+});
+
+test("an exhausted class no longer costs the ticket: the lane is claimed on the next routable profile (#155)", async (t) => {
+	const { capacity } = await openPool(t, { plan: twoClassPlan });
+	capacity.exhaustion.record("local", { until: T0 + 3_600_000, at: T0, evidence: {} });
+	const ran = [];
+
+	const result = await schedule({
+		capacity,
+		frontier: frontierOf([7]),
+		dispatch: dispatchOf(capacity, () => ["builder", "cloud"]),
+		execute: ({ ticket, route }) => {
+			ran.push({ ticket, declared: route.declared, profile: route.profile, class: route.class });
+			return { disposition: "published" };
+		},
+	});
+
+	assert.deepEqual(ran, [{ ticket: 7, declared: "builder", profile: "cloud", class: "claude-code" }]);
+	assert.equal(result.exhausted.length, 0, "a ticket that ran is not a ticket the memo blocked");
+});
+
+test("a rerouted lane takes its model slot from the class that actually runs it (#155, §9.1)", async (t) => {
+	const { capacity } = await openPool(t, { plan: twoClassPlan });
+	capacity.exhaustion.record("local", { until: T0 + 3_600_000, at: T0, evidence: {} });
+	const first = deferred();
+	const inFlight = [];
+
+	const loop = schedule({
+		capacity,
+		frontier: frontierOf([7, 42]),
+		dispatch: dispatchOf(capacity, () => ["builder", "cloud"]),
+		execute: async ({ ticket }) => {
+			inFlight.push(ticket);
+			if (ticket === 7) await first.promise;
+			return { disposition: "published" };
+		},
+	});
+
+	await settle();
+	assert.deepEqual(inFlight, [7], "the second lane waits on the size-1 pool the reroute landed in, not the declared one");
+
+	first.settle();
+	await loop;
+	assert.deepEqual(inFlight, [7, 42]);
+});
+
+test("a reroute that only finds a sibling on the same exhausted class is no reroute at all (#155)", async (t) => {
+	const { capacity } = await openPool(t, { plan: twoClassPlan });
+	capacity.exhaustion.record("local", { until: T0 + 3_600_000, at: T0, evidence: {} });
+	const started = [];
+
+	const result = await schedule({
+		capacity,
+		frontier: frontierOf([7]),
+		dispatch: dispatchOf(capacity, () => ["builder", "sibling"]),
+		execute: ({ ticket }) => {
+			started.push(ticket);
+			return { disposition: "published" };
+		},
+	});
+
+	assert.deepEqual(started, [], "the memo is class-scoped, so a second profile on that class is still blocked");
+	assert.deepEqual(result.exhausted[0].classes, ["local"]);
+});
+
+test("a ticket with no routable profile left says every route it tried, not just the first (#155)", async (t) => {
+	const { capacity } = await openPool(t, { plan: twoClassPlan });
+	capacity.exhaustion.record("local", { until: T0 + 3_600_000, at: T0, evidence: {} });
+	capacity.exhaustion.record("claude-code", { until: T0 + 1_800_000, at: T0, evidence: {} });
+
+	const result = await schedule({
+		capacity,
+		frontier: frontierOf([7]),
+		dispatch: dispatchOf(capacity, () => ["builder", "cloud"]),
+		execute: () => ({ disposition: "published" }),
+	});
+
+	assert.equal(result.lanes_run, 0);
+	assert.deepEqual(result.exhausted[0].classes, ["local", "claude-code"]);
+	assert.deepEqual(
+		result.exhausted[0].considered.map((entry) => entry.profile),
+		["builder", "cloud"],
+	);
 });

@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
 import { createRetrySeam } from "../../factory/lib/pipeline/retry.mjs";
-import { outcomeChain, walkStages } from "../../factory/lib/pipeline/stages.mjs";
+import { outcomeChain, resolveStage, walkStages } from "../../factory/lib/pipeline/stages.mjs";
 import { routeOutcome } from "../../factory/lib/pipeline/table.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { workedAttempt } from "./helpers/factory-git.mjs";
@@ -25,7 +25,7 @@ import { FIXED_NOW, manualTimers } from "./helpers/factory-store.mjs";
  */
 
 /** A run, a hold, a worked-on first attempt, and the composed seam over them. */
-async function executing(t, { routing = null, readResult = null } = {}) {
+async function executing(t, { selectRoute = null, readResult = null } = {}) {
 	const context = await workedAttempt(t);
 	const leases = openLeases(context.store, { now: () => FIXED_NOW });
 	const hold = holdControllerLease({ store: context.store, leases, timers: manualTimers().api });
@@ -39,7 +39,7 @@ async function executing(t, { routing = null, readResult = null } = {}) {
 		run: context.run,
 		ticket: context.ticket,
 		baseBranch: "main",
-		routing,
+		selectRoute,
 		readResult,
 		workerConfig: context.workerConfig,
 		actor: "controller",
@@ -200,8 +200,12 @@ test("the seam is idempotent: a re-entry after a crash lands on the attempt it a
 });
 
 test("§8.5's fresh-retry reaches its tier through the same seam, pinned by a fetch of its own (§7.2)", async (t) => {
+	const asked = [];
 	const context = await executing(t, {
-		routing: { roles: { implement: "builder", freshRetry: "big-builder", review: ["reader", "reader"] }, rules: [] },
+		selectRoute: async (request) => {
+			asked.push(request);
+			return { declared: "big-builder", profile: "big-builder", class: "local", rerouted: false, reason: null, considered: [] };
+		},
 	});
 
 	const answered = await context.ask(asking("implement", "no-result", { attempt: context.attempt }));
@@ -209,6 +213,91 @@ test("§8.5's fresh-retry reaches its tier through the same seam, pinned by a fe
 	assert.equal(answered.plan.tier, "fresh-retry");
 	assert.equal(answered.plan.profile, "big-builder", "§11.5's one tier-dependent routing point");
 	assert.equal(answered.plan.baseCommit, context.base.commit, "the work is discarded: the branch starts at the pin");
+	assert.deepEqual(asked, [{ role: "fresh-retry", dispatched: [] }], "a fresh-retry re-dispatches its role from scratch");
+});
+
+test("#155: a provider-refused attempt is rerouted onto a profile this execution has not yet spent", async (t) => {
+	const asked = [];
+	const context = await executing(t, {
+		selectRoute: async (request) => {
+			asked.push(request);
+			return {
+				declared: "builder",
+				profile: "big-builder",
+				class: "claude-code",
+				rerouted: true,
+				reason: "local exhausted (§9.8)",
+				considered: [
+					{ profile: "builder", class: "local", state: "blocked", until: 900 },
+					{ profile: "big-builder", class: "claude-code", state: "available", until: null },
+				],
+			};
+		},
+	});
+
+	// The walk resolves the failing stage **before** it asks the seam, and that
+	// resolution is what the bound is read from (#155) — so the fixture commits it
+	// too, rather than asking the seam about a refusal nothing recorded.
+	resolveStage(context.store, {
+		hold: context.hold,
+		run: context.run,
+		ticket: context.ticket,
+		phase: "implement",
+		attempt: context.attempt,
+		outcome: "provider-refused",
+		actor: "controller",
+		at: FIXED_NOW,
+	});
+
+	const answered = await context.ask(asking("implement", "provider-refused", { attempt: context.attempt }));
+
+	assert.equal(answered.plan.tier, "reroute");
+	assert.equal(answered.plan.profile, "big-builder");
+	assert.equal(answered.plan.role, "implement", "the role does not change: §11.5's order is per role");
+	assert.equal(answered.plan.from.kind, "prior-tip", "a refusal judged nothing, so the working line is kept");
+	assert.equal(answered.plan.routing.declared, "builder", "and the mint records what was declared beside what runs");
+	assert.deepEqual(
+		asked,
+		[{ role: "implement", dispatched: ["builder"] }],
+		"the profile already spent is excluded, which is what bounds the reroute",
+	);
+});
+
+test("#155: a reroute with no routable profile left refuses as its own typed answer, not as a plan", async (t) => {
+	const context = await executing(t, {
+		selectRoute: async () => ({
+			declared: "builder",
+			profile: null,
+			class: null,
+			rerouted: false,
+			reason: null,
+			considered: [{ profile: "builder", class: "local", state: "blocked", until: 900 }],
+		}),
+	});
+
+	await assert.rejects(
+		() => context.ask(asking("implement", "provider-refused", { attempt: context.attempt })),
+		(error) => {
+			assert.equal(error.reason, "routes-exhausted");
+			assert.equal(error.details.role, "implement");
+			assert.match(error.message, /builder on local: blocked/, "the refusal says what it tried and why each failed");
+			return true;
+		},
+	);
+});
+
+test("#155: a row that chooses a profile with no dispatch seam wired is refused, never routed blind", async (t) => {
+	const context = await executing(t);
+
+	await assert.rejects(
+		() => context.ask(asking("implement", "provider-refused", { attempt: context.attempt })),
+		(error) => {
+			assert.equal(error.reason, "retry-unplannable");
+			assert.equal(error.details.at, "seam");
+			assert.match(error.message, /memo/, "reaching for the routing without §9.8's memo is the failure named");
+			return true;
+		},
+	);
 });
 
 test("the prior worker's own prose reaches the brief through the seam, quoted as untrusted (§8.5)", async (t) => {

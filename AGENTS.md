@@ -152,10 +152,35 @@ is the authority; cite the section a change answers to.
   **an expiry re-admits by probe, never by the clock** — `worker/readmit.mjs` spends one
   cheap completion under the worker binding and answers
   `admitted`/`refused`/`inconclusive`, and only an admission writes `capacity.admitted`.
-  §8.10 charges no budget for it (budgetless `released`, builder and reviewer), and a run
-  left holding claimable work whose every route is memo-locked at the final scheduling
-  decision ends `capacity-exhausted` (exit 9) rather than draining — work other classes
-  finished does not soften it. Rerouting that consumes the memo is #155.
+  §8.10 charges no budget for it, and a run left holding claimable work whose every route
+  is memo-locked at the final scheduling decision ends `capacity-exhausted` (exit 9)
+  rather than draining — work other classes finished does not soften it.
+- **Dispatch answers with a route, not a class** (#155, §9.9). §11.5's dispatch and §9.8's
+  memo are one question — *which profile may this run spend, and from which pool* —
+  answered once in `worker/dispatch.mjs`: `dispatchOrder` is the declared profile then
+  §11.5's `fallbacks` for that role, and `selectRoute` takes the first candidate whose
+  class the memo has not locked. The class names the pool §9.4 takes the slot from and the
+  profile names what §6.5 mints, so the decision is made **before the claim** and travels
+  with the lane; nothing downstream resolves the routing again, because the memo moves.
+  There is **one** implementation of §11.5's resolution — `capacity/plan.mjs` translates
+  its refusal into a capacity one and adds nothing. The decision rides every mint
+  (`attempt.launched`'s `routing`, `null` where the row is pinned to the originating
+  attempt) and §8.9's block, so a green ticket can answer *what wrote this?* — and a
+  **launch reads the mint back** rather than the decision it just made, or a re-entry
+  would run a profile the record does not name. §8.10's `provider-refused` rows route
+  to a **`reroute`** action that spends no budget and is bounded by each routable
+  profile being **refused** at most once per ticket execution, derived from the
+  attempts whose stage routed to a reroute — never a counter, and never merely
+  *dispatched*, since an automation retry relaunches the same pinned profile and
+  excluding it would make every infra flake a silent model change. Running out is
+  `routes-exhausted`, one of §8.10's **phase-less** rows beside the two budget
+  exhaustions — no attempt has it, and a routed fresh-retry reaches it from `verify`
+  and `integrate`, which have no attempt for an outcome to belong to. The two review axes reroute
+  down their own declared orders, an axis with none releases without minting, and a
+  fan-out left on one profile says so in its verdict. **A route is decided by the memo
+  alone** — never by the preflight, which proves a profile's flag *spelling* and not that
+  its model value resolves (#164), so a misconfigured profile fails as an ordinary attempt
+  outcome instead of being silently routed around.
 - The scheduler (`factory/lib/controller/scheduler.mjs`) is §9.6's loop and nothing
   more: **no queue object, no ready-queue, no aging, no priority.** It re-reads the
   frontier at every scheduling decision, takes the lowest-numbered claimable ticket,
