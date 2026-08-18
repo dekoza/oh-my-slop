@@ -11,9 +11,11 @@ import {
 	EVENT_SOURCES,
 	GENESIS_PREV_HASH,
 	runStream,
+	sourceForActor,
 	VISIBILITY_CLASSES,
 } from "../../factory/lib/state/events.mjs";
 import { newUlid } from "../../factory/lib/identity/ulid.mjs";
+import { factorySources } from "./helpers/factory-repo.mjs";
 
 /**
  * §4.3's envelope. Everything here is about the record itself — what it must
@@ -223,6 +225,30 @@ test("source is mandatory and comes from the closed set", () => {
 	assert.equal(refusal({ source: "somewhere" }).details.at, "source");
 	assert.ok(EVENT_SOURCES.gitea.foreign, "gitea is a foreign source");
 	assert.equal(EVENT_SOURCES.controller.foreign, false);
+});
+
+test("the actor mapping is written once, and no module keeps its own copy (#176)", () => {
+	// #117 extracted `sourceForActor` and converted three of its five call sites,
+	// which left the rule looking satisfied from every angle except a full-tree
+	// search: the helper existed, most callers used it, and the survivors were
+	// invisible unless you grepped the expression rather than the name. That is
+	// the shape this asserts against — a *partial* extraction presenting as a
+	// complete one — because the next one will look exactly as finished.
+	const copies = factorySources()
+		.filter(([, body]) => /actor === "controller"/.test(body))
+		.map(([path]) => path);
+
+	assert.deepEqual(copies, ["lib/state/events.mjs"]);
+});
+
+test("`sourceForActor` collapses every actor that is not the controller to `operator`", () => {
+	// The mapping itself, so the consolidation above is guarded by behaviour and
+	// not only by where the text lives.
+	assert.equal(sourceForActor("controller"), "controller");
+	for (const actor of ["operator", "operator:stop", "operator:cleanup-execute", "reviewer"]) {
+		assert.equal(sourceForActor(actor), "operator", `${actor} is not the controller`);
+	}
+	assert.ok(EVENT_SOURCES[sourceForActor("operator:cleanup-execute")], "the result is a member of the closed set");
 });
 
 test("a foreign fact carries the foreign id and the raw timestamp verbatim", () => {
