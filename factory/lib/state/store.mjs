@@ -502,6 +502,29 @@ function readSurface(db) {
 				.all(limit)
 				.map(decodeRun),
 		),
+		/**
+		 * **Every run whose tier-1 detail still exists** (§12.2, §12.3).
+		 *
+		 * The `run` projection *is* the tier-1 set: it is derived from the run
+		 * streams, and expiry clears its rows in the same transaction that deletes
+		 * the stream. So "which runs are still in full detail" is this table's own
+		 * membership rather than a second list to keep in step — and a run absent
+		 * from it while present in `run_digest` is an expired run, said once.
+		 */
+		readRetainedRuns: rendering("run", () =>
+			db.prepare("SELECT * FROM run ORDER BY started_at, run_id").all().map(decodeRun),
+		),
+		/**
+		 * Every run the permanent digest remembers, newest first — including the
+		 * ones whose detail has already expired.
+		 *
+		 * §12.3's "last 20 runs" is a rank over the repository's history, so it is
+		 * read from the permanent projection. Ranking over the surviving set
+		 * instead would let one pinned old run push a newer one out of tier 1.
+		 */
+		readRunDigests: rendering("run_digest", () =>
+			db.prepare("SELECT * FROM run_digest ORDER BY started_at DESC, run_id DESC").all().map(decodeDigest),
+		),
 		readTicketExecutions: rendering("ticket_execution", (runId) =>
 			db.prepare("SELECT * FROM ticket_execution WHERE run_id = ? ORDER BY ticket").all(runId),
 		),

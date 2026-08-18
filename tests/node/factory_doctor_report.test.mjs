@@ -21,6 +21,7 @@ import {
 	makeAgentDir,
 	makeHome,
 	refusalOfAsync,
+	runEnded,
 	runStarted,
 } from "./helpers/factory-store.mjs";
 
@@ -36,7 +37,7 @@ import {
 const AT = FIXED_NOW + 200_000;
 
 /** A repository with a store, a live run, and a package to hand the handshake. */
-async function diagnosable(t, { effects = true, config: declared } = {}) {
+async function diagnosable(t, { effects = true, config: declared, then = () => {} } = {}) {
 	const agentDir = makeAgentDir(t);
 	const repoRoot = makeRepo(t, declared === undefined ? {} : { config: declared });
 	const store = await openStore({ repoRoot, agentDir });
@@ -57,6 +58,7 @@ async function diagnosable(t, { effects = true, config: declared } = {}) {
 			at: FIXED_NOW,
 		});
 	}
+	then(store, run);
 	store.close();
 
 	const root = makePackage(t);
@@ -367,6 +369,72 @@ test("a run pinned by an effect nothing can settle is what doctor shouts about (
 	assert.equal(pin.oldest_requested_at, FIXED_NOW);
 	assert.ok(report.alarms.some((alarm) => alarm.reason === "unresolved-effect-pin"));
 	assert.equal(report.ok, false);
+	// §12.4's alarm is about duration — "a run pinned this way for weeks" — so the
+	// age is stated rather than left as two epoch integers to subtract.
+	assert.equal(pin.pinned_for_ms, context.at - FIXED_NOW);
+});
+
+test("§12.4's alarm escalates when the pin is what is keeping a run in tier 1 past the horizon", async (t) => {
+	// One run of count budget and one day, and a second run seeded after it, so
+	// the effect-holding one is the one the horizon has released.
+	const config = cloneValidConfig();
+	config.retention = { fullDetailRuns: 1, fullDetailDays: 1 };
+	const { reader, context, run } = await diagnosable(t, {
+		config,
+		then: (store, run) => {
+			// Ended, so §12.6's "never mid-run" is not what is holding it — the pin is.
+			store.append(runEnded(run, { at: FIXED_NOW + 1000 }));
+			store.append(runStarted(newUlid(FIXED_NOW + 100_000), { at: FIXED_NOW + 100_000 }));
+		},
+	});
+
+	const report = await doctorReport(reader, { ...context, at: FIXED_NOW + 3 * 86_400_000 });
+
+	const alarm = report.alarms.find((entry) => entry.reason === "unresolved-effect-pin");
+	assert.equal(alarm.detail.run, run);
+	assert.equal(alarm.detail.holding_past_horizon, true);
+	assert.match(alarm.message, /keeping it in tier 1 past the horizon/);
+	assert.deepEqual(
+		report.retention.held.map((entry) => [entry.run, entry.reason, entry.pins.map((pin) => pin.pin)]),
+		[[run, "pinned", ["unresolved-effect"]]],
+	);
+});
+
+test("a run past the horizon that never ended is an alarm, because nothing will ever expire it (§12.6)", async (t) => {
+	const config = cloneValidConfig();
+	config.retention = { fullDetailRuns: 1, fullDetailDays: 1 };
+	const orphan = newUlid(FIXED_NOW - 100_000);
+	const { reader, context } = await diagnosable(t, {
+		effects: false,
+		config,
+		// Older than the run `diagnosable` opens, so the count half keeps that one
+		// and releases this one — which never ended and never will on its own.
+		then: (store) => store.append(runStarted(orphan, { at: FIXED_NOW - 100_000 })),
+	});
+
+	const report = await doctorReport(reader, { ...context, at: FIXED_NOW + 3 * 86_400_000 });
+
+	const alarm = report.alarms.find((entry) => entry.reason === "unended-run-past-horizon");
+	assert.equal(alarm.detail.run, orphan);
+	assert.equal(alarm.detail.reason, "live");
+	assert.equal(report.ok, false);
+});
+
+test("doctor reports §12.10's bytes per class and per run beside what expiry would reclaim", async (t) => {
+	const { reader, context, run } = await diagnosable(t);
+
+	const report = await doctorReport(reader, context);
+
+	assert.equal(report.retention.horizon.runs, 20);
+	assert.equal(report.retention.horizon.days, 30);
+	assert.deepEqual(report.retention.bytes.by_class, []);
+	assert.deepEqual(report.retention.bytes.by_run, []);
+	// The run is inside the horizon, so it is neither expiring nor held: `held`
+	// answers only for runs the horizon already released.
+	assert.deepEqual(report.retention.expiring, []);
+	assert.deepEqual(report.retention.held, []);
+	assert.equal(report.retention.reclaimable_bytes, 0);
+	assert.equal(report.retention.horizon.tier_one, 1, `run ${run} is not in tier 1`);
 });
 
 test("a quarantined journal stays loud in doctor, however many times it restarts (§4.7)", async (t) => {
