@@ -259,6 +259,40 @@ is the authority; cite the section a change answers to.
   renumbering or rewriting, is §14.7 broken; `tests/node/factory_state_integrity.test.mjs`
   greps the tree for it. A global sequence hole is the expected residue and is never read
   as tampering — only per-stream contiguity is verified.
+- **Retention is the horizon, the pins, and one subtractive pass** (`factory/lib/retention/`,
+  §12). The tier-1 horizon is a **union** — a run inside the last `fullDetailRuns` *or* inside
+  `fullDetailDays` is tier 1 — ranked over the **permanent digest** rather than the surviving
+  set, or one pinned old run would push a newer one out. §12.4's three pins are read from
+  durable state alone, because expiry runs unattended and a pin that needed the network would
+  fail open the first time Gitea was down; where durable state cannot answer, the pin **holds**,
+  and **no clock reaches `pinsForRun`** — the pins hold a run past the horizon rather than
+  carrying one of their own. The label pin's only release channel is a later repository-wide
+  poll's `observation.recorded` **that states `ticket.labels`** — §14.20 means the factory never
+  removes the label itself — with the run's own §8.9 disposition as the fallback when nothing has
+  been observed. That fact-class restriction is load-bearing and was a real bug without it: most
+  observations of a ticket (herdr liveness, a probe answer) establish nothing about its labels,
+  and reading one of those as "nothing is known" re-engages a cleared pin permanently. The
+  open-PR pin releases on the *ticket's* observed state, not the PR's, because §5.1 polls issues
+  and never pull requests. **Only an `ended`
+  run is a candidate** (§12.6's "never mid-run", read of the run and not only of the
+  invocation); an unended one is held as `live`, which is not a fourth pin — and because nothing
+  ever releases it on its own, `doctor` alarms on it. `retentionAccounting` and `planExpiry`
+  write nothing and are the one derivation `status`, `doctor`, and the pass that deletes all
+  answer from, so none of them can disagree about what tier 1 means — and **no size is an input**
+  (§14.30). The split between the two is §12.10's: `status` gets the accounting, and the
+  *reclaimable* number costs a pin evaluation per over-horizon run, which the lock-free report an
+  operator reruns against a live run should not pay for. Each run goes in one token-checked
+  transaction (`hold.transaction`): tombstones, effect rows, derived projections,
+  `deleteStreamWhole`, and `run.expired` on the `controller` stream, because deleting a run's
+  stream cannot be recorded inside it. **The blob unlink is not an effect** — an amendment to
+  §4.5 rather than a reading of §12, and §4.5 now carries the exception in its own text. The
+  ledger row is the record, the tombstone commits before the unlink so a crash resolves to
+  `retention-expired` rather than `blob-missing`, and every pass re-attempts every tombstone;
+  keying the pair by the expiring run would also **deadlock** expiry, since the unresolved effect
+  pins the run while reconcile can only settle `absent` once the blob is already gone.
+  `artifact-delete` stays cleanup's, for §12.8's blobs that have no row at all. Heartbeats
+  truncate to the first sequence of the oldest surviving run stream — one knob, and a sequence
+  rather than a clock.
 - Every mutation outside the database is an effect: a requested/resolved pair keyed by
   §4.5's grammar, built in one place (`factory/lib/effects/keys.mjs`) and written in
   one place (`records.mjs`). A new effect kind is a row in `effects/catalogue.mjs` and

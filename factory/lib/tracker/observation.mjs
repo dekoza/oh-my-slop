@@ -81,6 +81,65 @@ export function readCursor(store, scope) {
 }
 
 /**
+ * The fact class that establishes a ticket's labels (§5.2). Named because the
+ * reader below selects on it, and a second spelling would select nothing while
+ * looking exactly right.
+ */
+const TICKET_LABELS_FACT = "ticket.labels";
+
+/**
+ * **What durable state last heard about one ticket** — its state, and the label
+ * set of the newest record that actually stated one.
+ *
+ * It lives here because both halves are this module's: `observed_issue` is
+ * §5.1's per-issue row, and the label set is a shape *this file writes* into an
+ * `observation.recorded` payload. A reader elsewhere would be a second place
+ * that knows where a label hides in a fact.
+ *
+ * The two are read from different places because they keep differently. The row
+ * is canonical and outlives every run stream; a label set lives only in the
+ * fact that carried it, and that fact expires with the run whose poll recorded
+ * it. So this is "the freshest thing durable state knows", which is what §12.4's
+ * label pin needs — and `labels: null` where it knows nothing, never an empty
+ * set, because "no labels" and "never asked" are opposite answers.
+ *
+ * **The selection is by fact class, not by recency alone.** Most
+ * `observation.recorded` records carry a ticket and establish nothing about its
+ * labels — a herdr liveness reading, a probe answer — and taking the newest
+ * record of *any* class would read a missing label set as "nothing is known",
+ * which for a pin that fails closed means re-engaging a pin a human already
+ * cleared.
+ *
+ * @param {object} store an open store, controller or read-only
+ * @param {number} ticket
+ * @returns {Readonly<{ state: string | null, labels: ReadonlyArray<string> | null }>}
+ */
+export function lastObservedTicket(store, ticket) {
+	return store.read((db) => {
+		const issue = db.prepare("SELECT state FROM observed_issue WHERE ticket = ?").get(ticket);
+
+		// Newest by sequence, never by clock (§14.37) — and across every stream: a
+		// poll with no run records on `controller` and one inside a run records on
+		// the run's own stream, which says nothing about how fresh it is.
+		const fact = db
+			.prepare(
+				`SELECT payload FROM event
+				 WHERE kind = 'observation.recorded' AND ticket = ?
+				   AND EXISTS (SELECT 1 FROM json_each(event.payload, '$.fact_classes') WHERE value = ?)
+				 ORDER BY seq DESC LIMIT 1`,
+			)
+			.get(ticket, TICKET_LABELS_FACT);
+
+		const labels = fact === undefined ? null : (JSON.parse(fact.payload).observed?.labels ?? null);
+
+		return Object.freeze({
+			state: issue?.state ?? null,
+			labels: Array.isArray(labels) ? Object.freeze([...labels]) : null,
+		});
+	});
+}
+
+/**
  * Open this scope's cursor, or return the one that is already there.
  *
  * The watermark starts at **now** rather than at the epoch, and that is a real

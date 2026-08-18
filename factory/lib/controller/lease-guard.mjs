@@ -116,6 +116,21 @@ export function holdControllerLease({
 	}
 
 	/**
+	 * A compare that failed is §14.6's situation, whichever write met it: concede
+	 * the hold, then refuse rather than answer `false` — a caller that carried on
+	 * past a `false` would be a stale controller still acting.
+	 */
+	function concedeAndRefuse(what) {
+		concede({ lease: LEASE_NAMES.controller, holder_generation: null });
+		throw new FactoryStateError(
+			"lease-lost",
+			`The ${LEASE_NAMES.controller} lease is no longer this holder's, so ${what}: the run belongs to ` +
+				"whoever holds it now (§14.6).",
+			{ lease: LEASE_NAMES.controller, fencing_generation: held.fencingGeneration, run: driving },
+		);
+	}
+
+	/**
 	 * The gate every effect passes through. It reads the latch rather than the
 	 * database: the renewal is what discovers the loss, and §14.6's fencing check
 	 * at resolution is the backstop, so this does not have to win a race to be
@@ -270,13 +285,29 @@ export function holdControllerLease({
 			assertMayIssueEffects();
 			if (leases.attest(held, { event })) return;
 
-			concede({ lease: LEASE_NAMES.controller, holder_generation: null });
-			throw new FactoryStateError(
-				"lease-lost",
-				`The ${LEASE_NAMES.controller} lease is no longer this holder's, so "${event.kind}" was not ` +
-					"written: the run belongs to whoever holds it now (§14.6).",
-				{ lease: LEASE_NAMES.controller, fencing_generation: held.fencingGeneration, run: driving },
-			);
+			concedeAndRefuse(`"${event.kind}" was not written`);
+		},
+
+		/**
+		 * Several statements and the record of them, under **one** compare.
+		 *
+		 * §12.2's expiry is what needs this rather than `append`: deleting a run's
+		 * stream cannot be recorded inside that stream, so the deletion and the
+		 * `run.expired` that describes it are two writes on two streams that have
+		 * to be one transaction — and the compare has to be inside it, for exactly
+		 * the reason `append`'s is. Destroying a run's whole history is the most
+		 * final thing this process does; doing it after the lease moved on would
+		 * take the successor's evidence with it.
+		 *
+		 * @param {(tx: { db: object, appendEvent: (input: object) => object }) => unknown} body
+		 * @throws {FactoryStateError} `lease-lost`, having conceded
+		 */
+		transaction(body) {
+			assertMayIssueEffects();
+			const attested = leases.attestIn(held, body);
+			if (attested.held) return attested.result;
+
+			return concedeAndRefuse("a transaction under it was rolled back");
 		},
 
 		assertMayIssueEffects,

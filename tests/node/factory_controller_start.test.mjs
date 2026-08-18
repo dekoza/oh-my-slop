@@ -1566,3 +1566,66 @@ test("#154: a live memo on one class does not hold the others — routing around
 	assert.deepEqual(executed, [91], "the non-exhausted class is claimed; the exhausted one is not");
 	assert.equal(answer.report.end_reason, "capacity-exhausted", "the exhausted ticket still holds the run from draining");
 });
+
+// ── §12.6: expiry, in the window the run gives it ────────────────────────────
+
+test("#117: an invocation expires a run past the horizon before it preflights, and reports what it reclaimed", async (t) => {
+	// One run of count budget and one day: of the two runs seeded days back, the
+	// newer is the whole of "the last 1 run" and the older is outside both halves
+	// of §12.3's horizon.
+	const config = cloneValidConfig();
+	config.retention = { fullDetailRuns: 1, fullDetailDays: 1 };
+	const context = invocation(t, { config });
+	const loaded = loadFactoryConfig({ cwd: context.cwd });
+
+	const endedRunAt = async (at) =>
+		await orphanRun(context, {
+			at,
+			then: (store, runId) => {
+				store.append(attemptLaunched(runId, 42, 1, { at: at + 10 }));
+				store.append({
+					kind: "run.ended",
+					source: "controller",
+					run: runId,
+					occurredAt: at + 20,
+					observedAt: at + 20,
+					payload: { end_reason: "drained" },
+				});
+			},
+		});
+
+	const ancient = await endedRunAt(FIXED_NOW - 3 * 86_400_000);
+	const newer = await endedRunAt(FIXED_NOW - 2 * 86_400_000);
+
+	const answer = await runStart({
+		...loaded,
+		agentDir: context.agentDir,
+		executable: context.executable,
+		env: context.env,
+		workerTransports: context.workerTransports,
+		herdr: context.herdr,
+		args: ["42"],
+		flags: new Set([FOREGROUND_FLAG]),
+		timers: manualTimers().api,
+		now: () => FIXED_NOW,
+		frontier: async () => ({ claimable: [], members: [] }),
+		execute: () => ({ disposition: "published" }),
+	});
+
+	assert.equal(answer.report.expiry.ran, true);
+	assert.deepEqual(
+		answer.report.expiry.expired.map((entry) => entry.run),
+		[ancient],
+	);
+	// This invocation's own run has no record when expiry runs and is untouched;
+	// the newer seeded run is inside the count half, so nothing holds it either.
+	assert.deepEqual(answer.report.expiry.held, []);
+	assert.notEqual(answer.report.run, ancient);
+
+	const store = await storeOf(t, context);
+	assert.deepEqual(store.readEvents({ stream: runStream(ancient) }), []);
+	assert.equal(store.readRun(ancient), null);
+	assert.notEqual(store.readRunDigest(ancient), null, "the permanent digest went with the detail");
+	assert.notEqual(store.readRun(newer), null, "the run inside the horizon expired with the one past it");
+	assert.equal(store.verifyJournal().ok, true);
+});
