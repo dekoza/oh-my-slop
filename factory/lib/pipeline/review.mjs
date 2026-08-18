@@ -1,9 +1,11 @@
 import { CHECK_RESULTS, FINDING_SEVERITIES, PHASE_REVIEW, PHASE_VERIFY, REVIEW_VERDICTS, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
 import { createAttemptWorktree } from "../git/attempt.mjs";
 import { assessMutation, captureWorktreeState } from "../git/attestation.mjs";
-import { allocateAttempt, mintAttempt, requireAttemptIdentity } from "../worker/attempt.mjs";
-import { postureOf, profileForRole, REVIEW_ROLES, REVIEW_ROUTING_ROLE } from "../worker/roles.mjs";
+import { allocateAttempt, mintAttempt, mintedDispatch, requireAttemptIdentity } from "../worker/attempt.mjs";
+import { routeSummary } from "../worker/dispatch.mjs";
+import { postureOf, REVIEW_ROLES } from "../worker/roles.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
+import { refusedProfiles } from "./repair.mjs";
 import { FIRST_TRY, recordedStage, resolveStage, stageResults } from "./stages.mjs";
 import { routeOutcome } from "./table.mjs";
 
@@ -70,9 +72,12 @@ import { routeOutcome } from "./table.mjs";
  *   the attempt's own base (§7.3) — the prior attempt's tip for a repair — never
  *   reaches this phase at all, which is how the two meanings the one value
  *   conflated are kept apart (#161, #165)
- * @param {{ roles: object, rules: ReadonlyArray<object> }} context.routing the active routing
- * @param {ReadonlyArray<string>} [context.labels] the ticket's labels, as the
- *   claim-time snapshot has them
+ * @param {(request: { axis: string, index: number, dispatched: ReadonlyArray<string> }) => Promise<object>} context.routeAxis
+ *   §11.5's dispatch for **one axis**, read under §9.8's memo (#155). It is a
+ *   seam and per-axis for the same reason `runAxis` is either: selecting needs
+ *   the capacity pool, which is not this phase's, and §8.4's two axes are
+ *   independently routed — one call answering for both is how a single exhausted
+ *   class comes to collapse them onto one profile with nothing saying it did
  * @param {object} context.workerConfig §6.8's worker config environment
  * @param {(request: object) => Promise<{ outcome: string, record: object | null }>} context.runAxis
  *   the seam that launches one read-only reviewer into a pane and waits for
@@ -95,17 +100,15 @@ export async function reviewPhase(
 		run,
 		ticket,
 		attempt: builderAttempt,
-		routing,
-		labels = [],
 		workerConfig,
 		runAxis,
+		routeAxis,
 		automationRetry = null,
 		actor,
 		now,
 	},
 ) {
 	const { baseCommit, reviewedCommit } = verifiedBoundary(store, { run, ticket, attempt: builderAttempt });
-	const profiles = reviewProfiles(routing, { labels });
 	const axes = [];
 
 	for (const [index, axis] of REVIEW_ROLES.entries()) {
@@ -116,11 +119,12 @@ export async function reviewPhase(
 				ticket,
 				builderAttempt,
 				axis,
-				profile: profiles[index],
+				index,
 				baseCommit,
 				reviewedCommit,
 				workerConfig,
 				runAxis,
+				routeAxis: requireAxisDispatch(routeAxis),
 				automationRetry,
 				actor,
 				now,
@@ -129,6 +133,27 @@ export async function reviewPhase(
 	}
 
 	return decideReview(axes);
+}
+
+/**
+ * §8.4's fan-out cannot dispatch an axis without a dispatch seam, and it refuses
+ * rather than reaching for the routing itself.
+ *
+ * The plausible fallback — resolve §11.5's pair here and run it — is the one
+ * this ticket exists to remove: it launches a read-only reviewer into a class a
+ * provider has already refused, spends the launch, and ends the axis on a
+ * refusal the memo had already recorded (§9.8).
+ */
+function requireAxisDispatch(routeAxis) {
+	if (typeof routeAxis === "function") return routeAxis;
+
+	throw unroutable(
+		"seam",
+		"§8.4's fan-out dispatches each axis through §11.5's order under §9.8's memo, and this caller wired no seam to " +
+			"do it with. Resolving the routing here instead would launch a reviewer into a class a provider has already " +
+			"refused, and pay a launch to rediscover it.",
+		{ axes: REVIEW_ROLES.map((axis) => axis.name) },
+	);
 }
 
 /**
@@ -178,34 +203,6 @@ function verifiedBoundary(store, { run, ticket, attempt }) {
 }
 
 /**
- * §11.5's `review` pair, dispatched — **positionally**.
- *
- * The pair is two profiles written out even when they are the same, and which
- * one an axis runs under is decided here by position: `roles.review[0]` is the
- * first axis in `REVIEW_ROLES`, `[1]` is the second. That positional binding is
- * the whole of "model diversity is available as per-run configuration but is not
- * mandated" (§8.4) — an operator who wants two models writes two, and one who
- * does not writes the same name twice. Independence comes from the attempts being
- * separate and read-only, never from distinct weights.
- */
-function reviewProfiles(routing, { labels }) {
-	const dispatched = profileForRole(routing, { role: REVIEW_ROUTING_ROLE, labels });
-	const pair = Array.isArray(dispatched) ? dispatched : [dispatched];
-
-	if (pair.length !== REVIEW_ROLES.length) {
-		throw unroutable(
-			"routing",
-			`§11.5 routes "${REVIEW_ROUTING_ROLE}" to one profile per axis and this routing names ${pair.length} for ` +
-				`${REVIEW_ROLES.length} axes. Reusing one across both, or leaving one axis unrouted, are both decisions ` +
-				`§11.5 requires an operator to write down rather than a shape this dispatch may repair.`,
-			{ found: pair.length, expected: REVIEW_ROLES.length, axes: REVIEW_ROLES.map((axis) => axis.name) },
-		);
-	}
-
-	return pair;
-}
-
-/**
  * One axis, to a result — retries included.
  *
  * The loop is a loop because §8.10 routes six reviewer attempt outcomes to
@@ -220,11 +217,29 @@ function reviewProfiles(routing, { labels }) {
  * resolution committed re-runs the axis, and one that died after reads it back.
  */
 async function walkAxis(store, clone, context) {
-	const { hold, run, ticket, actor, now } = context;
+	const { hold, run, ticket, axis, index, routeAxis, actor, now } = context;
 	let tryNumber = 1;
 
 	for (;;) {
-		const opened = await openAxisAttempt(store, clone, { ...context, tryNumber });
+		// #155: dispatched per pass, not once per axis, because a pass is entered
+		// again exactly when the last profile stopped being spendable — a provider
+		// refused it, and the memo has moved since. Selecting once up front would
+		// relaunch into the refusal.
+		//
+		// **The bound is read from the journal, not carried in this loop.** An
+		// in-memory list would be lost by a controller that died mid-chain, and the
+		// axis would re-dispatch a profile the provider has already refused. It is
+		// keyed on **this axis's own role**, which is what keeps §8.4's two axes
+		// independent under a reroute: the other axis's refusals are not in it, so
+		// an exhausted class walks each down its own declared order.
+		const route = await routeAxis({
+			axis: axis.name,
+			index,
+			dispatched: refusedProfiles(store, { run, ticket, role: axis.name }),
+		});
+		if (typeof route?.profile !== "string") throw axisOutOfRoutes({ axis, route, tryNumber });
+
+		const opened = await openAxisAttempt(store, clone, { ...context, route, tryNumber });
 		// An axis's retry is a **fresh axis attempt** (§8.4's `try` rides the mint's
 		// purpose, not the stage key), so each pass reads its own attempt's first
 		// and only stage result.
@@ -251,6 +266,23 @@ async function walkAxis(store, clone, context) {
 			continue;
 		}
 
+		// #155: the provider refused this axis, so the axis moves to the next
+		// profile its own order names — **without asking the budget**. A retry is
+		// asked for because a reviewer that died says nothing about the work and
+		// somebody should pay for the flake; here nobody flaked, and charging the
+		// automation budget would let two quota blips fail a ticket whose review
+		// never started.
+		if (resolved.row.action === STAGE_ACTIONS.reroute) {
+			// Nothing is recorded here, and nothing needs to be. The bound is the
+			// resolution just committed — `refusedProfiles` reads it on the next
+			// pass — and the next pass's attempt id comes from `openAxisAttempt`
+			// allocating against the same purpose, which is a derivation and not a
+			// reservation. A call here to "take" the ordinal would write nothing and
+			// answer a question the next line asks again.
+			tryNumber += 1;
+			continue;
+		}
+
 		if (resolved.row.action === STAGE_ACTIONS.verdict || resolved.row.action === STAGE_ACTIONS.dispose) {
 			return Object.freeze({
 				axis: context.axis.name,
@@ -258,6 +290,7 @@ async function walkAxis(store, clone, context) {
 				action: resolved.row.action,
 				outcome: resolved.outcome,
 				detail: resolved.detail,
+				routing: opened.route,
 			});
 		}
 
@@ -282,13 +315,30 @@ async function walkAxis(store, clone, context) {
 async function openAxisAttempt(
 	store,
 	clone,
-	{ hold, run, ticket, builderAttempt, axis, profile, reviewedCommit, workerConfig, tryNumber, actor, now },
+	{ hold, run, ticket, builderAttempt, axis, route, reviewedCommit, workerConfig, tryNumber, actor, now },
 ) {
 	const purpose = axisPurpose({ axis, builderAttempt, tryNumber });
 	const allocated = allocateAttempt(store, { run, ticket, purpose });
 	const identity = requireAttemptIdentity({ run, ticket, phase: PHASE_REVIEW, attempt: allocated.attempt });
 
-	mintAttempt(store, { hold, identity, role: axis.name, profile, baseCommit: reviewedCommit, purpose, at: now() });
+	mintAttempt(store, {
+		hold,
+		identity,
+		role: axis.name,
+		profile: route.profile,
+		routing: route,
+		baseCommit: reviewedCommit,
+		purpose,
+		at: now(),
+	});
+
+	// **The mint decides, not the caller.** A record already there is left exactly
+	// as it is, so a re-entry after a crash finds the decision the previous
+	// controller committed — and §11.5 re-resolved against a memo that has since
+	// moved would launch this axis under a profile the record does not name, which
+	// is precisely the disagreement between "what ran" and "what the disposition
+	// says ran" that #155 exists to close (§6.5, §8.9).
+	const minted = mintedDispatch(store, { run, ticket, attempt: identity.attempt }) ?? { routing: route };
 
 	const created = await createAttemptWorktree(store, clone, {
 		hold,
@@ -311,7 +361,43 @@ async function openAxisAttempt(
 		identity,
 		branch: created.branch,
 		worktreePath: created.worktreePath,
+		// The mint's answer, so everything downstream — the launch, the axis's
+		// stage detail, §8.7's attestation — reads one value.
+		route: minted.routing ?? route,
 	});
+}
+
+
+/**
+ * An axis with nowhere to run: every profile §11.5's order names for it belongs
+ * to a class §9.8's memo has locked (#155).
+ *
+ * **No attempt is minted**, which is the point of asking before opening: an
+ * attempt row with no pane behind it would be a launch this run never made, and
+ * §8.9's branch evidence would then name a branch nothing ever wrote to.
+ *
+ * It is **thrown rather than answered**, for the reason §8.6's exhaustion is: the
+ * fan-out decides an axis's dispatch *inside* the phase executor, and an
+ * executor's only ways out are a phase result and a throw. Answering with one
+ * would mean inventing a `review` phase result for "the run is out of providers"
+ * — a capacity fact wearing a verdict's clothes — and §8.10's row for it is
+ * phase-less precisely because it belongs to no phase's outcome domain.
+ */
+function axisOutOfRoutes({ axis, route, tryNumber }) {
+	return new FactoryPipelineError(
+		"routes-exhausted",
+		`Every profile §11.5's order names for review axis ${axis.name} belongs to a resource class §9.8's memo has ` +
+			`recorded unavailable, so this axis cannot be run and no attempt is minted for it. The ticket goes back to ` +
+			`the frontier untouched: no reviewer failed, no budget is owed, and the memo keeps the next claim out until ` +
+			`a probe re-admits a class.`,
+		{
+			at: "route",
+			axis: axis.name,
+			try: tryNumber,
+			declared: route?.declared ?? null,
+			considered: route?.considered ?? [],
+		},
+	);
 }
 
 /**
@@ -337,12 +423,12 @@ function axisPurpose({ axis, builderAttempt, tryNumber }) {
  * written to it is the role this attempt belongs to — and §14.19 gives that role
  * no second go.
  */
-async function attemptAxis(clone, { axis, profile, identity, worktreePath, branch, baseCommit, reviewedCommit, runAxis, tryNumber }) {
+async function attemptAxis(clone, { axis, route, identity, worktreePath, branch, baseCommit, reviewedCommit, runAxis, tryNumber }) {
 	const before = await captureWorktreeState(clone, { worktreePath, branch });
 	if (!before.clean) {
 		return mutationAnswer({
 			axis,
-			profile,
+			route,
 			tryNumber,
 			baseCommit,
 			reviewedCommit,
@@ -357,7 +443,7 @@ async function attemptAxis(clone, { axis, profile, identity, worktreePath, branc
 		// to work out: it is derived from the role, and a fan-out that handed over a
 		// role without saying what it is would make "read-only" a convention.
 		posture: postureOf(axis),
-		profile,
+		profile: route.profile,
 		identity,
 		worktreePath,
 		branch,
@@ -367,7 +453,7 @@ async function attemptAxis(clone, { axis, profile, identity, worktreePath, branc
 	});
 
 	const guard = assessMutation({ before, after: await captureWorktreeState(clone, { worktreePath, branch }) });
-	if (guard.mutated) return mutationAnswer({ axis, profile, tryNumber, baseCommit, reviewedCommit, guard, ran });
+	if (guard.mutated) return mutationAnswer({ axis, route, tryNumber, baseCommit, reviewedCommit, guard, ran });
 
 	// §8.4's verdict is what a `completed` reviewer owes, and that obligation is
 	// **role** knowledge — which is why it is asserted here and not in §6.6's
@@ -380,7 +466,7 @@ async function attemptAxis(clone, { axis, profile, identity, worktreePath, branc
 			outcome: "invalid-result",
 			detail: axisDetail({
 				axis,
-				profile,
+				route,
 				tryNumber,
 				baseCommit,
 				reviewedCommit,
@@ -393,16 +479,16 @@ async function attemptAxis(clone, { axis, profile, identity, worktreePath, branc
 
 	return Object.freeze({
 		outcome: ran.outcome,
-		detail: axisDetail({ axis, profile, tryNumber, baseCommit, reviewedCommit, guard, ran }),
+		detail: axisDetail({ axis, route, tryNumber, baseCommit, reviewedCommit, guard, ran }),
 	});
 }
 
-function mutationAnswer({ axis, profile, tryNumber, baseCommit, reviewedCommit, guard, ran }) {
+function mutationAnswer({ axis, route, tryNumber, baseCommit, reviewedCommit, guard, ran }) {
 	return Object.freeze({
 		outcome: "mutation-detected",
 		detail: axisDetail({
 			axis,
-			profile,
+			route,
 			tryNumber,
 			baseCommit,
 			reviewedCommit,
@@ -423,13 +509,22 @@ function mutationAnswer({ axis, profile, tryNumber, baseCommit, reviewedCommit, 
  * wants the before/after guard result whatever the review concluded. So does
  * the boundary the axis was briefed on: a verdict's scope is part of the
  * verdict, and §8.7's artifact names the base it was rendered against (#165).
+ *
+ * **What dispatched it rides it too** (#155). §8.4 makes model diversity a
+ * per-run configuration rather than a mandate, so two axes on one profile is a
+ * legal verdict — but a reroute can arrive there on its own, and a verdict that
+ * recorded only the profile would present two independent reviews where two runs
+ * of one model happened. The record names what §11.5 declared, what ran, and why
+ * they differ, so §8.7's attestation carries the condition rather than leaving an
+ * operator to infer it from two profile names that happen to match.
  */
-function axisDetail({ axis, profile, tryNumber, baseCommit, reviewedCommit, guard, ran, problem = null }) {
+function axisDetail({ axis, route, tryNumber, baseCommit, reviewedCommit, guard, ran, problem = null }) {
 	const record = ran?.record ?? null;
 
 	return Object.freeze({
 		axis: axis.name,
-		profile,
+		profile: route.profile,
+		routing: route,
 		try: tryNumber,
 		base_commit: baseCommit,
 		reviewed_commit: reviewedCommit,
@@ -547,6 +642,13 @@ function decideReview(axes) {
 		// §8.10 marks this row's evidence untrusted, and the repair prompt renders
 		// every field of this detail inside its delimited block. So it carries the
 		// reviewers' words and nothing the controller wants read as its own.
+		// **No routing summary rides this detail**, though a collapsed fan-out is
+		// exactly as worth knowing on a rejection as on an approval. §8.10 marks
+		// this row's evidence untrusted and §8.5's prompt quotes every field of it
+		// inside the delimited block — so a controller-owned sentence added here
+		// would reach the next builder attributed to the reviewers. The same fact
+		// is on each axis's own durable result (`axisDetail`), which is what §8.7's
+		// attestation reads and what an operator opens.
 		return phaseAnswer("rejected", { blocking: Object.freeze(blocking), advisory: Object.freeze(advisory) });
 	}
 
@@ -555,6 +657,52 @@ function decideReview(axes) {
 			axes.map((axis) => Object.freeze({ axis: axis.axis, attempt: axis.attempt, verdict: axis.detail.verdict })),
 		),
 		advisory: Object.freeze(advisory),
+		routing: axisRouting(axes),
+	});
+}
+
+/**
+ * **What actually rendered each verdict, and whether the two axes ended up on
+ * one profile** (§8.4, #155).
+ *
+ * §8.4 makes model diversity a per-run configuration rather than a mandate, so
+ * two axes on one profile is a legal verdict — but it must be a *stated* one. An
+ * exhausted class can walk both axes onto the last profile standing, and a
+ * verdict that reported nothing would present two independent reviews where two
+ * runs of one model happened. Independence is still real (separate attempts,
+ * separate worktrees, read-only, no shared transcript), and the operator can see
+ * exactly how much of it survived.
+ *
+ * `collapsed` is deliberately narrower than "both axes name one profile": an
+ * operator who *wrote* the same profile twice already knows, and §11.5 makes
+ * them write it twice so they cannot not know. What this reports is the run
+ * arriving there on its own.
+ */
+function axisRouting(axes) {
+	const ran = axes.map((axis) => {
+		// The candidates a verdict does not carry: what an operator reads here is
+		// which model rendered it, and the walk past the exhausted ones is on the
+		// axis's own durable result. Dropped rather than set to `undefined`,
+		// because §4.3's records are canonicalised and an undefined field has no
+		// JSON representation to canonicalise.
+		const { considered, ...summary } = routeSummary(axis.routing);
+		return Object.freeze({ axis: axis.axis, profile: axis.routing?.profile ?? null, ...summary });
+	});
+
+	const profiles = ran.map((axis) => axis.profile);
+	const declared = ran.map((axis) => axis.declared);
+	const collapsed =
+		ran.some((axis) => axis.rerouted) &&
+		new Set(profiles).size === 1 &&
+		new Set(declared).size > 1;
+
+	return Object.freeze({
+		axes: Object.freeze(ran),
+		collapsed,
+		note: collapsed
+			? `both review axes ran on ${profiles[0]}: §11.5 declared ${declared.join(" and ")}, and the reroute left one ` +
+				`routable profile between them (§8.4, §9.8). The axes stayed separate read-only attempts; the model did not.`
+			: null,
 	});
 }
 

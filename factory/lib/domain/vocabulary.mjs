@@ -197,6 +197,12 @@ export const ATTEMPT_OUTCOMES = Object.freeze([
 	 * rather than as anything the worker did.
 	 */
 	"provider-refused",
+	// #155's `routes-exhausted` is deliberately **not** here: no attempt has it,
+	// because it is what the walk answers *instead of* minting one. It is one of
+	// §8.10's phase-less rows, beside the two budget exhaustions it is shaped like
+	// — "the run ran out of something this ticket needed" — which is also what
+	// makes it reachable from `verify` and `integrate`, whose fresh-retry is
+	// routed while they have no attempt for an outcome to belong to (§8.8).
 ]);
 
 /**
@@ -210,6 +216,23 @@ export const ATTEMPT_OUTCOMES = Object.freeze([
 export const ATTEMPT_CLOCK_NO_PROGRESS = "no-progress";
 export const ATTEMPT_CLOCK_DEADLINE = "deadline";
 export const ATTEMPT_CLOCKS = Object.freeze([ATTEMPT_CLOCK_NO_PROGRESS, ATTEMPT_CLOCK_DEADLINE]);
+
+/**
+ * §5.5's adoption verdict (#114). **Adopt when identity is provable; declare
+ * dead otherwise** — and the third value is what makes those two safe: a Herdr
+ * that would not answer and a path that could not be read taught the process
+ * nothing, and "unanswerable" is not "absent" (§5.2, §12.4).
+ *
+ * Kept here rather than in the module that computes it because two subsystems
+ * read it — `worker/adoption.mjs` answers with it and `capacity/slots.mjs`
+ * settles a row on it — and it rides both `attempt.ended`'s payload and the run
+ * report to the operator's screen, which is this file's criterion.
+ */
+export const ADOPTION_VERDICTS = Object.freeze({
+	provable: "provable",
+	disproved: "disproved",
+	unanswerable: "unanswerable",
+});
 
 /**
  * §6.6, §8.8: the outcomes **only the controller derives**, as the complement of
@@ -374,6 +397,23 @@ export const STAGE_ACTIONS = Object.freeze({
 	 * outcome that carried it (§8.8).
 	 */
 	verdict: "verdict",
+	/**
+	 * #155 — the same work, on the next profile the role's declared order names,
+	 * because the class the last one ran on is memo-locked (§9.8).
+	 *
+	 * It is not one of §8.5's tiers and not §8.10's automation retry, and the
+	 * reason is the same in both directions: **nothing failed.** A tier asks *is
+	 * the prior attempt's work worth keeping* and a retry says *the automation
+	 * broke* — a reroute answers neither question, because the provider refused
+	 * to serve the attempt and the attempt is what has to happen somewhere else.
+	 *
+	 * **It spends no budget**, which is why it is an action of its own rather
+	 * than a retry with a `null` budget: `BUDGET_KEY_FOR_ACTION` is what makes an
+	 * unbounded retry unconstructible, and a fourth key in it that charged
+	 * nothing would put a hole in exactly that property. What bounds a reroute is
+	 * that each routable profile is spent at most once (§9, `worker/dispatch.mjs`).
+	 */
+	reroute: "reroute",
 	/** §8.5 tier 1 — a fresh attempt from the prior attempt's tip. */
 	repair: "repair",
 	/** §8.5 tier 2 — a fresh attempt from the pinned base, work discarded. */

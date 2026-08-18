@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { RETAINED_REASONS } from "../../factory/lib/capacity/slots.mjs";
+import { ADOPTION_VERDICTS } from "../../factory/lib/domain/vocabulary.mjs";
 import { runStream } from "../../factory/lib/state/events.mjs";
 import {
+	attemptLaunched,
 	capacityPlanOf as plan,
 	FIXED_NOW as T0,
 	leaveSupersededSlot,
@@ -21,6 +24,20 @@ function capacityEvents(store, run) {
 		.readEvents({ stream: runStream(run) })
 		.filter((event) => event.kind.startsWith("capacity."))
 		.map((event) => ({ kind: event.kind, ticket: event.ticket, ...event.payload }));
+}
+
+/** One capacity row, exactly as the lease table holds it. */
+function rowOf(store, name) {
+	return store.read((db) => db.prepare("SELECT * FROM lease WHERE name = ?").get(name));
+}
+
+/**
+ * §5.5's verdict, as a test says it. The five tests themselves are
+ * `factory_worker_adoption.test.mjs`'s; what the pool cares about is which of
+ * the three answers came back and which attempt it named.
+ */
+function verdict(answer, { attempt = null, run = null, ticket = null, tests = {}, detail = {} } = {}) {
+	return Object.freeze({ verdict: answer, attempt, run, ticket, phase: "implement", tests, detail });
 }
 
 // ── Discrete named rows, each naming its holder (§9.4) ───────────────────────
@@ -246,10 +263,10 @@ test("a row from a dead generation blocks its index until a probe settles it", a
 		[["capacity:ticket:0", 7, true]],
 	);
 
-	// No probe in this package settles a pane, so the row stays exactly as it is.
-	const unsettled = capacity.reclaim({ at: T0 + 1 });
+	// With no probe wired there is no answer, so the row stays exactly as it is.
+	const unsettled = await capacity.reclaim({ at: T0 + 1 });
 	assert.equal(unsettled.reclaimed, 0);
-	assert.match(unsettled.missing, /#114/);
+	assert.match(unsettled.missing, /adoption probe/);
 	assert.notEqual(store.read((db) => db.prepare("SELECT * FROM lease WHERE name = ?").get("capacity:ticket:0")), undefined);
 	assert.equal(
 		capacityEvents(store, run).filter((event) => event.kind === "capacity.released").length,
@@ -258,7 +275,7 @@ test("a row from a dead generation blocks its index until a probe settles it", a
 	);
 });
 
-test("a probe that finds the holder gone releases the slot; one that finds it live does not", async (t) => {
+test("a probe that disproves the holder releases the slot; one that proves it live does not", async (t) => {
 	const { store, hold, capacity } = await openPool(t, {
 		plan: plan({ ticketSlots: 2, classes: [{ class: "local", size: 2, profiles: ["builder"] }] }),
 	});
@@ -270,19 +287,262 @@ test("a probe that finds the holder gone releases the slot; one that finds it li
 		leaveSupersededSlot(store, hold, { slot: `capacity:ticket:${index}`, ticket });
 	}
 
-	const settled = capacity.reclaim({
+	const settled = await capacity.reclaim({
 		at: T0 + 5,
-		probe: ({ identity }) => ({ live: identity.ticket === 8, detail: { pane: "herdr:3" } }),
+		probe: async ({ identity }) =>
+			verdict(identity.ticket === 8 ? ADOPTION_VERDICTS.provable : ADOPTION_VERDICTS.disproved, {
+				detail: { pane: "herdr:3" },
+			}),
 	});
 
 	assert.equal(settled.reclaimed, 1);
 	assert.deepEqual(
 		settled.held.map((entry) => entry.ticket),
 		[8],
-		"a live holder is adopted, not evicted",
+		"a live holder is left alone, never evicted",
 	);
 	assert.equal(store.read((db) => db.prepare("SELECT * FROM lease WHERE name = ?").get("capacity:ticket:0")), undefined);
 	assert.notEqual(store.read((db) => db.prepare("SELECT * FROM lease WHERE name = ?").get("capacity:ticket:1")), undefined);
+});
+
+// ── §5.5's adoption, at the pool ─────────────────────────────────────────────
+
+test("a provable lane of this run is transferred onto this generation, never released and re-taken", async (t) => {
+	const { store, hold, capacity, run } = await openPool(t);
+	// The mint is what makes the attempt real: the projections refuse an
+	// attempt-scoped record for a tuple nothing launched, and an adopted row
+	// names the attempt it was proved for (§6.5).
+	store.append(attemptLaunched(run, 42, 1));
+	leaveSupersededSlot(store, hold, { slot: "capacity:ticket:0", ticket: 42, run });
+	leaveSupersededSlot(store, hold, { slot: "capacity:model:local:0", ticket: 42, run, pool: "model" });
+	const before = rowOf(store, "capacity:ticket:0");
+
+	const settled = await capacity.reclaim({
+		at: T0 + 5,
+		adopt: true,
+		probe: async () => verdict(ADOPTION_VERDICTS.provable, { attempt: `${run}-t42-a1`, ticket: 42, run }),
+	});
+
+	assert.equal(settled.adopted, 2, "a lane is its ticket row and its model row, taken whole");
+	assert.deepEqual(
+		settled.resumed.map((lane) => [lane.ticket, lane.slots.ticket.name, lane.slots.model.name]),
+		[[42, "capacity:ticket:0", "capacity:model:local:0"]],
+	);
+
+	const after = rowOf(store, "capacity:ticket:0");
+	assert.equal(after.fencing_generation, hold.fencingGeneration, "§15 case 6: the slot its pane holds");
+	assert.notEqual(after.holder_token, before.holder_token, "the swap is on the predecessor's token");
+	assert.equal(
+		capacityEvents(store, run).filter((event) => event.kind === "capacity.released").length,
+		0,
+		"a release-then-acquire would open a window a third controller could take the index in",
+	);
+	const granted = capacityEvents(store, run).find((event) => event.slot === "capacity:ticket:0");
+	assert.equal(granted.adopted_from.fencing_generation, before.fencing_generation);
+});
+
+test("a live lane of another run is left alone: there is no lane here to resume it into", async (t) => {
+	const { store, hold, capacity } = await openPool(t);
+	leaveSupersededSlot(store, hold, { slot: "capacity:ticket:0", ticket: 42, run: "01JRUNOTHER00000000000000" });
+
+	const settled = await capacity.reclaim({
+		at: T0 + 5,
+		adopt: true,
+		probe: async () => verdict(ADOPTION_VERDICTS.provable, { attempt: "01JRUNOTHER00000000000000-t42-a1" }),
+	});
+
+	assert.deepEqual(settled.resumed, []);
+	assert.deepEqual(
+		settled.held.map((entry) => entry.reason),
+		[RETAINED_REASONS.otherRun],
+	);
+	assert.equal(rowOf(store, "capacity:ticket:0").fencing_generation, hold.fencingGeneration - 1);
+});
+
+test("nothing is transferred when this run has nothing to resume a lane with", async (t) => {
+	const { store, hold, capacity, run } = await openPool(t);
+	leaveSupersededSlot(store, hold, { slot: "capacity:ticket:0", ticket: 42, run });
+
+	// `adopt: false` is the red preflight, and the run with no pipeline: a row
+	// moved onto a generation that ends without using it is the one no successor
+	// can settle.
+	const settled = await capacity.reclaim({
+		at: T0 + 5,
+		adopt: false,
+		probe: async () => verdict(ADOPTION_VERDICTS.provable, { attempt: `${run}-t42-a1` }),
+	});
+
+	assert.deepEqual(settled.resumed, []);
+	assert.equal(settled.adopted, 0);
+	assert.deepEqual(
+		settled.held.map((entry) => entry.reason),
+		[RETAINED_REASONS.notExecuting],
+	);
+	assert.equal(rowOf(store, "capacity:ticket:0").fencing_generation, hold.fencingGeneration - 1);
+});
+
+test("a disproved lane settles its attempt before its rows, and once for the pair", async (t) => {
+	const { store, hold, capacity, run } = await openPool(t);
+	leaveSupersededSlot(store, hold, { slot: "capacity:ticket:0", ticket: 42, run });
+	leaveSupersededSlot(store, hold, { slot: "capacity:model:local:0", ticket: 42, run, pool: "model" });
+	const settledAttempts = [];
+
+	const settled = await capacity.reclaim({
+		at: T0 + 5,
+		adopt: true,
+		probe: async () => verdict(ADOPTION_VERDICTS.disproved, { attempt: `${run}-t42-a1`, ticket: 42, run }),
+		settleAttempt: async (answer) => settledAttempts.push(answer.attempt),
+	});
+
+	assert.equal(settled.reclaimed, 2);
+	assert.deepEqual(
+		settledAttempts,
+		[`${run}-t42-a1`],
+		"two rows name one attempt, and the projector refuses a second ending",
+	);
+	assert.deepEqual(settled.settled, [`${run}-t42-a1`]);
+	const released = capacityEvents(store, run).filter((event) => event.kind === "capacity.released");
+	assert.deepEqual(
+		released.map((event) => [event.reason, event.settled_attempt]),
+		[
+			["reclaimed-by-probe", `${run}-t42-a1`],
+			["reclaimed-by-probe", `${run}-t42-a1`],
+		],
+	);
+});
+
+test("a row whose durable state names no adoptable attempt is released with nothing to settle", async (t) => {
+	const { store, hold, capacity, run } = await openPool(t);
+	leaveSupersededSlot(store, hold, { slot: "capacity:ticket:0", ticket: 42, run });
+	const settledAttempts = [];
+
+	// The probe's durable-state branch: the attempt this row named has already
+	// ended, so `attempt` is null and there is nothing left to end.
+	const settled = await capacity.reclaim({
+		at: T0 + 5,
+		adopt: true,
+		probe: async () =>
+			verdict(ADOPTION_VERDICTS.disproved, { detail: { refusal: "attempt-already-ended", basis: "durable-state" } }),
+		settleAttempt: async (answer) => settledAttempts.push(answer.attempt),
+	});
+
+	assert.equal(settled.reclaimed, 1);
+	assert.deepEqual(settledAttempts, [], "an ending written for a settled attempt is the one the projector refuses");
+	assert.equal(rowOf(store, "capacity:ticket:0"), undefined);
+});
+
+test("an unanswerable probe moves nothing, and the run's closing account names it", async (t) => {
+	const { store, hold, capacity, run } = await openPool(t);
+	leaveSupersededSlot(store, hold, { slot: "capacity:ticket:0", ticket: 42, run });
+
+	const settled = await capacity.reclaim({
+		at: T0 + 5,
+		adopt: true,
+		probe: async () => verdict(ADOPTION_VERDICTS.unanswerable, { detail: { herdr_answered: false } }),
+	});
+
+	assert.equal(settled.reclaimed, 0);
+	assert.deepEqual(settled.resumed, []);
+	assert.notEqual(rowOf(store, "capacity:ticket:0"), undefined, "unanswerable is not absent (§5.2, §12.4)");
+
+	const account = capacity.unsettled({ at: T0 + 9 });
+	assert.equal(account.count, 1);
+	assert.deepEqual(
+		account.rows.map((row) => [row.slot, row.reason, row.verdict, row.adoptable_by_successor]),
+		[["capacity:ticket:0", RETAINED_REASONS.unanswerable, ADOPTION_VERDICTS.unanswerable, false]],
+	);
+	assert.match(account.resolution, /re-probes/);
+});
+
+test("a model row with no ticket row behind it is not adopted: half a lane resumes nothing", async (t) => {
+	const { store, hold, capacity, run } = await openPool(t);
+	leaveSupersededSlot(store, hold, { slot: "capacity:model:local:0", ticket: 42, run, pool: "model" });
+
+	const settled = await capacity.reclaim({
+		at: T0 + 5,
+		adopt: true,
+		probe: async () => verdict(ADOPTION_VERDICTS.provable, { attempt: `${run}-t42-a1` }),
+	});
+
+	assert.deepEqual(settled.resumed, []);
+	assert.deepEqual(
+		settled.held.map((entry) => entry.reason),
+		[RETAINED_REASONS.halfLane],
+	);
+	assert.equal(rowOf(store, "capacity:model:local:0").fencing_generation, hold.fencingGeneration - 1);
+});
+
+test("a lane whose row moves under the probe is retained, and the other lanes still resume", async (t) => {
+	const { store, hold, capacity, leases, run } = await openPool(t, {
+		plan: plan({ ticketSlots: 2, classes: [{ class: "local", size: 2, profiles: ["builder"] }] }),
+	});
+	store.append(attemptLaunched(run, 42, 1));
+	store.append(attemptLaunched(run, 43, 1));
+	leaveSupersededSlot(store, hold, { slot: "capacity:ticket:0", ticket: 42, run });
+	leaveSupersededSlot(store, hold, { slot: "capacity:ticket:1", ticket: 43, run });
+
+	const settled = await capacity.reclaim({
+		at: T0 + 5,
+		adopt: true,
+		probe: async ({ identity }) => {
+			// 43's row goes away between the proof and the swap — a release the
+			// compare-and-swap is what catches, because the token stops matching.
+			if (identity.ticket === 43) leases.release(leases.inspect("capacity:ticket:1"));
+			return verdict(ADOPTION_VERDICTS.provable, { attempt: `${run}-t${identity.ticket}-a1` });
+		},
+	});
+
+	assert.deepEqual(
+		settled.resumed.map((lane) => lane.ticket),
+		[42],
+		"one lane's surprise is not the other's",
+	);
+	assert.deepEqual(
+		settled.held.map((entry) => [entry.ticket, entry.reason]),
+		[[43, RETAINED_REASONS.moved]],
+	);
+	assert.equal(rowOf(store, "capacity:ticket:0").fencing_generation, hold.fencingGeneration);
+});
+
+test("a row naming a pool this run does not have is retained, never adopted into one", async (t) => {
+	const { store, hold, capacity, run } = await openPool(t);
+	store.append(attemptLaunched(run, 42, 1));
+	// The ceiling shrank and a class went away while nobody was driving: index 3
+	// is outside the ticket pool, and `rico` is not a class this plan declares.
+	leaveSupersededSlot(store, hold, { slot: "capacity:ticket:3", ticket: 42, run });
+	leaveSupersededSlot(store, hold, { slot: "capacity:model:rico:0", ticket: 42, run, pool: "model" });
+
+	const settled = await capacity.reclaim({
+		at: T0 + 5,
+		adopt: true,
+		probe: async () => verdict(ADOPTION_VERDICTS.provable, { attempt: `${run}-t42-a1` }),
+	});
+
+	assert.deepEqual(settled.resumed, []);
+	assert.deepEqual(
+		settled.held.map((entry) => [entry.slot, entry.reason]),
+		[
+			["capacity:model:rico:0", RETAINED_REASONS.outsidePool],
+			["capacity:ticket:3", RETAINED_REASONS.outsidePool],
+		],
+	);
+	assert.equal(rowOf(store, "capacity:ticket:3").fencing_generation, hold.fencingGeneration - 1);
+});
+
+test("a row this run adopted and never ran is given back before the run ends", async (t) => {
+	const { store, hold, capacity, run } = await openPool(t);
+	store.append(attemptLaunched(run, 42, 1));
+	leaveSupersededSlot(store, hold, { slot: "capacity:ticket:0", ticket: 42, run });
+	const settled = await capacity.reclaim({
+		at: T0 + 5,
+		adopt: true,
+		probe: async () => verdict(ADOPTION_VERDICTS.provable, { attempt: `${run}-t42-a1` }),
+	});
+	assert.equal(settled.resumed.length, 1);
+
+	assert.equal(capacity.releaseAdopted({ at: T0 + 6 }), 1);
+	assert.equal(rowOf(store, "capacity:ticket:0"), undefined, "no successor could ever adopt a row of an ended run");
+	assert.equal(capacity.releaseAdopted({ at: T0 + 7 }), 0, "a lane that gave its slots back has nothing more taken");
 });
 
 // ── What §9.7 asks status and doctor to print ────────────────────────────────

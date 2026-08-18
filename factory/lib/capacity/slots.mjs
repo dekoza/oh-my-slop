@@ -1,4 +1,4 @@
-import { capacityModelSlot, capacityTicketSlot, isSuperseded } from "../state/leases.mjs";
+import { capacityModelSlot, capacityTicketSlot, isSuperseded, parseCapacitySlot, POOLS } from "../state/leases.mjs";
 import {
 	classAvailability,
 	DEFAULT_EXHAUSTION_MEMO_MS,
@@ -8,6 +8,8 @@ import {
 	recordAdmission,
 	recordExhaustion,
 } from "./exhaustion.mjs";
+import { ADOPTION_VERDICTS } from "../domain/vocabulary.mjs";
+import { FactoryStateError } from "../state/errors.mjs";
 import { FactoryCapacityError } from "./errors.mjs";
 import { capacitySnapshot, describeSlot, laneKey } from "./report.mjs";
 
@@ -33,8 +35,30 @@ import { capacitySnapshot, describeSlot, laneKey } from "./report.mjs";
  * > hold-and-wait is constructible and therefore no deadlock cycle is.**
  */
 
-/** The two pools. A slot's pool decides its row name and its span. */
-export const POOLS = Object.freeze({ ticket: "ticket", model: "model" });
+/**
+ * Why a superseded row this pass could not settle is still held (§12.4). Each
+ * is a different thing for the operator to do, which is exactly why a single
+ * "still held" count is not an answer.
+ */
+export const RETAINED_REASONS = Object.freeze({
+	/** Herdr or the filesystem taught this process nothing (§5.2). */
+	unanswerable: "probe-unanswerable",
+	/** A provably live worker, belonging to a run this controller is not driving. */
+	otherRun: "live-holder-of-another-run",
+	/** A provably live worker, on a run that is not going to execute anything. */
+	notExecuting: "run-will-not-execute",
+	/** The ticket row of a live lane is missing, so there is no whole lane to resume. */
+	halfLane: "no-whole-lane-to-resume",
+	/** The compare-and-delete found somebody else's token on the row. */
+	moved: "row-moved-under-the-probe",
+	/**
+	 * A row naming a pool this run does not have — a class the configuration no
+	 * longer declares, or an index above the ceiling it was taken under. Adopting
+	 * it would hold a slot no pool accounts for, and releasing it by anything but
+	 * a probe is what §9.4 refuses.
+	 */
+	outsidePool: "row-outside-this-run-s-pools",
+});
 
 /**
  * @param {object} store an open store (§4.1)
@@ -367,6 +391,246 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 	}
 
 	/**
+	 * The rows this controller took over from a predecessor, kept so the run can
+	 * give back anything its scheduler never got to use. They are ordinary slot
+	 * holds — `release` is idempotent, so a lane that ran and released its own
+	 * has nothing more taken from it here.
+	 */
+	const adoptedHolds = [];
+
+	/**
+	 * The last verdict a probe gave each row it could not settle, so the run's
+	 * closing account says *why* a row is still held rather than only that it is
+	 * (§12.4). Keyed by row name; a row settled later simply stops appearing in
+	 * the superseded set the account is built from.
+	 */
+	const retainedVerdicts = new Map();
+
+	/**
+	 * §5.5's adoption, at the pool: **move a whole lane's rows onto this
+	 * controller's generation, on the predecessor's own tokens.**
+	 *
+	 * A lane is its ticket row *and* its model row, and it is taken whole or not
+	 * at all: a model row adopted without the ticket row that spans the execution
+	 * is a row no lane can resume, and the ticket row is what §9.4 makes span the
+	 * repair and the fresh-retry.
+	 */
+	function adoptLanes(adoptable, { at }) {
+		const retained = [];
+		const byTicket = new Map();
+
+		for (const entry of adoptable) {
+			const shape = parseCapacitySlot(entry.row.name);
+			// A row whose pool this run does not have cannot be adopted into one.
+			// The configuration moved under the crash, and §9.4 still says the row
+			// is settled by probing its holder — so it is left exactly as it is.
+			if (!poolDeclared(shape)) {
+				retained.push({ ...entry, reason: RETAINED_REASONS.outsidePool });
+				continue;
+			}
+
+			const ticket = entry.row.identity?.ticket ?? null;
+			const lane = byTicket.get(ticket) ?? { ticket, ticketRow: null, modelRow: null, extra: [] };
+			if (shape.pool === POOLS.ticket && lane.ticketRow === null) lane.ticketRow = entry;
+			else if (shape.pool === POOLS.model && lane.modelRow === null) lane.modelRow = entry;
+			else lane.extra.push(entry);
+			byTicket.set(ticket, lane);
+		}
+
+		const whole = [...byTicket.values()].filter((lane) => lane.ticketRow !== null);
+		retained.push(
+			...[...byTicket.values()]
+				.filter((lane) => lane.ticketRow === null)
+				.flatMap((lane) => [lane.modelRow, ...lane.extra])
+				.concat(whole.flatMap((lane) => lane.extra))
+				.filter((entry) => entry !== null && entry !== undefined)
+				.map((entry) => ({ ...entry, reason: RETAINED_REASONS.halfLane })),
+		);
+
+		const resumed = [];
+		const adopted = [];
+		// One fence for the whole pass, like every other write this hold makes: it
+		// is the gate as much as the number, and asking twice per row would let two
+		// rows of one lane be stamped either side of a loss.
+		const fence = hold.fence();
+
+		// **One transaction per lane**, because the lane is the atomic unit: a lane
+		// whose row moved under the probe leaves the others exactly where they are,
+		// and this run resumes the ones it could still prove.
+		for (const lane of whole) {
+			// The lane's answer is the **ticket row's**: that row is the one spanning
+			// the whole execution, and its candidate is the attempt a resumed lane is
+			// resuming (§9.4).
+			lane.answer = lane.ticketRow.answer;
+			const rows = [lane.ticketRow, lane.modelRow].filter((entry) => entry !== null);
+			let held;
+			try {
+				held = leases.adoptAll(
+					rows.map((entry) => transferOf(entry, { generation: fence.generation, at })),
+					{ fencedTo: fence.generation, at },
+				);
+			} catch (error) {
+				if (!(error instanceof FactoryStateError) || error.reason !== "lease-adoption-refused") throw error;
+				retained.push(...rows.map((entry) => ({ ...entry, reason: RETAINED_REASONS.moved })));
+				continue;
+			}
+
+			const holdsByName = new Map(held.map((entry) => [entry.name, entry]));
+			const slots = {
+				ticket: holdFor(holdsByName.get(lane.ticketRow.row.name), lane),
+				model: lane.modelRow === null ? null : holdFor(holdsByName.get(lane.modelRow.row.name), lane),
+			};
+			adoptedHolds.push(slots.ticket);
+			if (slots.model !== null) adoptedHolds.push(slots.model);
+			adopted.push(...held);
+			resumed.push(
+				Object.freeze({
+					ticket: lane.ticket,
+					attempt: lane.answer?.attempt ?? null,
+					// §3.1 recomputes membership at every scheduling decision, so a
+					// resumed lane carries only its ticket: the labels routing reads come
+					// from the ticket snapshot the execution takes for itself, never from
+					// a member record this recovery would have to invent.
+					member: Object.freeze({ ticket: lane.ticket, labels: Object.freeze([]) }),
+					slots: Object.freeze(slots),
+					evidence: lane.answer?.detail ?? null,
+				}),
+			);
+		}
+
+		return { resumed, retained, adopted };
+	}
+
+	/**
+	 * Whether any later controller could still **adopt** this row rather than only
+	 * disprove it: adoption requires the row to name the run that controller is
+	 * driving, so a row of this run — which is ending — is nobody's to adopt, and
+	 * one naming a run already ended is nobody's either.
+	 */
+	function adoptableLater(row) {
+		const named = row.identity?.run ?? null;
+		if (named === null || named === run) return false;
+		return store.readRun(named)?.lifecycle !== "ended";
+	}
+
+	/**
+	 * Whether a row names a slot **this run's plan still has** — a declared class,
+	 * and an index inside its size. A ceiling that shrank, or a class the routing
+	 * no longer reaches, leaves rows a pool cannot account for.
+	 */
+	function poolDeclared(shape) {
+		if (shape === null) return false;
+		if (shape.pool === POOLS.ticket) return shape.index < plan.ticketSlots;
+		return plan.classes.some((entry) => entry.class === shape.class && shape.index < entry.size);
+	}
+
+	/** One row's transfer: the new identity it carries, and the record announcing it. */
+	function transferOf({ row, answer }, { generation, at }) {
+		const shape = parseCapacitySlot(row.name);
+		const identity = {
+			run,
+			ticket: row.identity?.ticket ?? null,
+			attempt: answer.attempt ?? null,
+			pool: shape.pool,
+			class: shape.class,
+		};
+
+		return {
+			row,
+			identity,
+			event: {
+				kind: "capacity.granted",
+				source: "controller",
+				run,
+				ticket: identity.ticket,
+				...(identity.attempt === null ? {} : { attempt: identity.attempt }),
+				occurredAt: at,
+				observedAt: at,
+				payload: {
+					slot: row.name,
+					pool: shape.pool,
+					resource_class: shape.class,
+					size: poolSize(shape.pool, shape.class),
+					fencing_generation: generation,
+					// §5.5: the row was not re-taken from a free pool, it was moved off
+					// a dead generation — and the evidence that proved its worker alive
+					// rides with it, because that proof is the whole authority for the
+					// move (§14.1).
+					adopted_from: {
+						fencing_generation: row.fencingGeneration,
+						run: row.identity?.run ?? null,
+						attempt: row.identity?.attempt ?? null,
+					},
+					adoption: answer.detail ?? null,
+				},
+			},
+		};
+	}
+
+	function holdFor(held, lane) {
+		const shape = parseCapacitySlot(held.name);
+		return slotHold(held, {
+			pool: shape.pool,
+			resourceClass: shape.class,
+			index: shape.index,
+			ticket: lane.ticket,
+			attempt: lane.answer?.attempt ?? null,
+		});
+	}
+
+	/**
+	 * §15 case 7's release: **compare-and-delete on the token the row itself
+	 * carries**, with the probe's evidence riding the record that removes it.
+	 * There is no unconditional removal path here either (§4.6), and no clock
+	 * anywhere in it.
+	 */
+	function releaseByProbe(row, answer, at) {
+		const shape = parseCapacitySlot(row.name);
+		return leases.release(
+			{ name: row.name, token: row.token },
+			{
+				event: {
+					kind: "capacity.released",
+					source: "controller",
+					run,
+					occurredAt: at,
+					observedAt: at,
+					payload: {
+						slot: row.name,
+						pool: shape?.pool ?? null,
+						resource_class: shape?.class ?? null,
+						reason: "reclaimed-by-probe",
+						verdict: answer.verdict,
+						tests: answer.tests ?? {},
+						evidence: answer.detail ?? {},
+						// §5.5's *declare dead otherwise* has two halves, and the record
+						// says which one this release carried: the attempt whose ending
+						// went with it, or null when durable state had already ended it.
+						settled_attempt: answer.attempt ?? null,
+						held_by: {
+							run: row.identity?.run ?? null,
+							ticket: row.identity?.ticket ?? null,
+							fencing_generation: row.fencingGeneration,
+						},
+					},
+				},
+			},
+		);
+	}
+
+	/** A row nothing settled this pass, described with the verdict that left it. */
+	function retain(row, { reason, answer = null }) {
+		const verdict = Object.freeze({
+			reason,
+			verdict: answer?.verdict ?? null,
+			tests: answer?.tests ?? null,
+			evidence: answer?.detail ?? null,
+		});
+		retainedVerdicts.set(row.name, verdict);
+		return Object.freeze({ ...describeSlot(row, hold.fencingGeneration), ...verdict });
+	}
+
+	/**
 	 * The rows a **superseded** controller took. Because a slot is fenced to the
 	 * generation of the lease that took it, this is exactly "somebody else's, from
 	 * before this hold" — including rows a stale-but-live predecessor is still
@@ -392,74 +656,189 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 
 		/**
 		 * §9.4's settlement: **by probing the holder, never by waiting for a
-		 * clock.** The probe is handed the row's advisory identity and answers
-		 * whether that holder is still there; a live one is left alone, because
-		 * adopting it is the recovery slice's job (#114) and evicting a pane that
-		 * is still talking to the GPU is the double-booking this whole design
-		 * refuses.
+		 * clock** — and §5.5's adoption, which is the same probe's other answer.
 		 *
-		 * With no probe there is no answer, and the rows stay exactly as they are —
-		 * which is §12.4's alarm rather than a plausible zero.
+		 * The probe is handed the row's advisory identity and answers §5.5's typed
+		 * verdict (`worker/adoption.mjs`). Each row then settles exactly one of
+		 * three ways, and the third is what keeps the first two safe:
 		 *
-		 * @param {{ probe?: ((row: object) => { live: boolean, detail?: object }) | null, at?: number }} [options]
+		 * - **provable** — a live worker of *this* run, whose lane this controller
+		 *   can resume: the row moves onto this controller's generation on the
+		 *   predecessor's own token, and the lane comes back as `resumed` (§15
+		 *   case 6). Nothing is released and re-taken, because the gap between
+		 *   would double-book a resource whose pane is still using it.
+		 * - **disproved** — an authoritative negative: the attempt it names is
+		 *   settled first, then the row is released **by probe** (§15 case 7). The
+		 *   order is what a crash makes visible — a row left behind is re-probed by
+		 *   the next controller, while an unfinished attempt nothing names is
+		 *   finished by nobody.
+		 * - **unanswerable** — Herdr or the filesystem said nothing, so nothing
+		 *   moves. That is §12.4's alarm rather than a plausible zero, and the
+		 *   run's own report is what carries it (`unsettled`).
+		 *
+		 * With no probe there is no answer at all, and every row stays exactly as
+		 * it is — for the same reason.
+		 *
+		 * **`adopt` is the preflight's verdict**, and it gates the transfer alone.
+		 * A run whose preflight is red, or that has nothing to execute a lane
+		 * with, moves no generations: rows transferred to a controller that then
+		 * ends without running them would be fenced to a generation that is
+		 * superseded the moment it ends, which is exactly the state no successor
+		 * can settle. Disproving is not gated — a dead holder is dead whatever
+		 * this run is about to do.
+		 *
+		 * @param {object} [options]
+		 * @param {((row: object) => Promise<object>) | null} [options.probe] §5.5's verdict
+		 * @param {boolean} [options.adopt] whether this run may take a lane over
+		 * @param {((answer: object) => Promise<unknown>) | null} [options.settleAttempt]
+		 *   §5.5's *declare dead otherwise*, injected because ending an attempt is
+		 *   `worker/lifecycle.mjs`'s write and not this pool's
+		 * @param {number} [options.at]
 		 */
-		reclaim({ probe = null, at = now() } = {}) {
+		async reclaim({ probe = null, adopt = false, settleAttempt = null, at = now() } = {}) {
 			const superseded = supersededRows();
-			const describe = (row) => describeSlot(row, hold.fencingGeneration);
 			if (probe === null) {
+				// Every slot spelled, so the two branches answer the same shape: a
+				// caller reading `settled` must not have to tell "nothing was ended"
+				// from "this branch does not say" (§11.2).
 				return Object.freeze({
 					reclaimed: 0,
-					held: Object.freeze(superseded.map(describe)),
+					adopted: 0,
+					resumed: Object.freeze([]),
+					settled: Object.freeze([]),
+					held: Object.freeze(superseded.map((row) => retain(row, { reason: RETAINED_REASONS.unanswerable }))),
 					missing:
 						superseded.length === 0
 							? null
-							: "the pane probe that adopts or declares a previous controller's lane dead (#114, #107)",
-					spec: "§9.4, §14.22",
+							: "a §5.5 adoption probe on this call; nothing is settled by reasoning about a row nobody asked about (`worker/adoption.mjs`)",
+					spec: "§5.5, §9.4, §14.22",
 				});
 			}
 
 			const held = [];
+			const adoptable = [];
+			const settled = new Set();
 			let reclaimed = 0;
 
 			for (const row of superseded) {
-				const answer = probe({ slot: row.name, identity: row.identity ?? {}, row, at });
-				if (answer.live) {
-					held.push(describe(row));
+				const answer = await probe({ slot: row.name, identity: row.identity ?? {}, row, at });
+
+				if (answer.verdict === ADOPTION_VERDICTS.provable) {
+					if (!adopt) {
+						held.push(retain(row, { reason: RETAINED_REASONS.notExecuting, answer }));
+					} else if ((row.identity?.run ?? null) !== run) {
+						// A live lane of a run this controller is not driving. §2.1 gives a
+						// run one ticket execution per ticket, so there is no lane here to
+						// resume it into — and evicting a working pane is what §9.4 refuses.
+						held.push(retain(row, { reason: RETAINED_REASONS.otherRun, answer }));
+					} else {
+						adoptable.push({ row, answer });
+					}
 					continue;
 				}
 
-				// Compare-and-delete on the token the row itself carries: there is no
-				// unconditional removal path here either (§4.6), and the evidence the
-				// probe gave rides the record that removes it.
-				const removed = leases.release(
-					{ name: row.name, token: row.token },
-					{
-						event: {
-							kind: "capacity.released",
-							source: "controller",
-							run,
-							occurredAt: at,
-							observedAt: at,
-							payload: {
-								slot: row.name,
-								pool: row.identity?.pool ?? null,
-								resource_class: row.identity?.class ?? null,
-								reason: "reclaimed-by-probe",
-								evidence: answer.detail ?? {},
-								held_by: {
-									run: row.identity?.run ?? null,
-									ticket: row.identity?.ticket ?? null,
-									fencing_generation: row.fencingGeneration,
-								},
-							},
-						},
-					},
-				);
-				if (removed) reclaimed += 1;
-				else held.push(describe(row));
+				if (answer.verdict === ADOPTION_VERDICTS.disproved) {
+					// **The attempt first, the row second.** Two rows of one lane name
+					// one attempt, so the ending is written once — the projector refuses
+					// a second one, and asking it to is an automation failure rather
+					// than a settlement (§6.6).
+					if (settleAttempt !== null && answer.attempt !== null && !settled.has(answer.attempt)) {
+						settled.add(answer.attempt);
+						await settleAttempt(answer);
+					}
+
+					const removed = releaseByProbe(row, answer, at);
+					if (removed) reclaimed += 1;
+					else held.push(retain(row, { reason: RETAINED_REASONS.moved, answer }));
+					continue;
+				}
+
+				held.push(retain(row, { reason: RETAINED_REASONS.unanswerable, answer }));
 			}
 
-			return Object.freeze({ reclaimed, held: Object.freeze(held), missing: null, spec: "§9.4, §14.22" });
+			const lanes = adoptLanes(adoptable, { at });
+			for (const entry of lanes.retained) {
+				held.push(retain(entry.row, { reason: entry.reason, answer: entry.answer }));
+			}
+
+			return Object.freeze({
+				reclaimed,
+				adopted: lanes.adopted.length,
+				resumed: Object.freeze(lanes.resumed),
+				settled: Object.freeze([...settled]),
+				held: Object.freeze(held),
+				missing: null,
+				spec: "§5.5, §9.4, §14.22",
+			});
+		},
+
+		/**
+		 * **What this run is leaving held, and why** — the closing half of §12.4's
+		 * alarm, recomputed at the end rather than carried from the reclaim.
+		 *
+		 * It exists because a retained row's future is not symmetric. Adoption is
+		 * gated on the row naming the run this controller drives, so a row left
+		 * behind by a run that has now *ended* can never be adopted by anyone: the
+		 * only settlement left for it is a later probe disproving it. A run that
+		 * ended without saying so would leave an index quietly one short, which is
+		 * §9.7's slow run that looks like a busy one.
+		 *
+		 * @param {{ at?: number }} [options]
+		 */
+		unsettled({ at = now() } = {}) {
+			const rowsHeld = supersededRows().map((row) => {
+				const known = retainedVerdicts.get(row.name) ?? null;
+				return Object.freeze({
+					...describeSlot(row, hold.fencingGeneration),
+					reason: known?.reason ?? null,
+					verdict: known?.verdict ?? null,
+					evidence: known?.evidence ?? null,
+					// The operator's actual question: is anything going to pick this up
+					// on its own? Only a controller driving the run the row names can
+					// adopt it — this run is ending, so its own rows are nobody's to
+					// adopt, and the rest depend on whether their run is still open.
+					adoptable_by_successor: adoptableLater(row),
+				});
+			});
+
+			return Object.freeze({
+				count: rowsHeld.length,
+				rows: Object.freeze(rowsHeld),
+				at,
+				resolution:
+					rowsHeld.length === 0
+						? null
+						: "a later controller re-probes each row and releases the ones it disproves; the ones marked " +
+							"`adoptable_by_successor: false` can be settled no other way, because the run that took them " +
+							"is over (§5.5, §9.4)",
+				spec: "§5.5, §9.4, §12.4",
+			});
+		},
+
+		/**
+		 * Give back every row this run adopted whose lane never ran.
+		 *
+		 * A transfer is an ownership claim, and a run that ends without using one
+		 * has claimed an index for nothing: its generation is superseded the moment
+		 * it ends, and the row would then be unadoptable by anyone. Releasing is
+		 * safe precisely because the holds are *this* controller's — the release is
+		 * a compare-and-swap on its own token, like every other.
+		 *
+		 * Lanes that ran gave their slots back in the scheduler's `finally`, and
+		 * `release` is idempotent, so this takes nothing from them.
+		 *
+		 * **It is a backstop, and today's wiring cannot reach it**, which is worth
+		 * knowing before deleting it as dead: the transfer is gated on there being
+		 * an executor, and the scheduler starts every resumed lane before its loop
+		 * head, so every adopted row is a running lane's. What would reach it is a
+		 * return between the reclaim and the scheduler, or a scheduler that could
+		 * decline a lane — and either would otherwise strand an index silently.
+		 *
+		 * @param {{ reason?: string, at?: number }} [options]
+		 * @returns {number} how many rows this call actually released
+		 */
+		releaseAdopted({ reason = "adopted-lane-never-ran", at = now() } = {}) {
+			return adoptedHolds.filter((slot) => slot.release({ reason, at })).length;
 		},
 
 		/** §9.7's numbers, derived from the rows and the journal (`report.mjs`). */

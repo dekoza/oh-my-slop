@@ -188,6 +188,7 @@ function validateConfig(document, configPath, routingSet) {
 			set: routings.active.name,
 			roles: routings.active.roles,
 			rules: routings.active.rules,
+			fallbacks: routings.active.fallbacks,
 		}),
 	};
 }
