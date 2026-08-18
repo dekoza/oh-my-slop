@@ -11,7 +11,12 @@
  *
  * **Costs no tokens.** The agent is started and never prompted, so no request is ever made —
  * what is being timed is the harness quitting and Herdr noticing, neither of which involves a
- * model. A separate mid-turn measurement would cost one, and is a different question.
+ * model.
+ *
+ * It asks its question of an idle TUI, and that is the whole of its scope. *Whether* a given
+ * sequence quits a worker at all — which turned out to depend on how the keys are grouped
+ * into `send-keys` calls, and to differ between an idle harness and a working one — is
+ * `herdr-agent-quit-sequence.mjs` (#158), which costs one short turn to answer.
  *
  * Usage:
  *   node tests/live/herdr-agent-stop-latency.mjs --kind claude
@@ -22,7 +27,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { AGENT_STOP_KEYS } from "../../factory/lib/controller/herdr-control.mjs";
+import { createHerdrControl } from "../../factory/lib/controller/herdr-control.mjs";
 import { prepareWorkerEnvironment } from "../../factory/lib/worker/environment.mjs";
 
 const argv = process.argv.slice(2);
@@ -56,10 +61,11 @@ environment.pretrust({ worktreePath: work, gitCommonDir: join(work, ".git") });
 const binding = environment.binding({ kind, posture: "builder" });
 const args = kind === "pi" ? ["--model", model, "--thinking", "high", ...binding.args] : [...binding.args];
 
-// §6.8's binding is **declared** to the server, exactly as a launch declares it
-// (#157) — a probe that typed it at the shell instead would prove a pane no
-// worker will ever occupy, which is the same objection §6.8 makes to probing
-// under the operator's own config.
+// §6.8's binding is **declared** to the server rather than typed at the shell
+// (#157) — a probe that typed it would prove a pane no worker will ever occupy,
+// which is the same objection §6.8 makes to probing under the operator's own
+// config. The launch assembles it at the tab; this probe's pane is a workspace
+// root, so it declares there, which is the same channel one level up.
 const created = herdr([
 	"workspace",
 	"create",
@@ -81,9 +87,14 @@ log("agent start exit", spawnSync("herdr", ["agent", "start", agent, "--kind", k
 await sleep(settleMs);
 log("alive before quit:", agentAlive());
 
+// §13.B's sequence is issued by **the controller's own `stopAgent`** rather than replayed
+// here: since #158 the sequence has a shape — two calls with a settle between them — and a
+// probe that spelled that shape out a second time would keep measuring the shape it
+// remembered. The lag is timed from the call's return, which is the moment after the last
+// key went out.
+log("sending §13.B's quit keys through the controller's own stopAgent");
+log("stopAgent ok:", (await createHerdrControl({}).stopAgent(agent)).ok);
 const sentAt = Date.now();
-log(`sending §13.B's quit keys: ${AGENT_STOP_KEYS.join(" ")}`);
-herdr(["agent", "send-keys", agent, ...AGENT_STOP_KEYS]);
 
 // The controller's own probe: one read, taken immediately, with no grace.
 log(`the zero-grace probe would have recorded: stopped=${!agentAlive()}`);
