@@ -112,6 +112,10 @@ async function runProduction(
 		issue = giteaIssue({ number: 147, title: "feat: production pipeline" }),
 		onTrackerWrite = null,
 		paneOutput = "",
+		// The models pi advertises. A second provider is what a reroute needs to be
+		// visible at all: §9.8's memo is class-scoped, and the class is the provider
+		// segment of the model id (§9.1).
+		models = undefined,
 	} = {},
 ) {
 	const packageRoot = makePackage(t);
@@ -137,7 +141,7 @@ async function runProduction(
 		flags: new Set([FOREGROUND_FLAG]),
 		herdr: herdrAnswering(true),
 		runHerdr: herdr.run,
-		workerTransports: workerTransportsAnswering(packageRoot),
+		workerTransports: workerTransportsAnswering(packageRoot, models === undefined ? {} : { models }),
 		tracker: createGiteaReader({ ...where, request: tracker.request }),
 		trackerWriter: createGiteaWriter({ ...where, request: tracker.write }),
 		...(signal === undefined ? {} : { signal }),
@@ -359,4 +363,63 @@ test("#154: a provider refusal releases the ticket untouched and records the cla
 	assert.equal(memos[0].payload.class, "local");
 	assert.ok(memos[0].payload.until > ended.occurred_at, "the memo outlives the attempt that paid for it");
 	assert.equal(memos[0].payload.evidence.source, "herdr");
+});
+
+test("#155: a refused provider costs the ticket a relaunch, not the ticket — it publishes on the declared fallback", async (t) => {
+	const config = cloneValidConfig();
+	config.profiles.reserve = { kind: "pi", model: "cloudy/glm" };
+	config.routing.fallbacks = { implement: ["reserve"], review: [["reserve"], ["reserve"]] };
+	config.concurrency.resources.cloudy = 1;
+
+	const { answer, tracker, repoRoot, agentDir } = await runProduction(t, {
+		config,
+		turn: workerTurn({ builderStatuses: ["refused", "completed"] }),
+		paneOutput: "working...\nAPI Error: 429 insufficient_quota: you exceeded your current quota\n",
+		models: [
+			{ id: "qwen3", provider: "local", baseUrl: "http://127.0.0.1:9/v1" },
+			{ id: "glm", provider: "cloudy", baseUrl: "http://127.0.0.1:9/v1" },
+		],
+	});
+
+	assert.equal(
+		answer.report.execution.members[0].disposition,
+		"published",
+		"before #155 this same refusal released the ticket and a human waited for the cap to roll",
+	);
+	assert.ok(
+		tracker.writes.some((write) => write.operation === "pr-create"),
+		"the work reached publication on the profile the reroute chose",
+	);
+
+	const store = await openStore({ repoRoot, agentDir });
+	t.after(() => store.close());
+
+	const builders = store
+		.readEvents({ kind: "attempt.launched" })
+		.filter((event) => event.payload.role === "implement");
+
+	assert.deepEqual(
+		builders.map((event) => event.payload.profile),
+		["builder", "reserve"],
+		"the second builder attempt ran the next profile §11.5's declared order names",
+	);
+	// §6.5 and §11.5 re-assert a declared model against the observed one so a run
+	// cannot behave differently from what was declared. A substitution the record
+	// does not name is exactly that difference, so the mint carries the decision.
+	assert.equal(builders[1].payload.routing.declared, "builder");
+	assert.equal(builders[1].payload.routing.rerouted, true);
+	assert.match(builders[1].payload.routing.reason, /builder on local/);
+	assert.equal(
+		builders[1].payload.routing.profile,
+		undefined,
+		"what ran is the payload's own field: one value with two homes in one record is a disagreement waiting to happen",
+	);
+	// The pinned rows say so by carrying no decision at all, rather than by
+	// claiming to have declared what they were pinned to.
+	assert.equal(builders[0].payload.routing.rerouted, false);
+
+	const spend = store
+		.readEvents({ kind: "stage.resolved" })
+		.filter((event) => event.payload.budget !== null && event.payload.budget !== undefined);
+	assert.deepEqual(spend, [], "the worker is not charged for the provider: no budget moved");
 });

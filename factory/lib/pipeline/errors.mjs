@@ -80,6 +80,18 @@ export const PIPELINE_ERROR_REASONS = Object.freeze([
 	 */
 	"budget-exhausted",
 	/**
+	 * #155: §8.10's `reroute` has nowhere to send the work — every profile §11.5's
+	 * order names for this role belongs to a class §9.8's memo has locked.
+	 *
+	 * It is the second refusal in this list that is an answer, and it travels the
+	 * same way and for the same reason as `budget-exhausted`: §8.4's fan-out
+	 * decides an axis's reroutes inside the phase executor, and an executor's only
+	 * ways out are a phase result and a throw. The walk turns it into §8.10's
+	 * `routes-exhausted` row — a budgetless `released`, the ticket back on the
+	 * frontier untouched, and the memo left to keep the next claim out.
+	 */
+	"routes-exhausted",
+	/**
 	 * §8.4: the fan-out cannot run the review it was asked for — a routing that
 	 * names a number of profiles other than one per axis, or an axis attempt whose
 	 * §8.10 row is neither a verdict, a disposition, nor a retry. Both are the

@@ -1262,6 +1262,17 @@ transcript, ticket snapshot and diff as the only inputs. **Model diversity is av
 per-run configuration but is not mandated** — it would constrain model routing for a benefit
 nobody can measure.
 
+**The two axes are routed independently, and a fan-out that could only fill one says so** (#155).
+Each axis dispatches through §11.5's order for **that axis**, so §9.9's reroute walks each down its
+own escape rather than letting one axis's choices constrain the other's, and an axis with no routable
+profile releases the ticket execution rather than minting an attempt nothing could launch. Where the
+reroute does leave one profile between them, **that is a stated condition of the verdict**: two axes
+on one profile is a legal outcome, and a run arriving there on its own — as opposed to an operator
+writing the same name twice, which §11.5 makes them do visibly — must be recorded, or the verdict
+presents two independent reviews where two runs of one model happened. The condition rides each
+axis's own result and therefore §8.7's attestation; it is deliberately kept **off** the rejection's
+detail, which §8.5 quotes whole as the reviewers' words.
+
 **The diff both axes read is the publishable diff, and both of its ends are the passing verify
 record's.** That record's base is the fresh base-branch tip the branch sits on after §7.5's
 step-1 rebase — the boundary of what will be published — and its head is the exact commit
@@ -1413,6 +1424,12 @@ Controller-derived: `invalid-result` · `no-result` · `dead-worker` · `timeout
 `wrote-but-hung` · `cancelled` · `automation-failure` · `provider-refused` (#154 — the
 provider's fault, so §8.10 charges no budget for it).
 
+#155's **`routes-exhausted` is deliberately not in this enum**: no attempt has it, because it is
+what the walk answers *instead of* minting one. It is one of §8.10's phase-less rows, beside the two
+budget exhaustions it is shaped like — *the run ran out of something this ticket needed* — which is
+also what makes it reachable from `verify` and `integrate`, whose fresh-retry is routed while they
+have no attempt for an outcome to belong to.
+
 **Phase results.**
 `harvest` → `passed` | `predicate-failed` ·
 `verify` → `passed` | `failed` | `unrunnable` | `rebase-conflict` ·
@@ -1454,9 +1471,20 @@ about a counter it cannot see.
 the human at a glance whether they owe an *answer* or an *investigation*** — the difference
 between a two-minute reply and opening a terminal. Every disposition gets the same
 machine-parseable comment block: identity tuple, outcome chain, evidence references by digest,
-and **the ticket execution's attempt branches, read from the private clone at settlement**.
+**what actually did the work**, and **the ticket execution's attempt branches, read from the
+private clone at settlement**.
 
-**The branches are the fourth element because §8.10 harvests what an outbox claims, and an
+**The fourth element is #155's dispatch read**: every attempt with its role, the profile it ran on,
+what §11.5 declared for it, and why they differ. §9.9's reroute runs a profile other than the
+declared one, and a disposition naming neither would leave a green ticket unable to answer *what
+wrote this?* — which is the whole reason §6.5 re-asserts a declared model against the observed one.
+It is `null` for the two pinned rows rather than a copy of the profile: §8.5's repair and §8.10's
+automation retry made no dispatch decision, and saying they declared what they ran would read as a
+routing that happened to land where the pin already was. Unlike the branch read below it, it is a
+pure function of durable state and therefore rides the **digested intent**: a re-entered settlement
+recomputes it exactly.
+
+**The branches are on the block because §8.10 harvests what an outbox claims, and an
 attempt that never wrote one has still created a branch** — routinely carrying real commits, and
 under §7.7 the only copy of them. So every attempt of the execution is named with its branch, the
 head git answers *now* (§5.2, never the outbox's claim or the mint's record), and its commit
@@ -1498,7 +1526,7 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | implement | `wrote-but-hung` | harvest the valid outbox, stop the agent, record the anomaly | — |
 | implement | `dead-worker` | retry | automation |
 | implement | `automation-failure` | retry | automation |
-| implement | `provider-refused` | `released`, §9.8 memo recorded | — |
+| implement | `provider-refused` | §9.9 reroute to the next routable profile, §9.8 memo recorded | — |
 | implement | `cancelled` | `released` | — |
 | harvest | `passed` | → verify | — |
 | harvest | `predicate-failed` (dirty tree / 0 commits) | repair | repair |
@@ -1512,7 +1540,8 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | review | `mutation-detected` | `failed` / `review-mutation`, **no retry** | — |
 | review | reviewer attempt `needs-human` | `paused` (worker reason class) | — |
 | review | reviewer attempt `wrote-but-hung` | take its verdict, record the anomaly | — |
-| review | reviewer attempt `provider-refused` | `released`, §9.8 memo recorded | — |
+| review | reviewer attempt `provider-refused` | §9.9 reroute down **that axis's** order, §9.8 memo recorded | — |
+| review | `routes-exhausted` | `released` (§9.9 — the axis has no routable profile; no attempt is minted) | — |
 | review | reviewer attempt `cancelled` | `released` | — |
 | review | reviewer attempt `worker-failed` · `invalid-result` · `no-result` · `dead-worker` · `timeout` · `automation-failure` | retry | automation |
 | integrate | `integrated` | `published` | — |
@@ -1529,6 +1558,12 @@ human removing the label is what makes the label mean "someone has acknowledged 
 
 - **`mutation-detected` is the only outcome with no retry at all.** A read-only role that wrote
   has broken its own contract, and retrying it buys a second violation.
+- **`reroute` is the one action that spends nothing and is still not free of a bound** (§9.9). It is
+  not one of §8.5's tiers and not the automation retry: nothing was judged and nothing broke, so it
+  asks neither question. What bounds it is that each profile §11.5's order names is dispatched at
+  most once per ticket execution, which makes the chain at most as long as the declared order with
+  no counter to keep. Giving it a budget key that charged nothing would put a hole in exactly the
+  property that makes an unbounded retry unconstructible.
 - **`integration-red` disposes where `verify × failed` repairs**, though both are the same rerun
   reporting the same fact about the same kind of commit. What differs is what has been spent and
   what the red result is *about*: a red verify is the worker's own work failing at its own base,
@@ -1781,7 +1816,73 @@ memo is what keeps the next claim out of the exhausted class. A run left holding
 whose every route is memo-locked at its final scheduling decision ends `capacity-exhausted` (exit
 9) — even when other classes finished their tickets — saying so plainly in a classified per-member
 report rather than draining as though the work were done (§9.7's green-looking run that did nothing). The
-memo is the input #155's rerouting consumes; nothing here chooses a different profile.
+memo is the input §9.9's rerouting consumes; nothing here chooses a different profile.
+
+### 9.9 Dispatch reroutes around an exhausted class (#155)
+
+§9.8 remembers that a class is unavailable and holds dispatch off it. Holding is the right answer when
+the class is all a role has; it is the wrong one when the operator wrote down somewhere else to go, and
+a run that waits an hour for a daily cap to roll has turned one quota blip into an idle afternoon. **A
+role whose profile belongs to an exhausted class dispatches to the next routable profile instead**, and
+this section is that step.
+
+**The order is declared, never inferred.** §11.5's routing gains an optional `fallbacks` block: a
+per-role order of profiles dispatch may take next, with **review's declared as two orders, one per
+§8.4 axis**. Every order an inference could produce — the profiles block's key order, the class sizes,
+"any profile the routing reaches" — is defensible, none of them is the operator's, and the first quota
+blip is a poor moment to discover which one the code picked. **An unknown profile name is a load error**
+(§11.3), never a silent fall back to the default; a repeat within one order is one too. An absent block
+is the empty addition, in the shape §6.8's `worker` block already has, and a routing that declares none
+dispatches exactly as it did before this existed.
+
+**A route is one decision, made once and recorded once.** §11.5's dispatch and §9.8's memo are one
+question — *which profile may this run spend, and from which pool* — because the class names the slot
+pool §9.4 takes from and the profile names what §6.5 mints. Deriving them separately is how a lane comes
+to hold a slot in a pool its worker never touches. The scheduler makes the decision **before the claim**
+and it travels with the lane; nothing downstream resolves the routing again, because the memo moves.
+
+**A launch reads the mint, never the decision it just made.** The mint leaves an existing record exactly
+as it is, so a controller that died between minting an attempt and running it re-enters, re-resolves
+§11.5 against a memo that has since moved, and would otherwise launch under a profile the record does
+not name — leaving §8.9's block naming a profile that did not do the work, which is the hole this
+recording exists to close. The record is the answer to *what is this attempt* (§14.1), on every path.
+
+**The substitution is never silent.** §6.5 and §11.5 re-assert a *declared* model against the observed
+one precisely so a run cannot behave differently from what was declared, and a reroute is such a
+difference. So the decision is a first-class record on the attempt's mint — what was declared, what ran,
+why they differ, and every candidate passed over with the state that passed it over — and §8.9's block
+names what actually did the work. A green ticket that cannot answer *what wrote this?* is the auditing
+hole this exists on the right side of.
+
+**The worker is not charged for the provider.** §8.10's `provider-refused` rows route to a **`reroute`**
+action: the same work, on the next profile, on **no budget at all**. It is an action of its own rather
+than a retry with a null budget, because the action→budget map is what makes an unbounded retry
+unconstructible and a fourth key in it that charged nothing would put a hole in exactly that property.
+**What bounds it is that each routable profile is *refused* at most once per ticket execution**, derived
+from the journal — the attempts whose stage §8.10 routed to a reroute — so the bound and the spend are
+one expression, as §8.6's budgets already are, and there is no counter to declare, forget, or lose to a
+crash. **Refused, not merely dispatched**: an automation retry relaunches the same work on the same
+pinned profile, so a profile a retry ran is not spent, and excluding it would turn every infra flake
+into a silent model change — on a routing with no fallback, into a released ticket.
+
+**Running out is its own typed outcome.** `routes-exhausted` (§8.8) is what the walk answers when every
+profile a role can reach is memo-locked, and §8.10 settles it as a budgetless `released` — §9.8's answer
+unchanged: no label, the ticket back on the frontier untouched, and the memo keeping the next claim out.
+It is a word of its own rather than a second meaning for `provider-refused` because the two ask for
+different things: *this provider is out* is answered by rerouting and *the run is out of providers* is
+answered by waiting, and `released` writes no comment, so the outcome on the terminal record is the only
+thing telling them apart. It is likewise not a `failed`: filing a provider's daily cap as an
+investigation would end that investigation at "wait".
+
+**The memo is class-scoped, and that is load-bearing here.** Two profiles naming different presets on
+one endpoint share a slot pool because they share one GPU (§9.1), so they also share one refusal:
+rerouting between them buys nothing, and the record says so by naming each candidate's class rather than
+pretending the second is a different resource.
+
+**§8.4's two axes reroute independently.** The fan-out dispatches per axis through the axis's own
+declared order, so an exhausted class walks each down its own escape rather than one axis's choices
+constraining the other's, and an axis with none releases **without minting an attempt** nothing could
+launch. Where the reroute does leave one profile between them, the verdict says so (§8.4).
 
 ---
 
@@ -2002,6 +2103,10 @@ disk to declare them; the manifest's evidence would otherwise record a decision 
 could make. It is named in the singular deliberately: legacy `version: 1` files used `workers`
 for profiles and routing, and §11.8's migration must not confuse the two.
 
+- **`routing` gains one optional key, `fallbacks`** (§9.9, §11.5): the declared order dispatch
+  reroutes down when a role's profile belongs to a class §9.8's memo has locked. It is a block of
+  *additions*, so its absent form is the empty addition — the same shape `worker` has — and an
+  unknown profile name inside it is a load error rather than a silent fall back to the default.
 - **The label vocabulary is code constants, not config** (§3.2).
 - **`completion` is deleted entirely.** All four knobs (`closeAfterIntegration`, `finalMerge`,
   `createPullRequest`, `deploy`) now have exactly one legal value, three of them protected by
@@ -2047,6 +2152,21 @@ fallback**.
   legacy's positional first-match.
 - **`_postSubscription` becomes a first-class named routing set** (`routing.sets.*`), selectable
   per run. Dormant config the loader ignores is exactly the drift this section ends.
+- **An optional `fallbacks` block declares §9.9's reroute order** — per role, the profiles dispatch
+  may take next when the one the role resolves to belongs to a class §9.8's memo has recorded
+  unavailable. `implement` and `freshRetry` declare one order each; **`review` declares two, one per
+  §8.4 axis**, so an exhausted class cannot quietly walk both axes onto the same profile with nothing
+  in the config saying it could. An **unknown profile name is a load error** and a repeat within one
+  order is one too. **Absent means no alternate route** — the empty addition in §6.8's `worker`
+  block's shape, not a default anyone chose, because there is exactly one thing an undeclared reroute
+  order can mean. A fallback profile **counts as reached by the routing** for §11.6's sizing and
+  reachability rules and for §6.2's per-profile proof: a reroute dispatches into its class and takes a
+  slot from that class's pool, so discovering it unsized at the moment a quota blip makes it the only
+  way forward is the one moment the load-time refusal exists to be earlier than.
+- **Repair and §8.10's automation retry stay unrouted under a reroute too.** Both are pinned to the
+  originating attempt (above), and a reroute changes the profile without asking either tier's
+  question — nothing was judged, a provider declined to serve the attempt, and the work has to happen
+  somewhere else.
 
 **Opus/Fable on pi is a load-time validation error naming the offending profile, never
 coercion** — then re-asserted at launch against the *observed* runtime. A config that validates
@@ -2079,7 +2199,9 @@ by hand.
 
 - `1 ≤ maxTicketExecutions ≤ MAX_SUPPORTED_TICKET_CONCURRENCY`; every size `≥ 1`.
 - A class reachable from the **active** routing **must** have an entry — missing is a load
-  error, never an assumed 1.
+  error, never an assumed 1. **Reachable includes §11.5's `fallbacks`**: §9.9 dispatches into a
+  fallback's class and takes a slot from that class's pool, so an unsized one would surface at the
+  moment a quota blip made it the only way forward.
 - A class reachable from any **declared named set** **may** have one, so sizing `local` today
   does not break the loader when the set is switched tomorrow.
 - A class reachable from **no** set at all is a load error: dead config that lies about what
@@ -2756,4 +2878,5 @@ touching everything twice.
 | 2026-08-17 | #163 closes #160's leak class in the other runtime. **Claude registers the project skills its own working directory ships**, and an isolated `CLAUDE_CONFIG_DIR` does not fence them — measured live on Claude Code 2.1.233 at zero model cost: an `initialize` control-request in a scratch project shipping `.claude/skills/leaktest/SKILL.md`, under an *empty* isolated config dir, answered 44 commands including a bare `leaktest`, and a project `.claude/commands/` file registered the same way. A worker's cwd is the attempt worktree, so on any target repository shipping `.claude/skills/` every Claude worker would load skills from outside the pinned package root, and §6.8's "skills reach a worker only from the pinned package root" would be false again. §6.8 records the fact and makes **`--setting-sources user`** load-bearing isolation on every Claude **worker** session — measured in the same pass to drop the project skill and the project command (it drops the `project` and `local` setting *sources*) while leaving the §6.3 plugin's records, the injected `--settings` file, and `--permission-mode dontAsk` untouched. §6.2's Claude probe gains a **fourth step**, because Claude's command records carry names and no source path, so pi's converse check has no analogue: the probe plants a canary project skill in the directory it probes in, requires the fenced session not to register it, and requires one deliberately unfenced control session — the worker binding minus the fence, nothing else — to register it. A canary that survives the fence is `skill-shadowed` naming its source; a control session blind to it is the new `discovery-fence-unproven`, since a probe that could not have observed the leak is not evidence of its absence. The canary is planted and removed by the probe, and what a run proved is recorded on the `runtime-probe` check. One consequence is recorded rather than left to be discovered: the fence also stops the **target repository's own `CLAUDE.md`** from being auto-loaded (measured — a marker word in a project `CLAUDE.md` was answered unfenced and not fenced), which is §6.8's two rule channels applied rather than an accident; the declared worker-context file is installed in the user scope the fence keeps, and `worker.contextFile` is where a target repo's standing rules are declared. | #163 |
 | 2026-08-17 | #157 moves §6.5's environment channel from **typed at the pane** to **declared to the multiplexer**. `startedAgent` sent `export FACTORY_ATTEMPT='…' CLAUDE_CONFIG_DIR='…' …` through `pane run`, justified by "neither `workspace create` nor `agent start` takes an environment" — **half of which stopped being true at Herdr 0.8.0**, which offers `--env KEY=VALUE` on `workspace create` and `tab create` and only leaves `agent start` without one. The typed path put every worker's config-directory paths and attempt identity into pane scrollback — the one place §6.8's closed pane set was meant not to widen — made the factory carry POSIX single-quoting for values it derived itself, and made a failure to type the exports indistinguishable from a shell that was not ready. The binding is now one `--env` set per name on the attempt's `tab create` (#156's tab), assembled at the tab because that is the last command before the agent that accepts an environment; identity is applied last so no declared value can shadow it, and one variable per name so no argument parser decides a winner. This is not inheritance returning through another door: the pane's shell still belongs to the multiplexer server, and the same closed set crosses — declared rather than typed. **That the variables reach the agent *process* and not merely the shell was established live before the typed path was removed** (`tests/live/herdr-tab-env-reaches-agent.mjs`, reading `/proc/<pid>/environ` on both hops): Herdr's own help says `--env` sets a variable for "the launched process", and the launched process is the shell. The same probe showed a value carrying a space and an apostrophe crossing byte for byte as one argv element, so `shellQuote` went with the path it existed for. | #157 |
 | 2026-08-17 | #154 makes **provider exhaustion a typed fault with a time-boxed memo**. §6.6 gains the `provider-refused` outcome: a refusal for quota or rate reasons is observed in the pane output — a signature vocabulary read off the harnesses' own non-retryable limit classification, matched in the output's tail — recorded as its own `observation.recorded` fact (`provider.refusal`, §5.2's herdr row widened to three facts), and overriding the three silence-based verdicts (`no-result`, the no-progress clock, the hard ceiling); a valid outbox still wins and a dead pane is `dead-worker` still. §9 gains **§9.8**: the refusal is remembered as a `capacity.exhausted` memo naming the resource class and an expiry, on the `controller` stream with no run in the envelope so it outlives its author; dispatch consults it before launch, and **an expiry re-admits by probe, never by the clock** — one cheap completion under the worker binding answers `admitted`/`refused`/`inconclusive`, and only an admission writes `capacity.admitted`. §8.10 gains two budgetless `released` rows (builder and reviewer) — before this, the same refusal arrived as a repair-charged `no-result` with a `factory:failed` label — and §10.3 gains the `capacity-exhausted` end reason (exit 9), so a run left holding claimable work whose every route is memo-locked says so plainly in the §3.5 report instead of draining as though the work were done. §4.3's kind enumeration gains the two memo kinds. Rerouting that consumes the memo is #155; nothing here chooses a different profile. | #154 |
+| 2026-08-18 | #155 makes **dispatch reroute around an exhausted resource class**, which is the consumer #154's memo was recorded for. §11.5's routing gains an optional **`fallbacks`** block — a declared per-role order of profiles dispatch may take next, with **review's declared as two orders, one per §8.4 axis** — because every order an inference could produce is defensible and none of them is the operator's; an unknown profile name is a load error and a fallback profile counts as reached by the routing, so §11.6 sizes its class and §6.2 proves its flags. §9 gains **§9.9**: §11.5's dispatch and §9.8's memo become **one decision, made before the claim and recorded on the attempt's mint** — declared, ran, why, and every candidate passed over — because the class names the pool §9.4 takes from and the profile names what §6.5 mints, and deriving them separately is how a lane holds a slot in a pool its worker never touches. §8.10's two `provider-refused` rows become a new **`reroute`** action that spends **no budget at all** and is bounded by each routable profile being **refused** at most once per ticket execution, derived from the journal; §8.10 gains a **phase-less `routes-exhausted`** row for having run out of them — no attempt has that outcome, and a routed fresh-retry reaches it from `verify` and `integrate`, which have none — settled as §9.8's budgetless `released` and typed apart from `provider-refused` because *this provider is out* and *the run is out of providers* ask for different things. §8.4's two axes reroute down their own orders and a fan-out that could only fill one says so in its verdict; §8.9's block gains the dispatch read, so a green ticket can answer what wrote it. Found while wiring it: the review fan-out never consulted the memo at all, so a locked review class parked the lane on §9.8's wait for the memo's full hour while holding the ticket slot; §9.2's effective concurrency did not count the fallback pools a rerouted implement attempt starts from; and §8.6's breaker was read only at the head of a scheduling pass that may have started before a lane tripped it. | #155 |
 | 2026-08-18 | #117 builds §12's subtractive half and records three readings the section left to the implementer. **(a) Only an `ended` run is ever a candidate.** §12.6's "never mid-run" is read as a property of the *run*, not only of the invocation: a run whose lifecycle has not reached `ended` is this controller's own or an orphan a re-entry will adopt, so the plan holds it as `live` — which is not a fourth pin. **(b) Expiry's blob deletion is not an effect — and this is an amendment to §4.5, not a reading of §12.** §4.5's "every mutation outside the database is an effect" is categorical, so §4.5 now carries the single exception in its own text rather than being silently contradicted here. §12.5 makes the ledger row the record (`expired_at`, dated), and expiry commits the tombstone *then* unlinks: a crash in between resolves to the correct `unavailable(retention-expired)` and the next pass re-attempts every tombstone, so the crash window self-heals with no second table. An `artifact-delete` pair keyed by the expiring run would be a record of the deletion inside the thing being deleted — and, because §12.4's fourth pin skips a run holding an unresolved effect while reconcile can only settle `absent` once the blob is gone, it would deadlock expiry outright; keyed repo-scoped it would put two permanent records per artifact on the stream §12.2 keeps low-volume. `artifact-delete` stays cleanup's, for §12.8's orphaned blobs that have no row at all. **(c) §12.4's label pin reads the freshest surviving `observation.recorded` *that states `ticket.labels`*, falling back to the run's own §8.9 disposition when nothing has been observed.** §5.1's poll is repository-wide, so a *later* run's observation is what releases the pin after a human clears the label — the only durable channel there is, since §14.20 means the factory never removes it. The fact-class restriction is load-bearing: most observations of a ticket establish nothing about its labels, and reading one of those as "nothing is known" would re-engage a cleared pin permanently. **(d) The open-PR pin's release channel is the *ticket's* observed state, not the pull request's.** §5.1 polls issues and never pull requests, and §7.5's `Closes #N` makes the merge discharge the ticket; the visible cost is that a PR closed unmerged pins its run indefinitely, which is the direction chosen throughout: where durable state cannot answer, every pin holds, because an over-held run costs bytes an operator can see in `status` and a swept one costs the investigation. | #117 |

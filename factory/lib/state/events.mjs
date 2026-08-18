@@ -67,7 +67,14 @@ export const EVENT_KINDS = Object.freeze({
 	// polled out of Herdr after the agent came up, are not known then. It is
 	// also the marker that the launch *finished*: an attempt with a mint and no
 	// correlation is one a controller died in the middle of.
-	"attempt.correlated": { payloadVersion: 1, visibility: "detail" },
+	//
+	// #114 puts it on **payload v2**: `herdr.kind`, the agent kind Herdr was
+	// asked to start. §5.5's adoption test compares a live pane's agent against
+	// it, and a v1 record has nowhere to read it from — `worker/adoption.mjs`
+	// falls back to the mint's runtime there, which is the same value for both
+	// shipped runtimes but is a derivation rather than an observation. The
+	// version is what lets a reader tell the two apart.
+	"attempt.correlated": { payloadVersion: 2, visibility: "detail" },
 	// #107: §6.6's typed completion. One attempt ends once, carrying the outcome
 	// §8.8 names and — for a cancellation — who asked and why. It is the record
 	// that makes "late outboxes are ignored for state" structural: the projector

@@ -16,6 +16,7 @@ import {
 	DEFAULT_NO_PROGRESS_TIMEOUT_MS,
 	readLiveness,
 	SETTLE_GRACE_MS,
+	settleUnadoptable,
 	STOP_CONFIRM_BACKOFF_MS,
 } from "../../factory/lib/worker/lifecycle.mjs";
 import { OUTBOX_SCHEMA_VERSION, readOutbox } from "../../factory/lib/worker/outbox.mjs";
@@ -453,6 +454,104 @@ test("a degraded observation channel makes a no-progress timeout an automation f
 
 	assert.equal(result.outcome, "automation-failure");
 	assert.equal(result.clock, null, "a controller fault is not a worker-tier timeout");
+});
+
+test("a subscription re-established mid-wait makes the no-progress verdict the worker's again (§5.1, #114)", async (t) => {
+	const context = await waiting(t);
+	let clock = FIXED_NOW;
+
+	const result = await context.wait({
+		timeoutMs: 60_000,
+		noProgressTimeoutMs: 10_000,
+		now: () => clock,
+		watch: ({ onDegraded, onResubscribed }) => {
+			// The Herdr server restarted: the socket went, polling covered the gap,
+			// and the watch re-subscribed for the same pane id.
+			onDegraded({ source: "herdr", reason: "socket-closed", detail: "restart", fallback: "polling", interval_ms: 2_000 });
+			onResubscribed({ source: "herdr", pane: "w1:p2", attempts: 1 });
+			return { close: () => {}, degraded: () => false };
+		},
+		sleep: async () => {
+			clock += 1_000;
+		},
+	});
+
+	assert.equal(result.outcome, "timeout", "the channel recovered, so the silence is the worker's");
+	assert.equal(result.clock, "no-progress");
+	assert.equal(
+		context.store.readEvents({ kind: "observation.degraded" }).length,
+		1,
+		"the degradation is still on the record; recovery does not erase it",
+	);
+});
+
+// ── §5.5's other ending: the attempt whose worker could not be proved ────────
+
+test("a disproved worker's attempt is ended through the one settle, with no quit sent (§5.5, §13.B)", async (t) => {
+	const context = await waiting(t);
+	const verdict = { verdict: "disproved", tests: { token: "fail" }, evidence: { pane: null, herdr_answered: true } };
+
+	const settled = await settleUnadoptable(context.store, {
+		hold: context.hold,
+		identity: context.identity,
+		adoption: verdict,
+		actor: "controller",
+		now: () => FIXED_NOW,
+	});
+
+	assert.equal(settled.outcome, "dead-worker", "the automation lost the ability to say whose worker it was (§8.10)");
+
+	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
+	assert.equal(ended.payload.outcome, "dead-worker");
+	assert.deepEqual(ended.payload.adoption, verdict);
+	assert.equal(ended.payload.agent_stopped, null);
+	assert.equal(
+		ended.payload.stop_anomaly.anomaly,
+		"stop-not-attempted",
+		"a later reader must tell 'we asked and it stayed' from 'we never asked'",
+	);
+
+	assert.deepEqual(context.herdr.calls, [], "identity is exactly what failed, so nothing was sent at that pane");
+	assert.equal(
+		context.store.readEvents({ kind: "effect.requested" }).filter((event) => event.payload.operation === "agent-stop")
+			.length,
+		0,
+	);
+});
+
+test("a recovery cannot end an attempt twice: the projector refuses it, not a caller's pre-check", async (t) => {
+	const context = await waiting(t);
+	const settle = () =>
+		settleUnadoptable(context.store, {
+			hold: context.hold,
+			identity: context.identity,
+			adoption: { verdict: "disproved", tests: {}, evidence: {} },
+			actor: "controller",
+			now: () => FIXED_NOW,
+		});
+
+	await settle();
+
+	const refused = await refusalOfAsync(settle);
+	assert.equal(refused.reason, "invalid-event");
+	assert.match(refused.message, /already ended/i);
+	assert.equal(context.store.readEvents({ kind: "attempt.ended" }).length, 1);
+});
+
+test("a recovery cannot end an attempt this store never launched", async (t) => {
+	const context = await waiting(t);
+
+	const refused = await refusalOfAsync(() =>
+		settleUnadoptable(context.store, {
+			hold: context.hold,
+			identity: { ...context.identity, attempt: `${context.run}-t42-a9` },
+			adoption: { verdict: "disproved", tests: {}, evidence: {} },
+			actor: "controller",
+			now: () => FIXED_NOW,
+		}),
+	);
+
+	assert.equal(refused.reason, "worker-not-launched");
 });
 
 test("an idle seed is a state, not a transition: the just-prompted worker gets its turn before silence counts (§6.6)", async (t) => {
