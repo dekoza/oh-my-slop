@@ -293,6 +293,26 @@ is the authority; cite the section a change answers to.
   `artifact-delete` stays cleanup's, for §12.8's blobs that have no row at all. Heartbeats
   truncate to the first sequence of the oldest surviving run stream — one knob, and a sequence
   rather than a clock.
+- **Cleanup is plan-then-execute, and there is no `--force` anywhere in it** (`factory/lib/cleanup/`,
+  §12.8). §12.8's whitelist is **exactly six kinds**, with the factory-private clone outside them
+  and reachable only by naming it in `--kind`. The plan is enumerated from **the world** — worktrees
+  registered in the private clone, refs under `factory/`, panes carrying a factory token, blobs on
+  disk — and judged by durable state, because expiry deletes a run's records and a planner reading
+  only records would never look at that run's worktree again; `cleanup-execute` runs cleanup
+  **before** the expiry pass §12.6 folds into it, for the same reason. Eligibility is the attempt
+  being **terminal** and §12.4's pins being clear — the same `pinsForRun` expiry uses, so "the run
+  is still in full detail" and "its forensic artifacts still exist" can never disagree — and never
+  pane liveness, since the hard-stop path deliberately orphans panes. Panes are enumerated **by
+  token**, never by a recorded pane id: Herdr reuses ids, so §14.27 is structural rather than
+  checked, and the controller's own pane wears `FACTORY_RUN`, stamped only where `launch.mjs`
+  declared `FACTORY_CONTROLLER_PANE` — an operator's `--foreground` terminal is never marked and
+  therefore never a target. **Cleanup's effect records are repo-scoped** so they land on the
+  `controller` stream (§4.3 refuses a run-slotted record anywhere else, and a cleanup record inside
+  a run stream dies with the run it documents); the identity travels in the operand, whose grammar
+  lives with the module owning the subject. `worktree remove` carries **no `--force`**, so git
+  re-applies the untracked-work guard at the moment of deletion — the window a digest cannot cover
+  — and `cleanup/panes.mjs` is the **only** module allowed to build a `pane close`, which
+  `tests/node/factory_controller_launch.test.mjs` greps the tree to keep true.
 - Every mutation outside the database is an effect: a requested/resolved pair keyed by
   §4.5's grammar, built in one place (`factory/lib/effects/keys.mjs`) and written in
   one place (`records.mjs`). A new effect kind is a row in `effects/catalogue.mjs` and

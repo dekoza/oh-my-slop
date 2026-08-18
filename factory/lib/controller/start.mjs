@@ -43,7 +43,7 @@ import { createGiteaReader } from "../tracker/gitea.mjs";
 import { createGiteaWriter } from "../tracker/writer.mjs";
 import { drainReport } from "./drain.mjs";
 import { decideEntry, ENTRY_MODES, liveRunAnswer } from "./entry.mjs";
-import { FOREGROUND_FLAG, launch } from "./launch.mjs";
+import { CONTROLLER_PANE_ENV, FOREGROUND_FLAG, launch } from "./launch.mjs";
 import { FactoryRunError, isUsageRefusal } from "./errors.mjs";
 import { HEARTBEAT_INTERVAL_MS, startHeartbeat } from "./heartbeat.mjs";
 import { holdControllerLease } from "./lease-guard.mjs";
@@ -342,6 +342,7 @@ async function driveRun(store, hold, context, signals) {
 	// flight" premise the rest of this function is written under.
 	const expiry = applyExpiry(store, { retention: context.config.retention, hold, at: startedAt });
 	openLifecycle(hold, entry, { at: startedAt, pane: context.pane });
+	const paneMark = await markOwnPane(context, entry.run);
 	signals.attach(entry.run);
 
 	let lifecycle = RUN_LIFECYCLE.preflight;
@@ -530,6 +531,12 @@ async function driveRun(store, hold, context, signals) {
 			scope: { ...entry.scope, described: describeScope(entry.scope) },
 			reconcile: reconcileReport(reconciled),
 			expiry,
+			// §12.8's sixth target kind, reported rather than assumed: whether this
+			// run's controller pane carries the mark that makes it reclaimable, and
+			// why not when it does not. A pane that could not be marked is a pane
+			// cleanup will leave alone forever, which an operator should be able to
+			// read off the run that left it.
+			controller_pane: paneMark,
 			preflight: { ok: checked.ok, red: checked.red, checks: checked.checks },
 			// §8.6, on every run and not only the ones it stopped: a run that got to
 			// one automation failure short of the threshold is the operator's early
@@ -1120,9 +1127,15 @@ function openLifecycle(hold, entry, { at, pane }) {
 	}
 
 	// The pane is the controller's own: Herdr injects it into the pane it
-	// manages, and the record is where #118's cleanup finds the pane of a
-	// finished run. It is recorded, never acted on — this run and every later
-	// one leave the pane exactly as found (§13.B).
+	// manages. It is recorded, never acted on — this run and every later one
+	// leave the pane exactly as found (§13.B).
+	//
+	// **Cleanup does not find the pane through this record**, and deliberately
+	// not: Herdr reuses pane ids, so a recorded one may since have become the
+	// operator's own terminal. §12.8's plan enumerates panes by the token
+	// `markOwnPane` stamps, which is §14.27's guard rather than a lookup. What the
+	// record is for is the operator reading a finished run's report and wanting to
+	// know where it ran.
 	hold.append({
 		kind: "run.started",
 		source: "controller",
@@ -1134,6 +1147,35 @@ function openLifecycle(hold, entry, { at, pane }) {
 	// The append above committed under the token, so the run now durably exists
 	// and a later loss names it rather than reporting no run.
 	hold.adopt(entry.run);
+}
+
+/**
+ * §12.8's sixth target kind, made reachable: **stamp the run onto the
+ * controller's own pane**, and only where the factory made that pane.
+ *
+ * The discriminator is the launcher's declared environment, never
+ * `HERDR_PANE_ID` alone. Herdr sets the pane id in every pane it manages,
+ * including the terminal an operator ran `--foreground` from, so stamping on
+ * that evidence would make the operator's own shell a cleanup target — which is
+ * precisely the sentence §14.27 exists to write: *the factory does not own panes
+ * it did not create.* Unstamped is the safe state, and it is the default.
+ *
+ * **A refusal is not fatal, and that is a decision rather than a shrug.** The
+ * only thing the stamp buys is that this pane can be reclaimed later; without it
+ * cleanup finds no token and never touches the pane, which is the same outcome as
+ * §13.B's for every pane in the system before #118. Failing the run over an
+ * unmarked pane would trade a live run for a byte of housekeeping — and the mark
+ * is display-only metadata, not state anything reads for correctness. The answer
+ * rides the run's report either way, so a pane cleanup will never reclaim is
+ * visible on the run that left it rather than discovered as missing bytes.
+ *
+ * `null` is the honest answer for a run whose pane the factory did not make:
+ * nothing was attempted, so there is no outcome to report.
+ */
+async function markOwnPane(context, run) {
+	if (context.pane === null || (context.env?.[CONTROLLER_PANE_ENV] ?? "") === "") return null;
+
+	return context.herdrControl.stampRun(context.pane, { run, title: `factory ${run}` });
 }
 
 /**
