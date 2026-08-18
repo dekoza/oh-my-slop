@@ -55,7 +55,7 @@ const REVIEWER_DENIED_TOOLS = Object.freeze(["Edit", "Write", "NotebookEdit"]);
  * rejects, and `tests/node/factory_worker_permissions.test.mjs` holds the
  * distinction by asserting no rule here carries an argument.
  */
-const BUILDER_ALLOWED_TOOLS = Object.freeze([
+export const BUILDER_ALLOWED_TOOLS = Object.freeze([
 	"Bash",
 	"Edit",
 	"Glob",

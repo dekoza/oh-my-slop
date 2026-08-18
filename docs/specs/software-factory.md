@@ -885,6 +885,62 @@ Opus/Fable actually load and follow skill bodies is a **one-time acceptance matr
 (harness version × model × package revision) during implementation, with §8's independent
 review gate judging worker output at every integration.
 
+**The matrix is a receipt against a fresh nonce, not a transcript** (#115). The package ships one
+skill — `skills/meta/skill-loading-proof` — whose body declares a **marker, a token, and a
+transform** in a machine-readable block and asks its reader for a single line applying that
+transform to a nonce the prompt supplies. **No prompt carries the token, the transform, or the
+answer**, so a receipt line is a body that reached the model and a correct one is a body it
+followed; the judge reads the contract out of the *same shipped bytes the model was given*, so
+there is no second copy of the token for the package to drift from.
+
+**The proof skill ships in the pinned revision rather than being planted for the run**, and that
+is the trade deliberately taken: a body planted outside the revision would be delivered through a
+plugin the generator did not build from the pin, and would prove a package no worker runs. The
+cost is one skill in a catalogue of sixty-six, whose description narrows it to this matrix and
+which nothing else invokes; it is discovered by the closure walk, flattened by §6.3's generator,
+and counted in §6.2's expected component inventory exactly like every other — which is the point.
+
+Three cells per model, because the survey's two claims are separate — "success in one does not
+prove the other" — and because a proof that could not have observed the failure it rules out is
+not a proof:
+
+- **direct invocation** — the `<plugin>:<skill>` command §6.4 puts at the head of every worker
+  prompt;
+- **model invocation** — natural language naming no skill, so the `description` is what has to
+  work;
+- **trace control** — a cell deliberately told to read the body off disk. Its `read-not-loaded`
+  outcome is what makes the other two cells' *empty tool trace* evidence of native loading rather
+  than an untested assumption, exactly as #163's unfenced control session does for the discovery
+  fence. A control that shows no read leaves the trace question open, however green the rest is.
+
+**Every cell runs the worker binding** — the argv a worker pane receives, plus the probe-only IO
+flags and nothing else (#160's composed-binding rule). A cell proven under any other flag set
+proves a session no worker runs in.
+
+**That "plus" is also the matrix's own limit, recorded rather than glossed.** The probe-only IO
+flags make a cell a `--print` session, and §6.4 runs every real worker attempt in an interactive
+pane. The matrix therefore covers the **headless** end of that axis and cannot reach the other,
+which is why the survey claim naming "interactive versus headless" stays unverified here however
+green the cells are — the untested half is the one every attempt actually runs in.
+
+**A claim is evidence about every axis its own sentence names, or about nothing.** The recorded
+status of each survey claim is derived from the cells that ran, never narrated: a claim naming Opus
+and Fable stays unverified on a matrix that ran neither, one naming an interactive worker stays
+unverified on a headless run, and one naming consistency *across harness versions* is unreachable
+from a single document by construction — it is discharged, if ever, by comparing two of them. A
+caveat attached to a green claim is narration, and the silent-wrong-answer class §15 calls
+load-bearing. What a matrix *did* establish toward such a claim is stated beneath it, so honesty
+costs the reader no evidence.
+
+The result is a durable artifact under `docs/proofs/`, one document per (version × revision),
+citing the exact harness version, the **observed resolved model id** (§11.7), the package tree
+digest — the working tree as it stood when the cells ran, which is before the document existed —
+and §11.7's checkout metadata beside it, without which a digest of a tree that no longer exists
+is unreconstructable. The runner is `tests/live/prove-skill-loading.mjs`, which lives there for
+the reason every script in that directory does: it spends real turns and must never become a
+suite. The judgement, the claim assessment and the document are `factory/lib/proof/`, held by
+`tests/node/factory_proof_*.test.mjs`; what the runner itself owns is the wiring and the spending.
+
 ### 6.8 Trust, permissions, and isolation
 
 **Trust.** The controller pre-trusts its own worktrees mechanically, per attempt — a factory
@@ -2262,10 +2318,14 @@ validate:
 - canonical executable path (for the binary: the resolved `PATH` entry **and** its realpath),
   resolved package root, package name plus declared version;
 - a **deterministic tree digest** — sorted relative paths plus content hashes over the package's
-  own files, excluding `node_modules`, `__pycache__`, and VCS dirs (derived trees that belong to
-  the installer, the interpreter, and the VCS, not to the package) — **authoritative uniformly
-  for every install shape**, with git commit and a dirty-worktree flag recorded as
+  own files, excluding `node_modules`, `.venv`, `__pycache__`, and VCS dirs (derived trees that
+  belong to the installer, the interpreter, and the VCS, not to the package) — **authoritative
+  uniformly for every install shape**, with git commit and a dirty-worktree flag recorded as
   **metadata only**.
+  `.venv` is `node_modules` under uv's name, and is listed for one measured reason (#115):
+  `uv run pytest` — a mandatory command in this repository's own `AGENTS.md` — took the digested
+  file count from 862 to 6525, so an agent who had run the suite pinned a different revision than
+  one who had not, for byte-identical package files.
   Special-casing checkouts would make dev runs incomparable to installed runs, and dirty
   checkouts are the common case;
 - **live-probed** runtime/harness version, effective production flags, adapter/bridge identity,
@@ -2752,7 +2812,12 @@ profile flag the installed binary no longer accepts under that spelling** (#164)
 
 **Skill loading.** A **one-time acceptance matrix** per (harness version × model × package
 revision) proving that Opus and Fable actually load and follow skill bodies — discharging the
-survey's explicitly unverified claims.
+survey's explicitly unverified claims. Discharged by §6.7's mechanism (#115): a receipt against a
+per-cell nonce whose token and transform live only in the shipped body, three cells per model
+(direct invocation · model invocation · trace control), every cell under the **worker** binding,
+and one recorded document per (version × revision) under `docs/proofs/` naming which survey claims
+it discharges and which remain unverified. **The claims it does not discharge are named there too**
+— a matrix that only listed its wins would be the survey's own omission repeated.
 
 ---
 
@@ -2916,4 +2981,5 @@ touching everything twice.
 | 2026-08-18 | #155 makes **dispatch reroute around an exhausted resource class**, which is the consumer #154's memo was recorded for. §11.5's routing gains an optional **`fallbacks`** block — a declared per-role order of profiles dispatch may take next, with **review's declared as two orders, one per §8.4 axis** — because every order an inference could produce is defensible and none of them is the operator's; an unknown profile name is a load error and a fallback profile counts as reached by the routing, so §11.6 sizes its class and §6.2 proves its flags. §9 gains **§9.9**: §11.5's dispatch and §9.8's memo become **one decision, made before the claim and recorded on the attempt's mint** — declared, ran, why, and every candidate passed over — because the class names the pool §9.4 takes from and the profile names what §6.5 mints, and deriving them separately is how a lane holds a slot in a pool its worker never touches. §8.10's two `provider-refused` rows become a new **`reroute`** action that spends **no budget at all** and is bounded by each routable profile being **refused** at most once per ticket execution, derived from the journal; §8.10 gains a **phase-less `routes-exhausted`** row for having run out of them — no attempt has that outcome, and a routed fresh-retry reaches it from `verify` and `integrate`, which have none — settled as §9.8's budgetless `released` and typed apart from `provider-refused` because *this provider is out* and *the run is out of providers* ask for different things. §8.4's two axes reroute down their own orders and a fan-out that could only fill one says so in its verdict; §8.9's block gains the dispatch read, so a green ticket can answer what wrote it. Found while wiring it: the review fan-out never consulted the memo at all, so a locked review class parked the lane on §9.8's wait for the memo's full hour while holding the ticket slot; §9.2's effective concurrency did not count the fallback pools a rerouted implement attempt starts from; and §8.6's breaker was read only at the head of a scheduling pass that may have started before a lane tripped it. | #155 |
 | 2026-08-18 | #158 answers the question #152 left open — how long a **mid-turn** worker takes to stop being reported as an agent — and the answer changes §13.B's quit **sequence** rather than the bound. Measured on Claude with `tests/live/herdr-agent-quit-sequence.mjs` (Herdr 0.8.0 / protocol 19, one cheap turn held open by a committed script): sent as **one** `send-keys` call, `esc ctrl+c ctrl+c` quits an idle harness in 721 ms and is absorbed by a working one as a bare turn interrupt — the turn stops, the interrupted prompt returns to the input box, and the agent stays resident indefinitely, which is the wedge run `01M0859CJAA1Z8XK41756H5Y30` recorded on three attempts of #114. **The sequence is therefore two calls** — `esc`, a 250 ms settle, then `ctrl+c ctrl+c` together — and both halves of that shape are load-bearing: the two `ctrl+c` must ride one call because the exit affordance is a double press with a window under a second (spaced 1000 ms apart, nothing quits, not even an idle harness), while `esc` must ride its own because in company it is what swallows them. **The call boundary is the mechanism, not the delay**: two calls 8 ms apart quit a working worker as reliably as 1500 ms apart, and the settle is headroom for a loaded machine, bracketed by measurements at 0, 250 and 1500 ms. #152's `STOP_CONFIRM_BACKOFF_MS` is **confirmed unchanged**: with the corrected sequence a mid-turn stop is observed at 412–723 ms, the same order as the idle 729 ms, because the wait is Herdr's detection cycle and not the harness's teardown. **§5.2's presence fact is settled at the same time** (`tests/live/herdr-agent-presence-source.mjs`, no model cost): `pane.agent` follows the pane's **foreground process**, not the screen — a bare `sleep` whose argv names it `claude` is reported as an agent with a blank screen and no rule matched, an unregistered `claude` at a shell is reported without any `agent start`, and neither `pane release-agent` nor a foreign `pane report-agent` can take the field away from a live one (a foreign report does move `agent_status`, which is a separate signal). The detection rules decide **state**, never presence. That is what makes §6.6's confirmation safe in the direction it is used: a screen that matches nothing cannot manufacture an absence, and 487 reads across two working turns, tool running, recorded zero. The asymmetry is recorded rather than papered over — presence is name-shaped, so a false *presence* is constructible, and it lands as `wedged-pane`, which is the conservative error. pi quits under either shape (106 ms, 209 ms idle); its mid-turn case stays unmeasured, since Claude is the runtime whose interrupt affordance absorbed the sequence. Nothing on this path closes a pane. | #158 |
 | 2026-08-18 | #117 builds §12's subtractive half and records three readings the section left to the implementer. **(a) Only an `ended` run is ever a candidate.** §12.6's "never mid-run" is read as a property of the *run*, not only of the invocation: a run whose lifecycle has not reached `ended` is this controller's own or an orphan a re-entry will adopt, so the plan holds it as `live` — which is not a fourth pin. **(b) Expiry's blob deletion is not an effect — and this is an amendment to §4.5, not a reading of §12.** §4.5's "every mutation outside the database is an effect" is categorical, so §4.5 now carries the single exception in its own text rather than being silently contradicted here. §12.5 makes the ledger row the record (`expired_at`, dated), and expiry commits the tombstone *then* unlinks: a crash in between resolves to the correct `unavailable(retention-expired)` and the next pass re-attempts every tombstone, so the crash window self-heals with no second table. An `artifact-delete` pair keyed by the expiring run would be a record of the deletion inside the thing being deleted — and, because §12.4's fourth pin skips a run holding an unresolved effect while reconcile can only settle `absent` once the blob is gone, it would deadlock expiry outright; keyed repo-scoped it would put two permanent records per artifact on the stream §12.2 keeps low-volume. `artifact-delete` stays cleanup's, for §12.8's orphaned blobs that have no row at all. **(c) §12.4's label pin reads the freshest surviving `observation.recorded` *that states `ticket.labels`*, falling back to the run's own §8.9 disposition when nothing has been observed.** §5.1's poll is repository-wide, so a *later* run's observation is what releases the pin after a human clears the label — the only durable channel there is, since §14.20 means the factory never removes it. The fact-class restriction is load-bearing: most observations of a ticket establish nothing about its labels, and reading one of those as "nothing is known" would re-engage a cleared pin permanently. **(d) The open-PR pin's release channel is the *ticket's* observed state, not the pull request's.** §5.1 polls issues and never pull requests, and §7.5's `Closes #N` makes the merge discharge the ticket; the visible cost is that a PR closed unmerged pins its run indefinitely, which is the direction chosen throughout: where durable state cannot answer, every pin holds, because an over-held run costs bytes an operator can see in `status` and a swept one costs the investigation. | #117 |
+| 2026-08-18 | #115 discharges §6.7's acceptance matrix, and it is a **mechanism** rather than a transcript. The package now ships `skills/meta/skill-loading-proof`, whose body declares a marker, a token and a transform in one machine-readable block and asks for a single receipt line applying that transform to a **nonce the prompt supplies**; no prompt carries the token, the transform or the answer, so a receipt is a body that reached the model and a correct one is a body it followed — the gap between that and §6.2's registration-and-echo probe being exactly what §6.7 exists to close. The judge reads the contract out of the *same shipped bytes the model was given* (`factory/lib/proof/receipt.mjs`), so a package whose skill said something else could not go on passing; the skill ships in the pinned revision rather than being planted, because a planted body would be delivered through a plugin the generator did not build from the pin and would prove a package no worker runs. Three cells per model, because the survey names direct invocation and natural-language triggering as separate cases and asks separately whether a trace distinguishes native loading from a path read: **direct invocation**, **model invocation**, and a **trace control** deliberately told to read the body off disk — whose `read-not-loaded` outcome makes the other cells' empty tool trace evidence rather than an assumption (#163's control-session pattern, one layer up), and whose silence withdraws the trace claim however green the rest is. Every cell runs the **worker** binding by calling the argv builder §6.2's spelling proof already composes (#160's rule). **A claim is evidence about every axis its own sentence names, or about nothing** — the rule two review passes were needed to get right: a first cut counted verdicts and not whose, so a green haiku-only run reported "Opus and Fable actually load and follow" as discharged; a second still discharged "interactive versus headless" from headless-only cells and "across Claude Code versions" from one version, demoting the untested half to a caveat. A caveat on a green claim is narration, and all three are the silent-wrong-answer class §15 calls load-bearing; what a matrix *did* establish toward an unverified claim is now stated beneath it instead. §11.7's exclusion list gains **`.venv`** for a measured reason found here: `uv run pytest` — one of this repository's own mandatory commands — took the digested file count from 862 to 6525, so an agent who had run the suite pinned a different revision than one who had not, for byte-identical package files. Taken live against Claude Code **2.1.233**, revision `sha256:7505b5cae67e…` at commit `aef7a3c` (dirty): all four invoked cells `followed` under resolved ids `claude-opus-5` and `claude-fable-5`, both controls `read-not-loaded`. Three survey claims discharged; three recorded unverified — the interactive surface, cross-version consistency, and role closure. Also measured, zero cost: `claude --model nonsense-model` still answers the `initialize` control-request with exit 0, so #164's check proves flag *spelling* and never that a model **value** resolves; only a real turn does, which is what this matrix adds. The result lives at `docs/proofs/skill-loading-claude-2.1.233-7505b5cae67e.md`, and `tests/live/prove-skill-loading.mjs` re-takes it — by hand, one short turn per cell, beside the probe that spends a session for the same kind of reason. | #115 |
 | 2026-08-18 | #159 closes §8.9's one unapplied row. §9.6's abandon boundary marked in-flight executions `released` in the journal and wrote **nothing** to the tracker — no unassign, no comment — so the two halves disagreed from that moment on, and the tracker is the half a human reads: a ticket still assigned, still carrying the factory's claim comment, with nothing after it, reads as a run still working. §3.3's 24h staleness settled it eventually, which is a timeout standing in for a fact the controller already knew and could have stated — on a path reached by ordinary operator action (a second `stop` or `SIGTERM`, exit 4), not only by a crash. The boundary now applies §8.9's `released` row through the one module that applies dispositions: claim dropped, release stated, no label added, both as §4.5 pairs a re-probe settles if the controller dies between the journal record and the write. It also gives #151's parked-branch read the comment it had nowhere to ride, on precisely the ending most likely to catch a builder mid-work. §9.6's "stops issuing new effects" is narrowed to new effects **about the work**; a tracker refusal is carried into the §3.5 report (`released_unsettled`) rather than costing the run its own ending, since the unresolved effect is already §12.4's alarm. One thing had to become true for the boundary to be able to settle everything it marks: **§3.3's contest loser now records its own `released`** when it loses, journal-only, because it assigned before its re-read and therefore leaves a ticket execution behind for a ticket it does not hold — and un-assigning there would clear the winner's claim, which is one field with the loser's since arbitration is only reachable between installs sharing one tracker identity. | #159 |
