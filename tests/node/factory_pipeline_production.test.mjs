@@ -39,6 +39,10 @@ function workerTurn({ builderStatuses = ["completed"], commitsAlways = false, on
 				? (builderStatuses[Math.min(builderTurn++, builderStatuses.length - 1)] ?? "completed")
 				: "completed";
 		if (status === "abandon") {
+			// #159: the commit comes first where the fixture asks for one, because the
+			// abandon this models is an operator's — a builder mid-work whose commits
+			// are on its branch and nowhere else when the signal lands.
+			if (commitsAlways) commitWork(pane, identity);
 			onAbandon?.();
 			return;
 		}
@@ -67,21 +71,7 @@ function workerTurn({ builderStatuses = ["completed"], commitsAlways = false, on
 		};
 
 		if (identity.FACTORY_PHASE === "implement" && (status === "completed" || commitsAlways)) {
-			// Per attempt, because §8.5 branches a repair from the prior attempt's tip:
-			// identical content there would leave the repair with nothing to commit.
-			writeFileSync(
-				join(pane.cwd, "implemented.txt"),
-				`production composition reached the builder as ${identity.FACTORY_ATTEMPT}\n`,
-				"utf8",
-			);
-			git(pane.cwd, "add", "implemented.txt");
-			git(
-				pane.cwd,
-				"commit",
-				"--quiet",
-				"--message",
-				`feat: implement ticket ${identity.FACTORY_TICKET}\n\nFactory-Attempt: ${identity.FACTORY_RUN}/${identity.FACTORY_TICKET}/${identity.FACTORY_ATTEMPT}`,
-			);
+			commitWork(pane, identity);
 		}
 
 		if (identity.FACTORY_PHASE === "implement" && status === "completed") {
@@ -101,6 +91,28 @@ function workerTurn({ builderStatuses = ["completed"], commitsAlways = false, on
 
 		writeFileSync(identity.FACTORY_OUTBOX, `${JSON.stringify(result)}\n`, "utf8");
 	};
+}
+
+/**
+ * One builder commit, in the attempt's own worktree.
+ *
+ * Per attempt, because §8.5 branches a repair from the prior attempt's tip:
+ * identical content there would leave the repair with nothing to commit.
+ */
+function commitWork(pane, identity) {
+	writeFileSync(
+		join(pane.cwd, "implemented.txt"),
+		`production composition reached the builder as ${identity.FACTORY_ATTEMPT}\n`,
+		"utf8",
+	);
+	git(pane.cwd, "add", "implemented.txt");
+	git(
+		pane.cwd,
+		"commit",
+		"--quiet",
+		"--message",
+		`feat: implement ticket ${identity.FACTORY_TICKET}\n\nFactory-Attempt: ${identity.FACTORY_RUN}/${identity.FACTORY_TICKET}/${identity.FACTORY_ATTEMPT}`,
+	);
 }
 
 async function runProduction(
@@ -260,29 +272,53 @@ test("an operator abandon durably releases a claimed production lane without wai
 	const signal = new EventEmitter();
 	const { answer, tracker, repoRoot, agentDir } = await runProduction(t, {
 		signal,
-		turn: workerTurn({ builderStatuses: ["abandon"], onAbandon: () => signal.emit("SIGTERM", "SIGTERM") }),
+		turn: workerTurn({
+			builderStatuses: ["abandon"],
+			// #159: the builder committed before the signal landed, so the release has
+			// #151's evidence to carry — which is the state an abandon is most likely
+			// to catch a ticket execution in.
+			commitsAlways: true,
+			onAbandon: () => signal.emit("SIGTERM", "SIGTERM"),
+		}),
 	});
 
 	assert.equal(answer.report.end_reason, "abandoned");
 	assert.equal(answer.report.execution.members[0].disposition, "released");
 	assert.equal(answer.report.execution.released, 1);
-	// §9.6's boundary records the release in the journal — that is the fact this path
-	// does produce, and the one the next reconcile reads.
+	// §9.6's boundary records the release in the journal, and the journal is what the
+	// next reconcile reads.
 	const store = await openStore({ repoRoot, agentDir });
 	t.after(() => store.close());
 	assert.deepEqual(
 		store.readEvents({ kind: "ticket.disposition-changed" }).map((event) => event.payload.disposition),
 		["released"],
 	);
-	// It settles nothing on the tracker: no §8.9 comment, and the claim left standing
-	// for §3.3's staleness. So there is no disposition block on this path for #151's
-	// read to ride — a gap in the boundary's settlement rather than in the read, since
-	// a `released` reached through the walk carries it like any other row (#159).
+
+	// #159: and it settles the ticket, because §8.9's table says `released` drops the
+	// claim. Leaving the assignee for §3.3's staleness was a timeout standing in for a
+	// fact the controller already knew.
+	assert.deepEqual(tracker.issues[0].assignees, [], "the abandoned execution left its claim standing");
 	assert.equal(
-		tracker.comments.filter((comment) => comment.body.includes('"disposition"')).length,
-		0,
-		"the abandon boundary now posts a disposition comment; #151's parked read belongs on it (#159)",
+		tracker.writes.filter((write) => write.operation === "issue-unassign").length,
+		1,
+		"the claim was dropped by something other than an §4.5 effect",
 	);
+	// No label: `released` is an honest state and not a lock, so the ticket returns to
+	// the frontier untouched.
+	assert.equal(tracker.writes.filter((write) => write.operation === "label-add").length, 0);
+
+	// The human half: one §8.9 block saying the run gave the work up, carrying #151's
+	// read of the branch the commits are parked on.
+	const posted = tracker.comments.filter((comment) => comment.body.includes('"disposition"'));
+	assert.equal(posted.length, 1, "a human reading the ticket has to infer the release from silence");
+	const block = blockIn(posted[0].body);
+	assert.equal(block.disposition, "released");
+	assert.equal(block.reason_class, null);
+	const [branch] = block.attempt_branches.branches;
+	assert.equal(block.attempt_branches.source, "git-local");
+	assert.equal(branch.commits_ahead, 1, "the abandoned builder's commit is not named as parked");
+	assert.equal(git(privateClonePath(store.storeDir), "rev-parse", `refs/heads/${branch.branch}`), branch.head);
+	assert.ok(posted[0].body.includes(branch.head), "the parked head is not visible to a human");
 });
 
 test("#151: a ticket execution that harvested nothing names the branch and head SHA its commits are parked on", async (t) => {

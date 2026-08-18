@@ -717,7 +717,16 @@ is the authority; cite the section a change answers to.
   artifact-write effect rows rather than §12.1's ledger, whose producer columns name the
   *most recent* production and would move under a settlement already requested. A pause with
   no question, a publication with no PR link, and a reason class whose §14.18 disposition is
-  a different one are all refused before any mutation.
+  a different one are all refused before any mutation. **§9.6's abandon boundary settles through
+  this same module** (#159): `settleAtBoundary` records `released` for every in-flight execution
+  and then applies the row, so the journal and the tracker cannot disagree about a ticket the run
+  gave up on. Every row it settles is a claim the run holds, and what makes that true is that
+  **§3.3's contest loser settles its own row when it loses** — journal-only, since the loser's
+  assignee and the winner's are one field — rather than the boundary carrying a rule about whose
+  claim it is dropping. Its refusals are *carried* into the §3.5 report (`released_unsettled`):
+  the disposition is already durable and the mutation is §4.5's requested half, so an unreachable
+  tracker costs that ticket §3.3's staleness and an alarm, never the run's own `run.ended`, lease
+  release, and exit 4.
 - **The review phase fans out from the controller** (`pipeline/review.mjs`, §8.4): two
   read-only attempts, each with its own entry skill, outbox, attempt identity and **its own
   worktree at the reviewed commit**, so §7.3's one-worktree-per-attempt holds verbatim and a
