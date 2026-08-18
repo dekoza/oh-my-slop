@@ -603,9 +603,9 @@ test("a valid outbox from a settled worker is harvested, and the agent stopped (
 	assert.equal(harvested.record.summary, "did the thing");
 	assert.equal(harvested.agent_stopped, true);
 
-	// The liveness seed, then the stop, then the read-back — and **the agent,
-	// never the pane** (§13.B).
-	assert.deepEqual(context.herdr.commands(), ["pane list", "agent send-keys", "pane list"]);
+	// The liveness seed, then the stop — two calls, `esc` and then the pair
+	// (#158) — then the read-back, and **the agent, never the pane** (§13.B).
+	assert.deepEqual(context.herdr.commands(), ["pane list", "agent send-keys", "agent send-keys", "pane list"]);
 	assert.equal(context.herdr.panes.length, 2, "the workspace root and the attempt pane both survive the worker");
 });
 
