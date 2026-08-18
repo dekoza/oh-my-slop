@@ -163,6 +163,29 @@ export const STOP_ANOMALIES = Object.freeze({
 	wedged: "wedged-pane",
 	unconfirmed: "stop-unconfirmed",
 	undelivered: "quit-undelivered",
+	/**
+	 * #114: **no quit was sent, deliberately.** §5.5's adoption disproved this
+	 * attempt's worker, and identity is precisely what failed — so quit keys
+	 * would be sent at a pane this controller could not show was its own. It is
+	 * an anomaly rather than a clean stop because a pane may well survive
+	 * (§13.B), and a later reader has to be able to tell "we asked and it stayed"
+	 * from "we never asked".
+	 */
+	notAttempted: "stop-not-attempted",
+});
+
+/**
+ * The stop result of an ending that sent no quit at all. Every slot is spelled
+ * rather than omitted: §4.3's canonical serialisation refuses `undefined`, and
+ * a reader must not have to tell "not recorded" from "not attempted".
+ */
+const STOP_NOT_ATTEMPTED = Object.freeze({
+	stopped: null,
+	pane: null,
+	status: null,
+	probes: null,
+	agent: null,
+	quit_delivered: null,
 });
 
 /** The agent statuses that mean the turn is over (§6.6's liveness half). */
@@ -442,7 +465,11 @@ export async function launchWorker(
 			runtime,
 			// §6.5's "harness session identifiers": Herdr's agent and pane ids, and
 			// the runtime's own session, which arrives as the transcript pointer.
-			herdr: { workspace: started.workspace, tab: started.tab, pane: started.pane, agent },
+			// The **kind** rides along on payload v2 (#114): §5.5's third adoption
+			// test compares a live pane's agent against the kind this launch asked
+			// for, and a recovery deriving it from the runtime name is inference
+			// where an observation was available.
+			herdr: { workspace: started.workspace, tab: started.tab, pane: started.pane, agent, kind: agentKind },
 			transcript,
 			resolved_model: observedModel,
 			package_rev: packageRev,
@@ -594,6 +621,7 @@ export async function awaitCompletion(
 		onTransition: (transition) => pending.push({ transition, at: now() }),
 		onDegraded: (degradation) => pending.push({ degradation, at: now() }),
 		onUnrecognised: (unrecognised) => pending.push({ unrecognised, at: now() }),
+		onResubscribed: (resubscribed) => pending.push({ resubscribed, at: now() }),
 	});
 
 	try {
@@ -612,6 +640,17 @@ export async function awaitCompletion(
 				}
 				if (entry.unrecognised !== undefined) {
 					observer.unrecognised(entry.unrecognised, entry.at);
+					continue;
+				}
+				if (entry.resubscribed !== undefined) {
+					// §5.1's subscription is back, by the pane id that survived the
+					// Herdr server restart (#114). The channel is no longer degraded,
+					// so a no-progress verdict reached from here on is once again a
+					// statement about the worker rather than about this controller
+					// (§6.6, §8.10). Nothing durable is written: the transitions
+					// resuming with `observed_by: "subscribe"` beside the one recorded
+					// degradation are the record that it recovered.
+					observationDegraded = false;
 					continue;
 				}
 				liveness = readLiveness(entry.transition, liveness, entry.at);
@@ -740,6 +779,53 @@ export async function cancelAttempt(store, { hold, identity: minted, herdr, agen
 		actor,
 		now,
 		sleep,
+	});
+}
+
+/**
+ * §5.5's other ending: **the attempt whose worker could not be proved.**
+ *
+ * A recovery that disproves an attempt's identity has settled that attempt —
+ * §5.5's *declare dead otherwise* — and the ending has to be durable, or the
+ * ticket execution is left with an attempt nothing will ever finish and a
+ * ticket the scheduler will not re-offer.
+ *
+ * Two things this deliberately shares and one it deliberately does not:
+ *
+ * - It goes through the **same `settle`** every other ending uses, so
+ *   `attempt.ended` keeps its one writer and the projector's refusal of a
+ *   second ending stays structural rather than becoming a pre-check a caller
+ *   could forget (§6.6).
+ * - The outcome is **`dead-worker`**, §8.10's automation fault: the worker did
+ *   not fail at its job, the controller lost the ability to say whose it was.
+ * - It **stops no agent** (§13.B). Identity is exactly what failed, so quit keys
+ *   would be sent at a pane this controller could not show was its own; the
+ *   pane is left as evidence and the record names why nothing was sent.
+ *
+ * @param {object} store
+ * @param {object} context
+ * @param {object} context.hold
+ * @param {{ run: string, ticket: number, phase: string, attempt: string }} context.identity
+ * @param {object} context.adoption §5.5's verdict (`worker/adoption.mjs`)
+ * @returns {Promise<Readonly<object>>}
+ */
+export async function settleUnadoptable(store, { hold, identity: minted, adoption, actor, now }) {
+	const identity = requireAttemptIdentity(minted);
+	requireLaunched(store, identity);
+
+	return settle(store, {
+		hold,
+		identity,
+		herdr: null,
+		agent: null,
+		outcome: "dead-worker",
+		adoption,
+		quit: false,
+		outbox: null,
+		liveness: null,
+		actor,
+		now,
+		sleep: delay,
 	});
 }
 
@@ -1074,6 +1160,8 @@ async function settle(
 		clock = null,
 		lastProgress = null,
 		refusal = null,
+		adoption = null,
+		quit = true,
 		outbox,
 		liveness,
 		cancellation = null,
@@ -1083,7 +1171,12 @@ async function settle(
 	},
 ) {
 	const { run, ticket, phase, attempt } = identity;
-	const stopped = await stopAgent(store, { hold, identity, herdr, agent, actor, at: now(), sleep });
+	// `quit: false` is #114's disproved worker and nothing else: §5.5 failed to
+	// prove the pane is this attempt's, so keys sent at it would act on a session
+	// this controller cannot show it launched (§13.B).
+	const stopped = quit
+		? await stopAgent(store, { hold, identity, herdr, agent, actor, at: now(), sleep })
+		: STOP_NOT_ATTEMPTED;
 	const anomaly = stopAnomalyOf(stopped);
 	const at = now();
 
@@ -1108,6 +1201,11 @@ async function settle(
 			// observed — the signatures that matched and the pane's own excerpt, so
 			// the verdict is readable as an observation rather than as elapsed time.
 			refusal,
+			// #114: the §5.5 verdict this ending was decided on, when a recovery
+			// decided it rather than §6.6's wait — the five tests and their
+			// evidence, so a `dead-worker` reached without ever watching the pane
+			// is readable as the adoption refusal it is.
+			adoption,
 			// §5.2: the outbox is **evidence**, so what it claimed rides the record
 			// and never becomes the record. The controller's own rerun is the
 			// attestation boundary (§14.16).
@@ -1131,6 +1229,7 @@ async function settle(
 		clock,
 		lastProgress,
 		refusal,
+		adoption,
 		record: outbox?.record ?? null,
 		problems: outbox === null ? Object.freeze([]) : outbox.problems,
 		worker_status: liveness === null ? null : liveness.status,
@@ -1258,8 +1357,12 @@ function stopAnomalyOf({ stopped, pane = null, status = null, probes = null, age
 	return Object.freeze({ anomaly, pane, agent, status, probes, waited_ms: waitedMs(probes) });
 }
 
-/** Which of §13.B's three unknowns this stop is, or null when the agent simply went. */
+/** Which of §13.B's unknowns this stop is, or null when the agent simply went. */
 function anomalyClassOf({ stopped, quit_delivered }) {
+	// #114: no quit was sent, and that was the decision rather than a failure.
+	// It outranks everything below, because none of those readings apply to a
+	// stop nobody attempted.
+	if (quit_delivered === null) return STOP_ANOMALIES.notAttempted;
 	// An undelivered quit outranks the pane read, and is an anomaly even when the
 	// agent turns out to be gone: it went for some other reason, and "this
 	// controller stopped it" would be the journal asserting what it never did.

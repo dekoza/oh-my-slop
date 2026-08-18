@@ -14,6 +14,7 @@ import {
 	DEGRADED_POLL_INTERVAL_MS,
 	fromFrame,
 	fromPane,
+	RESUBSCRIBE_BACKOFF_MS,
 	SUBSCRIBED_EVENTS,
 	subscribeRequest,
 	UNRECOGNISED,
@@ -557,6 +558,131 @@ test("a quiet socket at subscribe time is a calm worker, not degradation (§5.1)
 	assert.equal(degraded.length, 0);
 	assert.equal(watcher.degraded(), false);
 	watcher.close();
+});
+
+// ── A Herdr server restart is a gap, not the end of the watch (§5.1, #114) ───
+
+/** A socket a test drives, and a `connect` that hands out a fresh one each time. */
+function reconnectableSocket() {
+	const opened = [];
+	return {
+		opened,
+		connect: () => {
+			const stream = Object.assign(new EventEmitter(), {
+				written: [],
+				destroyed: false,
+				write(line) {
+					this.written.push(line);
+				},
+				destroy() {
+					this.destroyed = true;
+				},
+			});
+			opened.push(stream);
+			return stream;
+		},
+	};
+}
+
+test("a Herdr server restart re-subscribes by pane id, and polling covers only the gap (§5.1, #114)", async () => {
+	const timers = manualTimers();
+	const socket = reconnectableSocket();
+	const degraded = [];
+	const resubscribed = [];
+	const transitions = [];
+	let sampled = 0;
+
+	const watcher = watchPane({
+		pane: "w1:p2",
+		socket: "/run/herdr.sock",
+		connect: socket.connect,
+		poll: async () => {
+			sampled += 1;
+			return { ok: true, pane: { agent: "pi", agent_status: "working" } };
+		},
+		onTransition: (transition) => transitions.push(transition),
+		onDegraded: (degradation) => degraded.push(degradation),
+		onResubscribed: (answer) => resubscribed.push(answer),
+		timers: timers.api,
+	});
+
+	socket.opened[0].emit("connect");
+	socket.opened[0].emit("close");
+
+	assert.equal(watcher.degraded(), true);
+	assert.equal(degraded[0].reason, "socket-closed");
+	assert.deepEqual(timers.timeouts(), [RESUBSCRIBE_BACKOFF_MS[0]], "the re-subscription is scheduled, not abandoned");
+
+	// The gap is polled, so the controller is never left reading silence as a
+	// well-behaved worker.
+	timers.tick(DEGRADED_POLL_INTERVAL_MS);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(sampled, 1);
+
+	// And the watch asks for **the same pane**: ids survive a server restart.
+	timers.fire();
+	assert.equal(socket.opened.length, 2);
+	socket.opened[1].emit("connect");
+	assert.deepEqual(
+		JSON.parse(socket.opened[1].written[0]),
+		JSON.parse(socket.opened[0].written[0]),
+		"pane ids are persisted and never reused, so the same subscription is the right one",
+	);
+	assert.equal(watcher.degraded(), false);
+	assert.deepEqual(resubscribed, [{ source: "herdr", pane: "w1:p2", attempts: 1 }]);
+
+	// Polling stops with the gap it covered.
+	timers.tick(DEGRADED_POLL_INTERVAL_MS);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(sampled, 1, "polling is the fallback, not the state the watch stays in");
+
+	socket.opened[1].emit(
+		"data",
+		'{"event":"pane.agent_status_changed","data":{"pane_id":"w1:p2","agent_status":"done","agent":"pi"}}\n',
+	);
+	assert.deepEqual(
+		transitions.map((transition) => [transition.status, transition.source]),
+		[
+			["working", "poll"],
+			["done", "subscribe"],
+		],
+	);
+	watcher.close();
+});
+
+test("a server that does not come back is retried on a growing backoff, never given up on", () => {
+	const timers = manualTimers();
+	let attempts = 0;
+	const degraded = [];
+
+	const watcher = watchPane({
+		pane: "w1:p2",
+		socket: "/run/herdr.sock",
+		connect: () => {
+			attempts += 1;
+			throw new Error("ECONNREFUSED");
+		},
+		onTransition: () => {},
+		onDegraded: (degradation) => degraded.push(degradation),
+		timers: timers.api,
+	});
+
+	assert.equal(attempts, 1);
+	assert.equal(degraded.length, 1, "the fallback is a state, not a stream of notices");
+
+	const waits = [];
+	for (let round = 0; round < RESUBSCRIBE_BACKOFF_MS.length + 2; round += 1) {
+		waits.push(timers.timeouts()[0]);
+		timers.fire();
+	}
+
+	assert.equal(attempts, RESUBSCRIBE_BACKOFF_MS.length + 3, "a failed reconnection leads to the next one");
+	assert.deepEqual(waits, [...RESUBSCRIBE_BACKOFF_MS, ...RESUBSCRIBE_BACKOFF_MS.slice(-1), ...RESUBSCRIBE_BACKOFF_MS.slice(-1)]);
+	assert.equal(degraded.length, 1);
+
+	watcher.close();
+	timers.fire();
+	assert.equal(attempts, RESUBSCRIBE_BACKOFF_MS.length + 3, "a closed watch reconnects to nothing");
 });
 
 test("an unrecognised frame for this pane is loud through onUnrecognised, not silent", () => {

@@ -1,6 +1,14 @@
-import { BASE_KINDS, RETRY_TIERS } from "../domain/vocabulary.mjs";
+import { BASE_KINDS, RETRY_TIERS, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
-import { openRetryAttempt, originatingAttempt, planAutomationRetry, planRetry } from "./repair.mjs";
+import {
+	FRESH_RETRY_ROLE,
+	openRetryAttempt,
+	originatingAttempt,
+	planAutomationRetry,
+	planReroute,
+	planRetry,
+	refusedProfiles,
+} from "./repair.mjs";
 
 /**
  * §8.5's tier seam, composed — **the `nextAttempt` a lane hands `walkStages`.**
@@ -39,10 +47,11 @@ import { openRetryAttempt, originatingAttempt, planAutomationRetry, planRetry } 
  *   **Fetched when a plan needs it and never before**: §7.2 pins the base by
  *   fetching immediately before the branch is created, so a base captured when
  *   the seam was built would be a commit the run has since moved past
- * @param {{ roles: object, rules: ReadonlyArray<object> } | null} [context.routing]
- *   §11.5's active routing. Required for fresh-retry and unread by every other row
- * @param {ReadonlyArray<string>} [context.labels] the ticket's labels, as the
- *   claim-time snapshot has them
+ * @param {((request: { role: string, routingRole: string, dispatched: ReadonlyArray<string> }) => Promise<object>) | null} [context.selectRoute]
+ *   §11.5's dispatch for one role, read under §9.8's memo (#155). **Required for
+ *   fresh-retry and for a reroute, unread by every other row**: those are the two
+ *   places a profile is chosen rather than pinned, and choosing one without the
+ *   memo is how a run relaunches into the refusal it just paid to learn about
  * @param {object} context.workerConfig §6.8's worker config environment
  * @param {((attempt: string) => object | null) | null} [context.readResult] the
  *   prior attempt's §6.6 outbox record, where it wrote one. It is injected
@@ -55,20 +64,18 @@ import { openRetryAttempt, originatingAttempt, planAutomationRetry, planRetry } 
 export function createRetrySeam(
 	store,
 	clone,
-	{ hold, run, ticket, baseBranch, routing = null, labels = [], workerConfig, readResult = null, actor, now },
+	{ hold, run, ticket, baseBranch, selectRoute = null, workerConfig, readResult = null, actor, now },
 ) {
 	return async function nextAttempt(request) {
 		const prior = requirePrior(store, { run, ticket, attempt: request.attempt, request });
 		const failure = { phase: request.phase, outcome: request.outcome, detail: request.detail, row: request.row };
 		const priorResult = readResult === null ? null : readResult(prior.attempt);
 
-		// Dispatched on §8.10's **row**, which is also what both planners validate.
+		// Dispatched on §8.10's **row**, which is also what every planner validates.
 		// The request carries a `tier` beside it, derived from this same field by
 		// the walk — reading that one here instead would make the choice of planner
 		// and the planner's own check two facts that agree only by convention.
-		const plan = RETRY_TIERS.includes(failure.row?.action)
-			? planRetry({ prior, failure, priorResult, routing, labels })
-			: planAutomationRetry({ prior, failure, priorResult });
+		const plan = await planned({ prior, failure, priorResult });
 
 		const opened = await openRetryAttempt(store, clone, {
 			hold,
@@ -87,6 +94,87 @@ export function createRetrySeam(
 
 		return Object.freeze({ attempt: opened.attempt, plan: opened });
 	};
+
+	/**
+	 * The right planner for §8.10's row, and the route for the two rows that need
+	 * one.
+	 *
+	 * The two are asked for separately because they are different questions: a
+	 * **fresh-retry** re-dispatches the `freshRetry` role from scratch, so its
+	 * order starts fresh too — discarding the work is the point, and refusing the
+	 * profile that built it would be a rule §11.5 does not have. A **reroute**
+	 * keeps the role it is on and excludes the profiles this ticket execution has
+	 * already had *refused* for it, which is the bound that makes the chain
+	 * finite — read from the journal, so a re-entry after a crash bounds the same
+	 * way rather than starting the chain again.
+	 */
+	async function planned({ prior, failure, priorResult }) {
+		const action = failure.row?.action;
+
+		if (action === STAGE_ACTIONS.reroute) {
+			return planReroute({
+				prior,
+				failure,
+				priorResult,
+				route: await routed({
+					role: prior.role,
+					dispatched: refusedProfiles(store, { run, ticket, role: prior.role }),
+					action,
+					failure,
+				}),
+			});
+		}
+
+		if (!RETRY_TIERS.includes(action)) return planAutomationRetry({ prior, failure, priorResult });
+
+		return planRetry({
+			prior,
+			failure,
+			priorResult,
+			route:
+				action === STAGE_ACTIONS.freshRetry
+					? await routed({ role: FRESH_RETRY_ROLE.name, dispatched: [], action, failure })
+					: null,
+		});
+	}
+
+	/**
+	 * §11.5's dispatch for one role, under §9.8's memo.
+	 *
+	 * **Nowhere left to go is a typed answer, not a plan with a hole in it**: the
+	 * walk turns `routes-exhausted` into §8.10's budgetless release, so the
+	 * refusal is thrown here rather than returned as a plan naming no profile.
+	 */
+	async function routed({ role, dispatched, action, failure }) {
+		if (typeof selectRoute !== "function") {
+			throw new FactoryPipelineError(
+				"retry-unplannable",
+				`§8.10 routes ${failure.phase} × ${failure.outcome} to ${action}, which chooses a profile rather than ` +
+					"pinning one (§11.5), and this caller wired no dispatch seam to choose it with. Reaching for the " +
+					"routing without §9.8's memo is how a run relaunches into the refusal it just paid to learn about.",
+				{ at: "seam", role, action, phase: failure.phase, outcome: failure.outcome },
+			);
+		}
+
+		const route = await selectRoute({ role, dispatched });
+		if (typeof route?.profile === "string") return route;
+
+		throw new FactoryPipelineError(
+			"routes-exhausted",
+			`Every profile §11.5's order names for role "${role}" belongs to a resource class §9.8's memo has recorded ` +
+				`unavailable (${describeRoutes(route)}). The ticket goes back to the frontier untouched: no worker failed, ` +
+				"no budget is owed, and the memo is what keeps the next claim out until a probe re-admits a class.",
+			{ at: "route", role, action, phase: failure.phase, considered: route?.considered ?? [] },
+		);
+	}
+}
+
+/** What the order tried, for the sentence a released ticket is explained by. */
+function describeRoutes(route) {
+	const considered = route?.considered ?? [];
+	if (considered.length === 0) return "no routable profile at all";
+
+	return considered.map((seen) => `${seen.profile} on ${seen.class}: ${seen.state}`).join("; ");
 }
 
 /**

@@ -15,10 +15,53 @@ import { IDENTIFIER_PATTERN, requireArray, requireDeclared, requireExactKeys, re
 const ROUTING_ROLES = Object.freeze(["implement", "freshRetry", "review"]);
 const REVIEW_ATTEMPTS = 2;
 
-const ROUTING_KEYS = Object.freeze(["roles", "rules", "sets"]);
+const ROUTING_KEYS = Object.freeze(["roles", "rules", "fallbacks", "sets"]);
+const SET_KEYS = Object.freeze(["roles", "rules", "fallbacks"]);
 const RULE_KEYS = Object.freeze(["labelsAny", "role", "profile"]);
 const NO_ROUTING_DEFAULTS =
 	"A routing declares its roles and its rules; an empty rule list is written out, never assumed.";
+
+/**
+ * #155's reroute order for a routing that declares none.
+ *
+ * **Absent means "no alternate route", and that is a statement rather than a
+ * default** — the same shape §6.8's `worker` block has: a block of *additions*
+ * whose absent form is the empty addition, spelled once here so no consumer
+ * branches on `undefined`. It is not §11.2's silent guessing, because there is
+ * exactly one thing an undeclared reroute order can mean and the loader is not
+ * choosing between candidates.
+ */
+const NO_FALLBACKS = Object.freeze({
+	implement: Object.freeze([]),
+	freshRetry: Object.freeze([]),
+	review: Object.freeze([Object.freeze([]), Object.freeze([])]),
+});
+
+/**
+ * One routing's reroute order, whether or not it declared one — **the one place
+ * the absent form is spelled**, so no consumer branches on `undefined`.
+ *
+ * Every reader of `fallbacks` goes through here: the loader's own reachability
+ * walk, §9.1's capacity plan, §6.2's roles-in-play, and §9.9's dispatch. A reader
+ * that reached for `routing.fallbacks?.[role] ?? []` instead would be a second
+ * statement of what absence means, in a file with no other reason to have an
+ * opinion about it.
+ *
+ * It also accepts a routing composed by hand — a test's, a caller's — for the
+ * same reason: the answer for a routing with no key is the answer this constant
+ * is, and making that a special case at four call sites is how the four come to
+ * disagree.
+ *
+ * @param {{ fallbacks?: object }} routing one validated routing, or a bare one
+ * @param {string} [role] a §11.5 routing role; omitted, the whole block
+ * @returns {Readonly<object> | ReadonlyArray<string> | ReadonlyArray<ReadonlyArray<string>>}
+ */
+export function fallbacksOf(routing, role = null) {
+	const declared = routing?.fallbacks ?? NO_FALLBACKS;
+	if (role === null) return declared;
+
+	return declared[role] ?? NO_FALLBACKS[role] ?? Object.freeze([]);
+}
 
 /**
  * @param {object} routing the `routing` block
@@ -37,7 +80,16 @@ export function validateRouting(routing, profiles, selected, configPath) {
 	const block = Object.freeze({
 		roles: defaultRouting.roles,
 		rules: defaultRouting.rules,
-		...(routing.sets === undefined ? {} : { sets: Object.freeze(Object.fromEntries(sets.map((set) => [set.name, { roles: set.roles, rules: set.rules }]))) }),
+		fallbacks: defaultRouting.fallbacks,
+		...(routing.sets === undefined
+			? {}
+			: {
+					sets: Object.freeze(
+						Object.fromEntries(
+							sets.map((set) => [set.name, { roles: set.roles, rules: set.rules, fallbacks: set.fallbacks }]),
+						),
+					),
+				}),
 	});
 
 	return { block, active: selectActive(defaultRouting, sets, selected, configPath), declared: [defaultRouting, ...sets] };
@@ -77,7 +129,7 @@ function validateNamedSets(sets, profiles, configPath) {
 		}
 
 		requireObject(set, at, configPath, at);
-		requireNoUnknownKeys(set, ["roles", "rules"], at, configPath);
+		requireNoUnknownKeys(set, SET_KEYS, at, configPath);
 		return validateRoutingSet(set, profiles, at, configPath, name);
 	});
 }
@@ -93,8 +145,85 @@ function validateRoutingSet(routing, profiles, at, configPath, name = null) {
 
 	const roles = validateRoles(routing.roles, profiles, `${at}.roles`, configPath);
 	const rules = validateRules(routing.rules, profiles, `${at}.rules`, configPath);
+	const fallbacks = validateFallbacks(routing.fallbacks, profiles, `${at}.fallbacks`, configPath);
+	const routed = { name, roles, rules, fallbacks };
 
-	return { name, roles, rules, profiles: profilesReachedBy(roles, rules) };
+	return { ...routed, profiles: profilesReachedBy(routed) };
+}
+
+/**
+ * #155's reroute order: **which profile a role takes next when the one it
+ * resolves to belongs to a class §9.8's memo has recorded unavailable.**
+ *
+ * It is declared rather than inferred for the reason §11.2 gives about every
+ * other policy on disk. The orders an inference could produce — the profiles
+ * block's key order, the classes' declared sizes, "any profile the routing
+ * reaches" — are all defensible and none of them is the operator's, and the
+ * first quota blip is a poor moment to discover which one the code picked.
+ *
+ * **Review's order is two orders**, one per axis, so §8.4's two axes stay
+ * independently routed under a reroute exactly as they are under a first
+ * dispatch. One shared order would let a single exhausted class quietly walk
+ * both axes onto the same profile with nothing in the config saying it could.
+ */
+function validateFallbacks(fallbacks, profiles, at, configPath) {
+	if (fallbacks === undefined) return NO_FALLBACKS;
+
+	requireObject(fallbacks, at, configPath, at);
+	requireNoUnknownKeys(fallbacks, ROUTING_ROLES, at, configPath);
+
+	return Object.freeze({
+		implement: fallbackOrder(fallbacks.implement, profiles, `${at}.implement`, configPath),
+		freshRetry: fallbackOrder(fallbacks.freshRetry, profiles, `${at}.freshRetry`, configPath),
+		review: reviewFallbackOrders(fallbacks.review, profiles, `${at}.review`, configPath),
+	});
+}
+
+/** §8.4's two axes, each with its own order — never one order read twice. */
+function reviewFallbackOrders(value, profiles, at, configPath) {
+	if (value === undefined) return NO_FALLBACKS.review;
+
+	if (!Array.isArray(value) || value.length !== REVIEW_ATTEMPTS || value.some((order) => !Array.isArray(order))) {
+		throw new FactoryConfigError(
+			"invalid-value",
+			`${configPath}: ${at} must be two reroute orders, one per §8.4 review axis, written out even when they are the same. A single shared order would let one exhausted class walk both axes onto the same profile with nothing here saying it could.`,
+			{
+				file: configPath,
+				at,
+				expected: `${REVIEW_ATTEMPTS} orders`,
+				found: Array.isArray(value) ? value.length : typeof value,
+			},
+		);
+	}
+
+	return Object.freeze(value.map((order, index) => fallbackOrder(order, profiles, `${at}[${index}]`, configPath)));
+}
+
+/**
+ * One role's reroute order: declared profile names, each named once.
+ *
+ * An **unknown name refuses** rather than being dropped: a typo that silently
+ * shortened the order would leave the role rerouting somewhere the operator
+ * never wrote, which is precisely §11.3's refusal to fall back to the default.
+ * A **repeat refuses** because an order visits each candidate once — a name
+ * written twice is either a typo or a belief about retries that this order does
+ * not implement.
+ */
+function fallbackOrder(order, profiles, at, configPath) {
+	if (order === undefined) return Object.freeze([]);
+	requireArray(order, at, configPath, at);
+
+	const names = order.map((name, index) => requireProfileName(name, profiles, `${at}[${index}]`, configPath));
+	if (new Set(names).size !== names.length) {
+		throw new FactoryConfigError("invalid-value", `${configPath}: ${at} repeats a profile.`, {
+			file: configPath,
+			at,
+			found: names.join(", "),
+			expected: "each profile once",
+		});
+	}
+
+	return Object.freeze(names);
 }
 
 function validateRoles(roles, profiles, at, configPath) {
@@ -221,23 +350,52 @@ function requireProfileName(value, profiles, at, configPath) {
 }
 
 /**
- * Every profile one routing can dispatch — its three roles plus every rule's.
+ * Every profile one routing can dispatch — its three roles, every rule's, and
+ * **every fallback order's** (#155).
  *
  * Exported because §11.6's reachability rules and §9.1's capacity plan ask the
  * same question of a routing: the loader asks it of all of them to size the
  * classes, the plan asks it of the active one to arbitrate over them.
  *
- * @param {object} roles the validated `roles` block
- * @param {ReadonlyArray<object>} rules the validated `rules` list
+ * A fallback profile counts for both rules and it has to. A reroute dispatches
+ * into its class and takes a slot from that class's pool, so an unsized fallback
+ * class would be discovered at the moment a quota blip made it the only way
+ * forward — which is the one moment §11.6's load-time refusal exists to be
+ * earlier than.
+ *
+ * @param {{ roles: object, rules: ReadonlyArray<object>, fallbacks?: object }} routing
+ *   one validated routing — the default or a named set
  * @returns {Set<string>}
  */
-export function profilesReachedBy(roles, rules) {
-	const reached = new Set([roles.implement, roles.freshRetry, ...roles.review]);
-	for (const rule of rules) {
-		for (const profile of Array.isArray(rule.profile) ? rule.profile : [rule.profile]) {
-			reached.add(profile);
-		}
+export function profilesReachedBy(routing) {
+	return new Set(ROUTING_ROLES.flatMap((role) => [...profilesForRole(routing, role)]));
+}
+
+/**
+ * Every profile **one role** can dispatch to under one routing: its declared
+ * value, every rule that names it, and every entry in its reroute order.
+ *
+ * The primitive the three reachability questions are asked through, because
+ * they are one question asked at three grains — the loader asks it of every
+ * role to size the classes, §9.1's plan asks it of `implement` to bound the
+ * lanes, and §6.2's preflight asks it per pipeline role to size its proof.
+ * Three walks would need the same one-line edit every time the routing grows a
+ * way to reach a profile, which is exactly how one of them comes to be missed.
+ *
+ * `review` answers with the **whole** pair's reach rather than one axis's:
+ * §11.5 binds the pair to the phase, and which axis lands on which profile is
+ * dispatch's decision rather than a reachability fact.
+ *
+ * @param {{ roles: object, rules: ReadonlyArray<object>, fallbacks?: object }} routing
+ * @param {string} role a §11.5 routing role
+ * @returns {Set<string>}
+ */
+export function profilesForRole(routing, role) {
+	const reached = new Set([routing.roles[role]].flat());
+	for (const rule of routing.rules) {
+		if (rule.role === role) for (const profile of [rule.profile].flat()) reached.add(profile);
 	}
+	for (const profile of [fallbacksOf(routing, role)].flat(2)) reached.add(profile);
 
 	return reached;
 }
