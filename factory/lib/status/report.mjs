@@ -1,4 +1,5 @@
 import { capacityFor } from "../capacity/report.mjs";
+import { retentionAccounting } from "../retention/expiry.mjs";
 
 /**
  * `factory status` (§10.2): **the current and recent runs**, and §9.7's
@@ -11,9 +12,9 @@ import { capacityFor } from "../capacity/report.mjs";
  *
  * It carries the verb's own sections and no more. §9.7 is what brought it into
  * existence, #108 added §8.10's outcome chains under the runs that hold them,
- * and the slices that own the rest — the classified drain report (#102), bytes
- * per retention class (#117) — each add their section when they land, the way
- * every other report in this package grew.
+ * #117 added §12.10's byte accounting, and the slices that own the rest — the
+ * classified drain report (#102) — each add their section when they land, the
+ * way every other report in this package grew.
  */
 
 /** How many runs "recent" means. Enough to see the last few, not a log viewer. */
@@ -44,6 +45,17 @@ export function statusReport(store, { config, activeRouting, agentDir, at = Date
 		// because two spellings of "the live run" is two answers to "who is
 		// waiting" (§5.4's re-entry order, §14.37).
 		capacity: capacityFor(store, { config, activeRouting, run: liveRun(store), at }),
+		/**
+		 * §12.10's accounting: **bytes per retention class and per run, and never a
+		 * trigger.** It comes from the derivation `doctor` and the deleting pass
+		 * build on, so the three cannot disagree about what tier 1 currently means.
+		 *
+		 * It stops at the accounting, deliberately. §12.10 gives the *reclaimable*
+		 * number to `cleanup-plan`, and computing it means asking every over-horizon
+		 * run whether a pin holds it — several reads per run, on the one report an
+		 * operator runs repeatedly against a live run (§10.5).
+		 */
+		retention: store === null ? null : retentionAccounting(store, { retention: config.retention, at }),
 	});
 }
 

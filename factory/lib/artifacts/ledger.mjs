@@ -119,9 +119,12 @@ export function recordArtifact(
  * date** rather than to "unknown digest" — expired and never-existed must never
  * look alike.
  *
- * Deleting the blob itself is a mutation outside the database and therefore an
- * effect (§4.5's `artifact-delete`); this marks the ledger, and the sequencing
- * belongs to expiry (§12.6).
+ * **This row is the record of the deletion**, which is why expiry marks it
+ * *before* unlinking rather than behind an `artifact-delete` effect: a crash in
+ * between leaves a digest that still resolves to the right answer, dated, and
+ * the next pass re-attempts the unlink. §4.5's pair stays cleanup's, for the
+ * orphaned blobs that have no row to be the record (§12.8). The sequencing is
+ * `retention/expiry.mjs`'s.
  *
  * @param {{ appendEvent: (input: object) => object, db: object }} tx
  * @param {{ algorithm?: string, digest: string }} address

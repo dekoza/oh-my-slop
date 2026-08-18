@@ -381,6 +381,34 @@ function withStage(chains, event) {
 /** Application order is the order they are declared here. */
 export const PROJECTIONS = Object.freeze([run, ticketExecution, attempt, ticketIndex, runDigest]);
 
+/**
+ * Drop one run's rows from the **derived** projections — §12.3's expiry, on the
+ * projection side of the same transaction that deletes its stream.
+ *
+ * The set is read from each projector's declared `retention` rather than
+ * listed here, so a projection added later is cleared or kept by what it says
+ * about itself. That is the same rule the rebuild path applies from the other
+ * direction (§12.2): derived rows are a pure function of a journal that no
+ * longer holds this run, and permanent ones — the tier-2 digest and the
+ * cross-run reverse index — are what "retained indefinitely" means.
+ *
+ * It is exported to expiry rather than done there because the tables are this
+ * module's: a `DELETE FROM run` somewhere else is a second place that decides
+ * what a projection is.
+ *
+ * @param {object} db the transaction's handle
+ * @param {string} runId
+ * @returns {Record<string, number>} rows dropped, per projection
+ */
+export function clearDerivedProjections(db, runId) {
+	const dropped = {};
+	for (const projection of PROJECTIONS) {
+		if (projection.retention !== PROJECTION_CLASSES.derived) continue;
+		dropped[projection.name] = db.prepare(`DELETE FROM ${projection.name} WHERE run_id = ?`).run(runId).changes;
+	}
+	return dropped;
+}
+
 /** §2.1: the attempt id is `<run>-t<ticket>-a<n>`, so `n` is read off it. */
 function attemptOrdinal(event) {
 	return Number.parseInt(event.attempt.slice(event.attempt.lastIndexOf("-a") + 2), 10);
