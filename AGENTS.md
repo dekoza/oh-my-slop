@@ -30,6 +30,12 @@ Run these commands when you touch the related areas. Do not skip them.
 one of them starts a paid model session. Run them by hand, never from a suite — see
 `tests/live/README.md`.
 
+`tests/live/prove-skill-loading.mjs` is one of them: it spends one short model turn per cell to
+take §6.7's skill-loading acceptance matrix, and records the result under `docs/proofs/`. What the
+matrix *concludes* — the contract, the judgement, the claim assessment, the document — is
+`factory/lib/proof/`, held by `tests/node/factory_proof_*.test.mjs`; the runner itself is wiring
+and spending, and is not covered by a test.
+
 Targeted minimums:
 
 - Any change under `skills/` or to markdown references: `uv run pytest tests/test_validate_refs.py tests/test_skill_frontmatter.py`

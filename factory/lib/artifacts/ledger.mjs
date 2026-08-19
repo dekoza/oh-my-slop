@@ -119,9 +119,12 @@ export function recordArtifact(
  * date** rather than to "unknown digest" — expired and never-existed must never
  * look alike.
  *
- * Deleting the blob itself is a mutation outside the database and therefore an
- * effect (§4.5's `artifact-delete`); this marks the ledger, and the sequencing
- * belongs to expiry (§12.6).
+ * **This row is the record of the deletion**, which is why expiry marks it
+ * *before* unlinking rather than behind an `artifact-delete` effect: a crash in
+ * between leaves a digest that still resolves to the right answer, dated, and
+ * the next pass re-attempts the unlink. §4.5's pair stays cleanup's, for the
+ * orphaned blobs that have no row to be the record (§12.8). The sequencing is
+ * `retention/expiry.mjs`'s.
  *
  * @param {{ appendEvent: (input: object) => object, db: object }} tx
  * @param {{ algorithm?: string, digest: string }} address
@@ -207,6 +210,33 @@ export function readArtifact(store, address) {
 	}
 
 	return content;
+}
+
+/**
+ * Every address the ledger has **ever** recorded, tombstoned rows included —
+ * §12.8's orphan scan, as a question the ledger answers about itself.
+ *
+ * The tombstones matter, and they are why this is not a `WHERE expired_at IS
+ * NULL`. A tombstoned row is a blob expiry has already claimed and re-attempts
+ * to unlink on every pass (§12.5); treating it as an orphan would give one
+ * deletion two mechanisms and two records. **An orphan is a blob with no row at
+ * all** — under the controller lease, unambiguously a crash leftover (§12.8).
+ *
+ * It lives here because the `artifact` table is this module's, and a `SELECT`
+ * over it from a subsystem that does not own it is a second place that decides
+ * what a row means.
+ *
+ * @param {object} store an open store, controller or read-only
+ * @returns {ReadonlySet<string>} `<algorithm>:<digest>`, the spelling a caller compares on
+ */
+export function recordedArtifactAddresses(store) {
+	return Object.freeze(
+		new Set(
+			store
+				.read((db) => db.prepare("SELECT algorithm, digest FROM artifact").all())
+				.map((row) => `${row.algorithm}:${row.digest}`),
+		),
+	);
 }
 
 /**

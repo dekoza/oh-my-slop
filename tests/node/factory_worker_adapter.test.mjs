@@ -177,6 +177,26 @@ test("rolesInPlay resolves each role to the profiles its routing role reaches", 
 	);
 });
 
+test("a role's reroute order is in play too: #164's proof covers what a quota blip makes the only way forward (#155)", () => {
+	const inPlay = rolesInPlay({
+		roles: { implement: "builder", freshRetry: "builder", review: ["reader", "reader"] },
+		rules: [],
+		fallbacks: { implement: ["cloud"], freshRetry: [], review: [["cloud-a"], ["cloud-b"]] },
+	});
+
+	assert.deepEqual(
+		inPlay.map((entry) => [entry.name, [...entry.profiles]]),
+		[
+			["implement", ["builder", "cloud"]],
+			["fresh-retry", ["builder"]],
+			// §11.5 binds the pair to the phase, so both axes carry the whole review
+			// reach — which axis lands on which profile is dispatch's decision.
+			["review-standards", ["cloud-a", "cloud-b", "reader"]],
+			["review-spec", ["cloud-a", "cloud-b", "reader"]],
+		],
+	);
+});
+
 // ── Dispatch: `labelsAny × role → profile` (§11.5) ───────────────────────────
 
 /** A routing whose three roles are declared, as §11.5 requires all of them to be. */

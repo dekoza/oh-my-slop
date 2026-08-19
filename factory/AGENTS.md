@@ -34,6 +34,12 @@ Every path below is spelled relative to the repository root.
 - Exit code `1` means usage or config-load failure and nothing else; `0` and `2`–`6`
   and `9` belong to the run end-reason table (`9` is #154's `capacity-exhausted`;
   `7` and `8` are verb-level markers that exist before any run does).
+- `factory/lib/proof/` is the **only** area not reachable from the binary, and deliberately:
+  it is §6.7's acceptance matrix — the deep proof that a model loads and *follows* a skill
+  body — which runs by hand from `tests/live/prove-skill-loading.mjs` and spends real turns.
+  Preflight (§6.2) proves registration and invocation echo per run at zero model cost; this
+  proves following, per (harness version × model × package revision), and records it under
+  `docs/proofs/`. Nothing in a run may come to depend on it.
 - Defaults exist only in `factory/lib/config/defaults.mjs` (`budgets`, `retention`),
   where an upstream decision already fixed the value. Everywhere else absence refuses —
   a policy the loader fills in is a policy nobody can read on disk. The one thing that
@@ -59,8 +65,9 @@ Every path below is spelled relative to the repository root.
   Slots carry **no TTL**: a row records the generation of the **controller lease** that
   took it — never one minted for the row, which a stale-but-live controller would stamp
   above its successor's — and a superseded row is settled by probing its holder
-  (`reclaim`, called once per run; the probe itself ships with the slice that can ask a
-  pane whether it is alive). An expiring slot would free itself while its pane still
+  (`reclaim`, called once per run, over §5.5's adoption probe — the probe ships with
+  `worker/adoption.mjs`, which is the module that can ask a pane whether it is alive).
+  An expiring slot would free itself while its pane still
   talks to the GPU. The ticket slot spans the whole ticket
   execution and the model slot spans one attempt, which is what makes hold-and-wait —
   and therefore deadlock — unconstructible. `factory/lib/capacity/report.mjs` is the one
@@ -79,17 +86,46 @@ Every path below is spelled relative to the repository root.
   **an expiry re-admits by probe, never by the clock** — `worker/readmit.mjs` spends one
   cheap completion under the worker binding and answers
   `admitted`/`refused`/`inconclusive`, and only an admission writes `capacity.admitted`.
-  §8.10 charges no budget for it (budgetless `released`, builder and reviewer), and a run
-  left holding claimable work whose every route is memo-locked at the final scheduling
-  decision ends `capacity-exhausted` (exit 9) rather than draining — work other classes
-  finished does not soften it. Rerouting that consumes the memo is #155.
+  §8.10 charges no budget for it, and a run left holding claimable work whose every route
+  is memo-locked at the final scheduling decision ends `capacity-exhausted` (exit 9)
+  rather than draining — work other classes finished does not soften it.
+- **Dispatch answers with a route, not a class** (#155, §9.9). §11.5's dispatch and §9.8's
+  memo are one question — *which profile may this run spend, and from which pool* —
+  answered once in `worker/dispatch.mjs`: `dispatchOrder` is the declared profile then
+  §11.5's `fallbacks` for that role, and `selectRoute` takes the first candidate whose
+  class the memo has not locked. The class names the pool §9.4 takes the slot from and the
+  profile names what §6.5 mints, so the decision is made **before the claim** and travels
+  with the lane; nothing downstream resolves the routing again, because the memo moves.
+  There is **one** implementation of §11.5's resolution — `capacity/plan.mjs` translates
+  its refusal into a capacity one and adds nothing. The decision rides every mint
+  (`attempt.launched`'s `routing`, `null` where the row is pinned to the originating
+  attempt) and §8.9's block, so a green ticket can answer *what wrote this?* — and a
+  **launch reads the mint back** rather than the decision it just made, or a re-entry
+  would run a profile the record does not name. §8.10's `provider-refused` rows route
+  to a **`reroute`** action that spends no budget and is bounded by each routable
+  profile being **refused** at most once per ticket execution, derived from the
+  attempts whose stage routed to a reroute — never a counter, and never merely
+  *dispatched*, since an automation retry relaunches the same pinned profile and
+  excluding it would make every infra flake a silent model change. Running out is
+  `routes-exhausted`, one of §8.10's **phase-less** rows beside the two budget
+  exhaustions — no attempt has it, and a routed fresh-retry reaches it from `verify`
+  and `integrate`, which have no attempt for an outcome to belong to. The two review axes reroute
+  down their own declared orders, an axis with none releases without minting, and a
+  fan-out left on one profile says so in its verdict. **A route is decided by the memo
+  alone** — never by the preflight, which proves a profile's flag *spelling* and not that
+  its model value resolves (#164), so a misconfigured profile fails as an ordinary attempt
+  outcome instead of being silently routed around.
 - The scheduler (`factory/lib/controller/scheduler.mjs`) is §9.6's loop and nothing
   more: **no queue object, no ready-queue, no aging, no priority.** It re-reads the
   frontier at every scheduling decision, takes the lowest-numbered claimable ticket,
   and otherwise waits for a ticket execution to terminate. Backpressure is **not
   claiming** — nothing is buffered and no intent is queued — and the two things it is
   parametric in, the frontier reader and the execution of one ticket, are injected so
-  the loop stays testable at any capacity with no override seam.
+  the loop stays testable at any capacity with no override seam. §5.5's `resumed` lanes
+  are **not** a third: they are lanes already *running* when this controller took over,
+  started before the first frontier read because they were never this loop's to claim —
+  their slots are held and their ticket execution is part-way through §8.1's pipeline —
+  and a ticket already running is not a candidate again (§2.1).
 - Every command answers from one structured value, rendered human by default and
   `--json` on request. A verb that cannot do its job says what is missing; it never
   goes quiet and never half-runs.
@@ -145,6 +181,60 @@ Every path below is spelled relative to the repository root.
   renumbering or rewriting, is §14.7 broken; `tests/node/factory_state_integrity.test.mjs`
   greps the tree for it. A global sequence hole is the expected residue and is never read
   as tampering — only per-stream contiguity is verified.
+- **Retention is the horizon, the pins, and one subtractive pass** (`factory/lib/retention/`,
+  §12). The tier-1 horizon is a **union** — a run inside the last `fullDetailRuns` *or* inside
+  `fullDetailDays` is tier 1 — ranked over the **permanent digest** rather than the surviving
+  set, or one pinned old run would push a newer one out. §12.4's three pins are read from
+  durable state alone, because expiry runs unattended and a pin that needed the network would
+  fail open the first time Gitea was down; where durable state cannot answer, the pin **holds**,
+  and **no clock reaches `pinsForRun`** — the pins hold a run past the horizon rather than
+  carrying one of their own. The label pin's only release channel is a later repository-wide
+  poll's `observation.recorded` **that states `ticket.labels`** — §14.20 means the factory never
+  removes the label itself — with the run's own §8.9 disposition as the fallback when nothing has
+  been observed. That fact-class restriction is load-bearing and was a real bug without it: most
+  observations of a ticket (herdr liveness, a probe answer) establish nothing about its labels,
+  and reading one of those as "nothing is known" re-engages a cleared pin permanently. The
+  open-PR pin releases on the *ticket's* observed state, not the PR's, because §5.1 polls issues
+  and never pull requests. **Only an `ended`
+  run is a candidate** (§12.6's "never mid-run", read of the run and not only of the
+  invocation); an unended one is held as `live`, which is not a fourth pin — and because nothing
+  ever releases it on its own, `doctor` alarms on it. `retentionAccounting` and `planExpiry`
+  write nothing and are the one derivation `status`, `doctor`, and the pass that deletes all
+  answer from, so none of them can disagree about what tier 1 means — and **no size is an input**
+  (§14.30). The split between the two is §12.10's: `status` gets the accounting, and the
+  *reclaimable* number costs a pin evaluation per over-horizon run, which the lock-free report an
+  operator reruns against a live run should not pay for. Each run goes in one token-checked
+  transaction (`hold.transaction`): tombstones, effect rows, derived projections,
+  `deleteStreamWhole`, and `run.expired` on the `controller` stream, because deleting a run's
+  stream cannot be recorded inside it. **The blob unlink is not an effect** — an amendment to
+  §4.5 rather than a reading of §12, and §4.5 now carries the exception in its own text. The
+  ledger row is the record, the tombstone commits before the unlink so a crash resolves to
+  `retention-expired` rather than `blob-missing`, and every pass re-attempts every tombstone;
+  keying the pair by the expiring run would also **deadlock** expiry, since the unresolved effect
+  pins the run while reconcile can only settle `absent` once the blob is already gone.
+  `artifact-delete` stays cleanup's, for §12.8's blobs that have no row at all. Heartbeats
+  truncate to the first sequence of the oldest surviving run stream — one knob, and a sequence
+  rather than a clock.
+- **Cleanup is plan-then-execute, and there is no `--force` anywhere in it** (`factory/lib/cleanup/`,
+  §12.8). §12.8's whitelist is **exactly six kinds**, with the factory-private clone outside them
+  and reachable only by naming it in `--kind`. The plan is enumerated from **the world** — worktrees
+  registered in the private clone, refs under `factory/`, panes carrying a factory token, blobs on
+  disk — and judged by durable state, because expiry deletes a run's records and a planner reading
+  only records would never look at that run's worktree again; `cleanup-execute` runs cleanup
+  **before** the expiry pass §12.6 folds into it, for the same reason. Eligibility is the attempt
+  being **terminal** and §12.4's pins being clear — the same `pinsForRun` expiry uses, so "the run
+  is still in full detail" and "its forensic artifacts still exist" can never disagree — and never
+  pane liveness, since the hard-stop path deliberately orphans panes. Panes are enumerated **by
+  token**, never by a recorded pane id: Herdr reuses ids, so §14.27 is structural rather than
+  checked, and the controller's own pane wears `FACTORY_RUN`, stamped only where `launch.mjs`
+  declared `FACTORY_CONTROLLER_PANE` — an operator's `--foreground` terminal is never marked and
+  therefore never a target. **Cleanup's effect records are repo-scoped** so they land on the
+  `controller` stream (§4.3 refuses a run-slotted record anywhere else, and a cleanup record inside
+  a run stream dies with the run it documents); the identity travels in the operand, whose grammar
+  lives with the module owning the subject. `worktree remove` carries **no `--force`**, so git
+  re-applies the untracked-work guard at the moment of deletion — the window a digest cannot cover
+  — and `cleanup/panes.mjs` is the **only** module allowed to build a `pane close`, which
+  `tests/node/factory_controller_launch.test.mjs` greps the tree to keep true.
 - Every mutation outside the database is an effect: a requested/resolved pair keyed by
   §4.5's grammar, built in one place (`factory/lib/effects/keys.mjs`) and written in
   one place (`records.mjs`). A new effect kind is a row in `effects/catalogue.mjs` and
@@ -246,8 +336,10 @@ Every path below is spelled relative to the repository root.
   Then the transcript pointer, polled out of Herdr with backoff and
   never computed; then §6.2's layer-3 recheck, which is why the pin is compared **before** the
   prompt — the prompt is the first thing that spends; then the prompt; then
-  `attempt.correlated`, whose presence is what makes a launch *finished*. A re-entry finishes
-  an uncorrelated attempt and refuses a correlated one (#114 adopts a live worker). Every
+  `attempt.correlated`, whose presence is what makes a launch *finished*, and which carries the
+  agent **kind** on payload v2 so §5.5's third adoption test compares against an observation
+  rather than a derivation. A re-entry finishes an uncorrelated attempt and refuses a correlated
+  one, whose live worker `worker/adoption.mjs` adopts instead. Every
   runtime difference is two values: the Herdr agent kind, and the name `prompt.mjs` turns into
   `/skill:<name>` or `/<plugin>:<name>`.
 - The first prompt is **one renderer parameterised by the role**, not four templates
@@ -268,13 +360,53 @@ Every path below is spelled relative to the repository root.
   automation's, §8.10), and a settled worker gets a grace before its silence is called
   silent-completion. **An attempt ends once**: the projector refuses a second `attempt.ended`,
   which is how "late outboxes are ignored for state" gets teeth instead of staying a rule the
-  harvest path has to remember.
+  harvest path has to remember. A **subscription is re-established by pane id** after a Herdr
+  server restart, because §5.1 makes pane ids persistent and never reused: polling covers the
+  gap and stops when the socket takes the question back, so a restart is a gap in the channel
+  rather than a permanent demotion — and the recovery clears the flag that would otherwise
+  charge the automation for the worker's next silence.
+- **Adoption asks §5.5's five tests together and answers three ways**
+  (`worker/adoption.mjs`, #114). Token · pane alive · agent kind · recorded worktree · outbox
+  path intact — each of them able to prevent adoption on its own. Provable and disproved are
+  what the specification names; **the third is what makes them safe**: an unanswerable Herdr
+  read and an unreadable path both taught the process nothing, and "unanswerable" is not
+  "absent" (§5.2, §12.4). The module **mutates nothing and asks about nothing but the pane**:
+  §5.5 settles two controllers with the controller lease and its fencing generation, *not* by
+  killing the worker, so there is no quit sequence and no pid in it, and
+  `factory_worker_adoption.test.mjs` greps for both. What a row may be adopted *for* is
+  re-derived from the journal rather than read off the advisory identity blob: **unfinished and
+  correlated**, because a launch that never finished is one a re-entry finishes (§6.4) and an
+  attempt the projections already settled has ended whatever its pane looks like — a wedged pane
+  passing all five would otherwise reach the projector's refusal of a second ending as an
+  automation failure. Acting on the verdict belongs to the modules that own the writes:
+  `capacity/slots.mjs` moves the row, `worker/lifecycle.mjs`'s `settleUnadoptable` ends the
+  attempt through the same `settle()` every other ending uses — `dead-worker`, §8.10's
+  automation fault — and it **stops no agent**, because identity is exactly what failed and quit
+  keys would act on a pane this controller could not show was its own (§13.B).
+- **A capacity row settles three ways, and a lane is adopted whole or not at all**
+  (`capacity/slots.mjs`'s `reclaim`, §9.4, §15 cases 6–8). A provable holder of the run this
+  controller drives is **transferred** onto its generation on the predecessor's own token —
+  `leases.adoptAll`, one transaction per lane, capacity rows only — because a release-and-retake
+  opens a window a third controller can take the index in while the pane is still using the
+  resource. A disproved holder has **its attempt settled first and its row released second**: a
+  crash between them leaves a row the next controller re-probes, while the other order leaves an
+  unfinished attempt nothing names. An unanswerable read moves nothing at all. The **transfer is
+  gated on `preflight.ok` and on there being an executor**, and whatever a run adopted and never
+  ran is released before it ends — a row fenced to a generation that ends unused is precisely the
+  row no successor may adopt, since adoption requires the row to name the run being driven. What
+  is still held at the end is **named on the report** (`unsettled`), saying that only a later
+  probe can settle it: a pool one index short and nobody told is §9.7's slow run that looks busy.
 - **Herdr has no `agent stop`** — verified against protocol 19, where the whole agent surface is
   list/get/read/send-keys/prompt/rename/focus/wait/attach/start/explain and the socket API has
   no `agent.stop` either. §13.B's "the controller stops agents and never closes panes" — nor
   tabs, nor the run's workspace — is therefore `agent send-keys` with the harness's own quit
   sequence, and a harness that ignores it leaves a wedged pane **recorded as an anomaly and never
-  escalated**. The availability probe
+  escalated**. That sequence is **two calls, and the grouping is load-bearing** (#158,
+  `AGENT_STOP_KEY_CALLS`): `esc` alone, a settle, then `ctrl+c ctrl+c` together. Sent as one
+  call it is absorbed by a *working* Claude as a bare turn interrupt and the agent stays;
+  spaced apart the double-press exit never composes and nothing quits at all. Both halves are
+  measured in `tests/live/herdr-agent-quit-sequence.mjs`, and a change to either is a claim
+  about somebody else's TUI — re-run the probe rather than reasoning about it. The availability probe
   (`controller/herdr.mjs`) and the commands (`controller/herdr-control.mjs`) are two modules
   because "the factory checks the multiplexer, it does not manage one" is checkable only as
   *the probe imports nothing that can start a process*.
@@ -527,7 +659,16 @@ Every path below is spelled relative to the repository root.
   artifact-write effect rows rather than §12.1's ledger, whose producer columns name the
   *most recent* production and would move under a settlement already requested. A pause with
   no question, a publication with no PR link, and a reason class whose §14.18 disposition is
-  a different one are all refused before any mutation.
+  a different one are all refused before any mutation. **§9.6's abandon boundary settles through
+  this same module** (#159): `settleAtBoundary` records `released` for every in-flight execution
+  and then applies the row, so the journal and the tracker cannot disagree about a ticket the run
+  gave up on. Every row it settles is a claim the run holds, and what makes that true is that
+  **§3.3's contest loser settles its own row when it loses** — journal-only, since the loser's
+  assignee and the winner's are one field — rather than the boundary carrying a rule about whose
+  claim it is dropping. Its refusals are *carried* into the §3.5 report (`released_unsettled`):
+  the disposition is already durable and the mutation is §4.5's requested half, so an unreachable
+  tracker costs that ticket §3.3's staleness and an alarm, never the run's own `run.ended`, lease
+  release, and exit 4.
 - **The review phase fans out from the controller** (`pipeline/review.mjs`, §8.4): two
   read-only attempts, each with its own entry skill, outbox, attempt identity and **its own
   worktree at the reviewed commit**, so §7.3's one-worktree-per-attempt holds verbatim and a

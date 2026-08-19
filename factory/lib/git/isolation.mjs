@@ -214,6 +214,73 @@ export function assertFactoryRef(ref) {
 	);
 }
 
+/**
+ * §12.8's two worktree target kinds, as an effect **operand** names them.
+ *
+ * `worktree-delete` is one effect kind serving two subjects — §12.7's eager
+ * reclamation of a merged attempt's worktree and §12.8's reclamation of a
+ * throwaway baseline one — because they are the same mutation with the same
+ * probe (`effects/catalogue.mjs` says so, and a second operation name would
+ * dilute what §4.5's `UNIQUE` covers). What differs is **which path** the probe
+ * must recompute, and an effect row carries no payload, so the key has to say.
+ *
+ * The eager path already answers it: its key names the attempt, and the path
+ * falls out of `attemptWorktreePath`. Cleanup's records are **repo-scoped** —
+ * §12.8 lands them on the `controller` stream, and §4.3 refuses a run-slotted
+ * record anywhere but that run's own stream — so the identity moves into the
+ * operand, and this is the one place that grammar is written.
+ */
+export const WORKTREE_OPERAND_KINDS = Object.freeze({ attempt: "attempt", baseline: "baseline" });
+
+const WORKTREE_OPERAND_NAMES = Object.freeze(Object.values(WORKTREE_OPERAND_KINDS));
+
+/**
+ * The operand naming one worktree target.
+ *
+ * @param {{ kind: string, id: string }} target
+ * @returns {string} `<kind>/<id>`
+ * @throws {FactoryGitError} `identity-mismatch` · `identity-charset`
+ */
+export function worktreeOperand({ kind, id }) {
+	if (!WORKTREE_OPERAND_NAMES.includes(kind)) {
+		throw new FactoryGitError(
+			"identity-mismatch",
+			`A worktree operand names one of ${WORKTREE_OPERAND_NAMES.join(", ")}; found ${JSON.stringify(kind ?? null)}.`,
+			{ at: "kind", found: kind ?? null, expected: WORKTREE_OPERAND_NAMES.join("|") },
+		);
+	}
+	requireIdentitySegment(id, kind);
+	return `${kind}/${id}`;
+}
+
+/**
+ * The worktree an operand names, resolved through the **same two functions the
+ * creators use** — so a probe can never reach a path a creator could not have
+ * created, and §2.1's containment covers the reclamation half for free.
+ *
+ * @param {string} storeDir the repository's store directory
+ * @param {string} operand as `worktreeOperand` built it
+ * @returns {Readonly<{ kind: string, id: string, path: string }>}
+ * @throws {FactoryGitError} `identity-mismatch` · `identity-charset` · `identity-path-escape`
+ */
+export function worktreeTarget(storeDir, operand) {
+	const [kind, ...rest] = String(operand ?? "").split("/");
+	const id = rest.join("/");
+	if (id === "" || !WORKTREE_OPERAND_NAMES.includes(kind)) {
+		throw new FactoryGitError(
+			"identity-mismatch",
+			`${JSON.stringify(operand ?? null)} does not name a worktree; §12.8's operand is \`<kind>/<id>\`.`,
+			{ at: "operand", found: operand ?? null, expected: `${WORKTREE_OPERAND_NAMES.join("|")}/<id>` },
+		);
+	}
+
+	const path =
+		kind === WORKTREE_OPERAND_KINDS.attempt
+			? attemptWorktreePath(storeDir, id)
+			: baselineWorktreePath(storeDir, id);
+	return Object.freeze({ kind, id, path });
+}
+
 function requireIdentitySegment(value, field) {
 	if (typeof value !== "string" || !IDENTITY_CHARSET.test(value)) {
 		throw new FactoryGitError(

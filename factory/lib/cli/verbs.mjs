@@ -1,3 +1,4 @@
+import { KIND_FLAG, RUN_FLAG, runCleanupExecute, runCleanupPlan } from "../cleanup/verb.mjs";
 import { FOREGROUND_FLAG } from "../controller/launch.mjs";
 import { PARENT_FLAG } from "../controller/scope.mjs";
 import { NEW_RUN_FLAG, runStart } from "../controller/start.mjs";
@@ -79,17 +80,36 @@ export const VERB_TABLE = Object.freeze({
 		summary: "request a drain at the next ticket boundary",
 		spec: "§10.5",
 	},
+	// §12.8's pair, and the asymmetry between them is the specification's:
+	// planning is a read that is *always* permitted, executing takes the
+	// controller lease so it can never race a live run (§14.25).
+	//
+	// **Neither declares a `--force`, and neither ever will** (§14.26). A force
+	// flag on a guard whose entire purpose is "a human may have work here" is a
+	// guard with an off switch, and the verb table is where such a flag would
+	// have to be typed to exist.
 	"cleanup-plan": {
 		requiresConfig: true,
+		handler: runCleanupPlan,
 		summary: "derive a reviewable reclamation plan",
-		missing: "the artifact ledger and the cleanup target whitelist (#118)",
+		// §12.8's two narrowings. Both carry their value on the flag, because the
+		// verb is not known while the line is being read and a flag that swallowed
+		// the next token could not tell a run id from `cleanup-execute`'s digest.
+		flags: {
+			[RUN_FLAG]: { spec: "§12.8", value: "run id" },
+			[KIND_FLAG]: { spec: "§12.8", value: "target kind" },
+		},
 		spec: "§12.8",
 	},
 	"cleanup-execute": {
 		requiresConfig: true,
+		handler: runCleanupExecute,
 		summary: "execute a plan whose digest still matches",
-		missing: "the artifact ledger and the cleanup target whitelist (#118)",
-		spec: "§12.8",
+		flags: {
+			[RUN_FLAG]: { spec: "§12.8", value: "run id" },
+			[KIND_FLAG]: { spec: "§12.8", value: "target kind" },
+		},
+		spec: "§12.8, §14.25",
 	},
 	migrate: {
 		requiresConfig: false,

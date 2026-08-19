@@ -144,7 +144,7 @@ These ship in the repo and load automatically through the root `pi install` mani
 ## Skills
 
 <details>
-<summary><strong>Skills (65)</strong></summary>
+<summary><strong>Skills (66)</strong></summary>
 
 Grouped by what you came looking for: an API surface (**Reference**), a way of
 working (**Practice**), a job to run (**Workflow**), or the agent's own toolkit
@@ -241,6 +241,7 @@ About the agent and its own toolkit, not about your code.
 | **[Git Guardrails (Claude Code)](skills/meta/git-guardrails-claude-code/SKILL.md)** | Set up PreToolUse hooks that block dangerous git commands (push, reset --hard, clean, branch -D) — git-discipline enforced by machinery, not prompts. |
 | **[Setup Project Skills](skills/meta/setup-project-skills/SKILL.md)** | Run once per repo to configure the workflow skills — issue tracker bindings (agent work vs human intake), triage label vocabulary, and domain doc layout — written to `docs/agents/` and pointed at from CLAUDE.md/AGENTS.md. |
 | **[Skill Creator](skills/meta/skill-creator/SKILL.md)** | Meta-skill for creating, modifying, and benchmarking other skills — evals, variance analysis, and description optimization for triggering accuracy. |
+| **[Skill Loading Proof](skills/meta/skill-loading-proof/SKILL.md)** | A body that exists to be followed: it answers a proof nonce with one receipt line whose token and transform live only on its own page. The software factory's acceptance matrix (`tests/live/prove-skill-loading.mjs`) uses it to prove a model *loaded and followed* a skill rather than merely registering its name. Nothing else invokes it. |
 | **[Websearch](skills/meta/websearch/SKILL.md)** | Search the web via locally installed SearXNG instance. Configurable endpoint via `/skill:websearch url`. |
 | **[Writing Great Skills](skills/meta/writing-great-skills/SKILL.md)** | Prose-level craft reference for skill authoring — leading words, no-ops, negation, context vs cognitive load, premature completion, progressive disclosure. Complements skill-creator's eval workflow. |
 

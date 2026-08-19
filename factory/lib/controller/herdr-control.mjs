@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 
+import { FactoryEffectError } from "../effects/errors.mjs";
 import { BINARY } from "./herdr.mjs";
 
 /**
@@ -81,6 +83,82 @@ export function herdrResult(stdout) {
 export const FACTORY_ATTEMPT_TOKEN = "FACTORY_ATTEMPT";
 
 /**
+ * The same guard for the **controller's own pane**, which §12.8 whitelists and
+ * no attempt owns.
+ *
+ * §14.27 is stated over `FACTORY_ATTEMPT` because that is the token a worker
+ * pane wears, and its point is the sentence beside it — *the factory does not
+ * own panes it did not create*. A second whitelisted pane kind that no attempt
+ * can name therefore needs a token of its own, or the sixth target kind is
+ * unreachable and the invariant it is supposed to obey has nothing to check.
+ *
+ * It carries the **run**, not a flag, for the reason the attempt token carries
+ * an attempt: Herdr reuses pane ids, so a mark saying only "a factory pane"
+ * would let a recycled id inherit a dead run's reclaimability. The token names
+ * which run's controller sat here, and cleanup refuses anything else.
+ */
+export const FACTORY_RUN_TOKEN = "FACTORY_RUN";
+
+/**
+ * §12.8's two pane target kinds, as an effect **operand** names them —
+ * `pane-delete` is one effect kind over two subjects, and the effect row carries
+ * no payload, so the key is where the probe reads which one.
+ *
+ * Cleanup's records are repo-scoped (§12.8 puts them on the `controller`
+ * stream), so unlike `agent-start` these keys have no attempt segment to read.
+ */
+export const PANE_OPERAND_KINDS = Object.freeze({ attempt: "attempt", run: "run" });
+
+const PANE_OPERAND_NAMES = Object.freeze(Object.values(PANE_OPERAND_KINDS));
+
+/**
+ * @param {{ kind: string, id: string }} target
+ * @returns {string} `<kind>/<id>`
+ */
+export function paneOperand({ kind, id }) {
+	if (!PANE_OPERAND_NAMES.includes(kind) || typeof id !== "string" || id.length === 0) {
+		refusePaneOperand("kind", `${JSON.stringify(kind ?? null)}/${JSON.stringify(id ?? null)}`);
+	}
+	return `${kind}/${id}`;
+}
+
+/**
+ * The token a pane operand asks about: which name, and what value it must carry.
+ *
+ * @param {string} operand as `paneOperand` built it
+ * @returns {Readonly<{ kind: string, id: string, token: string }>}
+ * @throws {FactoryEffectError} `effect-key-invalid`
+ */
+export function paneTarget(operand) {
+	const [kind, ...rest] = String(operand ?? "").split("/");
+	const id = rest.join("/");
+	if (id === "" || !PANE_OPERAND_NAMES.includes(kind)) {
+		refusePaneOperand("operand", operand ?? null);
+	}
+
+	return Object.freeze({
+		kind,
+		id,
+		token: kind === PANE_OPERAND_KINDS.attempt ? FACTORY_ATTEMPT_TOKEN : FACTORY_RUN_TOKEN,
+	});
+}
+
+/**
+ * A malformed pane operand is an **effect-key** refusal, not a Herdr one: what
+ * is wrong is the shape of a §4.5 key segment, and `effects/errors.mjs` already
+ * owns that reason. It carries `at`/`found`/`expected` like every other typed
+ * refusal in this binary, so the reason code reaches the operator's `--json`
+ * rather than a bare message nothing can match on.
+ */
+function refusePaneOperand(at, found) {
+	throw new FactoryEffectError(
+		"effect-key-invalid",
+		`A pane operand is \`${PANE_OPERAND_NAMES.join("|")}/<id>\` (§12.8); found ${JSON.stringify(found)}.`,
+		{ at, found, expected: `${PANE_OPERAND_NAMES.join("|")}/<id>` },
+	);
+}
+
+/**
  * The metadata source this factory reports under. Herdr requires one on every
  * `report-metadata` call and scopes a clear to it, so a single name means the
  * factory can only ever clear its own tokens.
@@ -88,7 +166,8 @@ export const FACTORY_ATTEMPT_TOKEN = "FACTORY_ATTEMPT";
 export const METADATA_SOURCE = "software-factory";
 
 /**
- * How the controller stops an **agent** without closing its **pane** (§13.B).
+ * How the controller stops an **agent** without closing its **pane** (§13.B):
+ * **two `send-keys` calls, and the grouping is the whole point.**
  *
  * Verified against the installed Herdr (protocol 19): there is no `agent stop`
  * in the CLI and no `agent.stop` in the socket API — `exit_code` aside, the
@@ -99,21 +178,47 @@ export const METADATA_SOURCE = "software-factory";
  * superseded, so an agent that ignores these keys leaves a wedged pane, and a
  * wedged pane is evidence reclaimed later by `cleanup-plan`.
  *
- * `esc` first: both runtimes treat it as "interrupt the current turn", and a
- * `ctrl+c` arriving mid-turn is interpreted by neither as "exit".
+ * `esc` first, because both runtimes treat it as "interrupt the current turn".
+ * It rides **its own call**: sent together with the two `ctrl+c`, the whole
+ * sequence is absorbed as a bare turn interrupt by a Claude that is working —
+ * the turn stops, the prompt is restored to the input box, and the agent stays
+ * resident. That is the wedge run `01M0859CJAA1Z8XK41756H5Y30` recorded on
+ * three attempts, and it is why the sequence rather than #152's re-probe budget
+ * is what #158 changed.
+ *
+ * The two `ctrl+c` ride **one** call for the opposite reason: the exit
+ * affordance is a double press with a window under a second, so spaced a second
+ * apart they quit nothing at all — not an idle harness either. Both halves were
+ * measured with `tests/live/herdr-agent-quit-sequence.mjs`, whose run table is
+ * in `tests/live/README.md`; pi quits under either shape, so one sequence still
+ * serves both harnesses.
  */
-export const AGENT_STOP_KEYS = Object.freeze(["esc", "ctrl+c", "ctrl+c"]);
+export const AGENT_STOP_KEY_CALLS = Object.freeze([Object.freeze(["esc"]), Object.freeze(["ctrl+c", "ctrl+c"])]);
+
+/**
+ * How long the interrupt is given before the exit keys follow.
+ *
+ * **The call boundary is what the harness needs, not the delay**: the two calls
+ * back to back — 8 ms apart, as fast as two CLI invocations can be — quit a
+ * working Claude just as well as 1500 ms apart did. The wait is here for the
+ * loaded machine that boundary alone does not cover, and 250 ms is bracketed by
+ * measurements on both sides rather than picked: the probe quit a worker whose
+ * tool was running at 0, 250, and 1500 ms.
+ */
+export const AGENT_STOP_SETTLE_MS = 250;
 
 /**
  * The typed operations the attempt path performs against Herdr.
  *
  * `run` is injected so a test drives every answer without a multiplexer on the
- * machine — the pattern the runtime probes' transports use one layer down.
+ * machine — the pattern the runtime probes' transports use one layer down, and
+ * `sleep` for the same reason: §13.B's settle is part of the stop's shape, so a
+ * suite has to be able to assert it was waited without waiting it.
  *
- * @param {{ binary?: string, env?: object, run?: Function }} [io]
+ * @param {{ binary?: string, env?: object, run?: Function, sleep?: Function }} [io]
  * @returns {Readonly<object>}
  */
-export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}) {
+export function createHerdrControl({ binary = BINARY, env, run = runHerdr, sleep = delay } = {}) {
 	const call = (args) => run(args, { env, binary });
 
 	/**
@@ -145,6 +250,29 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 		if (!Array.isArray(entries)) return unreadable(command, listed);
 
 		return Object.freeze({ ok: true, entries: Object.freeze(entries) });
+	}
+
+	/**
+	 * One `report-metadata` call, shared by the attempt stamp and the controller
+	 * one so the two cannot drift in how they mark a pane.
+	 *
+	 * Herdr's parser requires the positional pane **before** its options, despite
+	 * rendering the positional last in `--help`; with the pane last it consumes
+	 * the source value as an option and exits 2.
+	 */
+	async function stampToken(pane, { token, value, title }) {
+		const stamped = await call([
+			"pane",
+			"report-metadata",
+			pane,
+			"--source",
+			METADATA_SOURCE,
+			"--token",
+			`${token}=${value}`,
+			"--title",
+			title,
+		]);
+		return stamped.exitCode === 0 ? Object.freeze({ ok: true, pane }) : failed("pane report-metadata", stamped);
 	}
 
 	return Object.freeze({
@@ -263,21 +391,21 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 		 * early can never make an unstarted agent look started.
 		 */
 		async stamp(pane, { attempt, title }) {
-			// Herdr's report-metadata parser requires the positional pane before its
-			// options, despite rendering the positional last in `--help`. With the
-			// pane last it consumes the source value as an option and exits 2.
-			const stamped = await call([
-				"pane",
-				"report-metadata",
-				pane,
-				"--source",
-				METADATA_SOURCE,
-				"--token",
-				`${FACTORY_ATTEMPT_TOKEN}=${attempt}`,
-				"--title",
-				title,
-			]);
-			return stamped.exitCode === 0 ? Object.freeze({ ok: true, pane }) : failed("pane report-metadata", stamped);
+			return stampToken(pane, { token: FACTORY_ATTEMPT_TOKEN, value: attempt, title });
+		},
+
+		/**
+		 * §12.8's sixth target kind, made reachable: the **controller's own pane**,
+		 * marked with the run whose controller is sitting in it.
+		 *
+		 * It is stamped only where the factory created the pane (`launch.mjs` says
+		 * so in the workspace's environment), never in a terminal the operator
+		 * happened to run `--foreground` from — the whole content of §14.27's
+		 * second sentence is that the factory does not own panes it did not create,
+		 * and an operator's own shell is the pane that sentence is about.
+		 */
+		async stampRun(pane, { run, title }) {
+			return stampToken(pane, { token: FACTORY_RUN_TOKEN, value: run, title });
 		},
 
 		/**
@@ -346,15 +474,60 @@ export function createHerdrControl({ binary = BINARY, env, run = runHerdr } = {}
 		},
 
 		/**
+		 * The panes carrying a given factory token — §12.8's guard, asked as a
+		 * question about the world rather than answered from a recorded id.
+		 *
+		 * It answers a **list**, where `paneForAttempt` answers one: an attempt owns
+		 * exactly one pane by §14.23, but a run re-entered from a second terminal has
+		 * one controller pane per process that sat in it, and reclaiming only the one
+		 * `run.started` happened to record would leave the rest behind forever.
+		 *
+		 * A pane carrying no such token is simply not in the answer, which is
+		 * §14.27 made structural: there is no shape of this call that returns a pane
+		 * the factory did not stamp.
+		 */
+		async panesTokened({ token, value }) {
+			const listed = await panes();
+			if (!listed.ok) return listed;
+
+			return Object.freeze({
+				ok: true,
+				panes: Object.freeze(listed.panes.filter((entry) => entry?.tokens?.[token] === value)),
+			});
+		},
+
+		/**
+		 * §12.8's pane reclamation is **not** on this surface, deliberately.
+		 *
+		 * §13.B and §14.27 say the controller never closes a pane: not at the end of
+		 * a run, not when an agent ignores its quit keys, not when a worker dies — a
+		 * wedged pane is evidence. Every caller of this object is on a path the run
+		 * loop can reach, so a `close` here would be one refactor away from being
+		 * called by one, and the tree-wide guard in
+		 * `tests/node/factory_controller_launch.test.mjs` would have to be widened to
+		 * let it through. The close lives in `cleanup/panes.mjs`, which nothing but
+		 * `cleanup-execute` imports.
+		 */
+
+		/**
 		 * §13.B's stop: the agent's own quit sequence, and nothing that closes a
 		 * pane. Whether it worked is not this call's answer — the keys are
 		 * delivered or they are not, and *aliveness afterwards* is read back from
 		 * `paneForAttempt`, because a harness that ignores its own quit keys is
 		 * precisely the case §13.B accepts and records.
+		 *
+		 * The sequence is played as `AGENT_STOP_KEY_CALLS` groups it, with the
+		 * settle between them, and **a refused call ends the sequence**: keys sent
+		 * after Herdr has said it cannot reach this agent would replace one honest
+		 * refusal with a second one about the same thing (§11.2).
 		 */
 		async stopAgent(target) {
-			const sent = await call(["agent", "send-keys", target, ...AGENT_STOP_KEYS]);
-			return sent.exitCode === 0 ? Object.freeze({ ok: true }) : failed("agent send-keys", sent);
+			for (const [index, keys] of AGENT_STOP_KEY_CALLS.entries()) {
+				if (index > 0) await sleep(AGENT_STOP_SETTLE_MS);
+				const sent = await call(["agent", "send-keys", target, ...keys]);
+				if (sent.exitCode !== 0) return failed("agent send-keys", sent);
+			}
+			return Object.freeze({ ok: true });
 		},
 	});
 }

@@ -49,11 +49,20 @@ import { FactoryStateError } from "../state/errors.mjs";
  *   instead; and that map must be **kept up to date** as `add_dependency`
  *   observations arrive, since one captured at run start would freeze the graph
  *   and claim against stale edges (§5.1)
- * @param {(member: object) => string} loop.resourceClassOf the class this ticket's
- *   implement attempt would draw from (`capacity/plan.mjs`)
+ * @param {(member: object, options: { at: number }) => Promise<object>} loop.dispatch
+ *   §11.5's dispatch for this ticket's implement attempt, read under §9.8's memo
+ *   (`capacity/plan.mjs`, `worker/dispatch.mjs`): which profile it would run on
+ *   and which class that draws from, having stepped past every candidate the
+ *   memo has locked. `profile: null` is "this ticket has no routable profile
+ *   right now", which is what the loop walks past and the run reports
  * @param {(lane: object) => Promise<{ disposition: string }> | { disposition: string }} loop.execute
  *   one ticket execution, from the claim to its terminal disposition. It is
  *   handed the slots the loop acquired **before** the claim (§14.21)
+ * @param {ReadonlyArray<{ ticket: number, slots: object, member?: object }>} [loop.resumed]
+ *   §5.5's adopted lanes: ticket executions a previous controller started, whose
+ *   workers this one proved alive and whose slots it took over rather than
+ *   re-acquiring. They enter **ahead of the first frontier read** — they are not
+ *   claims this loop makes, and a lane already running is never a candidate again
  * @param {() => boolean} [loop.claiming] §3.5's drain: false stops new claims and
  *   lets every in-flight execution run to its terminal disposition
  * @param {() => boolean} [loop.abandoning] §9.6's abandon: in-flight executions
@@ -65,11 +74,34 @@ import { FactoryStateError } from "../state/errors.mjs";
 /** How often a lane wait checks the durable abandon request (§10.5). */
 const ABANDON_POLL_MS = 25;
 
+/**
+ * A ticket the tracker calls claimable and this run cannot spend, as §3.5's
+ * report and §10.3's end reason read it.
+ *
+ * It names the **declared** class first, because that is the one an operator
+ * looking at the routing expects to be running, and then every class the reroute
+ * tried — which under #155 is what "exhausted" actually means. Reporting only
+ * the first would say a class is out while the run had in fact run out of
+ * classes, and the two need different things doing about them.
+ */
+function blockedMember(ticket, route) {
+	const blocked = route.considered.filter((seen) => seen.state === "blocked");
+
+	return Object.freeze({
+		ticket,
+		class: blocked[0]?.class ?? null,
+		until: blocked[0]?.until ?? null,
+		classes: Object.freeze([...new Set(blocked.map((seen) => seen.class))]),
+		considered: route.considered,
+	});
+}
+
 export async function schedule({
 	capacity,
 	frontier,
-	resourceClassOf,
+	dispatch,
 	execute,
+	resumed = [],
 	claiming = () => true,
 	abandoning = () => false,
 	at = Date.now,
@@ -137,11 +169,28 @@ export async function schedule({
 	function abandon() {
 		for (const [ticket, lane] of lanes) {
 			lane.promise.catch(() => {});
-			lane.slots.model.release({ reason: "abandoned", at: at() });
+			// A resumed lane whose attempt had already ended holds no model slot —
+			// §9.4's model span is one attempt, and its holder gave it back. The
+			// ticket slot is the one that spans the execution and is always there.
+			lane.slots.model?.release({ reason: "abandoned", at: at() });
 			lane.slots.ticket.release({ reason: "abandoned", at: at() });
 			released.push(Object.freeze({ ticket, disposition: "released", abandoned: true }));
 		}
 		lanes.clear();
+	}
+
+	// §5.5's adopted lanes, **before the first frontier read**. They were not
+	// claimed by this loop and are not claimable now — the ticket is already this
+	// factory's, its slots are already held, and the ticket execution is part-way
+	// through §8.1's pipeline. Entering them here rather than in the loop is what
+	// makes that true of the very first decision: `nextClaimable` skips a running
+	// ticket, so an adopted lane cannot be offered a second time even if the
+	// frontier still lists it (§2.1, §15 case 6).
+	for (const lane of resumed) {
+		lanes.set(lane.ticket, {
+			slots: lane.slots,
+			promise: runLane({ member: lane.member ?? { ticket: lane.ticket, labels: [] }, slots: lane.slots, execute, capacity, at }),
+		});
 	}
 
 	while (claiming() && !abandoning()) {
@@ -175,12 +224,18 @@ export async function schedule({
 			});
 		let candidate = claimNext();
 
-		// Walk past candidates whose class the memo gates, lowest number first,
+		// Walk past candidates the memo leaves no route for, lowest number first,
 		// without re-reading the frontier per step: one view, one pass.
-		let resourceClass = null;
+		let route = null;
 		while (candidate !== null) {
 			try {
-				resourceClass = resourceClassOf(candidate);
+				// #154's gate and #155's reroute in one answer: the seam settles the
+				// memo for every profile this ticket's implement role can reach, in
+				// the declared order, and comes back with the first one this run may
+				// spend. An expiry is settled by probe in there, before any claim,
+				// which is how a class is re-admitted by probe and never by
+				// assumption (§5.2).
+				route = await dispatch(candidate, { at: at() });
 			} catch (error) {
 				if (!(error instanceof FactoryCapacityError)) throw error;
 				// §11.5's ticket-scoped conflict, raised **before any work**: the ticket
@@ -193,16 +248,11 @@ export async function schedule({
 				continue;
 			}
 
-			// #154: the dispatch gate. A live memo blocks the launch; an expiry is
-			// settled by probe right here, before any claim — which is how a class
-			// is re-admitted by probe and never by assumption (§5.2), and how the
-			// rediscovery every ticket used to pay for stops happening.
-			const gate = await capacity.exhaustion.settle(resourceClass, { at: at() });
-			if (gate.state === "blocked") {
-				memoBlocked.set(
-					candidate.ticket,
-					Object.freeze({ ticket: candidate.ticket, class: resourceClass, until: gate.until ?? null }),
-				);
+			// #155: no route left is what blocks a ticket now, and it is a stronger
+			// statement than #154's single blocked class — every profile the role
+			// can reach was tried, and the seam's record says which and why.
+			if (route.profile === null) {
+				memoBlocked.set(candidate.ticket, blockedMember(candidate.ticket, route));
 				candidate = claimNext();
 				continue;
 			}
@@ -219,9 +269,23 @@ export async function schedule({
 			continue;
 		}
 
+		// §8.6 and §10.5 both say *stop claiming*, and that is a statement about
+		// the claim rather than about the iteration that led to it. The candidate
+		// walk above awaits — the memo gate settles, and a probe may spend a whole
+		// completion in there — so a lane can reach its terminal disposition while
+		// it runs, and a breaker that tripped on that disposition must not be read
+		// only at the head of a pass that started before it. Re-read here, where
+		// the claim is, exactly as `abandoning()` is re-read after the frontier.
+		if (!claiming() || abandoning()) break;
+
 		// §9.4, §14.21: the ticket slot and the implement attempt's model slot,
 		// **together, before the claim**. A null answer is the backpressure.
-		const slots = capacity.acquireLane({ ticket: candidate.ticket, resourceClass, at: at() });
+		//
+		// The class is the **route's**, never the role's declared one: a rerouted
+		// lane runs on a different provider and must take its slot from that
+		// provider's pool, or the pool that arbitrates the GPU would be counting
+		// a lane that never touches it (§9.1).
+		const slots = capacity.acquireLane({ ticket: candidate.ticket, resourceClass: route.class, at: at() });
 		if (slots === null) {
 			exhaustedAtDecision = [...memoBlocked.values()];
 			if (lanes.size === 0) break;
@@ -229,7 +293,10 @@ export async function schedule({
 			continue;
 		}
 
-		lanes.set(candidate.ticket, { slots, promise: runLane({ member: candidate, slots, execute, capacity, at }) });
+		lanes.set(candidate.ticket, {
+			slots,
+			promise: runLane({ member: candidate, slots, route, execute, capacity, at }),
+		});
 	}
 
 	if (abandoning()) abandon();
@@ -302,10 +369,14 @@ function nextClaimable(view, { running, executed, refused, blocked = [] }) {
  * what this catches is the execution that ended without giving anything back,
  * which would otherwise leave a row held for a lane that no longer exists.
  */
-function runLane({ member, slots, execute, capacity, at }) {
+function runLane({ member, slots, route, execute, capacity, at }) {
 	return (async () => {
 		try {
-			const outcome = await execute({ ticket: member.ticket, member, slots, capacity });
+			// The route travels with the lane rather than being recomputed inside it:
+			// the slot above was taken from *this* class, and a pipeline resolving
+			// §11.5 again could reach a different answer — the memo moves, and the
+			// second answer would be a lane running on a pool it never took.
+			const outcome = await execute({ ticket: member.ticket, member, slots, route, capacity });
 			return Object.freeze({ ticket: member.ticket, disposition: outcome?.disposition ?? null, outcome });
 		} catch (error) {
 			return Object.freeze({
@@ -317,7 +388,10 @@ function runLane({ member, slots, execute, capacity, at }) {
 						: Object.assign(error, { reason: error.reason ?? null }),
 			});
 		} finally {
-			slots.model.release({ reason: "attempt-ended", at: at() });
+			// Optional for the reason `abandon` names: a resumed lane may have been
+			// adopted between two attempts, holding only the row that spans the
+			// execution (§9.4, §5.5).
+			slots.model?.release({ reason: "attempt-ended", at: at() });
 			slots.ticket.release({ reason: "terminal-disposition", at: at() });
 		}
 	})();

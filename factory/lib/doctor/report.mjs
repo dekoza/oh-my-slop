@@ -1,7 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { artifactBytesByClass } from "../artifacts/ledger.mjs";
 import { capacityFor } from "../capacity/report.mjs";
 import { baselineForRepo } from "../checks/baseline.mjs";
 import { checkRecord } from "../checks/run.mjs";
@@ -13,6 +12,8 @@ import { packageHandshake } from "../package/handshake.mjs";
 import { budgetSpend } from "../pipeline/budgets.mjs";
 import { reconcile, RECONCILE_MODES } from "../reconcile/engine.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
+import { HELD_REASONS, planExpiry } from "../retention/expiry.mjs";
+import { PINS } from "../retention/pins.mjs";
 import { resolveStorePaths } from "../state/location.mjs";
 import { FactoryTrackerError } from "../tracker/errors.mjs";
 import { readScope } from "../tracker/frontier.mjs";
@@ -89,13 +90,18 @@ export async function doctorReport(
 			: await reconcile(store, { probes, mode: RECONCILE_MODES.report, actor: "operator:doctor", at });
 
 	const value = {
-		schema_version: 1,
+		// v2: #94's `artifacts.by_class` became #117's `retention`, which carries
+		// §12.10's per-run half beside it and the horizon both are measured
+		// against. A renamed section is a schema change even where no consumer has
+		// been written yet — §4.4's rule for the projection contract, applied to
+		// the report that reads it.
+		schema_version: 2,
 		at,
 		store: storeSection(store, agentDir),
 		scope: await scopeSection(store, { scope, tracker, at }),
 		integrity: store === null ? null : integritySection(store),
 		reconcile: reconciled,
-		pins: pinsSection(unresolved, reconciled),
+		pins: pinsSection(unresolved, reconciled, at),
 		/**
 		 * §9.7's saturation numbers. They belong in a diagnosis for the same reason
 		 * they belong in `status`: "why did this stop" and "why is this slow" have
@@ -113,7 +119,17 @@ export async function doctorReport(
 		package: packageSection(handshake),
 		monitor: monitorSection(repoRoot),
 		legacy: legacySection(repoRoot, agentDir.path),
-		artifacts: store === null ? null : Object.freeze({ by_class: artifactBytesByClass(store) }),
+		/**
+		 * §12's whole retention picture: the horizon in force, what the next expiry
+		 * would take, what is being held past the horizon and by which pin, and
+		 * §12.10's bytes per class and per run.
+		 *
+		 * It is `planExpiry`'s own value rather than a diagnosis-shaped copy of it,
+		 * so `doctor`, `status`, and the pass that deletes answer from one
+		 * derivation — and the plan writes nothing, which is what keeps §14.24 a
+		 * property of this section rather than a rule it follows.
+		 */
+		retention: store === null ? null : planExpiry(store, { retention: config.retention, at }),
 	};
 
 	const alarms = alarmsOf(value);
@@ -151,15 +167,46 @@ function alarmsOf(value) {
 		);
 	}
 
+	// §12.4's alarm is about **duration** — "a run pinned this way for weeks means
+	// an effect nothing can settle". The durable spelling of "for weeks" is not a
+	// constant nobody chose: it is the run having outlived the tier-1 horizon and
+	// still being here, which is the operator's own configured patience. So the
+	// pin is reported either way and *escalated* when the horizon has passed it.
+	const heldPastHorizon = new Set(
+		(value.retention?.held ?? [])
+			.filter((entry) => entry.pins.some((pin) => pin.pin === PINS.unresolvedEffect))
+			.map((entry) => entry.run),
+	);
+
 	for (const pin of value.pins) {
+		const sustained = heldPastHorizon.has(pin.run);
 		alarms.push(
 			alarm(
 				"unresolved-effect-pin",
-				pin.unsettleable > 0
-					? `${describeRun(pin.run)} holds ${pin.unresolved} unresolved effect(s), ${pin.unsettleable} of ` +
-						"which nothing in this package can settle (§12.4)."
-					: `${describeRun(pin.run)} holds ${pin.unresolved} unresolved effect(s), still awaiting a probe (§12.4).`,
-				pin,
+				`${describeRun(pin.run)} holds ${pin.unresolved} unresolved effect(s)` +
+					(pin.unsettleable > 0
+						? `, ${pin.unsettleable} of which nothing in this package can settle`
+						: ", still awaiting a probe") +
+					(sustained
+						? ` — and this is what is keeping it in tier 1 past the horizon (§12.4).`
+						: " (§12.4)."),
+				Object.freeze({ ...pin, holding_past_horizon: sustained }),
+			),
+		);
+	}
+
+	// A run past the horizon that never ended is held out of expiry by §12.6's
+	// "never mid-run", and unlike a pin nothing will ever release it: §10.4 adopts
+	// an orphan only when a start names its scope again. Reported here because it
+	// is the one way a run's detail is retained forever with nobody deciding so.
+	for (const entry of value.retention?.held ?? []) {
+		if (entry.reason !== HELD_REASONS.live) continue;
+		alarms.push(
+			alarm(
+				"unended-run-past-horizon",
+				`Run ${entry.run} is past the tier-1 horizon and has never ended, so expiry will not touch it ` +
+					"(§12.6). Re-enter its scope so a controller adopts and closes it, or it keeps its full detail forever.",
+				entry,
 			),
 		);
 	}
@@ -377,7 +424,7 @@ function integritySection(store) {
  * §5.4 puts in scope for exactly this reason: an obligation nothing reports is
  * an obligation nobody discharges.
  */
-function pinsSection(unresolved, reconciled) {
+function pinsSection(unresolved, reconciled, at) {
 	const unsettleable = new Set((reconciled?.unsettled ?? []).map((entry) => entry.effect_key));
 	const pins = new Map();
 
@@ -396,7 +443,19 @@ function pinsSection(unresolved, reconciled) {
 		pins.set(effect.run_id, pin);
 	}
 
-	return Object.freeze([...pins.values()].map((pin) => Object.freeze({ ...pin, effects: Object.freeze(pin.effects) })));
+	return Object.freeze(
+		[...pins.values()].map((pin) =>
+			Object.freeze({
+				...pin,
+				// §12.4's alarm is about *duration*: "a run pinned this way for weeks
+				// means an effect nothing can settle". Stating the age is what lets the
+				// operator tell an obligation minutes old from one nothing will ever
+				// discharge, without subtracting two epoch integers by hand.
+				pinned_for_ms: at - pin.oldest_requested_at,
+				effects: Object.freeze(pin.effects),
+			}),
+		),
+	);
 }
 
 /**
