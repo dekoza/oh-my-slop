@@ -42,6 +42,7 @@ Targeted minimums:
 - Any change under `prompts/`: `uv run pytest tests/test_prompt_templates.py tests/test_readme.py`
 - Any change under `extensions/` or to package entrypoints: `node --test tests/node/*.mjs`
 - Any change under `factory/`: `node --test tests/node/factory_*.test.mjs`
+- Any change to `factory/AGENTS.md`: `uv run pytest tests/test_factory_agents_index.py`
 - Any change to `package.json`, `pyproject.toml`, or installable entrypoints: `uv run pytest tests/test_pi_package_installability.py`
 - Any change to `scripts/validate_refs.py`: `uv run pytest tests/test_validate_refs.py`
 
@@ -90,6 +91,11 @@ file. [`factory/AGENTS.md`](factory/AGENTS.md) holds them, beside the code they 
 before changing anything under `factory/`, and read it as a reviewer too, since findings about
 factory code cite it. [`docs/specs/software-factory.md`](docs/specs/software-factory.md) is the
 authority above both; cite the section a change answers to.
+
+That file is an **index**, not a narrative: one row per invariant, naming the module that owns it
+and the spec section it answers to, with the reasoning left in the spec and in the module's own
+comments. A new invariant is a new row. `tests/test_factory_agents_index.py` holds that shape and
+a line ceiling, so the section cannot go back to growing a paragraph per ticket.
 
 The mandatory commands above stay here: `factory/lib/migrate/matrix.mjs` reads this file's
 `## Mandatory commands` section at the repository root, once, at migration (§11.6).
