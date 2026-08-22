@@ -13,7 +13,7 @@ license: MIT (adapted from mattpocock/skills)
 
 Actively build and sharpen the project's domain model as you design. This is the *active* discipline — challenging terms, inventing edge-case scenarios, and writing the glossary and decisions down the moment they crystallise. (Merely *reading* `CONTEXT.md` for vocabulary is not this skill — that's a one-line habit any skill can do. This skill is for when you're changing the model, not just consuming it.)
 
-For the underlying DDD concepts (Bounded Contexts, Aggregates, Ubiquitous Language theory), see the `domain-driven-design` skill. For the broader documentation workflow (specs, runbooks, drift triage), see `documentation-lifecycle`. If the repo already has an ADR convention, follow it — [ADR-FORMAT.md](./ADR-FORMAT.md) is the default, not an override. The domain doc layout — where the glossary and ADRs live, and whether the repo is single- or multi-context — should have been provided to you; run `/setup-project-skills` if not. The structure below is what that config describes by default.
+For the underlying DDD concepts (Bounded Contexts, Aggregates, Ubiquitous Language theory), see the `domain-driven-design` skill. For the broader documentation workflow (specs, runbooks, drift triage), see `documentation-lifecycle`. If the repo already has an ADR convention, follow it — [ADR-FORMAT.md](./ADR-FORMAT.md) is the default, not an override. The domain doc layout — where the glossary and ADRs live, and whether the repo is single- or multi-context — should have been provided to you; tell the user to run `/setup-project-skills` if not. The structure below is what that config describes by default.
 
 ## File structure
 
