@@ -1,11 +1,10 @@
 ---
 name: domain-modeling
 description: >
-  Use when the project's domain model is being changed — terms pinned down, design
-  decisions landing, vocabulary conflicting — or when another skill needs to maintain
-  the domain model while decisions land. Triggers on: "pin down the terminology",
-  "ubiquitous language", "record this decision", "add it to the glossary",
-  "domain model".
+  Use when the user is discussing codebase terminology, writing or editing `CONTEXT.md`,
+  recording or editing an ADR, or when another skill needs to maintain the domain model
+  while decisions land. Triggers on: "pin down the terminology", "ubiquitous language",
+  "record this decision", "add it to the glossary", "domain model".
 license: MIT (adapted from mattpocock/skills)
 ---
 
