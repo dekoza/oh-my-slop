@@ -1,0 +1,29 @@
+{
+  "skill_name": "implement",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "You have been given three build-ready implementation tickets. Ticket A has no blockers. Ticket B is blocked by A. Ticket C is also blocked by A. No ticket was selected explicitly. State the scope of this invocation and the first work you take on; do not implement the tickets.",
+      "expected_output": "The response selects Ticket A as the only slice for this session, leaves B and C untouched, and keeps graph, branch, and worktree orchestration outside the implementation worker.",
+      "files": [],
+      "expectations": [
+        "The response selects one unblocked frontier ticket, Ticket A, for this session.",
+        "The response does not attempt the blocked tickets, Ticket B or Ticket C.",
+        "The response does not create branches or worktrees; those remain owned by the caller or controller.",
+        "The response states that each remaining ticket belongs in a fresh session."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "The user provides a small spec with one behavior: reject an expired invitation token and show the existing invalid-invitation response. There is no ticket list. State whether this is valid input for implement and how completion is judged; do not write code.",
+      "expected_output": "The response accepts the coherent spec as one ticket-sized slice and judges completion through its acceptance behavior, affected tests, two-axis review, and a committed result.",
+      "files": [],
+      "expectations": [
+        "The response treats the single coherent spec as one ticket-sized slice rather than requiring a tracker ticket.",
+        "The response identifies the expired-token behavior as the acceptance target.",
+        "The response requires affected checks and both review axes before completion.",
+        "The response limits the invocation to that slice."
+      ]
+    }
+  ]
+}
