@@ -60,15 +60,28 @@ export const INCONCLUSIVE_EXHAUSTION_MEMO_MS = 300_000;
  *
  * Each signature is a name plus a case-insensitive pattern, so the recorded
  * evidence says *which* wording decided, not merely that something did.
+ *
+ * **The words are letter-bounded, not substrings.** The pane tail is prose as
+ * often as it is an error: file contents the worker is writing, the ticket
+ * body, its own commentary. A bare `/quota/` read "quotations" in a README as
+ * the provider's refusal and stopped a working worker (run
+ * 01M0ZD1G52EC2CD946Y3B1AFQ8); `\b` alone would not do, because
+ * `insufficient_quota` and `rate_limit_error` — the wordings that *are*
+ * refusals — join the word to its neighbour with an underscore, which is a
+ * word character. So the boundary is "no letter on either side", and the
+ * `limit` family additionally admits `limited` and `limits` — the harness
+ * says "rate limited" — while "rate-limiting middleware" stays prose.
  */
+const LETTER_BOUNDED = (source) => new RegExp(`(?<![a-z])${source}(?![a-z])`, "i");
+
 export const REFUSAL_SIGNATURES = Object.freeze([
-	Object.freeze({ name: "quota", pattern: /quota/i }),
-	Object.freeze({ name: "rate-limit", pattern: /rate.?limit/i }),
-	Object.freeze({ name: "too-many-requests", pattern: /too many requests/i }),
-	Object.freeze({ name: "daily-limit", pattern: /daily.?limit/i }),
-	Object.freeze({ name: "usage-limit", pattern: /usage.?limit/i }),
-	Object.freeze({ name: "available-balance", pattern: /available balance/i }),
-	Object.freeze({ name: "out-of-budget", pattern: /out of budget/i }),
+	Object.freeze({ name: "quota", pattern: LETTER_BOUNDED("quota") }),
+	Object.freeze({ name: "rate-limit", pattern: LETTER_BOUNDED("rate.?limit(?:ed|s)?") }),
+	Object.freeze({ name: "too-many-requests", pattern: LETTER_BOUNDED("too many requests") }),
+	Object.freeze({ name: "daily-limit", pattern: LETTER_BOUNDED("daily.?limit(?:ed|s)?") }),
+	Object.freeze({ name: "usage-limit", pattern: LETTER_BOUNDED("usage.?limit(?:ed|s)?") }),
+	Object.freeze({ name: "available-balance", pattern: LETTER_BOUNDED("available balance") }),
+	Object.freeze({ name: "out-of-budget", pattern: LETTER_BOUNDED("out of budget") }),
 ]);
 
 /**
