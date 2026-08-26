@@ -795,11 +795,28 @@ export function decideOutcome({
 
 	if (GONE_STATUSES.includes(liveness.status)) return Object.freeze({ outcome: "dead-worker" });
 
-	// #154: the provider's refusal, observed in the pane output, outranks the
-	// three silence-based verdicts below — it says *why* the worker produced
-	// nothing, and the reason is neither the worker's fault nor a clock's.
-	if (refusal !== null) return Object.freeze({ outcome: "provider-refused" });
+	const silence = decideSilence({ liveness, at, deadline, noProgressDeadline, observationDegraded, settleGraceMs });
+	if (silence === null) return null;
 
+	// #154: the provider's refusal, observed in the pane output, reclassifies
+	// the silence-based verdicts — it says *why* the worker produced nothing,
+	// and the reason is neither the worker's fault nor a clock's. It is a
+	// reading of silence and nothing else: a worker that is still working with
+	// a matched line on its screen is still working. Run
+	// 01M0ZD1G52EC2CD946Y3B1AFQ8 ended a live attempt because this check once
+	// ran before the silence verdicts rather than on them.
+	if (refusal !== null && REFUSAL_RECLASSIFIABLE.includes(silence.outcome)) {
+		return Object.freeze({ outcome: "provider-refused" });
+	}
+	return silence;
+}
+
+/**
+ * §6.6's three silence-based verdicts, or null while the worker is still
+ * entitled to its silence: the settle grace after the turn ended, the
+ * no-progress clock, and the hard ceiling.
+ */
+function decideSilence({ liveness, at, deadline, noProgressDeadline, observationDegraded, settleGraceMs }) {
 	if (liveness.settledAt !== null && at - liveness.settledAt >= settleGraceMs) {
 		return Object.freeze({ outcome: "no-result" });
 	}
