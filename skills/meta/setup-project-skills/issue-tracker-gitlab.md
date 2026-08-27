@@ -47,6 +47,20 @@ Unlike GitHub, GitLab numbers issues and MRs separately, so `#42` is unambiguous
 
 Create a GitLab issue.
 
+## When a skill says "open a pull request"
+
+GitLab calls them merge requests:
+
+```sh
+git push -u origin <branch>
+glab mr create --source-branch <branch> --target-branch <base-branch> --title "..." --description "..."
+```
+
+Note `--description`, **not** `--body`; pass `--description -` for an editor. Put
+`Closes #<iid>` in the description so the merge closes the issue. Skip
+`--remove-source-branch` unless the repo asks for it, and do not merge — `glab mr merge`
+is the maintainer's call.
+
 ## When a skill says "fetch the relevant ticket"
 
 Run `glab issue view <number> --comments`.

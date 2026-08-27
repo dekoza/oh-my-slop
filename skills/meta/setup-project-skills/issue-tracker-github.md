@@ -60,6 +60,19 @@ resolve with `gh pr view 42` and fall back to `gh issue view 42`.
 Create a GitHub issue — **unless** this repo is intake-only (see the note at the top),
 in which case publish to the agent work tracker instead.
 
+## When a skill says "open a pull request"
+
+```sh
+git push -u origin <branch>
+gh pr create --base <base-branch> --head <branch> --title "..." --body "$(cat <<'EOF'
+...
+EOF
+)"
+```
+
+Use a heredoc for multi-line bodies. Put `Closes #<number>` in the body so the merge
+closes the issue. Do not merge — `gh pr merge` is the maintainer's call.
+
 ## When a skill says "fetch the relevant ticket"
 
 Run `gh issue view <number> --comments`.
