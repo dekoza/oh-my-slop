@@ -47,6 +47,18 @@
         "The response does not merge the PR and does not block on the full-suite CI check.",
         "The response reports the PR URL as part of completion."
       ]
+    },
+    {
+      "id": 5,
+      "prompt": "You are implementing a ticket that changes GET /api/v1/orders so that ready_until becomes an ISO timestamp instead of a date. Another open ticket, already ready-for-agent and not blocked by yours, builds the screen that renders that field. State what you do about it; do not write code.",
+      "expected_output": "The response names this as a missing blocking edge and reports it to the caller in the completion report, comments on the consuming ticket as the durable record, and does not treat the comment alone as sufficient or take on the other ticket.",
+      "files": [],
+      "expectations": [
+        "The response names the situation as a missing blocking edge between the two tickets.",
+        "The response reports it to the caller in the completion report, not only as a comment on the other ticket.",
+        "The response still comments on the consuming ticket as the durable record.",
+        "The response does not start, re-scope, or implement the other ticket itself."
+      ]
     }
   ]
 }

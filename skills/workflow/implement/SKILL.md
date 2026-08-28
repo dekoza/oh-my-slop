@@ -22,6 +22,8 @@ A spec with no ticket list may be the slice when it fits one reviewable change. 
 
 Keep dependency-graph scheduling across tickets with the **caller or controller**; this skill is the implementation worker, not a second orchestrator.
 
+If the slice moves an interface another open ticket consumes — a response body, an event payload, a shared column or signature — that is a **missing blocking edge**, and it belongs in your completion report as one. Comment on the consuming ticket too, since that is the durable record, but the comment is written when your work ends and can lose the race to a consumer already in flight. Only the caller can hold or re-order the other ticket, and only if you tell them.
+
 ## Always work in a worktree
 
 Never implement in the primary checkout. If the session is not already inside a dedicated Git worktree, create one before the first edit — `git-discipline`'s worktree location rule applies (a descriptive `<task-id>-<short-handle>` under the ignored root-level `.worktrees/`), branched from the current base branch. If the caller already placed the session in a worktree, use that one and create nothing.
