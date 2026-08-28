@@ -26,7 +26,7 @@ def test_implement_owns_one_frontier_ticket_not_graph_orchestration() -> None:
     assert "exactly one unblocked frontier ticket" in body
     assert "fresh session" in body
     assert "caller or controller" in body
-    assert "current worktree" in body
+    assert "Never implement in the primary checkout" in body
 
 
 def test_readme_describes_the_worker_scope() -> None:
@@ -47,5 +47,5 @@ def test_multi_ticket_eval_guards_the_worker_boundary() -> None:
     expectations = "\n".join(multi_ticket["expectations"])
 
     assert "one unblocked frontier ticket" in expectations
-    assert "does not create branches or worktrees" in expectations
+    assert "dedicated worktree" in expectations
     assert "does not attempt the blocked tickets" in expectations
