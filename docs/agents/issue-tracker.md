@@ -111,6 +111,12 @@ Maps and tickets live on Gitea only — never on the intake tracker.
   GitHub. Semantics: the issue in the URL becomes blocked by the issue in the body.
   `GET` on the same path lists everything blocking an issue; `DELETE` removes an edge.
   A ticket is unblocked when every blocker is closed.
+- **Terminal review ticket**: `to-tickets` ends every map's implementation run in one
+  `ready-for-human` + `workflow:implement` ticket, `Review the delivered <map title>`,
+  blocked by every other ticket of the run. It is the sink a factory run drains into —
+  the one ticket left open when everything implementable is done — and the factory warns
+  (`no-human-sink`) when a parent scope has none. The operator answers its three questions
+  in a comment and closes it.
 - **Frontier query**: list the map's open children, drop any that still have an open
   blocker (`GET .../dependencies`) or an assignee; first in map order wins.
 - **Claim**: `tea issues edit <index> --add-assignees <me>` — the session's first write.

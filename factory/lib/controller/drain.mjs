@@ -132,6 +132,14 @@ export function drainReport({ view = null, executed = null, inFlight = [], missi
 		blocked: executed?.blocked ?? [],
 		drained: verdict.drained,
 		drain: verdict,
+		// #183: the sinks — `ready-for-human` members, by the frontier's own class
+		// rather than the mapped one, since `ineligible` maps to human-owned too
+		// and is not a ticket anybody was asked to answer.
+		sink: Object.freeze(
+			members
+				.filter((member) => member.frontier_class === MEMBER_CLASSES.humanOwned)
+				.map((member) => member.ticket),
+		),
 		/**
 		 * §7.6: the report **may note** Gitea's unmergeable flag, and **no
 		 * automation acts on it in v1**. It is carried through from the member the

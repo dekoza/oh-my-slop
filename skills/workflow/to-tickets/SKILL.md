@@ -49,9 +49,11 @@ Draw the edge anyway: the ticket that defines the shape blocks every ticket that
 
 **"Tell the other ticket before merging" in the producer's acceptance criteria is not a substitute.** That note is written by the ticket changing the shape, delivered once its work is already done, to a ticket that may have been built and merged in the meantime. An edge is a constraint the frontier honours; a note is a hope about timing.
 
+**The last ticket is always the human's.** Every breakdown ends in one terminal **review ticket** — `Review the delivered <parent title>` — blocked by every other ticket of the run and marked for a human, never an agent. It is the sink the whole run drains into: when the software factory has implemented everything implementable, this is the one ticket left open on the board, and it is what asks the operator to look. Without it a fully delivered map simply goes quiet. It is not optional and not a ticket the user can drop from the breakdown; a breakdown without it is not publishable. Its body asks three fixed questions — does the delivered behaviour match the destination; what is wrong or missing; what should the next map chart — and the operator answers in a comment and closes it, the same shape a wayfinder resolution has.
+
 ### 4. Quiz the user
 
-Present the proposed breakdown as a numbered list. For each ticket, show:
+Present the proposed breakdown as a numbered list, the review ticket last so it is approved with the rest. For each ticket, show:
 
 - **Title**: short descriptive name
 - **Blocked by**: which other tickets (if any) must complete first
@@ -70,8 +72,8 @@ Iterate until the user approves the breakdown.
 
 Publish the approved tickets, following the tracker doc's conventions. The tickets are the same whatever the tracker — only the shape of the blocking edges changes:
 
-- **A forge-backed tracker** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the tracker's native blocking relationship where the doc describes one; otherwise set each ticket's "Blocked by" to the blocking issues.
-- **Local files** → write one file per ticket at the path the tracker doc specifies, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below — one ticket per file, never a single combined file.
+- **A forge-backed tracker** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the tracker's native blocking relationship where the doc describes one; otherwise set each ticket's "Blocked by" to the blocking issues. The review ticket is published **last**, with a blocking edge from **every** other ticket of the run, labelled `workflow:implement` and `ready-for-human`; use the review-ticket template below.
+- **Local files** → write one file per ticket at the path the tracker doc specifies, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below — one ticket per file, never a single combined file. The review ticket is the last numbered file, its "Blocked by" listing every other file, its status `ready-for-human`.
 
 **Every forge-backed ticket opens with the literal first body line `Part of #<parent>`** — the issue the tickets were cut from (the map, or the spec issue when there is no map), then a blank line, then the template below. This line is the membership contract the software factory resolves a parent-scoped run through (`docs/specs/software-factory.md` §3.1): one anchored pattern on the first line, nothing looser. A ticket whose first line is anything else — a heading, a blank line, prose that mentions the parent — is not a member of anything, and a run over its parent refuses as `scope-empty`. When the source is not an issue on the tracker there is no parent, and the line is omitted.
 
@@ -120,6 +122,32 @@ The end-to-end behaviour this ticket makes work, from the user's perspective —
 - A reference to each blocking ticket, or "None — can start immediately".
 
 </issue-template>
+
+<review-ticket-template>
+
+Part of #<parent>
+
+## Parent
+
+A reference to the parent issue, by name and link.
+
+## Review the delivered <parent title>
+
+Every other ticket of this run blocks this one, so it becomes takeable only when the rest is done. It is yours, not an agent's: answer in a comment, then close it.
+
+1. Does the delivered behaviour match the destination the parent names? Where does it fall short?
+2. What is wrong or missing — bugs to file, tickets to reopen?
+3. What should the next map chart?
+
+## Delivered by
+
+- Each ticket of the run, by name and link.
+
+## Blocked by
+
+- Every other ticket of the run.
+
+</review-ticket-template>
 
 In either form, avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
 

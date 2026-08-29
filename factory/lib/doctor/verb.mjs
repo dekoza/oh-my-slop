@@ -143,11 +143,16 @@ function trackerFor(config) {
 function headline(report) {
 	const scope = scopeHeadline(report.scope);
 
-	if (report.alarms.length === 0) return `doctor found nothing to raise.${scope}`;
+	// #183: warnings ride the headline after the verdict, named by reason so an
+	// operator scanning one line sees them without them reading as a failure.
+	const warnings =
+		report.warnings.length === 0 ? "" : ` Warning: ${report.warnings.map((warning) => warning.reason).join(", ")}.`;
+
+	if (report.alarms.length === 0) return `doctor found nothing to raise.${scope}${warnings}`;
 
 	return (
 		`doctor raises ${report.alarms.length} ${report.alarms.length === 1 ? "alarm" : "alarms"}: ` +
-		`${report.alarms.map((alarm) => alarm.reason).join(", ")}.${scope}`
+		`${report.alarms.map((alarm) => alarm.reason).join(", ")}.${scope}${warnings}`
 	);
 }
 

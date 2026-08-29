@@ -23,6 +23,23 @@ def test_to_tickets_marks_build_work_for_the_implement_workflow() -> None:
     assert "ready-for-human" in to_tickets_text
 
 
+def test_to_tickets_ends_every_run_in_a_human_review_ticket() -> None:
+    """#183: the last ticket is the human's — the sink a factory run drains into."""
+    to_tickets_text = (find_skill_dir(SKILLS_ROOT, "to-tickets") / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    tracker_doc_text = (REPO_ROOT / "docs" / "agents" / "issue-tracker.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Review the delivered <parent title>" in to_tickets_text
+    assert "<review-ticket-template>" in to_tickets_text
+    assert "blocked by every other ticket" in to_tickets_text
+    assert "a breakdown without it is not publishable" in to_tickets_text
+    assert "Part of #<parent>" in to_tickets_text
+    assert "no-human-sink" in tracker_doc_text
+
+
 def test_wayfinder_hands_build_ready_work_to_implementation_tickets() -> None:
     wayfinder_text = (find_skill_dir(SKILLS_ROOT, "wayfinder") / "SKILL.md").read_text(
         encoding="utf-8"

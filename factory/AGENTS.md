@@ -517,6 +517,9 @@ question is which rows have become the module's job to state, not what the ceili
   over it** — one read per typed ticket, above the process-shape branch, only for a start that
   would read a live frontier; a map beside other tickets is `scope-invalid`. —
   `controller/map-scope.mjs` · #182
+- **A parent scope with no `ready-for-human` member warns `no-human-sink`, never refuses**; the
+  drain report carries `sink`, and a delivered scope's headline leads with it. —
+  `tracker/frontier.mjs` · `controller/drain.mjs` · #183
 - **The edge set is a parameter**: a caller maintaining the graph from the poll passes it, and
   `doctor` omits it. — `tracker/frontier.mjs` · §5.1
 - **`awaits_external` is a field rather than a seventh member class.** — `tracker/frontier.mjs` ·
