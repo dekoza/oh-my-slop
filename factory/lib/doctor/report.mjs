@@ -15,7 +15,7 @@ import { reconcile, RECONCILE_MODES } from "../reconcile/engine.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
 import { resolveStorePaths } from "../state/location.mjs";
 import { FactoryTrackerError } from "../tracker/errors.mjs";
-import { readScope } from "../tracker/frontier.mjs";
+import { emptyScopeDiagnosis, isEmptyParentScope, readScope } from "../tracker/frontier.mjs";
 import { isDue, readCursor } from "../tracker/observation.mjs";
 
 /**
@@ -164,10 +164,16 @@ function alarmsOf(value) {
 		);
 	}
 
+	// #181: a parent the tracker answered about and nothing declares. The tracker
+	// was readable — this is the scope being empty, and the fix is on the
+	// tickets, so it is its own alarm rather than the unreadable one below.
+	if (value.scope.requested && value.scope.ok === false && value.scope.error.reason === "scope-empty") {
+		alarms.push(alarm("scope-empty", value.scope.error.message, value.scope.error));
+	}
 	// A scope the operator asked about and the factory could not read: no run
 	// over it can claim anything, and the reason is a fact rather than a
 	// diagnosis the operator has to reconstruct from a stack trace.
-	if (value.scope.requested && value.scope.ok === false) {
+	else if (value.scope.requested && value.scope.ok === false) {
 		alarms.push(
 			alarm(
 				"tracker-unreadable",
@@ -257,6 +263,22 @@ async function scopeSection(store, { scope, tracker, at }) {
 
 	try {
 		const resolved = await readScope(tracker, scope, { at });
+
+		// #181: the tracker answered and nothing on it declares this parent. A
+		// healthy-looking zero here is exactly the answer a run would have acted
+		// on, so it is reported as the defect it is, in `start`'s own words.
+		if (isEmptyParentScope(resolved)) {
+			const { reason, message, details } = emptyScopeDiagnosis(resolved);
+			return Object.freeze({
+				requested: true,
+				selector: scope,
+				described: describeScope(scope),
+				ok: false,
+				error: Object.freeze({ reason, message, ...details }),
+				candidates: resolved.candidates,
+				members: Object.freeze([]),
+			});
+		}
 
 		return Object.freeze({
 			requested: true,

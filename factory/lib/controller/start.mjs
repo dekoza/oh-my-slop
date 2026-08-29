@@ -32,10 +32,8 @@ import { openStore } from "../state/store.mjs";
 import { CLAIM_OUTCOMES, claimTicket } from "../tracker/claims.mjs";
 import { attemptIdOf } from "../worker/attempt.mjs";
 import { applyDisposition } from "../tracker/disposition.mjs";
-import { readScope } from "../tracker/frontier.mjs";
+import { emptyScopeDiagnosis, isEmptyParentScope, readScope } from "../tracker/frontier.mjs";
 import { createGiteaReader } from "../tracker/gitea.mjs";
-import { FACTORY_LABELS } from "../tracker/labels.mjs";
-import { PART_OF_PATTERN } from "../tracker/membership.mjs";
 import { SCOPE_FORMS } from "./scope.mjs";
 import { createGiteaWriter } from "../tracker/writer.mjs";
 import { drainReport } from "./drain.mjs";
@@ -321,7 +319,10 @@ async function driveRun(store, hold, context, signals) {
 	// behalf would be a read with no consumer.
 	if (entry.scope.kind === SCOPE_FORMS.parent && readsLiveFrontier(context)) {
 		const view = await readScope(context.tracker, entry.scope, { at: startedAt });
-		if (view.members.length === 0) return refusal(emptyScope(entry.scope, view));
+		if (isEmptyParentScope(view)) {
+			const { reason, message, details } = emptyScopeDiagnosis(view);
+			return refusal(new FactoryRunError(reason, message, details));
+		}
 	}
 
 	// An adopted run's row already exists, so a loss from here on may name it. A
@@ -607,27 +608,6 @@ function hasExecutor(context) {
  */
 function readsLiveFrontier(context) {
 	return hasExecutor(context) && context.frontier === undefined;
-}
-
-/**
- * #181's refusal, naming the three things the operator can fix: the parent, the
- * label the candidates came from, and the line a candidate must open with.
- */
-function emptyScope(scope, view) {
-	return new FactoryRunError(
-		"scope-empty",
-		`Parent #${scope.parent} has no member: of ${view.candidates} candidate(s) carrying ` +
-			`${FACTORY_LABELS.implementation}, none opens with the literal first body line ` +
-			`"Part of #${scope.parent}" (§3.1). A run over it could only report a drain over nothing. ` +
-			"Give each of the parent's tickets that first line — `to-tickets` writes it — and start again.",
-		{
-			parent: scope.parent,
-			candidates: view.candidates,
-			label: FACTORY_LABELS.implementation,
-			pattern: String(PART_OF_PATTERN),
-			spec: "§3.1",
-		},
-	);
 }
 
 /**
