@@ -34,6 +34,9 @@ import { attemptIdOf } from "../worker/attempt.mjs";
 import { applyDisposition } from "../tracker/disposition.mjs";
 import { readScope } from "../tracker/frontier.mjs";
 import { createGiteaReader } from "../tracker/gitea.mjs";
+import { FACTORY_LABELS } from "../tracker/labels.mjs";
+import { PART_OF_PATTERN } from "../tracker/membership.mjs";
+import { SCOPE_FORMS } from "./scope.mjs";
 import { createGiteaWriter } from "../tracker/writer.mjs";
 import { drainReport } from "./drain.mjs";
 import { decideEntry, ENTRY_MODES, liveRunAnswer } from "./entry.mjs";
@@ -309,6 +312,18 @@ async function driveRun(store, hold, context, signals) {
 	} catch (error) {
 		return refusal(error);
 	}
+
+	// #181: a parent nothing declares membership of is refused **before a run
+	// exists**, so the journal never records a drain over a scope that was never
+	// there — §10.3's end reasons describe runs that ran, and "empty" is not one.
+	// The read happens only when this run would read a live frontier at all: a
+	// run with nothing to execute reads none (§3.3), and a tracker asked on its
+	// behalf would be a read with no consumer.
+	if (entry.scope.kind === SCOPE_FORMS.parent && readsLiveFrontier(context)) {
+		const view = await readScope(context.tracker, entry.scope, { at: startedAt });
+		if (view.members.length === 0) return refusal(emptyScope(entry.scope, view));
+	}
+
 	// An adopted run's row already exists, so a loss from here on may name it. A
 	// minted one is only *intended* until its `run.started` commits — a loss in
 	// between reports no run, because no durable record names one (§14.6).
@@ -540,7 +555,7 @@ function runScheduler(store, capacity, entry, hold, context) {
 
 	return schedule({
 		capacity,
-		frontier: executor === null ? emptyFrontier : (context.frontier ?? liveFrontier(entry, context)),
+		frontier: executor === null ? emptyFrontier : readsLiveFrontier(context) ? liveFrontier(entry, context) : context.frontier,
 		resourceClassOf: (member) =>
 			implementResourceClass(
 				{ profiles: context.config.profiles, activeRouting: context.activeRouting },
@@ -574,9 +589,45 @@ function runScheduler(store, capacity, entry, hold, context) {
  * composed onto a pipeline, and with no pipeline there is nothing to compose.
  */
 function executorFor(store, entry, hold, context) {
+	if (!hasExecutor(context)) return null;
 	if (context.execute !== undefined) return context.execute;
-	if (context.pipeline === null || context.pipeline === undefined) return null;
 	return ticketExecution(store, entry, hold, context);
+}
+
+/** The predicate `executorFor` answers `null` by, readable without a hold. */
+function hasExecutor(context) {
+	return context.execute !== undefined || (context.pipeline !== null && context.pipeline !== undefined);
+}
+
+/**
+ * Whether this run reads §3.2's frontier **from the tracker**: it has something
+ * to execute, and no suite handed it a frontier of its own. Both the loop's
+ * wiring and #181's pre-run check read this one answer, so a run cannot be
+ * refused over a tracker read it would never have made.
+ */
+function readsLiveFrontier(context) {
+	return hasExecutor(context) && context.frontier === undefined;
+}
+
+/**
+ * #181's refusal, naming the three things the operator can fix: the parent, the
+ * label the candidates came from, and the line a candidate must open with.
+ */
+function emptyScope(scope, view) {
+	return new FactoryRunError(
+		"scope-empty",
+		`Parent #${scope.parent} has no member: of ${view.candidates} candidate(s) carrying ` +
+			`${FACTORY_LABELS.implementation}, none opens with the literal first body line ` +
+			`"Part of #${scope.parent}" (§3.1). A run over it could only report a drain over nothing. ` +
+			"Give each of the parent's tickets that first line — `to-tickets` writes it — and start again.",
+		{
+			parent: scope.parent,
+			candidates: view.candidates,
+			label: FACTORY_LABELS.implementation,
+			pattern: String(PART_OF_PATTERN),
+			spec: "§3.1",
+		},
+	);
 }
 
 /**

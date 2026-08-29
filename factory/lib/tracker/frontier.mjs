@@ -135,7 +135,7 @@ export async function readScope(reader, scope, { at = Date.now(), edges = null }
 		);
 	}
 
-	const members = await resolveMembers(reader, scope);
+	const { members, candidates } = await resolveMembers(reader, scope);
 	const inScope = new Set(members.map((member) => member.number));
 
 	// **Only the members whose class an edge could change.** `decide` below reaches
@@ -163,6 +163,12 @@ export async function readScope(reader, scope, { at = Date.now(), edges = null }
 	return Object.freeze({
 		scope,
 		resolved_at: at,
+		// How many issues the membership test was asked about: the label-found
+		// candidates for a parent, the typed numbers for a direct set. #181's
+		// refusal of an empty parent reads it, because "no member" and "no
+		// candidate" send the operator to different places — the tickets' first
+		// line, or the label.
+		candidates,
 		members: Object.freeze(classified),
 		// §3.2's ordering: **ascending issue number**, and nothing else. Dependency
 		// order is already enforced by claimability, and there are no priority
@@ -189,13 +195,19 @@ async function resolveMembers(reader, scope) {
 			labels: [FACTORY_LABELS.implementation],
 			state: "all",
 		});
-		return candidates.filter((issue) => isMemberOf(issue.body, scope.parent));
+		return {
+			members: candidates.filter((issue) => isMemberOf(issue.body, scope.parent)),
+			candidates: candidates.length,
+		};
 	}
 
 	// Read individually rather than filtered from a list: the operator named
 	// these numbers, and a number that is not there must be an error about that
 	// number rather than a member that quietly went missing.
-	return readEach(scope.tickets, (ticket) => reader.readIssue(ticket));
+	return {
+		members: await readEach(scope.tickets, (ticket) => reader.readIssue(ticket)),
+		candidates: scope.tickets.length,
+	};
 }
 
 /**

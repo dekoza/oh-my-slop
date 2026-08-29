@@ -29,6 +29,14 @@ export const RUN_ERROR_REASONS = Object.freeze([
 	 * the refusal, never the optimistic "it is probably in scope".
 	 */
 	"scope-unresolvable",
+	/**
+	 * A parent-scoped selector that resolved to **no member** (#181). §3.1's
+	 * membership is the literal first body line `Part of #N` on label-found
+	 * candidates, and a parent nothing declares is a scope a run could only
+	 * report as drained — the plausible zero §11.2 refuses everywhere else. A
+	 * parent whose members are all closed is not empty: that scope drains.
+	 */
+	"scope-empty",
 ]);
 
 /**
