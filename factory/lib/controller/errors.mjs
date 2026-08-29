@@ -37,6 +37,13 @@ export const RUN_ERROR_REASONS = Object.freeze([
 	 * parent whose members are all closed is not empty: that scope drains.
 	 */
 	"scope-empty",
+	/**
+	 * The tracker could not be read to learn what the line meant (#182: whether
+	 * a bare number is a map). Refused before a run exists, carrying the
+	 * tracker's own reason, rather than a stack trace or a run that would have
+	 * met the same tracker at its first frontier read.
+	 */
+	"scope-unreadable",
 ]);
 
 /**

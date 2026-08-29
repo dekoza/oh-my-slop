@@ -715,7 +715,13 @@ is the authority; cite the section a change answers to.
   `readScope` is a fresh set of reads, which makes §3.1's "membership is recomputed at
   every scheduling decision" a property of the code rather than a discipline the scheduler
   keeps. Parent membership is the anchored `Part of #N` **first body line** and nothing
-  looser; candidates come from the `workflow:implement` label **server-side**. The **edge
+  looser; candidates come from the `workflow:implement` label **server-side**. A parent no
+  candidate declares is refused `scope-empty` **before a run exists** (#181) — `readScope`
+  reports `candidates` beside `members` for it, and `doctor` raises the same alarm — and a
+  bare number carrying `wayfinder:map` is rewritten at start to the parent-scoped selector
+  over it (#182, `controller/map-scope.mjs`): one read per typed ticket, above the
+  process-shape branch so launcher and controller answer §10.4 about the same selector, and
+  only for a start that would read a live frontier at all. The **edge
   set is a parameter**, because §5.1 reads `dependencies`/`blocks` only on an
   `add_dependency` and a resolve that fetched them per member per decision would be exactly
   the cost that clause prevents — a caller maintaining the graph from the poll passes it,

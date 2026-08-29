@@ -76,6 +76,7 @@ export async function doctorReport(
 		env = process.env,
 		probes = PROBES,
 		scope = null,
+		resolvedFrom = null,
 		tracker = null,
 		baseline = false,
 		at = Date.now(),
@@ -92,7 +93,7 @@ export async function doctorReport(
 		schema_version: 1,
 		at,
 		store: storeSection(store, agentDir),
-		scope: await scopeSection(store, { scope, tracker, at }),
+		scope: await scopeSection(store, { scope, resolvedFrom, tracker, at }),
 		integrity: store === null ? null : integritySection(store),
 		reconcile: reconciled,
 		pins: pinsSection(unresolved, reconciled),
@@ -238,7 +239,7 @@ function describeRun(run) {
  * the controller is dead, and refusing to answer any of it because they did not
  * name a ticket would be the Babysitter failure again.
  */
-async function scopeSection(store, { scope, tracker, at }) {
+async function scopeSection(store, { scope, resolvedFrom = null, tracker, at }) {
 	if (scope === null) {
 		return Object.freeze({
 			requested: false,
@@ -273,6 +274,7 @@ async function scopeSection(store, { scope, tracker, at }) {
 				requested: true,
 				selector: scope,
 				described: describeScope(scope),
+				resolved_from: resolvedFrom,
 				ok: false,
 				error: Object.freeze({ reason, message, ...details }),
 				candidates: resolved.candidates,
@@ -284,8 +286,11 @@ async function scopeSection(store, { scope, tracker, at }) {
 			requested: true,
 			selector: scope,
 			described: describeScope(scope),
+			// #182: the map ticket a bare number was rewritten from, or `null`.
+			resolved_from: resolvedFrom,
 			ok: true,
 			error: null,
+			candidates: resolved.candidates,
 			counts: resolved.counts,
 			// §3.2's order, so the operator reads the frontier in the order a run
 			// would take it.

@@ -43,7 +43,10 @@ label.
 A run answers the same question and then acts on it. `factory start 100 101` resolves
 that frontier at every scheduling decision, takes the lowest-numbered claimable ticket,
 and claims it — an assignee plus a structured comment, then a re-read to confirm nobody
-else got there first. It stops when nothing is claimable and nothing can become
+else got there first. `factory start 75` — when #75 carries `wayfinder:map` — runs the
+map's members rather than the map, recording the parent-scoped selector as if
+`--parent 75` had been typed; a parent nothing declares `Part of #N` under is refused as
+`scope-empty` before any run exists, and `doctor` raises the same alarm. It stops when nothing is claimable and nothing can become
 claimable without a human: a merge, an answer, a closure outside the scope. It never
 waits for one. What it exits with is the classified per-member report — closed,
 needs-human, awaiting-merge-dependency, blocked-external, human-owned, failed — and each

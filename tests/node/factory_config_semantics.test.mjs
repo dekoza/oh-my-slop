@@ -717,6 +717,7 @@ test("the factory's label vocabulary is a frozen constant naming every tracker m
 		needsHuman: "factory:needs-human",
 		failed: "factory:failed",
 		awaitingMerge: "factory:awaiting-merge",
+		map: "wayfinder:map",
 	});
 	assert.ok(Object.isFrozen(FACTORY_LABELS));
 });

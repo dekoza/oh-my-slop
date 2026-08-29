@@ -43,7 +43,9 @@ function invocation(t) {
 	};
 }
 
-async function runParent(t, { world, parent, lanes = [] }) {
+const RECORDING = Symbol("a pipeline that records its lanes");
+
+async function runParent(t, { world, parent, lanes = [], pipeline = RECORDING }) {
 	const context = invocation(t);
 	const gitea = fakeGitea(world);
 	const loaded = loadFactoryConfig({ cwd: context.repoRoot });
@@ -60,10 +62,13 @@ async function runParent(t, { world, parent, lanes = [] }) {
 		flags: new Set([FOREGROUND_FLAG, PARENT_FLAG]),
 		tracker: createGiteaReader({ ...where, request: gitea.request }),
 		trackerWriter: createGiteaWriter({ ...where, request: gitea.write }),
-		pipeline: async (lane) => {
-			lanes.push(lane);
-			return { disposition: "published", pr: { number: 7, url: "http://gitea.example/acme/widgets/pulls/7" } };
-		},
+		pipeline:
+			pipeline === RECORDING
+				? async (lane) => {
+						lanes.push(lane);
+						return { disposition: "published", pr: { number: 7, url: "http://gitea.example/acme/widgets/pulls/7" } };
+					}
+				: pipeline,
 	});
 
 	return { answer, gitea, context, lanes };
@@ -102,6 +107,21 @@ test("a parent whose candidates all lack the `Part of #N` first line is refused,
 	assert.deepEqual(lanes, [], "a lane ran over an empty scope");
 	assert.deepEqual(gitea.writes, [], "an empty scope wrote to the tracker");
 	assert.deepEqual(await runsRecorded(t, context), [], "an empty scope opened a run");
+});
+
+test("the refusal fires on the production path too, where the pipeline is composed only after preflight", async (t) => {
+	// An omitted `pipeline` is #147's production composition, which happens
+	// after the run exists; the pre-run check must still count it as a run that
+	// will read a live frontier, or production would never refuse.
+	const { answer, context } = await runParent(t, {
+		parent: 75,
+		pipeline: undefined,
+		world: { issues: [giteaIssue({ number: 120, body: "## Parent\n\n#75" })] },
+	});
+
+	assert.equal(answer.exitCode, EXIT_REFUSED);
+	assert.equal(answer.error.kind, "scope-empty");
+	assert.deepEqual(await runsRecorded(t, context), []);
 });
 
 test("a parent whose members are all closed is delivered, not empty: the run drains cleanly", async (t) => {

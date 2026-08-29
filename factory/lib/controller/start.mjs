@@ -32,8 +32,10 @@ import { openStore } from "../state/store.mjs";
 import { CLAIM_OUTCOMES, claimTicket } from "../tracker/claims.mjs";
 import { attemptIdOf } from "../worker/attempt.mjs";
 import { applyDisposition } from "../tracker/disposition.mjs";
+import { FactoryTrackerError } from "../tracker/errors.mjs";
 import { emptyScopeDiagnosis, isEmptyParentScope, readScope } from "../tracker/frontier.mjs";
 import { createGiteaReader } from "../tracker/gitea.mjs";
+import { resolveMapScope } from "./map-scope.mjs";
 import { SCOPE_FORMS } from "./scope.mjs";
 import { createGiteaWriter } from "../tracker/writer.mjs";
 import { drainReport } from "./drain.mjs";
@@ -136,9 +138,34 @@ export async function runStart({
 	frontier,
 	execute,
 }) {
+	const reader = tracker ?? createGiteaReader({ repo: config.tracker.repo, login: config.tracker.login });
+
+	// #182: a bare number that is a `wayfinder:map` means the map's members.
+	// Resolved **here, above the process-shape branch**, so the detached launcher
+	// and the foreground controller answer §10.4's live-run question about the
+	// same selector, and the run records the selector rather than the number.
+	// The read is made only by a start that would read a live frontier at all,
+	// for the reason #181's pre-run check is: a run with nothing to execute asks
+	// the tracker nothing.
+	//
+	// A tracker that cannot be read is the **controller's** refusal, typed. The
+	// launcher's read serves only §10.4's answer — the controller it launches
+	// resolves the line again from `rawArgs` and refuses if it cannot — so a
+	// launcher that could not read carries the parsed scope through rather than
+	// refusing on behalf of a process that has not looked yet.
+	const foreground = flags.has(FOREGROUND_FLAG);
 	let requested;
+	let resolvedFrom = null;
 	try {
 		requested = parseScope(args, { parent: flags.has(PARENT_FLAG) });
+		if (readsLiveFrontier({ pipeline, execute, frontier })) {
+			try {
+				({ scope: requested, resolved_from: resolvedFrom } = await resolveMapScope(reader, requested));
+			} catch (error) {
+				if (!(error instanceof FactoryTrackerError)) throw error;
+				if (foreground) throw unreadableScope(error, args);
+			}
+		}
 	} catch (error) {
 		return refusal(error);
 	}
@@ -148,7 +175,7 @@ export async function runStart({
 	// terminal. They are one verb because they are one job with one decision
 	// between them; the branch is the decision, and the two shapes share the
 	// scope parse and §10.4's live-run answer above it.
-	if (!flags.has(FOREGROUND_FLAG)) {
+	if (!foreground) {
 		return launch({
 			repoRoot,
 			requested,
@@ -162,11 +189,11 @@ export async function runStart({
 		});
 	}
 
-	const reader = tracker ?? createGiteaReader({ repo: config.tracker.repo, login: config.tracker.login });
 	const store = await openStore({ repoRoot, agentDir });
 	try {
 		return await start(store, {
 			requested,
+			resolvedFrom,
 			newRun: flags.has(NEW_RUN_FLAG),
 			config,
 			configPath,
@@ -491,7 +518,13 @@ async function driveRun(store, hold, context, signals) {
 			started_at: startedAt,
 			ended_at: endedAt,
 			entry: entryReport(entry),
-			scope: { ...entry.scope, described: describeScope(entry.scope) },
+			scope: {
+				...entry.scope,
+				described: describeScope(entry.scope),
+				// #182: where a rewritten selector came from — the map ticket and the
+				// label that made it one — or `null` when the line said it outright.
+				resolved_from: context.resolvedFrom ?? null,
+			},
 			reconcile: reconcileReport(reconciled),
 			expiry,
 			preflight: { ok: checked.ok, red: checked.red, checks: checked.checks },
@@ -595,9 +628,14 @@ function executorFor(store, entry, hold, context) {
 	return ticketExecution(store, entry, hold, context);
 }
 
-/** The predicate `executorFor` answers `null` by, readable without a hold. */
+/**
+ * The predicate `executorFor` answers `null` by, readable without a hold — and
+ * readable **before** #147's production pipeline is composed, which happens
+ * after preflight. An omitted `pipeline` is that composition, so it counts; only
+ * an explicit `null` is the focused no-pipeline seam.
+ */
 function hasExecutor(context) {
-	return context.execute !== undefined || (context.pipeline !== null && context.pipeline !== undefined);
+	return context.execute !== undefined || context.pipeline !== null;
 }
 
 /**
@@ -608,6 +646,15 @@ function hasExecutor(context) {
  */
 function readsLiveFrontier(context) {
 	return hasExecutor(context) && context.frontier === undefined;
+}
+
+/** #182: the tracker failed while the line was still being read. */
+function unreadableScope(error, args) {
+	return new FactoryRunError(
+		"scope-unreadable",
+		`The tracker could not be read to resolve \`factory start ${args.join(" ")}\`: ${error.message}`,
+		{ at: "scope", tracker: { reason: error.reason, ...error.details } },
+	);
 }
 
 /**
@@ -1122,8 +1169,15 @@ function headline(report) {
 				? ` and drained all ${members} member(s) of its scope`
 				: ` with ${report.execution.drain.claimable_now} of ${members} member(s) still claimable`;
 
+	// #182: the operator typed a map's number, and the sentence says what that
+	// became before it says what happened to it.
+	const resolved =
+		report.scope.resolved_from === null || report.scope.resolved_from === undefined
+			? ""
+			: `#${report.scope.resolved_from.ticket} carries ${report.scope.resolved_from.label}, so its members were the scope: `;
+
 	return (
-		`run ${report.run} over ${report.scope.described} ended ${ended}, ` +
+		`${resolved}run ${report.run} over ${report.scope.described} ended ${ended}, ` +
 		`having claimed ${report.execution.claimed} tickets${scope}.`
 	);
 }
