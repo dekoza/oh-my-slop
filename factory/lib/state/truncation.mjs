@@ -1,5 +1,5 @@
 import { FactoryStateError } from "./errors.mjs";
-import { CONTROLLER_STREAM, HEARTBEAT_STREAM } from "./events.mjs";
+import { CONTROLLER_STREAM, HEARTBEAT_STREAM, sourceForActor } from "./events.mjs";
 
 /**
  * **The only two ways a record ever leaves the journal** (§4.2, §14.7):
@@ -84,7 +84,7 @@ export function truncateStreamFront(tx, { stream, throughSeq, at = Date.now(), a
 
 	const marker = tx.appendEvent({
 		kind: "stream.truncated",
-		source: actor === "operator" ? "operator" : "controller",
+		source: sourceForActor(actor),
 		stream: CONTROLLER_STREAM,
 		occurredAt: at,
 		observedAt: at,

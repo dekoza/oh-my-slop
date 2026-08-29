@@ -1,4 +1,4 @@
-import { agentAlive, FACTORY_ATTEMPT_TOKEN } from "../controller/herdr-control.mjs";
+import { agentAlive, FACTORY_ATTEMPT_TOKEN, paneTarget } from "../controller/herdr-control.mjs";
 import { createProbeRegistry } from "../reconcile/probes.mjs";
 import { runWorkspaceLabel } from "./workspace.mjs";
 
@@ -10,7 +10,10 @@ import { runWorkspaceLabel } from "./workspace.mjs";
  * **Two reads, because they are two questions.** `herdr.pane-list` answers about
  * a *worker* and serves three effect kinds — `agent-start`, `agent-stop`, and
  * §12.8's `pane-delete` — since they are three questions about one list, and
- * registering by the read is what keeps them one implementation.
+ * registering by the read is what keeps them one implementation. It is asked in
+ * terms of a **token**, never a recorded pane id, which is §14.27 made
+ * structural: there is no shape of this probe that can reach a pane the factory
+ * did not stamp, whatever a stale record says.
  * `herdr.workspace-list` answers about the *run's* workspace, which no pane
  * reading can: Herdr stamps no token on a workspace, and the pane that would
  * carry one is a pane no attempt occupies.
@@ -47,29 +50,56 @@ import { runWorkspaceLabel } from "./workspace.mjs";
  */
 export function herdrPaneListProbe({ herdr }) {
 	return async ({ effect, probe }) => {
-		const attempt = effect.attempt_id;
-		const listed = await herdr.paneForAttempt(attempt);
+		const subject = paneSubjectOf(effect);
+		const listed = await herdr.panesTokened(subject);
 		if (!listed.ok) {
 			// A multiplexer that will not answer taught this process nothing, and
 			// "unanswerable" is not "absent" (§12.4): throwing leaves the effect
 			// exactly as it was and reports it, which is §12.4's alarm.
-			throw new Error(`${listed.message} The attempt's liveness is unanswerable, not absent (§5.2).`);
+			throw new Error(`${listed.message} The pane's liveness is unanswerable, not absent (§5.2).`);
 		}
 
-		const pane = listed.pane;
-		const alive = agentAlive(pane);
-		const present = pane !== null;
+		// One pane for an attempt (§14.23); a run re-entered from a second terminal
+		// has one controller pane per process that sat in it, and `absent` is only
+		// true when every one of them is gone.
+		const [pane = null] = listed.panes;
+		const alive = listed.panes.some((entry) => agentAlive(entry));
+		const present = listed.panes.length > 0;
 
 		return {
 			matched: matchFor(probe.match, { present, alive }),
-			result: { pane: pane?.pane_id ?? null, agent: pane?.agent ?? null, alive },
+			result: { pane: pane?.pane_id ?? null, agent: pane?.agent ?? null, alive, panes: listed.panes.length },
 			// The fact, not the object: a pane's liveness read twice is two facts,
 			// and dating them by the pane id alone would make the first sighting
 			// suppress every later one through §5.1's dedup index.
-			foreignSourceId: `herdr:${FACTORY_ATTEMPT_TOKEN}:${attempt}:${present ? pane.pane_id : "absent"}:${alive}`,
-			detail: { attempt, pane: pane?.pane_id ?? null, present, alive, status: pane?.agent_status ?? null },
+			foreignSourceId: `herdr:${subject.token}:${subject.value}:${present ? pane.pane_id : "absent"}:${alive}`,
+			detail: {
+				token: subject.token,
+				subject: subject.value,
+				pane: pane?.pane_id ?? null,
+				panes: listed.panes.length,
+				present,
+				alive,
+				status: pane?.agent_status ?? null,
+			},
 		};
 	};
+}
+
+/**
+ * Which token this effect's pane must carry, and what value.
+ *
+ * `agent-start` and `agent-stop` name their attempt in the key, because the pane
+ * is that attempt's own work (§4.5). §12.8's `pane-delete` records are
+ * repo-scoped — they land on the `controller` stream, so §4.3 leaves them no
+ * attempt segment — and name their subject in the operand, which is also the
+ * only way the *controller's* own pane can be named at all: no attempt owns it.
+ */
+function paneSubjectOf(effect) {
+	if (effect.attempt_id !== null) return { token: FACTORY_ATTEMPT_TOKEN, value: effect.attempt_id };
+
+	const target = paneTarget(effect.operand);
+	return { token: target.token, value: target.id };
 }
 
 /**

@@ -291,7 +291,7 @@ Skills resolve this config **through the `## Agent skills` pointer**, never by
 hardcoding `docs/agents/issue-tracker.md`. A repo that keeps its agent docs elsewhere
 must still work. When adding a consumer skill, use this wording:
 
-> The issue tracker should have been provided to you — run `/setup-project-skills` if not.
+> The issue tracker should have been provided to you — tell the user to run `/setup-project-skills` if not.
 
 and, where the skill needs tracker-specific mechanics, name the section it needs:
 

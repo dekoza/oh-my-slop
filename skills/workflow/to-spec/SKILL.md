@@ -12,7 +12,7 @@ disable-model-invocation: true
 
 This skill takes the current conversation context and codebase understanding and produces a spec. Do NOT interview the user — just synthesize what you already know.
 
-The issue tracker and triage label vocabulary should have been provided to you — run `/setup-project-skills` if not. Publish to the agent work tracker it names, following that doc's conventions. If no tracker has been provided, default to the local-markdown tracker.
+The issue tracker and triage label vocabulary should have been provided to you — tell the user to run `/setup-project-skills` if not. Publish to the agent work tracker it names, following that doc's conventions. If no tracker has been provided, default to the local-markdown tracker.
 
 ## Process
 

@@ -147,7 +147,7 @@ These ship in the repo and load automatically through the root `pi install` mani
 ## Skills
 
 <details>
-<summary><strong>Skills (65)</strong></summary>
+<summary><strong>Skills (66)</strong></summary>
 
 Grouped by what you came looking for: an API surface (**Reference**), a way of
 working (**Practice**), a job to run (**Workflow**), or the agent's own toolkit
@@ -215,7 +215,7 @@ Rituals you run — session and tracker state, from interview through implementa
 | **[Grill With Docs](skills/workflow/grill-with-docs/SKILL.md)** | Grilling session that also maintains docs as decisions land — CONTEXT.md glossary entries and ADRs via domain-modeling. |
 | **[Grilling](skills/workflow/grilling/SKILL.md)** | The interview primitive — the design tree worked in rounds, each round asking the whole frontier of ready questions, facts looked up vs decisions asked, no enacting until the user confirms. Reused by grill-me, grill-with-docs, triage, wayfinder. |
 | **[Handoff](skills/workflow/handoff/SKILL.md)** | Compact the current conversation into a handoff document for another agent to pick up. References artifacts by path/URL, redacts sensitive info, saves to temp directory. |
-| **[Implement](skills/workflow/implement/SKILL.md)** | Work a spec or tickets to completion — TDD at pre-agreed seams, regular typechecks, full suite at the end, two-axis review before committing. |
+| **[Implement](skills/workflow/implement/SKILL.md)** | Build one ticket-sized slice from a spec or build-ready ticket — TDD at pre-agreed seams, regular typechecks, project test policy, and two-axis review before committing. |
 | **[Improve Codebase Architecture](skills/workflow/improve-codebase-architecture/SKILL.md)** | Dual-axis architecture scan: finds deepening opportunities (shallow modules) AND simplification opportunities (dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead flags). Visual HTML report, then a wayfinder map with one ticket per chosen candidate and an in-session work-through of the one you pick. Uses codebase-design vocabulary, integrates ponytail-audit. |
 | **[LLM Council](skills/workflow/council/SKILL.md)** | Multi-advisor decision protocol: 5 independent perspectives, anonymized peer review, chairman synthesis. For high-stakes uncertainty where being wrong is expensive. |
 | **[Ponytail Audit](skills/workflow/ponytail-audit/SKILL.md)** | Scan for over-engineering — dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead feature flags. Read-only, ranked by impact. |
@@ -244,6 +244,7 @@ About the agent and its own toolkit, not about your code.
 | **[Git Guardrails (Claude Code)](skills/meta/git-guardrails-claude-code/SKILL.md)** | Set up PreToolUse hooks that block dangerous git commands (push, reset --hard, clean, branch -D) — git-discipline enforced by machinery, not prompts. |
 | **[Setup Project Skills](skills/meta/setup-project-skills/SKILL.md)** | Run once per repo to configure the workflow skills — issue tracker bindings (agent work vs human intake), triage label vocabulary, and domain doc layout — written to `docs/agents/` and pointed at from CLAUDE.md/AGENTS.md. |
 | **[Skill Creator](skills/meta/skill-creator/SKILL.md)** | Meta-skill for creating, modifying, and benchmarking other skills — evals, variance analysis, and description optimization for triggering accuracy. |
+| **[Skill Loading Proof](skills/meta/skill-loading-proof/SKILL.md)** | A body that exists to be followed: it answers a proof nonce with one receipt line whose token and transform live only on its own page. The software factory's acceptance matrix (`tests/live/prove-skill-loading.mjs`) uses it to prove a model *loaded and followed* a skill rather than merely registering its name. Nothing else invokes it. |
 | **[Websearch](skills/meta/websearch/SKILL.md)** | Search the web via locally installed SearXNG instance. Configurable endpoint via `/skill:websearch url`. |
 | **[Writing Great Skills](skills/meta/writing-great-skills/SKILL.md)** | Prose-level craft reference for skill authoring — leading words, no-ops, negation, context vs cognitive load, premature completion, progressive disclosure. Complements skill-creator's eval workflow. |
 

@@ -68,6 +68,19 @@ export const SCHEMA_STATEMENTS = Object.freeze([
 	"CREATE INDEX IF NOT EXISTS event_by_stream ON event (stream, seq)",
 	"CREATE INDEX IF NOT EXISTS event_by_run ON event (run, seq)",
 	/**
+	 * The per-ticket walk, for the readers that ask about a **ticket** rather
+	 * than a run. §12.4's label pin is the one that made it necessary: releasing
+	 * the pin means finding the newest surviving observation of one ticket, and
+	 * a run's own stream is not where a later run's repository-wide poll recorded
+	 * it — so the alternative is a scan of the whole journal, on every `status`.
+	 *
+	 * **Partial**, because most records carry no ticket at all: the identity slot
+	 * is empty on every heartbeat, every controller record, and every run-level
+	 * one, and indexing those nulls would be paying for the rows the lookup can
+	 * never want.
+	 */
+	"CREATE INDEX IF NOT EXISTS event_by_ticket ON event (ticket, seq) WHERE ticket IS NOT NULL",
+	/**
 	 * §5.1's dedup, enforced by the database rather than by the poll behaving
 	 * itself — the same reasoning the `effect` table's primary key rests on: a
 	 * duplicate must not be able to become a second row however many times a

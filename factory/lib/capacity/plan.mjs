@@ -1,5 +1,7 @@
-import { classesReachedBy, resourceClassOf } from "../config/profiles.mjs";
-import { profilesReachedBy } from "../config/routing.mjs";
+import { classesReachedBy } from "../config/profiles.mjs";
+import { profilesForRole, profilesReachedBy } from "../config/routing.mjs";
+import { dispatchOrder, selectRoute } from "../worker/dispatch.mjs";
+import { FactoryWorkerError } from "../worker/errors.mjs";
 import { FactoryCapacityError } from "./errors.mjs";
 
 /**
@@ -40,7 +42,7 @@ export const MAX_PANES_PER_TICKET = 2;
  */
 export function capacityPlan({ concurrency, profiles, activeRouting }) {
 	const classes = Object.freeze(
-		[...classesReachedBy(profiles, profilesReachedBy(activeRouting.roles, activeRouting.rules))]
+		[...classesReachedBy(profiles, profilesReachedBy(activeRouting))]
 			.map(([className, reached]) =>
 				Object.freeze({
 					class: className,
@@ -53,9 +55,11 @@ export function capacityPlan({ concurrency, profiles, activeRouting }) {
 
 	const resourceSlots = classes.reduce((total, entry) => total + entry.size, 0);
 	// §9.4 acquires the **implement** attempt's model slot before the Gitea claim,
-	// so those pools alone decide how many ticket executions can ever be started.
+	// so those pools alone decide how many ticket executions can ever be started —
+	// the fallback pools included, since #155 starts a rerouted implement attempt
+	// from one of those and leaving them out would understate §9.2 by the reroute.
 	const implementSlots = [
-		...classesReachedBy(profiles, rolesReaching(activeRouting, "implement")).keys(),
+		...classesReachedBy(profiles, profilesForRole(activeRouting, "implement")).keys(),
 	].reduce((total, className) => total + concurrency.resources[className], 0);
 
 	return Object.freeze({
@@ -83,64 +87,56 @@ export function capacityPlan({ concurrency, profiles, activeRouting }) {
 }
 
 /**
- * The class an implement attempt on this ticket would draw its slot from —
- * §9.4's "acquire the ticket slot and its implement attempt's model-resource
- * slot together, before the Gitea claim".
+ * The route an implement attempt on this ticket would run — the profile and the
+ * class its slot comes from, having stepped past every candidate §9.8's memo has
+ * locked (#155).
+ *
+ * It answers §9.4's "acquire the ticket slot and its implement attempt's
+ * model-resource slot together, before the Gitea claim", and it answers it with
+ * a *route* rather than a class because the two are one decision: the class
+ * names the pool the slot is taken from and the profile names what the attempt
+ * is minted under, and deriving them separately is how a lane comes to hold a
+ * slot in a pool its worker never touches.
+ *
+ * `profile: null` means the memo has locked every profile this role can reach —
+ * §9.8's blocked candidate, now a stronger statement than one blocked class.
  *
  * @param {{ profiles: Record<string, object>, activeRouting: object }} routing
  * @param {{ ticket?: number | null, labels?: ReadonlyArray<string> }} member
- * @returns {string}
+ * @param {{ exhaustion: object, at?: number }} memo §9.8's facet (`slots.mjs`)
+ * @returns {Promise<Readonly<object>>} `worker/dispatch.mjs`'s route record
  * @throws {FactoryCapacityError} `routing-ambiguous`
  */
-export function implementResourceClass({ profiles, activeRouting }, member) {
-	return resourceClassOf(profiles[resolveRole(activeRouting, { role: "implement", ...member })]);
-}
-
-/** Every profile a role can dispatch to, across its declared value and its rules. */
-function rolesReaching(activeRouting, role) {
-	const reached = new Set([activeRouting.roles[role]].flat());
-	for (const rule of activeRouting.rules) {
-		if (rule.role === role) for (const profile of [rule.profile].flat()) reached.add(profile);
-	}
-
-	return reached;
+export async function implementDispatch({ profiles, activeRouting }, member, { exhaustion, at }) {
+	return selectRoute({
+		order: implementOrder(activeRouting, member),
+		profiles,
+		exhaustion,
+		at,
+	});
 }
 
 /**
- * §11.5's two-level conflict rule, second level. The loader answers the static
- * half — two rules for one role whose `labelsAny` sets intersect — with no
- * ticket in hand. This is the half that needs one: a ticket carrying labels from
- * two *disjoint* rules matches both, and there is no positional first-match to
- * fall back on.
+ * §11.5's dispatch order for the implement role, with the **ticket-scoped** half
+ * of its two-level conflict rule raised as a capacity refusal.
  *
- * It is raised **before any work**, which is why it is a refusal here rather
- * than a value the caller has to check: the alternative is a lane that has
- * already claimed a ticket discovering that nothing can say which model to run.
- *
- * @param {{ roles: object, rules: ReadonlyArray<object> }} activeRouting
- * @param {{ role: string, ticket?: number | null, labels?: ReadonlyArray<string> }} request
- * @returns {string | ReadonlyArray<string>} the profile name, or `review`'s pair
- * @throws {FactoryCapacityError} `routing-ambiguous`
+ * The resolution itself is `worker/dispatch.mjs`'s — one implementation of
+ * §11.5, not two that agree by review. What is this package's is *when* the
+ * refusal happens and what it is called: the scheduler asks before any claim, so
+ * a ticket whose labels match two rules is refused with a ticket in hand and
+ * never claimed, rather than a lane discovering mid-flight that nothing can say
+ * which model to run.
  */
-function resolveRole(activeRouting, { role, ticket = null, labels = [] }) {
-	const matched = activeRouting.rules.filter(
-		(rule) => rule.role === role && rule.labelsAny.some((label) => labels.includes(label)),
-	);
+function implementOrder(activeRouting, { ticket = null, labels = [] }) {
+	try {
+		return dispatchOrder(activeRouting, { role: "implement", labels });
+	} catch (error) {
+		if (!(error instanceof FactoryWorkerError)) throw error;
 
-	if (matched.length > 1) {
-		const profiles = [...new Set(matched.flatMap((rule) => rule.profile))].sort();
 		throw new FactoryCapacityError(
 			"routing-ambiguous",
-			`Ticket ${ticket ?? "(unnamed)"} matches ${matched.length} routing rules for role "${role}" (${profiles.join(", ")}), and §11.5 has no positional first-match. A human decides which label the ticket keeps.`,
-			{
-				at: "routing.rules",
-				role,
-				ticket,
-				profiles,
-				labels: matched.flatMap((rule) => rule.labelsAny.filter((label) => labels.includes(label))),
-			},
+			`Ticket ${ticket ?? "(unnamed)"} cannot be dispatched: ${error.message}`,
+			{ ...error.details, ticket },
 		);
 	}
-
-	return matched.length === 1 ? matched[0].profile : activeRouting.roles[role];
 }

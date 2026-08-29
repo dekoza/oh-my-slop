@@ -67,7 +67,14 @@ export const EVENT_KINDS = Object.freeze({
 	// polled out of Herdr after the agent came up, are not known then. It is
 	// also the marker that the launch *finished*: an attempt with a mint and no
 	// correlation is one a controller died in the middle of.
-	"attempt.correlated": { payloadVersion: 1, visibility: "detail" },
+	//
+	// #114 puts it on **payload v2**: `herdr.kind`, the agent kind Herdr was
+	// asked to start. §5.5's adoption test compares a live pane's agent against
+	// it, and a v1 record has nowhere to read it from — `worker/adoption.mjs`
+	// falls back to the mint's runtime there, which is the same value for both
+	// shipped runtimes but is a derivation rather than an observation. The
+	// version is what lets a reader tell the two apart.
+	"attempt.correlated": { payloadVersion: 2, visibility: "detail" },
 	// #107: §6.6's typed completion. One attempt ends once, carrying the outcome
 	// §8.8 names and — for a cancellation — who asked and why. It is the record
 	// that makes "late outboxes are ignored for state" structural: the projector
@@ -167,6 +174,33 @@ export const EVENT_SOURCES = Object.freeze({
 });
 
 /**
+ * Which §4.3 `source` a §4.5 actor writes as.
+ *
+ * The actor grammar is `controller` or `operator:<verb>` (monitor O6, §13.D) and
+ * the source vocabulary is the six above, so the mapping is a collapse: every
+ * operator verb writes as `operator`. It lives here, with `EVENT_SOURCES`,
+ * because five callers need it from four layers — the effect pair, the
+ * truncation primitive, §12.6's expiry, §10.3's preflight stage and §5.3's
+ * reconcile conclusion — and the state layer cannot import from `effects/`.
+ * Copies of one ternary are how the day arrives that a record from
+ * `operator:cleanup-execute` is attributed to the controller.
+ *
+ * **The last two arrived late** (#176): the extraction converted three call
+ * sites and left two writing the expression out, which reads as finished from
+ * everywhere except a search for the expression rather than the name. That is
+ * what `factory_state_events` now asserts structurally.
+ *
+ * It does not validate: the grammar's refusal is §4.5's, at the one place an
+ * actor enters a pair.
+ *
+ * @param {string} actor
+ * @returns {string} a member of `EVENT_SOURCES`
+ */
+export function sourceForActor(actor) {
+	return actor === "controller" ? "controller" : "operator";
+}
+
+/**
  * The payload key holding a foreign system's own timestamp string. Gitea
  * returns RFC3339 with the server's local offset; we store integer UTC
  * milliseconds *and* keep the original, because normalising in place destroys
@@ -177,9 +211,18 @@ export const FOREIGN_TIMESTAMP_KEY = "occurred_at_raw";
 export const CONTROLLER_STREAM = "controller";
 export const HEARTBEAT_STREAM = "controller.heartbeat";
 
+/**
+ * What every run stream's name begins with. Named because a reader sometimes
+ * asks about the *class* rather than one run — §12.2's heartbeat boundary is
+ * "the first record of the oldest surviving run stream" — and a second spelling
+ * of `run:` in a `LIKE` somewhere else is a prefix waiting to disagree with this
+ * one.
+ */
+export const RUN_STREAM_PREFIX = "run:";
+
 /** @param {string} runId @returns {string} */
 export function runStream(runId) {
-	return `run:${runId}`;
+	return `${RUN_STREAM_PREFIX}${runId}`;
 }
 
 /**

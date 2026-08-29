@@ -444,6 +444,112 @@ test("repair is not routable — naming it as a role refuses", (t) => {
 	assert.equal(error.details.at, "routing.roles.repair");
 });
 
+// ── Fallbacks: the declared reroute order (§11.5, #155) ─────────────────────
+
+/** A config with a second profile on a second class, ready to be a fallback. */
+function withCloudProfile() {
+	const config = clone();
+	config.profiles.cloud = { kind: "claude", model: "opus" };
+	config.concurrency.resources["claude-code"] = 2;
+	return config;
+}
+
+test("a routing that declares no fallbacks reroutes nowhere, spelled as the empty addition", (t) => {
+	const { activeRouting } = loaded(t, clone());
+
+	assert.deepEqual(activeRouting.fallbacks, { implement: [], freshRetry: [], review: [[], []] });
+});
+
+test("a declared fallback order is carried through to the active routing in order", (t) => {
+	const config = withCloudProfile();
+	config.routing.fallbacks = {
+		implement: ["cloud"],
+		freshRetry: ["cloud"],
+		review: [["cloud"], ["cloud"]],
+	};
+
+	const { activeRouting } = loaded(t, config);
+
+	assert.deepEqual(activeRouting.fallbacks, {
+		implement: ["cloud"],
+		freshRetry: ["cloud"],
+		review: [["cloud"], ["cloud"]],
+	});
+});
+
+test("a fallback naming a profile the config does not declare refuses, never falling back to the default", (t) => {
+	const config = clone();
+	config.routing.fallbacks = { implement: ["gpt"] };
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "invalid-value");
+	assert.equal(error.details.at, "routing.fallbacks.implement[0]");
+	assert.match(error.message, /gpt/);
+});
+
+test("fallbacks are declared per role, and an unknown role name refuses", (t) => {
+	const config = clone();
+	config.routing.fallbacks = { repair: ["builder"] };
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "unknown-key");
+	assert.equal(error.details.at, "routing.fallbacks.repair");
+});
+
+test("review's fallbacks are two orders, one per axis, so the axes stay independently routed", (t) => {
+	for (const review of [["cloud"], [["cloud"]], [["cloud"], ["cloud"], ["cloud"]]]) {
+		const config = withCloudProfile();
+		config.routing.fallbacks = { review };
+
+		const error = loadFailure(t, config);
+
+		assert.equal(error.reason, "invalid-value", JSON.stringify(review));
+		assert.equal(error.details.at, "routing.fallbacks.review");
+		assert.match(error.message, /two/);
+	}
+});
+
+test("a fallback order that repeats a profile refuses — an order names each candidate once", (t) => {
+	const config = withCloudProfile();
+	config.routing.fallbacks = { implement: ["cloud", "cloud"] };
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "invalid-value");
+	assert.equal(error.details.at, "routing.fallbacks.implement");
+	assert.match(error.message, /repeats/);
+});
+
+test("a fallback profile's class must be sized, because the routing can dispatch to it", (t) => {
+	const config = clone();
+	config.profiles.cloud = { kind: "claude", model: "opus" };
+	config.routing.fallbacks = { implement: ["cloud"] };
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "resource-unsized");
+	assert.equal(error.details.class, "claude-code");
+	assert.deepEqual(error.details.profiles, ["cloud"]);
+});
+
+test("a dormant named set's fallbacks are validated exactly as strictly as the active one's", (t) => {
+	const config = clone();
+	config.routing.sets = {
+		cloudy: {
+			roles: { implement: "builder", freshRetry: "builder", review: ["builder", "builder"] },
+			rules: [],
+			fallbacks: { implement: ["gpt"] },
+		},
+	};
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "invalid-value");
+	assert.equal(error.details.at, "routing.sets.cloudy.fallbacks.implement[0]");
+});
+
 // ── Rules: labelsAny × role → profile, overlap-free at load (§11.5) ──────────
 
 test("a rule declares exactly labelsAny, role, and profile", (t) => {

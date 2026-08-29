@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 
 import { EXIT_OK, EXIT_REFUSED } from "../../factory/lib/cli/exit-codes.mjs";
 import { runCli } from "../../factory/lib/cli/main.mjs";
+import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
+import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
+import { createGiteaWriter, TRACKER_WRITES } from "../../factory/lib/tracker/writer.mjs";
 import { ENTRY_MODES } from "../../factory/lib/controller/entry.mjs";
 import { installSignalRequests } from "../../factory/lib/controller/signals.mjs";
 import { requestEffect } from "../../factory/lib/effects/records.mjs";
@@ -19,6 +22,7 @@ import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
 import { FIXED_NOW, herdrAnswering, leaseIdentity, makeAgentDir, makeHome } from "./helpers/factory-store.mjs";
+import { dispositionBlockIn, fakeGitea, giteaIssue } from "./helpers/factory-tracker.mjs";
 import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 /**
@@ -37,18 +41,27 @@ import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
  */
 const AVAILABLE = herdrAnswering();
 
-function invocation(t) {
+function invocation(t, { status = {} } = {}) {
 	const root = makePackage(t);
 	const executable = join(root, "factory", "bin", "factory.mjs");
+	const cwd = makeRepo(t);
+	// §8.9's `released` is a tracker mutation (#159), so the abandon path below has
+	// a Gitea to settle against — faked for the same reason the Herdr probe is,
+	// and holding the ticket the in-flight execution names.
+	const gitea = fakeGitea({ issues: [giteaIssue({ number: 42, assignees: ["factory-bot"] })], status });
+	const where = loadFactoryConfig({ cwd }).config.tracker;
 
 	return {
-		cwd: makeRepo(t),
+		cwd,
 		agentDir: makeAgentDir(t),
 		executable,
 		env: { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" },
 		herdr: AVAILABLE,
 		workerTransports: workerTransportsAnswering(root),
 		pipeline: null,
+		gitea,
+		tracker: createGiteaReader({ repo: where.repo, login: where.login, request: gitea.request }),
+		trackerWriter: createGiteaWriter({ repo: where.repo, login: where.login, request: gitea.write }),
 	};
 }
 
@@ -363,6 +376,74 @@ test("abandon marks the in-flight executions released, durably, and the report s
 	assert.equal(record.ticket, 42);
 	assert.equal(record.payload.disposition, "released");
 	assert.equal(record.source, "controller");
+});
+
+test("#159: the released execution drops its claim on the tracker and says so, adding no label", async (t) => {
+	const context = invocation(t);
+	const runId = await runWithInFlight(context, { kinds: ["run.abandon-requested"] });
+
+	const { exitCode, value } = await runCli(["start", "--foreground"], context);
+
+	assert.equal(exitCode, 4);
+	assert.deepEqual(value.report.execution.released_unsettled, []);
+
+	// §8.9's table for `released`: the claim is dropped, the release is stated, and
+	// no label goes on — the ticket returns to the frontier untouched.
+	assert.deepEqual(context.gitea.issues[0].assignees, [], "§3.3's staleness was left to settle a known fact");
+	assert.deepEqual(
+		context.gitea.writes.map((write) => write.operation),
+		["issue-unassign", "comment-post"],
+		"the eligibility change goes first, and no label is added",
+	);
+
+	const block = dispositionBlockIn(context.gitea.comments.at(-1).body);
+	assert.equal(block.disposition, "released");
+	assert.equal(block.identity.run, runId);
+	assert.equal(block.identity.ticket, 42);
+
+	// §4.5: both mutations are recorded pairs, so a controller that died between the
+	// journal record and the write is settled by re-probe rather than half-applied.
+	const store = await storeOf(t, context);
+	assert.deepEqual(
+		store
+			.readEvents({ kind: "effect.resolved" })
+			.map((event) => event.payload.operation)
+			.filter((operation) => operation in TRACKER_WRITES),
+		["issue-unassign", "comment-post"],
+	);
+});
+
+test("#159: a tracker that refuses the release still ends the run abandoned, naming what it could not settle", async (t) => {
+	// The unassign is refused; §12.4's alarm on the unresolved effect and the report
+	// line below are the two halves of the answer, and neither costs the run its own
+	// ending — reconcile is what finishes the mutation.
+	const context = invocation(t, { status: { "/issues/42": 500 } });
+	const runId = await runWithInFlight(context, { kinds: ["run.abandon-requested"] });
+
+	const { exitCode, value } = await runCli(["start", "--foreground"], context);
+
+	assert.equal(exitCode, 4, "a tracker refusal took the run's own ending with it");
+	assert.equal(value.report.end_reason, "abandoned");
+	assert.deepEqual(
+		value.report.execution.released_unsettled.map((entry) => entry.ticket),
+		[42],
+	);
+
+	const store = await storeOf(t, context);
+	assert.equal(store.readRun(runId).end_reason, "abandoned");
+	assert.equal(
+		store.readTicketExecutions(runId)[0].disposition,
+		"released",
+		"the durable disposition rides on the tracker write",
+	);
+	assert.deepEqual(
+		store
+			.readEvents({ kind: "effect.requested" })
+			.map((event) => event.payload.operation)
+			.filter((operation) => operation in TRACKER_WRITES),
+		["issue-unassign"],
+		"the refused mutation left no recorded intent for reconcile to settle",
+	);
 });
 
 test("a stop never marks an execution released: that is abandon's word alone", async (t) => {

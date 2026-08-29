@@ -30,10 +30,15 @@ export const TREE_DIGEST_ALGORITHM = "sha256";
  * live when preflight's own plugin build reran python in the package root,
  * the rewritten .pyc header (it carries the source mtime) changed the digest,
  * and the attempt recheck refused a package nothing changed as
- * handshake-drift. Anything wider would be this module deciding what counts
- * as the package, which is the digest's whole job to observe.
+ * handshake-drift. `.venv` is `node_modules` under uv's name, and named
+ * separately for no other reason: measured in this repository, `uv run pytest`
+ * — one of AGENTS.md's own mandatory commands — takes the digested file count
+ * from 862 to 6525, so an agent who had run the suite pinned a different
+ * revision than one who had not, for byte-identical package files (#115).
+ * Anything wider would be this module deciding what counts as the package,
+ * which is the digest's whole job to observe.
  */
-const EXCLUDED_DIRECTORIES = Object.freeze(["node_modules", "__pycache__", ".git", ".hg", ".svn"]);
+const EXCLUDED_DIRECTORIES = Object.freeze(["node_modules", ".venv", "__pycache__", ".git", ".hg", ".svn"]);
 
 /**
  * One entry's contribution: `<relative path> NUL <kind> NUL <content hash> LF`.

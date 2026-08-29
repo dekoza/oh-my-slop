@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { EXIT_NOT_IMPLEMENTED, EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "../../factory/lib/cli/exit-codes.mjs";
 import { renderHuman, renderJson, runCli, VERBS } from "../../factory/lib/cli/main.mjs";
+import { VERB_TABLE } from "../../factory/lib/cli/verbs.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
@@ -112,37 +113,48 @@ test("--help lists the verb set and succeeds", async (t) => {
 	assert.deepEqual(value.usage.verbs, VERBS);
 });
 
-// ── What this slice does not implement, said out loud ────────────────────────
+// ── The verb set, and what an unbuilt row would have to say ──────────────────
 
-/** The verbs this package answers; the rest say what they are waiting for. */
-const IMPLEMENTED = new Set(["start", "status", "doctor", "reconcile", "stop", "migrate"]);
-const UNIMPLEMENTED = VERBS.filter((verb) => !IMPLEMENTED.has(verb));
-
-test("every verb this slice does not implement exits typed, naming what is missing", async (t) => {
+test("every verb in the set answers rather than reporting a missing subsystem (#118)", async (t) => {
+	// §12.8's pair was the last unbuilt row, so `not-implemented` is a state no
+	// invocation can now reach. Driven through the binary rather than read off the
+	// table, because what an operator relies on is that the verb they typed does
+	// something — a table row with a handler that throws on arrival would satisfy
+	// any assertion about the table and none about the verb.
 	const cwd = makeRepo(t);
 	const agentDir = makeAgentDir(t);
 
-	for (const verb of UNIMPLEMENTED) {
-		const { exitCode, value } = await runCli([verb], { cwd, agentDir });
+	for (const verb of VERBS) {
+		const { exitCode, value } = await runCli([verb], { cwd, agentDir, herdr: herdrAnswering(false) });
 
-		assert.equal(exitCode, EXIT_NOT_IMPLEMENTED, `${verb} exit code`);
-		assert.equal(value.error.kind, "not-implemented", `${verb} error kind`);
-		assert.equal(value.command, verb);
-		assert.ok(value.error.missing.length > 0, `${verb} names what is missing`);
-		assert.match(value.error.spec, /^§/, `${verb} cites a spec section`);
+		assert.notEqual(exitCode, EXIT_NOT_IMPLEMENTED, `${verb} reports a missing subsystem`);
+		assert.notEqual(value.error?.kind, "not-implemented", `${verb} reports a missing subsystem`);
 	}
 });
 
-test("not-implemented is never exit code 1, which belongs to usage and config alone", async (t) => {
+test("a flag whose subsystem has not landed still refuses before its verb runs", async (t) => {
+	// The mechanism outlives the last `missing:` row it was written for: a flag
+	// declared but unbuilt must refuse *before* the verb acts, or an operator
+	// reads a report that silently left out what they asked for. Exercised
+	// through the binary against a table that declares one, since no shipped verb
+	// does any more.
 	const cwd = makeRepo(t);
 	const agentDir = makeAgentDir(t);
+	const declared = VERB_TABLE.status.flags;
+	VERB_TABLE.status.flags = { "--soon": { missing: "a subsystem that has not landed", spec: "§10.2" } };
+	t.after(() => {
+		VERB_TABLE.status.flags = declared;
+	});
 
-	// Only the unbuilt verbs: `start` with no arguments *is* a usage refusal —
-	// §3.1's scope is declared, never inferred — and that is exactly what 1 is
-	// reserved for.
-	for (const verb of UNIMPLEMENTED) {
-		assert.notEqual((await runCli([verb], { cwd, agentDir })).exitCode, EXIT_USAGE, verb);
-	}
+	const { exitCode, value } = await runCli(["status", "--soon"], { cwd, agentDir });
+
+	assert.equal(exitCode, EXIT_NOT_IMPLEMENTED);
+	assert.equal(value.error.kind, "not-implemented");
+	assert.equal(value.error.missing, "a subsystem that has not landed");
+	assert.match(value.error.spec, /^§/);
+	// §10.3 reserves 1 for the operator's line being wrong, so a missing
+	// subsystem must never arrive as a typo would.
+	assert.notEqual(exitCode, EXIT_USAGE);
 });
 
 test("this slice produces no run end-reason exit code", async (t) => {

@@ -199,7 +199,7 @@ export function attemptLaunched(
 	runId,
 	ticket,
 	ordinal = 1,
-	{ at = 1_770_000_100_000, phase = "implement", role = "implement", profile = "builder" } = {},
+	{ at = 1_770_000_100_000, phase = "implement", role = "implement", profile = "builder", routing = null } = {},
 ) {
 	return {
 		kind: "attempt.launched",
@@ -212,8 +212,10 @@ export function attemptLaunched(
 		observedAt: at,
 		// The profile is on it because the claim always records one, and §8.5 pins a
 		// repair to the originating attempt's: a fixture that left it out would make
-		// every repair unplannable for a reason production never has.
-		payload: { role, profile },
+		// every repair unplannable for a reason production never has. The routing
+		// beside it is #155's dispatch decision, `null` where none was made — which
+		// is what a pinned attempt records and what a fixture defaults to.
+		payload: { role, profile, routing },
 	};
 }
 
@@ -306,6 +308,7 @@ export function appendLegacyEvent(
  */
 export function manualTimers() {
 	const scheduled = [];
+	const timeouts = [];
 
 	return {
 		api: {
@@ -317,13 +320,36 @@ export function manualTimers() {
 			clearInterval: (handle) => {
 				handle.cleared = true;
 			},
+			// One-shot timers are a **separate list, fired separately**. The watch's
+			// re-subscription backoff (#114) and the degraded poll interval can
+			// coincide on a period, and a `tick` that fired both would make a test
+			// unable to say which clock did the work — the same reason `tick` takes
+			// a period at all.
+			setTimeout: (fn, ms) => {
+				const handle = { fn, ms, cleared: false, fired: false };
+				timeouts.push(handle);
+				return handle;
+			},
+			clearTimeout: (handle) => {
+				handle.cleared = true;
+			},
 		},
 		tick: (ms = null) => {
 			for (const handle of scheduled.filter((live) => !live.cleared && (ms === null || live.ms === ms))) {
 				handle.fn();
 			}
 		},
+		/** Fire the one-shot timers due at `ms` — or every pending one. */
+		fire: (ms = null) => {
+			for (const handle of timeouts.filter(
+				(live) => !live.cleared && !live.fired && (ms === null || live.ms === ms),
+			)) {
+				handle.fired = true;
+				handle.fn();
+			}
+		},
 		intervals: () => scheduled.filter((handle) => !handle.cleared).map((handle) => handle.ms),
+		timeouts: () => timeouts.filter((handle) => !handle.cleared && !handle.fired).map((handle) => handle.ms),
 	};
 }
 

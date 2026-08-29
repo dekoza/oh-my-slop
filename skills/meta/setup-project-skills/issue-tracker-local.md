@@ -32,6 +32,13 @@ place; not found, append fresh. One live marker entry per skill and purpose.
 Create a new file under `docs/tickets/<feature-slug>/` (creating the directory if
 needed), or `docs/specs/<feature-slug>.md` for a spec.
 
+## When a skill says "open a pull request"
+
+There is no forge here, so there is no PR to open. Push the branch if the repo has a
+remote (`git push -u origin <branch>`), and report the branch name as the deliverable.
+Record the outcome by appending to the ticket file's `## Comments` under the skill's
+marker; the maintainer merges the branch by hand.
+
 ## When a skill says "fetch the relevant ticket"
 
 Read the file at the referenced path. The user will normally pass the path or the
