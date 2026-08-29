@@ -73,6 +73,8 @@ Publish the approved tickets, following the tracker doc's conventions. The ticke
 - **A forge-backed tracker** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the tracker's native blocking relationship where the doc describes one; otherwise set each ticket's "Blocked by" to the blocking issues.
 - **Local files** → write one file per ticket at the path the tracker doc specifies, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below — one ticket per file, never a single combined file.
 
+**Every forge-backed ticket opens with the literal first body line `Part of #<parent>`** — the issue the tickets were cut from (the map, or the spec issue when there is no map), then a blank line, then the template below. This line is the membership contract the software factory resolves a parent-scoped run through (`docs/specs/software-factory.md` §3.1): one anchored pattern on the first line, nothing looser. A ticket whose first line is anything else — a heading, a blank line, prose that mentions the parent — is not a member of anything, and a run over its parent refuses as `scope-empty`. When the source is not an issue on the tracker there is no parent, and the line is omitted.
+
 Apply `workflow:implement` to every forge-backed ticket so the next workflow is explicit. Choose the triage state separately: apply `ready-for-agent` by default, or `ready-for-human` when the ticket requires human implementation, resolving either state through the label mapping.
 
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
@@ -98,9 +100,11 @@ Do NOT close or modify any parent issue.
 
 <issue-template>
 
+Part of #<parent>
+
 ## Parent
 
-A reference to the parent issue on the tracker (if the source was an existing issue, otherwise omit this section).
+A reference to the parent issue on the tracker, by name and link, for the human reader. The `Part of #<parent>` first line above is what machines read; both are omitted when the source was not an existing issue.
 
 ## What to build
 

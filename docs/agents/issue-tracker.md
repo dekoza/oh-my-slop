@@ -83,9 +83,16 @@ Maps and tickets live on Gitea only — never on the intake tracker.
   Decisions-so-far / Fog body.
   `tea issues create --labels wayfinder:map --title "..." --description "..."`
 - **Child ticket**: Gitea has **no sub-issue API**, so parentage is expressed in the
-  body — put `Part of #<map>` at the top of each ticket, and keep a task list of
-  children in the map body. Label each ticket `wayfinder:<type>`
-  (`research` / `prototype` / `grilling` / `task`).
+  body — the **literal first body line** `Part of #<map>` (nothing before it, nothing
+  after the number), and keep a task list of children in the map body. Label each
+  ticket `wayfinder:<type>` (`research` / `prototype` / `grilling` / `task`).
+- **Membership is one anchored pattern on the first line, for every child of anything**
+  — decision tickets under a map, implementation tickets `to-tickets` cuts from a map
+  or a spec issue. It is the contract the software factory resolves a parent-scoped
+  run through (`docs/specs/software-factory.md` §3.1; `factory/lib/tracker/membership.mjs`),
+  so a `## Parent` heading or a mention in prose makes a ticket a member of nothing:
+  `factory start --parent <N>` over such children refuses as `scope-empty`, and
+  `factory doctor --parent <N>` raises the same alarm.
 - **Blocking**: Gitea has **native issue dependencies**, which render the frontier in
   the web UI. Add an edge with:
 

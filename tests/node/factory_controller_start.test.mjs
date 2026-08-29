@@ -665,6 +665,9 @@ test("a controller that loses its lease exits 6 without closing the run its succ
 		executable: context.executable,
 		env: context.env,
 		workerTransports: context.workerTransports,
+		// This suite isolates the controller lifecycle (see `invocation`), and
+		// #182 reads the tracker at start for any run that would execute.
+		pipeline: null,
 		args: ["42"],
 		flags: new Set([FOREGROUND_FLAG]),
 		timers: timers.api,
@@ -713,6 +716,9 @@ test("a controller that has not yet noticed the theft still moves no run its suc
 		executable: context.executable,
 		env: context.env,
 		workerTransports: context.workerTransports,
+		// This suite isolates the controller lifecycle (see `invocation`), and
+		// #182 reads the tracker at start for any run that would execute.
+		pipeline: null,
 		args: ["42"],
 		flags: new Set([FOREGROUND_FLAG]),
 		timers: timers.api,
@@ -772,6 +778,9 @@ test("a lease stolen before the run exists reports no phantom run and still exit
 		executable: context.executable,
 		env: context.env,
 		workerTransports: context.workerTransports,
+		// This suite isolates the controller lifecycle (see `invocation`), and
+		// #182 reads the tracker at start for any run that would execute.
+		pipeline: null,
 		args: ["42"],
 		flags: new Set([FOREGROUND_FLAG]),
 		timers: timers.api,

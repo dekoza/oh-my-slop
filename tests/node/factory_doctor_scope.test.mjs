@@ -209,6 +209,43 @@ test("`doctor --parent` resolves membership from the label and the Part of line"
 	assert.deepEqual(answered.report.scope.claimable, [10]);
 });
 
+test("`doctor --parent` over a parent nothing declares is an alarm, not a healthy zero (#181)", async (t) => {
+	const { repoRoot, agentDir, context } = await diagnosable(t);
+	const { reader: trackerReader } = tracker({
+		issues: [
+			// The heading `to-tickets` used to write, in place of §3.1's first line.
+			giteaIssue({ number: 10, body: "## Parent\n\nSpecify a reliable Software Factory (#75)" }),
+			giteaIssue({ number: 11, body: "Part of #76\n" }),
+		],
+	});
+
+	const answered = await runDoctor({
+		repoRoot,
+		agentDir,
+		config: context.config,
+		activeRouting: context.activeRouting,
+		args: ["75"],
+		flags: new Set(["--parent"]),
+		tracker: trackerReader,
+		probes: context.probes,
+		executable: context.executable,
+		env: context.env,
+		at: AT,
+	});
+
+	const { report } = answered;
+	assert.equal(report.scope.ok, false);
+	assert.equal(report.scope.error.reason, "scope-empty");
+	assert.equal(report.scope.error.candidates, 2);
+	assert.equal(report.ok, false);
+	const alarm = report.alarms.find((entry) => entry.reason === "scope-empty");
+	assert.notEqual(alarm, undefined, "no scope-empty alarm was raised");
+	assert.match(alarm.message, /Part of #75/);
+	assert.match(answered.message, /scope-empty/);
+	// The tracker answered; this is not the unreadable-tracker alarm wearing a new name.
+	assert.equal(report.alarms.some((entry) => entry.reason === "tracker-unreadable"), false);
+});
+
 test("a scope that will not parse is a usage refusal, exactly as it is for start", async (t) => {
 	const { repoRoot, agentDir } = await diagnosable(t);
 

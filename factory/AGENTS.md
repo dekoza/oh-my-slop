@@ -510,6 +510,13 @@ question is which rows have become the module's job to state, not what the ceili
 - **Parent membership is the anchored `Part of #N` first body line and nothing looser**, and
   candidates come from the `workflow:implement` label server-side. — `tracker/membership.mjs` ·
   §3.1
+- **A parent no candidate declares is refused `scope-empty` before a run exists**; `readScope`
+  reports `candidates` beside `members`, and `doctor` raises the same alarm. A parent whose
+  members are all closed is not empty. — `tracker/frontier.mjs` · `controller/start.mjs` · #181
+- **A bare number carrying `wayfinder:map` is rewritten at start to the parent-scoped selector
+  over it** — one read per typed ticket, above the process-shape branch, only for a start that
+  would read a live frontier; a map beside other tickets is `scope-invalid`. —
+  `controller/map-scope.mjs` · #182
 - **The edge set is a parameter**: a caller maintaining the graph from the poll passes it, and
   `doctor` omits it. — `tracker/frontier.mjs` · §5.1
 - **`awaits_external` is a field rather than a seventh member class.** — `tracker/frontier.mjs` ·

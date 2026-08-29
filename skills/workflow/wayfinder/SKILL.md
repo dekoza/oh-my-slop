@@ -62,9 +62,11 @@ The whole map at low resolution, loaded once per session. Open tickets are **not
 
 ### Tickets
 
-Each ticket is a **child issue** of the map; the tracker's issue id is its identity. Its body is the question, sized to one 100K token agent session:
+Each ticket is a **child issue** of the map; the tracker's issue id is its identity. On a forge-backed tracker the body's **literal first line** is `Part of #<map>` — the one anchored pattern the tracker doc and the software factory (`docs/specs/software-factory.md` §3.1) both resolve membership through; a heading or a mention in prose makes the ticket a child of nothing. Then the question, sized to one 100K token agent session:
 
 ```markdown
+Part of #<map>
+
 ## Question
 
 <the decision or investigation this ticket resolves>

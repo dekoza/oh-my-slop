@@ -407,9 +407,11 @@ test("a run reads the frontier again at every scheduling decision, and caches no
 	// reclassify it — so once #43 carries `factory:awaiting-merge` from its own
 	// publication, the label check settles it and the edges are never asked for.
 	// §3.3 adds two reads of its own on the ticket it claims, the pre-claim look
-	// and the re-read, so five decisions over #43 read it seven times.
+	// and the re-read, so five decisions over #43 read it seven times — and #182
+	// reads each typed ticket once at start, before any run exists, to learn
+	// whether it is a map: eight.
 	const decisions = gitea.calls.filter(
 		(entry) => entry.call === "issue.get" && entry.path.endsWith("/issues/43"),
 	);
-	assert.equal(decisions.length, 7, "the frontier was not re-read at every scheduling decision");
+	assert.equal(decisions.length, 8, "the frontier was not re-read at every scheduling decision");
 });

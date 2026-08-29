@@ -37,6 +37,8 @@ test("the signatures catch the quota and rate-limit wordings providers actually 
 		"provider error: quota exceeded for this project",
 		"out of budget; top up to continue",
 		"Error: daily limit reached, resets at midnight UTC",
+		'{"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed your limit"}}',
+		"You are being rate limited; retry in 30s",
 	]) {
 		const match = matchRefusal(`some earlier output\n${text}\n`);
 		assert.notEqual(match, null, `expected a refusal in: ${text}`);
@@ -52,6 +54,22 @@ test("ordinary worker output is not a refusal", () => {
 		"the server returned 500 internal error", // transient server fault, not quota
 		"connection refused while fetching",
 		"compiled with -O2",
+	]) {
+		assert.equal(matchRefusal(text), null, `not a refusal: ${text}`);
+	}
+});
+
+test("a signature word embedded in ordinary prose is not a refusal", () => {
+	// The line that ended run 01M0ZD1G52EC2CD946Y3B1AFQ8's attempt: a README
+	// the worker was writing, shown with a line number by its own editor.
+	// "quotations" carries "quota"; a bare substring match read it as the
+	// provider's refusal and stopped a working worker.
+	for (const text of [
+		" 10  Two names in them are guesses rather than quotations, and they are the ones to",
+		"the quotas table is keyed by tenant",
+		"docs/quotations.md updated",
+		"accurately rated: limited-edition pressing",
+		"add the rate-limiting middleware to the API",
 	]) {
 		assert.equal(matchRefusal(text), null, `not a refusal: ${text}`);
 	}

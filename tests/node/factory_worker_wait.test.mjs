@@ -989,6 +989,22 @@ test("the hard ceiling and the no-progress clock are reclassified the same way (
 	}
 });
 
+test("a refusal on screen while the worker is working decides nothing: only silence is reclassified (#154)", () => {
+	// Run 01M0ZD1G52EC2CD946Y3B1AFQ8: the pane tail matched a signature while
+	// the worker was alive, producing output, with no clock fired — and the
+	// controller ended the attempt on the spot. A refusal explains *why* a
+	// worker fell silent; it is not a verdict on one that has not.
+	const decided = decideOutcome({
+		outbox: outboxOf("absent"),
+		liveness: liveness({ status: "working" }),
+		at: FIXED_NOW + 1_000,
+		deadline: FIXED_NOW + 60_000,
+		noProgressDeadline: FIXED_NOW + 30_000,
+		refusal,
+	});
+	assert.equal(decided, null);
+});
+
 test("a valid outbox outranks a refusal in the pane: the worker's answer wins (#154)", () => {
 	const decided = decideOutcome({
 		outbox: outboxOf("valid", { status: "completed" }),
@@ -1105,4 +1121,42 @@ test("a refusal early in the session that the worker worked past decides nothing
 	});
 
 	assert.equal(result.outcome, "completed", "the worker's own outbox decides; the recovered refusal is history");
+});
+
+test("a refusal still on screen while the worker is working is recorded, not acted on (#154)", async (t) => {
+	// Run 01M0ZD1G52EC2CD946Y3B1AFQ8: the pane's tail matched a signature on
+	// the very sample that showed fresh output, and the loop stopped a working
+	// worker on the next turn. The sighting is a fact worth recording; the
+	// verdict waits for silence — here, for the worker's own answer.
+	const context = await waiting(t);
+	context.herdr.paneOutput = "API Error: 429 rate_limit_error: retrying in 20s\n";
+	let clock = FIXED_NOW;
+	let polls = 0;
+	let push;
+
+	const result = await context.wait({
+		now: () => clock,
+		watch: ({ onTransition }) => {
+			push = onTransition;
+			return { close: () => {}, degraded: () => false };
+		},
+		sleep: async () => {
+			clock += 1_000;
+			polls += 1;
+			if (polls === 1) push({ status: "working", alive: true, agent: "pi", source: "subscribe", event: null, from: "idle" });
+			if (polls === 3) {
+				context.writeOutbox(completedOutbox(context.identity));
+				push({ status: "idle", alive: false, agent: "pi", source: "subscribe", event: null, from: "working" });
+			}
+		},
+	});
+
+	assert.equal(result.outcome, "completed", "the refusal on screen did not end a working attempt");
+	const facts = context.store.readEvents({ kind: "observation.recorded" });
+	assert.ok(
+		facts.some((event) => event.payload.fact === "provider.refusal"),
+		"the sighting is still its own recorded observation",
+	);
+	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
+	assert.equal(ended.payload.outcome, "completed");
 });

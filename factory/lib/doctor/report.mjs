@@ -16,7 +16,7 @@ import { HELD_REASONS, planExpiry } from "../retention/expiry.mjs";
 import { PINS } from "../retention/pins.mjs";
 import { resolveStorePaths } from "../state/location.mjs";
 import { FactoryTrackerError } from "../tracker/errors.mjs";
-import { readScope } from "../tracker/frontier.mjs";
+import { emptyScopeDiagnosis, isEmptyParentScope, readScope } from "../tracker/frontier.mjs";
 import { isDue, readCursor } from "../tracker/observation.mjs";
 
 /**
@@ -77,6 +77,7 @@ export async function doctorReport(
 		env = process.env,
 		probes = PROBES,
 		scope = null,
+		resolvedFrom = null,
 		tracker = null,
 		baseline = false,
 		at = Date.now(),
@@ -98,7 +99,7 @@ export async function doctorReport(
 		schema_version: 2,
 		at,
 		store: storeSection(store, agentDir),
-		scope: await scopeSection(store, { scope, tracker, at }),
+		scope: await scopeSection(store, { scope, resolvedFrom, tracker, at }),
 		integrity: store === null ? null : integritySection(store),
 		reconcile: reconciled,
 		pins: pinsSection(unresolved, reconciled, at),
@@ -211,10 +212,16 @@ function alarmsOf(value) {
 		);
 	}
 
+	// #181: a parent the tracker answered about and nothing declares. The tracker
+	// was readable — this is the scope being empty, and the fix is on the
+	// tickets, so it is its own alarm rather than the unreadable one below.
+	if (value.scope.requested && value.scope.ok === false && value.scope.error.reason === "scope-empty") {
+		alarms.push(alarm("scope-empty", value.scope.error.message, value.scope.error));
+	}
 	// A scope the operator asked about and the factory could not read: no run
 	// over it can claim anything, and the reason is a fact rather than a
 	// diagnosis the operator has to reconstruct from a stack trace.
-	if (value.scope.requested && value.scope.ok === false) {
+	else if (value.scope.requested && value.scope.ok === false) {
 		alarms.push(
 			alarm(
 				"tracker-unreadable",
@@ -279,7 +286,7 @@ function describeRun(run) {
  * the controller is dead, and refusing to answer any of it because they did not
  * name a ticket would be the Babysitter failure again.
  */
-async function scopeSection(store, { scope, tracker, at }) {
+async function scopeSection(store, { scope, resolvedFrom = null, tracker, at }) {
 	if (scope === null) {
 		return Object.freeze({
 			requested: false,
@@ -305,12 +312,32 @@ async function scopeSection(store, { scope, tracker, at }) {
 	try {
 		const resolved = await readScope(tracker, scope, { at });
 
+		// #181: the tracker answered and nothing on it declares this parent. A
+		// healthy-looking zero here is exactly the answer a run would have acted
+		// on, so it is reported as the defect it is, in `start`'s own words.
+		if (isEmptyParentScope(resolved)) {
+			const { reason, message, details } = emptyScopeDiagnosis(resolved);
+			return Object.freeze({
+				requested: true,
+				selector: scope,
+				described: describeScope(scope),
+				resolved_from: resolvedFrom,
+				ok: false,
+				error: Object.freeze({ reason, message, ...details }),
+				candidates: resolved.candidates,
+				members: Object.freeze([]),
+			});
+		}
+
 		return Object.freeze({
 			requested: true,
 			selector: scope,
 			described: describeScope(scope),
+			// #182: the map ticket a bare number was rewritten from, or `null`.
+			resolved_from: resolvedFrom,
 			ok: true,
 			error: null,
+			candidates: resolved.candidates,
 			counts: resolved.counts,
 			// §3.2's order, so the operator reads the frontier in the order a run
 			// would take it.
