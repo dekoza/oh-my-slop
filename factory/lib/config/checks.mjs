@@ -46,7 +46,7 @@ const CHECK_SEVERITIES = Object.freeze(["required", "advisory"]);
 const EVERY_CHECK_FIELD = "Every check declares all five fields, none of them defaulted.";
 
 /**
- * @returns {ReadonlyArray<{ name: string, command: string, timeout: number, severity: string, expectedFailureExitCodes: number[] }>}
+ * @returns {ReadonlyArray<{ name: string, command: string, timeout: number, severity: string, expectedFailureExitCodes: number[], feeds: ReadonlyArray<string> }>}
  */
 export function validateChecks(checks, configPath) {
 	if (checks.length === 0) {
@@ -105,14 +105,9 @@ function validateCheck(check, at, configPath) {
 }
 
 /**
- * A check's name is an identifier, held to the same shape profiles and routing
- * sets are — one identifier rule for the file.
- *
- * It is not cosmetic here: the name reaches an **effect key** and an artifact's
- * discriminator when the runner records that check's output (§4.5, §8.7), and it
- * is what an attestation and every `--json` consumer identify the check by. A
- * name the key grammar cannot carry would be a load-time typo discovered
- * mid-run, on the expensive check nobody thought about.
+ * §8.2's `feeds`: the agent-borne phases an advisory check's captured output
+ * reaches. Absent means `[]`; a feed on a required check, an unknown phase, or
+ * `review` refuses the config rather than becoming inert policy (§11.6).
  */
 function validateFeeds(value, severity, at, configPath) {
 	if (value === undefined) return Object.freeze([]);
@@ -149,6 +144,16 @@ function validateFeeds(value, severity, at, configPath) {
 	return Object.freeze([...value]);
 }
 
+/**
+ * A check's name is an identifier, held to the same shape profiles and routing
+ * sets are — one identifier rule for the file.
+ *
+ * It is not cosmetic here: the name reaches an **effect key** and an artifact's
+ * discriminator when the runner records that check's output (§4.5, §8.7), and it
+ * is what an attestation and every `--json` consumer identify the check by. A
+ * name the key grammar cannot carry would be a load-time typo discovered
+ * mid-run, on the expensive check nobody thought about.
+ */
 function requireCheckName(name, path, configPath) {
 	if (typeof name === "string" && IDENTIFIER_PATTERN.test(name)) return name;
 

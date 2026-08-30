@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { MAX_SUPPORTED_TICKET_CONCURRENCY } from "../../factory/lib/config/concurrency.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
@@ -1055,4 +1056,25 @@ test("an unknown key in the worker block refuses, like every other block", (t) =
 
 	assert.equal(error.reason, "unknown-key");
 	assert.equal(error.details.at, "worker.permissionMode");
+});
+
+// ── The repository's own declaration, through the loader (§8.2, §11.6) ──────
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+test("the repository's own three advisory recipes load as feedable checks with mandatory timeouts (§8.2)", () => {
+	// Through `loadFactoryConfig`, not the raw JSON: what matters is how the loader
+	// treats the recipes, and a retuned threshold or exit-code set must not fail
+	// this test — the literals belong to the tools' own files.
+	const { config } = loadFactoryConfig({ cwd: REPO_ROOT });
+	const recipes = config.checks.filter((check) => check.severity === "advisory");
+
+	assert.deepEqual(
+		recipes.map((recipe) => recipe.name).sort(),
+		["complexity-crap-python", "mutation-node", "mutation-python"],
+	);
+	for (const recipe of recipes) {
+		assert.deepEqual(recipe.feeds, ["implement"], `${recipe.name} feeds the repair tier`);
+		assert.ok(Number.isInteger(recipe.timeout) && recipe.timeout > 0, `${recipe.name} declares its timeout`);
+	}
 });
