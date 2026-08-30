@@ -1,3 +1,4 @@
+import { isMissingRef } from "../git/errors.mjs";
 import { attemptBranch } from "../git/isolation.mjs";
 
 /** The stable prose marker on §8.9's machine-readable pause comment. */
@@ -11,15 +12,56 @@ const PAUSE_MARKER = "🤖 **factory — paused**";
  * crossed the tier-1 horizon by the time a human clears the label (§3.4).
  */
 export async function planTicketContinuation({ clone, baseCommit, ticketSnapshot, trackerLogin }) {
-	const pauses = ticketSnapshot.comments.map(parsePause).filter((entry) => entry !== null);
-	const latest = pauses.at(-1);
-	if (latest === undefined) throw new TypeError("the ticket has no parseable factory pause comment (§3.4)");
+	const candidates = ticketSnapshot.comments.filter(
+		(comment) => typeof comment.body === "string" && comment.body.includes(PAUSE_MARKER),
+	);
+	if (candidates.length === 0) {
+		return freshPlan({
+			baseCommit,
+			ticketSnapshot,
+			code: "pause-comment-absent",
+			message: "No factory pause comment is present; starting from the pinned default-branch base.",
+		});
+	}
+
+	const latestComment = candidates.at(-1);
+	const latest = parsePause(latestComment, ticketSnapshot.number);
+	if (latest === null) {
+		return freshPlan({
+			baseCommit,
+			ticketSnapshot,
+			code: "pause-comment-unparseable",
+			message: `The latest factory pause comment #${latestComment.id} is unparseable; starting from the pinned default-branch base.`,
+		});
+	}
+	const pauses = candidates
+		.map((comment) => parsePause(comment, ticketSnapshot.number))
+		.filter((entry) => entry !== null);
 
 	const branch = attemptBranch({ ticket: ticketSnapshot.number, attempt: latest.block.identity.attempt });
-	const head = await clone.git(["rev-parse", "--verify", `refs/heads/${branch}^{commit}`]);
+	let head;
+	try {
+		head = await clone.git(["rev-parse", "--verify", `refs/heads/${branch}^{commit}`]);
+	} catch (error) {
+		if (!isMissingRef(error)) throw error;
+		return freshPlan({
+			baseCommit,
+			ticketSnapshot,
+			code: "paused-branch-missing",
+			message: `The paused attempt branch ${branch} is missing; starting from the pinned default-branch base.`,
+		});
+	}
 	const commitsAhead = Number.parseInt(await clone.git(["rev-list", "--count", `${baseCommit}..${head}`]), 10);
-	if (!Number.isInteger(commitsAhead) || commitsAhead < 1) {
-		throw new TypeError(`the paused branch ${branch} carries no commit outside the default branch (§3.4)`);
+	if (commitsAhead === 0) {
+		return freshPlan({
+			baseCommit,
+			ticketSnapshot,
+			code: "paused-branch-empty",
+			message: `The paused attempt branch ${branch} carries no commit outside the default branch; starting fresh.`,
+		});
+	}
+	if (!Number.isInteger(commitsAhead) || commitsAhead < 0) {
+		throw new TypeError(`git returned an invalid commit delta for paused branch ${branch}: ${commitsAhead}`);
 	}
 
 	const exchanges = pauses.map((pause, index) => {
@@ -87,7 +129,20 @@ export async function planTicketContinuation({ clone, baseCommit, ticketSnapshot
 	});
 }
 
-function parsePause(comment) {
+function freshPlan({ baseCommit, ticketSnapshot, code, message }) {
+	return Object.freeze({
+		kind: "fresh",
+		baseCommit,
+		ticketSnapshot,
+		claim: Object.freeze({
+			kind: "fresh",
+			fallback_reason: Object.freeze({ code, message }),
+		}),
+		brief: null,
+	});
+}
+
+function parsePause(comment, expectedTicket) {
 	if (typeof comment.body !== "string" || !comment.body.includes(PAUSE_MARKER)) return null;
 	const fenced = /(^|\n)(`{3,})json\n([\s\S]*?)\n\2(?=\n|$)/.exec(comment.body);
 	if (fenced === null) return null;
@@ -102,9 +157,14 @@ function parsePause(comment) {
 		block?.schema_version !== 1 ||
 		block?.disposition !== "paused" ||
 		block?.identity === null ||
+		typeof block?.identity?.run !== "string" ||
+		block.identity.run === "" ||
+		block?.identity?.ticket !== expectedTicket ||
 		typeof block?.identity?.attempt !== "string" ||
-		!Number.isInteger(block?.identity?.ticket) ||
+		!block.identity.attempt.startsWith(`${block.identity.run}-t${expectedTicket}-a`) ||
+		!/^\d+$/.test(block.identity.attempt.slice(`${block.identity.run}-t${expectedTicket}-a`.length)) ||
 		typeof block?.reason_class !== "string" ||
+		block.reason_class === "" ||
 		typeof block?.question !== "string" ||
 		block.question.trim() === ""
 	) {

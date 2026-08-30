@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { FactoryGitError } from "../../factory/lib/git/errors.mjs";
 import { planTicketContinuation } from "../../factory/lib/pipeline/resume.mjs";
 
 const RUN = "01PAUSED00000000000000000";
@@ -98,4 +99,66 @@ test("a cleared needs-human ticket resumes from the paused attempt's committed t
 		["rev-parse", "--verify", `refs/heads/factory/t${TICKET}/a${ATTEMPT}^{commit}`],
 		["rev-list", "--count", `${BASE}..${HEAD}`],
 	]);
+});
+
+test("resume evidence failures produce explicit fresh-execution reasons instead of throwing", async (t) => {
+	const cases = [
+		{
+			name: "pause comment absent",
+			comments: [comment(1, "minder", "ordinary discussion")],
+			clone: cloneAnswering(),
+			code: "pause-comment-absent",
+			message: /no factory pause comment/i,
+		},
+		{
+			name: "latest pause comment unparseable",
+			comments: [
+				comment(1, "kuferek", pauseBody()),
+				comment(2, "kuferek", "🤖 **factory — paused**\n\n```json\nnot json\n```"),
+			],
+			clone: cloneAnswering(),
+			code: "pause-comment-unparseable",
+			message: /latest factory pause comment.*unparseable/i,
+		},
+		{
+			name: "paused branch missing",
+			comments: [comment(1, "kuferek", pauseBody())],
+			clone: {
+				git: async () => {
+					throw new FactoryGitError("git-command-failed", "missing ref", { stderr: "" });
+				},
+			},
+			code: "paused-branch-missing",
+			message: /paused attempt branch.*missing/i,
+		},
+		{
+			name: "paused branch has no commits outside the default base",
+			comments: [comment(1, "kuferek", pauseBody())],
+			clone: {
+				git: async (args) => (args[0] === "rev-parse" ? HEAD : "0"),
+			},
+			code: "paused-branch-empty",
+			message: /carries no commit outside the default branch/i,
+		},
+	];
+
+	for (const fixture of cases) {
+		await t.test(fixture.name, async () => {
+			const ticketSnapshot = snapshot(fixture.comments);
+			const plan = await planTicketContinuation({
+				clone: fixture.clone,
+				baseCommit: BASE,
+				ticketSnapshot,
+				trackerLogin: "kuferek",
+			});
+
+			assert.equal(plan.kind, "fresh");
+			assert.equal(plan.baseCommit, BASE);
+			assert.equal(plan.ticketSnapshot, ticketSnapshot);
+			assert.equal(plan.brief, null);
+			assert.equal(plan.claim.kind, "fresh");
+			assert.equal(plan.claim.fallback_reason.code, fixture.code);
+			assert.match(plan.claim.fallback_reason.message, fixture.message);
+		});
+	}
 });
