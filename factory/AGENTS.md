@@ -43,9 +43,8 @@ question is which rows have become the module's job to state, not what the ceili
 - **Budget bounds are per-key**, never one block-wide `max`. — `config/defaults.mjs` · §11.6
 - **§6.8's `worker` block is *additions* to floors that live in code**, so its absent form is the
   empty addition, spelled once so no consumer branches on `undefined`. — `config/worker.mjs` · §6.8
-- **`factory migrate` is the only verb that writes the operator's config**, and the only verb
-  exempt from the load — which is why it is a sibling of `doctor` rather than a flag on it.
-  — `migrate/verb.mjs` · §11.8
+- **`factory migrate` is the only verb that writes the operator's config**, and the only verb exempt
+  from the load. — `migrate/verb.mjs` · §11.8
 - **§11.8's legacy-key disposition table is data**: one row maps and reports, a legacy key no row
   names refuses the migration, the five holes it leaves are `TODO` sentinels the loader hard-fails
   on, and `.pi/factory.v1.json` is preserved before anything is written. — `migrate/document.mjs` · §11.8
@@ -155,12 +154,12 @@ question is which rows have become the module's job to state, not what the ceili
   and `capacity:model:<class>:<i>` are compare-and-swap holds on the lease primitive.
   — `capacity/slots.mjs` · §9.4
 - **The resource class is derived from the profile (`resourceClassOf`), never declared**, and the
-  pane bound is derived from the ceiling — **so no pane knob exists in config**. — `capacity/plan.mjs`
+  pane bound is derived from the ceiling — **so no pane knob exists in config.** — `capacity/plan.mjs`
 - **Slots carry no TTL**: a row records the generation of the *controller*
   lease that took it, and a superseded row is settled by probing its holder.
   — `reclaim` in `capacity/slots.mjs`, over `worker/adoption.mjs`'s probe · §5.5
-- **The ticket slot spans the whole ticket execution and the model slot spans one attempt**, which
-  is what makes hold-and-wait unconstructible. — `capacity/slots.mjs`
+- **The ticket slot spans the whole ticket execution and the model slot spans one attempt.**
+  — `capacity/slots.mjs`
 - **`capacity/report.mjs` is the one derivation of §9.7's numbers**: `held` is the rows, `waiting`
   is a walk over the journal, never a second tally. — `capacity/report.mjs` · §9.7
 - **A capacity row settles three ways, and a lane is adopted whole or not at all**: a provable
@@ -236,9 +235,9 @@ question is which rows have become the module's job to state, not what the ceili
 - **The deterministic tree digest is authoritative uniformly for every install shape**, with the git
   commit and a dirty flag recorded beside it as metadata only — checkouts are never special-cased.
   — `package/tree.mjs` · §11.7
-- **Findings are data rather than exceptions**, since `doctor` runs the same handshake in report
-  mode; `assertPackageIntact` is the one place they become the automation failure before first
-  claim, with no severity ladder and no compatibility pass. — `package/findings.mjs` · §10.5, §14.35
+- **Findings are data rather than exceptions**; `assertPackageIntact` is the one place they become
+  the automation failure before first claim, with no severity ladder and no compatibility pass.
+  — `package/findings.mjs` · §10.5, §14.35
 - **`package.expect` declares a name and a version and nothing else** — a hand-declared digest is
   refused at load. — `package/version.mjs` · §11.7
 
@@ -262,9 +261,8 @@ question is which rows have become the module's job to state, not what the ceili
   floor (`git push`, `tea`, `gh`, in every spelling the matcher accepts) has one home.
   — `worker/permissions.mjs` · §6.8, §11.4
 - **The builder binding is `dontAsk` plus broad tool-family allows** — never a per-command
-  allowlist, never `acceptEdits`, which still prompts for Bash. — `worker/permissions.mjs` · §6.8
-- **The reviewer binding is `dontAsk`** — plan mode requires an interactive approval — with edit
-  tools still withheld. — `worker/permissions.mjs` · §6.8
+  allowlist, never `acceptEdits`. — `worker/permissions.mjs` · §6.8
+- **The reviewer binding is `dontAsk`**, with edit tools still withheld. — `worker/permissions.mjs` · §6.8
 - **Overrides may only add denies**: the config surface has no allow channel and no remove channel,
   and an inverted rule spelling fails to parse. — `config/worker.mjs` · §6.8
 - **The floor's non-permission half is a disabled `pushurl` in every attempt worktree**,
@@ -276,9 +274,9 @@ question is which rows have become the module's job to state, not what the ceili
 - **What the writer writes is what the check reads back**, derived from the constants
   rather than hand-listed, so a fifth settled key cannot become a fourth unproven one.
   — `worker/trust.mjs`, `worker/preflight.mjs` · §6.8
-- **The guarantee is the state predicate preflight asserts, not a green probe** — a `--print`
-  probe never meets the dialog at all — and it reaches exactly as far as controller-owned state:
-  interstitials gated on anything else are attribution's, not prevention's. — `worker/trust.mjs` · §6.8
+- **The guarantee is the state predicate preflight asserts, not a green probe**, and it reaches
+  exactly as far as controller-owned state: interstitials gated on anything else are attribution's,
+  not prevention's. — `worker/trust.mjs` · §6.8
 - **Every session's binding carries the flags that keep an interstitial off a
   pane**: Claude's browser fence and pi's trust approval, on the worker binding
   beside the discovery fence, and therefore on both postures and on the probes.
@@ -300,19 +298,18 @@ question is which rows have become the module's job to state, not what the ceili
   — `worker/lifecycle.mjs` · §6.4
 - **The pane is a tab in the run's own workspace**, opened by one `workspace-open` effect keyed
   by the *run*, adopted by every later attempt and every re-entering controller, and probed by the
-  run's deterministic label because Herdr stamps no token on a workspace. — `worker/workspace.mjs` · §6.4
+  run's deterministic label. — `worker/workspace.mjs` · §6.4
 - **The `FACTORY_ATTEMPT` token is stamped before the agent**, and the probe asks for the token
   *and* a live agent, so an early stamp cannot fake a start. — `worker/lifecycle.mjs`
 - **§6.5's identity travels on two channels** — the prompt, and `FACTORY_*` variables declared on
   the attempt's `tab create` rather than typed at its shell. — `worker/lifecycle.mjs` · §6.5
-- **`workspace create` and `tab create` take `--env` and `agent start` takes none**, which is what
-  puts the binding at the tab; a value crosses as one argv element, so no quoting helper survives
-  here. — `controller/herdr-control.mjs` · evidence: `tests/live/herdr-tab-env-reaches-agent.mjs`
+- **`workspace create` and `tab create` take `--env` and `agent start` takes
+  none**; a value crosses as one argv element, so no quoting helper survives here.
+  — `controller/herdr-control.mjs` · evidence: `tests/live/herdr-tab-env-reaches-agent.mjs`
 - **Identity is applied last**, so a declared binding cannot shadow it. — `worker/environment.mjs`
 - **The transcript pointer is polled out of Herdr with backoff and never computed.**
   — `worker/lifecycle.mjs` · §6.5
-- **The pin is compared before the prompt** — the prompt is the first thing that spends.
-  — `worker/lifecycle.mjs` · §6.2
+- **The pin is compared before the prompt.** — `worker/lifecycle.mjs` · §6.2
 - **`attempt.correlated` is what makes a launch finished**, and carries the agent kind on payload
   v2 so §5.5's third adoption test compares against an observation rather than a derivation.
   — `worker/lifecycle.mjs` · §5.5
@@ -325,39 +322,36 @@ question is which rows have become the module's job to state, not what the ceili
 - **Idempotency is the minter's purpose, not the counter's**: a caller says what it
   is minting *for*, and a record already naming that purpose hands back the same id.
   — `mintAttempt` in `worker/attempt.mjs` · §8.4, §8.5
-- **The first prompt is one renderer parameterised by the role, not four templates**, and it is
-  deterministic — nothing in it reads a clock or a directory, which is what lets its digest ride
+- **The first prompt is one renderer parameterised by the role, not four templates**, and
+  it is deterministic — nothing in it reads a clock or a directory, and its digest rides
   `attempt.launched`. — `worker/prompt.mjs` · §6.4
-- **§6.4's completion-protocol obligation lives only in the prompt renderer** — a package
-  skill stating it would be a factory dependency inside a product the factory does not own.
+- **§6.4's completion-protocol obligation lives only in the prompt renderer.**
   — `worker/prompt.mjs` · §6.4 · guard: `tests/node/factory_worker_prompt.test.mjs`
 - **Workers get no tracker credential**, so the ticket arrives as a claim-time snapshot dated by the
   tracker's own clock. — `tracker/snapshot.mjs` · §6.8
 
 ## Waiting, adoption, and Herdr
 
-- **§6.6's wait is first-signal-wins over two sources answering different questions**:
-  Herdr is subscribed to, because a poll cannot see `working → blocked → working` between
-  samples, while the outbox is a file that appears once and is re-read on an interval.
+- **§6.6's wait is first-signal-wins over two sources answering different questions**: Herdr
+  is subscribed to, while the outbox is a file that appears once and is re-read on an interval.
   — `worker/outbox.mjs`, `controller/herdr-events.mjs` · §5.1, §6.6
 - **Liveness means "still working", not "the process exists"** — neither harness exits when a turn
   ends. — `controller/herdr-events.mjs` · §6.6
 - **The state table is one function**, with the two silences split by fault: `no-result` is the
   worker's, `dead-worker` is the automation's. — `decideOutcome` in `worker/outbox.mjs` · §8.10
 - **A pane never observed working had no turn to end**, so both silence rows become
-  `worker-never-started` on the automation budget — a state predicate over the working status
-  alone, never a launch window, and read from the attempt's durable observation records so a
-  controller re-entry answers the same. The wait's own seed read is recorded for that reason.
+  `worker-never-started` on the automation budget — a state predicate over the working
+  status alone, never a launch window, and read from the attempt's durable observation
+  records so a controller re-entry answers the same. The wait's own seed read is recorded.
   — `observedWorking` in `worker/lifecycle.mjs` · §6.6, §8.10
 - **A settled worker gets a grace before its silence is called silent-completion.**
   — `worker/outbox.mjs` · §6.6
 - **An attempt ends once**: the projector refuses a second `attempt.ended`. — `state/projections.mjs`
 - **A subscription is re-established by pane id** after a Herdr server restart — polling covers the
-  gap and stops when the socket takes the question back, and the recovery clears the flag that would
-  otherwise charge the automation for the worker's next silence. — `controller/herdr-events.mjs` · §5.1
-- **Adoption asks §5.5's five tests together and answers three ways** — token · pane alive · agent
-  kind · recorded worktree · outbox path intact, each able to prevent adoption on its own; the third
-  answer exists because an unanswerable read and an unreadable path both taught the process nothing.
+  gap and stops when the socket takes the question back, and the recovery clears the degraded flag.
+  — `controller/herdr-events.mjs` · §5.1
+- **Adoption asks §5.5's five tests together and answers three ways** — token · pane alive ·
+  agent kind · recorded worktree · outbox path intact, each able to prevent adoption on its own.
   — `worker/adoption.mjs` · §5.2, §5.5, §12.4
 - **The adoption module mutates nothing and asks about nothing but the pane** — no quit sequence and
   no pid in it. — `worker/adoption.mjs` · §5.5 · guard: `tests/node/factory_worker_adoption.test.mjs`
@@ -369,21 +363,18 @@ question is which rows have become the module's job to state, not what the ceili
 - **Herdr has no `agent stop`** — verified against protocol 19 — so §13.B's "the controller stops
   agents and never closes panes", nor tabs, nor the run's workspace, is `agent send-keys` with the
   harness's own quit sequence. — `controller/herdr-control.mjs` · §13.B
-- **The quit sequence is two calls, and the grouping is load-bearing**: `esc`
-  alone, a settle, then `ctrl+c ctrl+c` together. A change to either half is a
-  claim about somebody else's TUI — re-run the probe rather than reasoning about it.
+- **The quit sequence is two calls, and the grouping is
+  load-bearing**: `esc` alone, a settle, then `ctrl+c ctrl+c` together.
   — `AGENT_STOP_KEY_CALLS` in `controller/herdr-control.mjs` · evidence: `tests/live/herdr-agent-quit-sequence.mjs`
 - **A harness that ignores the quit sequence leaves a wedged pane recorded as an anomaly and never
   escalated.** — `controller/herdr-control.mjs` · §13.B
-- **The availability probe and the commands are two modules**, because "the factory checks the
-  multiplexer, it does not manage one" is checkable only as *the probe imports nothing that can
+- **The availability probe and the commands are two modules**: *the probe imports nothing that can
   start a process*. — `controller/herdr.mjs`, `controller/herdr-control.mjs`
 - **Herdr dates nothing**, so `EVENT_SOURCES` declares `statesTime: false` for it and §4.3's
   `occurred_at_raw` is refused on that source rather than filled with our clock under Herdr's name;
   `observed_at` dates the record. — `state/events.mjs` · §4.3
-- **Herdr's foreign id names the fact, not the pane** — a transition's ordinal within the attempt,
-  a reading's own liveness — or §5.1's dedup index would suppress every sighting after the first.
-  — `controller/herdr-events.mjs` · §5.1
+- **Herdr's foreign id names the fact, not the pane** — a transition's ordinal within the attempt, a
+  reading's own liveness. — `controller/herdr-events.mjs` · §5.1
 
 ## Git isolation
 
@@ -395,14 +386,13 @@ question is which rows have become the module's job to state, not what the ceili
 - **Fetches pin the base under `refs/factory/base/*` with `--no-tags`, serialized per handle.**
   — `git/clone.mjs` · §7.7
 - **Structural damage means rebuild, never in-place repair**; a drifted remote URL converges by
-  `set-url`, because a rebuild would discard attempt branches that are the only copy of unpushed
-  work. — `git/clone.mjs`
+  `set-url`. — `git/clone.mjs`
 - **Branch and worktree are effects with the pinned base in both payloads**, so §7.2's "never chased
   mid-attempt" arrives as a typed payload conflict. — `git/attempt.mjs` · §7.2
 - **The per-worktree config carries the dedicated factory identity** (`FACTORY_GIT_IDENTITY`, code
   not configuration), and `core.bare` moves into the bare repo's `config.worktree`. — `git/attempt.mjs`
 - **Every identity-derived path is contained by charset plus canonicalize-and-assert-prefix**,
-  which is also what lets the git probes recompute a worktree path from an effect key alone.
+  and the git probes recompute a worktree path from an effect key alone.
   — `git/attempt.mjs`, `git/probes.mjs` · §2.1
 - **§7.4's harvest predicates are typed verdicts** — a dirty worktree names its leftovers and is
   never auto-committed; a rebase-repair's commits-ahead is read against the merge-base with the base
@@ -412,8 +402,8 @@ question is which rows have become the module's job to state, not what the ceili
 - **Nothing force-updates anything, and nothing resolves a conflict.** — `git/integrate.mjs`
 - **The integration worktree is detached** and the branch is moved onto the rebased result by
   `update-ref` naming the value it replaces — a compare-and-swap. — `git/integrate.mjs` · §4.6
-- **A conflicting rebase is aborted**, reported with the paths read off the index (git's prose is
-  localized), and handed to §8.5's rebase-repair, then fresh-retry. — `git/integrate.mjs` · §8.5
+- **A conflicting rebase is aborted**, reported with the paths read off the index, and handed to
+  §8.5's rebase-repair, then fresh-retry. — `git/integrate.mjs` · §8.5
 - **§7.4's integration-side predicates are commits-ahead, `git diff --check`, and §7.3's correlation
   trailer on every commit**, matched on run and ticket rather than on the attempt. They need no
   worktree. — `git/integrate.mjs` · §7.3, §7.4
@@ -424,11 +414,9 @@ question is which rows have become the module's job to state, not what the ceili
   `tea` login, and `tea` resolves the instance and the secret. — `tracker/gitea.mjs` · §6.8, §11.2
 - **Two modules shell out to `tea` and no others**; the reader hardcodes `--method GET` and takes no
   method argument. — `tracker/gitea.mjs`, `tracker/writer.mjs`
-- **Status comes from `--include`, never from the exit code** — `tea api` exits `0` on a 404 and
-  prints the error body. — `tracker/gitea.mjs`
-- **Labels go through Gitea's appending `POST`, never the replacing `PUT`, and there is no
-  removal at all**, which is how §14.20's "a label is cleared by a human or not at all" becomes
-  unexpressible. — `tracker/writer.mjs` · §14.20
+- **Status comes from `--include`, never from the exit code.** — `tracker/gitea.mjs`
+- **Labels go through Gitea's appending `POST`, never the replacing `PUT`, and there is no removal
+  at all.** — `tracker/writer.mjs` · §14.20
 - **The writer performs and records nothing**; `mutations.mjs` owns "record the intent, perform,
   record the outcome" for both callers. — `tracker/mutations.mjs` · §4.5
 - **A comment effect digests the intent, never the prose rendered from it.**
@@ -444,8 +432,7 @@ question is which rows have become the module's job to state, not what the ceili
   — `tracker/claims.mjs` · §3.3
 - **Comment ids arbitrate simultaneous claims, never comment text**, and only between factories;
   every comment this store's effect rows account for is excluded. — `tracker/claims.mjs` · §5.2
-- **The contest window opens at the pre-claim read**, or a concluded claim's lower id would make its
-  ticket permanently unclaimable. — `tracker/claims.mjs` · §3.3
+- **The contest window opens at the pre-claim read.** — `tracker/claims.mjs` · §3.3
 - **Every timestamp in a claim is the tracker's**, and a tracker that will not state its clock
   refuses the claim rather than substituting ours. — `tracker/claims.mjs` · §3.3
 - **The loser of a contest writes nothing** — §3.3's *a live claim is never contested* outranks its
@@ -457,10 +444,10 @@ question is which rows have become the module's job to state, not what the ceili
   label and no row re-adds `ready-for-agent`. — `tracker/disposition.mjs` · §8.9
 - **The eligibility change goes first and the announcement second.** — `tracker/disposition.mjs` · §14.20
 - **All four rows post one machine-parseable JSON block** — identity tuple, the outcome chain
-  read back from the journal, evidence by digest — **carrying no clock reading of ours**.
+  read back from the journal, evidence by digest — **carrying no clock reading of ours.**
   — `tracker/disposition.mjs` · §8.9
-- **Evidence comes from the ticket execution's own artifact-write effect rows**, not §12.1's ledger,
-  whose producer columns name the most recent production. — `tracker/disposition.mjs` · §12.1
+- **Evidence comes from the ticket execution's own artifact-write effect rows**, not §12.1's ledger.
+  — `tracker/disposition.mjs` · §12.1
 - **A pause with no question, a publication with no PR link, and a reason class whose §14.18
   disposition is a different one are refused before any mutation.** — `tracker/disposition.mjs` · §14.18
 - **§9.6's abandon boundary settles through the same module**: `settleAtBoundary` records `released`
@@ -482,8 +469,7 @@ question is which rows have become the module's job to state, not what the ceili
   reads as `possibly-deleted` and never as `never-posted`. — `tracker/authority.mjs` · §5.2
 - **`worker.alive` is Herdr's one fact; the outbox is `evidence` and the journal is `intent`, never
   `proof`.** — `tracker/authority.mjs` · §5.2
-- **§5.1's observation cursor is canonical, not a projection** — a watermark, and rebuilding it
-  from a journal whose run streams expire would silently re-poll a repository's whole history.
+- **§5.1's observation cursor is canonical, not a projection** — a watermark.
   — `tracker/observation.mjs` · §5.1
 - **The watermark is a record's `updated_at` and never our clock**; a cursor with no record to
   anchor to takes the tracker's own `Date` response header. — `tracker/observation.mjs` · §5.1
@@ -521,8 +507,7 @@ question is which rows have become the module's job to state, not what the ceili
 - **`rebase-repair` spends nothing; its bound is §8.10's `thereafter` row**, taken once a
   `stage.resolved` record of this ticket execution has already routed to it, and read off the record
   on re-entry. — `pipeline/table.mjs`, `resolveStage` in `pipeline/stages.mjs` · §8.10
-- **Budget exhaustion is a disposition rather than a crash** — a throw only because §8.4's fan-out
-  spends inside a phase executor. — `pipeline/budgets.mjs` · §8.4
+- **Budget exhaustion is a disposition rather than a crash.** — `pipeline/budgets.mjs` · §8.4
 - **An automation retry mints an attempt only where there is a worker to run again.**
   — `pipeline/retry.mjs` · §8.5, §8.8
 - **A `retry` of an agent-borne phase relaunches from the prior tip under the profile already
@@ -533,7 +518,7 @@ question is which rows have become the module's job to state, not what the ceili
   of `(run, ticket, phase, attempt, try)`. — `pipeline/stages.mjs` · §8.10
 - **The walking attempt is always a builder attempt.** — `pipeline/stages.mjs` · §8.5
 - **The review phase fans out from the controller**: two read-only attempts, each with its
-  own entry skill, outbox, attempt identity, and **its own worktree at the reviewed commit**.
+  own entry skill, outbox, attempt identity, and **its own worktree at the reviewed commit.**
   — `pipeline/review.mjs` · §7.3, §8.4
 - **The axes run in sequence and both to completion** — neither is cancelled on the other's
   rejection. — `pipeline/review.mjs` · §8.4, §15
@@ -564,29 +549,26 @@ question is which rows have become the module's job to state, not what the ceili
   rows, both fields text — and never its truth; **whether one is owed is `missingResult` in
   `worker/roles.mjs`**, read off the role's own `writesTrace` expectation by the builder executor.
   — `builderResult` in `pipeline/production.mjs` · §6.6
-- **An invalid result's stage detail is the controller's own problems and never the refused
-  record**; §8.10's `implement × invalid-result` row marks it fact so the fresh attempt is told
-  which block it omitted, and the outcome chain — hence §8.9's disposition comment — carries it.
+- **An invalid result's stage detail is the controller's own problems and
+  never the refused record**; §8.10's `implement × invalid-result` row marks it
+  fact, and the outcome chain — hence §8.9's disposition comment — carries it.
   — `pipeline/table.mjs`, `outcomeChain` in `pipeline/stages.mjs` · §8.5, §8.9, §8.10
 - **A §6.6 problem sentence never embeds a worker-written value** — it names the field and the
-  closed set — because those sentences reach the fresh attempt as fact. — `worker/outbox.mjs` · §8.5
+  closed set. — `worker/outbox.mjs` · §8.5
 - **The trace is read off the reviewed attempt's own implement record**, never taken from
   the caller, and a review reached without one refuses rather than briefing the axis blind.
   — `builderTrace` in `pipeline/review.mjs` · §8.4
 - **Every axis is handed the trace and the template renders it for the role whose expectations say
   `checksTrace`**, inside the computed untrusted boundary; a checking role rendered without one is
   refused. — `worker/prompt.mjs`, `worker/roles.mjs` · §8.4
-- **The controller never classifies a citation**: recognising a baseline smell by name would put a
-  second copy of the skill's list in the factory, and downgrading a finding would be the reranking
-  §8.4 forbids. — `pipeline/review.mjs` · §8.4
-- **The integration lease is acquired twice, and the gap is the point**: `[lease] fetch → evidence
-  ref → rebase → the required set [release]`, then the two review axes with no lease held, then
-  `[lease] base unchanged? → predicates → push → PR [release]`. — `pipeline/integration.mjs` · §9.5
-- **The rebase is in `verify`, not in `integrate`**, which is what makes §8.2's invariant
-  literally true — the checks always run at the post-rebase commit that will be pushed.
-  — `pipeline/integration.mjs` · §8.2, §14.13
+- **The controller never classifies a citation.** — `pipeline/review.mjs` · §8.4
+- **The integration lease is acquired twice**: `[lease] fetch → evidence ref → rebase → the required
+  set [release]`, then the two review axes with no lease held, then `[lease] base unchanged? →
+  predicates → push → PR [release]`. — `pipeline/integration.mjs` · §9.5
+- **The rebase is in `verify`, not in `integrate`** — the checks always run at the post-rebase
+  commit that will be pushed. — `pipeline/integration.mjs` · §8.2, §14.13
 - **`integrate` re-acquires under a base-commit identity precondition and loops back to re-rebase
-  and re-verify, consuming no budget**, because nothing failed. — `pipeline/integration.mjs` · §9.5
+  and re-verify, consuming no budget.** — `pipeline/integration.mjs` · §9.5
 - **The integration lease is a row *and* an in-process turn**: the row is what reconcile finds after
   a crash, the chain is what makes a second lane wait. — `pipeline/integration.mjs` · §9.5
 - **A red re-verify inside §9.5's loop is `integration-red`**, carrying no automation fault.
@@ -684,8 +666,8 @@ question is which rows have become the module's job to state, not what the ceili
   cannot be constructed.** — `reconcile/conclusions.mjs` · §14.1, §14.2
 - **The engine ships once; each effect kind's probe ships with the subsystem that introduces that
   kind**, registered by its §4.5 read. — `effects/registry.mjs` · §4.5, §5.3
-- **An effect nothing could probe is left exactly as it was and reported** — no probe means no
-  evidence, therefore no `reconcile.concluded` record at all. — `reconcile/` · §12.4
+- **An effect nothing could probe is left exactly as it was and reported** — no
+  `reconcile.concluded` record at all. — `reconcile/` · §12.4
 - **Scope follows the effect rather than the run**: a ticket-less effect of an ended run and a
   repo-scoped one are entities too. — `reconcile/` · §12.4
 - **§5.4's "before the lease is used for any effect" is a latch only a settling pass opens** —
@@ -704,8 +686,7 @@ question is which rows have become the module's job to state, not what the ceili
 - **The label pin releases only on a later repository-wide poll's `observation.recorded` that states
   `ticket.labels`**, with the run's own §8.9 disposition as the fallback — most observations of a
   ticket establish nothing about its labels. — `retention/pins.mjs` · §5.1, §14.20
-- **The open-PR pin releases on the *ticket's* observed state, not the PR's**, because §5.1 polls
-  issues and never pull requests. — `retention/pins.mjs` · §5.1
+- **The open-PR pin releases on the *ticket's* observed state, not the PR's.** — `retention/pins.mjs` · §5.1
 - **Only an `ended` run is a candidate**; an unended one is held as `live`, which is not a fourth
   pin and which `doctor` alarms on. — `retention/expiry.mjs` · §12.6
 - **`retentionAccounting` and `planExpiry` write nothing and are the one derivation
@@ -714,9 +695,8 @@ question is which rows have become the module's job to state, not what the ceili
 - **Each run expires in one token-checked transaction**: tombstones, effect rows,
   derived projections, `deleteStreamWhole`, and `run.expired` on the `controller` stream.
   — `retention/expiry.mjs` · §12.6
-- **The blob unlink is not an effect** — an amendment §4.5 now carries in its own text — and
-  the tombstone commits before the unlink so a crash resolves to `retention-expired` rather than
-  `blob-missing`. — `retention/expiry.mjs` · §4.5
+- **The blob unlink is not an effect**, and the tombstone commits before the unlink so a crash
+  resolves to `retention-expired` rather than `blob-missing`. — `retention/expiry.mjs` · §4.5
 - **Heartbeats truncate to the first sequence of the oldest surviving run stream** — one knob, and a
   sequence rather than a clock. — `retention/expiry.mjs` · §12
 - **Cleanup is plan-then-execute, and there is no `--force` anywhere in it.**
@@ -728,9 +708,8 @@ question is which rows have become the module's job to state, not what the ceili
   — `cleanup/plan.mjs` · §12.8
 - **`cleanup-execute` runs cleanup before the expiry pass §12.6 folds into it.** — `cleanup/verb.mjs` · §12.6
 - **Eligibility is the attempt being terminal and §12.4's pins being clear** — the same `pinsForRun`
-  expiry uses — **and never pane liveness**. — `cleanup/plan.mjs` · §12.4
-- **Panes are enumerated by token, never by a recorded pane id**, since Herdr reuses ids.
-  — `cleanup/panes.mjs` · §14.27
+  expiry uses — **and never pane liveness.** — `cleanup/plan.mjs` · §12.4
+- **Panes are enumerated by token, never by a recorded pane id.** — `cleanup/panes.mjs` · §14.27
 - **The controller's own pane wears `FACTORY_RUN`, stamped only where `launch.mjs` declared
   `FACTORY_CONTROLLER_PANE`** — an operator's `--foreground` terminal is never marked and never a
   target. — `controller/launch.mjs` · §14.27
@@ -745,8 +724,8 @@ question is which rows have become the module's job to state, not what the ceili
 
 - **`doctor` is handed the store from `openRepoStoreReadOnly`**, which carries no `transaction` and
   never creates a store. — `doctor/report.mjs` · §14.24
-- **Every section is computed independently, and one that cannot answer says which ticket owes it**
-  — a plausible zero answers the operator's question wrongly. — `doctor/report.mjs` · §10.5
+- **Every section is computed independently, and one that cannot answer says which ticket owes it.**
+  — `doctor/report.mjs` · §10.5
 - **Monitor health is advisory-only and never an alarm; legacy artifacts are reported and never
   deleted.** — `doctor/report.mjs` · §10.5
 - **A named scope resolves its member list live and claims nothing** — it reads the observation
