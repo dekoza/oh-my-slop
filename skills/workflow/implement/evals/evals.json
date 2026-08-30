@@ -59,6 +59,18 @@
         "The response still comments on the consuming ticket as the durable record.",
         "The response does not start, re-scope, or implement the other ticket itself."
       ]
+    },
+    {
+      "id": 6,
+      "prompt": "The ticket has three numbered requirements: add a `--dry-run` flag, print the plan without writing, and exit 2 when the plan is empty. You implemented the flag and the print, with tests for both, and forgot the exit code. State what your completion report carries about requirement coverage; do not write code.",
+      "expected_output": "The response produces a requirement trace with one row per ticket requirement, each quoting the ticket's line and naming the path and test that answer it, and recognises the untraced exit-code requirement as unfinished work rather than omitting the row or paraphrasing around it.",
+      "files": [],
+      "expectations": [
+        "The response includes a requirement trace with one row per requirement the ticket states.",
+        "Each row quotes the ticket's own line and names the path and, where one exists, the test that answers it.",
+        "The response treats the exit-code requirement with no answering row as unfinished work, not as a footnote.",
+        "The response does not invent evidence for the missing requirement."
+      ]
     }
   ]
 }
