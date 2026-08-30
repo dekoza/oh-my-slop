@@ -267,3 +267,59 @@ test("a builder's record carries neither, and is valid without them (§6.6)", (t
 	assert.equal(read.record.verdict, null);
 	assert.deepEqual(read.record.findings, []);
 });
+
+// ── #189's requirement trace, judged as shape and never as truth ─────────────
+
+/**
+ * Whether a trace is *owed* is role knowledge and lives with the builder's
+ * phase executor (`worker/roles.mjs`, `pipeline/production.mjs`); what this
+ * module judges is that a trace, once written, is one review-spec can check
+ * row by row — which is structural, and never whether a row is true.
+ */
+const TRACED = Object.freeze({
+	requirement: "The builder outbox schema gains a mandatory trace block",
+	evidence: "factory/lib/worker/outbox.mjs; tests/node/factory_worker_outbox.test.mjs",
+});
+
+test("a well-formed trace survives normalisation in the order written, and nothing beside its three fields (§6.6, #189)", (t) => {
+	const noted = { ...TRACED, requirement: "Amend §6.6 and §8.4 with a log row", note: "advisory: log row appended", smuggled: "x" };
+	const read = readOutbox(outbox(t, completed({ trace: [noted, TRACED] })), IDENTITY);
+
+	assert.equal(read.state, "valid");
+	assert.deepEqual(read.record.trace, [
+		{ requirement: noted.requirement, evidence: noted.evidence, note: noted.note },
+		{ ...TRACED, note: null },
+	]);
+});
+
+test("a trace that is present but malformed is invalid, and every problem names the block (§6.6, #189)", (t) => {
+	const cases = [
+		[{ trace: [] }, /trace is an empty list/],
+		[{ trace: "traced it" }, /trace is a string, not a list/],
+		[{ trace: [{ evidence: "a path" }] }, /trace\[0\] carries no requirement/],
+		[{ trace: [{ ...TRACED, evidence: "  " }] }, /trace\[0\] carries no evidence/],
+		[{ trace: [{ ...TRACED, note: 7 }] }, /trace\[0\]\.note is not text/],
+		[{ trace: ["a requirement"] }, /trace\[0\] is not a \{requirement, evidence\} row/],
+	];
+
+	for (const [overrides, expected] of cases) {
+		const read = readOutbox(outbox(t, completed(overrides)), IDENTITY);
+		assert.equal(read.state, "invalid", `${JSON.stringify(overrides)} was accepted`);
+		assert.ok(read.problems.some((problem) => expected.test(problem)), `${JSON.stringify(overrides)}: ${read.problems}`);
+	}
+});
+
+test("the controller never judges whether a trace is true: that is review-spec's question (§8.4, #189)", (t) => {
+	const untrue = { requirement: "a line the ticket never contained", evidence: "a/path/that/does/not/exist.mjs" };
+	const read = readOutbox(outbox(t, completed({ trace: [untrue] })), IDENTITY);
+
+	assert.equal(read.state, "valid");
+	assert.deepEqual(read.record.trace, [{ ...untrue, note: null }]);
+});
+
+test("a record with no trace at all is still schema-valid here: whether one is owed is role knowledge (§6.6, #189)", (t) => {
+	const read = readOutbox(outbox(t, completed()), IDENTITY);
+
+	assert.equal(read.state, "valid");
+	assert.equal(read.record.trace, null, "absent is carried as absent, never as an empty list a caller could mistake for written");
+});

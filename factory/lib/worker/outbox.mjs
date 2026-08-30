@@ -143,8 +143,58 @@ function shapeProblems(parsed) {
 
 	problems.push(...statusProblems(parsed));
 	problems.push(...verdictProblems(parsed));
+	problems.push(...traceProblems(parsed));
 	problems.push(...referenceProblems(parsed));
 
+	return problems;
+}
+
+/**
+ * #189's requirement trace, held to its shape wherever one appears: a
+ * non-empty list of `{requirement, evidence}` rows, both non-empty text, with
+ * an optional `note` beside them.
+ *
+ * **The judgement is structural and never semantic.** Whether `requirement`
+ * really quotes a line of the ticket, and whether `evidence` names a path the
+ * diff touched, are review-spec's questions (§8.4) — the reviewer is the judge
+ * of truth, and a controller that checked a row against the snapshot would be a
+ * third reviewer with no verdict slot to write in. What the controller can hold
+ * is that the rows *exist* to be checked: an empty list is a trace in name only
+ * and is refused as one, because a reviewer briefed with it has nothing to
+ * check against and would pass the ticket's coverage question back to the diff
+ * alone, which is the state this block exists to end.
+ *
+ * **Whether a trace is *owed* is role knowledge and lives elsewhere** — with
+ * the builder's phase executor, the way whether a verdict is owed lives with
+ * the fan-out. This reader has never known which roles exist, and a reviewer's
+ * record legitimately carries none.
+ */
+function traceProblems(parsed) {
+	const trace = parsed.trace;
+	if (trace === undefined || trace === null) return [];
+	if (!Array.isArray(trace)) {
+		return [`trace is a ${typeof trace}, not a list of {requirement, evidence} rows (§6.6)`];
+	}
+	if (trace.length === 0) {
+		return ["trace is an empty list; a trace carries one row per requirement the attempt was briefed with (§6.6)"];
+	}
+
+	const problems = [];
+	for (const [index, row] of trace.entries()) {
+		if (row === null || typeof row !== "object" || Array.isArray(row)) {
+			problems.push(`trace[${index}] is not a {requirement, evidence} row (§6.6)`);
+			continue;
+		}
+		for (const field of ["requirement", "evidence"]) {
+			if (typeof row[field] === "string" && row[field].trim().length > 0) continue;
+			problems.push(
+				`trace[${index}] carries no ${field}; every row quotes a ticket line and names the path and test that answer it (§6.6)`,
+			);
+		}
+		if (row.note !== undefined && row.note !== null && typeof row.note !== "string") {
+			problems.push(`trace[${index}].note is not text (§6.6)`);
+		}
+	}
 	return problems;
 }
 
@@ -348,7 +398,22 @@ function normalise(parsed) {
 		// controller's own rerun is the attestation boundary, so this rides as a
 		// string and is never parsed into a pass/fail anything acts on.
 		test_evidence: typeof parsed.test_evidence === "string" ? parsed.test_evidence : null,
+		// #189's trace rides **as written and in the order written**, for the same
+		// reason the findings do: review-spec checks it row by row against the
+		// ticket, and a reader that sorted or merged rows would be editing the
+		// object under review. Absent is carried as `null`, never as an empty
+		// list — the two are different answers to "was one written".
+		trace: Array.isArray(parsed.trace) ? Object.freeze(parsed.trace.map(traceRow)) : null,
 		evidence: Object.freeze(Array.isArray(parsed.evidence) ? parsed.evidence.map(reference) : []),
+	});
+}
+
+/** One trace row's three fields (§6.6), and nothing a worker added beside them. */
+function traceRow(entry) {
+	return Object.freeze({
+		requirement: entry.requirement,
+		evidence: entry.evidence,
+		note: typeof entry.note === "string" ? entry.note : null,
 	});
 }
 
