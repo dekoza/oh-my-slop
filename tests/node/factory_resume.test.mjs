@@ -101,6 +101,49 @@ test("a cleared needs-human ticket resumes from the paused attempt's committed t
 	]);
 });
 
+test("the resume brief preserves every pause/answer exchange and records an unanswered pause", async () => {
+	const secondAttempt = `${RUN}-t${TICKET}-a2`;
+	const ticketSnapshot = snapshot([
+		comment(1, "kuferek", pauseBody({ question: "First question?" })),
+		comment(2, "operator-one", "First answer."),
+		comment(3, "kuferek", pauseBody({ attempt: secondAttempt, question: "Second question?" })),
+		comment(4, "kuferek", "Factory bookkeeping, not an operator answer."),
+	]);
+
+	const plan = await planTicketContinuation({
+		clone: cloneAnswering(),
+		baseCommit: BASE,
+		ticketSnapshot,
+		trackerLogin: "kuferek",
+	});
+
+	assert.equal(plan.claim.paused_attempt, secondAttempt);
+	assert.deepEqual(plan.claim.answering_comments, []);
+	assert.deepEqual(
+		plan.brief.resume.exchanges.map((exchange) => ({
+			comment: exchange.comment,
+			question: exchange.question,
+			answer_status: exchange.answer_status,
+			answers: exchange.answers,
+		})),
+		[
+			{
+				comment: 1,
+				question: "First question?",
+				answer_status: "found",
+				answers: [{ id: 2, author: "operator-one", body: "First answer." }],
+			},
+			{
+				comment: 3,
+				question: "Second question?",
+				answer_status: "none-found",
+				answers: [],
+			},
+		],
+	);
+	assert.deepEqual(plan.ticketSnapshot.comments.map((entry) => entry.id), [1, 3, 4]);
+});
+
 test("resume evidence failures produce explicit fresh-execution reasons instead of throwing", async (t) => {
 	const cases = [
 		{

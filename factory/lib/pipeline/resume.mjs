@@ -80,6 +80,7 @@ export async function planTicketContinuation({ clone, baseCommit, ticketSnapshot
 			attempt: pause.block.identity.attempt,
 			reason_class: pause.block.reason_class,
 			question: pause.block.question,
+			answer_status: answers.length === 0 ? "none-found" : "found",
 			answers: Object.freeze(answers),
 		});
 	});
