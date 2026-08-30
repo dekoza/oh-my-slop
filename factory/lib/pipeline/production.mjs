@@ -227,6 +227,9 @@ function phaseExecutors(context) {
 				worktreePath: opened.worktree,
 				branch: opened.branch,
 				baseCommit: opened.baseCommit,
+				// #194: a rebase-repair's mint names the base it was told to rebase
+				// onto, and §7.4's boundary under that tier is the merge-base with it.
+				onto: opened.onto,
 			});
 		},
 		verify: async ({ run, ticket, attempt }) => {
@@ -612,6 +615,9 @@ function attemptRecord(store, { run, attempt }) {
 		role: event.payload.role,
 		profile: event.payload.profile,
 		baseCommit: event.payload.base_commit,
+		// The base a rebase-repair was told to rebase onto, off its purpose
+		// (`pipeline/repair.mjs`); `null` on every other attempt (#194).
+		onto: event.payload.onto ?? null,
 		branch: event.payload.branch ?? attemptBranch({ ticket: event.ticket, attempt }),
 		worktree: event.payload.worktree,
 	};

@@ -431,6 +431,20 @@ export const STAGE_ACTIONS = Object.freeze({
 	repair: "repair",
 	/** §8.5 tier 2 — a fresh attempt from the pinned base, work discarded. */
 	freshRetry: "fresh-retry",
+	/**
+	 * #194 — §8.5's third tier: a fresh attempt from the prior attempt's tip,
+	 * told to rebase it onto the base commit the controller's own rebase could
+	 * not replay it onto. It answers the one question the other two do not ask —
+	 * *the tip conflicts textually; does that make the work invalid?* — by
+	 * handing the question to the pipeline that owns the mechanical answer:
+	 * the rebased result is harvested, verified, and reviewed as any attempt is.
+	 *
+	 * **It spends no budget**, for `reroute`'s reason: `BUDGET_KEY_FOR_ACTION`
+	 * is what makes an unbounded retry unconstructible, and a key that charged
+	 * nothing would put a hole in that property. What bounds it is §8.10's
+	 * `thereafter` row — once per ticket execution, read off the journal.
+	 */
+	rebaseRepair: "rebase-repair",
 	/** The same phase again: the automation failed, not the work. */
 	retry: "retry",
 	/** The ticket execution settles here (§8.9). */
@@ -454,7 +468,7 @@ export const BASE_KINDS = Object.freeze({
 });
 
 /**
- * §8.5's two tiers, by the base each one branches from — and the word rides the
+ * §8.5's tiers, by the base each one branches from — and the word rides the
  * `attempt.launched` payload of every attempt a tier produced, which is this
  * file's criterion for holding it.
  *
@@ -470,9 +484,17 @@ export const RETRY_BASES = Object.freeze({
 	[STAGE_ACTIONS.repair]: BASE_KINDS.priorTip,
 	/** Tier 2 — §7.2's freshly fetched pin, so its work is discarded. */
 	[STAGE_ACTIONS.freshRetry]: BASE_KINDS.pinnedBase,
+	/**
+	 * Tier 3 (#194) — the prior attempt's tip too: the work is preserved and
+	 * the worker rebases it. The base it is told to rebase onto is a fact on
+	 * the failure, not a base kind — the branch still *starts* where the prior
+	 * one ended, which is what makes §7.4's own-base reading wrong for it and
+	 * why the harvest predicate reads the merge-base instead.
+	 */
+	[STAGE_ACTIONS.rebaseRepair]: BASE_KINDS.priorTip,
 });
 
-/** The two actions above, as a list — `RETRY_BASES`' own keys and never a copy. */
+/** The tier actions above, as a list — `RETRY_BASES`' own keys and never a copy. */
 export const RETRY_TIERS = Object.freeze(Object.keys(RETRY_BASES));
 
 /**
@@ -480,6 +502,10 @@ export const RETRY_TIERS = Object.freeze(Object.keys(RETRY_BASES));
  * because **an automation failure never consumes the product budget** — the
  * worker did not cause it, and charging the builder would eventually discard
  * good work on an infra flake.
+ *
+ * #194's `rebase-repair` adds no third kind: it charges nothing, and a kind
+ * that named a budget nothing declares would be §8.6's foreclosed counter
+ * under another name. Its bound is §8.10's `thereafter` row, not a number.
  */
 export const BUDGET_KINDS = Object.freeze({ repair: "repair", automation: "automation" });
 

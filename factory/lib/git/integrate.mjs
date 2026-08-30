@@ -19,7 +19,9 @@ import { assertFactoryRef, attemptWorktreePath, evidenceRef, integrationWorktree
  * **Nothing here resolves a conflict.** §8.10 is explicit that the controller
  * never attempts automatic resolution — that would put a model inside a
  * controller phase — so a conflicting rebase is aborted, reported with the paths
- * git named, and left for §8.5's fresh-retry from the new base tip.
+ * git named, and left for §8.5's rebase-repair: a builder attempt from the
+ * same tip, told to rebase it (#194), and thereafter the fresh-retry from the
+ * new base tip.
  *
  * **Nothing here force-updates anything.** The one local ref move is a
  * compare-and-swap naming the value it replaces, and the one push is plain and
@@ -208,9 +210,11 @@ export async function basedOn(clone, { worktreePath, commit }) {
  * compares heads) while publishing half the work.
  *
  * **A conflict is aborted here, never resolved and never left in progress.**
- * §8.10 gives the conflict a fresh-retry from the new base tip and says plainly
- * that the controller attempts no automatic resolution; a rebase left mid-flight
- * would also be the state a re-entry, a second lane, or a human walks into.
+ * §8.10 gives the conflict a rebase-repair — the model that resolves it stays
+ * inside a worker attempt (#194) — and says plainly that the controller attempts
+ * no automatic resolution; a rebase left mid-flight would also be the state a
+ * re-entry, a second lane, or a human walks into. The worktree this leaves is
+ * therefore the branch's own tip, clean and detached.
  *
  * @param {object} clone the private clone's handle
  * @param {object} what
