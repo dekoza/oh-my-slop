@@ -77,6 +77,13 @@ export function createRetrySeam(
 		// and the planner's own check two facts that agree only by convention.
 		const plan = await planned({ prior, failure, priorResult });
 
+		// #194: a rebase-repair branches from the prior tip and is told to rebase
+		// onto the base, so the base branch is fetched into the private clone the
+		// worker's worktree shares — for the fetch's side effect alone. The plan's
+		// `onto` stays the failure's own commit whatever this fetch finds; what
+		// the fetch does is put that commit within the worker's reach.
+		if (plan.tier === STAGE_ACTIONS.rebaseRepair) await clone.fetchBase({ baseBranch });
+
 		const opened = await openRetryAttempt(store, clone, {
 			hold,
 			plan,
@@ -85,15 +92,8 @@ export function createRetrySeam(
 			// §7.2's pin, fetched here and nowhere earlier. `openRetryAttempt` reads
 			// it only for a `pinned-base` plan, and asking for one on a `prior-tip`
 			// plan would put a network round trip on the path that branches from a
-			// local ref — with one exception (#194): a rebase-repair branches from
-			// the prior tip and is told to rebase onto the base, so the base branch
-			// is fetched into the private clone the worker's worktree shares. The
-			// plan's `onto` stays the failure's own commit whatever this fetch
-			// finds; the fetch is what puts that commit within the worker's reach.
-			base:
-				plan.from.kind === BASE_KINDS.pinnedBase || plan.tier === STAGE_ACTIONS.rebaseRepair
-					? await clone.fetchBase({ baseBranch })
-					: null,
+			// local ref.
+			base: plan.from.kind === BASE_KINDS.pinnedBase ? await clone.fetchBase({ baseBranch }) : null,
 			workerConfig,
 			actor,
 			at: now(),

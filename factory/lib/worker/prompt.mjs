@@ -396,7 +396,9 @@ function tierSentences({ tier, prior, phase, outcome, facts }) {
 		// the worker is given and the fact block below it name one value.
 		const onto = facts.find((fact) => fact.label === "rebase")?.value?.base_commit ?? null;
 		if (typeof onto !== "string") {
-			throw new TypeError("a rebase-repair brief carries the base commit to rebase onto under its `rebase` fact (#194)");
+			throw new TypeError(
+				"a rebase-repair brief carries the base commit to rebase onto under its `rebase` fact (#194)",
+			);
 		}
 		return [
 			opening,

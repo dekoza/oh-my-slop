@@ -1187,7 +1187,11 @@ Controller-enforced, and deliberately split by fault attribution:
   would harvest as `completed`. Under a **rebase-repair** (§8.5, #194) the boundary is instead
   the **merge-base with the base commit the worker was told to rebase onto**: its own base is
   the prior tip, which after a rebase is no ancestor at all, and `priorTip..branch` would count
-  the base's own movement as the worker's.
+  the base's own movement as the worker's. The "did nothing" guard is deferred one phase for
+  this tier, deliberately: a rebase-repair that neither rebased nor committed is still ahead of
+  that merge-base by the prior attempt's commits and harvests, and verify's own rebase then
+  conflicts again — which §8.10's bound routes on, rather than a repair being minted to fix a
+  rebase nobody briefed it about.
 - **Integration-side (controller faults):** the branch passes `git diff --check`, and the
   pushed SHAs are exactly the verified branch's commits (ancestry and identity check).
 
@@ -1489,7 +1493,8 @@ prior worker's summary, the reviewer's findings — goes in a clearly delimited 
 block** using the same trust-boundary language `two-axis-review` already carries. A reviewer
 whose findings contain an injected directive must not have it promoted into an instruction to a
 write-capable builder. A rebase conflict's facts — `base_commit`, `previous_base`, the
-conflicting paths, and `git diff --stat previous_base..base_commit` as the controller read it —
+conflicting paths, and `git diff --stat previous_base..base_commit` as the controller read it
+(the per-path list bounded by a code constant, the summary total never) —
 are controller-produced and reach **every** prompt the conflict produces as fact, the
 fresh-retry's included (#194); the prior worker's outbox summary rides in the untrusted block
 exactly as a repair's does.

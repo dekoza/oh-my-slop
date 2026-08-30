@@ -245,9 +245,10 @@ export function planRetry({ prior, failure, priorResult = null, route = null }) 
 		if (typeof onto !== "string" || onto.length === 0) {
 			throw unplannable(
 				"onto",
-				`A rebase-repair rebases the prior attempt's tip onto the base commit its rebase conflicted with (§8.5, ` +
-					`#194), and the ${failure.phase} × ${failure.outcome} detail names no base_commit. There is nothing to ` +
-					"brief the worker with, and reading a fresh tip instead would name a base nobody measured the conflict against.",
+				"A rebase-repair rebases the prior attempt's tip onto the base commit its rebase conflicted with " +
+					`(§8.5, #194), and the ${failure.phase} × ${failure.outcome} detail names no base_commit. There is ` +
+					"nothing to brief the worker with, and reading a fresh tip instead would name a base nobody " +
+					"measured the conflict against.",
 				{ tier, phase: failure.phase, outcome: failure.outcome },
 			);
 		}

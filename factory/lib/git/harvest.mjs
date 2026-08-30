@@ -60,7 +60,8 @@ export async function assessHarvest(clone, { worktreePath, branch, baseCommit, o
 	// A merge-base git cannot find — unrelated histories — is a typed git
 	// refusal, left to propagate: a rebase-repair whose branch shares nothing
 	// with the base it was told to rebase onto is not a harvest question.
-	const boundary = onto === null ? baseCommit : await clone.git(["merge-base", onto, `refs/heads/${branch}`]);
+	const boundary =
+		onto === null ? baseCommit : await clone.git(["merge-base", onto, `refs/heads/${branch}`]);
 	const ahead = Number.parseInt(
 		await clone.git(["rev-list", "--count", `${boundary}..refs/heads/${branch}`]),
 		10,

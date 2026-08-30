@@ -1,6 +1,7 @@
 import { CHECK_RESULTS } from "../domain/vocabulary.mjs";
 import { CHECK_SELECTIONS, checkRecord, runChecks } from "../checks/run.mjs";
 import { assessHarvest } from "../git/harvest.mjs";
+import { FactoryPipelineError } from "./errors.mjs";
 
 /**
  * §8.1's controller phases, **with no model in them**.
@@ -27,14 +28,30 @@ import { assessHarvest } from "../git/harvest.mjs";
  * phase answered.
  *
  * @param {object} clone the private clone's handle (`git/clone.mjs`)
- * @param {{ worktreePath: string, branch: string, baseCommit: string, onto?: string | null }} attempt
+ * @param {{ worktreePath: string, branch: string, baseCommit: string, onto: string | null }} attempt
  *   `baseCommit` is the attempt's own base, which for a repair is the prior
  *   attempt's tip rather than the run's pin (§7.3, §8.5); `onto` is the base a
  *   rebase-repair was told to rebase onto, read off its mint, and the boundary
- *   §7.4 counts against under that tier (#194)
+ *   §7.4 counts against under that tier (#194). **Stated, never defaulted**:
+ *   `null` says the attempt is not a rebase-repair, and an absent value is a
+ *   caller that did not read the mint — which would hand a rebase-repair the
+ *   own-base count this phase's own header calls wrong
  * @returns {Promise<Readonly<{ outcome: string, detail: Readonly<object> }>>}
+ * @throws {FactoryPipelineError} `phase-unwired` — the caller left the boundary
+ *   unstated, which is a composition defect at the call site (§8.1's reason
+ *   for the class) and not a slice nobody wrote
  */
-export async function harvestPhase(clone, { worktreePath, branch, baseCommit, onto = null }) {
+export async function harvestPhase(clone, { worktreePath, branch, baseCommit, onto }) {
+	if (onto !== null && typeof onto !== "string") {
+		throw new FactoryPipelineError(
+			"phase-unwired",
+			"§7.4's harvest predicate needs the attempt's rebase target stated — a commit for a rebase-repair, " +
+				"`null` for every other tier (#194) — and this caller stated neither. Defaulting it would count a " +
+				"rebase-repair against its own base, which credits the base's movement to the worker.",
+			{ at: "phase", phase: "harvest", branch, found: onto ?? null },
+		);
+	}
+
 	const verdict = await assessHarvest(clone, { worktreePath, branch, baseCommit, onto });
 
 	if (verdict.harvestable) {

@@ -313,14 +313,20 @@ export async function walkStages(
 			// It re-enters the phase it left, like §8.10's automation retry and
 			// unlike §8.5's tiers: nothing about the work was judged, so there is
 			// nothing to rebuild from the top.
-			if (resolved.row.action === STAGE_ACTIONS.reroute) {
-				attempt = await retried(nextAttempt, {
+			// Every row below that mints asks the seam the same way: the failure that
+			// routed here, whole. One closure, so three branches cannot come to hand
+			// the seam three different accounts of one resolution.
+			const relaunched = () =>
+				retried(nextAttempt, {
 					attempt,
 					phase,
 					outcome: resolved.outcome,
 					detail: resolved.detail,
 					row: resolved.row,
 				});
+
+			if (resolved.row.action === STAGE_ACTIONS.reroute) {
+				attempt = await relaunched();
 				tryNumber = FIRST_TRY;
 				continue;
 			}
@@ -334,13 +340,7 @@ export async function walkStages(
 			// What bounds it is the row itself: `resolveStage` answers `thereafter`
 			// — today's fresh-retry — once this ticket execution has routed here.
 			if (resolved.row.action === STAGE_ACTIONS.rebaseRepair) {
-				attempt = await retried(nextAttempt, {
-					attempt,
-					phase,
-					outcome: resolved.outcome,
-					detail: resolved.detail,
-					row: resolved.row,
-				});
+				attempt = await relaunched();
 				tryNumber = FIRST_TRY;
 				phase = PHASE_IMPLEMENT;
 				continue;
@@ -366,13 +366,7 @@ export async function walkStages(
 					continue;
 				}
 
-				attempt = await retried(nextAttempt, {
-					attempt,
-					phase,
-					outcome: resolved.outcome,
-					detail: resolved.detail,
-					row: resolved.row,
-				});
+				attempt = await relaunched();
 				// A fresh attempt is a fresh worker run, and its first pass through any
 				// phase is its first: the try counts passes within one attempt.
 				tryNumber = FIRST_TRY;

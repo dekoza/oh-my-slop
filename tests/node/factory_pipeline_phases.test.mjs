@@ -59,7 +59,7 @@ test("a clean branch ahead of its base harvests as passed, carrying the head it 
 	writeFileSync(join(worktreePath, "feature.txt"), "built\n");
 	commitAll(worktreePath, "feat: the work");
 
-	const resolved = await harvestPhase(clone, { worktreePath, branch, baseCommit });
+	const resolved = await harvestPhase(clone, { worktreePath, branch, baseCommit, onto: null });
 
 	assert.equal(resolved.outcome, "passed");
 	assert.equal(resolved.detail.commits_ahead, 1);
@@ -72,11 +72,24 @@ test("a dirty worktree harvests as predicate-failed, naming the leftovers (§7.4
 	commitAll(worktreePath, "feat: a wave");
 	writeFileSync(join(worktreePath, "untracked.tmp"), "left behind\n");
 
-	const resolved = await harvestPhase(clone, { worktreePath, branch, baseCommit });
+	const resolved = await harvestPhase(clone, { worktreePath, branch, baseCommit, onto: null });
 
 	assert.equal(resolved.outcome, "predicate-failed");
 	assert.equal(resolved.detail.reason, "worktree-dirty");
 	assert.deepEqual(resolved.detail.leftovers, ["?? untracked.tmp"]);
+});
+
+test("#194: the harvest phase refuses an unstated rebase target rather than defaulting to the attempt's own base (§7.4)", async (t) => {
+	const { clone, worktreePath, branch, baseCommit } = await attemptFixture(t);
+
+	await assert.rejects(
+		() => harvestPhase(clone, { worktreePath, branch, baseCommit }),
+		(error) => {
+			assert.equal(error.reason, "phase-unwired");
+			assert.equal(error.details.found, null);
+			return true;
+		},
+	);
 });
 
 test("a green required set verifies as passed, and every check rides as evidence (§8.2)", async (t) => {
