@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { capacityFor } from "../capacity/report.mjs";
 import { baselineForRepo } from "../checks/baseline.mjs";
-import { checkRecord } from "../checks/run.mjs";
+import { CHECK_SELECTIONS, checkRecord } from "../checks/run.mjs";
 import { circuitBreaker } from "../controller/breaker.mjs";
 import { describeScope, PARENT_FLAG } from "../controller/scope.mjs";
 import { unresolvedEffects } from "../effects/records.mjs";
@@ -615,7 +615,7 @@ async function executedBaseline({ store, repoRoot, agentDir, config, at }) {
 			storeDir: store?.storeDir ?? resolveStorePaths({ repoRoot, agentDir: agentDir.path }).primary.dir,
 		},
 		config,
-		{ at },
+		{ at, selection: CHECK_SELECTIONS.all },
 	);
 
 	if (!answered.ran) {

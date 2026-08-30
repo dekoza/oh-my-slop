@@ -67,6 +67,10 @@ test("§8.10's stated properties are carried as fields, not as prose (§8.10)", 
 	assert.equal(routeOutcome("verify", "failed").evidence, "fact");
 	assert.equal(routeOutcome("review", "rejected").evidence, "untrusted");
 	assert.equal(routeOutcome("implement", "worker-failed").evidence, "untrusted");
+	// #189: an invalid result's detail is the controller's own judgement of which
+	// block was missing, never the refused record, so the fresh attempt reads it
+	// as fact.
+	assert.equal(routeOutcome("implement", "invalid-result").evidence, "fact");
 });
 
 test("wrote-but-hung is an anomaly on an ordinary row, never a failure (§8.10)", () => {
@@ -144,6 +148,33 @@ test("provider-refused reroutes, budgetlessly, for a builder and for a reviewer 
 		assert.equal(row.budget, null, `${phase}: no budget is charged for the provider's fault`);
 		assert.equal(row.disposition, null, `${phase}: nothing settles here — the attempt it replaces did nothing wrong`);
 	}
+});
+
+/**
+ * #178: `implement × no-result` and `implement × timeout` charge the **repair**
+ * budget — the worker tier, "ended its turn without writing". An attempt whose
+ * worker never had a turn belongs in neither, and charging it there spent the
+ * whole repair budget in seconds without a single model call.
+ */
+test("worker-never-started takes the automation budget, beside dead-worker (§8.10, #178)", () => {
+	const row = routeOutcome("implement", "worker-never-started");
+
+	assert.equal(row.action, "retry", "the work is untouched; it is the automation that could not deliver a worker");
+	assert.equal(row.budget, "automation");
+	assert.equal(row.disposition, null);
+	// The two rows it replaces, and the fault line between them.
+	assert.equal(routeOutcome("implement", "no-result").budget, "repair");
+	assert.equal(routeOutcome("implement", "timeout").budget, "repair");
+	assert.equal(row.budget, routeOutcome("implement", "dead-worker").budget);
+});
+
+test("it is a controller-derived outcome, never one a worker may write (§6.6, §8.8, #178)", () => {
+	assert.ok(CONTROLLER_DERIVED_OUTCOMES.includes("worker-never-started"));
+	assert.ok(!WORKER_WRITABLE_OUTCOMES.includes("worker-never-started"));
+	// Reachable from both agent-borne phases, because the table is total over its
+	// declared domain — review's silence rows already charge automation, so the
+	// row changes the word an operator reads and nothing else there.
+	assert.equal(routeOutcome("review", "worker-never-started").budget, "automation");
 });
 
 test("routes-exhausted is a budgetless release of its own, distinguishable from a worker that failed (§8.10, #155)", () => {

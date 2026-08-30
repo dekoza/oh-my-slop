@@ -9,7 +9,7 @@ import { FactoryWorkerError } from "./errors.mjs";
 import { DENY_FLOOR, NO_MID_ATTEMPT_APPROVALS, PI_GATING_CAVEAT, WORKER_POSTURES } from "./permissions.mjs";
 import { createPiAdapter, provePiProfileFlags } from "./pi.mjs";
 import { rolesInPlay } from "./roles.mjs";
-import { claudeTrustDecision, piTrustDecision, readClaudeConfigState, readPiTrust } from "./trust.mjs";
+import { claudeUnsettledKeys, piTrustDecision, readClaudeConfigState, readPiTrust } from "./trust.mjs";
 
 /**
  * The worker half of preflight: §6.2's layers 1 and 2, and §6.8's three
@@ -23,8 +23,11 @@ import { claudeTrustDecision, piTrustDecision, readClaudeConfigState, readPiTrus
  * - **`worker-permissions`** — the postures, the deny floor as actually written
  *   into the session settings, and pi's weaker gating recorded loudly.
  * - **`worker-trust`** — pre-trust the factory's own worktrees in that
- *   environment and read the decision back through each runtime's own rule, so
- *   no trust dialog can reach a worker pane.
+ *   environment and read **every key the writer writes** back through each
+ *   runtime's own rule, so none of the dialogs those keys answer can reach a
+ *   worker pane. It is a predicate over controller-owned state, and that is its
+ *   whole reach: interstitials gated on state no controller owns are caught by
+ *   §8.10's attribution instead (§6.8, #178).
  * - **`skill-closure`** — the §6.1 roles the active routing puts in play, each
  *   closed over `requires:` frontmatter from the pinned revision, with §6.8's
  *   conflict predicate and reference validation.
@@ -235,12 +238,21 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 		 *
 		 * What is proven here is the **state predicate**: each runtime's own
 		 * resolution rule, applied to the path a pane will run in, answers
-		 * "trusted". That is the whole guarantee, and it is deliberately not
-		 * delegated to the probe — a `--print` session never meets the trust
+		 * "trusted" — for every key the pre-trust writer writes, not the trust
+		 * dialog alone (#178). That is the whole guarantee, and it is deliberately
+		 * not delegated to the probe — a `--print` session never meets the trust
 		 * dialog at all (Claude skips it in non-interactive mode), so a green
 		 * probe says nothing about a pane. `claude.mjs` adds the one thing a
 		 * session *can* contribute: no project accumulated in the controller-owned
 		 * state may be one nobody trusted.
+		 *
+		 * **And the guarantee stops where controller-owned state does.** This
+		 * check proves a predicate about keys the controller writes; it says
+		 * nothing about interstitials gated on anything else — a cache the harness
+		 * warms itself, a deprecation gate keyed on the target repository's own
+		 * contents. Those are prevented where a flag on the session binding can
+		 * prevent them, and caught by §8.10's `worker-never-started` where nothing
+		 * can (§6.8).
 		 */
 		trustCheck() {
 			const built = environment();
@@ -249,6 +261,10 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 			const worktrees = worktreesRoot(cacheRoot);
 			const gitCommonDir = privateClonePath(cacheRoot);
 			const decisions = { pi: null, claude: false };
+			// #178: which of the keys the writer writes failed to read back. It is
+			// the detail an operator acts on — "untrusted" and "onboarding not
+			// answered" are two different panes to go and look at.
+			let unsettled = [];
 
 			try {
 				// The root, not one attempt: pi resolves by nearest ancestor, so this
@@ -261,7 +277,9 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 
 				const representative = `${worktrees}/probe-t0-a0`;
 				decisions.pi = piTrustDecision(readPiTrust(built.handle.roots.pi), representative);
-				decisions.claude = claudeTrustDecision(readClaudeConfigState(built.handle.roots.claude), gitCommonDir);
+				const claudeState = readClaudeConfigState(built.handle.roots.claude);
+				unsettled = [...claudeUnsettledKeys(claudeState, gitCommonDir)];
+				decisions.claude = unsettled.length === 0;
 			} catch (error) {
 				// A store that cannot be written is the same outcome as one that
 				// reads back untrusted — a pane meeting the dialog — so it is this
@@ -270,7 +288,7 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 					message:
 						`Pre-trust could not be written to the controller-owned config scope: ${error.message}. A worker pane ` +
 						`would meet the trust dialog and hang there (§6.8).`,
-					detail: { decisions, worktrees, git_common_dir: gitCommonDir, error: error.code ?? null },
+					detail: { decisions, worktrees, git_common_dir: gitCommonDir, unsettled, error: error.code ?? null },
 				});
 			}
 
@@ -278,9 +296,10 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 				return check("worker-trust", "static", "failed", {
 					message:
 						`Pre-trust did not read back as accepted (pi ${JSON.stringify(decisions.pi)}, Claude ` +
-						`${JSON.stringify(decisions.claude)}) for the factory's own worktrees. A worker pane would meet the ` +
-						`trust dialog and hang there, which is an automation failure, not a slow worker (§6.8).`,
-					detail: { decisions, worktrees, git_common_dir: gitCommonDir },
+						`${JSON.stringify(decisions.claude)}) for the factory's own worktrees` +
+						`${unsettled.length === 0 ? "" : `; unsettled: ${unsettled.join(", ")}`}. A worker pane would meet ` +
+						`the dialog those keys answer and hang there, which is an automation failure, not a slow worker (§6.8).`,
+					detail: { decisions, worktrees, git_common_dir: gitCommonDir, unsettled },
 				});
 			}
 
@@ -288,8 +307,9 @@ export function createWorkerPreflight({ handshake, config, activeRouting, cacheR
 				message:
 					`The factory's own worktrees are pre-trusted in controller-owned scope for both runtimes: pi by nearest ` +
 					`ancestor on ${worktrees}, Claude by the repository key ${gitCommonDir} that every attempt worktree ` +
-					`resolves to. No trust dialog can reach a worker pane (§6.8).`,
-				detail: { decisions, worktrees, git_common_dir: gitCommonDir },
+					`resolves to, with every key the pre-trust writer writes read back. None of the dialogs those keys ` +
+					`answer can reach a worker pane (§6.8).`,
+				detail: { decisions, worktrees, git_common_dir: gitCommonDir, unsettled },
 			});
 		},
 

@@ -28,7 +28,7 @@ function loaded(t, config, { routingSet = null } = {}) {
 	return loadFactoryConfig({ cwd: makeRepo(t, { config }), routingSet });
 }
 
-// ── Checks: five fields, none of them defaulted (§11.6) ──────────────────────
+// ── Checks: five required fields and one declared feed (§11.6) ──────────────
 
 test("every check declares all five fields, and a missing one names itself", (t) => {
 	for (const field of ["name", "command", "timeout", "severity", "expectedFailureExitCodes"]) {
@@ -71,6 +71,35 @@ test("an unknown key inside a check refuses and names its path", (t) => {
 
 	assert.equal(error.reason, "unknown-key");
 	assert.equal(error.details.at, "checks[0].parallelSafe");
+});
+
+test("feeds is optional and loads as the explicit phases an advisory check supplies", (t) => {
+	const absent = loaded(t, clone()).config.checks[0];
+	assert.deepEqual(absent.feeds, []);
+
+	const config = clone();
+	config.checks[0].severity = "advisory";
+	config.checks[0].feeds = ["implement"];
+
+	assert.deepEqual(loaded(t, config).config.checks[0].feeds, ["implement"]);
+});
+
+test("a check feed names a feedable agent phase, once, and only on an advisory check", (t) => {
+	for (const [feeds, severity, at] of [
+		[["harden"], "advisory", "checks[0].feeds[0]"],
+		[["review"], "advisory", "checks[0].feeds[0]"],
+		[["implement", "implement"], "advisory", "checks[0].feeds[1]"],
+		["implement", "advisory", "checks[0].feeds"],
+		[["implement"], "required", "checks[0].feeds"],
+	]) {
+		const config = clone();
+		config.checks[0].severity = severity;
+		config.checks[0].feeds = feeds;
+
+		const error = loadFailure(t, config);
+		assert.equal(error.reason, "invalid-value", JSON.stringify({ feeds, severity }));
+		assert.equal(error.details.at, at);
+	}
 });
 
 test("expectedFailureExitCodes must hold distinct non-zero exit codes", (t) => {

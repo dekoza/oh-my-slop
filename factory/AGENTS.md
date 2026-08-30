@@ -284,10 +284,20 @@ question is which rows have become the module's job to state, not what the ceili
   worktree-scoped so §7.5's integration push from the clone still works. — `git/attempt.mjs` ·
   §7.5
 - **Pre-trust is per runtime's own resolution rule, not per path**: pi walks up to the nearest
-  `trust.json` entry, and Claude keys `.claude.json`'s `projects` map exactly — for a linked
-  worktree, on the repository's git common directory. — `worker/trust.mjs`
+  `trust.json` entry over **canonical** spellings — symlinks resolved, as pi resolves them before
+  keying and before the walk — and Claude keys `.claude.json`'s `projects` map exactly, for a
+  linked worktree on the repository's git common directory. — `worker/trust.mjs` · §6.8
+- **What the writer writes is what the check reads back**, derived from the constants rather than
+  hand-listed, so a fifth settled key cannot become a fourth unproven one. — `worker/trust.mjs`,
+  `worker/preflight.mjs` · §6.8
 - **The guarantee is the state predicate preflight asserts, not a green probe** — a `--print`
-  probe never meets the dialog at all. — `worker/trust.mjs`
+  probe never meets the dialog at all — and it reaches exactly as far as controller-owned state:
+  interstitials gated on anything else are attribution's, not prevention's. — `worker/trust.mjs` ·
+  §6.8
+- **Every session's binding carries the flags that keep an interstitial off a pane**: Claude's
+  browser fence and pi's trust approval, on the worker binding beside the discovery fence, and
+  therefore on both postures and on the probes. — `worker/claude.mjs`, `worker/pi.mjs` · §6.8 ·
+  evidence: `tests/live/claude-chrome-cache.mjs`
 - **`createAttemptWorktree` requires the environment handle** and applies both the pushurl and
   the pre-trust outside the effect, so a re-entered attempt converges. — `git/attempt.mjs`
 
@@ -351,6 +361,11 @@ question is which rows have become the module's job to state, not what the ceili
   turn ends. — `controller/herdr-events.mjs` · §6.6
 - **The state table is one function**, with the two silences split by fault: `no-result` is the
   worker's, `dead-worker` is the automation's. — `decideOutcome` in `worker/outbox.mjs` · §8.10
+- **A pane never observed working had no turn to end**, so both silence rows become
+  `worker-never-started` on the automation budget — a state predicate over the working status
+  alone, never a launch window, and read from the attempt's durable observation records so a
+  controller re-entry answers the same. The wait's own seed read is recorded for that reason. —
+  `observedWorking` in `worker/lifecycle.mjs` · §6.6, §8.10
 - **A settled worker gets a grace before its silence is called silent-completion.** —
   `worker/outbox.mjs` · §6.6
 - **An attempt ends once**: the projector refuses a second `attempt.ended`. —
@@ -579,6 +594,23 @@ question is which rows have become the module's job to state, not what the ceili
 - **`worker/outbox.mjs` judges the shape a written verdict must have** — the closed pair, a
   findings list, a mandatory citation per finding, and the word agreeing with its own blocking set
   — **while whether a verdict is owed stays in `pipeline/review.mjs`.** — §8.4
+- **`worker/outbox.mjs` judges the shape of a written requirement trace** — non-empty rows, both
+  fields text — and never its truth; **whether one is owed is `missingResult` in
+  `worker/roles.mjs`**, read off the role's own `writesTrace` expectation by the builder executor.
+  — `builderResult` in `pipeline/production.mjs` · §6.6
+- **An invalid result's stage detail is the controller's own problems and never the refused
+  record**; §8.10's `implement × invalid-result` row marks it fact so the fresh attempt is told
+  which block it omitted, and the outcome chain — hence §8.9's disposition comment — carries it.
+  — `pipeline/table.mjs`, `outcomeChain` in `pipeline/stages.mjs` · §8.5, §8.9, §8.10
+- **A §6.6 problem sentence never embeds a worker-written value** — it names the field and the
+  closed set — because those sentences reach the fresh attempt as fact. — `worker/outbox.mjs` ·
+  §8.5
+- **The trace is read off the reviewed attempt's own implement record**, never taken from the
+  caller, and a review reached without one refuses rather than briefing the axis blind. —
+  `builderTrace` in `pipeline/review.mjs` · §8.4
+- **Every axis is handed the trace and the template renders it for the role whose expectations
+  say `checksTrace`**, inside the computed untrusted boundary; a checking role rendered without one
+  is refused. — `worker/prompt.mjs`, `worker/roles.mjs` · §8.4
 - **The controller never classifies a citation**: recognising a baseline smell by name would put a
   second copy of the skill's list in the factory, and downgrading a finding would be the reranking
   §8.4 forbids. — `pipeline/review.mjs` · §8.4
@@ -604,6 +636,15 @@ question is which rows have become the module's job to state, not what the ceili
   §8.2, §14.34
 - **The selector is the closed pair `required | all`**, so per-surface targeting is not a question
   the API can be asked. — `checks/run.mjs` · §8.2
+- **`feeds` is advisory-only and names agent-borne phases**, unique, defaulting to empty; unknown
+  phases and `review` refuse the config rather than becoming inert policy. — `config/checks.mjs` ·
+  §8.2, §11.6
+- **Fed evidence is selected from policy plus the verify record**, and resolved through the
+  artifact ledger by execution identity — never from a caller-supplied output string. —
+  `pipeline/feeds.mjs` · §8.2, §8.7
+- **Only selected evidence crosses the prompt trust boundary**, digest-labelled beneath a
+  controller-owned heading that marks captured output as data, not instructions. —
+  `worker/prompt.mjs` · §8.2
 - **Fault attribution lives in one function**: a required check exiting inside its declared
   expected-failure codes is the worker's failure; a timeout, a signal, a missing exec, or any
   other code is `unrunnable` — an automation failure. — `checks/run.mjs` · §8.2
@@ -611,11 +652,13 @@ question is which rows have become the module's job to state, not what the ceili
 - **§14.23's "two lanes never run mechanical checks concurrently" is one in-process chain, not a
   lease**; `checks[].parallelSafe` is the recorded v2 upgrade. — `checks/run.mjs` · §11.6, §14.23
 - **Running a check is not an effect, but recording its output is** — keyed by the *execution*,
-  not by the check alone. — `checks/artifacts.mjs` · §4.5
+  not by the check alone; stdout/stderr is content-addressed and later reachable only through its
+  ledger row. — `checks/artifacts.mjs` · §4.5, §8.7
 - **§8.3's baseline gate is a detached throwaway worktree** under `baselines/`, deleted eagerly
   when green and retained when red, writing nothing durable. — `checks/baseline.mjs` · §8.3, §12.7
-- **`doctor --baseline` shares it verbatim** through the one `baselineForRepo`, and a caller that
-  already pinned a base passes it. — `checks/baseline.mjs` · §14.24
+- **`doctor --baseline` shares the isolation path, not preflight's selection**: doctor explicitly
+  runs `all` and reports advisory severity, while preflight keeps the `required` gate. —
+  `checks/baseline.mjs`, `doctor/report.mjs` · §10.5, §14.24
 - **Differential no-new-failures verification is deliberately absent**, and the comment saying so
   is load-bearing. — `checks/baseline.mjs` · §8.3
 

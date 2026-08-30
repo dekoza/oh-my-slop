@@ -8,3 +8,16 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest", "pyyaml"]
+quality = [
+    "coverage>=7.10,<8",
+    "mutmut>=3.3,<4",
+    "radon>=6,<7",
+]
+
+[tool.pytest.ini_options]
+addopts = "--ignore=mutants"
+
+[tool.mutmut]
+source_paths = ["scripts"]
+only_mutate = ["scripts/crap.py"]
+pytest_add_cli_args_test_selection = ["tests/test_crap.py"]

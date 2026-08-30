@@ -90,7 +90,16 @@ export const OUTCOME_TABLE = Object.freeze([
 	// for a worker that failed at its own job, and a worker that wrote nothing
 	// readable by the end of its turn did exactly that. Only a pane that died
 	// under it, or the automation refusing to run, is the automation's failure.
-	row({ phase: PHASE_IMPLEMENT, outcome: "invalid-result", action: STAGE_ACTIONS.freshRetry, budget: BUDGET_KINDS.repair }),
+	// An invalid result's detail is the controller's own schema and role
+	// judgement — which block was missing or malformed — and never the record
+	// it refused, so it is presented to the fresh attempt as fact (#189).
+	row({
+		phase: PHASE_IMPLEMENT,
+		outcome: "invalid-result",
+		action: STAGE_ACTIONS.freshRetry,
+		budget: BUDGET_KINDS.repair,
+		evidence: EVIDENCE_TRUST.fact,
+	}),
 	row({ phase: PHASE_IMPLEMENT, outcome: "no-result", action: STAGE_ACTIONS.freshRetry, budget: BUDGET_KINDS.repair }),
 	row({ phase: PHASE_IMPLEMENT, outcome: "timeout", action: STAGE_ACTIONS.freshRetry, budget: BUDGET_KINDS.repair }),
 	row({
@@ -102,6 +111,15 @@ export const OUTCOME_TABLE = Object.freeze([
 	}),
 	row({ phase: PHASE_IMPLEMENT, outcome: "dead-worker", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_IMPLEMENT, outcome: "automation-failure", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
+	/**
+	 * #178: the pane was never observed working, so the two silence rows above it
+	 * are describing a turn that never happened. A worker sitting on a first-run
+	 * interstitial reports `idle` to Herdr — a settled status — and the
+	 * fresh-retry rows would then charge the **repair** budget, at seconds per
+	 * attempt, for "ended its turn without writing". This is the same fault class
+	 * as `dead-worker`: the automation could not get a worker onto the work.
+	 */
+	row({ phase: PHASE_IMPLEMENT, outcome: "worker-never-started", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_IMPLEMENT, outcome: "cancelled", action: STAGE_ACTIONS.dispose, disposition: "released" }),
 	/**
 	 * #154: the provider refused the attempt — quota, rate limit, a usage cap —
@@ -194,6 +212,12 @@ export const OUTCOME_TABLE = Object.freeze([
 	row({ phase: PHASE_REVIEW, outcome: "dead-worker", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_REVIEW, outcome: "timeout", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_REVIEW, outcome: "automation-failure", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
+	// #178's outcome is reachable from any agent-borne phase, so it is routed for
+	// both. The row is written because the table is **total** over its declared
+	// domain (§8.10) — not because review misattributes: every silence row here
+	// already charges automation, so this one changes nothing but the word an
+	// operator reads.
+	row({ phase: PHASE_REVIEW, outcome: "worker-never-started", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_REVIEW, outcome: "wrote-but-hung", action: STAGE_ACTIONS.verdict, anomaly: ANOMALY_WROTE_BUT_HUNG }),
 	row({ phase: PHASE_REVIEW, outcome: "cancelled", action: STAGE_ACTIONS.dispose, disposition: "released" }),
 	// #154, #155: a reviewer attempt its provider refused is the implement row's

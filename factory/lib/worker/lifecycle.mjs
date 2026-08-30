@@ -192,6 +192,18 @@ const STOP_NOT_ATTEMPTED = Object.freeze({
 const SETTLED_STATUSES = Object.freeze(["idle", "done", "released", "exited"]);
 
 /**
+ * The one status that means a worker **had a turn** (§6.6, #178).
+ *
+ * Herdr's vocabulary is `working` / `idle` / `blocked` / `unknown`, and this is
+ * deliberately the first of them and nothing else. `blocked` must not count: a
+ * pane sitting on the folder-trust dialog reports `blocked`, and admitting it
+ * would let one interstitial launder a hang into "the worker worked". `unknown`
+ * means an agent is present but unclassified, which proves nothing either — and
+ * `idle` is the status the interstitial this outcome exists for reports.
+ */
+const WORKING_STATUS = "working";
+
+/**
  * The verdicts #154 reclassifies when the pane's tail shows a provider
  * refusal: the three silence-based ones, and only when the outbox is absent.
  * `automation-failure` is on the list for its degraded-observation reading —
@@ -200,7 +212,30 @@ const SETTLED_STATUSES = Object.freeze(["idle", "done", "released", "exited"]);
  * past, and a pane that died is a different fact — so neither is ever re-read
  * for a refusal.
  */
-const REFUSAL_RECLASSIFIABLE = Object.freeze(["no-result", "timeout", "automation-failure"]);
+const REFUSAL_RECLASSIFIABLE = Object.freeze([
+	"no-result",
+	"timeout",
+	"automation-failure",
+	// #178: a refusal is an **affirmative observation with a named source**, and
+	// never-started is read off an absence, so the refusal outranks it — a worker
+	// whose provider refused it before it ever reached a working status is still
+	// a worker whose provider refused it, and §8.10 charges no budget for that.
+	"worker-never-started",
+]);
+
+/**
+ * The verdicts #178 reclassifies when the controller never observed this
+ * attempt's pane working: §8.10's **two silence-based `implement` rows**.
+ *
+ * `no-result` is the settle-grace ending and `timeout` is both clocks — the
+ * no-progress one, which is where a pane that came up already interstitial
+ * lands (no transition ever arrives, so the settle clock never starts), and the
+ * hard ceiling behind it. `dead-worker` is absent because a pane that died is a
+ * different fact, `automation-failure` because it already charges the
+ * automation budget, and every outbox-bearing verdict because an attempt that
+ * answered is answering (§6.6).
+ */
+const NEVER_STARTED_RECLASSIFIABLE = Object.freeze(["no-result", "timeout"]);
 
 /** The two that mean the worker is gone rather than waiting for input. */
 const GONE_STATUSES = Object.freeze(["released", "exited"]);
@@ -273,6 +308,8 @@ export const DEFAULT_NO_PROGRESS_TIMEOUT_MS = 600_000;
  *   (`pipeline/review.mjs`). It rides the prompt for the same reason the repair
  *   brief does, and it is not optional in practice: both axis skills open by
  *   asking the caller for a fixed point and there is nobody in the pane to ask
+ * @param {ReadonlyArray<object>} [context.trustedEvidence] controller-captured
+ *   advisory output selected by `checks[].feeds` for this phase (§8.2)
  * @param {ReadonlyArray<string>} [context.sessionArgs] §6.8's binding for this posture
  * @param {Record<string, string>} [context.sessionEnv] §6.8's closed pane set — the
  *   controller-owned config-directory variables and declared capability values the
@@ -305,6 +342,7 @@ export async function launchWorker(
 		ticketSnapshot,
 		repair = null,
 		review = null,
+		trustedEvidence = [],
 		sessionArgs = [],
 		sessionEnv = {},
 		startupTimeoutMs = null,
@@ -353,6 +391,7 @@ export async function launchWorker(
 		packageRev,
 		repair,
 		review,
+		trustedEvidence,
 	});
 
 	const manifest = writeAttemptManifest(store.storeDir, {
@@ -603,11 +642,31 @@ export async function awaitCompletion(
 	// the attempt as `no-result` before the worker ever worked. Silence starts
 	// counting only from an observed transition into a settled status; a pane
 	// already gone still decides immediately through the `dead-worker` row.
+	//
+	// **The seed is recorded when it is a sighting** (#178). The clock it does not
+	// start and the fact it does establish are two different things: a pane read
+	// as `working` here is a worker that had a turn, and that has to survive this
+	// controller dying — so it goes to the journal as an `observation.recorded`
+	// with `observed_by: "seed"` like any other sighting, and the never-started
+	// predicate below reads it back from there. A Herdr that would not answer, and
+	// an attempt with no pane, are recorded as nothing: `fromPane(null)` spells
+	// both as `exited`, and writing that down would be the controller asserting an
+	// external fact it never observed (§5.2, §14.1).
 	const seen = await herdr.paneForAttempt(identity.attempt);
-	let liveness = {
-		...readLiveness(fromPane(seen.ok ? seen.pane : null, "seed"), { settledAt: null }, now()),
-		settledAt: null,
-	};
+	const seedAt = now();
+	// `from: null` is spelled rather than left off: a seed is a state with no
+	// history, and §4.3's canonical serialisation refuses an absent slot outright.
+	const seed = Object.freeze({ ...fromPane(seen.ok ? seen.pane : null, "seed"), from: null });
+	if (seen.ok && seen.pane !== null && seen.pane !== undefined) observer.record(seed, seedAt);
+	let liveness = { ...readLiveness(seed, { settledAt: null }, seedAt), settledAt: null };
+
+	// §6.6's new state-table input (#178), seeded from the **journal** and never
+	// from an in-memory flag: a controller that crashed after a genuine worker
+	// turn must re-read this attempt as one that worked, or it would file a real
+	// `no-result` as an automation fault and retry it on the wrong budget forever.
+	// It is OR'd forward below rather than re-queried, because every transition
+	// that would change the answer is appended durably on the same path.
+	let workedEver = observedWorking(store, identity);
 
 	// Transitions are queued rather than journalled from the socket callback:
 	// every append then happens on this function's own path, in order, where a
@@ -655,6 +714,7 @@ export async function awaitCompletion(
 				}
 				liveness = readLiveness(entry.transition, liveness, entry.at);
 				observer.record(entry.transition, entry.at);
+				workedEver = workedEver || entry.transition.status === WORKING_STATUS;
 				// A status transition is observed progress: something about the
 				// worker changed, and the no-progress window reopens from it.
 				lastProgressAt = entry.at;
@@ -673,6 +733,7 @@ export async function awaitCompletion(
 				noProgressDeadline: lastProgressAt + noProgressTimeoutMs,
 				observationDegraded,
 				refusal: refusalNow,
+				workedEver,
 				settleGraceMs,
 			});
 			if (decided !== null) {
@@ -841,6 +902,7 @@ export async function settleUnadoptable(store, { hold, identity: minted, adoptio
  * | valid, foreign tuple | either | `automation-failure` (§6.5) |
  * | absent | gone | `dead-worker` |
  * | absent | settled past the grace | `no-result` — silent completion |
+ * | absent | never observed working | `worker-never-started` (§8.10, #178) |
  * | absent | working, no progress observed | `timeout` / `clock: no-progress` |
  * | absent | working, observed progress | `timeout` / `clock: deadline` at the hard ceiling |
  * | absent | working | undecided; keep waiting |
@@ -865,6 +927,21 @@ export async function settleUnadoptable(store, { hold, identity: minted, adoptio
  * a worker that ended its turn without writing failed at its own job, while a
  * pane that died under it is the automation's failure.
  *
+ * **And a worker never observed working never had a turn to end** (#178):
+ * `workedEver` false turns both silence rows into `worker-never-started`, which
+ * §8.10 charges to the automation budget. It is a state predicate rather than a
+ * launch-window timer, because "this pane was never seen working" is already the
+ * whole fact — see `NEVER_STARTED_RECLASSIFIABLE`. The caller supplies it, read
+ * from the attempt's own durable observation records (`observedWorking`), so
+ * this function stays pure and a controller re-entry answers the same way a
+ * controller that never died would.
+ *
+ * @param {boolean} [workedEver] whether a working status was ever observed for
+ *   this attempt. **Defaults to `true`**, which is the pre-#178 reading: a
+ *   caller that does not supply the fact under-reports the new outcome rather
+ *   than filing genuine `no-result`s as automation faults and retrying them on
+ *   the wrong budget forever — the fail-open shape the exhaustion-guard work
+ *   removed from this repo, and the one this parameter must not reintroduce
  * @returns {Readonly<{ outcome: string, clock?: string }> | null} null while nothing has decided
  */
 export function decideOutcome({
@@ -875,6 +952,7 @@ export function decideOutcome({
 	noProgressDeadline = null,
 	observationDegraded = false,
 	refusal = null,
+	workedEver = true,
 	settleGraceMs = SETTLE_GRACE_MS,
 }) {
 	if (outbox.state === "foreign") return Object.freeze({ outcome: "automation-failure" });
@@ -901,6 +979,14 @@ export function decideOutcome({
 	// ran before the silence verdicts rather than on them.
 	if (refusal !== null && REFUSAL_RECLASSIFIABLE.includes(silence.outcome)) {
 		return Object.freeze({ outcome: "provider-refused" });
+	}
+
+	// #178, and **after** the refusal for the reason `REFUSAL_RECLASSIFIABLE`
+	// gives: this reading is an absence, and an affirmative observation with a
+	// named source outranks one. The clock is dropped with the outcome — which
+	// clock ran out is a diagnosis of a turn, and there was no turn.
+	if (!workedEver && NEVER_STARTED_RECLASSIFIABLE.includes(silence.outcome)) {
+		return Object.freeze({ outcome: "worker-never-started" });
 	}
 	return silence;
 }
@@ -1550,6 +1636,40 @@ function recordedObservations(store, { run, attempt }) {
 	return store
 		.readEvents({ stream: runStream(run), kind: "observation.recorded" })
 		.filter((event) => event.attempt === attempt).length;
+}
+
+/**
+ * §6.6's never-started predicate (#178): **was this attempt's pane ever observed
+ * working** — the same read as the count above, with a status filter.
+ *
+ * Durable by construction, which is the whole point. An in-memory flag answers
+ * this correctly right up until the controller re-enters, and then answers
+ * `false` for an attempt whose worker had a full turn — turning a real
+ * `no-result` into an automation fault that retries on the automation budget
+ * until that runs out too. The journal is what a re-entry still has.
+ *
+ * **The recorded sightings are the whole source, and one window is left open
+ * knowingly**: the launch's prompt-delivery watch also sees the worker leave its
+ * resting state, and records nothing, so a worker that both started and finished
+ * between that read and the wait's seed — milliseconds later, and with no outbox
+ * — reads as never-started. The error costs a retry on the automation budget
+ * instead of the repair one, and loses no work; the opposite error is the one
+ * this predicate exists for. Closing it means giving the launch a recorder, not
+ * giving this function a second source.
+ *
+ * @param {object} store an open store
+ * @param {{ run: string, attempt: string }} identity
+ * @returns {boolean}
+ */
+export function observedWorking(store, { run, attempt }) {
+	return store
+		.readEvents({ stream: runStream(run), kind: "observation.recorded" })
+		.some(
+			(event) =>
+				event.attempt === attempt &&
+				event.payload?.fact === "worker.alive" &&
+				event.payload?.status === WORKING_STATUS,
+		);
 }
 
 /**

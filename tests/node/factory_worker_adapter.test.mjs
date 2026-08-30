@@ -4,7 +4,7 @@ import test from "node:test";
 import { createWorkerAdapter, validateRole, WORKER_OPERATIONS } from "../../factory/lib/worker/adapter.mjs";
 import { FactoryWorkerError } from "../../factory/lib/worker/errors.mjs";
 import { lifecycleOperations } from "../../factory/lib/worker/lifecycle.mjs";
-import { PIPELINE_ROLES, postureOf, profileForRole, REVIEW_ROLES, rolesInPlay } from "../../factory/lib/worker/roles.mjs";
+import { missingResult, PIPELINE_ROLES, postureOf, profileForRole, REVIEW_ROLES, rolesInPlay } from "../../factory/lib/worker/roles.mjs";
 
 /**
  * §6.1: one runtime-neutral adapter with four operations, role-parametric, and
@@ -148,6 +148,39 @@ test("a role's posture derives from the role, and an unknown name is refused (§
 		assert.equal(error.reason, "role-invalid");
 		return true;
 	});
+});
+
+test("the builder roles owe #189's requirement trace and review-spec checks it; review-standards does neither", () => {
+	assert.deepEqual(
+		PIPELINE_ROLES.map((declared) => [
+			declared.name,
+			declared.resultExpectations.writesTrace === true,
+			declared.resultExpectations.checksTrace === true,
+		]),
+		[
+			["implement", true, false],
+			["fresh-retry", true, false],
+			["review-standards", false, false],
+			["review-spec", false, true],
+		],
+	);
+});
+
+test("missingResult names the trace a completed builder record owes, and nothing a reviewer's does not (§6.6, #189)", () => {
+	const builder = PIPELINE_ROLES.find((declared) => declared.name === "implement");
+	const reviewer = PIPELINE_ROLES.find((declared) => declared.name === "review-spec");
+	const traced = { status: "completed", trace: [{ requirement: "It should work.", evidence: "src/it.mjs", note: null }] };
+
+	assert.equal(missingResult(builder, traced), null);
+	for (const record of [{ status: "completed", trace: null }, { status: "completed" }]) {
+		const problem = missingResult(builder, record);
+		assert.match(problem, /wrote no trace/, `${JSON.stringify(record)} was accepted from a builder`);
+		assert.match(problem, /§6\.6/);
+	}
+	// The record's status decides: a pause owes no trace, and no record owes none.
+	assert.equal(missingResult(builder, { status: "needs-human", reason_class: "product-ambiguity", question: "?" }), null);
+	assert.equal(missingResult(builder, null), null);
+	assert.equal(missingResult(reviewer, { status: "completed", verdict: "approve", findings: [] }), null);
 });
 
 test("REVIEW_ROLES is §8.4's two axes, in the order §11.5's pair is written in", () => {

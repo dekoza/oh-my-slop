@@ -116,11 +116,23 @@ function parsingHarness({ known, answer }) {
 	};
 }
 
-const PI_KNOWN = ["--mode", "--no-session", "--no-skills", "--skill", "--exclude-tools", "--model", "--thinking"];
+const PI_KNOWN = [
+	"--mode",
+	"--no-session",
+	"--no-skills",
+	// §6.8's trust approval rides the worker binding, so the spelling proof hands
+	// it to the binary too (#178).
+	"--approve",
+	"--skill",
+	"--exclude-tools",
+	"--model",
+	"--thinking",
+];
 const CLAUDE_KNOWN = [
 	"--plugin-dir",
 	// §6.8's discovery fence rides the worker binding, so the spelling proof
-	// hands it to the binary too (#163).
+	// hands it to the binary too (#163) — and #178's browser fence beside it.
+	"--no-chrome",
 	"--setting-sources",
 	"--settings",
 	"--permission-mode",
@@ -163,6 +175,7 @@ test("a pi profile whose flags the binary accepts is proven by one session over 
 		"rpc",
 		"--no-session",
 		"--no-skills",
+		"--approve",
 		"--skill",
 		"/pin/skills",
 		"--exclude-tools",
@@ -213,6 +226,7 @@ test("a Claude profile whose flags the binary accepts is proven by one session o
 	assert.deepEqual(harness.sessions[0].args, [
 		"--plugin-dir",
 		"/store/plugins/rev-1",
+		"--no-chrome",
 		"--setting-sources",
 		"user",
 		"--settings",
