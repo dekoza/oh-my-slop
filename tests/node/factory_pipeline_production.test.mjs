@@ -160,6 +160,7 @@ async function runProduction(
 		const loaded = loadFactoryConfig({ cwd: repoRoot });
 		const tracker = fakeGitea({
 			issues: [issue],
+			commentAuthor: loaded.config.tracker.login,
 			onWrite: (write, trackerWorld) => onTrackerWrite?.({ write, world: trackerWorld, loaded }),
 		});
 		fixture = { packageRoot, executable, repoRoot, agentDir, env, loaded, tracker, issue };
@@ -313,15 +314,19 @@ test("#199: clearing needs-human starts a new execution from the paused committe
 	t.after(() => store.close());
 	const runs = store.readEvents({ kind: "run.started" });
 	assert.equal(runs.length, 2, "the cleared ticket was folded back into the paused run");
-	assert.notEqual(runs[0].run, runs[1].run);
+	assert.equal(new Set(runs.map((event) => event.run)).size, 2);
 
 	const builders = store
 		.readEvents({ kind: "attempt.launched" })
 		.filter((event) => event.phase === "implement");
 	assert.equal(builders.length, 2);
-	assert.equal(builders[1].payload.base_commit, pausedBranch.head);
-	assert.equal(builders[1].payload.profile, "builder", "the resumed execution bypassed declared routing");
-	assert.match(builders[1].attempt, /-a1$/, "the resumed execution inherited the old run's attempt budget");
+	// `readEvents({ kind })` spans run streams and promises no cross-stream order;
+	// identify the new execution from the paused comment's durable run identity.
+	const resumedBuilder = builders.find((event) => event.run !== paused.identity.run);
+	assert.ok(resumedBuilder !== undefined);
+	assert.equal(resumedBuilder.payload.base_commit, pausedBranch.head);
+	assert.equal(resumedBuilder.payload.profile, "builder", "the resumed execution bypassed declared routing");
+	assert.match(resumedBuilder.attempt, /-a1$/, "the resumed execution inherited the old run's attempt budget");
 
 	const resumedPrompt = prompts.find((prompt) => prompt.phase === "implement").text;
 	assert.match(resumedPrompt, /Which behavior should the implementation preserve\?/);
