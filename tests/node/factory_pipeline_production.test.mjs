@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { addressOfContent, deleteArtifactBlob } from "../../factory/lib/artifacts/blobs.mjs";
 import { EXIT_OK } from "../../factory/lib/cli/exit-codes.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { FACTORY_ATTEMPT_TOKEN } from "../../factory/lib/controller/herdr-control.mjs";
@@ -17,6 +18,7 @@ import { builderResult } from "../../factory/lib/pipeline/production.mjs";
 import { PIPELINE_ROLES } from "../../factory/lib/worker/roles.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
+import { resolveStorePaths } from "../../factory/lib/state/location.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { workerConfigRoots } from "../../factory/lib/worker/environment.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
@@ -152,6 +154,11 @@ async function runProduction(
 		// The remote's seed tree, for a fixture whose conflict needs a file that
 		// exists at the base (#194).
 		remoteFiles = undefined,
+		// The controller's clock, built once the store's location is known. A test
+		// that must act *between* two controller steps — after verify recorded a
+		// blob, before the repair launch reads it — has no other synchronous seam:
+		// the controller reads its clock at every stage resolution and every mint.
+		clock = null,
 	} = {},
 ) {
 	const packageRoot = makePackage(t);
@@ -161,6 +168,7 @@ async function runProduction(
 		...(remoteFiles === undefined ? {} : { remotes: { gitea: makeRemote(t, { files: remoteFiles }) } }),
 	});
 	const agentDir = makeAgentDir(t);
+	const now = clock === null ? undefined : clock({ storeDir: resolveStorePaths({ repoRoot, agentDir }).primary.dir });
 	const env = { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" };
 	const loaded = loadFactoryConfig({ cwd: repoRoot });
 	const tracker = fakeGitea({
@@ -184,6 +192,7 @@ async function runProduction(
 		tracker: createGiteaReader({ ...where, request: tracker.request }),
 		trackerWriter: createGiteaWriter({ ...where, request: tracker.write }),
 		...(signal === undefined ? {} : { signal }),
+		...(now === undefined ? {} : { now }),
 	});
 
 	return { answer, tracker, loaded, repoRoot, agentDir, herdr, checkoutBefore };
@@ -532,6 +541,54 @@ test("a verify-fed advisory check reaches the repair prompt and an unfed check d
 	assert.match(prompts[1], /survivor from mutation/);
 	assert.doesNotMatch(prompts[1], /unfed browser output/);
 	assert.doesNotMatch(prompts[1], /\"name\": \"browser\"/, "an unfed advisory check still appeared in repair facts");
+});
+
+test("a repair launched after its fed check's blob is gone renders the slot as a sentence naming the digest, and the launch does not throw (#196, §12.5)", async (t) => {
+	const survivor = "survivor from mutation\n";
+	const address = addressOfContent(Buffer.from(survivor));
+	const config = cloneValidConfig();
+	config.checks = [
+		{
+			name: "reject-first-attempt",
+			command: "! grep -q -- '-a1' implemented.txt",
+			timeout: 30,
+			severity: "required",
+			expectedFailureExitCodes: [1],
+		},
+		{
+			name: "mutation",
+			command: `echo '${survivor.trimEnd()}'`,
+			timeout: 30,
+			severity: "advisory",
+			expectedFailureExitCodes: [1],
+			feeds: ["implement"],
+		},
+	];
+	const prompts = [];
+	let dropped = false;
+
+	const { answer } = await runProduction(t, {
+		config,
+		turn: workerTurn({ prompts }),
+		// §12.2's horizon, or a swept blob: the bytes verify recorded are gone by
+		// the time the repair reads them. The clock is read after the verify stage
+		// resolves and again when the repair is minted, so the first tick that
+		// finds the blob on disk removes it — before the launch resolves evidence.
+		clock:
+			({ storeDir }) =>
+			() => {
+				if (!dropped && deleteArtifactBlob(storeDir, address)) dropped = true;
+				return Date.now();
+			},
+	});
+
+	assert.equal(dropped, true, "the fixture never saw the blob it meant to expire");
+	assert.equal(answer.report.execution.members[0].disposition, "published", "the absent evidence failed the lane");
+	const repair = prompts.filter((prompt) => prompt.phase === "implement").at(-1).text;
+	assert.match(repair, /Trusted evidence — controller-captured advisory checks/);
+	assert.match(repair, /#### mutation/);
+	assert.ok(repair.includes(`The recorded output ${address.digest} could not be read back`), "the slot names the digest");
+	assert.doesNotMatch(repair, /Captured output:/, "bytes the ledger cannot vouch for were quoted anyway");
 });
 
 test("an exhausted builder failure reaches a durable failed disposition instead of escaping the claimed lane (#147, §8.10)", async (t) => {

@@ -56,11 +56,12 @@ The checks a run verifies against are **declared, never discovered**: the `check
 block in `.pi/factory.json` names each command, its timeout, whether it is required or
 advisory, and which exit codes count as a genuine failure. Advisory checks can opt their
 controller-captured output into a later agent phase with `feeds`; output is persisted by
-digest and inserted as explicitly untrusted data inside a controller-owned evidence section,
-never as ticket instructions. Nothing is inferred from a `pyproject.toml`, a `package.json`,
-or a Makefile, and `AGENTS.md` prose is never parsed at runtime. The controller runs the full
-required set at the pinned base before it claims anything, and a red base aborts the run naming
-the check that was red rather than blaming the first worker for it. `factory doctor --baseline`
+digest and rendered as trusted, digest-labelled evidence inside a controller-owned section
+that marks it as data, never as ticket instructions. Nothing is inferred from a
+`pyproject.toml`, a `package.json`, or a Makefile, and `AGENTS.md` prose is never parsed at
+runtime. The controller runs the full required set at the pinned base before it claims
+anything, and a red base aborts the run naming the check that was red rather than blaming the
+first worker for it. `factory doctor --baseline`
 runs **all** declared checks on demand — reporting advisory mutation and complexity results
 without turning them into gates — in a throwaway worktree inside the factory-private clone,
 never your checkout. The worktree is deleted when required checks pass and kept when they fail,
