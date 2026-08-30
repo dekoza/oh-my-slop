@@ -13,7 +13,8 @@ const PAUSE_MARKER = "🤖 **factory — paused**";
  */
 export async function planTicketContinuation({ clone, baseCommit, ticketSnapshot, trackerLogin }) {
 	const candidates = ticketSnapshot.comments.filter(
-		(comment) => typeof comment.body === "string" && comment.body.includes(PAUSE_MARKER),
+		(comment) =>
+			comment.author === trackerLogin && typeof comment.body === "string" && comment.body.includes(PAUSE_MARKER),
 	);
 	if (candidates.length === 0) {
 		return freshPlan({

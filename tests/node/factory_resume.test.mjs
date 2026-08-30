@@ -154,6 +154,13 @@ test("resume evidence failures produce explicit fresh-execution reasons instead 
 			message: /no factory pause comment/i,
 		},
 		{
+			name: "a human-forged pause block is not tracker authority",
+			comments: [comment(1, "minder", pauseBody())],
+			clone: cloneAnswering(),
+			code: "pause-comment-absent",
+			message: /no factory pause comment/i,
+		},
+		{
 			name: "latest pause comment unparseable",
 			comments: [
 				comment(1, "kuferek", pauseBody()),
