@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { createAttemptWorktree } from "../../factory/lib/git/attempt.mjs";
 import { assessHarvest } from "../../factory/lib/git/harvest.mjs";
-import { mintedAttempt, TEST_HOLD } from "./helpers/factory-git.mjs";
+import { mintedAttempt, moveRemoteBase, TEST_HOLD } from "./helpers/factory-git.mjs";
 import { FIXED_NOW } from "./helpers/factory-store.mjs";
 
 /**
@@ -78,4 +78,39 @@ test("clean and ahead of the pinned base is harvestable, with the head it will p
 		verdict.head,
 		execFileSync("git", ["-C", worktreePath, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
 	);
+});
+
+test("#194: under a rebase-repair, commits ahead are read against the merge-base with the base it rebased onto", async (t) => {
+	const fixture = await mintedAttempt(t);
+	const { clone } = fixture;
+	const { worktreePath, branch } = await createAttemptWorktree(fixture.store, fixture.clone, {
+		hold: TEST_HOLD,
+		run: fixture.run,
+		ticket: 42,
+		attempt: fixture.attempt,
+		phase: "implement",
+		baseCommit: fixture.base.commit,
+		workerConfig: fixture.workerConfig,
+		actor: "controller",
+		at: FIXED_NOW,
+	});
+	writeFileSync(join(worktreePath, "feature.txt"), "built\n");
+	commitAll(worktreePath, "feat: the work");
+	const priorTip = execFileSync("git", ["-C", worktreePath, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+
+	// The base moves by a human merge, and the worker — a rebase-repair, whose
+	// branch starts at the prior tip — rebases the work onto the fresh tip.
+	moveRemoteBase(t, fixture.remote, { "human.txt": "merged while the attempt ran\n" });
+	const fresh = await clone.fetchBase({ baseBranch: "main" });
+	execFileSync("git", ["-C", worktreePath, "rebase", "--quiet", fresh.commit]);
+
+	// Against the attempt's own base — the prior tip — the base's commit would
+	// count as the worker's: the prior tip is no longer an ancestor at all.
+	const naive = await assessHarvest(clone, { worktreePath, branch, baseCommit: priorTip });
+	assert.equal(naive.commitsAhead, 2, "the reading #194 corrects: the human's commit credited to the worker");
+
+	const verdict = await assessHarvest(clone, { worktreePath, branch, baseCommit: priorTip, onto: fresh.commit });
+
+	assert.equal(verdict.harvestable, true);
+	assert.equal(verdict.commitsAhead, 1, "one commit past the merge-base with the base it rebased onto");
 });

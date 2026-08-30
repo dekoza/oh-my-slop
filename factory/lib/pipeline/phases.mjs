@@ -27,13 +27,15 @@ import { assessHarvest } from "../git/harvest.mjs";
  * phase answered.
  *
  * @param {object} clone the private clone's handle (`git/clone.mjs`)
- * @param {{ worktreePath: string, branch: string, baseCommit: string }} attempt
+ * @param {{ worktreePath: string, branch: string, baseCommit: string, onto?: string | null }} attempt
  *   `baseCommit` is the attempt's own base, which for a repair is the prior
- *   attempt's tip rather than the run's pin (§7.3, §8.5)
+ *   attempt's tip rather than the run's pin (§7.3, §8.5); `onto` is the base a
+ *   rebase-repair was told to rebase onto, read off its mint, and the boundary
+ *   §7.4 counts against under that tier (#194)
  * @returns {Promise<Readonly<{ outcome: string, detail: Readonly<object> }>>}
  */
-export async function harvestPhase(clone, { worktreePath, branch, baseCommit }) {
-	const verdict = await assessHarvest(clone, { worktreePath, branch, baseCommit });
+export async function harvestPhase(clone, { worktreePath, branch, baseCommit, onto = null }) {
+	const verdict = await assessHarvest(clone, { worktreePath, branch, baseCommit, onto });
 
 	if (verdict.harvestable) {
 		return Object.freeze({
