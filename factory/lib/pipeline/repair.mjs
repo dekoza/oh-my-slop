@@ -25,17 +25,26 @@ import { PIPELINE_ROLES } from "../worker/roles.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 
 /**
- * §8.5's two tiers, and the trust framing of the prompt that drives them.
+ * §8.5's tiers, and the trust framing of the prompt that drives them.
  *
  * **Every resume is a fresh attempt with a fresh worktree**, so nothing in this
  * module continues a session, resumes a transcript, or reuses a worktree. What
- * the two tiers differ on is one question — *is the prior attempt's work worth
+ * the tiers differ on is one question — *is the prior attempt's work worth
  * keeping* — and every other difference follows from the answer:
  *
  * | | branches from | work | profile |
  * |---|---|---|---|
  * | **repair** | the prior attempt's tip | preserved | the originating attempt's, pinned |
  * | **fresh-retry** | the pinned base | discarded | routed, and the one place routing is tier-dependent |
+ * | **rebase-repair** (#194) | the prior attempt's tip | preserved, and rebased by the worker | the originating attempt's, pinned |
+ *
+ * A rebase-repair answers the question **before it is asked**: the prior tip
+ * conflicts textually with a base that moved, and whether that invalidates the
+ * work is what the pipeline measures at the rebased commit. It keeps the work
+ * and the profile for the repair's reason, and adds the one fact a repair does
+ * not carry — `onto`, the base commit the controller's own rebase could not
+ * replay the branch onto, read off the failure and never off the routing or the
+ * clone, so a re-entry plans the same rebase the first controller did.
  *
  * **#155's `reroute` is a third planner here and is not a tier** (`planReroute`):
  * it branches from the prior tip and keeps the role, like a repair, and changes
@@ -90,6 +99,22 @@ const FACT_PRODUCERS = Object.freeze({
 	[PHASE_VERIFY]: { producer: "checks", label: "checks" },
 	[PHASE_HARVEST]: { producer: "git", label: "predicate" },
 });
+
+/**
+ * #194: a rebase conflict's evidence is git's, whichever phase met it. §9.5
+ * puts a rebase in both `verify` and `integrate`, and neither phase's producer
+ * above describes it — no check ran, and no harvest predicate was asked. The
+ * detail is the controller's own reading of the repository: the base commit,
+ * the previous base, the paths the index could not merge, and the base's own
+ * movement as `git diff --stat` printed it.
+ */
+const REBASE_CONFLICT_FACT = Object.freeze({ producer: "git", label: "rebase" });
+
+/** Which producer a phase's fact detail is attributed to, for the row's outcome. */
+function factProducer(phase, outcome) {
+	if (outcome === "rebase-conflict") return REBASE_CONFLICT_FACT;
+	return FACT_PRODUCERS[phase] ?? { producer: "controller", label: "detail" };
+}
 
 /**
  * The fields of a prior attempt's outbox record that are **the worker's own
@@ -184,7 +209,7 @@ export function planRetry({ prior, failure, priorResult = null, route = null }) 
 				? " §8.6's automation retry is not a tier: it re-enters the phase it left, and `planAutomationRetry` is" +
 					" what plans one (§8.10)."
 				: "";
-		throw unplannable("tier", `${JSON.stringify(tier ?? null)} is not one of §8.5's two tiers.${aboutRetry}`, {
+		throw unplannable("tier", `${JSON.stringify(tier ?? null)} is not one of §8.5's tiers.${aboutRetry}`, {
 			tier: tier ?? null,
 			expected: Object.keys(RETRY_BASES).join("|"),
 		});
@@ -198,8 +223,8 @@ export function planRetry({ prior, failure, priorResult = null, route = null }) 
 		brief: repairBrief({ tier, prior, priorResult, ...failure }),
 	};
 
-	// The two tiers are built by two expressions rather than by one with
-	// conditionals, because the repair one **takes no routing at all**: "repair is
+	// The tiers are built by separate expressions rather than by one with
+	// conditionals, because the pinned ones **take no routing at all**: "repair is
 	// not routable" is then a property of the code's shape rather than a branch
 	// somebody could later make read the routing "just for the model".
 	if (tier === STAGE_ACTIONS.repair) {
@@ -207,6 +232,27 @@ export function planRetry({ prior, failure, priorResult = null, route = null }) 
 		// — which is the re-routing §11.5 forbids, arrived at through the back door
 		// of a missing record rather than through a decision.
 		return pinnedToPrior({ ...shared, action: tier, prior });
+	}
+
+	if (tier === STAGE_ACTIONS.rebaseRepair) {
+		// #194: pinned exactly as a repair is — the work is kept, so the profile
+		// that wrote it is kept — plus the base to rebase onto, which is the
+		// failure's own fact. It is refused rather than filled from a fetch: the
+		// commit the controller's rebase could not replay onto is the one the
+		// worker is briefed with, and a fresher tip would brief it with a base
+		// nobody measured the conflict against.
+		const onto = failure.detail?.base_commit;
+		if (typeof onto !== "string" || onto.length === 0) {
+			throw unplannable(
+				"onto",
+				"A rebase-repair rebases the prior attempt's tip onto the base commit its rebase conflicted with " +
+					`(§8.5, #194), and the ${failure.phase} × ${failure.outcome} detail names no base_commit. There is ` +
+					"nothing to brief the worker with, and reading a fresh tip instead would name a base nobody " +
+					"measured the conflict against.",
+				{ tier, phase: failure.phase, outcome: failure.outcome },
+			);
+		}
+		return pinnedToPrior({ ...shared, action: tier, prior, onto });
 	}
 
 	if (typeof route?.profile !== "string") {
@@ -552,9 +598,19 @@ export async function openRetryAttempt(
  * attempt exist*, rather than leaving an operator to infer a repair from two
  * attempts and a gap. Every field is a pure function of the plan, which is what
  * makes matching on all three deterministic.
+ *
+ * A rebase-repair's purpose carries `onto` as well (#194): the base it was told
+ * to rebase onto is part of *why it exists*, and it is what §7.4's harvest reads
+ * the commits-ahead boundary from afterwards — off the mint, so a re-entry and
+ * the harvest phase read the one value the plan was made with.
  */
 function retryPurpose(plan) {
-	return { tier: plan.tier, prior_attempt: plan.priorAttempt, base_kind: plan.from.kind };
+	return {
+		tier: plan.tier,
+		prior_attempt: plan.priorAttempt,
+		base_kind: plan.from.kind,
+		...(plan.onto === undefined ? {} : { onto: plan.onto }),
+	};
 }
 
 /**
@@ -646,7 +702,7 @@ export function repairBrief({ tier, prior, phase, outcome, detail = null, row, p
 	const untrusted = [];
 
 	if (detail !== null && row.evidence === EVIDENCE_TRUST.fact) {
-		const { producer, label } = FACT_PRODUCERS[phase] ?? { producer: "controller", label: "detail" };
+		const { producer, label } = factProducer(phase, outcome);
 		facts.push({ producer, label, value: factDetail(phase, detail) });
 	}
 

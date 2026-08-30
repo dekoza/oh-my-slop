@@ -4,11 +4,15 @@ import assert from "node:assert/strict";
 import {
 	AGENT_BORNE_PHASES,
 	ATTEMPT_OUTCOMES,
+	BUDGET_KINDS,
 	CONTROLLER_DERIVED_OUTCOMES,
 	CONTROLLER_PHASES,
 	PHASE_OUTCOME_DOMAINS,
 	PHASE_RESULTS,
 	PIPELINE_PHASES,
+	RETRY_BASES,
+	RETRY_TIERS,
+	STAGE_ACTIONS,
 	TICKET_DISPOSITIONS,
 	WORKER_WRITABLE_OUTCOMES,
 } from "../../factory/lib/domain/vocabulary.mjs";
@@ -54,12 +58,15 @@ test("§8.10's stated properties are carried as fields, not as prose (§8.10)", 
 		OUTCOME_TABLE.filter((row) => !row.retryable).map((row) => row.outcome),
 		["mutation-detected"],
 	);
-	// "A rebase-conflict consumes a fresh-retry, not a repair … a second conflict
-	// is failed / rebase-conflict."
+	// #194: "a rebase conflict routes to a rebase-repair before any fresh-retry,
+	// spending no product budget … a second conflict is fresh-retry as today, and
+	// a third is failed / rebase-conflict."
 	const conflict = routeOutcome("integrate", "rebase-conflict");
-	assert.equal(conflict.action, "fresh-retry");
-	assert.equal(conflict.budget, "repair");
-	assert.deepEqual(conflict.exhausted, { reasonClass: "rebase-conflict" });
+	assert.equal(conflict.action, "rebase-repair");
+	assert.equal(conflict.budget, null);
+	assert.equal(conflict.thereafter.action, "fresh-retry");
+	assert.equal(conflict.thereafter.budget, "repair");
+	assert.deepEqual(conflict.thereafter.exhausted, { reasonClass: "rebase-conflict" });
 	// "unrunnable → retry; exhausted ⇒ failed / check-unrunnable."
 	assert.deepEqual(routeOutcome("verify", "unrunnable").exhausted, { reasonClass: "check-unrunnable" });
 	// §8.5's trust framing: controller-produced evidence as fact, worker-authored
@@ -202,4 +209,38 @@ test("routes-exhausted names no phase, because no attempt ever had it as an outc
 			`${phase} claims an outcome no attempt of it ever had`,
 		);
 	}
+});
+
+test("#194: both rebase-conflict rows route to a budgetless rebase-repair first, and to today's fresh-retry thereafter", () => {
+	for (const phase of ["verify", "integrate"]) {
+		const row = routeOutcome(phase, "rebase-conflict");
+		assert.equal(row.action, "rebase-repair", `${phase}: the tip conflicts textually; nothing says the work is invalid`);
+		assert.equal(row.budget, null, `${phase}: a rebase-repair charges neither product number nor the automation one`);
+		assert.equal(row.evidence, "fact", `${phase}: the conflict facts are the controller's own reading of the repository`);
+		// The row taken once this ticket execution has already routed to a
+		// rebase-repair: exactly the pre-#194 row, so the bound is spent into the
+		// same chain as before — fresh-retry, then failed / rebase-conflict.
+		assert.equal(row.thereafter.phase, phase);
+		assert.equal(row.thereafter.outcome, "rebase-conflict");
+		assert.equal(row.thereafter.action, "fresh-retry");
+		assert.equal(row.thereafter.budget, "repair");
+		assert.equal(row.thereafter.evidence, "fact", `${phase}: the fresh-retry prompt carries the same facts (#194)`);
+		assert.deepEqual(row.thereafter.exhausted, { reasonClass: "rebase-conflict" });
+		assert.equal(row.thereafter.thereafter, null, "the bound is once per ticket execution, not a ladder");
+	}
+	// The only rows with a bound of their own — every other row is total as it stands.
+	assert.deepEqual(
+		OUTCOME_TABLE.filter((row) => row.thereafter !== null).map((row) => [row.phase, row.outcome]),
+		[
+			["verify", "rebase-conflict"],
+			["integrate", "rebase-conflict"],
+		],
+	);
+});
+
+test("#194: rebase-repair is a tier from the prior tip, and spends nothing", () => {
+	assert.equal(STAGE_ACTIONS.rebaseRepair, "rebase-repair");
+	assert.equal(RETRY_BASES["rebase-repair"], "prior-tip", "the work is kept; the branch is re-based, not rebuilt");
+	assert.ok(RETRY_TIERS.includes("rebase-repair"), "a tier's subject is the work, so it re-enters implement");
+	assert.deepEqual(BUDGET_KINDS, { repair: "repair", automation: "automation" }, "no new budget kind: it charges nothing");
 });

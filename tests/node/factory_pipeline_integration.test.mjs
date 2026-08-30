@@ -260,10 +260,18 @@ test("a rebase conflict ends verify as a typed outcome and keeps the worktree (�
 	assert.equal(verified.outcome, "rebase-conflict");
 	assert.deepEqual([...verified.detail.conflicts], ["contested.txt"]);
 	assert.equal(existsSync(integrationWorktreePath(fixture.store.storeDir, fixture.attempt)), true);
-	// The branch is untouched: nothing was adopted, so §8.5's fresh-retry starts
-	// from a branch that still holds exactly what the worker wrote.
+	// The branch is untouched: nothing was adopted, so §8.5's rebase-repair starts
+	// from a branch that still holds exactly what the worker wrote (#194).
 	assert.equal(git(fixture.clone.dir, ["rev-parse", `refs/heads/${fixture.branch}`]), fixture.head);
 	assert.equal(fixture.leases.inspect(LEASE_NAMES.integration), null);
+	// #194: the retained worktree is the attempt's tip — the rebase was aborted —
+	// with the pre-rebase head under the evidence ref; and the base's own movement
+	// rides the detail as the controller read it, for the prompt to carry.
+	assert.equal(git(integrationWorktreePath(fixture.store.storeDir, fixture.attempt), ["rev-parse", "HEAD"]), fixture.head);
+	assert.equal(git(fixture.clone.dir, ["rev-parse", verified.detail.evidence_ref]), fixture.head);
+	assert.equal(verified.detail.previous_base, fixture.base.commit);
+	assert.match(verified.detail.base_movement, /contested\.txt/);
+	assert.match(verified.detail.base_movement, /1 file changed/);
 });
 
 test("a red required set is verify's own failure, and nothing is published (§14.15)", async (t) => {

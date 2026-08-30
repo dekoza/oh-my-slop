@@ -217,15 +217,20 @@ test("§8.10: a row naming its own exhausted class keeps that class, and the fau
 	assert.equal(unrunnable.reason_class, "check-unrunnable");
 	assert.equal(unrunnable.fault, "automation");
 
-	// "A second conflict is `failed` / `rebase-conflict`" — and it spent a
-	// fresh-retry, so the fault is the product's and the breaker never sees it.
-	const conflict = exhaustionOf(routeOutcome("integrate", "rebase-conflict"));
+	// #194: "a third conflict is `failed` / `rebase-conflict`" — the row taken
+	// once the rebase-repair is spent is the fresh-retry, so the fault is the
+	// product's and the breaker never sees it.
+	const conflict = exhaustionOf(routeOutcome("integrate", "rebase-conflict").thereafter);
 	assert.equal(conflict.reason_class, "rebase-conflict");
 	assert.equal(conflict.fault, "repair");
 });
 
 test("a row that charges no budget cannot be asked for one", () => {
 	assert.equal(refusal(() => exhaustionOf(routeOutcome("implement", "completed"))).reason, "outcome-unmapped");
+	// #194: the rebase-repair charges nothing, so it has nothing to exhaust — its
+	// bound is the `thereafter` row, and asking it for a budget is the same
+	// question asked of a row that never retries.
+	assert.equal(refusal(() => exhaustionOf(routeOutcome("verify", "rebase-conflict"))).reason, "outcome-unmapped");
 });
 
 // ── §8.6: no counter exists that is not compared to a bound ──────────────────

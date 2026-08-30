@@ -426,14 +426,15 @@ question is which rows have become the module's job to state, not what the ceili
   which is also what lets the git probes recompute a worktree path from an effect key alone. —
   `git/attempt.mjs`, `git/probes.mjs` · §2.1
 - **§7.4's harvest predicates are typed verdicts** — a dirty worktree names its leftovers and is
-  never auto-committed. — `git/harvest.mjs` · §7.4
+  never auto-committed; a rebase-repair's commits-ahead is read against the merge-base with the
+  base it rebased onto, never its own base. — `git/harvest.mjs` · §7.4
 - **`git-isolation` fails closed on `.gitmodules` or LFS attributes read from the fetched base
   tree**, never from the checkout. — `git/isolation.mjs` · §7.8
 - **Nothing force-updates anything, and nothing resolves a conflict.** — `git/integrate.mjs`
 - **The integration worktree is detached** and the branch is moved onto the rebased result by
   `update-ref` naming the value it replaces — a compare-and-swap. — `git/integrate.mjs` · §4.6
-- **A conflicting rebase is aborted**, reported with the paths read off the index because git's
-  prose is localized, and left to §8.5's fresh-retry. — `git/integrate.mjs` · §8.5
+- **A conflicting rebase is aborted**, reported with the paths read off the index (git's prose is
+  localized), and handed to §8.5's rebase-repair, then fresh-retry. — `git/integrate.mjs` · §8.5
 - **§7.4's integration-side predicates are commits-ahead, `git diff --check`, and §7.3's
   correlation trailer on every commit**, matched on run and ticket rather than on the attempt.
   They need no worktree. — `git/integrate.mjs` · §7.3, §7.4
@@ -547,11 +548,13 @@ question is which rows have become the module's job to state, not what the ceili
 - **§8.6's budgets are counted, never incremented**: a spend is a count of the `stage.resolved`
   records that charged that budget, read back from the journal. — `pipeline/budgets.mjs` · §8.6
 - **`BUDGET_KEY_FOR_ACTION` is the whole relationship between §8.10's Action column and §11.6's
-  three numbers**; the suite asserts the spending rows and the budget-column rows are the same
-  set, both directions, and greps the shipped tree for the legacy counter names. —
+  three numbers**; the spending rows and the budget-column rows are one set, both directions. —
   `pipeline/budgets.mjs` · §8.10, §11.6
 - **The budget is asked in `walkStages` before the seam and never inside it.** —
   `pipeline/stages.mjs` · §8.6
+- **`rebase-repair` spends nothing; its bound is §8.10's `thereafter` row**, taken once a
+  `stage.resolved` record of this ticket execution has already routed to it, and read off the
+  record on re-entry. — `pipeline/table.mjs`, `resolveStage` in `pipeline/stages.mjs` · §8.10
 - **Budget exhaustion is a disposition rather than a crash** — a throw only because §8.4's
   fan-out spends inside a phase executor. — `pipeline/budgets.mjs` · §8.4
 - **An automation retry mints an attempt only where there is a worker to run again.** —
@@ -563,8 +566,6 @@ question is which rows have become the module's job to state, not what the ceili
   the walk re-enters them under the attempt it is already on, at the next **try** — the fifth slot
   of `(run, ticket, phase, attempt, try)`. — `pipeline/stages.mjs` · §8.10
 - **The walking attempt is always a builder attempt.** — `pipeline/stages.mjs` · §8.5
-- **`retried()`'s loop guard refuses a seam that answers with the attempt it was handed.** —
-  `pipeline/stages.mjs`
 - **The review phase fans out from the controller**: two read-only attempts, each with its own
   entry skill, outbox, attempt identity, and **its own worktree at the reviewed commit**. —
   `pipeline/review.mjs` · §7.3, §8.4
@@ -642,10 +643,9 @@ question is which rows have become the module's job to state, not what the ceili
 - **Fed evidence is selected from policy plus the verify record** and resolved through the
   artifact ledger — never from a caller-supplied string; a reference the ledger cannot answer is
   a sentence naming the digest, never a throw. — `pipeline/feeds.mjs` · §8.2, §8.7, §12.5
-- **One check-evidence record, one trust boundary**: the record is built in `checks/evidence.mjs`
-  and rendered by field selection, digest-labelled beneath a controller-owned heading that marks
-  output as data, not instructions; the generic verify fact of a repair prompt carries the
-  required set alone. — `worker/prompt.mjs`, `factDetail` in `pipeline/repair.mjs` · §8.2, §8.5
+- **One evidence record, one trust boundary**: `checks/evidence.mjs` builds it, `worker/prompt.mjs`
+  renders it under a heading marking output as data, not instructions; a repair's verify fact
+  carries the required set alone. — `factDetail` in `pipeline/repair.mjs` · §8.2, §8.5
 - **Fault attribution lives in one function**: a required check exiting inside its declared
   expected-failure codes is the worker's failure; a timeout, a signal, a missing exec, or any
   other code is `unrunnable` — an automation failure. — `checks/run.mjs` · §8.2
