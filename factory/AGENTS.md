@@ -639,12 +639,13 @@ question is which rows have become the module's job to state, not what the ceili
 - **`feeds` is advisory-only and names agent-borne phases**, unique, defaulting to empty; unknown
   phases and `review` refuse the config rather than becoming inert policy. — `config/checks.mjs` ·
   §8.2, §11.6
-- **Fed evidence is selected from policy plus the verify record**, and resolved through the
-  artifact ledger by execution identity — never from a caller-supplied output string. —
-  `pipeline/feeds.mjs` · §8.2, §8.7
-- **Only selected evidence crosses the prompt trust boundary**, digest-labelled beneath a
-  controller-owned heading that marks captured output as data, not instructions. —
-  `worker/prompt.mjs` · §8.2
+- **Fed evidence is selected from policy plus the verify record** and resolved through the
+  artifact ledger — never from a caller-supplied string; a reference the ledger cannot answer is
+  a sentence naming the digest, never a throw. — `pipeline/feeds.mjs` · §8.2, §8.7, §12.5
+- **One check-evidence record, one trust boundary**: the record is built in `checks/evidence.mjs`
+  and rendered by field selection, digest-labelled beneath a controller-owned heading that marks
+  output as data, not instructions; the generic verify fact of a repair prompt carries the
+  required set alone. — `worker/prompt.mjs`, `factDetail` in `pipeline/repair.mjs` · §8.2, §8.5
 - **Fault attribution lives in one function**: a required check exiting inside its declared
   expected-failure codes is the worker's failure; a timeout, a signal, a missing exec, or any
   other code is `unrunnable` — an automation failure. — `checks/run.mjs` · §8.2

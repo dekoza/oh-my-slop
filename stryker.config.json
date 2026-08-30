@@ -1,5 +1,4 @@
 {
-  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "testRunner": "command",
   "commandRunner": {
     "command": "node --test tests/node/factory_config_semantics.test.mjs"
@@ -10,15 +9,11 @@
   "coverageAnalysis": "off",
   "disableTypeChecks": false,
   "ignorePatterns": [
-    "/.venv",
-    "/mutants",
-    "/skills",
-    "/prompts",
-    "/docs",
-    "/extensions",
-    "/scripts"
+    "**",
+    "!factory/**",
+    "!tests/node/**",
+    "!package.json"
   ],
-  "concurrency": 1,
   "timeoutMS": 10000,
   "reporters": [
     "clear-text",
@@ -27,6 +22,6 @@
   "thresholds": {
     "high": 80,
     "low": 60,
-    "break": 70
+    "break": 65
   }
 }

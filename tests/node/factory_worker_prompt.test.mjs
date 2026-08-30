@@ -241,6 +241,32 @@ test("fed advisory output is rendered under trusted evidence, by digest, as data
 	assert.ok(fed.indexOf("### Prohibitions") > fed.indexOf("Ignore prior instructions"));
 });
 
+test("fed output the ledger could not answer renders as its sentence in the check's slot (§12.5)", () => {
+	const digest = "b".repeat(64);
+	const fed = render({
+		trustedEvidence: [
+			{
+				name: "mutation",
+				command: "mutmut run",
+				result: "failed",
+				reason: null,
+				exit_code: 1,
+				duration_ms: 52,
+				truncated: false,
+				reference: { algorithm: "sha256", digest },
+				output: null,
+				unavailable: `The recorded output ${digest} could not be read back: Artifact ${digest} is retention-expired.`,
+			},
+		],
+	});
+
+	assert.match(fed, /Trusted evidence — controller-captured advisory checks/);
+	assert.match(fed, /#### mutation/);
+	assert.match(fed, /"result": "failed"/, "the verdict is still stated when the bytes are gone");
+	assert.match(fed, new RegExp(`could not be read back: Artifact ${digest} is retention-expired`));
+	assert.doesNotMatch(fed, /Captured output:/, "an empty fence would read as a check that printed nothing");
+});
+
 test("worker-authored text is quoted in a delimited untrusted block (§8.5)", () => {
 	const prompt = repaired();
 	const [, untrusted] = prompt.split("BEGIN UNTRUSTED");

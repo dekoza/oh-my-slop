@@ -1,4 +1,5 @@
 import { readArtifact } from "../artifacts/ledger.mjs";
+import { checkEvidence } from "../checks/evidence.mjs";
 import { PHASE_VERIFY } from "../domain/vocabulary.mjs";
 import { stageResults } from "./stages.mjs";
 
@@ -17,14 +18,23 @@ import { stageResults } from "./stages.mjs";
  * phase to the shared agent-borne vocabulary; config validation and this reader
  * need no hard-coded knowledge of it.
  *
+ * **Absence is a sentence, never a throw.** A fed check whose verify record
+ * carries no reference, or whose blob the ledger can no longer answer — expired
+ * at §12.2's horizon on a long-idle run, tombstoned, missing, or failing its
+ * re-hash — still reaches the prompt, with `output: null` and an `unavailable`
+ * sentence naming the digest and the reason. Evidence that is absent is not a
+ * production failure, so `FactoryArtifactError` stays out of the lane's
+ * failure set and nothing here escapes a repair launch (§12.5).
+ *
  * @param {object} store an open store
  * @param {object} where
  * @param {string} where.run
  * @param {number} where.ticket
  * @param {string} where.phase the agent-borne phase whose prompt is being built
  * @param {ReadonlyArray<object>} where.checks the validated check declarations
- * @returns {ReadonlyArray<Readonly<object>>} captured controller facts, in
- *   declaration order, with output bytes decoded as the declared text media type
+ * @returns {ReadonlyArray<Readonly<import("../checks/evidence.mjs").CheckEvidence>>}
+ *   captured controller facts, in declaration order, with output bytes decoded
+ *   as the declared text media type
  */
 export function fedCheckEvidence(store, { run, ticket, phase, checks }) {
 	const selected = checks.filter((check) => check.severity === "advisory" && check.feeds.includes(phase));
@@ -37,21 +47,27 @@ export function fedCheckEvidence(store, { run, ticket, phase, checks }) {
 	return Object.freeze(
 		selected.flatMap((declaration) => {
 			const check = recorded.get(declaration.name);
-			if (check?.output === null || check?.output === undefined) return [];
-
-			return [
-				Object.freeze({
-					name: check.name,
-					command: check.command,
-					result: check.result,
-					reason: check.reason,
-					exit_code: check.exit_code,
-					duration_ms: check.duration_ms,
-					truncated: check.truncated,
-					reference: Object.freeze({ ...check.output }),
-					output: readArtifact(store, check.output).toString("utf8"),
-				}),
-			];
+			if (check === undefined) return [];
+			return [checkEvidence(check, outputOf(store, check))];
 		}),
 	);
+}
+
+/** The bytes, or the reason there are none — in the prompt's own voice. */
+function outputOf(store, check) {
+	if (check.output === null || check.output === undefined) {
+		return {
+			output: null,
+			unavailable: "This check's output was not recorded as an artifact, so there is nothing to quote here.",
+		};
+	}
+
+	try {
+		return { output: readArtifact(store, check.output).toString("utf8"), unavailable: null };
+	} catch (error) {
+		return {
+			output: null,
+			unavailable: `The recorded output ${check.output.digest} could not be read back: ${error.message}`,
+		};
+	}
 }
