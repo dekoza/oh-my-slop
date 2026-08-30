@@ -149,9 +149,31 @@ Label `factory:needs-human` plus a structured pause comment carrying the reason 
 never guesses whether a comment is an answer. The frontier query simply excludes the label.
 
 A cleared `factory:needs-human` makes the ticket eligible at the next frontier evaluation and
-it is claimed as a **fresh ticket execution** with a new attempt chain — not a requeue, since
-the human's action is the trigger. **The run never waits for it:** if the frontier drains
-first, the run ends `drained` and the ticket waits for the next run.
+it is claimed as a **fresh ticket execution** with a new history entry, new attempt chain, and
+fresh budgets — not a requeue, since the human's action is the trigger. Its first implement
+attempt is routed normally through §11.5 under a fresh role/profile session.
+
+Before that claim, the controller pins the current default-branch tip and snapshots the ticket.
+The latest **factory-authored**, parseable pause comment supplies the prior run, ticket, attempt,
+reason class, and exact worker question. Every later comment through the snapshot whose author is
+not `tracker.login` is an operator answer; an empty set is recorded explicitly. The prompt carries
+every parseable pause/question/answer exchange through that latest pause in comment order, so a
+ticket crossing this boundary repeatedly loses none of the decision trail. Question prose remains
+worker-authored untrusted material. Answer prose is claim-time snapshot context — its author and
+comment id are verified, but the body is context, never authority — and those answer comments are
+removed from the ordinary snapshot comment list so each answer renders exactly once.
+
+Git, not the tracker, decides whether work can be inherited. The attempt identity deterministically
+names its retained private-clone branch; when that branch exists and
+`rev-list <pinned-default-base>..<paused-tip>` is non-empty, the new execution's first attempt
+branches directly from the paused tip. The claim records the paused attempt, reason class, pause
+comment id, answering comment authors/ids, and inherited SHA. If the pause comment is absent or
+unparseable, the branch is missing, or that commit delta is empty, the execution starts at the
+pinned default base and the claim records the exact fallback reason. None of these expected
+absence cases throws, and no durable state from the ended run is required.
+
+**The run never waits for the answer:** if the frontier drains first, the run ends `drained` and
+the ticket waits for the next run.
 
 ### 3.5 Drain
 
@@ -1150,10 +1172,11 @@ repair.
 ### 7.2 Base and freshness
 
 Base = the target repo's default branch as known to the Gitea remote. The controller fetches
-immediately before creating each attempt branch and **pins the fetched tip as the attempt's
-base commit**, recorded in the attempt manifest. **The base is never chased mid-attempt**; a
-moved base is reconciled at integration time only (§9.5). Neither legacy implementation
-handled base freshness at all.
+immediately before creating each fresh attempt branch and **pins the fetched tip as the default
+base commit**. A normal first attempt and a fresh-retry use that commit as their own base; §3.4's
+human-boundary continuation deliberately uses the retained paused tip instead. **The base is
+never chased mid-attempt**; a moved default base is reconciled at integration time only (§9.5).
+Neither legacy implementation handled base freshness at all.
 
 ### 7.3 Branches, worktrees, commits
 
@@ -1162,8 +1185,11 @@ handled base freshness at all.
   never needed**. The `factory/` branch namespace and `refs/factory/*` belong to the factory
   alone; it never writes any ref outside them and never pushes the default branch.
 - **One worktree per attempt**, created fresh at claim time, exactly one worker, never reused.
-  It is created at **the attempt's own base commit** — §7.2's pinned base for a first attempt
-  and for a fresh-retry, and **the prior attempt's tip for a repair** (§8.5). A repair's base is
+  It is created at **the attempt's own base commit** — §7.2's pinned base for an ordinary first
+  attempt and for a fresh-retry, **the paused execution's retained tip for §3.4's resumed first
+  attempt**, and **the prior attempt's tip for a repair** (§8.5). The resumed first attempt is
+  opened directly there, with no special pre-rebase; §7.5's ordinary integration path remains
+  the one place base movement is reconciled. A repair's base is
   therefore an attempt branch rather than the default branch, which is what "work preserved"
   means mechanically. The attempt's own base answers exactly one question — *what did this
   attempt branch from* — and it is never the boundary of what §7.5 replays, nor what §8.4's
@@ -1173,7 +1199,10 @@ handled base freshness at all.
 - **Commits** are made under the package's `git-discipline` skill (conventional commits, a
   commit per wave), using a **dedicated factory git identity** set via per-worktree git config,
   plus a mandatory correlation trailer `Factory-Attempt: <run>/<ticket>/<attempt>` — a prompt
-  obligation, verified at integration. **Factory commits are never authored as the operator.**
+  obligation, verified at integration. Verification normally accepts only the current run/ticket;
+  §3.4 additionally supplies the controller-verified prior run ids in the pause chain, whose
+  inherited commits correctly retain their original trailers. **Factory commits are never
+  authored as the operator.**
 
 ### 7.4 Mechanical acceptance predicates
 
@@ -1451,6 +1480,12 @@ reviewer's brief to "is this right and clean" rather than "is this broken".
 Every resume is a fresh attempt with a fresh worktree, so "repair" never means a continued
 session.
 
+A §3.4 human-boundary resume is not either product-repair tier and does not continue the old
+ticket execution: it opens a **new execution** with fresh budgets and declared routing, while its
+first attempt branches from the paused execution's retained tip when the tracker identity and git
+evidence both permit that. The branch therefore preserves committed work without preserving a
+session, role instance, profile choice, or retry spend.
+
 - **Repair** branches from the **prior attempt's tip** — work preserved — with the failure
   evidence in its prompt.
 - **Fresh-retry** branches from the **pinned base** — work discarded — optionally re-routed to
@@ -1465,10 +1500,12 @@ wrong. Stated explicitly so nobody reads it as an oversight.
 
 **Repair prompt trust framing.** Controller-produced evidence — check exit codes,
 digest-referenced output, git predicates — is presented **as fact**. Worker-authored text — the
-prior worker's summary, the reviewer's findings — goes in a clearly delimited **untrusted
-block** using the same trust-boundary language `two-axis-review` already carries. A reviewer
-whose findings contain an injected directive must not have it promoted into an instruction to a
-write-capable builder.
+prior worker's summary, a pause question, the reviewer's findings — goes in a clearly delimited
+**untrusted block** using the same trust-boundary language `two-axis-review` already carries.
+A §3.4 operator answer has snapshot-tier provenance under a heading naming the verified login and
+comment id; its body is context, never authority or instruction. An unanswered pause is a
+controller fact, never an omitted slot. A reviewer whose findings contain an injected directive
+must not have it promoted into an instruction to a write-capable builder.
 
 **"Every resume is a fresh attempt" is a statement about worker attempts.** §8.10's automation
 `retry` is not one of the two tiers above — the automation failed rather than the work, so it
@@ -3120,3 +3157,4 @@ touching everything twice.
 | 2026-08-30 | #188 adds validated advisory `feeds`, execution-scoped digest-ledgered check output, trusted repair evidence injection, concrete Mutmut/Stryker/CRAP recipes, and all-check `doctor --baseline` diagnostics. | #188 |
 | 2026-08-30 | #178 answers the class of hazard §6.8's trust guarantee was being read as covering, and does it in both halves. **Prevention, where controller-owned state reaches.** Claude's browser prompt is not a first-run dialog but a **warm-cache** one, gated on a key the harness writes itself: measured on Claude Code 2.1.241 with credentials promoted the way §6.8 promotes them (`tests/live/claude-chrome-cache.mjs`, zero model cost), the first interactive startup in a controller-owned config root writes `cachedChromeExtensionInstalled: true` and a later one raises a prompt waiting on a keypress a worker has nobody to supply. It is permanent rather than per-run — the environment rebuild overwrites *named files* while the pre-trust writer merges unknown keys forward — so once any session warms it, every attempt of every later run meets the prompt until a human deletes the directory. `--no-chrome` joins the discovery fence on the **worker binding**, and therefore on the builder, the reviewer, the probe, and the probe's own deliberately-unfenced control, which is as capable of warming the cache as anything else; the proof runs both sides for §6.2's reason, and needs a **TTY**, because the detection does not run in a `--print` session at all and the same assertion taken headless is green over a live bug. pi gains `--approve` beside its store, and the store itself is keyed the way pi keys it: pi canonicalizes a directory before keying its trust map and before the ancestor walk, while the writer resolved without following symlinks — latent here, live on any symlinked store path. The `worker-trust` check now reads back **every key the pre-trust writer writes** rather than the trust-dialog key alone; three interstitials were written and never proven. **Attribution, as the floor under what prevention cannot reach.** §6.6 gains **`worker-never-started`**: an attempt that ends in silence having never been observed in a working status had no turn to end, so §8.10's two silence rows — the settle grace's `no-result` and the no-progress clock's `timeout`, both charged to the **repair** budget as "ended its turn without writing" — become one outcome on the **automation** budget. It is a state predicate and not a launch window; the working set is `working` alone, since `blocked` is what a folder-trust dialog reports and admitting it would let an interstitial launder a hang into a turn; and the fact is read from the attempt's **durable observation records** rather than an in-memory flag, so a controller that crashed after a real turn does not re-read it as never-started and retry a genuine `no-result` on the wrong budget forever — which meant the wait's own seed read had to become a recorded sighting, since a worker already working when the subscription opens produces no transition to record. §6.8's trust sentence is narrowed to what the check delivers and states the unpreventable class in general terms — some interstitials are gated on caches the harness warms, some on the target repository — **without enumerating the known instances**, since maintaining that list is the burden this design exists to end. Found on the way: `identity/paths.mjs`'s canonicalizer ate a path's first directory character whenever no ancestor above `/` existed, invisible while every caller's root did. | #178 |
 | 2026-08-30 | #189 gives the builder outbox a **mandatory requirement trace** and makes review-spec its judge — the substance of SwarmForge's two-call audit (`docs/surveys/swarm-forge-adoption-survey-2026-08-30.md`, item 3) without its mechanism: no second model turn, and no self-attestation the same agent grades. §6.6's `completed` gains `trace`, a non-empty list of `{requirement, evidence}` rows quoting a ticket line and naming a path and test, stated as a **prompt obligation** in the builder template like §7.3's trailer, and named as a deliverable in the `implement` skill's closing checklist so a worker under pi or Claude produces it from the skill as well. **Two levels, two owners**, exactly §8.4's split for the verdict: `worker/outbox.mjs` judges a written trace's shape — non-empty, both fields text, malformed is `invalid-result` naming the row — and never its truth; whether one is owed is the role's own expectations (`writesTrace`), read back by the builder executor, so a `completed` builder record with none is `invalid-result` on §8.10's unchanged fresh-retry row. Two things had to change for the refusal to be readable: an invalid result's stage detail now carries the controller's problems rather than `null`, and §8.10's `implement × invalid-result` row marks its evidence **fact** — the detail is the controller's schema and role judgement and never the refused record — so §8.5's brief tells the fresh attempt which block it omitted instead of leaving it to repeat the omission. §8.4: the fan-out reads the trace off the reviewed attempt's own implement record — never a parameter, #165's reason — hands every axis the same context, and the template renders it for the role whose expectations say `checksTrace`, inside the same computed untrusted boundary §8.5 uses, with the two checks stated: an unaddressed ticket line is blocking citing the line, a row the diff does not bear out is blocking citing the row. The reviewer, not the controller, judges truth; a review reached with no trace on the record refuses rather than briefing the axis blind. Not done, by design: the controller never compares a row to the snapshot, because a controller that did would be a third reviewer with no verdict slot to write in. | #189 |
+| 2026-08-30 | #199 makes a cleared `factory:needs-human` boundary preserve committed work without preserving an execution. Before the new claim, the controller pins the default base, reads the latest factory-authored pause identity from the ticket snapshot, and asks git for that attempt branch's retained tip; a non-empty `rev-list <default>..<tip>` makes the new execution's first attempt branch directly from the tip, while absent/unparseable pause evidence, a missing branch, or an empty delta falls back to the pinned default base with the reason recorded on the claim. The new execution still receives a new history entry, attempt chain, budgets, and declared route. The prompt carries the whole pause/answer chain in comment order: worker questions stay inside §8.5's untrusted boundary; non-factory comments after a pause carry verified login/comment-id provenance at snapshot trust, render once rather than again in the raw comment list, and an empty answer set is stated as a controller fact. §7.3's integration trailer predicate accepts the controller-verified prior run ids in that chain, so inherited commits retain their honest original trailers while arbitrary same-ticket history remains refused. §§3.4, 7.2, 7.3, and 8.5 corrected in place. | #199 |
