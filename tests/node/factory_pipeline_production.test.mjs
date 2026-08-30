@@ -258,6 +258,52 @@ test("a repair re-enters through nextAttempt and publishes the repairing builder
 	assert.match(tracker.pulls[0].head.ref, /\/a.*-a2$/);
 });
 
+test("a verify-fed advisory check reaches the repair prompt and an unfed check does not (§8.2, §8.5)", async (t) => {
+	const config = cloneValidConfig();
+	config.checks = [
+		{
+			name: "reject-first-attempt",
+			command: "! grep -q -- '-a1' implemented.txt",
+			timeout: 30,
+			severity: "required",
+			expectedFailureExitCodes: [1],
+		},
+		{
+			name: "mutation",
+			command: "echo 'survivor from mutation'",
+			timeout: 30,
+			severity: "advisory",
+			expectedFailureExitCodes: [1],
+			feeds: ["implement"],
+		},
+		{
+			name: "browser",
+			command: "node -e 'console.log(Buffer.from(\"dW5mZWQgYnJvd3NlciBvdXRwdXQ=\", \"base64\").toString())'",
+			timeout: 30,
+			severity: "advisory",
+			expectedFailureExitCodes: [1],
+		},
+	];
+	const prompts = [];
+	const turn = workerTurn();
+
+	const { answer } = await runProduction(t, {
+		config,
+		turn: async (input) => {
+			if (input.pane.env.FACTORY_PHASE === "implement") prompts.push(input.text);
+			return turn(input);
+		},
+	});
+
+	assert.equal(answer.report.execution.members[0].disposition, "published");
+	assert.equal(prompts.length, 2, "the failing verify did not route through a repair attempt");
+	assert.doesNotMatch(prompts[0], /Trusted evidence/);
+	assert.match(prompts[1], /Trusted evidence — controller-captured advisory checks/);
+	assert.match(prompts[1], /survivor from mutation/);
+	assert.doesNotMatch(prompts[1], /unfed browser output/);
+	assert.doesNotMatch(prompts[1], /\"name\": \"browser\"/, "an unfed advisory check still appeared in repair facts");
+});
+
 test("an exhausted builder failure reaches a durable failed disposition instead of escaping the claimed lane (#147, §8.10)", async (t) => {
 	const { answer, tracker } = await runProduction(t, {
 		turn: workerTurn({ builderStatuses: ["worker-failed", "worker-failed"] }),

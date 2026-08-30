@@ -647,7 +647,7 @@ export function repairBrief({ tier, prior, phase, outcome, detail = null, row, p
 
 	if (detail !== null && row.evidence === EVIDENCE_TRUST.fact) {
 		const { producer, label } = FACT_PRODUCERS[phase] ?? { producer: "controller", label: "detail" };
-		facts.push({ producer, label, value: detail });
+		facts.push({ producer, label, value: factDetail(phase, detail) });
 	}
 
 	if (detail !== null && row.evidence === EVIDENCE_TRUST.untrusted) {
@@ -673,6 +673,17 @@ export function repairBrief({ tier, prior, phase, outcome, detail = null, row, p
 		facts: Object.freeze(facts.map((fact) => Object.freeze(fact))),
 		untrusted: Object.freeze(untrusted.map((entry) => Object.freeze(entry))),
 	});
+}
+
+/**
+ * A verify repair always needs the required failure that routed it. Advisory
+ * check records reach a prompt only through their explicit `feeds` declaration,
+ * resolved by `pipeline/feeds.mjs`; leaving them in this generic fact would make
+ * an unfed check appear anyway and turn the declaration into decoration.
+ */
+function factDetail(phase, detail) {
+	if (phase !== PHASE_VERIFY || !Array.isArray(detail?.checks)) return detail;
+	return { ...detail, checks: detail.checks.filter((check) => check.severity === "required") };
 }
 
 /** Untrusted material reaches the prompt as text, whatever shape it arrived in. */

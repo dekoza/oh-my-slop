@@ -72,11 +72,13 @@ export async function harvestPhase(clone, { worktreePath, branch, baseCommit }) 
  * the verdict, which is what "never block" means.
  *
  * @param {ReadonlyArray<object>} declared the validated `checks` block (§11.6)
- * @param {{ cwd: string, env?: object, now?: () => number }} where the
- *   controller-owned verification worktree the set runs in
+ * @param {{ cwd: string, env?: object, now?: () => number,
+ *   record?: (results: ReadonlyArray<object>) => ReadonlyArray<object> }} where the
+ *   controller-owned verification worktree the set runs in. `record` is the
+ *   controller's artifact writer; tests and read-only callers may omit it.
  * @returns {Promise<Readonly<{ outcome: string, detail: Readonly<object> }>>}
  */
-export async function verifyPhase(declared, { cwd, env, now }) {
+export async function verifyPhase(declared, { cwd, env, now, record = (results) => results.map((result) => checkRecord(result)) }) {
 	const run = await runChecks(declared, {
 		select: CHECK_SELECTIONS.all,
 		cwd,
@@ -84,6 +86,7 @@ export async function verifyPhase(declared, { cwd, env, now }) {
 		...(now === undefined ? {} : { now }),
 	});
 
+	const records = await record(run.results);
 	const required = run.results.filter((result) => result.severity === "required");
 	const unrunnable = required.filter((result) => result.result === CHECK_RESULTS.unrunnable);
 	const failed = required.filter((result) => result.result === CHECK_RESULTS.failed);
@@ -97,7 +100,7 @@ export async function verifyPhase(declared, { cwd, env, now }) {
 		// store, referenced by digest (§8.7, §12.1), and this detail rides into an
 		// event payload.
 		detail: Object.freeze({
-			checks: Object.freeze(run.results.map((result) => checkRecord(result))),
+			checks: Object.freeze([...records]),
 			red: Object.freeze([...run.red]),
 			unrunnable: Object.freeze(unrunnable.map((result) => result.name)),
 			skipped: Object.freeze([...run.skipped]),
