@@ -2384,7 +2384,8 @@ Stryker copies the tree into a sandbox per worker and this repository is mostly 
 `.venv` it cannot copy. There is no `concurrency` cap, because none was measured to be needed,
 and no `$schema`, because nothing installs the package it would point at. **Measured on the
 reference host** (16 cores, Node 22.23.2, Stryker 10.0.0, 2026-08-30): 129 mutants, 68.22 %
-killed, **41 s wall clock including the `npx` fetch**, against the declared 900 s timeout; the
+killed (a same-day re-run: 68.99 %), **40–41 s wall clock including the `npx` fetch**, against
+the declared 900 s timeout; the
 shape #195 shipped — a deny-list and `concurrency: 1` — had measured 8 m 54 s and ended under
 its own `break`. `thresholds.break` is **65, at or below that baseline**: a break set above the
 measured score turns an advisory recipe into one that is red on every run, which is noise

@@ -1,3 +1,4 @@
+import { FactoryArtifactError } from "../artifacts/errors.mjs";
 import { readArtifact } from "../artifacts/ledger.mjs";
 import { checkEvidence } from "../checks/evidence.mjs";
 import { PHASE_VERIFY } from "../domain/vocabulary.mjs";
@@ -65,6 +66,10 @@ function outputOf(store, check) {
 	try {
 		return { output: readArtifact(store, check.output).toString("utf8"), unavailable: null };
 	} catch (error) {
+		// Only the ledger's own answers — unknown, expired, missing, re-hash failed
+		// — are absence. An I/O or store failure underneath is a host fault, and a
+		// sentence in a prompt would hide it.
+		if (!(error instanceof FactoryArtifactError)) throw error;
 		return {
 			output: null,
 			unavailable: `The recorded output ${check.output.digest} could not be read back: ${error.message}`,

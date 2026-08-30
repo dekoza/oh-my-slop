@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 
 import { tombstoneArtifact } from "../../factory/lib/artifacts/ledger.mjs";
@@ -138,6 +140,20 @@ test("a blob expired at §12.2's horizon between verify and the repair launch is
 	assert.ok(entry.unavailable.includes(where.record.output.digest));
 	assert.match(entry.unavailable, /retention-expired/);
 	assert.deepEqual(entry.reference, where.record.output, "the reference is still cited so the reader can name what is gone");
+});
+
+test("only the ledger's own answers become sentences — an I/O failure under the blob still propagates", async (t) => {
+	const where = await verifiedWith(t, "2 mutants survived\n");
+	where.resolved([where.record]);
+
+	// A blob that is a directory is not "gone" and not "expired": reading it is a
+	// host fault (EISDIR), and a sentence in a prompt would hide a broken store.
+	const { algorithm, digest } = where.record.output;
+	const blob = join(where.store.storeDir, "artifacts", algorithm, digest.slice(0, 2), digest);
+	rmSync(blob);
+	mkdirSync(blob);
+
+	assert.throws(() => fed(where.store, where), { code: "EISDIR" });
 });
 
 test("output a verify recorded without a reference says so instead of vanishing from the prompt", async (t) => {

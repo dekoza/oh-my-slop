@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { checkEvidence } from "../../factory/lib/checks/evidence.mjs";
 import { validateRole } from "../../factory/lib/worker/adapter.mjs";
 import { NO_MID_ATTEMPT_APPROVALS } from "../../factory/lib/worker/permissions.mjs";
 import { nativeInvocation, PROHIBITIONS, renderAttemptPrompt } from "../../factory/lib/worker/prompt.mjs";
@@ -243,20 +244,23 @@ test("fed advisory output is rendered under trusted evidence, by digest, as data
 
 test("fed output the ledger could not answer renders as its sentence in the check's slot (§12.5)", () => {
 	const digest = "b".repeat(64);
+	const record = {
+		name: "mutation",
+		command: "mutmut run",
+		result: "failed",
+		reason: null,
+		exit_code: 1,
+		duration_ms: 52,
+		truncated: false,
+		output: { algorithm: "sha256", digest },
+	};
+	assert.throws(() => checkEvidence(record, { output: null, unavailable: null }), TypeError);
 	const fed = render({
 		trustedEvidence: [
-			{
-				name: "mutation",
-				command: "mutmut run",
-				result: "failed",
-				reason: null,
-				exit_code: 1,
-				duration_ms: 52,
-				truncated: false,
-				reference: { algorithm: "sha256", digest },
+			checkEvidence(record, {
 				output: null,
 				unavailable: `The recorded output ${digest} could not be read back: Artifact ${digest} is retention-expired.`,
-			},
+			}),
 		],
 	});
 
