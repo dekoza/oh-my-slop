@@ -16,7 +16,14 @@ import { HELD_REASONS, planExpiry } from "../retention/expiry.mjs";
 import { PINS } from "../retention/pins.mjs";
 import { resolveStorePaths } from "../state/location.mjs";
 import { FactoryTrackerError } from "../tracker/errors.mjs";
-import { emptyScopeDiagnosis, isEmptyParentScope, readScope } from "../tracker/frontier.mjs";
+import {
+	emptyScopeDiagnosis,
+	humanSinks,
+	isEmptyParentScope,
+	noSinkWarning,
+	readScope,
+} from "../tracker/frontier.mjs";
+import { SCOPE_FORMS } from "../controller/scope.mjs";
 import { isDue, readCursor } from "../tracker/observation.mjs";
 
 /**
@@ -134,7 +141,27 @@ export async function doctorReport(
 	};
 
 	const alarms = alarmsOf(value);
-	return Object.freeze({ ...value, alarms, ok: alarms.length === 0 });
+	return Object.freeze({ ...value, alarms, warnings: warningsOf(value), ok: alarms.length === 0 });
+}
+
+/**
+ * #183: what the operator should know that fails nothing. A parent-scoped
+ * selector with no sink is the one so far — the scope will go quiet when it
+ * drains — and it is a warning rather than an alarm because a parent scoped by
+ * hand may legitimately have none.
+ */
+function warningsOf(value) {
+	const warnings = [];
+	if (
+		value.scope.requested &&
+		value.scope.ok === true &&
+		value.scope.selector.kind === SCOPE_FORMS.parent &&
+		value.scope.sinks.length === 0
+	) {
+		const { reason, message, details } = noSinkWarning({ scope: value.scope.selector });
+		warnings.push(Object.freeze({ reason, message, detail: details }));
+	}
+	return Object.freeze(warnings);
 }
 
 /**
@@ -338,6 +365,9 @@ async function scopeSection(store, { scope, resolvedFrom = null, tracker, at }) 
 			ok: true,
 			error: null,
 			candidates: resolved.candidates,
+			// #183: the `ready-for-human` members, by name — where a drained scope
+			// asks the operator to look.
+			sinks: humanSinks(resolved),
 			counts: resolved.counts,
 			// §3.2's order, so the operator reads the frontier in the order a run
 			// would take it.

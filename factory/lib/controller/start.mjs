@@ -38,7 +38,14 @@ import { attemptIdOf, mintedAttemptBranches } from "../worker/attempt.mjs";
 import { createAdoptionProbe } from "../worker/adoption.mjs";
 import { settleUnadoptable } from "../worker/lifecycle.mjs";
 import { applyDisposition } from "../tracker/disposition.mjs";
-import { emptyScopeDiagnosis, isEmptyParentScope, readScope } from "../tracker/frontier.mjs";
+import {
+	emptyScopeDiagnosis,
+	humanSinks,
+	isEmptyParentScope,
+	MEMBER_CLASSES,
+	noSinkWarning,
+	readScope,
+} from "../tracker/frontier.mjs";
 import { createGiteaReader } from "../tracker/gitea.mjs";
 import { resolveMapScope } from "./map-scope.mjs";
 import { SCOPE_FORMS } from "./scope.mjs";
@@ -350,12 +357,18 @@ async function driveRun(store, hold, context, signals) {
 	// The read happens only when this run would read a live frontier at all: a
 	// run with nothing to execute reads none (§3.3), and a tracker asked on its
 	// behalf would be a read with no consumer.
+	//
+	// #183 rides the same read: a parent with no `ready-for-human` member is a
+	// scope that will go quiet when it drains. A warning on the report and the
+	// start line, never a refusal — a parent scoped by hand may have none.
+	const warnings = [];
 	if (entry.scope.kind === SCOPE_FORMS.parent && readsLiveFrontier(context)) {
 		const view = await readScope(context.tracker, entry.scope, { at: startedAt });
 		if (isEmptyParentScope(view)) {
 			const { reason, message, details } = emptyScopeDiagnosis(view);
 			return refusal(new FactoryRunError(reason, message, details));
 		}
+		if (humanSinks(view).length === 0) warnings.push(noSinkWarning(view));
 	}
 
 	// An adopted run's row already exists, so a loss from here on may name it. A
@@ -578,6 +591,12 @@ async function driveRun(store, hold, context, signals) {
 				resolved_from: context.resolvedFrom ?? null,
 			},
 			reconcile: reconcileReport(reconciled),
+			// #183: what the operator should know that stopped nothing. Always
+			// present, so a `--json` consumer reads an empty list rather than a
+			// field that sometimes exists.
+			warnings: Object.freeze(
+				warnings.map((warning) => Object.freeze({ reason: warning.reason, message: warning.message, ...warning.details })),
+			),
 			expiry,
 			// §12.8's sixth target kind, reported rather than assumed: whether this
 			// run's controller pane carries the mark that makes it reclaimable, and
@@ -1421,8 +1440,51 @@ function headline(report) {
 			? ""
 			: `#${report.scope.resolved_from.ticket} carries ${report.scope.resolved_from.label}, so its members were the scope: `;
 
-	return (
+	const sentence =
 		`${resolved}run ${report.run} over ${report.scope.described} ended ${ended}, ` +
-		`having claimed ${report.execution.claimed} tickets${scope}.`
+		`having claimed ${report.execution.claimed} tickets${scope}.`;
+
+	return `${sinkLead(report)}${sentence}${sinkTail(report)}${warningTail(report)}`;
+}
+
+/**
+ * #183: the sinks — `ready-for-human` members — are where a drained scope asks
+ * the operator to look, so the report reads in the order they must act: a
+ * delivered scope leads with the sink; one with answers still owed names those
+ * first and the sink last.
+ */
+function sinksOf(report) {
+	return report.execution.members.filter((member) => member.frontier_class === MEMBER_CLASSES.humanOwned);
+}
+
+function owedFirst(report) {
+	return report.execution.members.filter(
+		(member) => member.class === MEMBER_CLASSES.needsHuman || member.class === MEMBER_CLASSES.failed,
 	);
+}
+
+function describeSink(sink) {
+	return `${sink.title} (#${sink.ticket})`;
+}
+
+/** "Delivered." only when every member that is not a sink is closed. */
+function sinkLead(report) {
+	const sinks = sinksOf(report);
+	if (sinks.length === 0 || report.execution.drained !== true) return "";
+	const delivered = report.execution.members.every(
+		(member) => member.class === MEMBER_CLASSES.closed || member.frontier_class === MEMBER_CLASSES.humanOwned,
+	);
+	return delivered ? `Delivered. Waiting on you: ${sinks.map(describeSink).join(", ")}. ` : "";
+}
+
+function sinkTail(report) {
+	const sinks = sinksOf(report);
+	if (sinks.length === 0 || sinkLead(report) !== "") return "";
+	const first = owedFirst(report);
+	const owed = first.length === 0 ? "" : ` Still on you first: ${first.map((member) => `#${member.ticket} (${member.class})`).join(", ")};`;
+	return `${owed} waiting on you last: ${sinks.map(describeSink).join(", ")}.`;
+}
+
+function warningTail(report) {
+	return (report.warnings ?? []).map((warning) => ` Warning: ${warning.message}`).join("");
 }

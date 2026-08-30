@@ -196,6 +196,43 @@ export function isEmptyParentScope(view) {
 }
 
 /**
+ * #183: the scope's **sinks** — the members a human owes an answer on, which is
+ * what `ready-for-human` means (§3.2). A map's `to-tickets` run ends in one, the
+ * review ticket blocked by everything else, so that a delivered scope always
+ * has somewhere it asks the operator to look. A parent-scoped run with none
+ * would simply go quiet when it drains, and both `start` and `doctor` say so.
+ *
+ * @param {{ members: readonly object[] }} view a `readScope` answer
+ * @returns {ReadonlyArray<{ ticket: number, title: string, html_url: string | null }>}
+ */
+export function humanSinks(view) {
+	return Object.freeze(
+		view.members
+			.filter((member) => member.class === MEMBER_CLASSES.humanOwned)
+			.map((member) => Object.freeze({ ticket: member.ticket, title: member.title, html_url: member.html_url ?? null })),
+	);
+}
+
+/**
+ * #183's warning, in one place for `start` and `doctor`: a parent-scoped
+ * selector with no sink. A warning and never a refusal — a parent someone
+ * scoped by hand may legitimately have none, and refusing would block the run
+ * the operator asked for.
+ *
+ * @param {{ scope: { parent: number } }} view a `readScope` answer
+ * @returns {Readonly<{ reason: string, message: string, details: object }>}
+ */
+export function noSinkWarning(view) {
+	return Object.freeze({
+		reason: "no-human-sink",
+		message:
+			`Parent #${view.scope.parent} has no ${FACTORY_LABELS.readyForHuman} member: when this scope drains, ` +
+			"nothing will ask for your review. `to-tickets` ends every map in one (#183).",
+		details: Object.freeze({ parent: view.scope.parent, label: FACTORY_LABELS.readyForHuman, spec: "§3.2" }),
+	});
+}
+
+/**
  * The one sentence both `start`'s refusal and `doctor`'s alarm carry for an
  * empty parent, naming the three things an operator can fix: the parent, the
  * label the candidates came from, and the line a candidate must open with.
