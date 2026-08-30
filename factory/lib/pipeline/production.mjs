@@ -29,6 +29,7 @@ import { reviewPhase } from "./review.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 import { walkStages } from "./stages.mjs";
 import { reviewAutomationRetry } from "./budgets.mjs";
+import { planTicketContinuation } from "./resume.mjs";
 
 /**
  * #147's production composition of §8.1.
@@ -56,9 +57,25 @@ export function createProductionPipeline(store, context) {
 	const retryPlans = new Map();
 	const adapters = workerAdapters({ herdr, socket, now, worker });
 
-	return async function productionPipeline(lane) {
+	return Object.freeze({ prepare: prepareExecution, execute: productionPipeline });
+
+	async function prepareExecution({ ticket }) {
+		// Pin immediately before the decision (§7.2), then snapshot immediately
+		// before the claim. The resulting object is the one value used by the claim,
+		// mint, and prompt; none of those layers re-derive #199's answer.
+		const base = await clone.fetchBase({ baseBranch: config.git.baseBranch });
+		const ticketSnapshot = await snapshotTicket(tracker, ticket);
+		return planTicketContinuation({
+			clone,
+			baseCommit: base.commit,
+			ticketSnapshot,
+			trackerLogin: config.tracker.login,
+		});
+	}
+
+	async function productionPipeline(lane) {
 		return withAttemptBranches(lane, await settled(lane));
-	};
+	}
 
 	async function settled(lane) {
 		try {
@@ -107,8 +124,15 @@ export function createProductionPipeline(store, context) {
 	}
 
 	async function executeProduction(lane) {
-		const { ticket, attempt, slots, capacity, route } = lane;
-		const ticketSnapshot = await snapshotTicket(tracker, ticket);
+		const { ticket, attempt, slots, capacity, route, preparation } = lane;
+		if (preparation === null || preparation === undefined) {
+			throw new FactoryPipelineError(
+				"phase-unwired",
+				`Ticket ${ticket}'s production lane reached attempt ${attempt} without its pre-claim continuation plan (#199).`,
+				{ at: "continuation", ticket, attempt },
+			);
+		}
+		const ticketSnapshot = preparation.ticketSnapshot;
 		const labels = ticketSnapshot.labels;
 		// §11.5's dispatch for this ticket is the scheduler's, made before the
 		// claim and against the memo, and it is what the ticket slot and the
@@ -124,10 +148,12 @@ export function createProductionPipeline(store, context) {
 			ticket,
 			attempt,
 			route: initialRoute,
-			baseBranch: config.git.baseBranch,
+			baseCommit: preparation.baseCommit,
 			workerConfig: worker.environment,
 			now,
 		});
+
+		if (preparation.brief !== null) retryPlans.set(attempt, Object.freeze({ brief: preparation.brief }));
 
 		const common = {
 			store,
@@ -149,6 +175,7 @@ export function createProductionPipeline(store, context) {
 			capacity,
 			initialAttempt: attempt,
 			initialModelSlot: slots.model,
+			acceptedRuns: preparation.acceptedRuns,
 		};
 
 		const nextAttempt = createRetrySeam(store, clone, {
@@ -469,6 +496,7 @@ function integrationContext(context, { run, ticket, attempt, opened }) {
 		checks: context.config.checks,
 		reader: context.tracker,
 		writer: context.trackerWriter,
+		acceptedRuns: context.acceptedRuns,
 		actor: "controller",
 		now: context.now,
 	};
@@ -523,7 +551,7 @@ function requireLaneRoute(route, { ticket, attempt }) {
 	);
 }
 
-async function openInitialAttempt({ store, clone, hold, run, ticket, attempt, route, baseBranch, workerConfig, now }) {
+async function openInitialAttempt({ store, clone, hold, run, ticket, attempt, route, baseCommit, workerConfig, now }) {
 	const purpose = { initial: true };
 	const allocated = allocateAttempt(store, { run, ticket, purpose });
 	if (allocated.attempt !== attempt) {
@@ -534,14 +562,13 @@ async function openInitialAttempt({ store, clone, hold, run, ticket, attempt, ro
 		);
 	}
 	const identity = requireAttemptIdentity({ run, ticket, phase: PHASE_IMPLEMENT, attempt });
-	const base = await clone.fetchBase({ baseBranch });
 	mintAttempt(store, {
 		hold,
 		identity,
 		role: PHASE_IMPLEMENT,
 		profile: route.profile,
 		routing: route,
-		baseCommit: base.commit,
+		baseCommit,
 		purpose,
 		at: now(),
 	});
@@ -551,7 +578,7 @@ async function openInitialAttempt({ store, clone, hold, run, ticket, attempt, ro
 		ticket,
 		attempt,
 		phase: PHASE_IMPLEMENT,
-		baseCommit: base.commit,
+		baseCommit,
 		workerConfig,
 		actor: "controller",
 		at: now(),

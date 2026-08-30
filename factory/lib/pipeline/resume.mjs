@@ -97,6 +97,7 @@ export async function planTicketContinuation({ clone, baseCommit, ticketSnapshot
 	return Object.freeze({
 		kind: "resume",
 		baseCommit: head,
+		acceptedRuns: Object.freeze([...new Set(pauses.map((pause) => pause.block.identity.run))]),
 		ticketSnapshot: filteredSnapshot,
 		claim: Object.freeze({
 			kind: "resume",
@@ -134,6 +135,7 @@ function freshPlan({ baseCommit, ticketSnapshot, code, message }) {
 	return Object.freeze({
 		kind: "fresh",
 		baseCommit,
+		acceptedRuns: Object.freeze([]),
 		ticketSnapshot,
 		claim: Object.freeze({
 			kind: "fresh",
