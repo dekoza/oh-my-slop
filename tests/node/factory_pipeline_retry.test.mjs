@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
 import { createRetrySeam } from "../../factory/lib/pipeline/retry.mjs";
+import { budgetSpend } from "../../factory/lib/pipeline/budgets.mjs";
 import { outcomeChain, resolveStage, walkStages } from "../../factory/lib/pipeline/stages.mjs";
 import { routeOutcome } from "../../factory/lib/pipeline/table.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
@@ -349,4 +350,180 @@ test("a walk wired with this seam repairs a failed verify under a new attempt (�
 		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).map((step) => step.phase),
 		["implement", "harvest", "verify", "implement", "harvest", "verify", "review", "integrate"],
 	);
+});
+
+// ── #194: a rebase conflict is a rebase-repair before any fresh-retry ────────
+
+/** A rebase conflict's detail, as `pipeline/integration.mjs` records one, over this fixture's base. */
+function conflicting(context) {
+	return {
+		outcome: "rebase-conflict",
+		detail: {
+			base_commit: context.base.commit,
+			previous_base: context.base.commit,
+			head: context.head,
+			conflicts: ["docs/specs/software-factory.md"],
+			base_movement: " docs/specs/software-factory.md | 1 +\n 1 file changed, 1 insertion(+)",
+			evidence_ref: null,
+			worktree: "/nowhere",
+		},
+	};
+}
+
+/** The spend, read the way §8.6 reads it. */
+function spendOf(context) {
+	return budgetSpend(context.store, { run: context.run, ticket: context.ticket });
+}
+
+test("#194: conflict → rebase-repair → green verify → review → integrated, with all three counts unchanged", async (t) => {
+	const context = await executing(t);
+	const { phases, calls } = answeringInTurn({
+		implement: ["completed"],
+		harvest: ["passed"],
+		verify: [conflicting(context), "passed"],
+		review: ["approved"],
+		integrate: [PUBLICATION],
+	});
+
+	const settled = await context.walk(phases, {
+		nextAttempt: context.nextAttempt,
+		budgets: { repair: 0, freshRetry: 0, automation: 0 },
+	});
+
+	assert.equal(settled.disposition, "published");
+	assert.deepEqual(spendOf(context), { repair: 0, freshRetry: 0, automation: 0 }, "a rebase-repair charges nothing");
+	assert.deepEqual(
+		context.asked.map((request) => request.tier),
+		["rebase-repair"],
+		"the seam was asked for the tier once, and for no fresh-retry",
+	);
+	const implementations = calls.filter((call) => call.phase === "implement").map((call) => call.attempt);
+	assert.equal(implementations.length, 2, "a tier's subject is the work, so it re-enters implement");
+	assert.notEqual(implementations[1], context.attempt);
+	assert.deepEqual(
+		outcomeChain(context.store, { run: context.run, ticket: context.ticket }).map((step) => [step.phase, step.outcome]),
+		[
+			["implement", "completed"],
+			["harvest", "passed"],
+			["verify", "rebase-conflict"],
+			["implement", "completed"],
+			["harvest", "passed"],
+			["verify", "passed"],
+			["review", "approved"],
+			["integrate", "integrated"],
+		],
+	);
+
+	// The mint says why the attempt exists — and onto what it was told to rebase
+	// — so §7.4's harvest can read the boundary off it later.
+	const minted = context.store
+		.readEvents({ stream: `run:${context.run}`, kind: "attempt.launched" })
+		.find((record) => record.attempt === implementations[1]);
+	assert.equal(minted.payload.tier, "rebase-repair");
+	assert.equal(minted.payload.prior_attempt, context.attempt);
+	assert.equal(minted.payload.onto, context.base.commit);
+	assert.equal(minted.payload.base_commit, context.head, "the branch starts at the tip that would not replay");
+	// And the base commit is in the worker's reach from its own worktree.
+	execFileSync("git", ["-C", minted.payload.worktree, "cat-file", "-e", `${context.base.commit}^{commit}`]);
+});
+
+test("#194: a second conflict is the fresh-retry as today, and a third is failed / rebase-conflict — bound read from the journal", async (t) => {
+	const context = await executing(t, {
+		selectRoute: async () => ({ declared: "big-builder", profile: "big-builder", class: "local", rerouted: false, reason: null, considered: [] }),
+	});
+	const { phases } = answeringInTurn({
+		implement: ["completed"],
+		harvest: ["passed"],
+		verify: [conflicting(context)],
+	});
+
+	const settled = await context.walk(phases, {
+		nextAttempt: context.nextAttempt,
+		budgets: { repair: 1, freshRetry: 1, automation: 1 },
+	});
+
+	assert.equal(settled.disposition, "failed");
+	assert.equal(settled.reason_class, "rebase-conflict");
+	assert.equal(settled.fault, "repair", "the third conflict exhausted the product budget, as before #194");
+	assert.deepEqual(context.asked.map((request) => request.tier), ["rebase-repair", "fresh-retry"]);
+	// §8.6 counts resolutions, and the refused third one is itself a charge —
+	// two fresh-retry resolutions against a bound of one. The rebase-repair
+	// resolution is not among them.
+	assert.deepEqual(spendOf(context), { repair: 0, freshRetry: 2, automation: 0 });
+	// The record says what the controller did each time, so an operator reading
+	// the journal sees the bound being spent without re-deriving it.
+	const conflicts = context.store
+		.readEvents({ stream: `run:${context.run}`, kind: "stage.resolved" })
+		.filter((record) => record.phase === "verify")
+		.map((record) => [record.payload.action, record.payload.budget]);
+	assert.deepEqual(conflicts, [
+		["rebase-repair", null],
+		["fresh-retry", "repair"],
+		["fresh-retry", "repair"],
+	]);
+});
+
+test("#194: a rebase-repair whose rebased result is red routes verify × failed → repair, as today", async (t) => {
+	const context = await executing(t);
+	const { phases } = answeringInTurn({
+		implement: ["completed"],
+		harvest: ["passed"],
+		verify: [conflicting(context), { outcome: "failed", detail: { red: ["unit"] } }, "passed"],
+		review: ["approved"],
+		integrate: [PUBLICATION],
+	});
+
+	const settled = await context.walk(phases, {
+		nextAttempt: context.nextAttempt,
+		budgets: { repair: 1, freshRetry: 0, automation: 0 },
+	});
+
+	assert.equal(settled.disposition, "published");
+	assert.deepEqual(context.asked.map((request) => request.tier), ["rebase-repair", "repair"], "nothing new is trusted");
+	assert.deepEqual(spendOf(context), { repair: 1, freshRetry: 0, automation: 0 });
+});
+
+test("#194: a rebase-repair that ends needs-human pauses the ticket with the worker's reason class, as any attempt does", async (t) => {
+	const context = await executing(t);
+	const { phases } = answeringInTurn({
+		implement: [
+			"completed",
+			{
+				outcome: "needs-human",
+				detail: { reason_class: "spec-contradiction", question: "The base now forbids the approach the ticket asks for; which wins?" },
+			},
+		],
+		harvest: ["passed"],
+		verify: [conflicting(context)],
+	});
+
+	const settled = await context.walk(phases, { nextAttempt: context.nextAttempt });
+
+	assert.equal(settled.disposition, "paused");
+	assert.equal(settled.reason_class, "spec-contradiction");
+	assert.match(settled.question, /which wins/);
+	assert.deepEqual(context.asked.map((request) => request.tier), ["rebase-repair"]);
+});
+
+test("#194: a re-entry reads the row it recorded, not the row the journal would now route to", async (t) => {
+	const context = await executing(t);
+	const resolving = {
+		hold: context.hold,
+		run: context.run,
+		ticket: context.ticket,
+		phase: "verify",
+		attempt: context.attempt,
+		...conflicting(context),
+		actor: "controller",
+		at: FIXED_NOW,
+	};
+	const first = resolveStage(context.store, resolving);
+	assert.equal(first.row.action, "rebase-repair");
+
+	// The same semantic key, resolved again — a controller that died between the
+	// resolution and the mint. The journal now holds one rebase-repair, and a
+	// naive re-read would answer fresh-retry for a record that says otherwise.
+	const again = resolveStage(context.store, resolving);
+	assert.equal(again.state, "already-resolved");
+	assert.equal(again.row.action, "rebase-repair", "the recorded action is the answer on re-entry");
 });

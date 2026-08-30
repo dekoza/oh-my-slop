@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -11,6 +12,7 @@ import { FACTORY_ATTEMPT_TOKEN } from "../../factory/lib/controller/herdr-contro
 import { FOREGROUND_FLAG } from "../../factory/lib/controller/launch.mjs";
 import { runStart } from "../../factory/lib/controller/start.mjs";
 import { privateClonePath } from "../../factory/lib/git/isolation.mjs";
+import { budgetSpend } from "../../factory/lib/pipeline/budgets.mjs";
 import { builderResult } from "../../factory/lib/pipeline/production.mjs";
 import { PIPELINE_ROLES } from "../../factory/lib/worker/roles.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
@@ -18,7 +20,7 @@ import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { workerConfigRoots } from "../../factory/lib/worker/environment.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
-import { cloneValidConfig, makeRepo } from "./helpers/factory-repo.mjs";
+import { cloneValidConfig, makeRemote, makeRepo } from "./helpers/factory-repo.mjs";
 import { makeAgentDir, makeHome, herdrAnswering } from "./helpers/factory-store.mjs";
 import { dispositionBlockIn as blockIn, fakeGitea, giteaIssue } from "./helpers/factory-tracker.mjs";
 import { fakeHerdr, workerTransportsAnswering } from "./helpers/factory-worker.mjs";
@@ -147,11 +149,17 @@ async function runProduction(
 		// visible at all: §9.8's memo is class-scoped, and the class is the provider
 		// segment of the model id (§9.1).
 		models = undefined,
+		// The remote's seed tree, for a fixture whose conflict needs a file that
+		// exists at the base (#194).
+		remoteFiles = undefined,
 	} = {},
 ) {
 	const packageRoot = makePackage(t);
 	const executable = join(packageRoot, "factory", "bin", "factory.mjs");
-	const repoRoot = makeRepo(t, config === undefined ? {} : { config });
+	const repoRoot = makeRepo(t, {
+		...(config === undefined ? {} : { config }),
+		...(remoteFiles === undefined ? {} : { remotes: { gitea: makeRemote(t, { files: remoteFiles }) } }),
+	});
 	const agentDir = makeAgentDir(t);
 	const env = { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" };
 	const loaded = loadFactoryConfig({ cwd: repoRoot });
@@ -359,6 +367,125 @@ test("a repair re-enters through nextAttempt and publishes the repairing builder
 
 	assert.equal(answer.report.execution.members[0].disposition, "published");
 	assert.match(tracker.pulls[0].head.ref, /\/a.*-a2$/);
+});
+
+// ── #194: the #188/#178 case — two lanes append a row at one table position ──
+
+const LOG_HEADER = "| Date | Change | By |\n|---|---|---|\n| 2026-08-30 | the seed row | #0 |\n";
+const HUMAN_ROW = "| 2026-08-30 | #178 answers the hazard | #178 |\n";
+const ATTEMPT_ROW = "| 2026-08-30 | #188 adds validated feeds | #188 |\n";
+
+/**
+ * #194's builder. Its first turn appends a row to the log and — while it runs —
+ * a human merges the other lane's row at the same position, so the controller's
+ * rebase cannot replay the attempt. Its second turn is the rebase-repair: it
+ * reads the base commit off its prompt, rebases, keeps both rows, and ends
+ * `completed`. Every other role is the ordinary fixture worker's.
+ */
+function conflictingTurn({ prompts }) {
+	const plain = workerTurn({ prompts });
+	let builderTurn = 0;
+	return async (call) => {
+		const { pane, text } = call;
+		const identity = pane.env;
+		if (identity.FACTORY_PHASE !== "implement") return plain(call);
+		prompts.push({ phase: identity.FACTORY_PHASE, attempt: identity.FACTORY_ATTEMPT, text });
+		const turn = builderTurn++;
+		const log = join(pane.cwd, "docs", "log.md");
+		const trailer = `Factory-Attempt: ${identity.FACTORY_RUN}/${identity.FACTORY_TICKET}/${identity.FACTORY_ATTEMPT}`;
+
+		if (turn === 0) {
+			writeFileSync(log, LOG_HEADER + ATTEMPT_ROW, "utf8");
+			git(pane.cwd, "add", "docs/log.md");
+			git(pane.cwd, "commit", "--quiet", "--message", `docs: add the #188 log row\n\n${trailer}`);
+
+			// The human merge, landing on the remote the worktree fetches from.
+			const remote = git(pane.cwd, "remote", "get-url", "origin");
+			const mover = join(tmpdir(), `factory-mover-${identity.FACTORY_ATTEMPT}`);
+			execFileSync("git", ["clone", "--quiet", remote, mover]);
+			writeFileSync(join(mover, "docs", "log.md"), LOG_HEADER + HUMAN_ROW, "utf8");
+			git(mover, "add", "docs/log.md");
+			git(mover, "-c", "user.name=Human", "-c", "user.email=human@example.invalid", "commit", "--quiet", "-m", "docs: add the #178 log row");
+			git(mover, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+			rmSync(mover, { recursive: true, force: true });
+		} else {
+			assert.match(text, /This attempt is a \*\*rebase-repair\*\*/, "the second builder turn is the rebase-repair");
+			const onto = /git rebase ([0-9a-f]{40})/.exec(text)?.[1];
+			assert.ok(onto, "the prompt names the base commit to rebase onto");
+			let conflicted = false;
+			try {
+				execFileSync("git", ["-C", pane.cwd, "rebase", "--quiet", onto], { stdio: "pipe" });
+			} catch {
+				conflicted = true;
+			}
+			assert.equal(conflicted, true, "the worker meets the conflict the controller could not resolve");
+			assert.equal(git(pane.cwd, "diff", "--name-only", "--diff-filter=U"), "docs/log.md");
+			writeFileSync(log, LOG_HEADER + HUMAN_ROW + ATTEMPT_ROW, "utf8");
+			git(pane.cwd, "add", "docs/log.md");
+			git(pane.cwd, "-c", "core.editor=true", "rebase", "--continue");
+		}
+
+		const result = {
+			schema_version: 1,
+			status: "completed",
+			run: identity.FACTORY_RUN,
+			ticket: Number(identity.FACTORY_TICKET),
+			phase: identity.FACTORY_PHASE,
+			attempt: identity.FACTORY_ATTEMPT,
+			summary: turn === 0 ? "appended the #188 log row" : "rebased onto the moved base and kept both rows",
+			commits: [git(pane.cwd, "rev-parse", "HEAD")],
+			trace: [{ requirement: "feat: production pipeline", evidence: "docs/log.md" }],
+		};
+		writeFileSync(identity.FACTORY_OUTBOX, `${JSON.stringify(result)}\n`, "utf8");
+	};
+}
+
+test("#194: two lanes appending a row at one table position integrate with one rebase-repair and no product budget spent", async (t) => {
+	const prompts = [];
+	const { answer, tracker, repoRoot, agentDir, loaded } = await runProduction(t, {
+		turn: conflictingTurn({ prompts }),
+		remoteFiles: { "README.md": "seed\n", "docs/log.md": LOG_HEADER },
+	});
+
+	assert.equal(
+		answer.report.execution.members[0].disposition,
+		"published",
+		JSON.stringify({ member: answer.report.execution.members[0], comments: tracker.comments }, null, 2),
+	);
+	assert.match(tracker.pulls[0].head.ref, /-a2$/, "the rebase-repair's branch is what was published");
+
+	// The chain: one conflict, one rebase-repair, then green — and nothing spent.
+	const store = await openStore({ repoRoot, agentDir });
+	t.after(() => store.close());
+	const resolved = store.readEvents({ kind: "stage.resolved" });
+	assert.deepEqual(
+		resolved.filter((record) => record.phase === "verify").map((record) => [record.payload.outcome, record.payload.action]),
+		[
+			["rebase-conflict", "rebase-repair"],
+			["passed", "advance"],
+		],
+	);
+	assert.deepEqual(budgetSpend(store, { run: resolved[0].run, ticket: 147 }), { repair: 0, freshRetry: 0, automation: 0 });
+	// §7.4 under the tier: the human's commit is on the branch now, and is not
+	// counted as the worker's.
+	assert.deepEqual(
+		resolved.filter((record) => record.phase === "harvest").map((record) => record.payload.detail.commits_ahead),
+		[1, 1],
+	);
+
+	// The rebase-repair was told which file conflicted and how the base moved.
+	const briefed = prompts.find((prompt) => /rebase-repair\*\*/.test(prompt.text));
+	assert.match(briefed.text, /"conflicts": \[\s*"docs\/log\.md"\s*\]/);
+	assert.match(briefed.text, /docs\/log\.md \|/, "the base movement's --stat names the path");
+	assert.match(briefed.text, /appended the #188 log row/, "the prior worker's summary rides in the untrusted block");
+
+	// What landed is both rows, in the order a human keeping both would leave.
+	const published = execFileSync(
+		"git",
+		["-C", loaded.remote.url, "show", `refs/heads/${tracker.pulls[0].head.ref}:docs/log.md`],
+		{ encoding: "utf8" },
+	);
+	assert.equal(published, LOG_HEADER + HUMAN_ROW + ATTEMPT_ROW);
 });
 
 test("a verify-fed advisory check reaches the repair prompt and an unfed check does not (§8.2, §8.5)", async (t) => {

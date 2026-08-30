@@ -376,7 +376,7 @@ function trustedEvidenceSection(entries) {
 }
 
 /** What the tier means for the branch the worker has been given (§8.5, §7.3). */
-function tierSentences({ tier, prior, phase, outcome }) {
+function tierSentences({ tier, prior, phase, outcome, facts }) {
 	const opening =
 		`This attempt is a **${tier}** (§8.5). The attempt before it, \`${prior.attempt}\`, ended at ` +
 		`\`${phase}\` with the outcome \`${outcome}\`.`;
@@ -388,6 +388,35 @@ function tierSentences({ tier, prior, phase, outcome }) {
 			"Your branch already carries that attempt's commits. Build on top of them, and do not",
 			"rewrite, amend, squash, drop, or cherry-pick anything already committed. The whole chain",
 			"reaches the pull request as it stands, because it is honest about what happened.",
+		];
+	}
+
+	if (tier === STAGE_ACTIONS.rebaseRepair) {
+		// #194: the base commit is read off the brief's own facts, so the command
+		// the worker is given and the fact block below it name one value.
+		const onto = facts.find((fact) => fact.label === "rebase")?.value?.base_commit ?? null;
+		if (typeof onto !== "string") {
+			throw new TypeError(
+				"a rebase-repair brief carries the base commit to rebase onto under its `rebase` fact (#194)",
+			);
+		}
+		return [
+			opening,
+			"",
+			"Your branch already carries that attempt's commits, and the base branch has moved under them:",
+			"the controller's own rebase of this branch onto the base commit below could not replay it, and",
+			"the controller resolves nothing itself. That rebase is yours to do.",
+			"",
+			"```",
+			`git rebase ${onto}`,
+			"```",
+			"",
+			"Rebase the branch onto that commit, resolve the conflicting paths named in the facts below, and",
+			"keep the ticket's intent — the base's own movement is shown there as the controller read it.",
+			"The rebase is the one rewrite you are permitted; beyond it, do not rewrite, amend, squash, drop,",
+			"or cherry-pick anything already committed. If the base movement invalidates the approach the",
+			"prior attempt took, either rewrite within this attempt or end `needs-human` saying so. What you",
+			"leave on the branch is verified, reviewed, and integrated as any attempt's work is.",
 		];
 	}
 

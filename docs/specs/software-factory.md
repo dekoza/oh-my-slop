@@ -1184,7 +1184,14 @@ Controller-enforced, and deliberately split by fault attribution:
   typed failure, never auto-committed — **and** its branch has **≥1 commit** ahead of **its own
   base** (§7.3). Read against the run's base instead, a repair that committed nothing would
   still be "ahead" by the commits the attempt before it made, and a worker that did nothing
-  would harvest as `completed`.
+  would harvest as `completed`. Under a **rebase-repair** (§8.5, #194) the boundary is instead
+  the **merge-base with the base commit the worker was told to rebase onto**: its own base is
+  the prior tip, which after a rebase is no ancestor at all, and `priorTip..branch` would count
+  the base's own movement as the worker's. The "did nothing" guard is deferred one phase for
+  this tier, deliberately: a rebase-repair that neither rebased nor committed is still ahead of
+  that merge-base by the prior attempt's commits and harvests, and verify's own rebase then
+  conflicts again — which §8.10's bound routes on, rather than a repair being minted to fix a
+  rebase nobody briefed it about.
 - **Integration-side (controller faults):** the branch passes `git diff --check`, and the
   pushed SHAs are exactly the verified branch's commits (ancestry and identity check).
 
@@ -1446,7 +1453,7 @@ whole chain by construction, and neither end of the diff is a value a caller can
 as evidence; **the reviewer only ever sees mechanically-passing code.** This sharpens the
 reviewer's brief to "is this right and clean" rather than "is this broken".
 
-### 8.5 Repair — two tiers
+### 8.5 Repair — three tiers
 
 Every resume is a fresh attempt with a fresh worktree, so "repair" never means a continued
 session.
@@ -1455,23 +1462,45 @@ session.
   evidence in its prompt.
 - **Fresh-retry** branches from the **pinned base** — work discarded — optionally re-routed to
   a different model.
+- **Rebase-repair** (#194) branches from the **prior attempt's tip** — work preserved — and is
+  told to **rebase it onto the base commit** the controller's own rebase could not replay it
+  onto, with the conflict facts in its prompt. It answers exactly one failure, §8.10's
+  `rebase-conflict`, keeps the profile that wrote the work, and charges nothing (§8.6).
 
-The two tiers answer different failures: a failing test is usually a small fix on top of good
-work, while a worker that flailed should not have its flailing inherited.
+The tiers answer different failures: a failing test is usually a small fix on top of good work;
+a worker that flailed should not have its flailing inherited; and a tip that conflicts textually
+with a base that moved says nothing yet about whether the work is invalid — the pipeline owns
+the mechanical answer to that (the required set at the rebased commit, then both review axes),
+and discarding the work before asking it was the defect #194 removed.
 
 **The repair chain reaches the PR unsquashed.** It is honest about what happened, and the
 alternative is the controller rewriting worker commits — a new class of thing for it to get
 wrong. Stated explicitly so nobody reads it as an oversight.
+
+**The rebase-repair is the one place a worker rewrites, and the controller still resolves
+nothing.** §8.10's rule — no model inside a controller phase — holds unchanged: the controller
+aborts its conflicting rebase and mints a builder attempt at the prior tip, with the base branch
+fetched into the private clone the worker's worktree shares, and the worker rebases, resolves,
+and keeps the ticket's intent. If the base movement invalidates the approach, it either rewrites
+within the attempt or ends `needs-human` saying so. The rebased result is then harvested (§7.4's
+merge-base reading), verified — a rebase that is now a no-op, up to date, or a second conflict —
+reviewed, and integrated as any attempt's work is: green means the work stood, red is the
+existing `verify × failed` path, and nothing new is trusted.
 
 **Repair prompt trust framing.** Controller-produced evidence — check exit codes,
 digest-referenced output, git predicates — is presented **as fact**. Worker-authored text — the
 prior worker's summary, the reviewer's findings — goes in a clearly delimited **untrusted
 block** using the same trust-boundary language `two-axis-review` already carries. A reviewer
 whose findings contain an injected directive must not have it promoted into an instruction to a
-write-capable builder.
+write-capable builder. A rebase conflict's facts — `base_commit`, `previous_base`, the
+conflicting paths, and `git diff --stat previous_base..base_commit` as the controller read it
+(the per-path list bounded by a code constant, the summary total never) —
+are controller-produced and reach **every** prompt the conflict produces as fact, the
+fresh-retry's included (#194); the prior worker's outbox summary rides in the untrusted block
+exactly as a repair's does.
 
 **"Every resume is a fresh attempt" is a statement about worker attempts.** §8.10's automation
-`retry` is not one of the two tiers above — the automation failed rather than the work, so it
+`retry` is not one of the tiers above — the automation failed rather than the work, so it
 rebuilds nothing and re-enters the phase it left — and what it mints depends on whether that
 phase has a worker:
 
@@ -1515,6 +1544,15 @@ read back from the journal, so the bound and the count are one expression and th
 counter to keep in step. That is also what makes the walk re-enterable: a controller that died
 between resolving a failing stage and minting the attempt its tier called for reads the same
 count back and grants the same retry.
+
+**A rebase-repair spends nothing, and is bounded anyway** (#194). Like §9.9's reroute, it is an
+action of its own rather than a retry with a null budget — the action→budget map is what makes
+an unbounded retry unconstructible — and its bound is §8.10's own row: a `rebase-conflict`
+routes to a rebase-repair only while no `stage.resolved` record of this ticket execution has
+already routed to one, read from the journal exactly as the counts above are; thereafter it
+routes as it did before #194 — fresh-retry on `freshRetry`, then `failed` / `rebase-conflict`.
+No number is declared for it (§11.6), and the repair count stays scoped to a red verify and a
+rejected review, which is what §8.5 scoped it to.
 
 - **Automation failures never consume the product budget** — the worker did not cause them.
 - **Reviewer-attempt failures consume the automation budget**, because a reviewer that crashed
@@ -1699,7 +1737,7 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | verify | `passed` | → review | — |
 | verify | `failed` | repair, check output presented as fact | repair |
 | verify | `unrunnable` | retry; exhausted ⇒ `failed` / `check-unrunnable` | automation |
-| verify | `rebase-conflict` | fresh-retry from the new base tip | repair |
+| verify | `rebase-conflict` | rebase-repair from the prior tip, conflict facts as fact (§8.5, #194); once per ticket execution, then fresh-retry from the new base tip; exhausted ⇒ `failed` / `rebase-conflict` | — · then repair |
 | review | reviewer attempt `completed` | take its verdict | — |
 | review | both axes `approved` | → integrate | — |
 | review | either axis `rejected` | repair, findings in the untrusted block | repair |
@@ -1711,7 +1749,7 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | review | reviewer attempt `cancelled` | `released` | — |
 | review | reviewer attempt `worker-failed` · `invalid-result` · `no-result` · `dead-worker` · `timeout` · `automation-failure` · `worker-never-started` | retry | automation |
 | integrate | `integrated` | `published` | — |
-| integrate | `rebase-conflict` | fresh-retry from the new base tip | repair |
+| integrate | `rebase-conflict` | rebase-repair from the prior tip, conflict facts as fact (§8.5, #194); once per ticket execution, then fresh-retry from the new base tip; exhausted ⇒ `failed` / `rebase-conflict` | — · then repair |
 | integrate | `predicate-failed` | `failed` / automation | — |
 | integrate | `push-failed` | retry | automation |
 | integrate | `integration-red` | `failed` / `integration-red` | — |
@@ -1751,12 +1789,18 @@ human removing the label is what makes the label mean "someone has acknowledged 
   `push-failed` is the honest row for it because no push was attempted and nothing about the
   work is implicated, and §8.10 retries it on the automation budget — a later pass may well
   find a quiet moment.
-- **A `rebase-conflict` consumes a fresh-retry, not a repair**, because the prior tip is
-  precisely what conflicts. A second conflict is `failed` / `rebase-conflict`, and **the
-  controller never attempts automatic resolution**, which would put a model inside a controller
-  phase. It appears under **two phases** because §9.5 puts a rebase in each: `verify` opens with
-  one, and `integrate`'s compare-and-publish loop redoes it when the base moved again. The row is
-  the same in both.
+- **A `rebase-conflict` is a rebase-repair first, and a fresh-retry only thereafter** (#194).
+  The prior tip is precisely what conflicts *textually*; whether the base movement invalidated
+  the work is the pipeline's question, answered at the rebased commit by the required set and
+  both review axes, and discarding the work before asking it charged the product budget for a
+  race the factory ran against itself. The rebase-repair is bounded at once per ticket
+  execution, read from the journal and charging nothing (§8.6); a second conflict is the
+  fresh-retry as before, and a third is `failed` / `rebase-conflict`. **The controller never
+  attempts automatic resolution**, which would put a model inside a controller phase — the model
+  that resolves is a builder attempt. It appears under **two phases** because §9.5 puts a rebase
+  in each: `verify` opens with one, and `integrate`'s compare-and-publish loop redoes it when the
+  base moved again. The row is the same in both, and every prompt either produces carries the
+  conflict facts.
 - **`wrote-but-hung` is not a failure.** The outbox is valid, so harvest it, stop the agent as
   routine shutdown, and record the anomaly.
 - **A `timeout` carries which clock fired (§6.6).** The two clocks share the one outcome word;
@@ -2388,7 +2432,9 @@ by hand.
 N — floor 1, and **no ceiling**, because it counts ticket executions rather than one ticket's
 retries), `retention.fullDetailRuns`=20,
 `retention.fullDetailDays`=30 (floor of 1 each), monitor `bind`=`127.0.0.1`, monitor `tls`
-absent = off.
+absent = off. **No number declares the rebase-repair's bound** (§8.6, #194): it is once per
+ticket execution, read from the journal, and a knob for it would be a fourth product number for
+a tier that charges nothing.
 
 **Required with no default:** everything in `tracker` and `git`; every profile's `kind` and
 `model`; all three routing roles; every check's five fields; both `concurrency` keys; monitor
@@ -3120,3 +3166,4 @@ touching everything twice.
 | 2026-08-30 | #188 adds validated advisory `feeds`, execution-scoped digest-ledgered check output, trusted repair evidence injection, concrete Mutmut/Stryker/CRAP recipes, and all-check `doctor --baseline` diagnostics. | #188 |
 | 2026-08-30 | #178 answers the class of hazard §6.8's trust guarantee was being read as covering, and does it in both halves. **Prevention, where controller-owned state reaches.** Claude's browser prompt is not a first-run dialog but a **warm-cache** one, gated on a key the harness writes itself: measured on Claude Code 2.1.241 with credentials promoted the way §6.8 promotes them (`tests/live/claude-chrome-cache.mjs`, zero model cost), the first interactive startup in a controller-owned config root writes `cachedChromeExtensionInstalled: true` and a later one raises a prompt waiting on a keypress a worker has nobody to supply. It is permanent rather than per-run — the environment rebuild overwrites *named files* while the pre-trust writer merges unknown keys forward — so once any session warms it, every attempt of every later run meets the prompt until a human deletes the directory. `--no-chrome` joins the discovery fence on the **worker binding**, and therefore on the builder, the reviewer, the probe, and the probe's own deliberately-unfenced control, which is as capable of warming the cache as anything else; the proof runs both sides for §6.2's reason, and needs a **TTY**, because the detection does not run in a `--print` session at all and the same assertion taken headless is green over a live bug. pi gains `--approve` beside its store, and the store itself is keyed the way pi keys it: pi canonicalizes a directory before keying its trust map and before the ancestor walk, while the writer resolved without following symlinks — latent here, live on any symlinked store path. The `worker-trust` check now reads back **every key the pre-trust writer writes** rather than the trust-dialog key alone; three interstitials were written and never proven. **Attribution, as the floor under what prevention cannot reach.** §6.6 gains **`worker-never-started`**: an attempt that ends in silence having never been observed in a working status had no turn to end, so §8.10's two silence rows — the settle grace's `no-result` and the no-progress clock's `timeout`, both charged to the **repair** budget as "ended its turn without writing" — become one outcome on the **automation** budget. It is a state predicate and not a launch window; the working set is `working` alone, since `blocked` is what a folder-trust dialog reports and admitting it would let an interstitial launder a hang into a turn; and the fact is read from the attempt's **durable observation records** rather than an in-memory flag, so a controller that crashed after a real turn does not re-read it as never-started and retry a genuine `no-result` on the wrong budget forever — which meant the wait's own seed read had to become a recorded sighting, since a worker already working when the subscription opens produces no transition to record. §6.8's trust sentence is narrowed to what the check delivers and states the unpreventable class in general terms — some interstitials are gated on caches the harness warms, some on the target repository — **without enumerating the known instances**, since maintaining that list is the burden this design exists to end. Found on the way: `identity/paths.mjs`'s canonicalizer ate a path's first directory character whenever no ancestor above `/` existed, invisible while every caller's root did. | #178 |
 | 2026-08-30 | #189 gives the builder outbox a **mandatory requirement trace** and makes review-spec its judge — the substance of SwarmForge's two-call audit (`docs/surveys/swarm-forge-adoption-survey-2026-08-30.md`, item 3) without its mechanism: no second model turn, and no self-attestation the same agent grades. §6.6's `completed` gains `trace`, a non-empty list of `{requirement, evidence}` rows quoting a ticket line and naming a path and test, stated as a **prompt obligation** in the builder template like §7.3's trailer, and named as a deliverable in the `implement` skill's closing checklist so a worker under pi or Claude produces it from the skill as well. **Two levels, two owners**, exactly §8.4's split for the verdict: `worker/outbox.mjs` judges a written trace's shape — non-empty, both fields text, malformed is `invalid-result` naming the row — and never its truth; whether one is owed is the role's own expectations (`writesTrace`), read back by the builder executor, so a `completed` builder record with none is `invalid-result` on §8.10's unchanged fresh-retry row. Two things had to change for the refusal to be readable: an invalid result's stage detail now carries the controller's problems rather than `null`, and §8.10's `implement × invalid-result` row marks its evidence **fact** — the detail is the controller's schema and role judgement and never the refused record — so §8.5's brief tells the fresh attempt which block it omitted instead of leaving it to repeat the omission. §8.4: the fan-out reads the trace off the reviewed attempt's own implement record — never a parameter, #165's reason — hands every axis the same context, and the template renders it for the role whose expectations say `checksTrace`, inside the same computed untrusted boundary §8.5 uses, with the two checks stated: an unaddressed ticket line is blocking citing the line, a row the diff does not bear out is blocking citing the row. The reviewer, not the controller, judges truth; a review reached with no trace on the record refuses rather than briefing the axis blind. Not done, by design: the controller never compares a row to the snapshot, because a controller that did would be a third reviewer with no verdict slot to write in. | #189 |
+| 2026-08-30 | #194 routes a **rebase conflict to a `rebase-repair` before any fresh-retry, spending no product budget**. Evidence: run 01M18SGJZJ9NGS2ENVEB9AMR3C discarded attempt …-t188-a1 — 1774 node + 885 pytest green, one hunk conflicting with the sibling lane's §20 row — and paid 58 minutes of pipeline for a marginally weaker replacement, because §8.10 conflated *the tip conflicts textually* with *the work is invalid*, and its fresh-retry budget of 1 made a conflict every #75 member is structurally guaranteed to meet a throughput failure. §8.5 gains a third tier: a builder attempt at the prior tip, with the base branch fetched into the worker's reach, briefed under the controller-verified heading with `base_commit`, `previous_base`, the conflict paths, and `git diff --stat previous_base..base_commit` as the controller read it, and with the prior outbox summary untrusted as a repair's is; the worker rebases, resolves, keeps the intent, or ends `needs-human`, and the result is harvested, verified, reviewed and integrated as any attempt's — nothing new is trusted, and the controller still resolves nothing. §8.6: it spends nothing and is bounded once per ticket execution, read from the journal as §9.9 bounds a reroute; §11.6 declares no number for it. §8.10's two `rebase-conflict` rows carry the bound as data — the row taken thereafter is the pre-#194 row unchanged — and the stated property is corrected; every prompt a conflict produces, the fresh-retry's included, carries the facts, which #110's "no fresh-retry row carries untrusted evidence" survives, since they are facts. §7.4's harvest predicate under the tier reads commits-ahead against the merge-base with the fetched base, since after a rebase the prior tip is no ancestor and the base's movement would count as the worker's. Found alongside: `pipeline/integration.mjs` promised an operator a conflict to `cd` into while `rebaseAttempt` had aborted it — the retained worktree is the attempt's tip plus the evidence ref, and `git rebase <base_commit>` is how to see what would not replay. | #194 |

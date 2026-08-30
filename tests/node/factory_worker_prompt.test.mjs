@@ -321,6 +321,61 @@ test("a repair is told to build on the prior commits, and a fresh-retry that it 
 	);
 });
 
+/** A rebase conflict's facts, as `pipeline/repair.mjs` briefs them (#194). */
+const REBASE_FACT = Object.freeze({
+	producer: "git",
+	label: "rebase",
+	value: {
+		base_commit: "b".repeat(40),
+		previous_base: "a".repeat(40),
+		head: "c".repeat(40),
+		conflicts: ["docs/specs/software-factory.md"],
+		base_movement: " docs/specs/software-factory.md | 1 +\n 1 file changed, 1 insertion(+)",
+		evidence_ref: null,
+		worktree: "/store/integration/a1",
+	},
+});
+
+test("#194: a rebase-repair is told to rebase onto the base commit, resolve, keep the intent — or say the approach no longer stands", () => {
+	const prompt = repaired({
+		tier: "rebase-repair",
+		phase: "verify",
+		outcome: "rebase-conflict",
+		facts: [{ producer: "controller", label: "tier", value: "rebase-repair" }, REBASE_FACT],
+		untrusted: [{ source: "the prior worker", label: "summary", text: "I appended the §20 row." }],
+	});
+
+	assert.match(prompt, /This attempt is a \*\*rebase-repair\*\*/);
+	assert.match(prompt, new RegExp(`git rebase ${"b".repeat(40)}`), "the base commit is named as the command to run");
+	assert.match(prompt, /resolve/i);
+	assert.match(prompt, /keep(s|ing)? the ticket's intent/i);
+	assert.match(prompt, /needs-human/, "a base movement that invalidates the approach is the worker's to say");
+	assert.match(prompt, /rewrite, amend, squash, drop,\s+or cherry-pick/, "the rebase is the one rewrite; nothing else is");
+	// The conflict facts sit under the controller-verified heading, and the prior
+	// worker's summary under the untrusted one — never the other way round.
+	const [, facts] = prompt.split("#### Controller-verified facts");
+	const [verified, untrusted] = facts.split("#### Untrusted material");
+	assert.match(verified, /"base_commit": "b{40}"/);
+	assert.match(verified, /"previous_base": "a{40}"/);
+	assert.match(verified, /"conflicts": \[\s*"docs\/specs\/software-factory.md"\s*\]/);
+	assert.match(verified, /1 file changed, 1 insertion/, "the base's own movement, as the controller read it");
+	assert.match(untrusted, /I appended the §20 row\./);
+});
+
+test("#194: a fresh-retry after a rebase conflict carries the same facts, and still starts from nothing", () => {
+	const prompt = repaired({
+		tier: "fresh-retry",
+		phase: "integrate",
+		outcome: "rebase-conflict",
+		facts: [{ producer: "controller", label: "tier", value: "fresh-retry" }, REBASE_FACT],
+		untrusted: [],
+	});
+
+	assert.match(prompt, /none of that attempt's work/);
+	assert.match(prompt, /"conflicts": \[\s*"docs\/specs\/software-factory.md"\s*\]/, "the new worker learns which file conflicted");
+	assert.doesNotMatch(prompt, /git rebase/, "there is nothing to rebase: the branch starts at the fresh pin");
+});
+
 // ── The completion protocol (§6.6), and where it may live (§6.4) ─────────────
 
 test("the completion protocol names the path, the schema, and the whole status set", () => {

@@ -178,13 +178,27 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
 
 	const rebased = await rebaseAttempt(clone, { worktreePath: opened.path, onto: fresh.commit });
 	if (rebased.result === REBASE_RESULTS.conflict) {
-		// The worktree is left where it is (§12.7): a conflict is exactly when an
-		// operator wants to `cd` in and see what would not replay.
+		// The worktree is retained (§12.7) **at the attempt's tip, not mid-conflict**:
+		// `rebaseAttempt` aborts a conflicting rebase, so what an operator finds
+		// here is a clean detached checkout of the head the worker left, with the
+		// pre-rebase head under `refs/factory/evidence/<attempt>`. To see what
+		// would not replay, `cd` in and run `git rebase <base_commit>` (#194).
 		return answer("rebase-conflict", {
 			base_commit: fresh.commit,
 			previous_base: rebased.previousBase,
 			head: rebased.head,
 			conflicts: rebased.conflicts,
+			// #194: the base's own movement, as the controller read it — what the
+			// rebase-repair and the fresh-retry after it are briefed with, under the
+			// fact heading. It rides the detail rather than the artifact store
+			// because it is the one line per path a worker needs to place the
+			// conflict, bounded by `--stat`'s own count cap; the bytes are not
+			// the diff.
+			base_movement: await baseMovement(clone, {
+				worktreePath: opened.path,
+				from: rebased.previousBase,
+				to: fresh.commit,
+			}),
 			evidence_ref: evidence?.ref ?? null,
 			worktree: opened.path,
 		});
@@ -234,6 +248,26 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
 		commits,
 		worktree: opened.path,
 	});
+}
+
+/**
+ * How many paths `base_movement` lists before `--stat` summarises the rest —
+ * a code constant for `MAX_BASE_MOVES`' reason: nobody tunes how long a
+ * prompt's fact block may be, and the summary line carries the total either
+ * way.
+ */
+const BASE_MOVEMENT_PATHS = 200;
+
+/**
+ * `git diff --stat previous_base..base_commit`, as read by the controller
+ * (#194): what the base branch gained while the attempt ran, one line per
+ * path. `null` when there is no previous base to diff from — unrelated
+ * histories — which is a fact the worker is better told than shown an empty
+ * stat for.
+ */
+async function baseMovement(clone, { worktreePath, from, to }) {
+	if (from === null) return null;
+	return clone.git(["diff", `--stat=120,90,${BASE_MOVEMENT_PATHS}`, `${from}..${to}`], { cwd: worktreePath });
 }
 
 /**
