@@ -49,9 +49,20 @@ Draw the edge anyway: the ticket that defines the shape blocks every ticket that
 
 **"Tell the other ticket before merging" in the producer's acceptance criteria is not a substitute.** That note is written by the ticket changing the shape, delivered once its work is already done, to a ticket that may have been built and merged in the meantime. An edge is a constraint the frontier honours; a note is a hope about timing.
 
+**The first implementation ticket is a walking skeleton — a check, not advice.** When the breakdown starts a new product or a new top-level component, its first implementation ticket must produce one **runnable entry point** — a process that starts, a command that answers, a route that responds — thin end to end, which every later ticket extends. Story-independent tickets without it produce a series of little applications that never meet; the running skeleton is what makes each later slice a slice *of something*. Contract tickets (next rule) are not implementation tickets and may precede it: the skeleton is the first ticket that produces behaviour, blocked by whichever contracts it reads. The quiz below refuses a breakdown that fails this check.
+
+**Contract first when the work spans more than one component.** A component is a module, service, or package with its own boundary; the quiz asks. When tickets fall on both sides of one, the interface between them — the request and response shapes, the event payload, the exported signature — gets its own **contract ticket**, emitted before any ticket that depends on it:
+
+- **Ownership.** The interface is **owned by the higher-level component** — the one that composes or calls the other. Its contract ticket lives in that component's scope, not the provider's, so the shape is the caller's need rather than whatever the provider found convenient to expose.
+- **One contract ticket per cross-component interface, first.** Every implementation ticket on either side that reads or implements the shape is **blocked by** it, as a native blocking edge, never a note. A dependent is not started until its contract is accepted — the same edge the shared-interface rule above draws, drawn before either side has a ticket to argue with.
+- **Acceptance criteria are the artifact and a test.** The contract ticket is done when the interface artifact exists (a schema, a type, an OpenAPI fragment, an event shape) and a test exercises it **from the dependent's side against a stub** of the provider. The stub is what lets the dependent build before the provider does.
+- **An accepted contract is immutable.** A revision is a new version, and a new version is a **new ticket** — blocked by nothing, blocking the affected dependents' follow-up tickets. Nobody edits an accepted contract ticket in place; the contract ticket's body says so, in the template below, so the rule survives into the tracker.
+
 **The last ticket is always the human's.** Every breakdown ends in one terminal **review ticket** — `Review the delivered <parent title>` — blocked by every other ticket of the run and marked for a human, never an agent. It is the sink the whole run drains into: when the software factory has implemented everything implementable, this is the one ticket left open on the board, and it is what asks the operator to look. Without it a fully delivered map simply goes quiet. It is not optional and not a ticket the user can drop from the breakdown; a breakdown without it is not publishable. Its body asks three fixed questions — does the delivered behaviour match the destination; what is wrong or missing; what should the next map chart — and the operator answers in a comment and closes it, the same shape a wayfinder resolution has.
 
 ### 4. Quiz the user
+
+First apply the walking-skeleton check: if the breakdown starts a new product or a new top-level component and its first implementation ticket — the first ticket after any contract tickets — does not produce a runnable entry point, **refuse** it — do not present it for approval. Say which ticket would have to come first and redraw before quizzing. A breakdown that fails this check is not a candidate, whatever the user prefers about granularity.
 
 Present the proposed breakdown as a numbered list, the review ticket last so it is approved with the rest. For each ticket, show:
 
@@ -64,6 +75,7 @@ Ask the user:
 - Does the granularity feel right? (too coarse / too fine)
 - Are the blocking edges correct — does each ticket depend on every ticket that gates it, and on no others?
 - Does any ticket change a shape another ticket reads? That gates it too, even though the consumer could start today.
+- Does the work span more than one component — module, service, package? If so, which interfaces cross a boundary, which component owns each, and does each have a contract ticket that its dependents are blocked by?
 - Should any tickets be merged or split further?
 
 Iterate until the user approves the breakdown.
@@ -73,7 +85,7 @@ Iterate until the user approves the breakdown.
 Publish the approved tickets, following the tracker doc's conventions. The tickets are the same whatever the tracker — only the shape of the blocking edges changes:
 
 - **A forge-backed tracker** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the tracker's native blocking relationship where the doc describes one; otherwise set each ticket's "Blocked by" to the blocking issues. The review ticket is published **last**, with a blocking edge from **every** other ticket of the run, labelled `workflow:implement` and `ready-for-human`; use the review-ticket template below.
-- **Local files** → write one file per ticket at the path the tracker doc specifies, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below — one ticket per file, never a single combined file. The review ticket is the last numbered file, its "Blocked by" listing every other file, its status `ready-for-human`.
+- **Local files** → write one file per ticket at the path the tracker doc specifies, numbered from `01` in dependency order (blockers first; contract tickets before their dependents, so a dependent's number is always higher than its contract's). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below — one ticket per file, never a single combined file. The review ticket is the last numbered file, its "Blocked by" listing every other file, its status `ready-for-human`.
 
 **Every forge-backed ticket opens with the literal first body line `Part of #<parent>`** — the issue the tickets were cut from (the map, or the spec issue when there is no map), then a blank line, then the template below. This line is the membership contract the software factory resolves a parent-scoped run through (`docs/specs/software-factory.md` §3.1): one anchored pattern on the first line, nothing looser. A ticket whose first line is anything else — a heading, a blank line, prose that mentions the parent — is not a member of anything, and a run over its parent refuses as `scope-empty`. When the source is not an issue on the tracker there is no parent, and the line is omitted.
 
@@ -122,6 +134,31 @@ The end-to-end behaviour this ticket makes work, from the user's perspective —
 - A reference to each blocking ticket, or "None — can start immediately".
 
 </issue-template>
+
+<contract-ticket-template>
+
+Part of #<parent>
+
+## Parent
+
+A reference to the parent issue, by name and link.
+
+## Contract: <interface name> between <higher-level component> and <lower-level component>
+
+Owned by <higher-level component>. This ticket fixes the shape of <interface> — <what crosses it: request and response, event payload, exported signature> — so both sides can build against one truth. Dependents are blocked by this ticket and start only once it is accepted.
+
+Once accepted, this contract is immutable. A change is a new version, filed as a new ticket that blocks the affected dependents' follow-up tickets; do not edit this ticket's shape in place.
+
+## Acceptance criteria
+
+- [ ] The interface artifact exists: <schema / type / OpenAPI fragment / event shape>.
+- [ ] A test exercises the interface from <dependent>'s side against a stub of <provider>.
+
+## Blocked by
+
+- A reference to each blocking ticket, or "None — can start immediately". A revision of an accepted contract is blocked by nothing.
+
+</contract-ticket-template>
 
 <review-ticket-template>
 
