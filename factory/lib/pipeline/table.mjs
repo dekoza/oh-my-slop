@@ -90,7 +90,16 @@ export const OUTCOME_TABLE = Object.freeze([
 	// for a worker that failed at its own job, and a worker that wrote nothing
 	// readable by the end of its turn did exactly that. Only a pane that died
 	// under it, or the automation refusing to run, is the automation's failure.
-	row({ phase: PHASE_IMPLEMENT, outcome: "invalid-result", action: STAGE_ACTIONS.freshRetry, budget: BUDGET_KINDS.repair }),
+	// An invalid result's detail is the controller's own schema and role
+	// judgement — which block was missing or malformed — and never the record
+	// it refused, so it is presented to the fresh attempt as fact (#189).
+	row({
+		phase: PHASE_IMPLEMENT,
+		outcome: "invalid-result",
+		action: STAGE_ACTIONS.freshRetry,
+		budget: BUDGET_KINDS.repair,
+		evidence: EVIDENCE_TRUST.fact,
+	}),
 	row({ phase: PHASE_IMPLEMENT, outcome: "no-result", action: STAGE_ACTIONS.freshRetry, budget: BUDGET_KINDS.repair }),
 	row({ phase: PHASE_IMPLEMENT, outcome: "timeout", action: STAGE_ACTIONS.freshRetry, budget: BUDGET_KINDS.repair }),
 	row({

@@ -20,7 +20,7 @@ import {
 	requireAttemptIdentity,
 } from "../worker/attempt.mjs";
 import { dispatchOrder, selectRoute } from "../worker/dispatch.mjs";
-import { PIPELINE_ROLES, postureOf } from "../worker/roles.mjs";
+import { missingResult, PIPELINE_ROLES, postureOf } from "../worker/roles.mjs";
 import { fedCheckEvidence } from "./feeds.mjs";
 import { createRetrySeam } from "./retry.mjs";
 import { harvestPhase } from "./phases.mjs";
@@ -230,6 +230,42 @@ async function implement(context, identity) {
 			review: null,
 		}),
 	);
+	return builderResult(roleFor(context.worker.roles, opened.role), result);
+}
+
+/**
+ * The builder's phase result from its attempt's outcome — **the builder-side
+ * half of §8.4's "two levels, two owners"** (#189).
+ *
+ * §6.6's schema judgement already happened in `worker/outbox.mjs`, and a record
+ * it refused arrives here as `invalid-result` with the problems it named. What
+ * is judged here is what the *role* owes: a `completed` builder record with no
+ * trace produced no result for its role, exactly as a `completed` reviewer with
+ * no verdict produces none for its (`pipeline/review.mjs`). Both are
+ * `invalid-result`, and §8.10's row for this phase — fresh-retry on the repair
+ * budget — is unchanged.
+ *
+ * The owed-ness is asked of **the record, whatever the attempt's outcome**: a
+ * builder still alive at turn end with a valid `completed` file is
+ * `wrote-but-hung`, which §8.10 harvests exactly as a completion — so a
+ * traceless record there is the same invalid result, rather than a review
+ * reached with nothing to brief the spec axis with.
+ *
+ * **The detail on an invalid result is the controller's own sentences and
+ * never the record.** The row marks its evidence as fact so §8.5's brief tells
+ * the fresh attempt why it exists; a record put on that detail would reach the
+ * next builder as controller-verified fact, which no worker's prose is.
+ *
+ * @param {Readonly<object>} role the attempt's pipeline role
+ * @param {{ outcome: string, record: object | null, problems?: ReadonlyArray<string> }} result
+ * @returns {{ outcome: string, detail: object | null }}
+ */
+export function builderResult(role, result) {
+	if (result.outcome === "invalid-result") {
+		return { outcome: result.outcome, detail: { problems: [...(result.problems ?? [])] } };
+	}
+	const missing = missingResult(role, result.record ?? null);
+	if (missing !== null) return { outcome: "invalid-result", detail: { problems: [missing] } };
 	return { outcome: result.outcome, detail: result.record };
 }
 
@@ -257,7 +293,9 @@ async function review(context, { run, ticket, attempt }) {
 					identity: axis.identity,
 					opened: axisOpened,
 					repair: null,
-					review: { baseCommit: axis.baseCommit, reviewedCommit: axis.reviewedCommit },
+					// #189: the builder's trace rides with the fixed point, and the
+					// template renders it for the axis whose expectations check it.
+					review: { baseCommit: axis.baseCommit, reviewedCommit: axis.reviewedCommit, trace: axis.trace },
 				}),
 			);
 		},
@@ -569,7 +607,14 @@ function endedAttempt(store, run, attempt) {
 }
 
 function outcomeFromEnd(event) {
-	return Object.freeze({ outcome: event.payload.outcome, record: event.payload.result, refusal: event.payload.refusal ?? null });
+	return Object.freeze({
+		outcome: event.payload.outcome,
+		record: event.payload.result,
+		// §6.6's schema problems ride the ending too, so a re-entry's invalid
+		// result names the same block the first controller's did (#189).
+		problems: Object.freeze([...(event.payload.problems ?? [])]),
+		refusal: event.payload.refusal ?? null,
+	});
 }
 
 function roleFor(roles, name) {

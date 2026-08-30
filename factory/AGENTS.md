@@ -594,6 +594,23 @@ question is which rows have become the module's job to state, not what the ceili
 - **`worker/outbox.mjs` judges the shape a written verdict must have** — the closed pair, a
   findings list, a mandatory citation per finding, and the word agreeing with its own blocking set
   — **while whether a verdict is owed stays in `pipeline/review.mjs`.** — §8.4
+- **`worker/outbox.mjs` judges the shape of a written requirement trace** — non-empty rows, both
+  fields text — and never its truth; **whether one is owed is `missingResult` in
+  `worker/roles.mjs`**, read off the role's own `writesTrace` expectation by the builder executor.
+  — `builderResult` in `pipeline/production.mjs` · §6.6
+- **An invalid result's stage detail is the controller's own problems and never the refused
+  record**; §8.10's `implement × invalid-result` row marks it fact so the fresh attempt is told
+  which block it omitted, and the outcome chain — hence §8.9's disposition comment — carries it.
+  — `pipeline/table.mjs`, `outcomeChain` in `pipeline/stages.mjs` · §8.5, §8.9, §8.10
+- **A §6.6 problem sentence never embeds a worker-written value** — it names the field and the
+  closed set — because those sentences reach the fresh attempt as fact. — `worker/outbox.mjs` ·
+  §8.5
+- **The trace is read off the reviewed attempt's own implement record**, never taken from the
+  caller, and a review reached without one refuses rather than briefing the axis blind. —
+  `builderTrace` in `pipeline/review.mjs` · §8.4
+- **Every axis is handed the trace and the template renders it for the role whose expectations
+  say `checksTrace`**, inside the computed untrusted boundary; a checking role rendered without one
+  is refused. — `worker/prompt.mjs`, `worker/roles.mjs` · §8.4
 - **The controller never classifies a citation**: recognising a baseline smell by name would put a
   second copy of the skill's list in the factory, and downgrading a finding would be the reranking
   §8.4 forbids. — `pipeline/review.mjs` · §8.4

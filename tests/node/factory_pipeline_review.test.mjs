@@ -65,6 +65,11 @@ const ADVISORY = Object.freeze({
 	statement: "this wrapper only delegates",
 });
 
+/** The builder's #189 trace, as its implement record carries it (§6.6). */
+const TRACE = Object.freeze([
+	Object.freeze({ requirement: "Make the thing work", evidence: "feature.txt", note: null }),
+]);
+
 /** A reviewer's outbox record, as §6.6 normalises one. */
 function verdict(word, findings = []) {
 	return { schema_version: OUTBOX_VERSION, status: "completed", verdict: word, findings, summary: "read it" };
@@ -105,6 +110,19 @@ async function reviewable(t) {
 	const reviewedCommit = execFileSync("git", ["-C", built.worktreePath, "rev-parse", "HEAD"], {
 		encoding: "utf8",
 	}).trim();
+	// The builder's own result, as the walk resolves it: §6.6's record, whose
+	// trace the fan-out reads to brief the spec axis (#189).
+	resolveStage(context.store, {
+		hold,
+		run: context.run,
+		ticket: context.ticket,
+		phase: "implement",
+		attempt: context.attempt,
+		outcome: "completed",
+		detail: { status: "completed", commits: [reviewedCommit], trace: TRACE },
+		actor: "controller",
+		at: FIXED_NOW,
+	});
 	resolveStage(context.store, {
 		hold,
 		run: context.run,
@@ -269,6 +287,7 @@ test("a reviewer is handed a worktree and a diff, and nothing that could open a 
 		"posture",
 		"profile",
 		"reviewedCommit",
+		"trace",
 		"try",
 		"worktreePath",
 	]);
@@ -975,6 +994,7 @@ async function reviewableChain(t) {
 	hold.adopt(chain.run);
 
 	for (const [phase, detail] of [
+		["implement", { status: "completed", commits: [chain.head], trace: TRACE }],
 		["harvest", { head: chain.head, commits_ahead: 1 }],
 		// What §8.1's verify resolved: the base never moved, so the branch already
 		// sits on the run's pin and the head is the chain's tip, both commits deep.
@@ -986,7 +1006,7 @@ async function reviewableChain(t) {
 			ticket: chain.ticket,
 			phase,
 			attempt: chain.attempt,
-			outcome: "passed",
+			outcome: phase === "implement" ? "completed" : "passed",
 			detail,
 			actor: "controller",
 			at: FIXED_NOW,
@@ -1117,4 +1137,72 @@ test("the axis mint says why the attempt exists: which axis, whose work, which t
 			{ axis: "review-spec", of: context.attempt, try: 1 },
 		],
 	);
+});
+
+// ── #189: the spec axis is briefed with the builder's trace ──────────────────
+
+test("each axis is handed the builder's trace, read off the implement record under the reviewed attempt (§8.4, #189)", async (t) => {
+	const context = await reviewable(t);
+	const { seam, run } = review(context, { answers: bothAnswering(APPROVING) });
+
+	await run();
+
+	for (const request of seam.asked) {
+		assert.deepEqual(
+			request.trace,
+			TRACE,
+			`${request.axis.name} was briefed on a trace other than the builder's own — the template decides which axis renders it`,
+		);
+	}
+});
+
+test("a repair chain's re-review is briefed with the reviewed attempt's trace, never the prior attempt's (§8.4, #189)", async (t) => {
+	const chain = await reviewableChain(t);
+	const seam = reviewers(bothAnswering(APPROVING));
+
+	await reviewChain(chain, seam);
+
+	assert.equal(seam.asked.length, 2);
+	for (const request of seam.asked) assert.deepEqual(request.trace, TRACE);
+});
+
+test("with no implement record carrying a trace the review refuses rather than briefing the spec axis blind (§8.4, #189)", async (t) => {
+	// A builder that reached review without a trace on its record is a state the
+	// journal cannot explain: a `completed` record with none is an invalid result
+	// one phase earlier. The refusal names it rather than letting the spec axis
+	// answer the coverage question from the diff alone.
+	const built = await workedAttempt(t, { files: { "worker.txt": "the implement\n" } });
+	const leases = openLeases(built.store, { now: () => FIXED_NOW });
+	const hold = holdControllerLease({ store: built.store, leases, timers: manualTimers().api });
+	hold.recordStartupReconcile();
+	hold.adopt(built.run);
+	for (const [phase, outcome, detail] of [
+		["implement", "completed", { status: "completed", commits: [built.head], trace: null }],
+		["harvest", "passed", { head: built.head, commits_ahead: 1 }],
+		["verify", "passed", verifiedDetail({ baseCommit: built.base.commit, head: built.head })],
+	]) {
+		resolveStage(built.store, {
+			hold,
+			run: built.run,
+			ticket: built.ticket,
+			phase,
+			attempt: built.attempt,
+			outcome,
+			detail,
+			actor: "controller",
+			at: FIXED_NOW,
+		});
+	}
+	const seam = reviewers(bothAnswering(APPROVING));
+
+	await assert.rejects(
+		() => reviewChain({ ...built, hold }, seam),
+		(error) => {
+			assert.equal(error.reason, "review-unroutable");
+			assert.equal(error.details.at, "builder-trace");
+			assert.match(error.message, /no implement record carrying a trace/);
+			return true;
+		},
+	);
+	assert.equal(seam.asked.length, 0, "no axis was launched blind");
 });

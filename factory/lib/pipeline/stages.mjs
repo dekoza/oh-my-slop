@@ -612,9 +612,20 @@ function unbuilt({ row, phase }) {
  */
 export function outcomeChain(store, { run, ticket }) {
 	return Object.freeze(
-		stageRecords(store, { run, ticket }).map((record) =>
-			Object.freeze({ phase: record.phase, outcome: record.payload.outcome, attempt: record.attempt }),
-		),
+		stageRecords(store, { run, ticket }).map((record) => {
+			// #189: a step the controller refused carries the controller's own
+			// problems — which block was missing or malformed — so §8.9's disposition
+			// comment names it. The key is present only where there are any: the
+			// chain is digested into the disposition block, and an absent key is one
+			// spelling rather than two for "nothing to say".
+			const problems = record.payload.detail?.problems;
+			return Object.freeze({
+				phase: record.phase,
+				outcome: record.payload.outcome,
+				attempt: record.attempt,
+				...(Array.isArray(problems) && problems.length > 0 ? { problems: Object.freeze([...problems]) } : {}),
+			});
+		}),
 	);
 }
 

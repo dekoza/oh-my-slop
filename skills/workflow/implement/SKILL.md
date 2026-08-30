@@ -56,6 +56,12 @@ Report the PR URL when reporting completion.
 
 If anything in this session started Docker containers — test infrastructure, a dev stack, a one-off `docker compose run`, a warm E2E environment — bring down each stack **you** started before reporting completion, using the same compose file you started it with (`docker compose -f compose.test.yml down`, etc.). Dev and test stacks have independent lifecycles, so bringing one down does not touch the other (see `docker-discipline`). Add `-v` only for volumes this session created. Leave stacks that were already running when the session began exactly as they were.
 
+## Requirement trace
+
+The completion report carries a **requirement trace**: one row per requirement the ticket states, in the ticket's order. Each row quotes the ticket's own line — never a paraphrase — and names the path that answers it and, where one exists, the test that proves it. A short advisory note per row is fine.
+
+Build the trace by re-reading the ticket and every source it references, not from memory of what you did: a ticket line no row answers is unfinished work, and a row naming a path the diff never touched is a claim the spec reviewer will reject. The trace is what lets that reviewer check coverage row by row instead of re-deriving it from the diff.
+
 ## Completion
 
-The invocation is complete when this one ticket-sized slice meets its acceptance criteria, affected checks pass under the project's test policy, both review axes have completed, the worktree's branch contains the committed result, and its PR is open and reported by URL (or, on a forge-less repo, the branch is pushed and named). Every Docker stack this session started is down. No other frontier ticket has been started.
+The invocation is complete when this one ticket-sized slice meets its acceptance criteria, affected checks pass under the project's test policy, both review axes have completed, the worktree's branch contains the committed result, its requirement trace is in the completion report, and its PR is open and reported by URL (or, on a forge-less repo, the branch is pushed and named). Every Docker stack this session started is down. No other frontier ticket has been started.
