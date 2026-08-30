@@ -619,6 +619,15 @@ question is which rows have become the module's job to state, not what the ceili
   §8.2, §14.34
 - **The selector is the closed pair `required | all`**, so per-surface targeting is not a question
   the API can be asked. — `checks/run.mjs` · §8.2
+- **`feeds` is advisory-only and names agent-borne phases**, unique, defaulting to empty; unknown
+  phases and `review` refuse the config rather than becoming inert policy. — `config/checks.mjs` ·
+  §8.2, §11.6
+- **Fed evidence is selected from policy plus the verify record**, and resolved through the
+  artifact ledger by execution identity — never from a caller-supplied output string. —
+  `pipeline/feeds.mjs` · §8.2, §8.7
+- **Only selected evidence crosses the prompt trust boundary**, digest-labelled beneath a
+  controller-owned heading that marks captured output as data, not instructions. —
+  `worker/prompt.mjs` · §8.2
 - **Fault attribution lives in one function**: a required check exiting inside its declared
   expected-failure codes is the worker's failure; a timeout, a signal, a missing exec, or any
   other code is `unrunnable` — an automation failure. — `checks/run.mjs` · §8.2
@@ -626,11 +635,13 @@ question is which rows have become the module's job to state, not what the ceili
 - **§14.23's "two lanes never run mechanical checks concurrently" is one in-process chain, not a
   lease**; `checks[].parallelSafe` is the recorded v2 upgrade. — `checks/run.mjs` · §11.6, §14.23
 - **Running a check is not an effect, but recording its output is** — keyed by the *execution*,
-  not by the check alone. — `checks/artifacts.mjs` · §4.5
+  not by the check alone; stdout/stderr is content-addressed and later reachable only through its
+  ledger row. — `checks/artifacts.mjs` · §4.5, §8.7
 - **§8.3's baseline gate is a detached throwaway worktree** under `baselines/`, deleted eagerly
   when green and retained when red, writing nothing durable. — `checks/baseline.mjs` · §8.3, §12.7
-- **`doctor --baseline` shares it verbatim** through the one `baselineForRepo`, and a caller that
-  already pinned a base passes it. — `checks/baseline.mjs` · §14.24
+- **`doctor --baseline` shares the isolation path, not preflight's selection**: doctor explicitly
+  runs `all` and reports advisory severity, while preflight keeps the `required` gate. —
+  `checks/baseline.mjs`, `doctor/report.mjs` · §10.5, §14.24
 - **Differential no-new-failures verification is deliberately absent**, and the comment saying so
   is load-bearing. — `checks/baseline.mjs` · §8.3
 
