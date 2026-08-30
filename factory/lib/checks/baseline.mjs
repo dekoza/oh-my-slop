@@ -46,12 +46,17 @@ import { CHECK_SELECTIONS, runChecks } from "./run.mjs";
  * @param {string} what.baseCommit §7.2's pinned base — what the run will build on
  * @param {string} what.baseBranch the branch that commit was pinned from
  * @param {Record<string, string | undefined>} [what.env]
+ * @param {string} [what.selection] `required` for run preflight; `all` for the
+ *   operator's explicit `doctor --baseline` diagnostic (§10.5)
  * @param {number} [what.at] UTC epoch milliseconds
  * @returns {Promise<Readonly<object>>} the verdict, the per-check results with
  *   their captured output, and where the worktree went
  * @throws {FactoryGitError} when the worktree cannot be created at all
  */
-export async function runBaseline(clone, { storeDir, checks, baseCommit, baseBranch, env, at = Date.now() }) {
+export async function runBaseline(
+	clone,
+	{ storeDir, checks, baseCommit, baseBranch, env, selection = CHECK_SELECTIONS.required, at = Date.now() },
+) {
 	requireOwnClone(clone, storeDir);
 
 	// The **execution**'s id: it names this one run of the set, and it is what the
@@ -64,7 +69,7 @@ export async function runBaseline(clone, { storeDir, checks, baseCommit, baseBra
 	// Removal is on the success path alone, so a throw out of the set leaves the
 	// worktree exactly where §12.7 wants a red one: whatever stopped the checks
 	// from finishing happened in this copy of the base tree.
-	const answer = await runChecks(checks, { select: CHECK_SELECTIONS.required, cwd: path, env });
+	const answer = await runChecks(checks, { select: selection, cwd: path, env });
 	if (answer.ok) await clone.removeWorktree({ path });
 
 	return frozen({ execution, path, retained: !answer.ok, baseCommit, baseBranch, at, answer });
@@ -101,7 +106,8 @@ function frozen({ execution, path, retained, baseCommit, baseBranch, at, answer 
  * @param {{ canonicalPath: string, storeDir: string }} where the repository — a
  *   store satisfies this shape, and so does a `doctor` that has none yet
  * @param {object} config the validated configuration
- * @param {{ at?: number, env?: Record<string, string | undefined>, isolation?: object | null }} [options]
+ * @param {{ at?: number, env?: Record<string, string | undefined>, isolation?: object | null,
+ *   selection?: string }} [options]
  *   a caller that has **already** run §7's isolation check passes its verdict:
  *   pinning the base again would fetch a second time and could run the set at a
  *   commit the recorded check never saw (§7.2). A caller with none — `doctor` —
@@ -109,7 +115,11 @@ function frozen({ execution, path, retained, baseCommit, baseBranch, at, answer 
  * @returns {Promise<Readonly<{ ran: true, baseline: object } |
  *   { ran: false, reason: string, message: string, detail: object }>>}
  */
-export async function baselineForRepo({ canonicalPath, storeDir }, config, { at = Date.now(), env, isolation = null } = {}) {
+export async function baselineForRepo(
+	{ canonicalPath, storeDir },
+	config,
+	{ at = Date.now(), env, isolation = null, selection = CHECK_SELECTIONS.required } = {},
+) {
 	const pinned = isolation ?? (await gitIsolationCheck({ canonicalPath, storeDir }, config));
 
 	if (pinned.clone === undefined) {
@@ -132,6 +142,7 @@ export async function baselineForRepo({ canonicalPath, storeDir }, config, { at 
 				baseCommit: pinned.base.commit,
 				baseBranch: config.git.baseBranch,
 				env,
+				selection,
 				at,
 			}),
 		});

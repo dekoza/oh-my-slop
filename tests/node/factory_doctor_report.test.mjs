@@ -239,6 +239,28 @@ test("--baseline executes the checks in the private clone and re-runs nothing el
 	assert.deepEqual(reader.readEvents({ kind: "preflight.checked" }), []);
 });
 
+test("--baseline runs advisory recipes and reports their severity without making them a gate (§8.2, §10.5)", async (t) => {
+	const config = cloneValidConfig();
+	config.checks.push({
+		name: "mutation",
+		command: "echo mutation-survivor; exit 1",
+		timeout: 30,
+		severity: "advisory",
+		expectedFailureExitCodes: [1],
+		feeds: ["implement"],
+	});
+	const { reader, context } = await diagnosable(t, { config });
+
+	const report = await doctorReport(reader, { ...context, baseline: true });
+
+	assert.equal(report.baseline.ok, true, "an advisory mutation result blocked the baseline");
+	assert.deepEqual(report.baseline.checks.map((check) => [check.name, check.severity, check.result]), [
+		["unit", "required", "passed"],
+		["mutation", "advisory", "failed"],
+	]);
+	assert.match(report.baseline.checks[1].output_tail, /mutation-survivor/);
+});
+
 test("a red --baseline is an alarm, keeps its worktree, and carries the tail of what failed", async (t) => {
 	const config = cloneValidConfig();
 	config.checks = [
