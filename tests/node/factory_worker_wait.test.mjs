@@ -14,6 +14,7 @@ import {
 	cancelAttempt,
 	decideOutcome,
 	DEFAULT_NO_PROGRESS_TIMEOUT_MS,
+	observedWorking,
 	readLiveness,
 	SETTLE_GRACE_MS,
 	settleUnadoptable,
@@ -22,9 +23,11 @@ import {
 import { OUTBOX_SCHEMA_VERSION, readOutbox } from "../../factory/lib/worker/outbox.mjs";
 import { runWorkspaceLabel } from "../../factory/lib/worker/workspace.mjs";
 import { fakeHerdr } from "./helpers/factory-worker.mjs";
+import { makeRepo } from "./helpers/factory-repo.mjs";
 import {
 	attemptLaunched,
 	FIXED_NOW,
+	makeAgentDir,
 	manualTimers,
 	openTestStore,
 	refusalOfAsync,
@@ -270,8 +273,8 @@ test("a live `pane.agent_status_changed` frame reaches the rows the old matcher 
 // ── The wait, end to end ─────────────────────────────────────────────────────
 
 /** A store with a run, a hold, and one launched attempt whose pane is live. */
-async function waiting(t, { herdr = fakeHerdr() } = {}) {
-	const store = await openTestStore(t);
+async function waiting(t, { herdr = fakeHerdr(), repoRoot = makeRepo(t), agentDir = makeAgentDir(t) } = {}) {
+	const store = await openTestStore(t, { repoRoot, agentDir });
 	const timers = manualTimers();
 	const leases = openLeases(store, { now: () => FIXED_NOW });
 	const hold = holdControllerLease({ store, leases, timers: timers.api });
@@ -301,6 +304,10 @@ async function waiting(t, { herdr = fakeHerdr() } = {}) {
 		herdr,
 		identity,
 		run: opened.run,
+		// The durable location, so a test can open a **second** controller on the
+		// same state (#178's re-entry).
+		repoRoot,
+		agentDir,
 		writeOutbox(content) {
 			mkdirSync(attemptDir(store.storeDir, identity.attempt), { recursive: true });
 			writeFileSync(
@@ -871,7 +878,12 @@ test("agent-status transitions are recorded as events, one per observed change",
 		},
 	});
 
-	const observed = context.store.readEvents({ stream: runStream(context.run), kind: "observation.recorded" });
+	const all = context.store.readEvents({ stream: runStream(context.run), kind: "observation.recorded" });
+	// The wait's own opening read is a sighting and is recorded as one (#178);
+	// the four transitions follow it.
+	assert.equal(all[0].payload.observed_by, "seed");
+	assert.equal(all[0].payload.from, null, "a seed is a state with no history");
+	const observed = all.slice(1);
 	assert.deepEqual(observed.map((event) => event.payload.status), ["working", "blocked", "working", "done"]);
 	assert.equal(observed[0].source, "herdr");
 	assert.equal(observed[0].payload.fact, "worker.alive", "§5.2 names the fact a status transition records");
@@ -882,7 +894,7 @@ test("agent-status transitions are recorded as events, one per observed change",
 	assert.equal(observed[0].payload.occurred_at_raw, undefined);
 	// Each transition is its own foreign id, or the dedup index would let the
 	// first sighting suppress every later one.
-	assert.equal(new Set(observed.map((event) => event.foreign_source_id)).size, 4);
+	assert.equal(new Set(all.map((event) => event.foreign_source_id)).size, all.length);
 });
 
 test("a socket that will not carry the transitions degrades loudly and keeps watching", async (t) => {
@@ -906,7 +918,8 @@ test("a socket that will not carry the transitions degrades loudly and keeps wat
 
 	// Which half saw it rides the observation, so an operator can tell a run
 	// whose transitions were all sampled from one that was subscribed.
-	const [observed] = context.store.readEvents({ kind: "observation.recorded" });
+	const [seeded, observed] = context.store.readEvents({ kind: "observation.recorded" });
+	assert.equal(seeded.payload.observed_by, "seed");
 	assert.equal(observed.payload.observed_by, "poll");
 });
 
@@ -1159,4 +1172,260 @@ test("a refusal still on screen while the worker is working is recorded, not act
 	);
 	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
 	assert.equal(ended.payload.outcome, "completed");
+});
+
+// ── #178: the worker that never started ──────────────────────────────────────
+
+/**
+ * §8.10 charged the **repair** budget — the worker tier, "ended its turn
+ * without writing" — to attempts whose worker never had a turn. A pane sitting
+ * on a first-run interstitial reports `idle` to Herdr, which is a settled
+ * status, so the settle grace answered `no-result` within seconds of launch and
+ * the whole repair budget was spent before a single model call. The sibling
+ * hole is the same misattribution through the other door: a pane that came up
+ * already interstitial produces no transition at all, the settle clock never
+ * starts, and the no-progress clock answers `timeout` — §8.10's other
+ * repair-budget row.
+ */
+
+test("a settled worker never observed working is worker-never-started, not no-result (§8.10, #178)", () => {
+	const decided = decideOutcome({
+		outbox: outboxOf("absent"),
+		liveness: liveness({ status: "idle", alive: false, settledAt: FIXED_NOW - SETTLE_GRACE_MS }),
+		at: FIXED_NOW,
+		deadline: FIXED_NOW + 60_000,
+		workedEver: false,
+	});
+
+	assert.equal(decided.outcome, "worker-never-started");
+	assert.equal(decided.clock, undefined, "there was no turn, so no clock diagnoses one");
+});
+
+test("the no-progress clock over a worker that never worked is worker-never-started too (#178)", () => {
+	const decided = decideOutcome({
+		outbox: outboxOf("absent"),
+		liveness: liveness({ status: "blocked" }),
+		at: FIXED_NOW,
+		deadline: FIXED_NOW + 60_000,
+		noProgressDeadline: FIXED_NOW,
+		workedEver: false,
+	});
+
+	assert.equal(decided.outcome, "worker-never-started");
+});
+
+test("a worker observed working and then silent is still no-result — the row it belongs in (#178)", () => {
+	const decided = decideOutcome({
+		outbox: outboxOf("absent"),
+		liveness: liveness({ status: "idle", alive: false, settledAt: FIXED_NOW - SETTLE_GRACE_MS }),
+		at: FIXED_NOW,
+		deadline: FIXED_NOW + 60_000,
+		workedEver: true,
+	});
+
+	assert.equal(decided.outcome, "no-result");
+});
+
+test("the never-started reading replaces silence and nothing else (§6.6, #178)", () => {
+	// A valid outbox is an answer, whatever the pane was ever seen doing...
+	assert.equal(
+		decideOutcome({
+			outbox: outboxOf("valid"),
+			liveness: liveness({ status: "idle", alive: false, settledAt: FIXED_NOW }),
+			at: FIXED_NOW,
+			deadline: FIXED_NOW + 60_000,
+			workedEver: false,
+		}).outcome,
+		"completed",
+	);
+	// ...an invalid one is still the worker's own bad answer...
+	assert.equal(
+		decideOutcome({
+			outbox: outboxOf("invalid"),
+			liveness: liveness({ status: "idle", alive: false, settledAt: FIXED_NOW }),
+			at: FIXED_NOW,
+			deadline: FIXED_NOW + 60_000,
+			workedEver: false,
+		}).outcome,
+		"invalid-result",
+	);
+	// ...and a pane that died is a different fact, not this one.
+	assert.equal(
+		decideOutcome({
+			outbox: outboxOf("absent"),
+			liveness: liveness({ status: "exited", alive: false, settledAt: FIXED_NOW }),
+			at: FIXED_NOW,
+			deadline: FIXED_NOW + 60_000,
+			workedEver: false,
+		}).outcome,
+		"dead-worker",
+	);
+});
+
+test("an observed provider refusal outranks the never-started reading (#154, #178)", () => {
+	// The refusal is an affirmative observation with a named source; this one is
+	// read off an absence. And §8.10 charges no budget at all for a refusal,
+	// where never-started charges the automation tier.
+	const decided = decideOutcome({
+		outbox: outboxOf("absent"),
+		liveness: liveness({ status: "idle", alive: false, settledAt: FIXED_NOW - SETTLE_GRACE_MS }),
+		at: FIXED_NOW,
+		deadline: FIXED_NOW + 60_000,
+		refusal: { signatures: ["usage-limit"], excerpt: "5-hour limit reached" },
+		workedEver: false,
+	});
+
+	assert.equal(decided.outcome, "provider-refused");
+});
+
+test("a caller that supplies no never-started fact gets the pre-#178 reading, never the automation budget", () => {
+	// The default is `true` on purpose. A forgotten wiring must under-report the
+	// new outcome rather than file genuine `no-result`s as automation faults and
+	// retry them on the wrong budget until that one runs out too.
+	const decided = decideOutcome({
+		outbox: outboxOf("absent"),
+		liveness: liveness({ status: "idle", alive: false, settledAt: FIXED_NOW - SETTLE_GRACE_MS }),
+		at: FIXED_NOW,
+		deadline: FIXED_NOW + 60_000,
+	});
+
+	assert.equal(decided.outcome, "no-result");
+});
+
+test("a pane the wait only ever sees interstitial ends the attempt as worker-never-started (§6.6, #178)", async (t) => {
+	// The screen this ticket is about: a harness waiting on a keypress, which
+	// Herdr reports as a settled agent because the process is alive and resting.
+	const herdr = fakeHerdr({ agentStatus: "idle" });
+	const context = await waiting(t, { herdr });
+	let clock = FIXED_NOW;
+
+	const result = await context.wait({
+		now: () => (clock += SETTLE_GRACE_MS),
+		watch: ({ onTransition }) => {
+			onTransition({ status: "idle", alive: false, agent: "pi", source: "subscribe", event: null, from: null });
+			return { close: () => {}, degraded: () => false };
+		},
+	});
+
+	assert.equal(result.outcome, "worker-never-started");
+	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
+	assert.equal(ended.payload.outcome, "worker-never-started");
+	assert.equal(ended.payload.clock, null);
+});
+
+/**
+ * #178: the fact has to survive controller re-entry, or a controller that
+ * crashed **after** a genuine worker turn re-reads the attempt as one that never
+ * started — filing a real `no-result` as an automation fault and retrying it on
+ * the wrong budget forever. That is the fail-open shape the exhaustion-guard
+ * work removed from this repo.
+ */
+async function crashedMidWait(t, { status, repoRoot, agentDir }) {
+	const herdr = fakeHerdr({ agentStatus: status });
+	const context = await waiting(t, { herdr, repoRoot, agentDir });
+
+	// The crash: the loop drains its transitions, finds no outbox, decides
+	// nothing, samples the pane, and then sleeps — so a sleep that throws leaves
+	// the attempt launched, its observations durable, and **no ending written**.
+	// That is a controller killed mid-wait, exactly.
+	await assert.rejects(() =>
+		context.wait({
+			sleep: async () => {
+				throw new Error("controller died mid-wait");
+			},
+			watch: ({ onTransition }) => {
+				onTransition({ status, alive: status === "working", agent: "pi", source: "subscribe", event: null, from: null });
+				return { close: () => {}, degraded: () => false };
+			},
+		}),
+	);
+
+	assert.deepEqual(context.store.readEvents({ kind: "attempt.ended" }), [], "the crash wrote an ending after all");
+	// The dead process's lease goes with it. What the re-entry is about is the
+	// journal, and a lease nobody released would only make this test about §4.6.
+	context.hold.release();
+	return { ...context, herdr };
+}
+
+/** A second controller process on the same durable state, holding no history of the first. */
+async function reentering(t, context) {
+	// The same multiplexer — a new controller, not a new world — with the pane
+	// now resting, which is what the first one was about to decide on.
+	context.herdr.settle("idle");
+	const store = await openTestStore(t, { repoRoot: context.repoRoot, agentDir: context.agentDir });
+	const timers = manualTimers();
+	const leases = openLeases(store, { now: () => FIXED_NOW });
+	const hold = holdControllerLease({ store, leases, timers: timers.api });
+	hold.recordStartupReconcile();
+	hold.adopt(context.identity.run);
+	let clock = FIXED_NOW;
+
+	return {
+		store,
+		outcome: await awaitCompletion(store, {
+			hold,
+			identity: context.identity,
+			pane: "w1:p2",
+			agent: herdrAgentName(context.identity.attempt),
+			socket: "/run/herdr.sock",
+			herdr: context.herdr.control,
+			timeoutMs: 60_000,
+			actor: "controller",
+			now: () => (clock += SETTLE_GRACE_MS),
+			sleep: async () => {},
+			watch: ({ onTransition }) => {
+				onTransition({ status: "idle", alive: false, agent: "pi", source: "subscribe", event: null, from: null });
+				return { close: () => {}, degraded: () => false };
+			},
+		}),
+	};
+}
+
+test("a fresh controller recovers the worked fact from the journal, not from memory (§6.6, #178)", async (t) => {
+	const repoRoot = makeRepo(t);
+	const agentDir = makeAgentDir(t);
+	const crashed = await crashedMidWait(t, { status: "working", repoRoot, agentDir });
+
+	// A second process, with no in-memory history of the first.
+	const reentered = await reentering(t, crashed);
+
+	assert.equal(
+		observedWorking(reentered.store, crashed.identity),
+		true,
+		"the working sighting the first controller recorded did not survive its death",
+	);
+	assert.equal(reentered.outcome.outcome, "no-result", "a real worker turn was re-read as one that never happened");
+});
+
+test("a fresh controller that finds no working sighting answers worker-never-started (§8.10, #178)", async (t) => {
+	const repoRoot = makeRepo(t);
+	const agentDir = makeAgentDir(t);
+	// The same crash, over a pane only ever seen blocked — the folder-trust
+	// dialog's status, which must never launder a hang into "it worked".
+	const crashed = await crashedMidWait(t, { status: "blocked", repoRoot, agentDir });
+
+	const reentered = await reentering(t, crashed);
+
+	assert.equal(observedWorking(reentered.store, crashed.identity), false);
+	assert.equal(reentered.outcome.outcome, "worker-never-started");
+});
+
+test("neither blocked nor unknown counts as a worker that worked (§6.6, #178)", async (t) => {
+	for (const status of ["blocked", "unknown"]) {
+		const context = await waiting(t, { herdr: fakeHerdr({ agentStatus: status }) });
+
+		assert.equal(observedWorking(context.store, context.identity), false);
+
+		let clock = FIXED_NOW;
+		const result = await context.wait({
+			now: () => (clock += SETTLE_GRACE_MS),
+			watch: ({ onTransition }) => {
+				onTransition({ status, alive: true, agent: "pi", source: "subscribe", event: null, from: null });
+				onTransition({ status: "idle", alive: false, agent: "pi", source: "subscribe", event: null, from: status });
+				return { close: () => {}, degraded: () => false };
+			},
+		});
+
+		assert.equal(result.outcome, "worker-never-started", `${status} was read as a worker that had a turn`);
+	}
 });

@@ -197,6 +197,19 @@ export const ATTEMPT_OUTCOMES = Object.freeze([
 	 * rather than as anything the worker did.
 	 */
 	"provider-refused",
+	/**
+	 * #178: the controller **never observed this attempt's pane in a working
+	 * status**, and the attempt then ended in silence. A worker that never
+	 * reached a working status never had a turn, so it cannot have ended one
+	 * without writing — which is what `no-result` and `timeout` say about it.
+	 *
+	 * It is a state predicate and not a timer: no launch window, no grace. The
+	 * hazard it answers is general — any interstitial a harness can raise in an
+	 * interactive pane reads to Herdr as a settled or blocked worker, and some of
+	 * them are gated on state no controller owns (§6.8) — so the fault is the
+	 * automation's and §8.10 charges the automation budget for it.
+	 */
+	"worker-never-started",
 	// #155's `routes-exhausted` is deliberately **not** here: no attempt has it,
 	// because it is what the walk answers *instead of* minting one. It is one of
 	// §8.10's phase-less rows, beside the two budget exhaustions it is shaped like

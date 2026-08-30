@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { IDENTITY_CHARSET } from "../domain/vocabulary.mjs";
 
@@ -39,8 +39,8 @@ export function containPath(root, segment) {
 	}
 
 	const path = join(root, segment);
-	const canonical = canonicalize(path);
-	if (!canonical.startsWith(canonicalize(root) + "/")) {
+	const canonical = canonicalPath(path);
+	if (!canonical.startsWith(canonicalPath(root) + "/")) {
 		return Object.freeze({ ok: false, reason: PATH_REFUSALS.escape, found: canonical, expected: root });
 	}
 
@@ -48,12 +48,26 @@ export function containPath(root, segment) {
 }
 
 /**
- * The prefix assertion compares canonical spellings: a symlink planted inside
- * the root must not launder a path out of it. The path itself may not exist yet
- * — worktrees and attempt directories are asserted before they are created — so
- * resolution walks to the nearest existing ancestor.
+ * A path's canonical spelling: absolute, with every symlink in it resolved.
+ *
+ * The prefix assertion above compares canonical spellings, because a symlink
+ * planted inside the root must not launder a path out of it. The path itself may
+ * not exist yet — worktrees and attempt directories are asserted before they are
+ * created — so resolution walks to the nearest existing ancestor and re-appends
+ * the rest.
+ *
+ * **Exported because a second subsystem needs the same spelling** (#178):
+ * §6.8's pi trust store is keyed by the directory *pi* canonicalizes, and pi
+ * resolves symlinks before keying it and before walking to the nearest ancestor
+ * entry. A store the factory wrote with symlinks unresolved is one pi looks up
+ * under a different key, reads back as no decision, and answers with the trust
+ * dialog — on a pane nobody is watching. One helper, so the two spellings cannot
+ * drift; the non-existent-path handling is the same requirement in both.
+ *
+ * @param {string} path
+ * @returns {string}
  */
-function canonicalize(path) {
+export function canonicalPath(path) {
 	const absolute = resolve(path);
 	let probe = absolute;
 	let suffix = "";
@@ -61,7 +75,13 @@ function canonicalize(path) {
 		try {
 			return join(realpathSync(probe), suffix);
 		} catch {
-			suffix = join(probe.slice(dirname(probe).length + 1), suffix);
+			// `basename`, not arithmetic over `dirname`'s length: the parent of a
+			// first-level directory is `/`, which carries no separator to skip, and
+			// the off-by-one ate that directory's first character — `/state/wt`
+			// canonicalized to `/tate/wt` on any host with no `/state`. Invisible
+			// while every caller's root existed; #178 gave it a caller whose paths
+			// routinely do not.
+			suffix = join(basename(probe), suffix);
 			const parent = dirname(probe);
 			if (parent === probe) return absolute;
 			probe = parent;
