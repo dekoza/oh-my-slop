@@ -208,7 +208,7 @@ function traceProblems(parsed) {
 			continue;
 		}
 		for (const field of ["requirement", "evidence"]) {
-			if (typeof row[field] === "string" && row[field].trim().length > 0) continue;
+			if (nonEmptyText(row[field])) continue;
 			problems.push(
 				`trace[${index}] carries no ${field}; every row quotes a ticket line and names the path and test that answer it (§6.6)`,
 			);
@@ -299,7 +299,7 @@ function findingProblems(finding, index) {
 		);
 	}
 	for (const field of ["citation", "statement"]) {
-		if (typeof finding[field] === "string" && finding[field].trim().length > 0) continue;
+		if (nonEmptyText(finding[field])) continue;
 		problems.push(`findings[${index}] carries no ${field}; every finding carries a mandatory citation (§8.4)`);
 	}
 
@@ -322,7 +322,7 @@ function statusProblems(parsed) {
 					`${WORKER_WRITABLE_REASON_CLASSES.join(", ")} — every other class is controller-derived (§6.6, §8.8)`,
 			);
 		}
-		if (typeof parsed.question !== "string" || parsed.question.trim().length === 0) {
+		if (!nonEmptyText(parsed.question)) {
 			// "the exact question", not a summary: the human's reply is what
 			// resumes the ticket, and a vague pause costs a round trip.
 			problems.push("needs-human carries the exact question a human must answer (§6.6)");
@@ -331,9 +331,7 @@ function statusProblems(parsed) {
 	}
 
 	if (parsed.status === "worker-failed") {
-		return typeof parsed.explanation === "string" && parsed.explanation.trim().length > 0
-			? []
-			: ["worker-failed carries a classification and an explanation (§6.6)"];
+		return nonEmptyText(parsed.explanation) ? [] : ["worker-failed carries a classification and an explanation (§6.6)"];
 	}
 
 	if (parsed.status === "completed") {
@@ -384,13 +382,18 @@ function identityProblems(parsed, identity) {
 	for (const field of ["run", "ticket", "phase", "attempt"]) {
 		if (parsed[field] === identity[field]) continue;
 		// The minted value is the controller's own and may be named; the value the
-		// file echoes is somebody else's and stays in the file.
+		// file echoes is somebody else's and stays in the file. (An absent slot
+		// never reaches here — `shapeProblems` refused it first.)
 		problems.push(
-			`${field} echoes ${absentOr(parsed[field], "a value other than")} what the controller minted, ` +
-				`${JSON.stringify(identity[field] ?? null)}`,
+			`${field} echoes a value other than what the controller minted, ${JSON.stringify(identity[field] ?? null)}`,
 		);
 	}
 	return problems;
+}
+
+/** A field that says something: text with at least one non-blank character. */
+function nonEmptyText(value) {
+	return typeof value === "string" && value.trim().length > 0;
 }
 
 /** "absent", or the caller's description of a value that is present and wrong — never the value. */

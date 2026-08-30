@@ -602,9 +602,15 @@ function completionProtocol({ identity, outboxPath, role }) {
 			: [
 					`  "summary": "one paragraph on what you changed",`,
 					`  "commits": ["<sha>"],`,
-					`  "trace": [`,
-					`    {"requirement": "<a line of the ticket snapshot, quoted>", "evidence": "<path>; <test>", "note": "optional"}`,
-					`  ],`,
+					// The example shows the trace on exactly the roles that owe one — the
+					// same flag `traceObligation` and `missingResult` read.
+					...(role.resultExpectations.writesTrace === true
+						? [
+								`  "trace": [`,
+								`    {"requirement": "<a line of the ticket snapshot, quoted>", "evidence": "<path>; <test>", "note": "optional"}`,
+								`  ],`,
+							]
+						: []),
 					`  "test_evidence": "what you ran and what it said (context only; the controller reruns everything)"`,
 				]),
 		"}",
