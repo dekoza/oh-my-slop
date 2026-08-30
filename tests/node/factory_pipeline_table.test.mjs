@@ -67,6 +67,10 @@ test("§8.10's stated properties are carried as fields, not as prose (§8.10)", 
 	assert.equal(routeOutcome("verify", "failed").evidence, "fact");
 	assert.equal(routeOutcome("review", "rejected").evidence, "untrusted");
 	assert.equal(routeOutcome("implement", "worker-failed").evidence, "untrusted");
+	// #189: an invalid result's detail is the controller's own judgement of which
+	// block was missing, never the refused record, so the fresh attempt reads it
+	// as fact.
+	assert.equal(routeOutcome("implement", "invalid-result").evidence, "fact");
 });
 
 test("wrote-but-hung is an anomaly on an ordinary row, never a failure (§8.10)", () => {

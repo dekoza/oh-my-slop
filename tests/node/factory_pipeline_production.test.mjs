@@ -28,16 +28,28 @@ const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encodi
  * without claiming it — a timeout, a refusal, a dead pane. The commit is in the
  * worktree and nothing in the outbox mentions it.
  */
-function workerTurn({ builderStatuses = ["completed"], commitsAlways = false, onAbandon = null } = {}) {
+/**
+ * `withoutTrace` names the builder turns (zero-based) that end `completed`
+ * without #189's trace — the omission the controller refuses as an invalid
+ * result. `prompts` collects every prompt a worker was handed, by phase, so a
+ * test can read what the next attempt was told.
+ */
+function workerTurn({
+	builderStatuses = ["completed"],
+	commitsAlways = false,
+	onAbandon = null,
+	withoutTrace = [],
+	prompts = null,
+} = {}) {
 	let builderTurn = 0;
 	return async ({ pane, text }) => {
 		// The environment the pane's tab was created under (#157) — which is what a
 		// real worker reads out of its own process, rather than off the scrollback.
 		const identity = pane.env;
+		prompts?.push({ phase: identity.FACTORY_PHASE, attempt: identity.FACTORY_ATTEMPT, text });
+		const thisTurn = identity.FACTORY_PHASE === "implement" ? builderTurn++ : null;
 		const status =
-			identity.FACTORY_PHASE === "implement"
-				? (builderStatuses[Math.min(builderTurn++, builderStatuses.length - 1)] ?? "completed")
-				: "completed";
+			thisTurn !== null ? (builderStatuses[Math.min(thisTurn, builderStatuses.length - 1)] ?? "completed") : "completed";
 		if (status === "abandon") {
 			// #159: the commit comes first where the fixture asks for one, because the
 			// abandon this models is an operator's — a builder mid-work whose commits
@@ -76,6 +88,11 @@ function workerTurn({ builderStatuses = ["completed"], commitsAlways = false, on
 
 		if (identity.FACTORY_PHASE === "implement" && status === "completed") {
 			result.commits = [git(pane.cwd, "rev-parse", "HEAD")];
+			// #189: one row per requirement, quoting the ticket's own line — here the
+			// title, which is the whole of what the fixture issue states.
+			if (!withoutTrace.includes(thisTurn)) {
+				result.trace = [{ requirement: "feat: production pipeline", evidence: "implemented.txt" }];
+			}
 		} else if (status === "needs-human") {
 			result.reason_class = "product-ambiguity";
 			result.question = "Which behavior should the implementation preserve?";
@@ -247,6 +264,63 @@ test("a builder question reaches a durable paused disposition instead of escapin
 	assert.equal(answer.report.execution.members[0].disposition, "paused");
 	assert.match(tracker.comments.at(-1).body, /Which behavior should the implementation preserve\?/);
 	assert.match(tracker.comments.at(-1).body, /product-ambiguity/);
+});
+
+test("#189: a builder that ends completed without a trace is an invalid result naming the block, and the fresh attempt is told why", async (t) => {
+	const prompts = [];
+	const { answer, tracker, repoRoot, agentDir } = await runProduction(t, {
+		turn: workerTurn({ builderStatuses: ["completed", "completed"], withoutTrace: [0], prompts }),
+	});
+
+	// §8.10's row is unchanged: invalid-result is a fresh retry on the repair
+	// budget, and the second builder's branch is what gets published.
+	assert.equal(answer.report.execution.members[0].disposition, "published");
+	assert.match(tracker.pulls[0].head.ref, /-a2$/);
+
+	const store = await openStore({ repoRoot, agentDir });
+	t.after(() => store.close());
+	const implemented = store
+		.readEvents({ kind: "stage.resolved" })
+		.filter((event) => event.phase === "implement")
+		.map((event) => [event.attempt.endsWith("-a1"), event.payload.outcome, event.payload.detail?.problems ?? null]);
+	assert.equal(implemented.length, 2);
+	assert.equal(implemented[0][0], true);
+	assert.equal(implemented[0][1], "invalid-result");
+	assert.match(implemented[0][2][0], /wrote no trace/, "the record names the missing block");
+	assert.equal(implemented[1][1], "completed");
+
+	// The worker did end `completed`; the controller's role judgement, not §6.6's
+	// schema judgement, is what refused it — and the record says which.
+	const [first] = store.readEvents({ kind: "attempt.ended" });
+	assert.equal(first.payload.outcome, "completed");
+	assert.equal(first.payload.result.trace, null);
+
+	// The fresh attempt is told, as a controller-verified fact, why it exists.
+	const builders = prompts.filter((prompt) => prompt.phase === "implement");
+	assert.equal(builders.length, 2);
+	assert.match(builders[1].text, /This attempt is a \*\*fresh-retry\*\*/);
+	assert.match(builders[1].text, /Controller-verified facts/);
+	assert.match(builders[1].text, /wrote no trace/, "the next builder is not told what the last one omitted");
+	assert.match(builders[1].text, /### Requirement trace/, "and is told the obligation again");
+});
+
+test("#189: the spec axis is prompted with the builder's trace inside the untrusted block; the standards axis is not", async (t) => {
+	const prompts = [];
+	const { answer } = await runProduction(t, { turn: workerTurn({ prompts }) });
+	assert.equal(answer.report.execution.members[0].disposition, "published");
+
+	const spec = prompts.find((prompt) => prompt.phase === "review" && prompt.text.startsWith("/skill:review-spec"));
+	const standards = prompts.find((prompt) => prompt.phase === "review" && prompt.text.startsWith("/skill:review-standards"));
+	assert.ok(spec !== undefined && standards !== undefined, "both axes were prompted");
+
+	const [before, quoted] = spec.text.split(/--- BEGIN UNTRUSTED [0-9a-f]+ ---\n/);
+	assert.ok(quoted !== undefined, "the spec axis's prompt carries no untrusted block");
+	assert.match(before, /you are the judge of its truth/);
+	assert.ok(quoted.split(/--- END UNTRUSTED/)[0].includes('"requirement": "feat: production pipeline"'));
+	assert.ok(quoted.split(/--- END UNTRUSTED/)[0].includes('"evidence": "implemented.txt"'));
+
+	assert.doesNotMatch(standards.text, /BEGIN UNTRUSTED/);
+	assert.ok(!standards.text.includes("implemented.txt"), "the trace reached the axis whose question it does not answer");
 });
 
 test("a repair re-enters through nextAttempt and publishes the repairing builder branch (#147, §8.5)", async (t) => {
