@@ -308,6 +308,8 @@ export const DEFAULT_NO_PROGRESS_TIMEOUT_MS = 600_000;
  *   (`pipeline/review.mjs`). It rides the prompt for the same reason the repair
  *   brief does, and it is not optional in practice: both axis skills open by
  *   asking the caller for a fixed point and there is nobody in the pane to ask
+ * @param {ReadonlyArray<object>} [context.trustedEvidence] controller-captured
+ *   advisory output selected by `checks[].feeds` for this phase (§8.2)
  * @param {ReadonlyArray<string>} [context.sessionArgs] §6.8's binding for this posture
  * @param {Record<string, string>} [context.sessionEnv] §6.8's closed pane set — the
  *   controller-owned config-directory variables and declared capability values the
@@ -340,6 +342,7 @@ export async function launchWorker(
 		ticketSnapshot,
 		repair = null,
 		review = null,
+		trustedEvidence = [],
 		sessionArgs = [],
 		sessionEnv = {},
 		startupTimeoutMs = null,
@@ -388,6 +391,7 @@ export async function launchWorker(
 		packageRev,
 		repair,
 		review,
+		trustedEvidence,
 	});
 
 	const manifest = writeAttemptManifest(store.storeDir, {

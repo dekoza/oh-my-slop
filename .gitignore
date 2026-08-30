@@ -1,6 +1,8 @@
 .sisyphus/
 __pycache__/
 .worktrees/
+mutants/
+.stryker-tmp/
 
 council-debates/
 

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
+import { readArtifact } from "../../factory/lib/artifacts/ledger.mjs";
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
 import { unresolvedEffects } from "../../factory/lib/effects/records.mjs";
 import { registerGitProbes } from "../../factory/lib/git/probes.mjs";
@@ -131,6 +132,9 @@ test("verify rebases onto the fresh base and runs the set at the result, under t
 	// §14.13: the commit the checks ran at is the one the branch now is.
 	assert.equal(git(fixture.clone.dir, ["rev-parse", `refs/heads/${fixture.branch}`]), verified.detail.head);
 	assert.deepEqual([...verified.detail.commits], [verified.detail.head]);
+	const output = verified.detail.checks[0].output;
+	assert.match(output.digest, /^[0-9a-f]{64}$/, "verify did not retain the captured output by digest");
+	assert.match(readArtifact(fixture.store, output).toString("utf8"), new RegExp(verified.detail.head));
 
 	// §7.5: the pre-rebase head survives by contract.
 	assert.equal(verified.detail.evidence_ref, evidenceRef(fixture.attempt));
