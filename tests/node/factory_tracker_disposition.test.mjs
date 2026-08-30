@@ -33,7 +33,7 @@ async function settling(t, options) {
 }
 
 /** The ticket is claimed first, exactly as a ticket execution reaches §8.9. */
-async function claimed(context, ticket) {
+async function claimed(context, ticket, { routing = null, profile = "builder" } = {}) {
 	await claimTicket(context.store, {
 		reader: context.reader,
 		writer: context.writer,
@@ -44,6 +44,7 @@ async function claimed(context, ticket) {
 		assignee: ASSIGNEE,
 		at: TRACKER_NOW,
 	});
+	context.dispatched = { routing, profile };
 	return `${context.run}-t${ticket}-a1`;
 }
 
@@ -64,7 +65,9 @@ function dispose(context, { ticket, ...rest }) {
 function resolveStages(context, ticket, attempt, stages) {
 	// The projections refuse an attempt-scoped record for a tuple nothing minted,
 	// so the attempt is launched first exactly as a lane would launch it.
-	context.store.append(attemptLaunched(context.run, ticket, 1, { at: TRACKER_NOW }));
+	context.store.append(
+		attemptLaunched(context.run, ticket, 1, { at: TRACKER_NOW, ...(context.dispatched ?? {}) }),
+	);
 
 	for (const [phase, outcome] of stages) {
 		resolveStage(context.store, {
@@ -504,7 +507,12 @@ test("§8.9: every disposition gets the same block — identity tuple, outcome c
 
 		const block = blockIn(context.gitea.comments.at(-1).body);
 		assert.deepEqual(
-			{ ...block, outcome_chain: block.outcome_chain.length, evidence: block.evidence.length },
+			{
+				...block,
+				outcome_chain: block.outcome_chain.length,
+				evidence: block.evidence.length,
+				dispatch: block.dispatch.length,
+			},
 			{
 				schema_version: 1,
 				identity: { run: context.run, ticket: 10, attempt },
@@ -524,10 +532,44 @@ test("§8.9: every disposition gets the same block — identity tuple, outcome c
 				attempt_branches: null,
 				outcome_chain: 1,
 				evidence: 0,
+				// #155's read, on every block for the same reason: a reroute runs a
+				// profile other than the one §11.5 declared, so what actually did the
+				// work belongs on all four rather than on the ones that rerouted.
+				dispatch: 1,
 			},
 			`${disposition} does not carry §8.9's block`,
 		);
 	}
+});
+
+test("#155: the disposition names what actually did the work, declared beside it", async (t) => {
+	const context = await settling(t, { issues: [giteaIssue({ number: 10 })] });
+	const attempt = await claimed(context, 10, {
+		profile: "cloud",
+		routing: {
+			declared: "builder",
+			profile: "cloud",
+			class: "claude-code",
+			rerouted: true,
+			reason: "local is provider-exhausted (§9.8)",
+			considered: [],
+		},
+	});
+	resolveStages(context, 10, attempt, [["implement", "completed"]]);
+
+	await dispose(context, { ticket: 10, disposition: "published", pr: { number: 7, url: "http://x/7" } });
+
+	const block = blockIn(context.gitea.comments.at(-1).body);
+	assert.deepEqual(block.dispatch, [
+		{
+			attempt,
+			role: "implement",
+			profile: "cloud",
+			declared: "builder",
+			rerouted: true,
+			reason: "local is provider-exhausted (§9.8)",
+		},
+	]);
 });
 
 test("§8.7's summary and advisory findings land in the ticket comment; blocking findings never do", async (t) => {

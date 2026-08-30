@@ -16,6 +16,7 @@ import {
 	DEFAULT_NO_PROGRESS_TIMEOUT_MS,
 	readLiveness,
 	SETTLE_GRACE_MS,
+	settleUnadoptable,
 	STOP_CONFIRM_BACKOFF_MS,
 } from "../../factory/lib/worker/lifecycle.mjs";
 import { OUTBOX_SCHEMA_VERSION, readOutbox } from "../../factory/lib/worker/outbox.mjs";
@@ -455,6 +456,104 @@ test("a degraded observation channel makes a no-progress timeout an automation f
 	assert.equal(result.clock, null, "a controller fault is not a worker-tier timeout");
 });
 
+test("a subscription re-established mid-wait makes the no-progress verdict the worker's again (§5.1, #114)", async (t) => {
+	const context = await waiting(t);
+	let clock = FIXED_NOW;
+
+	const result = await context.wait({
+		timeoutMs: 60_000,
+		noProgressTimeoutMs: 10_000,
+		now: () => clock,
+		watch: ({ onDegraded, onResubscribed }) => {
+			// The Herdr server restarted: the socket went, polling covered the gap,
+			// and the watch re-subscribed for the same pane id.
+			onDegraded({ source: "herdr", reason: "socket-closed", detail: "restart", fallback: "polling", interval_ms: 2_000 });
+			onResubscribed({ source: "herdr", pane: "w1:p2", attempts: 1 });
+			return { close: () => {}, degraded: () => false };
+		},
+		sleep: async () => {
+			clock += 1_000;
+		},
+	});
+
+	assert.equal(result.outcome, "timeout", "the channel recovered, so the silence is the worker's");
+	assert.equal(result.clock, "no-progress");
+	assert.equal(
+		context.store.readEvents({ kind: "observation.degraded" }).length,
+		1,
+		"the degradation is still on the record; recovery does not erase it",
+	);
+});
+
+// ── §5.5's other ending: the attempt whose worker could not be proved ────────
+
+test("a disproved worker's attempt is ended through the one settle, with no quit sent (§5.5, §13.B)", async (t) => {
+	const context = await waiting(t);
+	const verdict = { verdict: "disproved", tests: { token: "fail" }, evidence: { pane: null, herdr_answered: true } };
+
+	const settled = await settleUnadoptable(context.store, {
+		hold: context.hold,
+		identity: context.identity,
+		adoption: verdict,
+		actor: "controller",
+		now: () => FIXED_NOW,
+	});
+
+	assert.equal(settled.outcome, "dead-worker", "the automation lost the ability to say whose worker it was (§8.10)");
+
+	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
+	assert.equal(ended.payload.outcome, "dead-worker");
+	assert.deepEqual(ended.payload.adoption, verdict);
+	assert.equal(ended.payload.agent_stopped, null);
+	assert.equal(
+		ended.payload.stop_anomaly.anomaly,
+		"stop-not-attempted",
+		"a later reader must tell 'we asked and it stayed' from 'we never asked'",
+	);
+
+	assert.deepEqual(context.herdr.calls, [], "identity is exactly what failed, so nothing was sent at that pane");
+	assert.equal(
+		context.store.readEvents({ kind: "effect.requested" }).filter((event) => event.payload.operation === "agent-stop")
+			.length,
+		0,
+	);
+});
+
+test("a recovery cannot end an attempt twice: the projector refuses it, not a caller's pre-check", async (t) => {
+	const context = await waiting(t);
+	const settle = () =>
+		settleUnadoptable(context.store, {
+			hold: context.hold,
+			identity: context.identity,
+			adoption: { verdict: "disproved", tests: {}, evidence: {} },
+			actor: "controller",
+			now: () => FIXED_NOW,
+		});
+
+	await settle();
+
+	const refused = await refusalOfAsync(settle);
+	assert.equal(refused.reason, "invalid-event");
+	assert.match(refused.message, /already ended/i);
+	assert.equal(context.store.readEvents({ kind: "attempt.ended" }).length, 1);
+});
+
+test("a recovery cannot end an attempt this store never launched", async (t) => {
+	const context = await waiting(t);
+
+	const refused = await refusalOfAsync(() =>
+		settleUnadoptable(context.store, {
+			hold: context.hold,
+			identity: { ...context.identity, attempt: `${context.run}-t42-a9` },
+			adoption: { verdict: "disproved", tests: {}, evidence: {} },
+			actor: "controller",
+			now: () => FIXED_NOW,
+		}),
+	);
+
+	assert.equal(refused.reason, "worker-not-launched");
+});
+
 test("an idle seed is a state, not a transition: the just-prompted worker gets its turn before silence counts (§6.6)", async (t) => {
 	// Proven live (run 01M068G2…): a freshly prompted pi agent still reads
 	// "idle" before its model begins the turn, and a seed that starts the
@@ -504,9 +603,9 @@ test("a valid outbox from a settled worker is harvested, and the agent stopped (
 	assert.equal(harvested.record.summary, "did the thing");
 	assert.equal(harvested.agent_stopped, true);
 
-	// The liveness seed, then the stop, then the read-back — and **the agent,
-	// never the pane** (§13.B).
-	assert.deepEqual(context.herdr.commands(), ["pane list", "agent send-keys", "pane list"]);
+	// The liveness seed, then the stop — two calls, `esc` and then the pair
+	// (#158) — then the read-back, and **the agent, never the pane** (§13.B).
+	assert.deepEqual(context.herdr.commands(), ["pane list", "agent send-keys", "agent send-keys", "pane list"]);
 	assert.equal(context.herdr.panes.length, 2, "the workspace root and the attempt pane both survive the worker");
 });
 
@@ -890,6 +989,22 @@ test("the hard ceiling and the no-progress clock are reclassified the same way (
 	}
 });
 
+test("a refusal on screen while the worker is working decides nothing: only silence is reclassified (#154)", () => {
+	// Run 01M0ZD1G52EC2CD946Y3B1AFQ8: the pane tail matched a signature while
+	// the worker was alive, producing output, with no clock fired — and the
+	// controller ended the attempt on the spot. A refusal explains *why* a
+	// worker fell silent; it is not a verdict on one that has not.
+	const decided = decideOutcome({
+		outbox: outboxOf("absent"),
+		liveness: liveness({ status: "working" }),
+		at: FIXED_NOW + 1_000,
+		deadline: FIXED_NOW + 60_000,
+		noProgressDeadline: FIXED_NOW + 30_000,
+		refusal,
+	});
+	assert.equal(decided, null);
+});
+
 test("a valid outbox outranks a refusal in the pane: the worker's answer wins (#154)", () => {
 	const decided = decideOutcome({
 		outbox: outboxOf("valid", { status: "completed" }),
@@ -1006,4 +1121,42 @@ test("a refusal early in the session that the worker worked past decides nothing
 	});
 
 	assert.equal(result.outcome, "completed", "the worker's own outbox decides; the recovered refusal is history");
+});
+
+test("a refusal still on screen while the worker is working is recorded, not acted on (#154)", async (t) => {
+	// Run 01M0ZD1G52EC2CD946Y3B1AFQ8: the pane's tail matched a signature on
+	// the very sample that showed fresh output, and the loop stopped a working
+	// worker on the next turn. The sighting is a fact worth recording; the
+	// verdict waits for silence — here, for the worker's own answer.
+	const context = await waiting(t);
+	context.herdr.paneOutput = "API Error: 429 rate_limit_error: retrying in 20s\n";
+	let clock = FIXED_NOW;
+	let polls = 0;
+	let push;
+
+	const result = await context.wait({
+		now: () => clock,
+		watch: ({ onTransition }) => {
+			push = onTransition;
+			return { close: () => {}, degraded: () => false };
+		},
+		sleep: async () => {
+			clock += 1_000;
+			polls += 1;
+			if (polls === 1) push({ status: "working", alive: true, agent: "pi", source: "subscribe", event: null, from: "idle" });
+			if (polls === 3) {
+				context.writeOutbox(completedOutbox(context.identity));
+				push({ status: "idle", alive: false, agent: "pi", source: "subscribe", event: null, from: "working" });
+			}
+		},
+	});
+
+	assert.equal(result.outcome, "completed", "the refusal on screen did not end a working attempt");
+	const facts = context.store.readEvents({ kind: "observation.recorded" });
+	assert.ok(
+		facts.some((event) => event.payload.fact === "provider.refusal"),
+		"the sighting is still its own recorded observation",
+	);
+	const [ended] = context.store.readEvents({ kind: "attempt.ended" });
+	assert.equal(ended.payload.outcome, "completed");
 });

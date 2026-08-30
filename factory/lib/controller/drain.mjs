@@ -118,6 +118,16 @@ export function drainReport({ view = null, executed = null, inFlight = [], missi
 		counts: countByClass(members),
 		in_flight: inFlight.length,
 		released: executed?.released ?? 0,
+		/**
+		 * #159: the releases §9.6's abandon boundary recorded and the tracker would
+		 * not take, each naming its ticket. The boundary is what fills it — every
+		 * other ending settles its tickets through the pipeline's own dispositions —
+		 * and it is on every report rather than only that one, because a `--json`
+		 * consumer branching on a field that sometimes exists is reading the ending
+		 * rather than the answer. Empty here is the truthful zero: no release was
+		 * asked for, so none went unsettled.
+		 */
+		released_unsettled: Object.freeze([]),
 		refused: executed?.refused ?? [],
 		blocked: executed?.blocked ?? [],
 		drained: verdict.drained,
@@ -222,11 +232,23 @@ function exhaustionBlock(member, exhaustedEntry) {
 		exhaustedEntry.until === null
 			? "no expiry is recorded, so only a probe can settle it"
 			: `until ${new Date(exhaustedEntry.until).toISOString()}`;
+	// #155: the reroute tried every profile §11.5's order names, so "the class is
+	// out" is only half the sentence when the order had more than one class in it.
+	// A report naming the first would send an operator to look at one provider
+	// while the run had in fact run out of providers — two different things to do
+	// something about.
+	const others = (exhaustedEntry.classes ?? []).filter((className) => className !== exhaustedEntry.class);
+	const reroute =
+		others.length === 0
+			? ""
+			: ` Every other profile §11.5's order names for this ticket is exhausted too (${others.join(", ")}).`;
+
 	return {
 		class: MEMBER_CLASSES.blockedExternal,
 		reason:
 			`#${member.ticket} is claimable, but its resource class "${exhaustedEntry.class}" is provider-exhausted ${until} (§9). ` +
-			"The provider refused for quota or rate reasons; dispatch holds until the memo expires and a probe re-admits the class.",
+			"The provider refused for quota or rate reasons; dispatch holds until the memo expires and a probe re-admits the class." +
+			reroute,
 		blockedBy: null,
 	};
 }

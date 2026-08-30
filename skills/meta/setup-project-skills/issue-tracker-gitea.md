@@ -52,6 +52,18 @@ be either — resolve with `tea pulls <n>` and fall back to `tea issues <n>`.
 
 Create a Gitea issue with `tea issues create`.
 
+## When a skill says "open a pull request"
+
+```sh
+git push -u origin <branch>
+tea pr create --title "..." --description "..." --base <base-branch> --head <branch>
+```
+
+Note `--description` / `-d`, **not** `--body`. `tea pr create` opens the PR from the
+current repo; pass `--repo <owner>/<name>` when remote inference is wrong. Put
+`Closes #<index>` in the description so the merge closes the ticket. Do not merge —
+`tea pr merge` is the maintainer's call.
+
 ## When a skill says "fetch the relevant ticket"
 
 Run `tea issues <index> --comments`.

@@ -113,7 +113,7 @@ export const OUTCOME_TABLE = Object.freeze([
 	 * axis said nothing about the work, and charging the automation budget for
 	 * a provider's cap would be the wrong blame with the same answer.
 	 */
-	row({ phase: PHASE_IMPLEMENT, outcome: "provider-refused", action: STAGE_ACTIONS.dispose, disposition: "released" }),
+	row({ phase: PHASE_IMPLEMENT, outcome: "provider-refused", action: STAGE_ACTIONS.reroute }),
 
 	// ── harvest (§7.4's builder-fault predicates) ────────────────────────────
 	row({ phase: PHASE_HARVEST, outcome: "passed", action: STAGE_ACTIONS.advance, to: PHASE_VERIFY }),
@@ -196,9 +196,11 @@ export const OUTCOME_TABLE = Object.freeze([
 	row({ phase: PHASE_REVIEW, outcome: "automation-failure", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_REVIEW, outcome: "wrote-but-hung", action: STAGE_ACTIONS.verdict, anomaly: ANOMALY_WROTE_BUT_HUNG }),
 	row({ phase: PHASE_REVIEW, outcome: "cancelled", action: STAGE_ACTIONS.dispose, disposition: "released" }),
-	// #154: a reviewer attempt its provider refused is the implement row's twin —
-	// released, budgetless, and the memo is the dispatch-side consequence.
-	row({ phase: PHASE_REVIEW, outcome: "provider-refused", action: STAGE_ACTIONS.dispose, disposition: "released" }),
+	// #154, #155: a reviewer attempt its provider refused is the implement row's
+	// twin — budgetless, rerouted onto the axis's own declared order, and
+	// released only when that axis has nowhere left to go. The two axes reroute
+	// independently, which is why §11.5 declares an order per axis (§8.4).
+	row({ phase: PHASE_REVIEW, outcome: "provider-refused", action: STAGE_ACTIONS.reroute }),
 
 	// ── integrate (§7.5) ─────────────────────────────────────────────────────
 	row({ phase: PHASE_INTEGRATE, outcome: "integrated", action: STAGE_ACTIONS.dispose, disposition: "published" }),
@@ -248,6 +250,30 @@ export const OUTCOME_TABLE = Object.freeze([
 		action: STAGE_ACTIONS.dispose,
 		reasonClass: "automation-budget-exhausted",
 	}),
+	/**
+	 * #155: §9.9's reroute found nowhere left to go — every profile §11.5's order
+	 * names for the role belongs to a class §9.8's memo has locked.
+	 *
+	 * **Phase-less, beside the two budget exhaustions it is shaped like.** All
+	 * three say *the run ran out of something this ticket needed*, and none of
+	 * them is an outcome any attempt had: this is what the walk answers **instead
+	 * of** minting one. It also has to be reachable from `verify` and `integrate`
+	 * — §11.5's fresh-retry is routed and both phases route to it — and those have
+	 * no worker, so an attempt-level row there would be an outcome with nothing to
+	 * belong to (§8.8).
+	 *
+	 * §9.8's answer holds unchanged: the ticket goes back to the frontier
+	 * **untouched** — no label, no budget — and the memo keeps the next claim out
+	 * of the exhausted classes until an expiry and a probe open one. Filing it
+	 * `failed` would ask a human to investigate a provider's daily cap, and the
+	 * investigation would end at "wait". It is a row of its own rather than the
+	 * `provider-refused` row's second meaning because §8.9's `released` writes no
+	 * comment: the outcome word on the terminal record is the only thing telling
+	 * *a provider refused and we moved on* from *we ran out of providers*, and
+	 * those are what an operator is choosing between when a ticket comes back
+	 * untouched.
+	 */
+	row({ phase: TABLE_WIDE, outcome: "routes-exhausted", action: STAGE_ACTIONS.dispose, disposition: "released" }),
 	row({ phase: TABLE_WIDE, outcome: "duplicate-identical", action: STAGE_ACTIONS.idempotentReturn }),
 	row({ phase: TABLE_WIDE, outcome: "duplicate-conflicting", action: STAGE_ACTIONS.dispose, fault: BUDGET_KINDS.automation }),
 ]);

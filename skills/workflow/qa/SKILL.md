@@ -14,7 +14,7 @@ license: MIT (adapted from mattpocock/skills)
 
 Run an interactive QA session. The user describes problems they're encountering. You clarify, explore the codebase for context, and file issues that are durable, user-focused, and use the project's domain language.
 
-The issue tracker and triage label vocabulary should have been provided to you — run `/setup-project-skills` if not. File to the **agent work tracker** it names: these issues are agent-created, so they belong there even though the reports originate with a human. If no tracker has been provided, default to the local-markdown tracker.
+The issue tracker and triage label vocabulary should have been provided to you — tell the user to run `/setup-project-skills` if not. File to the **agent work tracker** it names: these issues are agent-created, so they belong there even though the reports originate with a human. If no tracker has been provided, default to the local-markdown tracker.
 
 ## For each issue the user raises
 

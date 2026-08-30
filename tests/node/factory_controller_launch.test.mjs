@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { EXIT_OK, EXIT_REFUSED } from "../../factory/lib/cli/exit-codes.mjs";
 import { runCli } from "../../factory/lib/cli/main.mjs";
+import { CONTROLLER_PANE_ENV } from "../../factory/lib/controller/launch.mjs";
 import { CONTROLLER_LEASE } from "../../factory/lib/domain/vocabulary.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
@@ -141,6 +142,12 @@ test("the launcher creates the workspace and runs the foreground start in its ro
 		context.cwd,
 		"--label",
 		calls[0][5],
+		// The marker that tells the controller the factory made this pane, so its
+		// run may be stamped onto it and cleanup may later reclaim it (§12.8,
+		// §14.27). A pane the operator ran `--foreground` from carries no such
+		// declaration and is never a target.
+		"--env",
+		`${CONTROLLER_PANE_ENV}=${calls[0][5]}`,
 		"--no-focus",
 	]);
 	assert.match(calls[0][5], /^factory-[0-9A-HJKMNP-TV-Z]{26}$/);
@@ -246,14 +253,27 @@ test("a failed pane run names the workspace it created", async (t) => {
 
 // ── The structural guard (§13.B, §14.27) ─────────────────────────────────────
 
-test("no factory module issues a Herdr pane, tab, or workspace close (§13.B)", () => {
+test("only cleanup's own reclaimer issues a Herdr pane close, and nothing closes a tab or workspace (§13.B, §12.8)", () => {
 	// The invariant is about the tree, not only about the launcher: a `pane
 	// close` added to a future retry path would pass every behavioural test in
 	// this file while destroying the classified drain report §10.1 leaves on
-	// screen. The command-builder place is launch.mjs; the close verbs are
-	// simply not a shape it or any sibling may build.
-	const pattern = /["'](pane|workspace|tab|session)["']\s*,\s*["']close["']|(pane|workspace|tab|session)\s+close\b/i;
+	// screen. The close verbs are simply not a shape the controller's modules
+	// may build.
+	//
+	// §12.8 whitelists two pane kinds as cleanup targets, so exactly one module
+	// may build the command — `cleanup/panes.mjs`, which nothing on a run loop's
+	// path imports. The exemption is a **file**, not a relaxation of the
+	// pattern: a close reappearing anywhere else still fails here, which is what
+	// keeps "the controller never closes a pane" a property of the tree.
+	//
+	// Containers stay off-limits everywhere. §12.8's whitelist has six entries
+	// and none of them is a tab, a workspace, or a session, so no exemption
+	// widens past `pane`.
+	const anyClose = /["'](pane|workspace|tab|session)["']\s*,\s*["']close["']|(pane|workspace|tab|session)\s+close\b/i;
+	const containerClose = /["'](workspace|tab|session)["']\s*,\s*["']close["']|(workspace|tab|session)\s+close\b/i;
+
 	for (const [file, source] of factorySources()) {
+		const pattern = file.endsWith("cleanup/panes.mjs") ? containerClose : anyClose;
 		assert.equal(pattern.test(source), false, `${file} builds a Herdr close command`);
 	}
 });

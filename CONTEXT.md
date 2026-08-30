@@ -47,6 +47,14 @@ index, never a store: a decision lives in its **Decision ticket**, and the map o
 gists and links it.
 _Avoid_: plan, epic, roadmap, backlog
 
+**Blocking edge**:
+A directed relation between two **Tickets**: the blocker must be *closed* before the
+blocked one can be taken — no branch-level or partly-done state satisfies it. Two
+grounds earn one: the blocked ticket cannot start until the blocker lands, or it
+reads a shape the blocker changes. `to-tickets` and `wayfinder` author them; the
+**Frontier** is what is left once they are honoured.
+_Avoid_: dependency, dependency edge, prerequisite, blocker link
+
 **Frontier**:
 The edge of what is takeable now. On a **Map**, the open, unblocked, unclaimed
 **Decision tickets**; in a `grilling` session, every question whose prerequisites are

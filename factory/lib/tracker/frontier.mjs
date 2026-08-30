@@ -2,7 +2,7 @@ import { isScope, SCOPE_FORMS } from "../controller/scope.mjs";
 import { FactoryTrackerError } from "./errors.mjs";
 import { readEach } from "./gitea.mjs";
 import { FACTORY_LABELS } from "./labels.mjs";
-import { isMemberOf } from "./membership.mjs";
+import { isMemberOf, PART_OF_PATTERN } from "./membership.mjs";
 
 /**
  * §3.1's scope resolution and §3.2's eligibility, over the **live** tracker
@@ -135,7 +135,7 @@ export async function readScope(reader, scope, { at = Date.now(), edges = null }
 		);
 	}
 
-	const members = await resolveMembers(reader, scope);
+	const { members, candidates } = await resolveMembers(reader, scope);
 	const inScope = new Set(members.map((member) => member.number));
 
 	// **Only the members whose class an edge could change.** `decide` below reaches
@@ -163,6 +163,12 @@ export async function readScope(reader, scope, { at = Date.now(), edges = null }
 	return Object.freeze({
 		scope,
 		resolved_at: at,
+		// How many issues the membership test was asked about: the label-found
+		// candidates for a parent, the typed numbers for a direct set. #181's
+		// refusal of an empty parent reads it, because "no member" and "no
+		// candidate" send the operator to different places — the tickets' first
+		// line, or the label.
+		candidates,
 		members: Object.freeze(classified),
 		// §3.2's ordering: **ascending issue number**, and nothing else. Dependency
 		// order is already enforced by claimability, and there are no priority
@@ -171,6 +177,48 @@ export async function readScope(reader, scope, { at = Date.now(), edges = null }
 			classified.filter((member) => member.class === MEMBER_CLASSES.claimable).map((member) => member.ticket),
 		),
 		counts: countByClass(classified),
+	});
+}
+
+/**
+ * Is this a parent-scoped answer with **no member at all** (#181)?
+ *
+ * Distinct from a drained scope: a parent whose members are all closed has
+ * members, and §3.5 classes them. No member means nothing on the tracker
+ * declares the parent, and a run over it could only report a drain over
+ * nothing — the plausible zero §11.2 refuses everywhere else.
+ *
+ * @param {{ scope: object, members: readonly object[] }} view a `readScope` answer
+ * @returns {boolean}
+ */
+export function isEmptyParentScope(view) {
+	return view.scope.kind === SCOPE_FORMS.parent && view.members.length === 0;
+}
+
+/**
+ * The one sentence both `start`'s refusal and `doctor`'s alarm carry for an
+ * empty parent, naming the three things an operator can fix: the parent, the
+ * label the candidates came from, and the line a candidate must open with.
+ *
+ * @param {{ scope: { parent: number }, candidates: number }} view a `readScope` answer
+ * @returns {Readonly<{ reason: string, message: string, details: object }>}
+ */
+export function emptyScopeDiagnosis(view) {
+	const parent = view.scope.parent;
+	return Object.freeze({
+		reason: "scope-empty",
+		message:
+			`Parent #${parent} has no member: of ${view.candidates} candidate(s) carrying ` +
+			`${FACTORY_LABELS.implementation}, none opens with the literal first body line ` +
+			`"Part of #${parent}" (§3.1). A run over it could only report a drain over nothing. ` +
+			"Give each of the parent's tickets that first line — `to-tickets` writes it — and start again.",
+		details: Object.freeze({
+			parent,
+			candidates: view.candidates,
+			label: FACTORY_LABELS.implementation,
+			pattern: String(PART_OF_PATTERN),
+			spec: "§3.1",
+		}),
 	});
 }
 
@@ -189,13 +237,19 @@ async function resolveMembers(reader, scope) {
 			labels: [FACTORY_LABELS.implementation],
 			state: "all",
 		});
-		return candidates.filter((issue) => isMemberOf(issue.body, scope.parent));
+		return {
+			members: candidates.filter((issue) => isMemberOf(issue.body, scope.parent)),
+			candidates: candidates.length,
+		};
 	}
 
 	// Read individually rather than filtered from a list: the operator named
 	// these numbers, and a number that is not there must be an error about that
 	// number rather than a member that quietly went missing.
-	return readEach(scope.tickets, (ticket) => reader.readIssue(ticket));
+	return {
+		members: await readEach(scope.tickets, (ticket) => reader.readIssue(ticket)),
+		candidates: scope.tickets.length,
+	};
 }
 
 /**

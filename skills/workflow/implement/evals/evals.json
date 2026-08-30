@@ -1,0 +1,64 @@
+{
+  "skill_name": "implement",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "You have been given three build-ready implementation tickets. Ticket A has no blockers. Ticket B is blocked by A. Ticket C is also blocked by A. No ticket was selected explicitly. State the scope of this invocation and the first work you take on; do not implement the tickets.",
+      "expected_output": "The response selects Ticket A as the only slice for this session, leaves B and C untouched, keeps cross-ticket scheduling outside the implementation worker, and works Ticket A in a dedicated worktree.",
+      "files": [],
+      "expectations": [
+        "The response selects one unblocked frontier ticket, Ticket A, for this session.",
+        "The response does not attempt the blocked tickets, Ticket B or Ticket C.",
+        "The response works in a dedicated worktree under .worktrees/, creating one if the session is not already inside one, and does not schedule the other tickets.",
+        "The response states that each remaining ticket belongs in a fresh session."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "The user provides a small spec with one behavior: reject an expired invitation token and show the existing invalid-invitation response. There is no ticket list. State whether this is valid input for implement and how completion is judged; do not write code.",
+      "expected_output": "The response accepts the coherent spec as one ticket-sized slice and judges completion through its acceptance behavior, affected tests, two-axis review, a committed result, and an open PR.",
+      "files": [],
+      "expectations": [
+        "The response treats the single coherent spec as one ticket-sized slice rather than requiring a tracker ticket.",
+        "The response identifies the expired-token behavior as the acceptance target.",
+        "The response requires affected checks, both review axes, and an open pull request before completion.",
+        "The response limits the invocation to that slice."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "While implementing the slice you started the test infrastructure with `docker compose -f compose.test.yml up -d` to run an E2E test, and the project's dev stack was already running before your session began. The slice is now green and reviewed. State what you do before reporting completion; do not write code.",
+      "expected_output": "The response brings down the test stack it started with the same compose file and leaves the pre-existing dev stack running.",
+      "files": [],
+      "expectations": [
+        "The response brings down the compose.test.yml stack it started before reporting completion.",
+        "The response leaves the dev stack that was already running untouched.",
+        "The response does not treat the slice as complete while a stack it started is still up."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "The slice is implemented, committed to the worktree's branch, and both review axes have passed. The repo's tracker doc is the Gitea one, and the ticket is #212. State what remains before you can report completion; do not run anything.",
+      "expected_output": "The response pushes the branch and opens a PR against the base branch with Closes #212 in the description, does not merge it or wait on CI, and reports the PR URL.",
+      "files": [],
+      "expectations": [
+        "The response pushes the worktree's branch and opens a pull request as part of this invocation rather than leaving it to the caller.",
+        "The response puts the closing reference to #212 in the PR body so the merge closes the ticket.",
+        "The response does not merge the PR and does not block on the full-suite CI check.",
+        "The response reports the PR URL as part of completion."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "You are implementing a ticket that changes GET /api/v1/orders so that ready_until becomes an ISO timestamp instead of a date. Another open ticket, already ready-for-agent and not blocked by yours, builds the screen that renders that field. State what you do about it; do not write code.",
+      "expected_output": "The response names this as a missing blocking edge and reports it to the caller in the completion report, comments on the consuming ticket as the durable record, and does not treat the comment alone as sufficient or take on the other ticket.",
+      "files": [],
+      "expectations": [
+        "The response names the situation as a missing blocking edge between the two tickets.",
+        "The response reports it to the caller in the completion report, not only as a comment on the other ticket.",
+        "The response still comments on the consuming ticket as the durable record.",
+        "The response does not start, re-scope, or implement the other ticket itself."
+      ]
+    }
+  ]
+}

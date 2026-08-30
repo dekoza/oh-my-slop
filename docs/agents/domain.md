@@ -30,8 +30,8 @@ glossary somewhere else (`UBIQUITOUS_LANGUAGE.md`, a section of `AGENTS.md`, a w
 page) should say so here rather than leaving each skill to guess.
 
 **This repo splits its glossary in two.** `CONTEXT.md` holds the **workflow**
-vocabulary — issue tracker, issue vs ticket, decision ticket, map, frontier, triage
-role. The **skill-authoring** vocabulary — predictability, model- vs user-invoked,
+vocabulary — issue tracker, issue vs ticket, decision ticket, map, blocking edge,
+frontier, triage role. The **skill-authoring** vocabulary — predictability, model- vs user-invoked,
 context load, leading word, progressive disclosure, duplication — lives in
 [`skills/meta/writing-great-skills/GLOSSARY.md`](../../skills/meta/writing-great-skills/GLOSSARY.md),
 which is a disclosed reference of that skill and is already authoritative. Read

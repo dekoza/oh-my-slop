@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { EventEmitter } from "node:events";
 import { join } from "node:path";
 
 import { EXIT_OK } from "../../factory/lib/cli/exit-codes.mjs";
@@ -48,7 +49,10 @@ function invocation(t) {
  * A run over a scope, with a pipeline that records what it was handed. The
  * pipeline is #107's seam; everything below the claim is this package's.
  */
-async function runOver(t, { world, tickets, pipeline, lanes = [], context = invocation(t), gitea = fakeGitea(world) }) {
+async function runOver(
+	t,
+	{ world, tickets, pipeline, lanes = [], context = invocation(t), gitea = fakeGitea(world), signal = undefined },
+) {
 	const loaded = loadFactoryConfig({ cwd: context.repoRoot });
 	const where = { repo: loaded.config.tracker.repo, login: loaded.config.tracker.login };
 
@@ -73,6 +77,7 @@ async function runOver(t, { world, tickets, pipeline, lanes = [], context = invo
 				// block naming no pull request.
 				return { disposition: "published", pr: PUBLISHED_PR };
 			}),
+		...(signal === undefined ? {} : { signal }),
 	});
 
 	return { answer, gitea, context, lanes };
@@ -250,6 +255,96 @@ test("§8.9: released drops the claim with no label, so the ticket returns to th
 	assert.equal(answer.report.execution.in_flight, 0);
 });
 
+test("#159: an abandon between the claim and the first attempt still drops the claim it took", async (t) => {
+	const signal = new EventEmitter();
+	const gitea = fakeGitea({ issues: [giteaIssue({ number: 42 })] });
+	// The narrowest window there is: the ticket is claimed and the operator's SIGTERM
+	// lands before anything is minted for it. Leaving that one to §3.3's staleness
+	// would be the timeout standing in for a known fact all over again.
+	const { answer, context } = await runOver(t, {
+		gitea,
+		tickets: [42],
+		signal,
+		pipeline: () => {
+			signal.emit("SIGTERM", "SIGTERM");
+			return new Promise(() => {});
+		},
+	});
+
+	assert.equal(answer.report.end_reason, "abandoned");
+	assert.equal(answer.report.execution.released, 1);
+	assert.deepEqual(answer.report.execution.released_unsettled, []);
+	assert.deepEqual(gitea.issues[0].assignees, [], "the claim it took was left standing");
+	assert.deepEqual(
+		gitea.writes.map((write) => write.operation),
+		["issue-assign", "comment-post", "issue-unassign", "comment-post"],
+	);
+
+	const store = await eventsOf(t, context);
+	assert.deepEqual(
+		store.readEvents({ kind: "attempt.launched" }),
+		[],
+		"the fixture minted an attempt, so the window under test was not the one that opened",
+	);
+	assert.deepEqual(
+		store.readTicketExecutions(answer.report.run).map((row) => [row.ticket, row.disposition]),
+		[[42, "released"]],
+	);
+});
+
+test("#159: a lane that lost the claim contest settles itself, and the abandon boundary leaves its ticket alone (§3.3)", async (t) => {
+	const signal = new EventEmitter();
+	// §3.3's lost collision — the assignment does not survive its own re-read — and
+	// the only way a ticket execution exists for a ticket this run does not hold.
+	// #42 loses it; #46 is then claimed for real and abandoned mid-lane, which is
+	// the boundary #159 gave a tracker action to. `maxTicketExecutions: 1` is what
+	// puts them in that order.
+	const gitea = fakeGitea({
+		issues: [giteaIssue({ number: 42 }), giteaIssue({ number: 46 })],
+		onWrite: ({ operation, ticket }, world) => {
+			if (operation !== "issue-assign" || ticket !== 42) return;
+			world.issues[0].assignees = [{ id: 2, login: "kuferek", username: "kuferek" }];
+		},
+	});
+
+	const { answer, context } = await runOver(t, {
+		gitea,
+		tickets: [42, 46],
+		signal,
+		pipeline: () => {
+			signal.emit("SIGTERM", "SIGTERM");
+			return new Promise(() => {});
+		},
+	});
+
+	assert.equal(answer.report.end_reason, "abandoned");
+	// The loser's row is settled by the lane that lost, not by the boundary …
+	const store = await eventsOf(t, context);
+	assert.deepEqual(
+		store
+			.readEvents({ kind: "ticket.disposition-changed" })
+			.map((event) => [event.ticket, event.payload.disposition]),
+		[
+			[42, "released"],
+			[46, "released"],
+		],
+	);
+	// … and #42's tracker state is left exactly as the winner left it. Un-assigning
+	// there would clear **the winner's** claim: a contest is only reachable between
+	// installs sharing one tracker identity, so the two claims are one field.
+	assert.deepEqual(
+		gitea.issues[0].assignees.map((user) => user.login),
+		["kuferek"],
+	);
+	assert.deepEqual(
+		gitea.writes.filter((write) => write.path.includes("/issues/42")).map((write) => write.operation),
+		["issue-assign", "comment-post"],
+		"the loser wrote to the tracker after losing",
+	);
+	// The ticket it did hold is settled in full.
+	assert.deepEqual(gitea.issues[1].assignees, []);
+});
+
 test("§3.4: a cleared factory:needs-human is a fresh ticket execution, never a requeue", async (t) => {
 	const gitea = fakeGitea({ issues: [giteaIssue({ number: 42 })] });
 	const context = invocation(t);
@@ -312,9 +407,11 @@ test("a run reads the frontier again at every scheduling decision, and caches no
 	// reclassify it — so once #43 carries `factory:awaiting-merge` from its own
 	// publication, the label check settles it and the edges are never asked for.
 	// §3.3 adds two reads of its own on the ticket it claims, the pre-claim look
-	// and the re-read, so five decisions over #43 read it seven times.
+	// and the re-read, so five decisions over #43 read it seven times — and #182
+	// reads each typed ticket once at start, before any run exists, to learn
+	// whether it is a map: eight.
 	const decisions = gitea.calls.filter(
 		(entry) => entry.call === "issue.get" && entry.path.endsWith("/issues/43"),
 	);
-	assert.equal(decisions.length, 7, "the frontier was not re-read at every scheduling decision");
+	assert.equal(decisions.length, 8, "the frontier was not re-read at every scheduling decision");
 });

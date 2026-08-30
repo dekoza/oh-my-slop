@@ -1,4 +1,4 @@
-import { capacityPlan, implementResourceClass } from "../capacity/plan.mjs";
+import { capacityPlan, implementDispatch } from "../capacity/plan.mjs";
 import { openCapacity } from "../capacity/slots.mjs";
 import {
 	EXIT_LEASE_LOST,
@@ -8,6 +8,7 @@ import {
 } from "../cli/exit-codes.mjs";
 import {
 	CONTROLLER_EXIT_LEASE_LOST,
+	DISPOSITION_RELEASED,
 	END_REASON_ABANDONED,
 	END_REASON_BASELINE_RED,
 	END_REASON_CAPACITY_EXHAUSTED,
@@ -19,6 +20,8 @@ import {
 } from "../domain/vocabulary.mjs";
 import { circuitBreaker } from "./breaker.mjs";
 import { FactoryEffectError } from "../effects/errors.mjs";
+import { FactoryGitError } from "../git/errors.mjs";
+import { readAttemptBranches, unreadableAttemptBranches } from "../git/parked.mjs";
 import { latestRequest, operatorRequests, requestReport } from "./stop.mjs";
 import { installSignalRequests } from "./signals.mjs";
 import { reconcile } from "../reconcile/engine.mjs";
@@ -30,18 +33,24 @@ import { FactoryStateError } from "../state/errors.mjs";
 import { LEASE_RENEWAL_MS, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
 import { CLAIM_OUTCOMES, claimTicket } from "../tracker/claims.mjs";
-import { attemptIdOf } from "../worker/attempt.mjs";
+import { FactoryTrackerError } from "../tracker/errors.mjs";
+import { attemptIdOf, mintedAttemptBranches } from "../worker/attempt.mjs";
+import { createAdoptionProbe } from "../worker/adoption.mjs";
+import { settleUnadoptable } from "../worker/lifecycle.mjs";
 import { applyDisposition } from "../tracker/disposition.mjs";
-import { readScope } from "../tracker/frontier.mjs";
+import { emptyScopeDiagnosis, isEmptyParentScope, readScope } from "../tracker/frontier.mjs";
 import { createGiteaReader } from "../tracker/gitea.mjs";
+import { resolveMapScope } from "./map-scope.mjs";
+import { SCOPE_FORMS } from "./scope.mjs";
 import { createGiteaWriter } from "../tracker/writer.mjs";
 import { drainReport } from "./drain.mjs";
 import { decideEntry, ENTRY_MODES, liveRunAnswer } from "./entry.mjs";
-import { FOREGROUND_FLAG, launch } from "./launch.mjs";
+import { CONTROLLER_PANE_ENV, FOREGROUND_FLAG, launch } from "./launch.mjs";
 import { FactoryRunError, isUsageRefusal } from "./errors.mjs";
 import { HEARTBEAT_INTERVAL_MS, startHeartbeat } from "./heartbeat.mjs";
 import { holdControllerLease } from "./lease-guard.mjs";
 import { preflight } from "./preflight.mjs";
+import { applyExpiry } from "../retention/expiry.mjs";
 import { createProductionPipeline } from "../pipeline/production.mjs";
 import { schedule } from "./scheduler.mjs";
 import { describeScope, PARENT_FLAG, parseScope } from "./scope.mjs";
@@ -135,9 +144,34 @@ export async function runStart({
 	frontier,
 	execute,
 }) {
+	const reader = tracker ?? createGiteaReader({ repo: config.tracker.repo, login: config.tracker.login });
+
+	// #182: a bare number that is a `wayfinder:map` means the map's members.
+	// Resolved **here, above the process-shape branch**, so the detached launcher
+	// and the foreground controller answer §10.4's live-run question about the
+	// same selector, and the run records the selector rather than the number.
+	// The read is made only by a start that would read a live frontier at all,
+	// for the reason #181's pre-run check is: a run with nothing to execute asks
+	// the tracker nothing.
+	//
+	// A tracker that cannot be read is the **controller's** refusal, typed. The
+	// launcher's read serves only §10.4's answer — the controller it launches
+	// resolves the line again from `rawArgs` and refuses if it cannot — so a
+	// launcher that could not read carries the parsed scope through rather than
+	// refusing on behalf of a process that has not looked yet.
+	const foreground = flags.has(FOREGROUND_FLAG);
 	let requested;
+	let resolvedFrom = null;
 	try {
 		requested = parseScope(args, { parent: flags.has(PARENT_FLAG) });
+		if (readsLiveFrontier({ pipeline, execute, frontier })) {
+			try {
+				({ scope: requested, resolved_from: resolvedFrom } = await resolveMapScope(reader, requested));
+			} catch (error) {
+				if (!(error instanceof FactoryTrackerError)) throw error;
+				if (foreground) throw unreadableScope(error, args);
+			}
+		}
 	} catch (error) {
 		return refusal(error);
 	}
@@ -147,7 +181,7 @@ export async function runStart({
 	// terminal. They are one verb because they are one job with one decision
 	// between them; the branch is the decision, and the two shapes share the
 	// scope parse and §10.4's live-run answer above it.
-	if (!flags.has(FOREGROUND_FLAG)) {
+	if (!foreground) {
 		return launch({
 			repoRoot,
 			requested,
@@ -161,11 +195,11 @@ export async function runStart({
 		});
 	}
 
-	const reader = tracker ?? createGiteaReader({ repo: config.tracker.repo, login: config.tracker.login });
 	const store = await openStore({ repoRoot, agentDir });
 	try {
 		return await start(store, {
 			requested,
+			resolvedFrom,
 			newRun: flags.has(NEW_RUN_FLAG),
 			config,
 			configPath,
@@ -309,6 +343,21 @@ async function driveRun(store, hold, context, signals) {
 	} catch (error) {
 		return refusal(error);
 	}
+
+	// #181: a parent nothing declares membership of is refused **before a run
+	// exists**, so the journal never records a drain over a scope that was never
+	// there — §10.3's end reasons describe runs that ran, and "empty" is not one.
+	// The read happens only when this run would read a live frontier at all: a
+	// run with nothing to execute reads none (§3.3), and a tracker asked on its
+	// behalf would be a read with no consumer.
+	if (entry.scope.kind === SCOPE_FORMS.parent && readsLiveFrontier(context)) {
+		const view = await readScope(context.tracker, entry.scope, { at: startedAt });
+		if (isEmptyParentScope(view)) {
+			const { reason, message, details } = emptyScopeDiagnosis(view);
+			return refusal(new FactoryRunError(reason, message, details));
+		}
+	}
+
 	// An adopted run's row already exists, so a loss from here on may name it. A
 	// minted one is only *intended* until its `run.started` commits — a loss in
 	// between reports no run, because no durable record names one (§14.6).
@@ -324,8 +373,18 @@ async function driveRun(store, hold, context, signals) {
 		);
 	}
 
-	const expiry = applyExpiry();
+	// §12.6: **once per controller invocation, after reconcile and before
+	// preflight, under the controller lease** — the established "state is
+	// authoritative and nothing is in flight" window, and never on a timer, never
+	// mid-run (§14.30). It sits above `openLifecycle` on purpose: this run has no
+	// record yet, so it is not a candidate, and an adopted one is held as `live`.
+	// A failure here propagates rather than being swallowed — a housekeeping pass
+	// that warns and continues is the failure mode §11.2 exists to end, and a run
+	// that could not settle its own history has not established the "nothing is in
+	// flight" premise the rest of this function is written under.
+	const expiry = applyExpiry(store, { retention: context.config.retention, hold, at: startedAt });
 	openLifecycle(hold, entry, { at: startedAt, pane: context.pane });
+	const paneMark = await markOwnPane(context, entry.run);
 	signals.attach(entry.run);
 
 	let lifecycle = RUN_LIFECYCLE.preflight;
@@ -396,12 +455,53 @@ async function driveRun(store, hold, context, signals) {
 						}),
 		});
 
+		// The composition this run would execute a lane with, decided **before** the
+		// reclaim below: §5.5's adoption is only worth doing for a run that can
+		// actually resume the lane it adopts.
+		const scheduling =
+			checked.ok && context.pipeline === undefined
+				? {
+						...context,
+						pipeline: createProductionPipeline(store, {
+							hold,
+							leases: context.leases,
+							config: context.config,
+							activeRouting: context.activeRouting,
+							tracker: context.tracker,
+							trackerWriter: context.trackerWriter,
+							herdr: context.herdrControl,
+							preflight: checked.production,
+							executable: context.executable,
+							env: context.env,
+							now: context.now,
+						}),
+					}
+				: context;
+		const executor = checked.ok ? executorFor(store, entry, hold, scheduling) : null;
+
 		// §9.4: a slot a previous controller left held is settled **by probing its
-		// holder, never by waiting for a clock**. The probe belongs to the slice
-		// that can ask a pane whether it is still there (#114, #107); until then
-		// this call is what reports the rows nothing can settle, rather than a
-		// silent pool one index short.
-		const reclaimed = capacity.reclaim({ probe: context.slotProbe ?? null, at: context.now() });
+		// holder, never by waiting for a clock** — and §5.5's adoption is that same
+		// probe's other answer. A provable worker of this run comes back as a lane
+		// to resume; a disproved one has its attempt settled and its row released;
+		// an unanswerable read moves nothing and is accounted for when the run ends.
+		//
+		// **The transfer is gated on there being a run to transfer into.** A red
+		// preflight, or a package with nothing to execute a lane with, adopts
+		// nothing: a row moved onto a generation that ends without using it is
+		// exactly the row no successor can settle.
+		const reclaimed = await capacity.reclaim({
+			probe: createAdoptionProbe({ store, herdr: context.herdrControl }),
+			adopt: executor !== null,
+			settleAttempt: (answer) =>
+				settleUnadoptable(store, {
+					hold,
+					identity: { run: answer.run, ticket: answer.ticket, phase: answer.phase, attempt: answer.attempt },
+					adoption: adoptionEvidence(answer),
+					actor: "controller",
+					now: context.now,
+				}),
+			at: context.now(),
+		});
 
 		// Only a green run reaches `running`: a red required preflight ends the run
 		// with `baseline-red` without a lane ever being offered a slot.
@@ -409,31 +509,22 @@ async function driveRun(store, hold, context, signals) {
 		let executionContext = context;
 		if (checked.ok) {
 			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.running, { at: context.now() });
-			const scheduling =
-				context.pipeline === undefined
-					? {
-							...context,
-							pipeline: createProductionPipeline(store, {
-								hold,
-								leases: context.leases,
-								config: context.config,
-								activeRouting: context.activeRouting,
-								tracker: context.tracker,
-								trackerWriter: context.trackerWriter,
-								herdr: context.herdrControl,
-								preflight: checked.production,
-								executable: context.executable,
-								env: context.env,
-								now: context.now,
-							}),
-						}
-					: context;
 			executionContext = scheduling;
-			executed = await runScheduler(store, capacity, entry, hold, scheduling);
+			executed = await runScheduler(store, capacity, entry, hold, scheduling, {
+				executor,
+				resumed: reclaimed.resumed,
+			});
 			lifecycle = move(hold, entry.run, RUN_LIFECYCLE.draining, { at: context.now() });
 		}
 
 		if (hold.lost) return leaseLostAnswer(store, hold);
+
+		// Anything this run adopted and never ran is given back before it ends. Its
+		// generation is superseded the moment the run is over, and a row held under
+		// a generation nobody drives is a row no successor may adopt (§5.5) — so a
+		// lane the loop never reached, because a stop was already pending or an
+		// abandon came first, must not leave an index quietly one short.
+		const releasedAdopted = capacity.releaseAdopted({ at: context.now() });
 
 		// §10.3's mandatory reason, read **after** the loop: a stop that arrived
 		// mid-run was honoured at a ticket boundary, and the record of it is what
@@ -447,11 +538,15 @@ async function driveRun(store, hold, context, signals) {
 		const endReason = endReasonOf(checked, requests, breaker, executed);
 		let execution = executionReport(store, entry.run, executed, executionContext);
 		if (endReason !== END_REASON_BASELINE_RED) {
-			execution = settleAtBoundary(store, hold, entry.run, {
+			execution = await settleAtBoundary(store, hold, entry.run, {
 				endReason,
 				at: context.now(),
 				executed,
 				context: executionContext,
+				// #151's read is git's to answer, and the private clone is the green
+				// preflight's handle. A run that never got one carries no evidence
+				// rather than an assumption about what its attempts left behind.
+				clone: checked.production?.clone ?? null,
 			});
 		}
 
@@ -475,9 +570,21 @@ async function driveRun(store, hold, context, signals) {
 			started_at: startedAt,
 			ended_at: endedAt,
 			entry: entryReport(entry),
-			scope: { ...entry.scope, described: describeScope(entry.scope) },
+			scope: {
+				...entry.scope,
+				described: describeScope(entry.scope),
+				// #182: where a rewritten selector came from — the map ticket and the
+				// label that made it one — or `null` when the line said it outright.
+				resolved_from: context.resolvedFrom ?? null,
+			},
 			reconcile: reconcileReport(reconciled),
 			expiry,
+			// §12.8's sixth target kind, reported rather than assumed: whether this
+			// run's controller pane carries the mark that makes it reclaimable, and
+			// why not when it does not. A pane that could not be marked is a pane
+			// cleanup will leave alone forever, which an operator should be able to
+			// read off the run that left it.
+			controller_pane: paneMark,
 			preflight: { ok: checked.ok, red: checked.red, checks: checked.checks },
 			// §8.6, on every run and not only the ones it stopped: a run that got to
 			// one automation failure short of the threshold is the operator's early
@@ -496,7 +603,16 @@ async function driveRun(store, hold, context, signals) {
 			// all of them are queued behind one slot, so the run says which — and
 			// beside it, what the last controller left that this one could not
 			// settle.
-			capacity: { ...capacity.snapshot({ at: endedAt }), reclaim: reclaimed },
+			capacity: {
+				...capacity.snapshot({ at: endedAt }),
+				reclaim: reclaimReport(reclaimed),
+				released_adopted: releasedAdopted,
+				// §5.5, §12.4: what this run could not settle, said out loud rather
+				// than left as a pool one index short. A row an unanswerable probe left
+				// behind is not adoptable by anyone — the run that took it is over —
+				// so the report names it and what will settle it.
+				unsettled: capacity.unsettled({ at: endedAt }),
+			},
 			execution,
 			monitor: {
 				// The trigger is a property of the launch surface, not of the run:
@@ -534,17 +650,20 @@ async function driveRun(store, hold, context, signals) {
  * missing, is how a run ends up reading a live frontier with nothing able to
  * execute against it.
  */
-function runScheduler(store, capacity, entry, hold, context) {
+function runScheduler(store, capacity, entry, hold, context, { executor, resumed = [] }) {
 	const run = entry.run;
-	const executor = executorFor(store, entry, hold, context);
 
 	return schedule({
 		capacity,
-		frontier: executor === null ? emptyFrontier : (context.frontier ?? liveFrontier(entry, context)),
-		resourceClassOf: (member) =>
-			implementResourceClass(
+		frontier: executor === null ? emptyFrontier : readsLiveFrontier(context) ? liveFrontier(entry, context) : context.frontier,
+		// §5.5's adopted lanes, entered ahead of the first frontier read. They are
+		// empty unless a previous controller left a worker this one could prove.
+		resumed,
+		dispatch: (member, { at }) =>
+			implementDispatch(
 				{ profiles: context.config.profiles, activeRouting: context.activeRouting },
 				member,
+				{ exhaustion: capacity.exhaustion, at },
 			),
 		execute: executor ?? refuseExecution,
 		// §10.5: the stop request is **polled at ticket boundaries**, which is
@@ -567,6 +686,38 @@ function runScheduler(store, capacity, entry, hold, context) {
 }
 
 /**
+ * The reclaim, as the **report** carries it.
+ *
+ * `resumed` hands the scheduler live slot holds, and a hold is a capability
+ * rather than a fact: a report is printed, serialised, and read by the monitor,
+ * and none of those is something to do with one. The lanes are named instead —
+ * their ticket, the attempt the probe proved, the rows they hold, and the
+ * evidence that authorised the move.
+ */
+function reclaimReport(reclaimed) {
+	return {
+		...reclaimed,
+		resumed: reclaimed.resumed.map((lane) => ({
+			ticket: lane.ticket,
+			attempt: lane.attempt,
+			slots: [lane.slots.ticket.name, ...(lane.slots.model === null ? [] : [lane.slots.model.name])],
+			evidence: lane.evidence,
+		})),
+	};
+}
+
+/**
+ * §5.5's verdict, as the ending of a disproved attempt records it.
+ *
+ * The whole probe answer minus the identity the record already carries: an
+ * `attempt.ended` naming its own run, ticket, and attempt a second time inside
+ * its payload is noise in the one record an operator reads first.
+ */
+function adoptionEvidence(answer) {
+	return Object.freeze({ verdict: answer.verdict, tests: answer.tests ?? {}, evidence: answer.detail ?? {} });
+}
+
+/**
  * What this run can do with a claimable ticket, or `null` if nothing.
  *
  * **One predicate, read by both the loop and the report.** An injected `execute`
@@ -574,9 +725,38 @@ function runScheduler(store, capacity, entry, hold, context) {
  * composed onto a pipeline, and with no pipeline there is nothing to compose.
  */
 function executorFor(store, entry, hold, context) {
+	if (!hasExecutor(context)) return null;
 	if (context.execute !== undefined) return context.execute;
-	if (context.pipeline === null || context.pipeline === undefined) return null;
 	return ticketExecution(store, entry, hold, context);
+}
+
+/**
+ * The predicate `executorFor` answers `null` by, readable without a hold — and
+ * readable **before** #147's production pipeline is composed, which happens
+ * after preflight. An omitted `pipeline` is that composition, so it counts; only
+ * an explicit `null` is the focused no-pipeline seam.
+ */
+function hasExecutor(context) {
+	return context.execute !== undefined || context.pipeline !== null;
+}
+
+/**
+ * Whether this run reads §3.2's frontier **from the tracker**: it has something
+ * to execute, and no suite handed it a frontier of its own. Both the loop's
+ * wiring and #181's pre-run check read this one answer, so a run cannot be
+ * refused over a tracker read it would never have made.
+ */
+function readsLiveFrontier(context) {
+	return hasExecutor(context) && context.frontier === undefined;
+}
+
+/** #182: the tracker failed while the line was still being read. */
+function unreadableScope(error, args) {
+	return new FactoryRunError(
+		"scope-unreadable",
+		`The tracker could not be read to resolve \`factory start ${args.join(" ")}\`: ${error.message}`,
+		{ at: "scope", tracker: { reason: error.reason, ...error.details } },
+	);
 }
 
 /**
@@ -615,7 +795,7 @@ function liveFrontier(entry, context) {
  * report a lane it finished as still in flight.
  */
 function ticketExecution(store, entry, hold, context) {
-	return async ({ ticket, member, slots, capacity }) => {
+	return async ({ ticket, member, slots, capacity, route }) => {
 		// §7.3's deterministic identity, so a re-entered run rebuilds the same one
 		// and §4.5's duplicate check returns the claim already committed.
 		const attempt = attemptIdOf({ run: entry.run, ticket, ordinal: 1 });
@@ -633,7 +813,30 @@ function ticketExecution(store, entry, hold, context) {
 		// §3.3's four refusing outcomes each end the lane having written nothing.
 		// `claimed: false` is what keeps them out of the report's claim count — a
 		// run that touched no ticket must not report one (§9.7).
-		if (!HELD_BY_THIS_RUN.has(claim.outcome)) return { disposition: null, claimed: false, claim };
+		if (!HELD_BY_THIS_RUN.has(claim.outcome)) {
+			// **Three of them write nothing at all; the lost collision is the
+			// exception**, and it is the only way a `ticket_execution` row exists for
+			// a ticket this run does not hold: it assigned and commented before the
+			// re-read told it the claim is somebody else's (§3.3). The row is settled
+			// `released` here — the journal half of §8.9's row and **none of its
+			// tracker half**, since §3.3's loser leaves the field exactly as it is —
+			// because an execution nobody is working on must not sit in §9.6's
+			// in-flight set, where the abandon boundary would drop **the winner's**
+			// claim (#159). It is also what that row has always meant: this run gave
+			// the execution up rather than finishing it.
+			if (claim.outcome === CLAIM_OUTCOMES.lostCollision) {
+				hold.append({
+					kind: "ticket.disposition-changed",
+					source: "controller",
+					run: entry.run,
+					ticket,
+					occurredAt: context.now(),
+					observedAt: context.now(),
+					payload: { disposition: DISPOSITION_RELEASED, reason_class: null, fault: null },
+				});
+			}
+			return { disposition: null, claimed: false, claim };
+		}
 
 		// §11.6's declared numbers travel with the lane rather than being fetched
 		// by whoever composes the walk: the budgets a ticket execution spends and
@@ -647,6 +850,12 @@ function ticketExecution(store, entry, hold, context) {
 			attempt,
 			claim,
 			capacity,
+			// §11.5's dispatch decision, made before the claim and against §9.8's
+			// memo (#155). It travels with the lane for the same reason §11.6's
+			// budgets do: the route this lane's model slot was taken for and the
+			// route its first attempt is minted under are the one decision, and a
+			// composer resolving it again would be a second place it could differ.
+			route,
 			budgets: context.config.budgets,
 		});
 		const disposition = outcome?.disposition ?? null;
@@ -769,25 +978,6 @@ function endReasonOf(checked, requests, breaker, executed = null) {
 }
 
 /**
- * §12.6: expiry runs **once per controller invocation, after reconcile and
- * before preflight, under the controller lease** — the established "state is
- * authoritative and nothing is in flight" window.
- *
- * It is a no-op until retention lands, and says so rather than reporting a
- * plausible zero: "reclaimed 0 bytes" and "nothing ran" are different answers to
- * the operator's question, and only one of them is true here.
- */
-function applyExpiry() {
-	return {
-		ran: false,
-		reclaimed_bytes: null,
-		expired_runs: null,
-		missing: "the two retention tiers, the four pins, and expiry (#117)",
-		spec: "§12.6",
-	};
-}
-
-/**
  * §3.5's classified per-member report, over the frontier as of the loop's last
  * scheduling decision.
  *
@@ -848,16 +1038,43 @@ function missingSubsystem(context) {
  * durable disposition beside them, which is what the next reconcile reads to
  * tell a stopped run from an abandoned one (§13.A).
  *
- * **It touches no pane, and it touches no tracker.** §9.6's abandon *stops
- * issuing new effects*, so the assignee stays exactly where it is: dropping it
- * here would be a mutation issued by a run that has just declared it is issuing
- * none. The claim a dead run leaves behind is not stranded — §3.3's same-factory
- * staleness proves it from this same durable disposition and takes it over with
- * no waiting period, which is why the record below is the whole obligation. A
- * wedged pane is evidence for the same reason (§13.B, §14.27), and pane
- * reclamation is cleanup-plan's exclusively.
+ * **The disposition is §8.9's, whole** (#159). Recording `released` and stopping
+ * there left the journal and the tracker disagreeing about the same ticket, and
+ * the tracker is the half a human reads: an assignee still standing under a claim
+ * comment nothing answers reads as a run still working. §8.9's table says
+ * `released` drops the claim, states itself, and adds no label, and this path is
+ * reached by ordinary operator action — a second stop or a SIGTERM (§10.5, §15) —
+ * rather than only by a crash. §3.3's staleness still settles a claim whose
+ * controller died mid-settlement, but as the backstop it is rather than as a
+ * timeout standing in for a fact this controller already knew.
+ *
+ * §9.6's abandon *stops issuing new effects* about the **work**: no pane is
+ * touched, no worker is relaunched, nothing new is claimed. A wedged pane is
+ * evidence (§13.B, §14.27) and pane reclamation is cleanup-plan's exclusively.
+ * Giving the claim back is not new work — it is the settlement of work already
+ * done with, and §8.9 has one word for it.
+ *
+ * The lanes are not awaited (§9.6), so one may still be alive in this process and
+ * may still reach its own §8.9 row — and then §4.5's pair is what decides, since
+ * both settlements key the same `comment-post` on the same ticket execution: the
+ * second is a typed payload conflict rather than two disagreeing comments on one
+ * ticket. It lands in a promise nobody awaits, in the moment before the binary
+ * exits; that is the whole of the exposure, and it is the pair doing its job.
+ *
+ * **A tracker refusal is carried, never raised.** Letting it escape would trade
+ * the run's own ending — `run.ended`, the lease release, exit 4 — for a mutation
+ * that has somewhere else to be answered, which is the one thing a settlement
+ * must not do. What that somewhere is, exactly: the disposition is already in the
+ * journal, and the refused mutation is §4.5's *requested* half, so reconcile
+ * re-probes it and §12.4 alarms on it — **reconcile settles the record, it does
+ * not perform the write**. So the claim itself falls back to §3.3's staleness for
+ * that ticket, as it did before this path wrote anything, and the run names the
+ * ticket in `released_unsettled` rather than reporting a release the tracker
+ * refused. The announcement is not posted over a claim that is still standing:
+ * §8.9's order is the eligibility change first, and a comment saying the work was
+ * given up, above an assignee saying it was not, is worse than the silence.
  */
-function settleAtBoundary(store, hold, run, { endReason, at, executed, context }) {
+async function settleAtBoundary(store, hold, run, { endReason, at, executed, context, clone }) {
 	if (endReason !== END_REASON_ABANDONED) {
 		return executionReport(store, run, executed, context);
 	}
@@ -870,6 +1087,10 @@ function settleAtBoundary(store, hold, run, { endReason, at, executed, context }
 		.readTicketExecutions(run)
 		.filter((execution) => execution.disposition === null);
 
+	// Every record first, then the tracker: the durable half is what §13.A reads
+	// back and what §3.3 proves a takeover from, and a refusal partway through the
+	// mutations below must not leave some of these executions with no disposition
+	// at all.
 	inFlight.forEach((execution) =>
 		hold.append({
 			kind: "ticket.disposition-changed",
@@ -882,9 +1103,39 @@ function settleAtBoundary(store, hold, run, { endReason, at, executed, context }
 			// gave up on the work, and nothing about the ticket or the host failed.
 			// Spelling both nulls rather than omitting them is what keeps a v2
 			// reader from having to tell "no fault" from "an older writer".
-			payload: { disposition: "released", reason_class: null, fault: null },
+			payload: { disposition: DISPOSITION_RELEASED, reason_class: null, fault: null },
 		}),
 	);
+
+	// **Every one of them is a claim this run holds.** §3.3's contest loser is the
+	// one execution that would not be, and un-assigning there would clear *the
+	// winner's* claim — arbitration is only reachable between installs sharing one
+	// tracker identity, so the two claims are one field. That row never reaches
+	// here: the lane records its own `released` the moment it loses, which is what
+	// keeps this loop from needing a rule about whose claim it is settling.
+	const unsettled = [];
+	for (const execution of inFlight) {
+		try {
+			await applyDisposition(store, {
+				writer: context.trackerWriter,
+				hold,
+				run,
+				ticket: execution.ticket,
+				// The identity the claim was made under (§7.3), derived rather than read
+				// back: it is what the ordinary path names on its own disposition, so one
+				// ticket execution reads the same in the journal whichever way it ended.
+				attempt: attemptIdOf({ run, ticket: execution.ticket, ordinal: 1 }),
+				assignee: context.config.tracker.assignee,
+				at,
+				disposition: DISPOSITION_RELEASED,
+				parked: await parkedBranches(store, clone, { run, ticket: execution.ticket }),
+			});
+		} catch (error) {
+			if (isLeaseLoss(error)) throw error;
+			if (!(error instanceof FactoryTrackerError) && !(error instanceof FactoryEffectError)) throw error;
+			unsettled.push(Object.freeze({ ticket: execution.ticket, reason: error.message }));
+		}
+	}
 
 	// Counted by ticket rather than added up: the loop already released the lanes
 	// it was running, and the claim writes a `ticket_execution` row per ticket, so
@@ -899,7 +1150,44 @@ function settleAtBoundary(store, hold, run, { endReason, at, executed, context }
 		...executionReport(store, run, executed, context),
 		in_flight: inFlight.length,
 		released: released.size,
+		// Named rather than counted: the operator's next question about a release the
+		// tracker did not take is *which ticket*, and §12.4's alarm on the unresolved
+		// effect is the other half of the answer.
+		released_unsettled: Object.freeze(unsettled),
 	});
+}
+
+/**
+ * #151's evidence for a ticket execution the run is giving up on, as
+ * `git/parked.mjs`'s two halves composed here.
+ *
+ * The composition is at the call site by that module's own design — the journal
+ * says which attempts exist and the clone says what their refs are now, and the
+ * seam between intent and fact stays visible in the signatures. The production
+ * pipeline composes the same two for the dispositions it produces; this is the
+ * one ending that never reaches it, which is exactly why the evidence is most
+ * likely to matter here: an abandon catches a builder mid-work, and §7.7 makes
+ * its branch the only copy of what it committed.
+ *
+ * A run with no green production handles has no clone to ask, and answers `null`
+ * — **"nobody looked", never "nothing was built"** (§11.2).
+ */
+async function parkedBranches(store, clone, { run, ticket }) {
+	if (clone === null) return null;
+
+	try {
+		return await readAttemptBranches(clone, mintedAttemptBranches(store, { run, ticket }));
+	} catch (error) {
+		// The read is evidence about a disposition already decided, so a refusal
+		// costs the evidence and never the settlement — the same carry, and the same
+		// typed refusal, the pipeline's own composition makes of this pair. The read
+		// half never throws by construction; the journal half can, on an identity no
+		// branch name is derivable from. A store that cannot answer is not caught
+		// here and is not meant to be: the `hold.append` above would already have
+		// failed on it, and this function is not where that gets discovered.
+		if (!(error instanceof FactoryGitError)) throw error;
+		return unreadableAttemptBranches(error.message);
+	}
 }
 
 /**
@@ -916,9 +1204,15 @@ function openLifecycle(hold, entry, { at, pane }) {
 	}
 
 	// The pane is the controller's own: Herdr injects it into the pane it
-	// manages, and the record is where #118's cleanup finds the pane of a
-	// finished run. It is recorded, never acted on — this run and every later
-	// one leave the pane exactly as found (§13.B).
+	// manages. It is recorded, never acted on — this run and every later one
+	// leave the pane exactly as found (§13.B).
+	//
+	// **Cleanup does not find the pane through this record**, and deliberately
+	// not: Herdr reuses pane ids, so a recorded one may since have become the
+	// operator's own terminal. §12.8's plan enumerates panes by the token
+	// `markOwnPane` stamps, which is §14.27's guard rather than a lookup. What the
+	// record is for is the operator reading a finished run's report and wanting to
+	// know where it ran.
 	hold.append({
 		kind: "run.started",
 		source: "controller",
@@ -930,6 +1224,35 @@ function openLifecycle(hold, entry, { at, pane }) {
 	// The append above committed under the token, so the run now durably exists
 	// and a later loss names it rather than reporting no run.
 	hold.adopt(entry.run);
+}
+
+/**
+ * §12.8's sixth target kind, made reachable: **stamp the run onto the
+ * controller's own pane**, and only where the factory made that pane.
+ *
+ * The discriminator is the launcher's declared environment, never
+ * `HERDR_PANE_ID` alone. Herdr sets the pane id in every pane it manages,
+ * including the terminal an operator ran `--foreground` from, so stamping on
+ * that evidence would make the operator's own shell a cleanup target — which is
+ * precisely the sentence §14.27 exists to write: *the factory does not own panes
+ * it did not create.* Unstamped is the safe state, and it is the default.
+ *
+ * **A refusal is not fatal, and that is a decision rather than a shrug.** The
+ * only thing the stamp buys is that this pane can be reclaimed later; without it
+ * cleanup finds no token and never touches the pane, which is the same outcome as
+ * §13.B's for every pane in the system before #118. Failing the run over an
+ * unmarked pane would trade a live run for a byte of housekeeping — and the mark
+ * is display-only metadata, not state anything reads for correctness. The answer
+ * rides the run's report either way, so a pane cleanup will never reclaim is
+ * visible on the run that left it rather than discovered as missing bytes.
+ *
+ * `null` is the honest answer for a run whose pane the factory did not make:
+ * nothing was attempted, so there is no outcome to report.
+ */
+async function markOwnPane(context, run) {
+	if (context.pane === null || (context.env?.[CONTROLLER_PANE_ENV] ?? "") === "") return null;
+
+	return context.herdrControl.stampRun(context.pane, { run, title: `factory ${run}` });
 }
 
 /**
@@ -1091,8 +1414,15 @@ function headline(report) {
 				? ` and drained all ${members} member(s) of its scope`
 				: ` with ${report.execution.drain.claimable_now} of ${members} member(s) still claimable`;
 
+	// #182: the operator typed a map's number, and the sentence says what that
+	// became before it says what happened to it.
+	const resolved =
+		report.scope.resolved_from === null || report.scope.resolved_from === undefined
+			? ""
+			: `#${report.scope.resolved_from.ticket} carries ${report.scope.resolved_from.label}, so its members were the scope: `;
+
 	return (
-		`run ${report.run} over ${report.scope.described} ended ${ended}, ` +
+		`${resolved}run ${report.run} over ${report.scope.described} ended ${ended}, ` +
 		`having claimed ${report.execution.claimed} tickets${scope}.`
 	);
 }

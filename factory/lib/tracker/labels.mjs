@@ -23,4 +23,9 @@ export const FACTORY_LABELS = Object.freeze({
 	failed: "factory:failed",
 	/** §7.5, §8.9: published — closes on the human's manual merge. */
 	awaitingMerge: "factory:awaiting-merge",
+	/**
+	 * #182: a wayfinder map. A bare `factory start <N>` naming one runs the
+	 * map's members — the parent-scoped selector over it — rather than the map.
+	 */
+	map: "wayfinder:map",
 });

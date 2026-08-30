@@ -1,8 +1,10 @@
 import { EXIT_REFUSED, EXIT_USAGE } from "../cli/exit-codes.mjs";
 import { FactoryRunError, isUsageRefusal } from "../controller/errors.mjs";
+import { resolveMapScope } from "../controller/map-scope.mjs";
 import { PARENT_FLAG, parseScope } from "../controller/scope.mjs";
 import { resolveAgentDir } from "../state/location.mjs";
 import { openRepoStoreReadOnly } from "../state/store.mjs";
+import { FactoryTrackerError } from "../tracker/errors.mjs";
 import { createGiteaReader } from "../tracker/gitea.mjs";
 import { doctorReport } from "./report.mjs";
 
@@ -66,8 +68,25 @@ export async function runDoctor({
 	// operator's line being wrong, and the same mistyped argument reaching two
 	// different exit codes is a shell script's bug waiting to happen.
 	let scope;
+	let resolvedFrom = null;
+	// Built only when there is a scope to spend it on: a `doctor` with no scope
+	// makes no tracker read, so it needs no credentials either.
+	let trackerClient = null;
 	try {
 		scope = parseScope(args, { parent: flags.has(PARENT_FLAG) });
+		trackerClient = scope === null ? null : (tracker ?? trackerFor(config));
+		// #182: `doctor <map>` reads what `start <map>` would claim, so the same
+		// rewrite happens here — §10.5 wants the two asked the question in exactly
+		// one way. A tracker that cannot be read leaves the parsed scope standing;
+		// the scope section reports the unreadable tracker as it always has,
+		// rather than one failed read taking the whole diagnosis down.
+		if (trackerClient !== null) {
+			try {
+				({ scope, resolved_from: resolvedFrom } = await resolveMapScope(trackerClient, scope));
+			} catch (error) {
+				if (!(error instanceof FactoryTrackerError)) throw error;
+			}
+		}
 	} catch (error) {
 		if (!(error instanceof FactoryRunError)) throw error;
 		return {
@@ -92,9 +111,8 @@ export async function runDoctor({
 			env,
 			probes,
 			scope,
-			// Built only when there is a scope to spend it on: a `doctor` with no
-			// scope makes no tracker read, so it needs no credentials either.
-			tracker: scope === null ? null : (tracker ?? trackerFor(config)),
+			resolvedFrom,
+			tracker: trackerClient,
 			// §10.5's expensive mode, asked for explicitly. Without the flag the last
 			// recorded result is reported and nothing is executed.
 			baseline: flags.has(BASELINE_FLAG),

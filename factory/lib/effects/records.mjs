@@ -1,5 +1,5 @@
 import { CONTROLLER_LEASE } from "../domain/vocabulary.mjs";
-import { canonicalJson, digest } from "../state/events.mjs";
+import { canonicalJson, digest, sourceForActor } from "../state/events.mjs";
 import { FactoryEffectError } from "./errors.mjs";
 import { effectKey } from "./keys.mjs";
 import { EFFECT_REGISTRY } from "./registry.mjs";
@@ -93,7 +93,7 @@ export function requestEffectIn(
 
 	const event = tx.appendEvent({
 		kind: "effect.requested",
-		source: sourceOf(actor),
+		source: sourceForActor(actor),
 		run,
 		ticket,
 		phase,
@@ -179,7 +179,7 @@ export function resolveEffectIn(tx, { key, actor, fencingGeneration, result, at 
 
 	const event = tx.appendEvent({
 		kind: "effect.resolved",
-		source: sourceOf(actor),
+		source: sourceForActor(actor),
 		run: row.run_id,
 		ticket: row.ticket,
 		phase: row.phase,
@@ -227,6 +227,56 @@ export function unresolvedEffects(store, { run = null } = {}) {
 				.all(run, run),
 		)
 		.map((row) => ({ ...row, result: decodeResult(row.result) }));
+}
+
+/**
+ * Did this ticket execution's mutation of the given kind actually happen?
+ *
+ * A **resolved** row and nothing weaker: §14.1 is that the journal never
+ * establishes an external fact, so a `requested` row is an intent the world may
+ * never have seen. §12.4's open-PR pin is the caller — "did this run open a pull
+ * request" is a question about the world, and a requested-but-unresolved
+ * `pr-create` is §12.4's *fourth* pin instead.
+ *
+ * It lives here because the `effect` table is this module's; a `SELECT` over it
+ * from a subsystem that does not own it is a second place that decides what a
+ * `state` column means.
+ *
+ * @param {object} store an open store, controller or read-only
+ * @param {{ run: string | null, ticket: number | null, operation: string }} what
+ * @returns {boolean}
+ */
+export function performedEffect(store, { run, ticket, operation }) {
+	return store.read(
+		(db) =>
+			db
+				.prepare(
+					"SELECT 1 FROM effect WHERE run_id IS ? AND ticket IS ? AND operation = ? AND state = 'resolved'",
+				)
+				.get(run, ticket, operation) !== undefined,
+	);
+}
+
+/**
+ * Drop a run's effect rows — §12.2's "**effect rows expire with their run**", in
+ * the transaction that deletes its stream.
+ *
+ * It lives here because the `effect` table is this module's (§4.5's "written in
+ * one place"), and it deletes **only** rows naming the run: a repo-scoped
+ * obligation carries no run and outlives every one of them, which is exactly why
+ * §5.4 puts it in reconcile's scope as an entity of its own.
+ *
+ * There is no guard against dropping an unresolved row, and that is deliberate:
+ * an unresolved effect is §12.4's fourth pin, so a run reaching this call has
+ * none by construction. Re-checking here would be a second copy of the pin, and
+ * the copy is the one that eventually disagrees.
+ *
+ * @param {{ db: object }} tx
+ * @param {{ run: string }} what
+ * @returns {number} rows dropped
+ */
+export function deleteRunEffects(tx, { run }) {
+	return tx.db.prepare("DELETE FROM effect WHERE run_id = ?").run(run).changes;
 }
 
 /**
@@ -345,10 +395,6 @@ function requireOperandIsNotTheDigest(operand, payloadDigest) {
 			{ at: "operand", found: operand, expected: "a natural discriminator" },
 		);
 	}
-}
-
-function sourceOf(actor) {
-	return actor === "controller" ? "controller" : "operator";
 }
 
 /**

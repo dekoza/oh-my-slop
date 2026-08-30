@@ -4,6 +4,7 @@ import { FactoryEffectError } from "../effects/errors.mjs";
 import { gitIsolationCheck } from "../git/preflight.mjs";
 import { FactoryPackageError } from "../package/errors.mjs";
 import { assertPackageIntact, packageHandshake, recordPackageHandshake } from "../package/handshake.mjs";
+import { sourceForActor } from "../state/events.mjs";
 import { createWorkerPreflight } from "../worker/preflight.mjs";
 import { probeHerdr } from "./herdr.mjs";
 import { writeRunManifest } from "./manifest.mjs";
@@ -368,7 +369,7 @@ function failed(check, className, { message, detail }) {
 function emit(store, { run, actor, at, check }) {
 	store.append({
 		kind: "preflight.checked",
-		source: actor === "controller" ? "controller" : "operator",
+		source: sourceForActor(actor),
 		run,
 		phase: "preflight",
 		occurredAt: at,

@@ -45,6 +45,11 @@ export const PROBE_CALLS = Object.freeze([
 	"git.rev-parse",
 	"git.ls-remote",
 	"git.worktree-list",
+	// §12.8's non-default target: whether §7.1's factory-private bare clone is
+	// there at all. `git.rev-parse` cannot answer it — a rev-parse against a
+	// directory that is not a repository fails the way a broken repository does,
+	// and "absent" and "unanswerable" are different facts (§12.4).
+	"git.clone-status",
 	"herdr.pane-list",
 	"herdr.workspace-list",
 	"artifact.blob",
@@ -159,6 +164,12 @@ export const PROBE_CATALOGUE = Object.freeze({
 	"branch-delete": probe("git-local", "git.rev-parse", "absent"),
 	"pane-delete": probe("harness", "herdr.pane-list", "absent"),
 	"artifact-delete": probe("artifact", "artifact.blob", "absent"),
+	// §12.8's one non-whitelisted target: the factory-private bare clone, which
+	// is **not** a default target and is reached only by naming it. It has an
+	// operation of its own rather than riding `worktree-delete` because it is not
+	// a worktree — deleting it takes every worktree registered in it with it, and
+	// a probe that looked for a path would answer about the wrong thing.
+	"clone-delete": probe("git-local", "git.clone-status", "absent"),
 });
 
 function probe(source, call, match) {

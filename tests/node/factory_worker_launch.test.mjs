@@ -328,6 +328,10 @@ test("attempt.correlated carries what only the harness could say (§6.5)", async
 		tab: "w1:t2",
 		pane: "w1:p2",
 		agent: herdrAgentName(context.attempt),
+		// Payload v2 (#114): the kind, so §5.5's third adoption test compares a
+		// live pane's agent against what this launch asked for rather than
+		// against a value derived from the runtime name.
+		kind: "pi",
 	});
 	assert.equal(event.payload.resolved_model, "qwen3-30b", "§11.7's observed id, per attempt");
 	assert.equal(event.payload.package_rev, PACKAGE_REV);

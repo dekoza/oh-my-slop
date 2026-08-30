@@ -43,7 +43,7 @@ skip the search. Otherwise look, in this order:
 
 1. **Issue references in the commit messages** (`#123`, `Closes #45`, GitLab `!67`) — fetch via
    the tracker doc's "fetch the relevant ticket" convention. The issue tracker should have been
-   provided to you — run `/setup-project-skills` if not.
+   provided to you — tell the user to run `/setup-project-skills` if not.
 2. A path passed as an argument.
 3. A spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or feature.
 4. If nothing is found, ask where the spec is.

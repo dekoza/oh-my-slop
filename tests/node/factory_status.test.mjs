@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 
+import { writeArtifactBlob } from "../../factory/lib/artifacts/blobs.mjs";
+import { recordArtifact } from "../../factory/lib/artifacts/ledger.mjs";
 import { runCli } from "../../factory/lib/cli/main.mjs";
 import { runStart } from "../../factory/lib/controller/start.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
@@ -117,7 +119,35 @@ test("status carries the sections this slice owes and no speculative others", as
 
 	const { value } = await runCli(["status"], context);
 
-	assert.deepEqual(Object.keys(value.report), ["schema_version", "at", "store", "runs", "capacity"]);
+	assert.deepEqual(Object.keys(value.report), ["schema_version", "at", "store", "runs", "capacity", "retention"]);
+});
+
+test("status reports bytes per retention class and per run, and the horizon they are measured against (§12.10)", async (t) => {
+	const context = invocation(t);
+	const store = await openTestStore(t, { repoRoot: context.cwd, agentDir: context.agentDir });
+	const opened = runStarted();
+	store.append(opened);
+	const written = writeArtifactBlob(store.storeDir, "checks: 3 passed");
+	store.transaction((tx) =>
+		recordArtifact(tx, { ...written, mediaType: "text/plain", run: opened.run, ticket: 42, at: FIXED_NOW }),
+	);
+	store.close();
+
+	const { value } = await runCli(["status"], context);
+
+	assert.deepEqual(value.report.retention.bytes.by_class, [
+		{ retention_class: "tier-1", artifacts: 1, bytes: written.bytes, expired: 0, expired_bytes: 0 },
+	]);
+	assert.deepEqual(value.report.retention.bytes.by_run, [
+		{ run_id: opened.run, artifacts: 1, bytes: written.bytes, expired: 0, expired_bytes: 0 },
+	]);
+	assert.equal(value.report.retention.horizon.runs, 20);
+	assert.equal(value.report.retention.horizon.days, 30);
+	// §12.10 gives the *reclaimable* number to `cleanup-plan`, not to `status`,
+	// and computing it here would cost a pin evaluation per over-horizon run on
+	// the one report an operator runs repeatedly against a live run.
+	assert.equal(value.report.retention.reclaimable_bytes, undefined);
+	assert.deepEqual(Object.keys(value.report.retention), ["at", "horizon", "bytes"]);
 });
 
 test("status shows a ticket execution's outcome chain (§8.10)", async (t) => {

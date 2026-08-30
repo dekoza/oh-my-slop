@@ -8,6 +8,7 @@ import {
 	isSuperseded,
 	LEASE_NAMES,
 	openLeases,
+	parseCapacitySlot,
 } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { factorySources, makeRepo } from "./helpers/factory-repo.mjs";
@@ -335,10 +336,137 @@ test("regression: a recorded pid is advisory — it neither holds a lapsed lease
 	assert.ok(adopter.fencingGeneration > live.fencingGeneration);
 });
 
+test("§15's PID reuse and replacement, injected: the recycled pid decides nothing either way", async (t) => {
+	const store = await openTestStore(t);
+	let clock = T0;
+	const leases = openLeases(store, { now: () => clock });
+
+	// A controller records its identity and dies. The host reboots, the kernel
+	// hands the same pid to something else, and that process is alive right now —
+	// the exact confusion §4.6's blob exists to make visible and to decide
+	// nothing by.
+	const dead = leases.acquire({
+		name: LEASE_NAMES.controller,
+		identity: leaseIdentity({ pid: 4242, boot_id: "boot-one", process_start_time: T0 - 5_000 }),
+	});
+
+	// Before the TTL, the row is held — and it is the clock that says so, not the
+	// pid: the recycled process being alive changes nothing.
+	assert.equal(
+		refusalOf(() =>
+			leases.acquire({
+				name: LEASE_NAMES.controller,
+				identity: leaseIdentity({ pid: 4242, boot_id: "boot-two", process_start_time: T0 + 1_000 }),
+			}),
+		).reason,
+		"lease-held",
+	);
+
+	// After it, the successor adopts without asking anything about the pid, and
+	// its generation strictly supersedes the dead holder's.
+	clock = T0 + CONTROLLER_LEASE_TTL_MS + 1;
+	const successor = leases.acquire({
+		name: LEASE_NAMES.controller,
+		identity: leaseIdentity({ pid: 4242, boot_id: "boot-two", process_start_time: T0 + 1_000 }),
+	});
+	assert.ok(successor.fencingGeneration > dead.fencingGeneration);
+
+	// **Replacement**: the row now names the same pid under a different boot, and
+	// the blob is what makes the reuse readable while the token is what decides.
+	// The predecessor's hold, whose blob is indistinguishable by pid, is gone.
+	const row = leases.inspect(LEASE_NAMES.controller);
+	assert.equal(row.identity.pid, 4242);
+	assert.equal(row.identity.boot_id, "boot-two");
+	assert.notEqual(row.token, dead.token);
+	assert.equal(refusalOf(() => leases.renew(dead)).reason, "lease-lost");
+	assert.equal(leases.release(dead), false, "a recycled pid does not release its namesake's row");
+	assert.equal(leases.inspect(LEASE_NAMES.controller).token, successor.token);
+});
+
+// ── §5.5's adoption: rows move, they are never freed and re-taken ────────────
+
+test("adoption swaps a capacity row onto a new token and generation, on the predecessor's own token", async (t) => {
+	const store = await openTestStore(t);
+	const leases = openLeases(store, { now: () => T0 });
+	const slot = capacityTicketSlot(0);
+	const dead = leases.acquire({ name: slot, fencedTo: 1, identity: { run: "R", ticket: 42, pool: "ticket" } });
+
+	const [adopted] = leases.adoptAll(
+		[{ row: leases.inspect(slot), identity: { run: "R", ticket: 42, pool: "ticket", attempt: "R-t42-a1" } }],
+		{ fencedTo: 9, at: T0 + 1 },
+	);
+
+	assert.equal(adopted.name, slot);
+	assert.equal(adopted.fencingGeneration, 9);
+	assert.notEqual(adopted.token, dead.token);
+	assert.equal(adopted.expiresAt, null, "a capacity row carries no TTL, and adoption does not give it one");
+
+	const row = leases.inspect(slot);
+	assert.equal(row.token, adopted.token);
+	assert.equal(row.identity.attempt, "R-t42-a1");
+	assert.equal(leases.release(dead), false, "the predecessor's token no longer holds the row");
+	assert.equal(leases.release(adopted), true);
+});
+
+test("a lane's rows move together or not at all: half a lane is a row nothing can resume", async (t) => {
+	const store = await openTestStore(t);
+	const leases = openLeases(store, { now: () => T0 });
+	const ticket = capacityTicketSlot(0);
+	const model = capacityModelSlot("local", 0);
+	leases.acquire({ name: ticket, fencedTo: 1, identity: { run: "R", ticket: 42, pool: "ticket" } });
+	leases.acquire({ name: model, fencedTo: 1, identity: { run: "R", ticket: 42, pool: "model" } });
+	const rows = [leases.inspect(ticket), leases.inspect(model)];
+
+	// The model row moves under the transfer — a third party took it — so the
+	// whole adoption is refused and the ticket row is untouched.
+	leases.release(rows[1]);
+	const refused = refusalOf(() =>
+		leases.adoptAll(
+			rows.map((row) => ({ row, identity: { ...row.identity } })),
+			{ fencedTo: 9, at: T0 + 1 },
+		),
+	);
+
+	assert.equal(refused.reason, "lease-adoption-refused");
+	assert.equal(leases.inspect(ticket).fencingGeneration, 1, "the first row was rolled back with the second");
+	assert.equal(leases.inspect(ticket).token, rows[0].token);
+});
+
+test("adoption moves capacity rows only: the two singleton objects have their own settlements", async (t) => {
+	const store = await openTestStore(t);
+	const leases = openLeases(store, { now: () => T0 });
+	leases.acquire({ name: LEASE_NAMES.integration, identity: leaseIdentity() });
+
+	const refused = refusalOf(() =>
+		leases.adoptAll([{ row: leases.inspect(LEASE_NAMES.integration), identity: {} }], { fencedTo: 9 }),
+	);
+
+	assert.equal(refused.reason, "invalid-lease-name");
+	assert.match(refused.message, /§9.5/, "an integration lease is settled by probing git, never transferred");
+});
+
+test("a capacity row's pool, class, and index are read off its name, never off the advisory blob", () => {
+	assert.deepEqual({ ...parseCapacitySlot(capacityTicketSlot(3)) }, { pool: "ticket", class: null, index: 3 });
+	assert.deepEqual({ ...parseCapacitySlot(capacityModelSlot("claude-code", 2)) }, {
+		pool: "model",
+		class: "claude-code",
+		index: 2,
+	});
+	assert.equal(parseCapacitySlot(LEASE_NAMES.controller), null);
+	assert.equal(parseCapacitySlot("capacity:ticket:x"), null);
+});
+
 test("no lease leaves the database without its token compared, and no source tests a process", () => {
 	for (const [path, source] of factorySources()) {
-		for (const statement of source.match(/DELETE FROM lease[^"'`]*/g) ?? []) {
-			assert.match(statement, /holder_token = \?/, `${path} deletes a lease without comparing the token`);
+		// **Every** statement, not only the deletions: §5.5's adoption writes a row
+		// somebody else holds, and a transfer that compared no token would be the
+		// unconditional removal path this module exists not to have.
+		for (const statement of source.match(/(DELETE FROM|UPDATE) lease[^"'`]*/g) ?? []) {
+			assert.match(
+				statement,
+				/WHERE name = \? AND holder_token = \?/,
+				`${path} writes a lease row without comparing the token`,
+			);
 		}
 		// Signalling a pid is banned as a **liveness test** — §4.6's identity blob
 		// is advisory, and both legacy systems decided ownership from a pid they

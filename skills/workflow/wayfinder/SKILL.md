@@ -28,7 +28,7 @@ The map is a single issue on this repo's issue tracker, labelled `wayfinder:map`
 
 The map is an **index**, not a store. It lists the decisions made and points at the tickets that hold their detail; a decision lives in exactly one place — its ticket — so the map never restates it, only gists it and links.
 
-**Where the map, its child tickets, blocking, and frontier queries physically live is tracker-specific.** The issue tracker should have been provided to you — run `/setup-project-skills` if not. Consult the tracker doc's "Wayfinding operations" section for how *this* repo expresses them. If no tracker has been provided, default to the local-markdown tracker.
+**Where the map, its child tickets, blocking, and frontier queries physically live is tracker-specific.** The issue tracker should have been provided to you — tell the user to run `/setup-project-skills` if not. Consult the tracker doc's "Wayfinding operations" section for how *this* repo expresses them. If no tracker has been provided, default to the local-markdown tracker.
 
 Whatever the tracker: the map is an issue labelled `wayfinder:map`, tickets are children of it, blocking uses the tracker's native "blocked by" relationship where it has one and a `Blocked by:` body line otherwise, and the frontier query is "open, unassigned, all blockers closed".
 
@@ -62,9 +62,11 @@ The whole map at low resolution, loaded once per session. Open tickets are **not
 
 ### Tickets
 
-Each ticket is a **child issue** of the map; the tracker's issue id is its identity. Its body is the question, sized to one 100K token agent session:
+Each ticket is a **child issue** of the map; the tracker's issue id is its identity. On a forge-backed tracker the body's **literal first line** is `Part of #<map>` — the one anchored pattern the tracker doc and the software factory (`docs/specs/software-factory.md` §3.1) both resolve membership through; a heading or a mention in prose makes the ticket a child of nothing. Then the question, sized to one 100K token agent session:
 
 ```markdown
+Part of #<map>
+
 ## Question
 
 <the decision or investigation this ticket resolves>

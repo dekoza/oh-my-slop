@@ -303,6 +303,17 @@ writes (branch create, push, evidence ref, worktree create/delete), Herdr writes
 agent start, agent stop), artifact and attestation writes, and cleanup deletions. **Reads are not
 effects** — they get durable observation cursors.
 
+**One exception, and it is the only one: expiry's reclamation of an artifact blob** (§12.5). The
+pair exists so a mutation whose outcome the database cannot know is settled by re-probing rather
+than by reasoning (§14.1). An expiring blob is the one mutation for which the database already
+*is* the record: §12.5 keeps the ledger row permanently as a dated tombstone, expiry commits that
+row before unlinking, and a crash in between leaves a digest resolving to the correct
+`unavailable(retention-expired)` while the next pass re-attempts the unlink. Keying such a pair by
+the expiring run would put the record of a deletion inside the thing being deleted; keying it
+repo-scoped would add two permanent records per artifact to the `controller` stream §12.2 keeps
+low-volume by design. `artifact-delete` therefore belongs to §12.8's cleanup, whose orphaned blobs
+have no ledger row to be the record.
+
 **Key grammar:**
 
 ```
@@ -505,6 +516,19 @@ corroborate.
 Herdr **exposes no exit code anywhere** (`exit_code` occurs exactly once in its entire API
 schema, on plugin command logs), so it can never say *how* something ended. The outbox remains
 the sole structured completion signal.
+
+**"A worker process is alive right now" is `pane.agent`, and that field follows the pane's
+foreground process rather than its screen** (#158, `tests/live/herdr-agent-presence-source.mjs`).
+Herdr's screen rules decide agent **state** — `agent explain` names the rule that matched and
+the region it matched in — but a pane whose foreground process merely *names* itself `claude`
+is reported as hosting an agent with a blank screen and no rule matched, and neither
+`pane release-agent` nor a foreign `pane report-agent` removes the field from a live one. This
+is what makes §6.6's stop confirmation safe **in the direction it is used**: a mid-turn screen
+that stops matching cannot manufacture an absence, so `stopped: true` is never written about a
+worker that is still working. The error the signal *can* make is the opposite one — a process
+wearing the name is reported present — and that lands as §13.B's `wedged-pane`, which is the
+conservative failure. Agent **status** carries no such guarantee: a foreign `report-agent` moves
+it, and pi's `idle` is already the engine's default when nothing matches (#150).
 
 ### 5.3 The reconciliation invariant
 
@@ -860,6 +884,62 @@ Runtime verification proves **registration and invocation echo only**. Deep proo
 Opus/Fable actually load and follow skill bodies is a **one-time acceptance matrix** per
 (harness version × model × package revision) during implementation, with §8's independent
 review gate judging worker output at every integration.
+
+**The matrix is a receipt against a fresh nonce, not a transcript** (#115). The package ships one
+skill — `skills/meta/skill-loading-proof` — whose body declares a **marker, a token, and a
+transform** in a machine-readable block and asks its reader for a single line applying that
+transform to a nonce the prompt supplies. **No prompt carries the token, the transform, or the
+answer**, so a receipt line is a body that reached the model and a correct one is a body it
+followed; the judge reads the contract out of the *same shipped bytes the model was given*, so
+there is no second copy of the token for the package to drift from.
+
+**The proof skill ships in the pinned revision rather than being planted for the run**, and that
+is the trade deliberately taken: a body planted outside the revision would be delivered through a
+plugin the generator did not build from the pin, and would prove a package no worker runs. The
+cost is one skill in a catalogue of sixty-six, whose description narrows it to this matrix and
+which nothing else invokes; it is discovered by the closure walk, flattened by §6.3's generator,
+and counted in §6.2's expected component inventory exactly like every other — which is the point.
+
+Three cells per model, because the survey's two claims are separate — "success in one does not
+prove the other" — and because a proof that could not have observed the failure it rules out is
+not a proof:
+
+- **direct invocation** — the `<plugin>:<skill>` command §6.4 puts at the head of every worker
+  prompt;
+- **model invocation** — natural language naming no skill, so the `description` is what has to
+  work;
+- **trace control** — a cell deliberately told to read the body off disk. Its `read-not-loaded`
+  outcome is what makes the other two cells' *empty tool trace* evidence of native loading rather
+  than an untested assumption, exactly as #163's unfenced control session does for the discovery
+  fence. A control that shows no read leaves the trace question open, however green the rest is.
+
+**Every cell runs the worker binding** — the argv a worker pane receives, plus the probe-only IO
+flags and nothing else (#160's composed-binding rule). A cell proven under any other flag set
+proves a session no worker runs in.
+
+**That "plus" is also the matrix's own limit, recorded rather than glossed.** The probe-only IO
+flags make a cell a `--print` session, and §6.4 runs every real worker attempt in an interactive
+pane. The matrix therefore covers the **headless** end of that axis and cannot reach the other,
+which is why the survey claim naming "interactive versus headless" stays unverified here however
+green the cells are — the untested half is the one every attempt actually runs in.
+
+**A claim is evidence about every axis its own sentence names, or about nothing.** The recorded
+status of each survey claim is derived from the cells that ran, never narrated: a claim naming Opus
+and Fable stays unverified on a matrix that ran neither, one naming an interactive worker stays
+unverified on a headless run, and one naming consistency *across harness versions* is unreachable
+from a single document by construction — it is discharged, if ever, by comparing two of them. A
+caveat attached to a green claim is narration, and the silent-wrong-answer class §15 calls
+load-bearing. What a matrix *did* establish toward such a claim is stated beneath it, so honesty
+costs the reader no evidence.
+
+The result is a durable artifact under `docs/proofs/`, one document per (version × revision),
+citing the exact harness version, the **observed resolved model id** (§11.7), the package tree
+digest — the working tree as it stood when the cells ran, which is before the document existed —
+and §11.7's checkout metadata beside it, without which a digest of a tree that no longer exists
+is unreconstructable. The runner is `tests/live/prove-skill-loading.mjs`, which lives there for
+the reason every script in that directory does: it spends real turns and must never become a
+suite. The judgement, the claim assessment and the document are `factory/lib/proof/`, held by
+`tests/node/factory_proof_*.test.mjs`; what the runner itself owns is the wiring and the spending.
 
 ### 6.8 Trust, permissions, and isolation
 
@@ -1251,6 +1331,17 @@ transcript, ticket snapshot and diff as the only inputs. **Model diversity is av
 per-run configuration but is not mandated** — it would constrain model routing for a benefit
 nobody can measure.
 
+**The two axes are routed independently, and a fan-out that could only fill one says so** (#155).
+Each axis dispatches through §11.5's order for **that axis**, so §9.9's reroute walks each down its
+own escape rather than letting one axis's choices constrain the other's, and an axis with no routable
+profile releases the ticket execution rather than minting an attempt nothing could launch. Where the
+reroute does leave one profile between them, **that is a stated condition of the verdict**: two axes
+on one profile is a legal outcome, and a run arriving there on its own — as opposed to an operator
+writing the same name twice, which §11.5 makes them do visibly — must be recorded, or the verdict
+presents two independent reviews where two runs of one model happened. The condition rides each
+axis's own result and therefore §8.7's attestation; it is deliberately kept **off** the rejection's
+detail, which §8.5 quotes whole as the reviewers' words.
+
 **The diff both axes read is the publishable diff, and both of its ends are the passing verify
 record's.** That record's base is the fresh base-branch tip the branch sits on after §7.5's
 step-1 rebase — the boundary of what will be published — and its head is the exact commit
@@ -1402,6 +1493,12 @@ Controller-derived: `invalid-result` · `no-result` · `dead-worker` · `timeout
 `wrote-but-hung` · `cancelled` · `automation-failure` · `provider-refused` (#154 — the
 provider's fault, so §8.10 charges no budget for it).
 
+#155's **`routes-exhausted` is deliberately not in this enum**: no attempt has it, because it is
+what the walk answers *instead of* minting one. It is one of §8.10's phase-less rows, beside the two
+budget exhaustions it is shaped like — *the run ran out of something this ticket needed* — which is
+also what makes it reachable from `verify` and `integrate`, whose fresh-retry is routed while they
+have no attempt for an outcome to belong to.
+
 **Phase results.**
 `harvest` → `passed` | `predicate-failed` ·
 `verify` → `passed` | `failed` | `unrunnable` | `rebase-conflict` ·
@@ -1443,9 +1540,20 @@ about a counter it cannot see.
 the human at a glance whether they owe an *answer* or an *investigation*** — the difference
 between a two-minute reply and opening a terminal. Every disposition gets the same
 machine-parseable comment block: identity tuple, outcome chain, evidence references by digest,
-and **the ticket execution's attempt branches, read from the private clone at settlement**.
+**what actually did the work**, and **the ticket execution's attempt branches, read from the
+private clone at settlement**.
 
-**The branches are the fourth element because §8.10 harvests what an outbox claims, and an
+**The fourth element is #155's dispatch read**: every attempt with its role, the profile it ran on,
+what §11.5 declared for it, and why they differ. §9.9's reroute runs a profile other than the
+declared one, and a disposition naming neither would leave a green ticket unable to answer *what
+wrote this?* — which is the whole reason §6.5 re-asserts a declared model against the observed one.
+It is `null` for the two pinned rows rather than a copy of the profile: §8.5's repair and §8.10's
+automation retry made no dispatch decision, and saying they declared what they ran would read as a
+routing that happened to land where the pin already was. Unlike the branch read below it, it is a
+pure function of durable state and therefore rides the **digested intent**: a re-entered settlement
+recomputes it exactly.
+
+**The branches are on the block because §8.10 harvests what an outbox claims, and an
 attempt that never wrote one has still created a branch** — routinely carrying real commits, and
 under §7.7 the only copy of them. So every attempt of the execution is named with its branch, the
 head git answers *now* (§5.2, never the outbox's claim or the mint's record), and its commit
@@ -1461,10 +1569,11 @@ attempts not listable** and **no read at all** distinct from all five.
 digest, and every other field of the block is a function of durable state — so a re-entered
 settlement recomputes it exactly, while a branch head is a fact about the world at the moment of
 reading. Digesting it would make an ordinary §10.4 re-entry that read a moved head a payload
-conflict instead of returning the comment already posted. **The one ending it therefore does not
-reach is §9.6's abandon boundary**, which marks in-flight executions `released` in the journal and
-writes nothing to the tracker: there is no comment there for any of §8.9's block to ride, which is
-tracked as its own defect (#159) rather than carved out here.
+conflict instead of returning the comment already posted. **§9.6's abandon boundary settles like
+every other ending** (#159): the in-flight executions it marks `released` in the journal drop their
+claim, state the release, and add no label — the row above, applied by the one module that applies
+it. An abandon is also where the read matters most, since it catches builders mid-work whose
+commits §7.7 leaves on a branch and nowhere else.
 
 `released` is for operator stop and controller shutdown mid-attempt: an honest state, not a lock
 nobody holds.
@@ -1487,7 +1596,7 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | implement | `wrote-but-hung` | harvest the valid outbox, stop the agent, record the anomaly | — |
 | implement | `dead-worker` | retry | automation |
 | implement | `automation-failure` | retry | automation |
-| implement | `provider-refused` | `released`, §9.8 memo recorded | — |
+| implement | `provider-refused` | §9.9 reroute to the next routable profile, §9.8 memo recorded | — |
 | implement | `cancelled` | `released` | — |
 | harvest | `passed` | → verify | — |
 | harvest | `predicate-failed` (dirty tree / 0 commits) | repair | repair |
@@ -1501,7 +1610,8 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | review | `mutation-detected` | `failed` / `review-mutation`, **no retry** | — |
 | review | reviewer attempt `needs-human` | `paused` (worker reason class) | — |
 | review | reviewer attempt `wrote-but-hung` | take its verdict, record the anomaly | — |
-| review | reviewer attempt `provider-refused` | `released`, §9.8 memo recorded | — |
+| review | reviewer attempt `provider-refused` | §9.9 reroute down **that axis's** order, §9.8 memo recorded | — |
+| review | `routes-exhausted` | `released` (§9.9 — the axis has no routable profile; no attempt is minted) | — |
 | review | reviewer attempt `cancelled` | `released` | — |
 | review | reviewer attempt `worker-failed` · `invalid-result` · `no-result` · `dead-worker` · `timeout` · `automation-failure` | retry | automation |
 | integrate | `integrated` | `published` | — |
@@ -1518,6 +1628,12 @@ human removing the label is what makes the label mean "someone has acknowledged 
 
 - **`mutation-detected` is the only outcome with no retry at all.** A read-only role that wrote
   has broken its own contract, and retrying it buys a second violation.
+- **`reroute` is the one action that spends nothing and is still not free of a bound** (§9.9). It is
+  not one of §8.5's tiers and not the automation retry: nothing was judged and nothing broke, so it
+  asks neither question. What bounds it is that each profile §11.5's order names is dispatched at
+  most once per ticket execution, which makes the chain at most as long as the declared order with
+  no counter to keep. Giving it a budget key that charged nothing would put a hole in exactly the
+  property that makes an unbounded retry unconstructible.
 - **`integration-red` disposes where `verify × failed` repairs**, though both are the same rerun
   reporting the same fact about the same kind of commit. What differs is what has been spent and
   what the red result is *about*: a red verify is the worker's own work failing at its own base,
@@ -1698,9 +1814,16 @@ the honest representation of unstarted work. Nothing is buffered and no intent i
 terminal disposition, integration included. Slots are released and never refilled; the run exits
 when the last lane terminates.
 
-**Abandon** — a second `stop` or `SIGTERM` — stops issuing new effects, marks in-flight ticket
-executions **`released`**, releases their slots, and **leaves worker panes alive for the next
-reconcile**.
+**Abandon** — a second `stop` or `SIGTERM` — stops issuing new effects **about the work**, marks
+in-flight ticket executions **`released`**, releases their slots, and **leaves worker panes alive
+for the next reconcile**. Nothing is relaunched and nothing new is claimed; §8.9's `released` row
+is still applied to each of those tickets, because giving a claim back is the settlement of work
+already given up on rather than new work, and a claim left standing under an unanswered claim
+comment reads to a human as a run still working (#159). Every in-flight execution at that boundary
+is a claim the run holds, and **§3.3's contest loser is what makes that true rather than assumed**:
+it assigned before its re-read told it the claim is somebody else's, so it settles its own row
+`released` — journal only, since §3.3's loser leaves the tracker exactly as it is, and
+un-assigning there would clear **the winner's** claim, which is one field with the loser's.
 
 **One report, one end reason.** The end reason is a property of the controller loop and is
 **never derived from the lanes**, so it stays unambiguous however differently they ended.
@@ -1770,7 +1893,73 @@ memo is what keeps the next claim out of the exhausted class. A run left holding
 whose every route is memo-locked at its final scheduling decision ends `capacity-exhausted` (exit
 9) — even when other classes finished their tickets — saying so plainly in a classified per-member
 report rather than draining as though the work were done (§9.7's green-looking run that did nothing). The
-memo is the input #155's rerouting consumes; nothing here chooses a different profile.
+memo is the input §9.9's rerouting consumes; nothing here chooses a different profile.
+
+### 9.9 Dispatch reroutes around an exhausted class (#155)
+
+§9.8 remembers that a class is unavailable and holds dispatch off it. Holding is the right answer when
+the class is all a role has; it is the wrong one when the operator wrote down somewhere else to go, and
+a run that waits an hour for a daily cap to roll has turned one quota blip into an idle afternoon. **A
+role whose profile belongs to an exhausted class dispatches to the next routable profile instead**, and
+this section is that step.
+
+**The order is declared, never inferred.** §11.5's routing gains an optional `fallbacks` block: a
+per-role order of profiles dispatch may take next, with **review's declared as two orders, one per
+§8.4 axis**. Every order an inference could produce — the profiles block's key order, the class sizes,
+"any profile the routing reaches" — is defensible, none of them is the operator's, and the first quota
+blip is a poor moment to discover which one the code picked. **An unknown profile name is a load error**
+(§11.3), never a silent fall back to the default; a repeat within one order is one too. An absent block
+is the empty addition, in the shape §6.8's `worker` block already has, and a routing that declares none
+dispatches exactly as it did before this existed.
+
+**A route is one decision, made once and recorded once.** §11.5's dispatch and §9.8's memo are one
+question — *which profile may this run spend, and from which pool* — because the class names the slot
+pool §9.4 takes from and the profile names what §6.5 mints. Deriving them separately is how a lane comes
+to hold a slot in a pool its worker never touches. The scheduler makes the decision **before the claim**
+and it travels with the lane; nothing downstream resolves the routing again, because the memo moves.
+
+**A launch reads the mint, never the decision it just made.** The mint leaves an existing record exactly
+as it is, so a controller that died between minting an attempt and running it re-enters, re-resolves
+§11.5 against a memo that has since moved, and would otherwise launch under a profile the record does
+not name — leaving §8.9's block naming a profile that did not do the work, which is the hole this
+recording exists to close. The record is the answer to *what is this attempt* (§14.1), on every path.
+
+**The substitution is never silent.** §6.5 and §11.5 re-assert a *declared* model against the observed
+one precisely so a run cannot behave differently from what was declared, and a reroute is such a
+difference. So the decision is a first-class record on the attempt's mint — what was declared, what ran,
+why they differ, and every candidate passed over with the state that passed it over — and §8.9's block
+names what actually did the work. A green ticket that cannot answer *what wrote this?* is the auditing
+hole this exists on the right side of.
+
+**The worker is not charged for the provider.** §8.10's `provider-refused` rows route to a **`reroute`**
+action: the same work, on the next profile, on **no budget at all**. It is an action of its own rather
+than a retry with a null budget, because the action→budget map is what makes an unbounded retry
+unconstructible and a fourth key in it that charged nothing would put a hole in exactly that property.
+**What bounds it is that each routable profile is *refused* at most once per ticket execution**, derived
+from the journal — the attempts whose stage §8.10 routed to a reroute — so the bound and the spend are
+one expression, as §8.6's budgets already are, and there is no counter to declare, forget, or lose to a
+crash. **Refused, not merely dispatched**: an automation retry relaunches the same work on the same
+pinned profile, so a profile a retry ran is not spent, and excluding it would turn every infra flake
+into a silent model change — on a routing with no fallback, into a released ticket.
+
+**Running out is its own typed outcome.** `routes-exhausted` (§8.8) is what the walk answers when every
+profile a role can reach is memo-locked, and §8.10 settles it as a budgetless `released` — §9.8's answer
+unchanged: no label, the ticket back on the frontier untouched, and the memo keeping the next claim out.
+It is a word of its own rather than a second meaning for `provider-refused` because the two ask for
+different things: *this provider is out* is answered by rerouting and *the run is out of providers* is
+answered by waiting, and `released` writes no comment, so the outcome on the terminal record is the only
+thing telling them apart. It is likewise not a `failed`: filing a provider's daily cap as an
+investigation would end that investigation at "wait".
+
+**The memo is class-scoped, and that is load-bearing here.** Two profiles naming different presets on
+one endpoint share a slot pool because they share one GPU (§9.1), so they also share one refusal:
+rerouting between them buys nothing, and the record says so by naming each candidate's class rather than
+pretending the second is a different resource.
+
+**§8.4's two axes reroute independently.** The fan-out dispatches per axis through the axis's own
+declared order, so an exhausted class walks each down its own escape rather than one axis's choices
+constraining the other's, and an axis with none releases **without minting an attempt** nothing could
+launch. Where the reroute does leave one profile between them, the verdict says so (§8.4).
 
 ---
 
@@ -1991,6 +2180,10 @@ disk to declare them; the manifest's evidence would otherwise record a decision 
 could make. It is named in the singular deliberately: legacy `version: 1` files used `workers`
 for profiles and routing, and §11.8's migration must not confuse the two.
 
+- **`routing` gains one optional key, `fallbacks`** (§9.9, §11.5): the declared order dispatch
+  reroutes down when a role's profile belongs to a class §9.8's memo has locked. It is a block of
+  *additions*, so its absent form is the empty addition — the same shape `worker` has — and an
+  unknown profile name inside it is a load error rather than a silent fall back to the default.
 - **The label vocabulary is code constants, not config** (§3.2).
 - **`completion` is deleted entirely.** All four knobs (`closeAfterIntegration`, `finalMerge`,
   `createPullRequest`, `deploy`) now have exactly one legal value, three of them protected by
@@ -2036,6 +2229,21 @@ fallback**.
   legacy's positional first-match.
 - **`_postSubscription` becomes a first-class named routing set** (`routing.sets.*`), selectable
   per run. Dormant config the loader ignores is exactly the drift this section ends.
+- **An optional `fallbacks` block declares §9.9's reroute order** — per role, the profiles dispatch
+  may take next when the one the role resolves to belongs to a class §9.8's memo has recorded
+  unavailable. `implement` and `freshRetry` declare one order each; **`review` declares two, one per
+  §8.4 axis**, so an exhausted class cannot quietly walk both axes onto the same profile with nothing
+  in the config saying it could. An **unknown profile name is a load error** and a repeat within one
+  order is one too. **Absent means no alternate route** — the empty addition in §6.8's `worker`
+  block's shape, not a default anyone chose, because there is exactly one thing an undeclared reroute
+  order can mean. A fallback profile **counts as reached by the routing** for §11.6's sizing and
+  reachability rules and for §6.2's per-profile proof: a reroute dispatches into its class and takes a
+  slot from that class's pool, so discovering it unsized at the moment a quota blip makes it the only
+  way forward is the one moment the load-time refusal exists to be earlier than.
+- **Repair and §8.10's automation retry stay unrouted under a reroute too.** Both are pinned to the
+  originating attempt (above), and a reroute changes the profile without asking either tier's
+  question — nothing was judged, a provider declined to serve the attempt, and the work has to happen
+  somewhere else.
 
 **Opus/Fable on pi is a load-time validation error naming the offending profile, never
 coercion** — then re-asserted at launch against the *observed* runtime. A config that validates
@@ -2068,7 +2276,9 @@ by hand.
 
 - `1 ≤ maxTicketExecutions ≤ MAX_SUPPORTED_TICKET_CONCURRENCY`; every size `≥ 1`.
 - A class reachable from the **active** routing **must** have an entry — missing is a load
-  error, never an assumed 1.
+  error, never an assumed 1. **Reachable includes §11.5's `fallbacks`**: §9.9 dispatches into a
+  fallback's class and takes a slot from that class's pool, so an unsized one would surface at the
+  moment a quota blip made it the only way forward.
 - A class reachable from any **declared named set** **may** have one, so sizing `local` today
   does not break the loader when the set is switched tomorrow.
 - A class reachable from **no** set at all is a load error: dead config that lies about what
@@ -2108,10 +2318,14 @@ validate:
 - canonical executable path (for the binary: the resolved `PATH` entry **and** its realpath),
   resolved package root, package name plus declared version;
 - a **deterministic tree digest** — sorted relative paths plus content hashes over the package's
-  own files, excluding `node_modules`, `__pycache__`, and VCS dirs (derived trees that belong to
-  the installer, the interpreter, and the VCS, not to the package) — **authoritative uniformly
-  for every install shape**, with git commit and a dirty-worktree flag recorded as
+  own files, excluding `node_modules`, `.venv`, `__pycache__`, and VCS dirs (derived trees that
+  belong to the installer, the interpreter, and the VCS, not to the package) — **authoritative
+  uniformly for every install shape**, with git commit and a dirty-worktree flag recorded as
   **metadata only**.
+  `.venv` is `node_modules` under uv's name, and is listed for one measured reason (#115):
+  `uv run pytest` — a mandatory command in this repository's own `AGENTS.md` — took the digested
+  file count from 862 to 6525, so an agent who had run the suite pinned a different revision than
+  one who had not, for byte-identical package files.
   Special-casing checkouts would make dev runs incomparable to installed runs, and dirty
   checkouts are the common case;
 - **live-probed** runtime/harness version, effective production flags, adapter/bridge identity,
@@ -2313,26 +2527,59 @@ unrecoverable.
 
 **The live-pane guard.** Plan entries derive from the attempt being **terminal**, never from pane
 liveness — the hard-stop path deliberately orphans worker panes, so "pane exists" must not read
-as "work in progress". At execute time each pane is **re-probed for its `FACTORY_ATTEMPT` token**
+as "work in progress". At execute time each pane is **re-probed for its factory token**
 and refused if that token now belongs to a non-terminal attempt. **A pane carrying no factory
 token is never a target under any circumstance** — the factory does not own panes it did not
 create.
+
+The token is `FACTORY_ATTEMPT` on a worker pane and `FACTORY_RUN` on the controller's own, which
+no attempt can name (#118). The controller stamps its own pane only where the **launcher made
+it** — declared as `FACTORY_CONTROLLER_PANE` in the workspace's environment — because
+`HERDR_PANE_ID` is set in the operator's terminal too, and a `--foreground` start must never
+leave their shell reclaimable.
+
+**Cleanup's own effect records are repo-scoped**, every identity slot `-`, with the target's
+identity in the operand. That is what puts them on the `controller` stream: §4.3 refuses a
+run-slotted record anywhere but that run's own stream, and a cleanup record living inside a run
+stream would be deleted by the expiry of the run whose reclamation it documents.
 
 **Orphaned blobs need no TTL.** `cleanup-execute` holds the controller lease, so no controller is
 writing; under that lease a blob with no committed ledger row is unambiguously a crash leftover.
 A grace period here would be the rejected stale-plan clock all over again.
 
-**Scope.** The whole eligible set by default, narrowable with `--run <id>` and
-`--kind <target-kind>`. The digest re-derivation covers whatever the plan actually contains, so a
+**Scope.** The whole eligible set by default, narrowable with `--run=<id>` and
+`--kind=<target-kind>`. The digest re-derivation covers whatever the plan actually contains, so a
 narrowed plan is a first-class plan rather than a subset of a bigger one. **The default being
 *everything* matters:** an operator reclaiming space should see the full picture including the
 skips.
 
+Both values ride the flag rather than the following token (#118): the verb is not known while
+the line is being read — flags may precede it — so a flag that swallowed the next word could not
+tell a run id from `cleanup-execute`'s plan digest.
+
 **Crash mid-execute needs no resume logic.** Deleting a worktree is a mutation outside the
-database and therefore an effect (§4.5), keyed `<run>/<ticket>/cleanup/<target-kind>/<operand>`
-with a trivial probe. A crash leaves requested-but-unresolved effects; the next reconcile settles
+database and therefore an effect (§4.5), keyed `-/-/cleanup/-/<operation>/<operand>` with a
+trivial probe. A crash leaves requested-but-unresolved effects; the next reconcile settles
 them by re-probing. Cleanup's own actions land on the `controller` stream, auditable after the
 fact.
+
+**The plan is enumerated from the world and judged by durable state**, never derived from records
+alone: expiry deletes a run's tier-1 detail, so a planner reading only records would never look at
+that run's worktree again. `cleanup-execute` therefore runs cleanup **before** §12.6's folded-in
+expiry pass, for the same reason.
+
+**The deletion carries no force either.** `git worktree remove` is issued without `--force`, so
+git applies the untracked-work guard a second time at the moment it acts — covering the window
+between the plan's re-derivation and the deletion, which no digest comparison can. The guard
+covers **every** whitelisted worktree, a `doctor --baseline` throwaway included.
+
+That is not §12.7's retention restated, and the difference is worth being exact about. §12.7
+retains a red baseline against **eager** deletion, which is automatic and unreviewed; a red
+baseline whose checks left nothing on disk is still clean, and cleanup will therefore offer it.
+What protects it there is the pair itself — it appears in a plan the operator reads, and
+`--kind` narrows any plan that should not contain it. A guard that read the check outcome
+instead is not available: `doctor` appends nothing to the journal in either mode (§14.24), so
+there is no durable record of which baseline went red.
 
 ### 12.9 Transcripts — the factory never deletes one
 
@@ -2421,6 +2668,17 @@ own.**
 kill is **superseded**. Herdr's `agent stop` and pane closure are distinct operations, and only
 the first is the controller's.
 
+**The stop is the harness's own quit sequence, and its shape is two `send-keys` calls** — `esc`,
+a short settle, then `ctrl+c ctrl+c` together — because Herdr exposes no `agent stop` (#107) and
+because the grouping is what decides whether a worker quits at all (#158, measured in
+`tests/live/herdr-agent-quit-sequence.mjs`). Sent as one call, the sequence quits an *idle*
+harness but is absorbed by a *working* one as a bare turn interrupt: the turn stops, the
+interrupted prompt returns to the input box, and the agent stays resident — the state three
+attempts of run `01M0859CJAA1Z8XK41756H5Y30` were left in. The two `ctrl+c` must nevertheless
+stay in one call: the exit affordance is a double press with a window under a second, and spaced
+beyond it nothing quits at all. **A timeout arrives by definition at a working worker**, so the
+mid-turn case is the normal one and the idle case is the exception.
+
 **The cost is accepted explicitly:** an agent that ignores `agent stop` leaves a wedged pane that
 survives the run. That pane is recorded as an anomaly and reclaimed later through
 `cleanup-plan`'s live-pane guard (§12.8) — never killed as a side effect. #86's reasoning for the
@@ -2496,8 +2754,9 @@ Numbered, testable, and adversarially exercised by §15's cases. Each is a **nev
     re-derived digest differs.
 26. **A worktree with uncommitted or untracked files never enters a cleanup plan**, and there is
     no `--force`.
-27. **A pane carrying no `FACTORY_ATTEMPT` token is never a cleanup target**, and **the
-    controller never closes a pane.**
+27. **A pane carrying no factory-stamped token is never a cleanup target**, and **the
+    controller never closes a pane.** The token is `FACTORY_ATTEMPT` on a worker pane and
+    `FACTORY_RUN` on the controller's own, which §12.8 whitelists and no attempt owns (#118).
 28. **An artifact is never referenced by path** — only by digest through the ledger.
 29. **The factory never deletes a transcript.**
 30. **Expiry is never size-triggered**, and never runs mid-run or on a timer.
@@ -2559,7 +2818,10 @@ proves the knob and not the scheduler):
     failures interleaved among them do not.
 14. Drain with in-flight lanes: no new claims, all reach terminal dispositions, **one report, one
     end reason**.
-15. Second stop ⇒ in-flight lanes `released`, slots freed, panes left alive for reconcile.
+15. Second stop ⇒ in-flight lanes `released`, slots freed, panes left alive for reconcile, and
+    each of those tickets' claims dropped and stated on the tracker per §8.9's `released` row.
+    A lane that lost §3.3's claim contest is not one of them: it settled itself when it lost, and
+    un-assigning there would clear the winner's claim.
 16. Declared size exceeding observed `max_instances` ⇒ preflight failure naming both values.
 17. Required class unreachable ⇒ preflight failure naming class, endpoint, and fix — **never a
     silent drain-as-if-done**.
@@ -2584,7 +2846,12 @@ profile flag the installed binary no longer accepts under that spelling** (#164)
 
 **Skill loading.** A **one-time acceptance matrix** per (harness version × model × package
 revision) proving that Opus and Fable actually load and follow skill bodies — discharging the
-survey's explicitly unverified claims.
+survey's explicitly unverified claims. Discharged by §6.7's mechanism (#115): a receipt against a
+per-cell nonce whose token and transform live only in the shipped body, three cells per model
+(direct invocation · model invocation · trace control), every cell under the **worker** binding,
+and one recorded document per (version × revision) under `docs/proofs/` naming which survey claims
+it discharges and which remain unverified. **The claims it does not discharge are named there too**
+— a matrix that only listed its wins would be the survey's own omission repeated.
 
 ---
 
@@ -2745,3 +3012,9 @@ touching everything twice.
 | 2026-08-17 | #163 closes #160's leak class in the other runtime. **Claude registers the project skills its own working directory ships**, and an isolated `CLAUDE_CONFIG_DIR` does not fence them — measured live on Claude Code 2.1.233 at zero model cost: an `initialize` control-request in a scratch project shipping `.claude/skills/leaktest/SKILL.md`, under an *empty* isolated config dir, answered 44 commands including a bare `leaktest`, and a project `.claude/commands/` file registered the same way. A worker's cwd is the attempt worktree, so on any target repository shipping `.claude/skills/` every Claude worker would load skills from outside the pinned package root, and §6.8's "skills reach a worker only from the pinned package root" would be false again. §6.8 records the fact and makes **`--setting-sources user`** load-bearing isolation on every Claude **worker** session — measured in the same pass to drop the project skill and the project command (it drops the `project` and `local` setting *sources*) while leaving the §6.3 plugin's records, the injected `--settings` file, and `--permission-mode dontAsk` untouched. §6.2's Claude probe gains a **fourth step**, because Claude's command records carry names and no source path, so pi's converse check has no analogue: the probe plants a canary project skill in the directory it probes in, requires the fenced session not to register it, and requires one deliberately unfenced control session — the worker binding minus the fence, nothing else — to register it. A canary that survives the fence is `skill-shadowed` naming its source; a control session blind to it is the new `discovery-fence-unproven`, since a probe that could not have observed the leak is not evidence of its absence. The canary is planted and removed by the probe, and what a run proved is recorded on the `runtime-probe` check. One consequence is recorded rather than left to be discovered: the fence also stops the **target repository's own `CLAUDE.md`** from being auto-loaded (measured — a marker word in a project `CLAUDE.md` was answered unfenced and not fenced), which is §6.8's two rule channels applied rather than an accident; the declared worker-context file is installed in the user scope the fence keeps, and `worker.contextFile` is where a target repo's standing rules are declared. | #163 |
 | 2026-08-17 | #157 moves §6.5's environment channel from **typed at the pane** to **declared to the multiplexer**. `startedAgent` sent `export FACTORY_ATTEMPT='…' CLAUDE_CONFIG_DIR='…' …` through `pane run`, justified by "neither `workspace create` nor `agent start` takes an environment" — **half of which stopped being true at Herdr 0.8.0**, which offers `--env KEY=VALUE` on `workspace create` and `tab create` and only leaves `agent start` without one. The typed path put every worker's config-directory paths and attempt identity into pane scrollback — the one place §6.8's closed pane set was meant not to widen — made the factory carry POSIX single-quoting for values it derived itself, and made a failure to type the exports indistinguishable from a shell that was not ready. The binding is now one `--env` set per name on the attempt's `tab create` (#156's tab), assembled at the tab because that is the last command before the agent that accepts an environment; identity is applied last so no declared value can shadow it, and one variable per name so no argument parser decides a winner. This is not inheritance returning through another door: the pane's shell still belongs to the multiplexer server, and the same closed set crosses — declared rather than typed. **That the variables reach the agent *process* and not merely the shell was established live before the typed path was removed** (`tests/live/herdr-tab-env-reaches-agent.mjs`, reading `/proc/<pid>/environ` on both hops): Herdr's own help says `--env` sets a variable for "the launched process", and the launched process is the shell. The same probe showed a value carrying a space and an apostrophe crossing byte for byte as one argv element, so `shellQuote` went with the path it existed for. | #157 |
 | 2026-08-17 | #154 makes **provider exhaustion a typed fault with a time-boxed memo**. §6.6 gains the `provider-refused` outcome: a refusal for quota or rate reasons is observed in the pane output — a signature vocabulary read off the harnesses' own non-retryable limit classification, matched in the output's tail — recorded as its own `observation.recorded` fact (`provider.refusal`, §5.2's herdr row widened to three facts), and overriding the three silence-based verdicts (`no-result`, the no-progress clock, the hard ceiling); a valid outbox still wins and a dead pane is `dead-worker` still. §9 gains **§9.8**: the refusal is remembered as a `capacity.exhausted` memo naming the resource class and an expiry, on the `controller` stream with no run in the envelope so it outlives its author; dispatch consults it before launch, and **an expiry re-admits by probe, never by the clock** — one cheap completion under the worker binding answers `admitted`/`refused`/`inconclusive`, and only an admission writes `capacity.admitted`. §8.10 gains two budgetless `released` rows (builder and reviewer) — before this, the same refusal arrived as a repair-charged `no-result` with a `factory:failed` label — and §10.3 gains the `capacity-exhausted` end reason (exit 9), so a run left holding claimable work whose every route is memo-locked says so plainly in the §3.5 report instead of draining as though the work were done. §4.3's kind enumeration gains the two memo kinds. Rerouting that consumes the memo is #155; nothing here chooses a different profile. | #154 |
+| 2026-08-18 | #155 makes **dispatch reroute around an exhausted resource class**, which is the consumer #154's memo was recorded for. §11.5's routing gains an optional **`fallbacks`** block — a declared per-role order of profiles dispatch may take next, with **review's declared as two orders, one per §8.4 axis** — because every order an inference could produce is defensible and none of them is the operator's; an unknown profile name is a load error and a fallback profile counts as reached by the routing, so §11.6 sizes its class and §6.2 proves its flags. §9 gains **§9.9**: §11.5's dispatch and §9.8's memo become **one decision, made before the claim and recorded on the attempt's mint** — declared, ran, why, and every candidate passed over — because the class names the pool §9.4 takes from and the profile names what §6.5 mints, and deriving them separately is how a lane holds a slot in a pool its worker never touches. §8.10's two `provider-refused` rows become a new **`reroute`** action that spends **no budget at all** and is bounded by each routable profile being **refused** at most once per ticket execution, derived from the journal; §8.10 gains a **phase-less `routes-exhausted`** row for having run out of them — no attempt has that outcome, and a routed fresh-retry reaches it from `verify` and `integrate`, which have none — settled as §9.8's budgetless `released` and typed apart from `provider-refused` because *this provider is out* and *the run is out of providers* ask for different things. §8.4's two axes reroute down their own orders and a fan-out that could only fill one says so in its verdict; §8.9's block gains the dispatch read, so a green ticket can answer what wrote it. Found while wiring it: the review fan-out never consulted the memo at all, so a locked review class parked the lane on §9.8's wait for the memo's full hour while holding the ticket slot; §9.2's effective concurrency did not count the fallback pools a rerouted implement attempt starts from; and §8.6's breaker was read only at the head of a scheduling pass that may have started before a lane tripped it. | #155 |
+| 2026-08-18 | #158 answers the question #152 left open — how long a **mid-turn** worker takes to stop being reported as an agent — and the answer changes §13.B's quit **sequence** rather than the bound. Measured on Claude with `tests/live/herdr-agent-quit-sequence.mjs` (Herdr 0.8.0 / protocol 19, one cheap turn held open by a committed script): sent as **one** `send-keys` call, `esc ctrl+c ctrl+c` quits an idle harness in 721 ms and is absorbed by a working one as a bare turn interrupt — the turn stops, the interrupted prompt returns to the input box, and the agent stays resident indefinitely, which is the wedge run `01M0859CJAA1Z8XK41756H5Y30` recorded on three attempts of #114. **The sequence is therefore two calls** — `esc`, a 250 ms settle, then `ctrl+c ctrl+c` together — and both halves of that shape are load-bearing: the two `ctrl+c` must ride one call because the exit affordance is a double press with a window under a second (spaced 1000 ms apart, nothing quits, not even an idle harness), while `esc` must ride its own because in company it is what swallows them. **The call boundary is the mechanism, not the delay**: two calls 8 ms apart quit a working worker as reliably as 1500 ms apart, and the settle is headroom for a loaded machine, bracketed by measurements at 0, 250 and 1500 ms. #152's `STOP_CONFIRM_BACKOFF_MS` is **confirmed unchanged**: with the corrected sequence a mid-turn stop is observed at 412–723 ms, the same order as the idle 729 ms, because the wait is Herdr's detection cycle and not the harness's teardown. **§5.2's presence fact is settled at the same time** (`tests/live/herdr-agent-presence-source.mjs`, no model cost): `pane.agent` follows the pane's **foreground process**, not the screen — a bare `sleep` whose argv names it `claude` is reported as an agent with a blank screen and no rule matched, an unregistered `claude` at a shell is reported without any `agent start`, and neither `pane release-agent` nor a foreign `pane report-agent` can take the field away from a live one (a foreign report does move `agent_status`, which is a separate signal). The detection rules decide **state**, never presence. That is what makes §6.6's confirmation safe in the direction it is used: a screen that matches nothing cannot manufacture an absence, and 487 reads across two working turns, tool running, recorded zero. The asymmetry is recorded rather than papered over — presence is name-shaped, so a false *presence* is constructible, and it lands as `wedged-pane`, which is the conservative error. pi quits under either shape (106 ms, 209 ms idle); its mid-turn case stays unmeasured, since Claude is the runtime whose interrupt affordance absorbed the sequence. Nothing on this path closes a pane. | #158 |
+| 2026-08-18 | #117 builds §12's subtractive half and records three readings the section left to the implementer. **(a) Only an `ended` run is ever a candidate.** §12.6's "never mid-run" is read as a property of the *run*, not only of the invocation: a run whose lifecycle has not reached `ended` is this controller's own or an orphan a re-entry will adopt, so the plan holds it as `live` — which is not a fourth pin. **(b) Expiry's blob deletion is not an effect — and this is an amendment to §4.5, not a reading of §12.** §4.5's "every mutation outside the database is an effect" is categorical, so §4.5 now carries the single exception in its own text rather than being silently contradicted here. §12.5 makes the ledger row the record (`expired_at`, dated), and expiry commits the tombstone *then* unlinks: a crash in between resolves to the correct `unavailable(retention-expired)` and the next pass re-attempts every tombstone, so the crash window self-heals with no second table. An `artifact-delete` pair keyed by the expiring run would be a record of the deletion inside the thing being deleted — and, because §12.4's fourth pin skips a run holding an unresolved effect while reconcile can only settle `absent` once the blob is gone, it would deadlock expiry outright; keyed repo-scoped it would put two permanent records per artifact on the stream §12.2 keeps low-volume. `artifact-delete` stays cleanup's, for §12.8's orphaned blobs that have no row at all. **(c) §12.4's label pin reads the freshest surviving `observation.recorded` *that states `ticket.labels`*, falling back to the run's own §8.9 disposition when nothing has been observed.** §5.1's poll is repository-wide, so a *later* run's observation is what releases the pin after a human clears the label — the only durable channel there is, since §14.20 means the factory never removes it. The fact-class restriction is load-bearing: most observations of a ticket establish nothing about its labels, and reading one of those as "nothing is known" would re-engage a cleared pin permanently. **(d) The open-PR pin's release channel is the *ticket's* observed state, not the pull request's.** §5.1 polls issues and never pull requests, and §7.5's `Closes #N` makes the merge discharge the ticket; the visible cost is that a PR closed unmerged pins its run indefinitely, which is the direction chosen throughout: where durable state cannot answer, every pin holds, because an over-held run costs bytes an operator can see in `status` and a swept one costs the investigation. | #117 |
+| 2026-08-18 | #115 discharges §6.7's acceptance matrix, and it is a **mechanism** rather than a transcript. The package now ships `skills/meta/skill-loading-proof`, whose body declares a marker, a token and a transform in one machine-readable block and asks for a single receipt line applying that transform to a **nonce the prompt supplies**; no prompt carries the token, the transform or the answer, so a receipt is a body that reached the model and a correct one is a body it followed — the gap between that and §6.2's registration-and-echo probe being exactly what §6.7 exists to close. The judge reads the contract out of the *same shipped bytes the model was given* (`factory/lib/proof/receipt.mjs`), so a package whose skill said something else could not go on passing; the skill ships in the pinned revision rather than being planted, because a planted body would be delivered through a plugin the generator did not build from the pin and would prove a package no worker runs. Three cells per model, because the survey names direct invocation and natural-language triggering as separate cases and asks separately whether a trace distinguishes native loading from a path read: **direct invocation**, **model invocation**, and a **trace control** deliberately told to read the body off disk — whose `read-not-loaded` outcome makes the other cells' empty tool trace evidence rather than an assumption (#163's control-session pattern, one layer up), and whose silence withdraws the trace claim however green the rest is. Every cell runs the **worker** binding by calling the argv builder §6.2's spelling proof already composes (#160's rule). **A claim is evidence about every axis its own sentence names, or about nothing** — the rule two review passes were needed to get right: a first cut counted verdicts and not whose, so a green haiku-only run reported "Opus and Fable actually load and follow" as discharged; a second still discharged "interactive versus headless" from headless-only cells and "across Claude Code versions" from one version, demoting the untested half to a caveat. A caveat on a green claim is narration, and all three are the silent-wrong-answer class §15 calls load-bearing; what a matrix *did* establish toward an unverified claim is now stated beneath it instead. §11.7's exclusion list gains **`.venv`** for a measured reason found here: `uv run pytest` — one of this repository's own mandatory commands — took the digested file count from 862 to 6525, so an agent who had run the suite pinned a different revision than one who had not, for byte-identical package files. Taken live against Claude Code **2.1.233**, revision `sha256:7505b5cae67e…` at commit `aef7a3c` (dirty): all four invoked cells `followed` under resolved ids `claude-opus-5` and `claude-fable-5`, both controls `read-not-loaded`. Three survey claims discharged; three recorded unverified — the interactive surface, cross-version consistency, and role closure. Also measured, zero cost: `claude --model nonsense-model` still answers the `initialize` control-request with exit 0, so #164's check proves flag *spelling* and never that a model **value** resolves; only a real turn does, which is what this matrix adds. The result lives at `docs/proofs/skill-loading-claude-2.1.233-7505b5cae67e.md`, and `tests/live/prove-skill-loading.mjs` re-takes it — by hand, one short turn per cell, beside the probe that spends a session for the same kind of reason. | #115 |
+| 2026-08-18 | #159 closes §8.9's one unapplied row. §9.6's abandon boundary marked in-flight executions `released` in the journal and wrote **nothing** to the tracker — no unassign, no comment — so the two halves disagreed from that moment on, and the tracker is the half a human reads: a ticket still assigned, still carrying the factory's claim comment, with nothing after it, reads as a run still working. §3.3's 24h staleness settled it eventually, which is a timeout standing in for a fact the controller already knew and could have stated — on a path reached by ordinary operator action (a second `stop` or `SIGTERM`, exit 4), not only by a crash. The boundary now applies §8.9's `released` row through the one module that applies dispositions: claim dropped, release stated, no label added, both as §4.5 pairs a re-probe settles if the controller dies between the journal record and the write. It also gives #151's parked-branch read the comment it had nowhere to ride, on precisely the ending most likely to catch a builder mid-work. §9.6's "stops issuing new effects" is narrowed to new effects **about the work**; a tracker refusal is carried into the §3.5 report (`released_unsettled`) rather than costing the run its own ending, since the unresolved effect is already §12.4's alarm. One thing had to become true for the boundary to be able to settle everything it marks: **§3.3's contest loser now records its own `released`** when it loses, journal-only, because it assigned before its re-read and therefore leaves a ticket execution behind for a ticket it does not hold — and un-assigning there would clear the winner's claim, which is one field with the loser's since arbitration is only reachable between installs sharing one tracker identity. | #159 |
+| 2026-08-18 | #118 builds §12.8's pair and records six readings, four of which are places the section as written could not be implemented literally. **(a) Cleanup's effect records are repo-scoped.** §12.8 puts cleanup's own actions on the `controller` stream, and §4.3 refuses a record carrying a run anywhere but that run's own stream — so §12.8's sketched key `<run>/<ticket>/cleanup/<target-kind>/<operand>` cannot be both. Repo-scoped wins, for a second reason beyond the refusal: a run-slotted cleanup record would be deleted by the expiry of the very run whose reclamation it documents. Every identity a probe needs therefore travels in the **operand**, whose grammar lives with the module that owns the subject (`worktreeTarget`, `paneTarget`, `addressFromOperand`), so a probe resolves a target through the code that created it. **(b) §14.27's `FACTORY_ATTEMPT` is read as *a factory-stamped pane token*, and the controller's own pane gets `FACTORY_RUN`.** §12.8 whitelists a pane no attempt owns, so under the literal spelling the fourth target kind is unreachable and the invariant it must obey has nothing to check. The stamp is applied only where the factory *made* the pane — `launch.mjs` declares `FACTORY_CONTROLLER_PANE` in the workspace's environment — because `HERDR_PANE_ID` is set in the operator's own terminal too, and stamping on that evidence would make their shell a cleanup target, which is precisely the sentence §14.27 exists to write. It carries the run rather than a flag, since Herdr reuses pane ids. A stamp that fails is reported on the run and leaves the pane unreclaimable, which is the fail-safe direction. **(c) The plan is enumerated from the world and judged by the journal**, never derived from records alone: expiry deletes a run's tier-1 detail, and a planner that could only see records would never look at that run's worktree again. For the same reason `cleanup-execute` runs cleanup **before** the expiry pass §12.6 folds into it. **(d) §14.26's guard applies to every whitelisted worktree, baseline ones included**, and the deletion is issued as `git worktree remove` **without `--force`** so git applies the same guard again at the moment it acts — covering the window between the digest re-derivation and the deletion, which no comparison can. It is **not** §12.7's red-baseline retention restated, and the review caught the first draft of this row claiming that it was: §12.7 protects a red baseline from *eager, unreviewed* deletion, while a red baseline whose checks left nothing on disk is clean and cleanup will offer it. What protects it there is the plan-then-execute pair — it appears in a plan the operator reads — and a guard that consulted the check outcome is not available at all, since §14.24 leaves `doctor` no durable record of which baseline went red. **(e) The private clone needed a mutation class of its own** — `clone-delete`, probed by a new `git.clone-status` read — because it is not a worktree and a path probe would answer about the wrong thing; it is reachable only by naming it in `--kind`, which is what makes the invocation separate. **(f) An orphaned blob's operand is `sha256/<digest>`.** §14.28 leaves a blob no handle but its address, so the key must carry one; §14.4 forbids a hash **of the effect's own payload**, whose absence is what keeps a conflicting duplicate a typed conflict rather than a different key, and `keys.mjs` still refuses a bare sha256. Also: `--run` and `--kind` take their values as `--flag=value`, because the verb is not known while the line is being read and a flag that swallowed the next token could not tell a run id from `cleanup-execute`'s digest. | #118 |

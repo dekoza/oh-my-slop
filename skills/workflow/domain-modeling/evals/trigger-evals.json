@@ -36,6 +36,14 @@
     "should_trigger": true
   },
   {
+    "query": "Update CONTEXT.md to define settlement window and reconcile the two conflicting meanings currently used in the code.",
+    "should_trigger": true
+  },
+  {
+    "query": "Edit ADR 0007 because our queue decision changed after the throughput test; preserve the rejected alternatives and explain the new trade-off.",
+    "should_trigger": true
+  },
+  {
     "query": "How should I draw aggregate boundaries between orders and line items, and which one is the consistency boundary?",
     "should_trigger": false
   },

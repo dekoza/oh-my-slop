@@ -33,6 +33,26 @@ import { herdrResult, runHerdr } from "./herdr-control.mjs";
 export const FOREGROUND_FLAG = "--foreground";
 
 /**
+ * How the controller learns that **the factory made the pane it is sitting in**
+ * — which is the whole of what §12.8's sixth target kind needs and the whole of
+ * what §14.27 forbids getting wrong.
+ *
+ * `HERDR_PANE_ID` says *which* pane, and Herdr sets it in every pane it manages,
+ * including the one an operator ran `--foreground` from. Reclaiming a pane on
+ * that evidence would close the operator's own terminal, so the discriminator
+ * has to come from the side that created the pane: this launcher, which is the
+ * one place a factory-owned controller pane comes into existence. The controller
+ * stamps its run onto the pane only when it reads this, and a pane with no stamp
+ * is never a target under any circumstance (§14.27).
+ *
+ * It rides the workspace's declared environment rather than the command line for
+ * the reason #157 moved the worker's binding there: the shell Herdr launches for
+ * the pane carries it, and a value in `argv` would be re-typed into scrollback by
+ * every `pane run` that follows.
+ */
+export const CONTROLLER_PANE_ENV = "FACTORY_CONTROLLER_PANE";
+
+/**
  * @param {object} invocation as the CLI assembles it
  * @param {string} invocation.repoRoot
  * @param {object | null} invocation.requested §3.1's parsed selector, or null
@@ -110,7 +130,19 @@ export async function launch({
 		// repository, and two repositories' ticket 42 must not be indistinguishable.
 		const label = `factory-${mint()}`;
 		const created = await run(
-			["workspace", "create", "--cwd", repoRoot, "--label", label, "--no-focus"],
+			[
+				"workspace",
+				"create",
+				"--cwd",
+				repoRoot,
+				"--label",
+				label,
+				// The marker that makes this pane the factory's own, declared to the
+				// server so the shell the pane runs in carries it (§12.8, §14.27).
+				"--env",
+				`${CONTROLLER_PANE_ENV}=${label}`,
+				"--no-focus",
+			],
 			{ env, binary: availability.binary },
 		);
 		if (created.exitCode !== 0) {

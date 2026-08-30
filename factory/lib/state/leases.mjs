@@ -63,6 +63,13 @@ export const CONTROLLER_LEASE_TTL_MS = 3 * LEASE_RENEWAL_MS;
 const LEASE_TTLS = Object.freeze({ [LEASE_NAMES.controller]: CONTROLLER_LEASE_TTL_MS });
 
 /**
+ * §9.4's two capacity pools. The words live **here**, beside the row names they
+ * appear in, because a pool is one third of the slot-name grammar: a second
+ * spelling somewhere else is a name this module could build and not parse.
+ */
+export const POOLS = Object.freeze({ ticket: "ticket", model: "model" });
+
+/**
  * §9.4's capacity rows are **discrete and named**, never a counter: a slot row
  * names its holder and is therefore probeable, and §5.3 settles an unresolved
  * fact by probing rather than by reasoning about a number.
@@ -76,6 +83,30 @@ export function capacityTicketSlot(index) {
 /** @param {string} resourceClass @param {number} index `0 … size - 1` */
 export function capacityModelSlot(resourceClass, index) {
 	return `capacity:model:${resourceClass}:${index}`;
+}
+
+/**
+ * The same grammar, read backwards: **a row name is what a slot canonically
+ * is**, and its pool, class, and index come out of it rather than out of the
+ * advisory identity blob a previous controller wrote (§4.6).
+ *
+ * Recovery is exactly where that distinction bites. #114 rebuilds a hold over a
+ * row a *dead* controller took, and the blob beside it is that controller's
+ * unverified word; the name is the row's own identity, which is why the pool
+ * and the index a resumed lane is given are parsed from it here.
+ *
+ * @param {string} name
+ * @returns {Readonly<{ pool: string, class: string | null, index: number }> | null}
+ *   null when the name is not a capacity row's
+ */
+export function parseCapacitySlot(name) {
+	const ticket = /^capacity:ticket:(\d+)$/.exec(name ?? "");
+	if (ticket !== null) return Object.freeze({ pool: POOLS.ticket, class: null, index: Number(ticket[1]) });
+
+	const model = /^capacity:model:([0-9A-Za-z-]+):(\d+)$/.exec(name ?? "");
+	if (model !== null) return Object.freeze({ pool: POOLS.model, class: model[1], index: Number(model[2]) });
+
+	return null;
 }
 
 /**
@@ -217,6 +248,89 @@ export function openLeases(store, { now = Date.now } = {}) {
 			}),
 
 		/**
+		 * The same compare, over a body of several statements.
+		 *
+		 * §12.2's expiry is the shape that needs it: a run's stream deletion
+		 * **cannot be recorded inside the stream**, so the deletion, the projection
+		 * rows it clears, and the `run.expired` on the `controller` stream commit
+		 * together or not at all — and a holder that lost the lease in between
+		 * writes none of them. `attest` cannot express that, and running the body
+		 * outside the compare would put the destructive half of expiry beyond the
+		 * one proof of ownership this module recognises.
+		 *
+		 * @param {object} held
+		 * @param {(tx: { db: object, appendEvent: (input: object) => object }) => unknown} body
+		 * @returns {{ held: boolean, result: unknown }}
+		 */
+		attestIn: (held, body) =>
+			store.transaction((tx) =>
+				holdsLease(tx.db, held) ? { held: true, result: body(tx) } : { held: false, result: null },
+			),
+
+		/**
+		 * §5.5's adoption, at the lease layer: **move rows a previous controller
+		 * holds onto this one's token and fencing generation, without ever
+		 * freeing the index in between.**
+		 *
+		 * Three properties, and each is the answer to a way this could go wrong:
+		 *
+		 * - It is a **compare-and-swap on the predecessor's own token**, like
+		 *   every other write here. A release-then-acquire would open a window in
+		 *   which a third controller takes the index while the adopted pane is
+		 *   still talking to the resource §9.4's row exists to protect.
+		 * - It is **all or nothing**, in one transaction. A lane is a ticket row
+		 *   and a model row, and half a lane is a row nothing can resume.
+		 * - It is **capacity rows only**. The `controller` lease is adopted by
+		 *   `acquire` when it is free or expired (§10.4), and `integration` is
+		 *   settled by probing git (§9.5); a transfer path reaching either would
+		 *   be a second, weaker answer to a question those two already settle.
+		 *
+		 * `fencedTo` is the adopting controller's own generation, for the reason
+		 * `acquire` takes one: a row is fenced to the lease that holds it, so a
+		 * generation minted here would order the adopted rows above the
+		 * controller that adopted them.
+		 *
+		 * @param {ReadonlyArray<{ row: object, identity: object, event?: object | null }>} transfers
+		 * @param {{ fencedTo: number, at?: number }} where
+		 * @returns {ReadonlyArray<Readonly<object>>} the new holds, in input order
+		 * @throws {FactoryStateError} `invalid-lease-name` · `lease-adoption-refused`
+		 */
+		adoptAll: (transfers, { fencedTo, at = now() }) =>
+			store.transaction(({ db, appendEvent }) => {
+				const adopted = [];
+
+				for (const { row, identity, event = null } of transfers) {
+					requireCapacityName(row.name);
+					const token = randomBytes(16).toString("hex");
+					const moved = db
+						.prepare(
+							`UPDATE lease SET holder_token = ?, fencing_generation = ?, renewed_at = ?, identity = ?
+							 WHERE name = ? AND holder_token = ?`,
+						)
+						.run(token, fencedTo, at, JSON.stringify(identity), row.name, row.token);
+
+					if (moved.changes !== 1) refuseUnadoptable(row, readLease(db, row.name));
+					if (event !== null) appendEvent(event);
+
+					adopted.push(
+						Object.freeze({
+							name: row.name,
+							token,
+							fencingGeneration: fencedTo,
+							// Untimed, like every capacity row: §9.4's slots carry no TTL,
+							// and adoption is not the moment to give one a clock.
+							expiresAt: null,
+							renewedAt: at,
+							ttlMs: null,
+							identity,
+						}),
+					);
+				}
+
+				return Object.freeze(adopted);
+			}),
+
+		/**
 		 * Compare-and-delete on the token. There is **no unconditional removal
 		 * path** in this module: `job-pipeline`'s `releaseJobLock` was a bare
 		 * `rmSync`, so any process could drop any owner's lock.
@@ -272,6 +386,23 @@ export function openLeases(store, { now = Date.now } = {}) {
  */
 export function isSuperseded(row, generation) {
 	return row.fencingGeneration < generation;
+}
+
+/**
+ * The names §5.5's adoption may move. Narrower than `requireLeaseName` on
+ * purpose: the two singleton objects have their own settlements, and a
+ * transfer path that could reach them would be a way around both.
+ */
+function requireCapacityName(name) {
+	if (parseCapacitySlot(name) !== null) return;
+
+	throw new FactoryStateError(
+		"invalid-lease-name",
+		`${JSON.stringify(name ?? null)} is not a capacity row, and adoption moves capacity rows only: the ` +
+			`${LEASE_NAMES.controller} lease is adopted free-or-expired (§10.4) and ${LEASE_NAMES.integration} is ` +
+			"settled by probing git (§9.5).",
+		{ found: name ?? null, expected: "capacity:ticket:<i>|capacity:model:<class>:<i>" },
+	);
 }
 
 function requireLeaseName(name) {
@@ -334,6 +465,30 @@ function refuseLost(held, incumbent) {
 		{
 			lease: held.name,
 			fencing_generation: held.fencingGeneration,
+			holder_generation: incumbent === null ? null : incumbent.fencingGeneration,
+		},
+	);
+}
+
+/**
+ * A transfer whose compare failed: the row moved — released, or taken over —
+ * between the probe that proved its holder live and this swap.
+ *
+ * It is deliberately **not** `lease-lost`: that reason names *this* controller's
+ * own hold going away and costs the process exit 6 (§14.6). Here the controller
+ * is fine and one row it hoped to adopt is not there to adopt, which leaves the
+ * lane unresumed and everything else running.
+ */
+function refuseUnadoptable(row, incumbent) {
+	throw new FactoryStateError(
+		"lease-adoption-refused",
+		incumbent === null
+			? `The ${row.name} row was released between the probe that proved its holder live and this adoption.`
+			: `The ${row.name} row is now held under generation ${incumbent.fencingGeneration} by a different token, ` +
+				"so this controller is not the one adopting it.",
+		{
+			lease: row.name,
+			fencing_generation: row.fencingGeneration,
 			holder_generation: incumbent === null ? null : incumbent.fencingGeneration,
 		},
 	);

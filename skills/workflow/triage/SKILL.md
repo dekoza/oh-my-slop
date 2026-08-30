@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 # Triage
 
-Move issues through a small state machine of triage roles. The issue tracker and triage label vocabulary should have been provided to you — run `/setup-project-skills` if not. Use the CLI and conventions that doc specifies.
+Move issues through a small state machine of triage roles. The issue tracker and triage label vocabulary should have been provided to you — tell the user to run `/setup-project-skills` if not. Use the CLI and conventions that doc specifies.
 
 Triage reads whichever surfaces the tracker doc names. Where a repo separates an **intake** tracker (human- and community-filed issues) from an **agent work** tracker, triage works the intake surface — that is where untriaged requests arrive.
 
@@ -50,7 +50,7 @@ For a PR, the same states read against the attached code: `ready-for-agent` mean
 
 Every triaged issue should carry exactly one category role and one state role. If state roles conflict, flag it and ask the maintainer before doing anything else.
 
-These are canonical role names — the actual label strings used in the issue tracker may differ. The mapping should have been provided to you — run `/setup-project-skills` if not. If no mapping has been provided, use the canonical names as the labels, creating them on first use.
+These are canonical role names — the actual label strings used in the issue tracker may differ. The mapping should have been provided to you — tell the user to run `/setup-project-skills` if not. If no mapping has been provided, use the canonical names as the labels, creating them on first use.
 
 State transitions: an unlabeled issue normally goes to `needs-triage` first; from there it moves to `needs-info`, `ready-for-agent`, `ready-for-human`, or `wontfix`. `needs-info` returns to `needs-triage` once the reporter replies. The maintainer can override at any time — flag transitions that look unusual and ask before proceeding.
 
