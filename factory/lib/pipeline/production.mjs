@@ -229,7 +229,7 @@ async function implement(context, identity) {
 			review: null,
 		}),
 	);
-	return builderResult(context, opened, result);
+	return builderResult(roleFor(context.worker.roles, opened.role), result);
 }
 
 /**
@@ -244,19 +244,27 @@ async function implement(context, identity) {
  * `invalid-result`, and §8.10's row for this phase — fresh-retry on the repair
  * budget — is unchanged.
  *
+ * The owed-ness is asked of **the record, whatever the attempt's outcome**: a
+ * builder still alive at turn end with a valid `completed` file is
+ * `wrote-but-hung`, which §8.10 harvests exactly as a completion — so a
+ * traceless record there is the same invalid result, rather than a review
+ * reached with nothing to brief the spec axis with.
+ *
  * **The detail on an invalid result is the controller's own sentences and
  * never the record.** The row marks its evidence as fact so §8.5's brief tells
  * the fresh attempt why it exists; a record put on that detail would reach the
  * next builder as controller-verified fact, which no worker's prose is.
+ *
+ * @param {Readonly<object>} role the attempt's pipeline role
+ * @param {{ outcome: string, record: object | null, problems?: ReadonlyArray<string> }} result
+ * @returns {{ outcome: string, detail: object | null }}
  */
-function builderResult(context, opened, result) {
+export function builderResult(role, result) {
 	if (result.outcome === "invalid-result") {
 		return { outcome: result.outcome, detail: { problems: [...(result.problems ?? [])] } };
 	}
-	if (result.outcome === "completed") {
-		const missing = missingResult(roleFor(context.worker.roles, opened.role), result.record);
-		if (missing !== null) return { outcome: "invalid-result", detail: { problems: [missing] } };
-	}
+	const missing = missingResult(role, result.record ?? null);
+	if (missing !== null) return { outcome: "invalid-result", detail: { problems: [missing] } };
 	return { outcome: result.outcome, detail: result.record };
 }
 

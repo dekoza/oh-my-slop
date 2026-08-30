@@ -11,6 +11,8 @@ import { FACTORY_ATTEMPT_TOKEN } from "../../factory/lib/controller/herdr-contro
 import { FOREGROUND_FLAG } from "../../factory/lib/controller/launch.mjs";
 import { runStart } from "../../factory/lib/controller/start.mjs";
 import { privateClonePath } from "../../factory/lib/git/isolation.mjs";
+import { builderResult } from "../../factory/lib/pipeline/production.mjs";
+import { PIPELINE_ROLES } from "../../factory/lib/worker/roles.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
@@ -295,6 +297,12 @@ test("#189: a builder that ends completed without a trace is an invalid result n
 	assert.equal(first.payload.outcome, "completed");
 	assert.equal(first.payload.result.trace, null);
 
+	// §8.9's disposition comment carries the chain, and the refused step on it
+	// names the block — a human reading the ticket sees why a2 exists.
+	const posted = tracker.comments.filter((comment) => comment.body.includes('"disposition"'));
+	const refused = blockIn(posted.at(-1).body).outcome_chain.find((step) => step.outcome === "invalid-result");
+	assert.match(refused.problems[0], /wrote no trace/, "the disposition comment does not name the missing block");
+
 	// The fresh attempt is told, as a controller-verified fact, why it exists.
 	const builders = prompts.filter((prompt) => prompt.phase === "implement");
 	assert.equal(builders.length, 2);
@@ -302,6 +310,27 @@ test("#189: a builder that ends completed without a trace is an invalid result n
 	assert.match(builders[1].text, /Controller-verified facts/);
 	assert.match(builders[1].text, /wrote no trace/, "the next builder is not told what the last one omitted");
 	assert.match(builders[1].text, /### Requirement trace/, "and is told the obligation again");
+});
+
+test("#189: builderResult asks the owed-ness of the record whatever the outcome, and passes everything else through", () => {
+	const builder = PIPELINE_ROLES.find((role) => role.name === "implement");
+	const traced = { status: "completed", commits: ["a1b2c3d"], trace: [{ requirement: "r", evidence: "e", note: null }] };
+	const traceless = { status: "completed", commits: ["a1b2c3d"], trace: null };
+
+	assert.deepEqual(builderResult(builder, { outcome: "completed", record: traced }), { outcome: "completed", detail: traced });
+	assert.equal(builderResult(builder, { outcome: "completed", record: traceless }).outcome, "invalid-result");
+	// A builder still alive with a valid completed file is wrote-but-hung, which
+	// §8.10 harvests as a completion — the trace is owed there too.
+	const hung = builderResult(builder, { outcome: "wrote-but-hung", record: traceless });
+	assert.equal(hung.outcome, "invalid-result");
+	assert.match(hung.detail.problems[0], /wrote no trace/);
+	// A pause owes none, and §6.6's own refusal keeps the problems it named.
+	const paused = { status: "needs-human", reason_class: "product-ambiguity", question: "?" };
+	assert.deepEqual(builderResult(builder, { outcome: "needs-human", record: paused }), { outcome: "needs-human", detail: paused });
+	assert.deepEqual(builderResult(builder, { outcome: "invalid-result", record: null, problems: ["trace is an empty list"] }), {
+		outcome: "invalid-result",
+		detail: { problems: ["trace is an empty list"] },
+	});
 });
 
 test("#189: the spec axis is prompted with the builder's trace inside the untrusted block; the standards axis is not", async (t) => {

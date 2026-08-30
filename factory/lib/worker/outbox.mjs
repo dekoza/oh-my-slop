@@ -32,8 +32,30 @@ import {
  * outright.
  */
 
+/**
+ * **A problem sentence never embeds what the worker wrote.** The problems this
+ * reader names ride `attempt.ended`, the implement stage's detail, and — on
+ * §8.10's `implement × invalid-result` row, whose evidence is marked fact — the
+ * fresh attempt's "controller-verified facts" (§8.5). A sentence quoting a
+ * refused `status` would carry whatever the worker typed there into that block
+ * under the controller's own name. So every sentence names the field and the
+ * closed set it missed, and the value stays in the file it came from.
+ */
+
 /** The outbox's own shape version, carried by every record (§6.6). */
 export const OUTBOX_SCHEMA_VERSION = 1;
+
+/**
+ * Whether a trace was written at all: a non-empty list (#189). The one
+ * predicate the three readers of a trace — the role's owed-ness, the fan-out's
+ * read, the template's refusal — share, so "written" has one spelling.
+ *
+ * @param {unknown} trace
+ * @returns {boolean}
+ */
+export function traceWritten(trace) {
+	return Array.isArray(trace) && trace.length > 0;
+}
 
 /** The states this reader answers in. Closed, so a caller can branch exhaustively. */
 export const OUTBOX_STATES = Object.freeze(["absent", "unreadable", "invalid", "foreign", "valid"]);
@@ -122,14 +144,14 @@ function shapeProblems(parsed) {
 
 	if (parsed.schema_version !== OUTBOX_SCHEMA_VERSION) {
 		problems.push(
-			`schema_version is ${JSON.stringify(parsed.schema_version ?? null)}; this controller reads ` +
-				`${OUTBOX_SCHEMA_VERSION}`,
+			`schema_version is ${absentOr(parsed.schema_version, `not ${OUTBOX_SCHEMA_VERSION}`)}; this controller ` +
+				`reads ${OUTBOX_SCHEMA_VERSION} (§6.6)`,
 		);
 	}
 	if (!WORKER_WRITABLE_OUTCOMES.includes(parsed.status)) {
 		problems.push(
-			`status is ${JSON.stringify(parsed.status ?? null)}; the worker-writable set is exactly ` +
-				`${WORKER_WRITABLE_OUTCOMES.join(", ")} — every other outcome is controller-derived (§6.6, §8.8)`,
+			`status is ${absentOr(parsed.status, "not one of the worker-writable set")}; the worker-writable set is ` +
+				`exactly ${WORKER_WRITABLE_OUTCOMES.join(", ")} — every other outcome is controller-derived (§6.6, §8.8)`,
 		);
 	}
 	for (const field of ["run", "phase", "attempt"]) {
@@ -224,7 +246,8 @@ function verdictProblems(parsed) {
 	const problems = [];
 	if (!REVIEW_VERDICTS.includes(parsed.verdict)) {
 		problems.push(
-			`verdict is ${JSON.stringify(parsed.verdict ?? null)}; §8.4's verdict is one of ${REVIEW_VERDICTS.join(", ")}`,
+			`verdict is ${absentOr(parsed.verdict, "not one of the closed pair")}; §8.4's verdict is one of ` +
+				`${REVIEW_VERDICTS.join(", ")}`,
 		);
 	}
 
@@ -271,8 +294,8 @@ function findingProblems(finding, index) {
 	const problems = [];
 	if (!Object.values(FINDING_SEVERITIES).includes(finding.severity)) {
 		problems.push(
-			`findings[${index}].severity is ${JSON.stringify(finding.severity ?? null)}; the set is exactly ` +
-				`${Object.values(FINDING_SEVERITIES).join(", ")} (§8.4)`,
+			`findings[${index}].severity is ${absentOr(finding.severity, "not one of the closed pair")}; the set is ` +
+				`exactly ${Object.values(FINDING_SEVERITIES).join(", ")} (§8.4)`,
 		);
 	}
 	for (const field of ["citation", "statement"]) {
@@ -295,7 +318,7 @@ function statusProblems(parsed) {
 			// second kind could file its own ticket as an infrastructure failure —
 			// or claim a budget it cannot see has run out (§6.6, §8.8).
 			problems.push(
-				`reason_class is ${JSON.stringify(parsed.reason_class)}; the worker-writable set is exactly ` +
+				`reason_class is not one of the worker-writable set, which is exactly ` +
 					`${WORKER_WRITABLE_REASON_CLASSES.join(", ")} — every other class is controller-derived (§6.6, §8.8)`,
 			);
 		}
@@ -360,11 +383,19 @@ function identityProblems(parsed, identity) {
 	// and comparing one of those against an outbox would fail every record.
 	for (const field of ["run", "ticket", "phase", "attempt"]) {
 		if (parsed[field] === identity[field]) continue;
+		// The minted value is the controller's own and may be named; the value the
+		// file echoes is somebody else's and stays in the file.
 		problems.push(
-			`${field} echoes ${JSON.stringify(parsed[field] ?? null)}, and the controller minted ${JSON.stringify(identity[field] ?? null)}`,
+			`${field} echoes ${absentOr(parsed[field], "a value other than")} what the controller minted, ` +
+				`${JSON.stringify(identity[field] ?? null)}`,
 		);
 	}
 	return problems;
+}
+
+/** "absent", or the caller's description of a value that is present and wrong — never the value. */
+function absentOr(value, otherwise) {
+	return value === undefined || value === null ? "absent" : otherwise;
 }
 
 /**

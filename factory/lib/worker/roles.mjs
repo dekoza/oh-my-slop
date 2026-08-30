@@ -1,6 +1,7 @@
 import { profilesForRole } from "../config/routing.mjs";
 import { REVIEW_VERDICTS, WORKER_WRITABLE_OUTCOMES } from "../domain/vocabulary.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
+import { traceWritten } from "./outbox.mjs";
 import { WORKER_POSTURES } from "./permissions.mjs";
 import { renderAttemptPrompt } from "./prompt.mjs";
 
@@ -67,13 +68,19 @@ export const PIPELINE_ROLES = Object.freeze([
  * for shape and review-spec's to judge for truth — the controller reads the
  * rows and never their content (#189).
  *
+ * **The record's own status decides, not the attempt's outcome.** A builder
+ * still alive at turn end with a valid `completed` file is `wrote-but-hung`,
+ * which §8.10 harvests exactly as a completion — so the trace is owed there
+ * too, and a `needs-human` record owes none under either outcome.
+ *
  * @param {Readonly<object>} role a pipeline role
  * @param {Readonly<object> | null} record the normalised outbox record
  * @returns {string | null}
  */
 export function missingResult(role, record) {
 	if (role.resultExpectations.writesTrace !== true) return null;
-	if (Array.isArray(record?.trace) && record.trace.length > 0) return null;
+	if (record?.status !== "completed") return null;
+	if (traceWritten(record.trace)) return null;
 
 	return (
 		"the attempt ended completed and wrote no trace, so this builder produced no result for its role: a completed " +

@@ -1617,7 +1617,7 @@ human removing the label is what makes the label mean "someone has acknowledged 
 | implement | `completed` | → harvest | — |
 | implement | `needs-human` | `paused` (worker reason class) | — |
 | implement | `worker-failed` | repair | repair |
-| implement | `invalid-result` | fresh-retry | repair |
+| implement | `invalid-result` | fresh-retry, the controller's schema and role problems presented as fact | repair |
 | implement | `no-result` | fresh-retry | repair |
 | implement | `timeout` | fresh-retry | repair |
 | implement | `wrote-but-hung` | harvest the valid outbox, stop the agent, record the anomaly | — |

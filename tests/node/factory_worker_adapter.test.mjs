@@ -172,11 +172,14 @@ test("missingResult names the trace a completed builder record owes, and nothing
 	const traced = { status: "completed", trace: [{ requirement: "It should work.", evidence: "src/it.mjs", note: null }] };
 
 	assert.equal(missingResult(builder, traced), null);
-	for (const record of [{ status: "completed", trace: null }, { status: "completed" }, null]) {
+	for (const record of [{ status: "completed", trace: null }, { status: "completed" }]) {
 		const problem = missingResult(builder, record);
 		assert.match(problem, /wrote no trace/, `${JSON.stringify(record)} was accepted from a builder`);
 		assert.match(problem, /§6\.6/);
 	}
+	// The record's status decides: a pause owes no trace, and no record owes none.
+	assert.equal(missingResult(builder, { status: "needs-human", reason_class: "product-ambiguity", question: "?" }), null);
+	assert.equal(missingResult(builder, null), null);
 	assert.equal(missingResult(reviewer, { status: "completed", verdict: "approve", findings: [] }), null);
 });
 

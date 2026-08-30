@@ -584,8 +584,12 @@ question is which rows have become the module's job to state, not what the ceili
   `worker/roles.mjs`**, read off the role's own `writesTrace` expectation by the builder executor.
   — `builderResult` in `pipeline/production.mjs` · §6.6
 - **An invalid result's stage detail is the controller's own problems and never the refused
-  record**, and §8.10's `implement × invalid-result` row marks it fact so the fresh attempt is told
-  which block it omitted. — `pipeline/table.mjs` · §8.5, §8.10
+  record**; §8.10's `implement × invalid-result` row marks it fact so the fresh attempt is told
+  which block it omitted, and the outcome chain — hence §8.9's disposition comment — carries it.
+  — `pipeline/table.mjs`, `outcomeChain` in `pipeline/stages.mjs` · §8.5, §8.9, §8.10
+- **A §6.6 problem sentence never embeds a worker-written value** — it names the field and the
+  closed set — because those sentences reach the fresh attempt as fact. — `worker/outbox.mjs` ·
+  §8.5
 - **The trace is read off the reviewed attempt's own implement record**, never taken from the
   caller, and a review reached without one refuses rather than briefing the axis blind. —
   `builderTrace` in `pipeline/review.mjs` · §8.4

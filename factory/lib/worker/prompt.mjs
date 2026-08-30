@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { FINDING_SEVERITIES, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
-import { OUTBOX_SCHEMA_VERSION } from "./outbox.mjs";
+import { OUTBOX_SCHEMA_VERSION, traceWritten } from "./outbox.mjs";
 import { NO_MID_ATTEMPT_APPROVALS } from "./permissions.mjs";
 
 /**
@@ -183,7 +183,7 @@ function requireFixedPoint({ role, review }) {
  */
 function requireTrace({ role, review }) {
 	if (role.resultExpectations.checksTrace !== true) return;
-	if (Array.isArray(review?.trace) && review.trace.length > 0) return;
+	if (traceWritten(review?.trace)) return;
 
 	throw new TypeError(
 		`role "${role.name}" checks a trace against the ticket and was given none (§8.4, #189); without it the axis ` +
@@ -263,10 +263,11 @@ function traceBrief(trace) {
 		"Check the trace against the ticket and the diff, and write what you find under the verdict shape",
 		"stated in the completion protocol:",
 		"",
-		"- **An unaddressed requirement** — a line of the ticket snapshot that no row addresses, or that a",
-		"  row claims and the diff does not deliver — is a `blocking` finding citing the ticket line.",
+		"- **An unaddressed requirement** — a line of the ticket snapshot that no row addresses — is a",
+		"  `blocking` finding citing the ticket line.",
 		"- **A row whose evidence does not match the diff** — a path the diff never touched, a test that does",
-		"  not exist or does not exercise the requirement — is a `blocking` finding citing the trace row.",
+		"  not exist or does not exercise the requirement, a claim the diff does not deliver — is a",
+		"  `blocking` finding citing the trace row.",
 		"- A row's `note` is advisory context from the builder and never evidence of anything.",
 		"",
 		"A trace that checks out is not itself a finding; it is what lets your coverage findings cite a",
@@ -314,7 +315,13 @@ function repairSection(repair) {
 		// value is a program's own output, and a suite that prints three backticks
 		// would otherwise close the block a line into it.
 		...fenced(facts),
-		...(repair.untrusted.length === 0 ? [] : untrustedBlock(repair.untrusted)),
+		...(repair.untrusted.length === 0
+			? []
+			: untrustedBlock(repair.untrusted, {
+					object: "repairing against",
+					carry: "repair against the rest",
+					report: "in your outbox summary",
+				})),
 	];
 }
 
@@ -429,11 +436,18 @@ function factLine({ producer, label, value }) {
  * The tag is a pure function of the text, so §6.4's determinism holds: the same
  * attempt renders the same bytes, and the recorded prompt digest still attests
  * exactly what the worker was shown.
+ *
+ * The three phrases that tie the block to its reader's job — what the reader is
+ * doing with the object, what it does with the rest, where it reports a
+ * directive — are **required**, not defaulted: a caller that forgot them would
+ * otherwise get another posture's wording without anything saying so.
  */
-function untrustedBlock(
-	entries,
-	{ object = "repairing against", carry = "repair against the rest", report = "in your outbox summary" } = {},
-) {
+function untrustedBlock(entries, { object, carry, report }) {
+	for (const [name, phrase] of Object.entries({ object, carry, report })) {
+		if (typeof phrase !== "string" || phrase.length === 0) {
+			throw new TypeError(`an untrusted block states its reader's posture; \`${name}\` was not given`);
+		}
+	}
 	const sources = [...new Set(entries.map((entry) => entry.source))].join(" and ");
 	const body = entries.map((entry) => `${entry.label}:\n${entry.text}`).join("\n\n");
 	const tag = createHash("sha256").update(body).digest("hex").slice(0, BOUNDARY_TAG_LENGTH);

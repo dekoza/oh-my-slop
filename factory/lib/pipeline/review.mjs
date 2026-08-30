@@ -11,6 +11,7 @@ import { createAttemptWorktree } from "../git/attempt.mjs";
 import { assessMutation, captureWorktreeState } from "../git/attestation.mjs";
 import { allocateAttempt, mintAttempt, mintedDispatch, requireAttemptIdentity } from "../worker/attempt.mjs";
 import { routeSummary } from "../worker/dispatch.mjs";
+import { traceWritten } from "../worker/outbox.mjs";
 import { postureOf, REVIEW_ROLES } from "../worker/roles.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 import { refusedProfiles } from "./repair.mjs";
@@ -233,7 +234,7 @@ function verifiedBoundary(store, { run, ticket, attempt }) {
  */
 function builderTrace(store, { run, ticket, attempt }) {
 	const record = stageResults(store, { run, ticket, phase: PHASE_IMPLEMENT })
-		.filter((result) => result.attempt === attempt && Array.isArray(result.detail?.trace) && result.detail.trace.length > 0)
+		.filter((result) => result.attempt === attempt && traceWritten(result.detail?.trace))
 		.at(-1);
 
 	if (record === undefined) {
