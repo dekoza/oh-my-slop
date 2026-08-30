@@ -62,15 +62,14 @@ question is which rows have become the module's job to state, not what the ceili
   — `controller/scheduler.mjs` · guard: `tests/node/factory_config_semantics.test.mjs`
 - **Six run end reasons plus one controller exit outcome, as two values and never a union
   collection.** — `domain/vocabulary.mjs` · §10.3
-- **§10.3's seven-row exit table sits beside them**, with import-time checks refusing a member with
-  no row, a row naming no member, and an outcome that leaked into the reasons. — `cli/exit-codes.mjs` · §10.3
+- **§10.3's seven-row exit table sits beside them, and neither it nor `--json`'s `schema_version`
+  is reachable from configuration**: import-time checks refuse a member with no row, a row naming no
+  member, and an outcome that leaked into the reasons. — `cli/exit-codes.mjs` · §10.3
 - **`controller-lost` maps to no exit code** and `exitCodeForEndReason` refuses it; it refuses
   `lease-lost` too, whose `EXIT_LEASE_LOST` names a process's exit and is refused by the `run`
   projector on a `run.ended`. — `cli/exit-codes.mjs` · §10.3
 - **Exit `1` means usage or config-load failure and nothing else**; `0`, `2`–`6` and `9` belong to
   the run end-reason table, and `7` and `8` are verb-level markers that exist before any run does.
-  — `cli/exit-codes.mjs` · §10.3
-- **Neither the exit table nor `--json`'s `schema_version` is reachable from configuration.**
   — `cli/exit-codes.mjs` · §10.3
 - **Every command answers from one structured value**, rendered human by default and `--json`
   on request. A verb that cannot do its job says what is missing; it never goes quiet and never
@@ -88,48 +87,41 @@ question is which rows have become the module's job to state, not what the ceili
 - **`effect` and `lease` rows are canonical, not projections** — same transaction, never rebuilt
   from the journal. — `state/store.mjs`
 - **The projection tables are the monitor's versioned read contract**: a projector whose output
-  changes bumps its `version`, the head compare at open is fail-closed, and a missing head is a
-  mismatch rather than a skipped check. — `state/projections.mjs`
-- **A mismatched reader refuses that projection alone** (`projection-unreadable`) and still answers
-  from the rest. — `state/projections.mjs`
-- **Every lock is one row and one compare-and-swap, from one module.** — `state/leases.mjs`
-- **The holder token is the only ownership proof**: the identity blob is advisory, nothing tests a
-  pid, and no path removes a row without comparing the token. — `state/leases.mjs`
-- **Fencing generations come from the one DB-wide counter**, so they order every lease against every
-  other. — `state/leases.mjs`
-- **The `controller` lease is the only row a clock may free**, and the TTL belongs to the lease
-  object rather than to its caller; every other row is settled by its superseded generation and a
-  probe. — `state/leases.mjs`
+  changes bumps its `version`, the head compare at open is fail-closed, a missing head is a
+  mismatch rather than a skipped check, and a mismatched reader refuses that projection alone
+  (`projection-unreadable`) and still answers from the rest. — `state/projections.mjs`
+- **Every lock is one row, one compare-and-swap, and one module**: the holder token is the only
+  ownership proof — the identity blob is advisory, nothing tests a pid, and no path removes a row
+  without comparing the token — fencing generations come from the one DB-wide counter, ordering
+  every lease against every other, and the `controller` lease is the only row a clock may free,
+  its TTL on the lease object rather than on its caller, every other row settled by its superseded
+  generation and a probe. — `state/leases.mjs`
 - **A lost controller lease is terminal**: stop issuing effects, emit, exit 6, never reacquire, and
-  never self-close a run a successor may already have adopted. — `controller/lease-guard.mjs`
+  never self-close a run a successor may already have adopted. A loss conceded before `run.started`
+  commits names no run — the loss event carries `run: null` and the exit-6 report names no phantom
+  run. — `controller/lease-guard.mjs`
 - **Every record moving a run's lifecycle goes through `hold.append`**, which compares
   the token inside the write's own transaction; a holder's in-memory latch is not proof.
   — `controller/lease-guard.mjs` · §14.5
-- **A loss conceded before `run.started` commits names no run** — the loss event carries `run: null`
-  and the exit-6 report names no phantom run. — `controller/lease-guard.mjs`
 - **Integrity failure is never repaired**: the damaged database is quarantined byte-for-byte and
   replaced by a minimal fresh store carrying a typed `journal.integrity-failed` fact; a hash-chain
-  break scopes to its own stream. — `state/quarantine.mjs`, `state/integrity.mjs`
+  break scopes to its own stream, and a global sequence hole is expected residue rather than
+  tampering — only per-stream contiguity is verified. — `state/quarantine.mjs`, `state/integrity.mjs`
 - **Only projections are rebuildable**, only under a `REBUILD_REASONS` member, and every rebuild
   emits its reason, projector versions, and resulting head. — `state/rebuild.mjs`
-- **The rebuild handle carries no `append` and no `transaction`.**
-  — `openStoreForRebuild` in `state/rebuild.mjs`
 - **Two ways only for a record to leave the journal** — whole-stream deletion for a
   run stream, front-truncation for `controller.heartbeat` — recording `stream.truncated
   {stream, up_to_seq, up_to_hash}` on the indefinite `controller` stream. Any
   other `DELETE FROM event`, and any renumbering or rewriting, is §14.7 broken.
   — `state/truncation.mjs` · §14.7 · guard: `tests/node/factory_state_integrity.test.mjs`
-- **A global sequence hole is expected residue, never tampering**; only per-stream contiguity is
-  verified. — `state/integrity.mjs`
 
 ## Effects and artifacts
 
 - **Every mutation outside the database is an effect**: a requested/resolved pair keyed by §4.5's
   grammar, built in one place and written in one place. — `effects/keys.mjs`, `effects/records.mjs` · §4.5
 - **An effect kind with no probe cannot be registered**, refused at construction; a new kind is a
-  row in the catalogue and nothing else. — `effects/catalogue.mjs` · §5.3
-- **Reads are not effects**: they appear in the catalogue only as a probe's `call`, and get durable
-  observation cursors instead. — `effects/catalogue.mjs`
+  row in the catalogue and nothing else, and reads are not effects — they appear there only as a
+  probe's `call`, and get durable observation cursors instead. — `effects/catalogue.mjs` · §5.3
 - **The payload digest sits beside the effect key, never in it.** Re-issuing a key with an
   identical payload returns the committed result; a different payload is a typed conflict.
   — `effects/records.mjs` · §4.5
@@ -137,22 +129,23 @@ question is which rows have become the module's job to state, not what the ceili
   attempt when the subject is that attempt's own work (branch, worktree, evidence ref, pane), the
   ticket execution when the subject is something one ticket execution has exactly one of (`push`,
   `pr-create`, `assign`, `label-add`, `comment-post`). — `effects/keys.mjs` · §4.5
-- **`pushAttemptBranch` takes no attempt parameter at all** — the wrong key is not something a
-  caller can ask for. — `git/integrate.mjs`
 - **An artifact is never referenced by path** — only content or an address, never a location.
   — `artifacts/blobs.mjs`, `artifacts/writes.mjs` · §12.1
 - **The ledger row is canonical and keyed by content**, stamped with the later producer, with no
-  reference counting. — `artifacts/ledger.mjs` · §12.1
-- **The retention class is derived from the producer, never passed**, and byte accounting per class
-  is a `GROUP BY` over the ledger. — `artifacts/ledger.mjs`
+  reference counting; the retention class is derived from that producer and never passed, and byte
+  accounting per class is a `GROUP BY` over the ledger. — `artifacts/ledger.mjs` · §12.1
 - **Large output goes in as bytes and comes back as §6.6's reference**; the bytes themselves never
   enter an outbox or an event payload. — `artifacts/writes.mjs` · §6.6
 
 ## Capacity, exhaustion, and dispatch
 
-- **Capacity is arbitrated by named rows, never by a counter**: `capacity:ticket:<i>`
-  and `capacity:model:<class>:<i>` are compare-and-swap holds on the lease primitive.
-  — `capacity/slots.mjs` · §9.4
+- **Capacity is arbitrated by named rows, never by a counter**: `capacity:ticket:<i>` and
+  `capacity:model:<class>:<i>` are compare-and-swap holds on the lease primitive, and a row settles
+  three ways with a lane adopted whole or not at all — a provable holder is transferred onto this
+  generation on the predecessor's token in one transaction, gated on `preflight.ok` and on there
+  being an executor; a disproved one has its attempt settled first and its row released second; an
+  unanswerable read moves nothing. Whatever a run adopted and never ran is released before it ends.
+  — `capacity/slots.mjs` · §9.4, §15
 - **The resource class is derived from the profile (`resourceClassOf`), never declared**, and the
   pane bound is derived from the ceiling — **so no pane knob exists in config.** — `capacity/plan.mjs`
 - **Slots carry no TTL**: a row records the generation of the *controller*
@@ -162,12 +155,6 @@ question is which rows have become the module's job to state, not what the ceili
   — `capacity/slots.mjs`
 - **`capacity/report.mjs` is the one derivation of §9.7's numbers**: `held` is the rows, `waiting`
   is a walk over the journal, never a second tally. — `capacity/report.mjs` · §9.7
-- **A capacity row settles three ways, and a lane is adopted whole or not at all**: a provable
-  holder is transferred onto this generation on the predecessor's token in one transaction, a
-  disproved one has its attempt settled first and its row released second, and an unanswerable read
-  moves nothing. — `capacity/slots.mjs` · §9.4, §15
-- **The transfer is gated on `preflight.ok` and on there being an executor**, and whatever a run
-  adopted and never ran is released before it ends. — `capacity/slots.mjs`
 - **What is still held at the end is named on the report** (`unsettled`). — `capacity/report.mjs` · §9.7
 - **Provider exhaustion is a time-boxed capacity state, not a routing preference**: a quota or
   rate refusal is observed in the pane tail and typed `provider-refused`, overriding the three
@@ -260,9 +247,9 @@ question is which rows have become the module's job to state, not what the ceili
 - **Permissions derive from the role's posture, never from a profile**, and the deny
   floor (`git push`, `tea`, `gh`, in every spelling the matcher accepts) has one home.
   — `worker/permissions.mjs` · §6.8, §11.4
-- **The builder binding is `dontAsk` plus broad tool-family allows** — never a per-command
-  allowlist, never `acceptEdits`. — `worker/permissions.mjs` · §6.8
-- **The reviewer binding is `dontAsk`**, with edit tools still withheld. — `worker/permissions.mjs` · §6.8
+- **Both postures bind `dontAsk`**: the builder adds broad tool-family allows — never a
+  per-command allowlist, never `acceptEdits` — and the reviewer keeps edit tools withheld.
+  — `worker/permissions.mjs` · §6.8
 - **Overrides may only add denies**: the config surface has no allow channel and no remove channel,
   and an inverted rule spelling fails to parse. — `config/worker.mjs` · §6.8
 - **The floor's non-permission half is a disabled `pushurl` in every attempt worktree**,
@@ -293,23 +280,17 @@ question is which rows have become the module's job to state, not what the ceili
   outside the worktree by topology so §12.7's eager deletion cannot take a result with it.
   — `worker/lifecycle.mjs` · §12.7
 - **`attempt.launched` is the mint**: the projections refuse an attempt-scoped record for a tuple
-  nothing minted. — `worker/lifecycle.mjs` · §6.4
-- **One `agent-start` effect covers pane, stamp, identity variables, and agent.**
-  — `worker/lifecycle.mjs` · §6.4
+  nothing minted, one `agent-start` effect covers pane, stamp, identity variables, and agent, and
+  the `FACTORY_ATTEMPT` token is stamped before the agent — the probe asks for it *and* a live
+  agent, so an early stamp cannot fake a start. — `worker/lifecycle.mjs` · §6.4
 - **The pane is a tab in the run's own workspace**, opened by one `workspace-open` effect keyed
   by the *run*, adopted by every later attempt and every re-entering controller, and probed by the
   run's deterministic label. — `worker/workspace.mjs` · §6.4
-- **The `FACTORY_ATTEMPT` token is stamped before the agent**, and the probe asks for the token
-  *and* a live agent, so an early stamp cannot fake a start. — `worker/lifecycle.mjs`
 - **§6.5's identity travels on two channels** — the prompt, and `FACTORY_*` variables declared on
   the attempt's `tab create` rather than typed at its shell. — `worker/lifecycle.mjs` · §6.5
 - **`workspace create` and `tab create` take `--env` and `agent start` takes
   none**; a value crosses as one argv element, so no quoting helper survives here.
   — `controller/herdr-control.mjs` · evidence: `tests/live/herdr-tab-env-reaches-agent.mjs`
-- **Identity is applied last**, so a declared binding cannot shadow it. — `worker/environment.mjs`
-- **The transcript pointer is polled out of Herdr with backoff and never computed.**
-  — `worker/lifecycle.mjs` · §6.5
-- **The pin is compared before the prompt.** — `worker/lifecycle.mjs` · §6.2
 - **`attempt.correlated` is what makes a launch finished**, and carries the agent kind on payload
   v2 so §5.5's third adoption test compares against an observation rather than a derivation.
   — `worker/lifecycle.mjs` · §5.5
@@ -338,25 +319,23 @@ question is which rows have become the module's job to state, not what the ceili
 - **Liveness means "still working", not "the process exists"** — neither harness exits when a turn
   ends. — `controller/herdr-events.mjs` · §6.6
 - **The state table is one function**, with the two silences split by fault: `no-result` is the
-  worker's, `dead-worker` is the automation's. — `decideOutcome` in `worker/outbox.mjs` · §8.10
+  worker's, `dead-worker` is the automation's, and a settled worker gets a grace before its silence
+  is called silent-completion. — `decideOutcome` in `worker/outbox.mjs` · §6.6, §8.10
 - **A pane never observed working had no turn to end**, so both silence rows become
   `worker-never-started` on the automation budget — a state predicate over the working
   status alone, never a launch window, and read from the attempt's durable observation
   records so a controller re-entry answers the same. The wait's own seed read is recorded.
   — `observedWorking` in `worker/lifecycle.mjs` · §6.6, §8.10
-- **A settled worker gets a grace before its silence is called silent-completion.**
-  — `worker/outbox.mjs` · §6.6
 - **An attempt ends once**: the projector refuses a second `attempt.ended`. — `state/projections.mjs`
 - **A subscription is re-established by pane id** after a Herdr server restart — polling covers the
   gap and stops when the socket takes the question back, and the recovery clears the degraded flag.
   — `controller/herdr-events.mjs` · §5.1
-- **Adoption asks §5.5's five tests together and answers three ways** — token · pane alive ·
-  agent kind · recorded worktree · outbox path intact, each able to prevent adoption on its own.
-  — `worker/adoption.mjs` · §5.2, §5.5, §12.4
+- **Adoption asks §5.5's five tests together and answers three ways** — token · pane alive · agent
+  kind · recorded worktree · outbox path intact, each able to prevent adoption on its own — and what
+  a row may be adopted *for* is re-derived from the journal, never read off the advisory identity
+  blob: unfinished and correlated. — `worker/adoption.mjs` · §5.2, §5.5, §6.4, §12.4
 - **The adoption module mutates nothing and asks about nothing but the pane** — no quit sequence and
   no pid in it. — `worker/adoption.mjs` · §5.5 · guard: `tests/node/factory_worker_adoption.test.mjs`
-- **What a row may be adopted *for* is re-derived from the journal**, never read off the advisory
-  identity blob: unfinished and correlated. — `worker/adoption.mjs` · §6.4
 - **Acting on the verdict belongs to the modules that own the writes**: `capacity/slots.mjs` moves
   the row, and `settleUnadoptable` ends the attempt through the same `settle()` every other ending
   uses. It stops no agent. — `worker/lifecycle.mjs` · §13.B
@@ -382,9 +361,8 @@ question is which rows have become the module's job to state, not what the ceili
   operator's checkout is never read or written, and the protection is topological.
   — `git/clone.mjs`, `git/repo.mjs` · guard: `tests/node/factory_controller_start.test.mjs`
 - **The clone is `init --bare` plus a refspec-less named remote**, never `git clone`, so every ref
-  in it is one the factory wrote deliberately. — `git/clone.mjs` · §14.11
-- **Fetches pin the base under `refs/factory/base/*` with `--no-tags`, serialized per handle.**
-  — `git/clone.mjs` · §7.7
+  in it is one the factory wrote deliberately, and fetches pin the base under `refs/factory/base/*`
+  with `--no-tags`, serialized per handle. — `git/clone.mjs` · §7.7, §14.11
 - **Structural damage means rebuild, never in-place repair**; a drifted remote URL converges by
   `set-url`. — `git/clone.mjs`
 - **Branch and worktree are effects with the pinned base in both payloads**, so §7.2's "never chased
@@ -399,9 +377,9 @@ question is which rows have become the module's job to state, not what the ceili
   it rebased onto, never its own base. — `git/harvest.mjs` · §7.4
 - **`git-isolation` fails closed on `.gitmodules` or LFS attributes read from the fetched base
   tree**, never from the checkout. — `git/isolation.mjs` · §7.8
-- **Nothing force-updates anything, and nothing resolves a conflict.** — `git/integrate.mjs`
-- **The integration worktree is detached** and the branch is moved onto the rebased result by
-  `update-ref` naming the value it replaces — a compare-and-swap. — `git/integrate.mjs` · §4.6
+- **Nothing force-updates anything, and nothing resolves a conflict**: the integration worktree
+  is detached and the branch is moved onto the rebased result by `update-ref` naming the value it
+  replaces — a compare-and-swap. — `git/integrate.mjs` · §4.6
 - **A conflicting rebase is aborted**, reported with the paths read off the index, and handed to
   §8.5's rebase-repair, then fresh-retry. — `git/integrate.mjs` · §8.5
 - **§7.4's integration-side predicates are commits-ahead, `git diff --check`, and §7.3's correlation
@@ -430,13 +408,12 @@ question is which rows have become the module's job to state, not what the ceili
   — `tracker/claims.mjs` · §3.3
 - **A claim this factory made and released is not proof of a claim standing now.**
   — `tracker/claims.mjs` · §3.3
-- **Comment ids arbitrate simultaneous claims, never comment text**, and only between factories;
-  every comment this store's effect rows account for is excluded. — `tracker/claims.mjs` · §5.2
-- **The contest window opens at the pre-claim read.** — `tracker/claims.mjs` · §3.3
+- **Comment ids arbitrate simultaneous claims, never comment text**, and only between factories:
+  every comment this store's effect rows account for is excluded, the window opens at the pre-claim
+  read, and the loser writes nothing — §3.3's *a live claim is never contested* outranks its *the
+  loser un-assigns itself* where the two collide. — `tracker/claims.mjs` · §3.3, §5.2
 - **Every timestamp in a claim is the tracker's**, and a tracker that will not state its clock
   refuses the claim rather than substituting ours. — `tracker/claims.mjs` · §3.3
-- **The loser of a contest writes nothing** — §3.3's *a live claim is never contested* outranks its
-  *the loser un-assigns itself* where the two collide. — `tracker/claims.mjs` · §3.3
 - **The claim's effects carry no attempt**: the claim belongs to the ticket execution.
   — `tracker/claims.mjs` · §9.4
 - **A disposition is §8.9's table applied to the tracker, and the table is data**: three rows add
@@ -456,9 +433,8 @@ question is which rows have become the module's job to state, not what the ceili
 - **Disposition refusals are carried into the §3.5 report (`released_unsettled`)** — an unreachable
   tracker costs that ticket §3.3's staleness and an alarm, never the run's own `run.ended`, lease
   release, and exit 4. — `controller/drain.mjs` · §3.5
-- **§7.5's pull request is check-then-create inside §4.5's pair.** — `tracker/pulls.mjs` · §4.5, §7.5
-- **The PR body is a fenced JSON block followed by `Closes #N`**, so the manual merge discharges the
-  ticket. — `tracker/pulls.mjs` · §7.5
+- **§7.5's pull request is check-then-create inside §4.5's pair**, and its body is a fenced JSON
+  block followed by `Closes #N`, so the manual merge discharges the ticket. — `tracker/pulls.mjs` · §4.5, §7.5
 - **§8.7's summary and advisory findings ride the PR and the §8.9 comment alike; blocking findings
   ride the attestation artifact and nothing else.** — `tracker/pulls.mjs` · §8.7
 - **The stale-PR sweep closes each superseded factory PR of the same ticket and leaves alone any PR
@@ -469,14 +445,12 @@ question is which rows have become the module's job to state, not what the ceili
   reads as `possibly-deleted` and never as `never-posted`. — `tracker/authority.mjs` · §5.2
 - **`worker.alive` is Herdr's one fact; the outbox is `evidence` and the journal is `intent`, never
   `proof`.** — `tracker/authority.mjs` · §5.2
-- **§5.1's observation cursor is canonical, not a projection** — a watermark.
-  — `tracker/observation.mjs` · §5.1
-- **The watermark is a record's `updated_at` and never our clock**; a cursor with no record to
-  anchor to takes the tracker's own `Date` response header. — `tracker/observation.mjs` · §5.1
-- **The foreign id names the fact, not the object** (`gitea:<kind>:<id>@<revision>`), and the graph
-  fact is keyed by the timeline entry that caused its read. — `tracker/observation.mjs` · §5.1
-- **Dedup is enforced by a partial unique index**, not by the poll behaving itself.
-  — `tracker/observation.mjs` · §5.1
+- **§5.1's observation cursor is canonical, not a projection** — a watermark, and a record's
+  `updated_at` rather than our clock; a cursor with no record to anchor to takes the tracker's own
+  `Date` response header. — `tracker/observation.mjs` · §5.1
+- **The foreign id names the fact, not the object** (`gitea:<kind>:<id>@<revision>`), the graph fact
+  is keyed by the timeline entry that caused its read, and dedup is enforced by a partial unique
+  index rather than by the poll behaving itself. — `tracker/observation.mjs` · §5.1
 - **A run's scope is a live selector, so `frontier.mjs` caches nothing** — every `readScope` is a
   fresh set of reads. — `tracker/frontier.mjs` · §3.1
 - **Parent membership is the anchored `Part of #N` first body line and nothing looser**, and
@@ -490,11 +464,11 @@ question is which rows have become the module's job to state, not what the ceili
 - **A parent scope with no `ready-for-human` member warns `no-human-sink`, never refuses**;
   the drain report carries `sink`, and a delivered scope's headline leads with it.
   — `tracker/frontier.mjs` · `controller/drain.mjs` · #183
-- **The edge set is a parameter**: a caller maintaining the graph from the poll passes it, and
-  `doctor` omits it. — `tracker/frontier.mjs` · §5.1
+- **The edge set is a parameter**: a caller maintaining the graph from the poll passes it and
+  `doctor` omits it, and `readScope` reads edges only for members an edge could reclassify
+  — `decide` consults blockers exactly once, after every state and label check has passed.
+  — `tracker/frontier.mjs` · §5.1
 - **`awaits_external` is a field rather than a seventh member class.** — `tracker/frontier.mjs` · §3.5
-- **`readScope` reads edges only for members an edge could reclassify** — `decide` consults blockers
-  exactly once, after every state and label check has passed. — `tracker/frontier.mjs`
 
 ## The pipeline
 
@@ -520,15 +494,15 @@ question is which rows have become the module's job to state, not what the ceili
 - **The review phase fans out from the controller**: two read-only attempts, each with its
   own entry skill, outbox, attempt identity, and **its own worktree at the reviewed commit.**
   — `pipeline/review.mjs` · §7.3, §8.4
-- **The axes run in sequence and both to completion** — neither is cancelled on the other's
-  rejection. — `pipeline/review.mjs` · §8.4, §15
+- **The axes run in sequence and both to completion** — neither is cancelled on
+  the other's rejection — and §11.5's `review` pair maps onto them positionally.
+  — `pipeline/review.mjs` · §8.4, §11.5, §15
 - **Each axis resolves its own `stage.resolved` under its own attempt**, and the phase's own result
   is resolved by the walk under the *builder* attempt. — `pipeline/review.mjs` · §8.10
 - **`STAGE_ACTIONS.verdict` is never the walk's to take** — reaching it there means an executor
   answered a phase with an attempt outcome. — `pipeline/stages.mjs` · §8.10
 - **Blocking sets are unioned by concatenation in axis order**, each finding tagged with the axis
   that wrote it — nothing merged, deduplicated, or reranked. — `pipeline/review.mjs` · §8.4
-- **§11.5's `review` pair maps onto the axes positionally.** — `pipeline/review.mjs` · §11.5
 - **Both ends of the diff are read off the passing verify record**, never taken from the caller.
   — `verifiedBoundary` in `pipeline/review.mjs` · §14.13
 - **The fixed point reaches the worker through `renderAttemptPrompt`'s `review` block**, required
@@ -562,24 +536,23 @@ question is which rows have become the module's job to state, not what the ceili
   `checksTrace`**, inside the computed untrusted boundary; a checking role rendered without one is
   refused. — `worker/prompt.mjs`, `worker/roles.mjs` · §8.4
 - **The controller never classifies a citation.** — `pipeline/review.mjs` · §8.4
-- **The integration lease is acquired twice**: `[lease] fetch → evidence ref → rebase → the required
-  set [release]`, then the two review axes with no lease held, then `[lease] base unchanged? →
-  predicates → push → PR [release]`. — `pipeline/integration.mjs` · §9.5
+- **The integration lease is acquired twice, and is a row *and* an in-process turn**: `[lease] fetch
+  → evidence ref → rebase → the required set [release]`, then the two review axes with no lease
+  held, then `[lease] base unchanged? → predicates → push → PR [release]`. The row is what reconcile
+  finds after a crash, the chain is what makes a second lane wait. — `pipeline/integration.mjs` · §9.5
 - **The rebase is in `verify`, not in `integrate`** — the checks always run at the post-rebase
   commit that will be pushed. — `pipeline/integration.mjs` · §8.2, §14.13
 - **`integrate` re-acquires under a base-commit identity precondition and loops back to re-rebase
   and re-verify, consuming no budget.** — `pipeline/integration.mjs` · §9.5
-- **The integration lease is a row *and* an in-process turn**: the row is what reconcile finds after
-  a crash, the chain is what makes a second lane wait. — `pipeline/integration.mjs` · §9.5
 - **A red re-verify inside §9.5's loop is `integration-red`**, carrying no automation fault.
   — `pipeline/integration.mjs` · §8.6
 
 ## Checks
 
 - **The checks are declared, never discovered**: the validated `checks` block and nothing else — no
-  manifest, no Makefile, and `AGENTS.md` prose is never parsed at runtime. — `checks/run.mjs` · §8.2, §14.34
-- **The selector is the closed pair `required | all`**, so per-surface targeting is not a question
-  the API can be asked. — `checks/run.mjs` · §8.2
+  manifest, no Makefile, and `AGENTS.md` prose is never parsed at runtime — with the selector the
+  closed pair `required | all`, so per-surface targeting is not a question the API can be asked.
+  — `checks/run.mjs` · §8.2, §14.34
 - **`feeds` is advisory-only and names agent-borne phases**, unique, defaulting to empty; unknown
   phases and `review` refuse the config rather than becoming inert policy. — `config/checks.mjs` · §8.2, §11.6
 - **Fed evidence is selected from policy plus the verify record** and resolved through the artifact
@@ -590,18 +563,17 @@ question is which rows have become the module's job to state, not what the ceili
   carries the required set alone. — `factDetail` in `pipeline/repair.mjs` · §8.2, §8.5
 - **Fault attribution lives in one function**: a required check exiting inside its declared
   expected-failure codes is the worker's failure; a timeout, a signal, a missing exec, or any other
-  code is `unrunnable` — an automation failure. — `checks/run.mjs` · §8.2
-- **A timed-out check is killed as a process group.** — `checks/run.mjs`
+  code is `unrunnable` — an automation failure. A timed-out check is killed as a process group.
+  — `checks/run.mjs` · §8.2
 - **§14.23's "two lanes never run mechanical checks concurrently" is one in-process chain, not a
   lease**; `checks[].parallelSafe` is the recorded v2 upgrade. — `checks/run.mjs` · §11.6, §14.23
 - **Running a check is not an effect, but recording its output is** — keyed by the *execution*, not
   by the check alone; stdout/stderr is content-addressed and later reachable only through its ledger
   row. — `checks/artifacts.mjs` · §4.5, §8.7
 - **§8.3's baseline gate is a detached throwaway worktree** under `baselines/`, deleted eagerly when
-  green and retained when red, writing nothing durable. — `checks/baseline.mjs` · §8.3, §12.7
-- **`doctor --baseline` shares the isolation path, not preflight's selection**: doctor
-  explicitly runs `all` and reports advisory severity, while preflight keeps the `required` gate.
-  — `checks/baseline.mjs`, `doctor/report.mjs` · §10.5, §14.24
+  green and retained when red, writing nothing durable; `doctor --baseline` shares that isolation
+  path but not preflight's selection, running `all` and reporting advisory severity while preflight
+  keeps the `required` gate. — `checks/baseline.mjs`, `doctor/report.mjs` · §8.3, §10.5, §12.7, §14.24
 - **Differential no-new-failures verification is deliberately absent**, and the comment saying so is
   load-bearing. — `checks/baseline.mjs` · §8.3
 
@@ -621,42 +593,38 @@ question is which rows have become the module's job to state, not what the ceili
   lease release commit in one token-checked transaction. — `controller/start.mjs`
 - **Preflight is observable, not a gate**: every check writes a `preflight.checked` stage on the
   run's stream carrying no ticket, in §9.7's order — artifacts and config, then probes, then the
-  expensive baseline. — `controller/preflight.mjs` · §9.7
-- **A check whose subsystem has not landed answers `unbuilt`**, which is neither `passed` nor
-  `failed`. — `controller/preflight.mjs` · §9.7
+  expensive baseline — and one whose subsystem has not landed answers `unbuilt`, which is neither
+  `passed` nor `failed`. — `controller/preflight.mjs` · §9.7
 - **The drain report names the subsystems that would have found work**, so a green-looking run that
   did nothing cannot hide. — `controller/drain.mjs` · §9.7
 - **The run manifest and the package handshake are effects keyed by the run**, so a re-entry whose
   declared inputs changed is a typed conflict. — `controller/manifest.mjs` · §3.1, §11.7
 - **The scheduler is §9.6's loop and nothing more: no queue object, no ready-queue, no aging, no
-  priority.** It re-reads the frontier at every scheduling decision and takes the lowest-numbered
-  claimable ticket. — `controller/scheduler.mjs` · §9.6
-- **Backpressure is not claiming** — nothing is buffered and no intent is queued.
+  priority, and backpressure is not claiming** — nothing is buffered and no intent is queued. It
+  re-reads the frontier at every scheduling decision and takes the lowest-numbered claimable ticket.
   — `controller/scheduler.mjs` · §9.6
 - **The frontier reader and the execution of one ticket are injected**, so the loop stays testable
   at any capacity with no override seam. — `controller/scheduler.mjs`
 - **§5.5's `resumed` lanes are not a third kind**: they were running before the first frontier read,
   and a ticket already running is not a candidate again. — `controller/scheduler.mjs` · §2.1, §5.5
 - **The circuit breaker reads terminal-commit order, and its verdict is monotone**: the journal's
-  own sequence over `ticket.disposition-changed`, never a clock. — `controller/breaker.mjs` · §3.5
-- **It asks *has this run ever reached N in a row*, not *are the last N*.** — `controller/breaker.mjs` · §3.5
+  own sequence over `ticket.disposition-changed`, never a clock, asking *has this run ever reached N
+  in a row* rather than *are the last N*. — `controller/breaker.mjs` · §3.5
 - **The scheduler's `claiming` predicate and `endReasonOf` call the one function**, and the verdict
-  is on every run's report. — `controller/breaker.mjs`
-- **Automation-versus-product is the disposition's own `fault`**, carried on
-  `ticket.disposition-changed` payload v2, never a list of reason classes matched a second time.
-  — `controller/breaker.mjs` · §8.6
-- **An operator's explicit stop outranks the breaker in `endReasonOf`.** — `controller/breaker.mjs`
+  is on every run's report: automation-versus-product is the disposition's own `fault`, carried on
+  `ticket.disposition-changed` payload v2 and never a list of reason classes matched a second time,
+  and an operator's explicit stop outranks the breaker there. — `controller/breaker.mjs` · §8.6
 - **N is `budgets.circuitBreaker`, taken with no default.** — `controller/breaker.mjs` · §11.6
 - **§3.5's drain owns both clauses** — nothing claimable now, and nothing that can become claimable
   without external change, the second read off `awaits_external`. — `controller/drain.mjs` · §3.5
-- **The report's classes are §3.5's six exactly**; a member blocked by an in-scope blocker takes its
-  blocker's class and carries `blocked_by`. — `controller/drain.mjs` · §3.5
+- **The report's classes are §3.5's six exactly**; a member blocked by an in-scope blocker takes
+  its blocker's class and carries `blocked_by`, and a scope nobody read is `drained: null`, never
+  `true`. — `controller/drain.mjs` · §3.5
 - **Cycles are reported, not walked.** — `controller/drain.mjs`
-- **A scope nobody read is `drained: null`, never `true`.** — `controller/drain.mjs` · §3.5
-- **A lane that ran is not a ticket claimed**: the loop counts `lanes_run` and the report derives
-  `claimed` from what the lanes answered. — `controller/drain.mjs` · §3.3
-- **The frontier and the claim are wired together or not at all**, and the report names that half
-  rather than reporting a scope that drained. — `controller/drain.mjs`
+- **A lane that ran is not a ticket claimed**: the loop counts `lanes_run`, the report derives
+  `claimed` from what the lanes answered, and the frontier and the claim are wired together
+  or not at all — the report names that half rather than reporting a scope that drained.
+  — `controller/drain.mjs` · §3.3
 
 ## Reconciliation
 
@@ -667,9 +635,8 @@ question is which rows have become the module's job to state, not what the ceili
 - **The engine ships once; each effect kind's probe ships with the subsystem that introduces that
   kind**, registered by its §4.5 read. — `effects/registry.mjs` · §4.5, §5.3
 - **An effect nothing could probe is left exactly as it was and reported** — no
-  `reconcile.concluded` record at all. — `reconcile/` · §12.4
-- **Scope follows the effect rather than the run**: a ticket-less effect of an ended run and a
-  repo-scoped one are entities too. — `reconcile/` · §12.4
+  `reconcile.concluded` record at all — and scope follows the effect rather than the run: a
+  ticket-less effect of an ended run and a repo-scoped one are entities too. — `reconcile/` · §12.4
 - **§5.4's "before the lease is used for any effect" is a latch only a settling pass opens** —
   `fence()` refuses until then. — `controller/lease-guard.mjs` · §5.4
 
@@ -679,10 +646,9 @@ question is which rows have become the module's job to state, not what the ceili
 - **The tier-1 horizon is a union** — a run inside the last `fullDetailRuns` *or* inside
   `fullDetailDays` — ranked over the permanent digest rather than the surviving set.
   — `retention/horizon.mjs` · §12
-- **§12.4's three pins are read from durable state alone**, and where durable state cannot answer
-  the pin holds. — `retention/pins.mjs` · §12.4
-- **No clock reaches `pinsForRun`**: the pins hold a run past the horizon rather than carrying one
-  of their own. — `retention/pins.mjs` · §12.4
+- **§12.4's three pins are read from durable state alone, and no clock reaches `pinsForRun`**: where
+  durable state cannot answer the pin holds, and the pins hold a run past the horizon rather than
+  carrying one of their own. — `retention/pins.mjs` · §12.4
 - **The label pin releases only on a later repository-wide poll's `observation.recorded` that states
   `ticket.labels`**, with the run's own §8.9 disposition as the fallback — most observations of a
   ticket establish nothing about its labels. — `retention/pins.mjs` · §5.1, §14.20
@@ -724,10 +690,9 @@ question is which rows have become the module's job to state, not what the ceili
 
 - **`doctor` is handed the store from `openRepoStoreReadOnly`**, which carries no `transaction` and
   never creates a store. — `doctor/report.mjs` · §14.24
-- **Every section is computed independently, and one that cannot answer says which ticket owes it.**
-  — `doctor/report.mjs` · §10.5
-- **Monitor health is advisory-only and never an alarm; legacy artifacts are reported and never
-  deleted.** — `doctor/report.mjs` · §10.5
+- **Every section is computed independently, and one that cannot answer says which ticket owes it**;
+  monitor health is advisory-only and never an alarm, and legacy artifacts are reported and never
+  deleted. — `doctor/report.mjs` · §10.5
 - **A named scope resolves its member list live and claims nothing** — it reads the observation
   cursor and never opens one. — `doctor/verb.mjs` · §10.5
 - **A tracker `doctor` cannot read *is* an alarm**: no run over that scope can claim anything.
