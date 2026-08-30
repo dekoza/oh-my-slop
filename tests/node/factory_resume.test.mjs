@@ -10,7 +10,7 @@ const ATTEMPT = `${RUN}-t${TICKET}-a1`;
 const BASE = "a".repeat(40);
 const HEAD = "b".repeat(40);
 
-function pauseBody({ attempt = ATTEMPT, question = "Which rule applies?" } = {}) {
+function pauseBody({ run = RUN, attempt = `${run}-t${TICKET}-a1`, question = "Which rule applies?" } = {}) {
 	return [
 		"🤖 **factory — paused** · `product-ambiguity`",
 		"",
@@ -18,7 +18,7 @@ function pauseBody({ attempt = ATTEMPT, question = "Which rule applies?" } = {})
 		JSON.stringify(
 			{
 				schema_version: 1,
-				identity: { run: RUN, ticket: TICKET, attempt },
+				identity: { run, ticket: TICKET, attempt },
 				disposition: "paused",
 				reason_class: "product-ambiguity",
 				question,
@@ -166,6 +166,13 @@ test("resume evidence failures produce explicit fresh-execution reasons instead 
 				comment(1, "kuferek", pauseBody()),
 				comment(2, "kuferek", "🤖 **factory — paused**\n\n```json\nnot json\n```"),
 			],
+			clone: cloneAnswering(),
+			code: "pause-comment-unparseable",
+			message: /latest factory pause comment.*unparseable/i,
+		},
+		{
+			name: "pause identity outside the factory charset",
+			comments: [comment(1, "kuferek", pauseBody({ run: "bad/run" }))],
 			clone: cloneAnswering(),
 			code: "pause-comment-unparseable",
 			message: /latest factory pause comment.*unparseable/i,

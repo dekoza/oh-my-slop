@@ -1,3 +1,4 @@
+import { IDENTITY_CHARSET } from "../domain/vocabulary.mjs";
 import { isMissingRef } from "../git/errors.mjs";
 import { attemptBranch } from "../git/isolation.mjs";
 
@@ -162,9 +163,10 @@ function parsePause(comment, expectedTicket) {
 		block?.disposition !== "paused" ||
 		block?.identity === null ||
 		typeof block?.identity?.run !== "string" ||
-		block.identity.run === "" ||
+		!IDENTITY_CHARSET.test(block.identity.run) ||
 		block?.identity?.ticket !== expectedTicket ||
 		typeof block?.identity?.attempt !== "string" ||
+		!IDENTITY_CHARSET.test(block.identity.attempt) ||
 		!block.identity.attempt.startsWith(`${block.identity.run}-t${expectedTicket}-a`) ||
 		!/^\d+$/.test(block.identity.attempt.slice(`${block.identity.run}-t${expectedTicket}-a`.length)) ||
 		typeof block?.reason_class !== "string" ||
