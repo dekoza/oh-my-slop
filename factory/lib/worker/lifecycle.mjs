@@ -305,11 +305,11 @@ export const DEFAULT_NO_PROGRESS_TIMEOUT_MS = 600_000;
  *   `attempt.launched`, so the mint below cannot be appended twice
  * @param {Readonly<{ baseCommit: string, reviewedCommit: string }> | null} [context.review]
  *   §8.4's fixed point, when a review axis attempt is being launched
- * @param {ReadonlyArray<object>} [context.trustedEvidence] controller-captured
- *   advisory output selected by `checks[].feeds` for this phase (§8.2)
  *   (`pipeline/review.mjs`). It rides the prompt for the same reason the repair
  *   brief does, and it is not optional in practice: both axis skills open by
  *   asking the caller for a fixed point and there is nobody in the pane to ask
+ * @param {ReadonlyArray<object>} [context.trustedEvidence] controller-captured
+ *   advisory output selected by `checks[].feeds` for this phase (§8.2)
  * @param {ReadonlyArray<string>} [context.sessionArgs] §6.8's binding for this posture
  * @param {Record<string, string>} [context.sessionEnv] §6.8's closed pane set — the
  *   controller-owned config-directory variables and declared capability values the

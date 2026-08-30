@@ -4,6 +4,14 @@ import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const BREAKING_SCORE = /Final mutation score .* under breaking threshold .*setting exit code to 1/;
+const MAX_VERDICT_TAIL_BYTES = 4096;
+
+export function retainStrykerTail(prior, chunk) {
+	const bytes = Buffer.from(`${prior}${chunk}`, "utf8");
+	let tail = bytes.subarray(Math.max(0, bytes.length - MAX_VERDICT_TAIL_BYTES)).toString("utf8");
+	while (Buffer.byteLength(tail, "utf8") > MAX_VERDICT_TAIL_BYTES) tail = tail.slice(1);
+	return tail;
+}
 
 /**
  * Preserve Stryker's score failure as product evidence while mapping every
@@ -23,11 +31,11 @@ export async function runStryker() {
 	child.stdout.setEncoding("utf8");
 	child.stderr.setEncoding("utf8");
 	child.stdout.on("data", (chunk) => {
-		output += chunk;
+		output = retainStrykerTail(output, chunk);
 		process.stdout.write(chunk);
 	});
 	child.stderr.on("data", (chunk) => {
-		output += chunk;
+		output = retainStrykerTail(output, chunk);
 		process.stderr.write(chunk);
 	});
 
