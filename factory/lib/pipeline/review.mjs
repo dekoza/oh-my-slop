@@ -1,4 +1,12 @@
-import { CHECK_RESULTS, FINDING_SEVERITIES, PHASE_REVIEW, PHASE_VERIFY, REVIEW_VERDICTS, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
+import {
+	CHECK_RESULTS,
+	FINDING_SEVERITIES,
+	PHASE_IMPLEMENT,
+	PHASE_REVIEW,
+	PHASE_VERIFY,
+	REVIEW_VERDICTS,
+	STAGE_ACTIONS,
+} from "../domain/vocabulary.mjs";
 import { createAttemptWorktree } from "../git/attempt.mjs";
 import { assessMutation, captureWorktreeState } from "../git/attestation.mjs";
 import { allocateAttempt, mintAttempt, mintedDispatch, requireAttemptIdentity } from "../worker/attempt.mjs";
@@ -109,6 +117,7 @@ export async function reviewPhase(
 	},
 ) {
 	const { baseCommit, reviewedCommit } = verifiedBoundary(store, { run, ticket, attempt: builderAttempt });
+	const trace = builderTrace(store, { run, ticket, attempt: builderAttempt });
 	const axes = [];
 
 	for (const [index, axis] of REVIEW_ROLES.entries()) {
@@ -122,6 +131,7 @@ export async function reviewPhase(
 				index,
 				baseCommit,
 				reviewedCommit,
+				trace,
 				workerConfig,
 				runAxis,
 				routeAxis: requireAxisDispatch(routeAxis),
@@ -200,6 +210,44 @@ function verifiedBoundary(store, { run, ticket, attempt }) {
 	}
 
 	return Object.freeze({ baseCommit, reviewedCommit });
+}
+
+/**
+ * #189's requirement trace — **read off the reviewed attempt's own implement
+ * record**, the way the boundary is read off its verify record.
+ *
+ * The record is the right source for the same reason the verify record is: it
+ * is the result the walk resolved under this attempt, so the trace the spec
+ * axis checks is the one the controller accepted from *this* builder, and on a
+ * repair chain it is the repairing attempt's — the whole ticket restated by the
+ * worker whose commit is being published — rather than a prior attempt's claim
+ * about work that was set aside. It is not a parameter, for #165's reason: a
+ * caller-supplied trace would be a second opinion about what the builder said.
+ *
+ * **Absence refuses.** A `completed` builder record with no trace is an invalid
+ * result one phase earlier (`missingResult`, §8.10's fresh-retry row), so a
+ * review reached without one is a state the journal cannot explain — and the
+ * plausible fallthrough, briefing the spec axis without it, is exactly the
+ * re-derivation of coverage from the diff alone that the trace exists to end,
+ * arriving as an approve that looks like every other approve.
+ */
+function builderTrace(store, { run, ticket, attempt }) {
+	const record = stageResults(store, { run, ticket, phase: PHASE_IMPLEMENT })
+		.filter((result) => result.attempt === attempt && Array.isArray(result.detail?.trace) && result.detail.trace.length > 0)
+		.at(-1);
+
+	if (record === undefined) {
+		throw unroutable(
+			"builder-trace",
+			`Attempt ${attempt} has no implement record carrying a trace, so there is nothing to brief the spec axis ` +
+				`with (§8.4, #189). A completed builder record without one is an invalid result at the implement phase; ` +
+				`reaching review without it is a journal this controller cannot explain, and briefing the axis without ` +
+				`the trace would have it answer the ticket's coverage question from the diff alone.`,
+			{ attempt, phase: PHASE_IMPLEMENT },
+		);
+	}
+
+	return record.detail.trace;
 }
 
 /**
@@ -423,7 +471,7 @@ function axisPurpose({ axis, builderAttempt, tryNumber }) {
  * written to it is the role this attempt belongs to — and §14.19 gives that role
  * no second go.
  */
-async function attemptAxis(clone, { axis, route, identity, worktreePath, branch, baseCommit, reviewedCommit, runAxis, tryNumber }) {
+async function attemptAxis(clone, { axis, route, identity, worktreePath, branch, baseCommit, reviewedCommit, trace, runAxis, tryNumber }) {
 	const before = await captureWorktreeState(clone, { worktreePath, branch });
 	if (!before.clean) {
 		return mutationAnswer({
@@ -449,6 +497,11 @@ async function attemptAxis(clone, { axis, route, identity, worktreePath, branch,
 		branch,
 		baseCommit,
 		reviewedCommit,
+		// #189: the builder's trace rides every axis request, and **the template
+		// decides which axis renders it** (`checksTrace` on the role's own
+		// expectations). Handing it to one axis by name here would be a second
+		// copy of that role knowledge, and the two would drift.
+		trace,
 		try: tryNumber,
 	});
 
