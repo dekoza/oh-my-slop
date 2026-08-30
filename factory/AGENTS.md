@@ -284,10 +284,20 @@ question is which rows have become the module's job to state, not what the ceili
   worktree-scoped so §7.5's integration push from the clone still works. — `git/attempt.mjs` ·
   §7.5
 - **Pre-trust is per runtime's own resolution rule, not per path**: pi walks up to the nearest
-  `trust.json` entry, and Claude keys `.claude.json`'s `projects` map exactly — for a linked
-  worktree, on the repository's git common directory. — `worker/trust.mjs`
+  `trust.json` entry over **canonical** spellings — symlinks resolved, as pi resolves them before
+  keying and before the walk — and Claude keys `.claude.json`'s `projects` map exactly, for a
+  linked worktree on the repository's git common directory. — `worker/trust.mjs` · §6.8
+- **What the writer writes is what the check reads back**, derived from the constants rather than
+  hand-listed, so a fifth settled key cannot become a fourth unproven one. — `worker/trust.mjs`,
+  `worker/preflight.mjs` · §6.8
 - **The guarantee is the state predicate preflight asserts, not a green probe** — a `--print`
-  probe never meets the dialog at all. — `worker/trust.mjs`
+  probe never meets the dialog at all — and it reaches exactly as far as controller-owned state:
+  interstitials gated on anything else are attribution's, not prevention's. — `worker/trust.mjs` ·
+  §6.8
+- **Every session's binding carries the flags that keep an interstitial off a pane**: Claude's
+  browser fence and pi's trust approval, on the worker binding beside the discovery fence, and
+  therefore on both postures and on the probes. — `worker/claude.mjs`, `worker/pi.mjs` · §6.8 ·
+  evidence: `tests/live/claude-chrome-cache.mjs`
 - **`createAttemptWorktree` requires the environment handle** and applies both the pushurl and
   the pre-trust outside the effect, so a re-entered attempt converges. — `git/attempt.mjs`
 
@@ -351,6 +361,11 @@ question is which rows have become the module's job to state, not what the ceili
   turn ends. — `controller/herdr-events.mjs` · §6.6
 - **The state table is one function**, with the two silences split by fault: `no-result` is the
   worker's, `dead-worker` is the automation's. — `decideOutcome` in `worker/outbox.mjs` · §8.10
+- **A pane never observed working had no turn to end**, so both silence rows become
+  `worker-never-started` on the automation budget — a state predicate over the working status
+  alone, never a launch window, and read from the attempt's durable observation records so a
+  controller re-entry answers the same. The wait's own seed read is recorded for that reason. —
+  `observedWorking` in `worker/lifecycle.mjs` · §6.6, §8.10
 - **A settled worker gets a grace before its silence is called silent-completion.** —
   `worker/outbox.mjs` · §6.6
 - **An attempt ends once**: the projector refuses a second `attempt.ended`. —
