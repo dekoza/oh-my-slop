@@ -14,7 +14,7 @@ Module paths are relative to `factory/lib/`; everything else is relative to the 
 [`docs/specs/software-factory.md`](../docs/specs/software-factory.md) for the decision — the
 authority, and what a change cites — and the owning module's own comments for how the invariant
 is held, which is where you will find why the rejected alternative fails. Those comments run to
-roughly 64,000 words across the 52 modules named below; this file is an index into them, and a
+roughly 64,000 words across the 53 modules named below; this file is an index into them, and a
 row that needs a paragraph to state is a row whose module is missing that paragraph.
 
 A new invariant is a new row, not a new paragraph. `tests/test_factory_agents_index.py` holds
@@ -408,15 +408,13 @@ question is which rows have become the module's job to state, not what the ceili
 ## Git isolation
 
 - **Git operates exclusively on a factory-private bare clone** beside `state.db`; the operator's
-  checkout is never read or written, and the protection is topological. — `git/clone.mjs`,
-  `git/repo.mjs` · guard: `tests/node/factory_controller_start.test.mjs`
+  checkout is untouched topologically. — `git/clone.mjs`, `git/repo.mjs` · guard: `tests/node/factory_controller_start.test.mjs`
 - **The clone is `init --bare` plus a refspec-less named remote**, never `git clone`, so every
   ref in it is one the factory wrote deliberately. — `git/clone.mjs` · §14.11
 - **Fetches pin the base under `refs/factory/base/*` with `--no-tags`, serialized per handle.** —
   `git/clone.mjs` · §7.7
 - **Structural damage means rebuild, never in-place repair**; a drifted remote URL converges by
-  `set-url`, because a rebuild would discard attempt branches that are the only copy of unpushed
-  work. — `git/clone.mjs`
+  `set-url`, because rebuilding would discard the only copy of unpushed work. — `git/clone.mjs`
 - **Branch and worktree are effects with the pinned base in both payloads**, so §7.2's "never
   chased mid-attempt" arrives as a typed payload conflict. — `git/attempt.mjs` · §7.2
 - **The per-worktree config carries the dedicated factory identity** (`FACTORY_GIT_IDENTITY`,
@@ -436,8 +434,8 @@ question is which rows have become the module's job to state, not what the ceili
 - **A conflicting rebase is aborted**, reported with the paths read off the index (git's prose is
   localized), and handed to §8.5's rebase-repair, then fresh-retry. — `git/integrate.mjs` · §8.5
 - **§7.4's integration-side predicates are commits-ahead, `git diff --check`, and §7.3's
-  correlation trailer on every commit**, matched on run and ticket rather than on the attempt.
-  They need no worktree. — `git/integrate.mjs` · §7.3, §7.4
+  correlation trailer on every commit**, accepting only the current run/ticket and §3.4's verified
+  inherited runs; they need no worktree. — `git/integrate.mjs` · §3.4, §7.3, §7.4
 
 ## Tracker
 
@@ -545,6 +543,8 @@ question is which rows have become the module's job to state, not what the ceili
 
 ## The pipeline
 
+- **Human-boundary continuation is decided before the claim from two authorities**: the latest
+  factory pause identity and git's retained tip; expected absence is an explicit fresh-base reason, never a throw. — `pipeline/resume.mjs` · §3.4, §7.3, §8.5
 - **§8.6's budgets are counted, never incremented**: a spend is a count of the `stage.resolved`
   records that charged that budget, read back from the journal. — `pipeline/budgets.mjs` · §8.6
 - **`BUDGET_KEY_FOR_ACTION` is the whole relationship between §8.10's Action column and §11.6's

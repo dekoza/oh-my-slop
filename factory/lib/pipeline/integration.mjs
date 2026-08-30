@@ -155,7 +155,11 @@ export async function integrationVerify(store, clone, context) {
  * whenever the base moved. **One function, so the two can never disagree about
  * what "verified" means** — which is the whole of §14.13.
  */
-async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branch, baseBranch, checks, env, actor, now }) {
+async function rebaseAndVerify(
+	store,
+	clone,
+	{ hold, run, ticket, attempt, branch, baseBranch, checks, env, acceptedRuns = [], actor, now },
+) {
 	const fresh = await clone.fetchBase({ baseBranch });
 	const opened = await openIntegrationWorktree(clone, { storeDir: store.storeDir, attempt, branch });
 
@@ -233,8 +237,16 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
 	// green path, and §12.7 retains it on the red one.
 	const commits =
 		verified.outcome === CHECK_RESULTS.passed
-			? (await assessIntegration(clone, { worktreePath: opened.path, baseCommit: fresh.commit, head: rebased.head, run, ticket }))
-					.commits
+			? (
+					await assessIntegration(clone, {
+						worktreePath: opened.path,
+						baseCommit: fresh.commit,
+						head: rebased.head,
+						run,
+						ticket,
+						acceptedRuns,
+					})
+				).commits
 			: [];
 
 	return answer(verified.outcome, {
@@ -392,7 +404,7 @@ function reverified({ outcome, detail }) {
  * pull request names always exists.
  */
 async function publish(store, clone, context) {
-	const { hold, run, ticket, attempt, branch, baseBranch, verified, actor, now } = context;
+	const { hold, run, ticket, attempt, branch, baseBranch, verified, acceptedRuns = [], actor, now } = context;
 
 	// No worktree: every predicate is a question about commits and trees, which
 	// the bare clone answers — and that is what lets a re-entry after a success
@@ -402,6 +414,7 @@ async function publish(store, clone, context) {
 		head: verified.head,
 		run,
 		ticket,
+		acceptedRuns,
 	});
 	if (!predicates.pushable) {
 		// Retained (§12.7): the branch is unpushed, so the worktree and it are the
