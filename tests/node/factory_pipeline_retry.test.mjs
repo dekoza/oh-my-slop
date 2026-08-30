@@ -463,6 +463,48 @@ test("#194: a second conflict is the fresh-retry as today, and a third is failed
 	]);
 });
 
+test("#194: a rebase-repair whose rebased result is red routes verify × failed → repair, as today", async (t) => {
+	const context = await executing(t);
+	const { phases } = answeringInTurn({
+		implement: ["completed"],
+		harvest: ["passed"],
+		verify: [conflicting(context), { outcome: "failed", detail: { red: ["unit"] } }, "passed"],
+		review: ["approved"],
+		integrate: [PUBLICATION],
+	});
+
+	const settled = await context.walk(phases, {
+		nextAttempt: context.nextAttempt,
+		budgets: { repair: 1, freshRetry: 0, automation: 0 },
+	});
+
+	assert.equal(settled.disposition, "published");
+	assert.deepEqual(context.asked.map((request) => request.tier), ["rebase-repair", "repair"], "nothing new is trusted");
+	assert.deepEqual(spendOf(context), { repair: 1, freshRetry: 0, automation: 0 });
+});
+
+test("#194: a rebase-repair that ends needs-human pauses the ticket with the worker's reason class, as any attempt does", async (t) => {
+	const context = await executing(t);
+	const { phases } = answeringInTurn({
+		implement: [
+			"completed",
+			{
+				outcome: "needs-human",
+				detail: { reason_class: "spec-contradiction", question: "The base now forbids the approach the ticket asks for; which wins?" },
+			},
+		],
+		harvest: ["passed"],
+		verify: [conflicting(context)],
+	});
+
+	const settled = await context.walk(phases, { nextAttempt: context.nextAttempt });
+
+	assert.equal(settled.disposition, "paused");
+	assert.equal(settled.reason_class, "spec-contradiction");
+	assert.match(settled.question, /which wins/);
+	assert.deepEqual(context.asked.map((request) => request.tier), ["rebase-repair"]);
+});
+
 test("#194: a re-entry reads the row it recorded, not the row the journal would now route to", async (t) => {
 	const context = await executing(t);
 	const resolving = {
