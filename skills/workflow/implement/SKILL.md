@@ -8,6 +8,7 @@ license: MIT (adapted from mattpocock/skills)
 #disable-model-invocation: true
 requires:
   - construction-craft
+  - domain-modeling
   - git-discipline
   - tdd
   - testing-workflow
@@ -29,6 +30,10 @@ If the slice moves an interface another open ticket consumes — a response body
 Never implement in the primary checkout. If the session is not already inside a dedicated Git worktree, create one before the first edit — `git-discipline`'s worktree location rule applies (a descriptive `<task-id>-<short-handle>` under the ignored root-level `.worktrees/`), branched from the current base branch. If the caller already placed the session in a worktree, use that one and create nothing.
 
 Every edit, test run, and git command targets **that worktree's directory** — no `git -C` back into the primary checkout, no edits outside the worktree path. Leave the worktree in place when the session ends; removing it is the caller's call.
+
+## Read the shared language before the first edit
+
+When the target repo has a `CONTEXT.md` — or whatever its domain doc layout (the one `/setup-project-skills` writes) names as the glossary — read it before editing, and use its terms in identifiers, tests, and commit messages. Parallel builders drift into synonymous vocabularies when each reads only its own ticket; one shared language is an input to every builder, not something the reviewer catches afterwards. When the slice needs a term the glossary lacks, or changes what an existing term means, do not coin a synonym: name the gap the way the `domain-modeling` skill would, in the PR body and completion report, and leave the glossary edit to the map's owner — `CONTEXT.md` is one file shared by every slice running beside yours. A repo with no glossary gets no new one from this step: proceed silently.
 
 ## Build and verify
 

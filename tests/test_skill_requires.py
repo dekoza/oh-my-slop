@@ -175,7 +175,7 @@ def test_the_factory_builder_entry_skill_closure_carries_its_disciplines() -> No
         pending.extend(declared_requires(known[name]))
 
     for expected in ("tdd", "testing-workflow", "two-axis-review", "construction-craft",
-                     "git-discipline", "review-standards", "review-spec"):
+                     "git-discipline", "review-standards", "review-spec", "domain-modeling"):
         assert expected in closure, (
             f"implement's declared closure is missing '{expected}'"
         )
