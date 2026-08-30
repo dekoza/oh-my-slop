@@ -21,6 +21,7 @@ import {
 } from "../worker/attempt.mjs";
 import { dispatchOrder, selectRoute } from "../worker/dispatch.mjs";
 import { missingResult, PIPELINE_ROLES, postureOf } from "../worker/roles.mjs";
+import { fedCheckEvidence } from "./feeds.mjs";
 import { createRetrySeam } from "./retry.mjs";
 import { harvestPhase } from "./phases.mjs";
 import { integrationVerify, integratePublish } from "./integration.mjs";
@@ -363,6 +364,12 @@ async function launched(context, { identity, opened, repair, review }) {
 		ticketSnapshot: context.ticketSnapshot,
 		repair,
 		review,
+		trustedEvidence: fedCheckEvidence(context.store, {
+			run: identity.run,
+			ticket: identity.ticket,
+			phase: identity.phase,
+			checks: context.config.checks,
+		}),
 		sessionArgs: binding.args,
 		sessionEnv: binding.paneEnv,
 		// §6.6's two clocks: the profile's declared ceiling and no-progress window,

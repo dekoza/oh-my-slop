@@ -34,6 +34,7 @@ it saw.
 | `herdr-agent-stop-latency.mjs` | probe | no | How long after §13.B's quit keys does Herdr stop reporting an agent in the pane — the lag #152's bound has to cover? |
 | `herdr-agent-quit-sequence.mjs` | probe | **yes**, unless `--no-prompt` | Does §13.B's quit sequence quit **at all**, key by key and call by call, against a worker that is mid-turn rather than idle? |
 | `herdr-agent-presence-source.mjs` | probe | no | What is `pane.agent` — the one fact §5.2 trusts — derived from: the screen, the process, or somebody reporting it? |
+| `claude-chrome-cache.mjs` | probe | no | Does an interactive Claude session warm `cachedChromeExtensionInstalled` in the controller-owned config state, and does §6.8's browser fence stop it? |
 | `prove-skill-loading.mjs` | proof | **yes** | §6.7 / §15 — do Opus and Fable *load and follow* a skill body, or merely register its name? Writes `docs/proofs/skill-loading-<version>-<digest>.md`. |
 
 `herdr-isolated-worker-status.mjs` starts a real Claude session and prompts it. Keep the prompt
@@ -44,6 +45,14 @@ whose only work is to run a script that waits. `--no-prompt` skips the prompt an
 which is the idle control for the same send plan. Its `--keys` flag is the send plan itself:
 spaces separate `send-keys` **calls**, commas separate keys **within** a call, so
 `esc,ctrl+c,ctrl+c` is the pre-#158 single call and `esc ctrl+c,ctrl+c` is what ships now.
+
+`claude-chrome-cache.mjs` needs a **TTY**, and that is the finding rather than an inconvenience: on
+Claude Code 2.1.241 the detection does not run in a `--print` session at all, so a headless test
+asserting the key's absence is green with or without the fence. It allocates the pty through
+`script(1)`, runs three successive startups per side in one controller-owned config root, and kills
+each at its prompt — no turn, no tokens. It runs **both sides**, for the reason §6.2's discovery
+fence does: an absence under a run that could not have seen the write is not evidence of a fence,
+and the probe exits 2 saying so.
 
 `prove-skill-loading.mjs` spends one short turn per cell — three cells per model, two models by
 default. Run `--dry-run` first to see the plan, the argv and the prompts without spending
@@ -178,8 +187,33 @@ its tab carried no binding, so the session ran on the operator's config. §6.8's
 never in question.) §6.8 proves no *trust* dialog can reach a worker pane; a first-run prompt
 about something else is a different door into the same hang.
 
+That aside became #178, and `claude-chrome-cache.mjs` settled it.
+
 **An operator hook can reach an isolated worker.** A first run of the probe held its turn open
 with `sleep 240` and had it refused by a hook — with the refusal, the turn ended, and the
 "mid-turn" measurement was in fact a measurement of a finished one. What holds a probe's turn
 open must be something no hook has an opinion about; this one commits a script and asks the
 worker to run it.
+
+Against Claude Code 2.1.241, on 2026-08-30 (#178):
+
+**The browser prompt is not a first-run prompt — it is a warm-cache one, and the cache is the
+harness's own.** Three successive interactive startups in one controller-owned config root, with
+credentials promoted the way §6.8 promotes them:
+
+| session binding | after 1 | after 2 | after 3 |
+|---|---|---|---|
+| the worker binding | `cachedChromeExtensionInstalled` absent | absent | absent |
+| the same, minus `--no-chrome` | `true` | `true` | `true` |
+
+Three things follow, and all three are why the fix is a flag on the binding rather than a rule
+about a screen:
+
+- **The first session is the one that warms it**, and a *later* one is the one that raises the
+  prompt — so a single-session test proves nothing, and the assertion has to be an absence over
+  several.
+- **A `--print` session never warms it at all**, with or without the flag. So the same assertion
+  taken without a TTY is green over a live bug, which is why this probe allocates one.
+- **The write needs credentials.** An isolated config root with none is "not logged in", the
+  detection does not run, and the key stays absent for a reason that says nothing about the
+  fence. The probe promotes them through `prepareWorkerEnvironment`, exactly as a run does.

@@ -1,3 +1,4 @@
+import { recordCheckOutputs } from "../checks/artifacts.mjs";
 import { CHECK_RESULTS, PHASE_IMPLEMENT, PHASE_INTEGRATE, PHASE_VERIFY } from "../domain/vocabulary.mjs";
 import { effectKey } from "../effects/keys.mjs";
 import { effectByKey } from "../effects/records.mjs";
@@ -14,6 +15,7 @@ import {
 	releaseIntegrationWorktree,
 } from "../git/integrate.mjs";
 import { FactoryGitError } from "../git/errors.mjs";
+import { newUlid } from "../identity/ulid.mjs";
 import { LEASE_NAMES } from "../state/leases.mjs";
 import { createTurnstile } from "../state/turnstile.mjs";
 import { publishPullRequest, pullTitle, renderPullBody } from "../tracker/pulls.mjs";
@@ -193,7 +195,24 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
 	// the push against a branch, not against a detached head only this step saw.
 	await adoptRebasedHead(clone, { branch, from: opened.head, to: rebased.head });
 
-	const verified = await verifyPhase(checks, { cwd: opened.path, ...(env === undefined ? {} : { env }), now });
+	const verifiedAt = now();
+	const execution = newUlid(verifiedAt);
+	const verified = await verifyPhase(checks, {
+		cwd: opened.path,
+		...(env === undefined ? {} : { env }),
+		now,
+		record: (results) =>
+			recordCheckOutputs(store, results, {
+				execution,
+				run,
+				ticket,
+				attempt,
+				phase: PHASE_VERIFY,
+				actor,
+				fencingGeneration: hold.fence().generation,
+				at: verifiedAt,
+			}),
+	});
 	// The commit list only when there is something to publish: a red set stops
 	// here, and reading the range would be work whose answer nobody uses. The
 	// worktree stays either way — §9.5's second lease publishes from it on the
