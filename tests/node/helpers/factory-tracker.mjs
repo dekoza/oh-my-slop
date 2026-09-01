@@ -155,6 +155,7 @@ export function giteaTimelineEntry({
  * @param {number | null} [world.serverTime] what the tracker's own clock says, as its
  *   `Date` response header would — the instant a fresh cursor anchors to when the
  *   first poll sees nothing
+ * @param {string} [world.commentAuthor] authenticated login attached to fixture writes
  * @param {(write: object, world: object) => void} [world.onWrite] fired after each
  *   mutation lands, so a test can stage what a *second* factory did in between —
  *   §3.3's collision has no other seam, since both claims are simultaneous by
@@ -170,6 +171,7 @@ export function fakeGitea({
 	dependencies = {},
 	status = {},
 	serverTime = TRACKER_NOW,
+	commentAuthor = "kuferek",
 	onWrite = null,
 } = {}) {
 	const calls = [];
@@ -271,7 +273,7 @@ export function fakeGitea({
 			const created = giteaComment({
 				id: (nextCommentId += 1),
 				ticket,
-				author: "kuferek",
+				author: commentAuthor,
 				body: body.body,
 				createdAt: new Date(serverTime).toISOString(),
 				updatedAt: new Date(serverTime).toISOString(),

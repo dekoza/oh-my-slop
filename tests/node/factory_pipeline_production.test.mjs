@@ -24,7 +24,7 @@ import { workerConfigRoots } from "../../factory/lib/worker/environment.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
 import { cloneValidConfig, makeRemote, makeRepo } from "./helpers/factory-repo.mjs";
 import { makeAgentDir, makeHome, herdrAnswering } from "./helpers/factory-store.mjs";
-import { dispositionBlockIn as blockIn, fakeGitea, giteaIssue } from "./helpers/factory-tracker.mjs";
+import { dispositionBlockIn as blockIn, fakeGitea, giteaComment, giteaIssue } from "./helpers/factory-tracker.mjs";
 import { fakeHerdr, workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
@@ -159,22 +159,29 @@ async function runProduction(
 		// blob, before the repair launch reads it — has no other synchronous seam:
 		// the controller reads its clock at every stage resolution and every mint.
 		clock = null,
+		world = null,
 	} = {},
 ) {
-	const packageRoot = makePackage(t);
-	const executable = join(packageRoot, "factory", "bin", "factory.mjs");
-	const repoRoot = makeRepo(t, {
-		...(config === undefined ? {} : { config }),
-		...(remoteFiles === undefined ? {} : { remotes: { gitea: makeRemote(t, { files: remoteFiles }) } }),
-	});
-	const agentDir = makeAgentDir(t);
-	const now = clock === null ? undefined : clock({ storeDir: resolveStorePaths({ repoRoot, agentDir }).primary.dir });
-	const env = { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" };
-	const loaded = loadFactoryConfig({ cwd: repoRoot });
-	const tracker = fakeGitea({
-		issues: [issue],
-		onWrite: (write, world) => onTrackerWrite?.({ write, world, loaded }),
-	});
+	let fixture = world;
+	if (fixture === null) {
+		const packageRoot = makePackage(t);
+		const executable = join(packageRoot, "factory", "bin", "factory.mjs");
+		const repoRoot = makeRepo(t, {
+			...(config === undefined ? {} : { config }),
+			...(remoteFiles === undefined ? {} : { remotes: { gitea: makeRemote(t, { files: remoteFiles }) } }),
+		});
+		const agentDir = makeAgentDir(t);
+		const now = clock === null ? undefined : clock({ storeDir: resolveStorePaths({ repoRoot, agentDir }).primary.dir });
+		const env = { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" };
+		const loaded = loadFactoryConfig({ cwd: repoRoot });
+		const tracker = fakeGitea({
+			issues: [issue],
+			commentAuthor: loaded.config.tracker.login,
+			onWrite: (write, trackerWorld) => onTrackerWrite?.({ write, world: trackerWorld, loaded }),
+		});
+		fixture = { packageRoot, executable, repoRoot, agentDir, env, loaded, tracker, issue, now };
+	}
+	const { packageRoot, executable, repoRoot, agentDir, env, loaded, tracker, now } = fixture;
 	const where = { repo: loaded.config.tracker.repo, login: loaded.config.tracker.login };
 	const herdr = fakeHerdr({ onPrompt: turn, paneOutput });
 	const checkoutBefore = git(repoRoot, "status", "--porcelain=v1", "--untracked-files=all");
@@ -184,7 +191,7 @@ async function runProduction(
 		agentDir,
 		executable,
 		env,
-		args: ["147"],
+		args: [String(fixture.issue.number)],
 		flags: new Set([FOREGROUND_FLAG]),
 		herdr: herdrAnswering(true),
 		runHerdr: herdr.run,
@@ -195,7 +202,7 @@ async function runProduction(
 		...(now === undefined ? {} : { now }),
 	});
 
-	return { answer, tracker, loaded, repoRoot, agentDir, herdr, checkoutBefore };
+	return { answer, tracker, loaded, repoRoot, agentDir, herdr, checkoutBefore, world: fixture };
 }
 
 test("runStart composes the production pipeline through publication without injected pipeline or execute (#147)", async (t) => {
@@ -283,6 +290,73 @@ test("a builder question reaches a durable paused disposition instead of escapin
 	assert.equal(answer.report.execution.members[0].disposition, "paused");
 	assert.match(tracker.comments.at(-1).body, /Which behavior should the implementation preserve\?/);
 	assert.match(tracker.comments.at(-1).body, /product-ambiguity/);
+});
+
+test("#199: clearing needs-human starts a new execution from the paused committed tip with the operator answer", async (t) => {
+	const issue = giteaIssue({ number: 199, title: "Resume the paused implementation" });
+	const first = await runProduction(t, {
+		issue,
+		turn: workerTurn({ builderStatuses: ["needs-human"], commitsAlways: true }),
+	});
+	assert.equal(first.answer.report.execution.members[0].disposition, "paused");
+
+	const paused = blockIn(first.tracker.comments.at(-1).body);
+	const pausedBranch = paused.attempt_branches.branches.at(-1);
+	assert.equal(pausedBranch.commits_ahead, 1, "the fixture did not retain committed work to resume");
+
+	first.tracker.issues[0].labels = first.tracker.issues[0].labels.filter((label) => label.name !== "factory:needs-human");
+	first.tracker.comments.push(
+		giteaComment({
+			id: 9500,
+			ticket: 199,
+			author: "minder",
+			body: "Preserve the cancellation-time behavior.",
+			createdAt: "2026-08-15T14:01:00Z",
+			updatedAt: "2026-08-15T14:01:00Z",
+		}),
+	);
+
+	const prompts = [];
+	const second = await runProduction(t, {
+		world: first.world,
+		turn: workerTurn({ prompts }),
+	});
+
+	assert.equal(
+		second.answer.report.execution.members[0].disposition,
+		"published",
+		JSON.stringify({ member: second.answer.report.execution.members[0], comments: second.tracker.comments }, null, 2),
+	);
+	const store = await openStore({ repoRoot: second.repoRoot, agentDir: second.agentDir });
+	t.after(() => store.close());
+	const runs = store.readEvents({ kind: "run.started" });
+	assert.equal(runs.length, 2, "the cleared ticket was folded back into the paused run");
+	assert.equal(new Set(runs.map((event) => event.run)).size, 2);
+
+	const builders = store
+		.readEvents({ kind: "attempt.launched" })
+		.filter((event) => event.phase === "implement");
+	assert.equal(builders.length, 2);
+	// `readEvents({ kind })` spans run streams and promises no cross-stream order;
+	// identify the new execution from the paused comment's durable run identity.
+	const resumedBuilder = builders.find((event) => event.run !== paused.identity.run);
+	assert.ok(resumedBuilder !== undefined);
+	assert.equal(resumedBuilder.payload.base_commit, pausedBranch.head);
+	assert.equal(resumedBuilder.payload.profile, "builder", "the resumed execution bypassed declared routing");
+	assert.match(resumedBuilder.attempt, /-a1$/, "the resumed execution inherited the old run's attempt budget");
+
+	const resumedPrompt = prompts.find((prompt) => prompt.phase === "implement").text;
+	assert.match(resumedPrompt, /Which behavior should the implementation preserve\?/);
+	assert.equal(resumedPrompt.split("Preserve the cancellation-time behavior.").length - 1, 1);
+
+	const resumedClaim = second.tracker.comments
+		.filter((entry) => entry.body.includes("🤖 **factory — claimed**"))
+		.at(-1).body;
+	assert.ok(resumedClaim.includes(`paused_attempt: ${paused.identity.attempt}`));
+	assert.match(resumedClaim, /reason_class: product-ambiguity/);
+	assert.match(resumedClaim, /pause_comment: [0-9]+/);
+	assert.match(resumedClaim, /answering_comments: minder#9500/);
+	assert.ok(resumedClaim.includes(`resumed_from: ${pausedBranch.head}`));
 });
 
 test("#189: a builder that ends completed without a trace is an invalid result naming the block, and the fresh attempt is told why", async (t) => {

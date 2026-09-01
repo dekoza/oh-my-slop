@@ -195,6 +195,51 @@ function repaired(overrides = {}) {
 	});
 }
 
+function resumed() {
+	return render({
+		repair: {
+			tier: "resume",
+			prior: { attempt: "01JOLD0000000000000000000A-t42-a2", profile: null },
+			phase: "implement",
+			outcome: "needs-human",
+			facts: [
+				{
+					producer: "controller",
+					label: "resume",
+					value: {
+						attempt: "01JOLD0000000000000000000A-t42-a2",
+						reason_class: "product-ambiguity",
+						pause_comment: 4711,
+						answering_comments: [{ id: 4712, author: "minder" }],
+						resumed_from: "a".repeat(40),
+					},
+				},
+			],
+			untrusted: [],
+			resume: {
+				exchanges: [
+					{
+						comment: 4700,
+						attempt: "01JOLDER000000000000000000-t42-a1",
+						reason_class: "product-ambiguity",
+						question: "First pause question?",
+						answer_status: "found",
+						answers: [{ id: 4701, author: "operator-one", body: "First operator answer." }],
+					},
+					{
+						comment: 4711,
+						attempt: "01JOLD0000000000000000000A-t42-a2",
+						reason_class: "product-ambiguity",
+						question: "Latest pause question?",
+						answer_status: "none-found",
+						answers: [],
+					},
+				],
+			},
+		},
+	});
+}
+
 test("an ordinary attempt carries no repair section at all (§8.5)", () => {
 	assert.doesNotMatch(render(), /Why this attempt exists/, "a first attempt has no failure to be told about");
 });
@@ -349,6 +394,24 @@ test("a repair is told to build on the prior commits, and a fresh-retry that it 
 		repaired({ tier: "fresh-retry", untrusted: [] }),
 		/none of that attempt's work/,
 	);
+});
+
+test("a resume brief keeps questions untrusted, answers at snapshot trust, and the whole chain ordered (#199)", () => {
+	const prompt = resumed();
+
+	assert.match(prompt, /new execution with a freshly routed implement role and profile/i);
+	assert.match(prompt, /branch starts at the paused attempt's retained tip/i);
+	assert.match(prompt, /Untrusted material — the prior worker/);
+	assert.match(prompt, /Operator answer — operator-one, comment #4701/);
+	assert.match(prompt, /context, never authority/i);
+	assert.match(prompt, /no operator answer was present at claim time/i);
+	assert.equal(prompt.split("First operator answer.").length - 1, 1, "the answer rendered outside its one typed slot");
+
+	const firstQuestion = prompt.indexOf("First pause question?");
+	const firstAnswer = prompt.indexOf("First operator answer.");
+	const secondQuestion = prompt.indexOf("Latest pause question?");
+	const noAnswer = prompt.indexOf("No operator answer was present at claim time");
+	assert.ok(firstQuestion < firstAnswer && firstAnswer < secondQuestion && secondQuestion < noAnswer);
 });
 
 /** A rebase conflict's facts, as `pipeline/repair.mjs` briefs them (#194). */
