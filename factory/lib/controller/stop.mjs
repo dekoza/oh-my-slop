@@ -1,5 +1,6 @@
-import { EXIT_OK, EXIT_REFUSED } from "../cli/exit-codes.mjs";
+import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "../cli/exit-codes.mjs";
 import { CONTROLLER_LEASE, RUN_LIFECYCLE } from "../domain/vocabulary.mjs";
+import { resolveRepoRoot } from "../git/repo.mjs";
 import { runStream } from "../state/events.mjs";
 import { hasLapsed, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
@@ -13,6 +14,20 @@ import { openStore } from "../state/store.mjs";
  * > signal-handler reentrancy inside an async scheduler, and **makes
  * > `draining` visible to the monitor the moment it is *requested*** rather
  * > than when the phase ends.
+ *
+ * **The verb is exempt from the config load** (#205). Everything it needs is
+ * durable repository state: the run, the lease row, the stream it appends to.
+ * The controller it addresses read its own policy once, at start, so a config
+ * the operator has since broken is not the config the drain is using — and a
+ * `stop` that refused to parse that file would leave the operator holding a
+ * live run whose only remaining endings destroy work: kill the pane and the
+ * in-flight ticket executions are abandoned mid-flight. The load stays
+ * fail-closed for every verb that decides something from policy; this one
+ * decides nothing from it, and so it walks up to the repo root itself, exactly
+ * as discovery would (§11.1), and opens the store from there without reading
+ * the policy file. An invocation that belongs to no repository has no state
+ * root to address, and refuses as `no-repo-root` rather than crashing on a
+ * root that is null.
  *
  * The record is the interface. There is deliberately no pid here and no
  * signal: the controller polls its own run's stream, and a request written to
@@ -62,6 +77,14 @@ export function requestLadder(latest, base) {
 
 /** The closed set this verb's refusals draw from. */
 export const STOP_ERROR_REASONS = Object.freeze([
+	/**
+	 * The invocation directory belongs to no repository, so there is no per-repo
+	 * state root to address and nothing to record a request on. It is the one
+	 * refusal here about the operator's line rather than about a run, and it
+	 * exits with §10.3's usage code accordingly — the answer `migrate`, the
+	 * other config-exempt verb, already gives a repo-less invocation.
+	 */
+	"no-repo-root",
 	/** No run in this repository to stop. */
 	"no-run",
 	/**
@@ -76,6 +99,26 @@ export const STOP_ERROR_REASONS = Object.freeze([
 	/** Unended runs exist but nothing names which one to address. */
 	"run-ambiguous",
 ]);
+
+/**
+ * §10.3's exit code per reason, beside the set rather than at the call site
+ * that refuses: a reason and the code it exits with are one decision, and
+ * splitting them is how a member acquires whichever code its throw site
+ * happened to be near. Every refusal *about the run* is `refused` (8); the
+ * exception is listed, because it is the one about the operator's line.
+ */
+const STOP_ERROR_EXIT_CODES = Object.freeze({ "no-repo-root": EXIT_USAGE });
+
+// The co-location made mechanical, the way `cli/exit-codes.mjs` makes §10.3's:
+// the lookup falls back to `refused`, so a row naming no reason — a typo, or a
+// reason since renamed — would cost nothing at all and quietly hand its verb
+// the default. Only this direction can be checked: a reason with no row *is*
+// the fallback, and that is the rule rather than an omission.
+for (const reason of Object.keys(STOP_ERROR_EXIT_CODES)) {
+	if (!STOP_ERROR_REASONS.includes(reason)) {
+		throw new Error(`Stop exit-code row "${reason}" is not one of this verb's refusal reasons.`);
+	}
+}
 
 export class FactoryStopError extends Error {
 	/**
@@ -96,12 +139,24 @@ export class FactoryStopError extends Error {
 
 /**
  * @param {object} invocation
- * @param {string} invocation.repoRoot
+ * @param {string} invocation.cwd the invocation directory; the repo root is
+ *   walked up to from here rather than taken from a load this verb does not do
  * @param {string | null} [invocation.agentDir]
  * @param {() => number} [invocation.now] the verb's clock, injectable for tests
  * @returns {Promise<{ message: string, report: object, exitCode: number } | { error: object, exitCode: number }>}
  */
-export async function runStop({ repoRoot, agentDir = null, now = Date.now }) {
+export async function runStop({ cwd, agentDir = null, now = Date.now }) {
+	const repoRoot = resolveRepoRoot(cwd);
+	if (repoRoot === null) {
+		return refusal(
+			new FactoryStopError(
+				"no-repo-root",
+				`No git repository root above ${cwd}; \`factory stop\` addresses the run recorded for one repository.`,
+				{ from: cwd },
+			),
+		);
+	}
+
 	const store = await openStore({ repoRoot, agentDir });
 
 	try {
@@ -283,5 +338,8 @@ export function requestReport(event) {
 }
 
 function refusal(error) {
-	return { error: { kind: error.reason, message: error.message, ...error.details }, exitCode: EXIT_REFUSED };
+	return {
+		error: { kind: error.reason, message: error.message, ...error.details },
+		exitCode: STOP_ERROR_EXIT_CODES[error.reason] ?? EXIT_REFUSED,
+	};
 }

@@ -1097,6 +1097,53 @@ test("a config that declares no budgets records no budget override", async (t) =
 	assert.deepEqual(manifest.overrides.budgets, {});
 });
 
+test("--routing-set reaches the run manifest, so a later reader knows which routing ran", async (t) => {
+	// §11.5's selection is what §6.8 records as the run's model choices, and the
+	// manifest is the only durable statement of it: the config file on disk can
+	// have been edited by the time anyone asks.
+	const config = cloneValidConfig();
+	config.profiles.remote = { kind: "pi", model: "local/qwen3-alt" };
+	config.routing.sets = {
+		"post-subscription": {
+			roles: { implement: "remote", freshRetry: "remote", review: ["remote", "remote"] },
+			rules: [],
+		},
+	};
+	const context = invocation(t, {
+		config,
+		transportOverrides: {
+			models: [
+				{ id: "qwen3", provider: "local", baseUrl: "http://127.0.0.1:9/v1" },
+				{ id: "qwen3-alt", provider: "local", baseUrl: "http://127.0.0.1:9/v1" },
+			],
+		},
+	});
+
+	const { value } = await runCli(["start", "--foreground", "--routing-set=post-subscription", "42"], context);
+
+	const store = await storeOf(t, context);
+	const manifest = JSON.parse(readArtifact(store, value.report.manifest).toString("utf8"));
+
+	assert.equal(manifest.overrides.models.routing_set, "post-subscription");
+	assert.deepEqual(manifest.overrides.models.roles.implement, {
+		profile: "remote",
+		kind: "pi",
+		model: "local/qwen3-alt",
+	});
+});
+
+test("a run that selects no set records the file-level routing as the one that ran", async (t) => {
+	const context = invocation(t);
+
+	const { value } = await runCli(["start", "--foreground", "42"], context);
+
+	const store = await storeOf(t, context);
+	const manifest = JSON.parse(readArtifact(store, value.report.manifest).toString("utf8"));
+
+	assert.equal(manifest.overrides.models.routing_set, null);
+	assert.equal(manifest.overrides.models.roles.implement.profile, "builder");
+});
+
 test("the manifest is keyed by the run, so one run has exactly one set of declared inputs", async (t) => {
 	const context = invocation(t);
 
@@ -1276,7 +1323,7 @@ test("a stop honoured at a ticket boundary stops the loop claiming, and the run 
 		execute: async ({ ticket }) => {
 			executed.push(ticket);
 			// The operator asks, from another terminal, while this lane runs.
-			await runStop({ repoRoot: context.cwd, agentDir: context.agentDir });
+			await runStop({ cwd: context.cwd, agentDir: context.agentDir });
 			return { disposition: "published" };
 		},
 	});
@@ -1462,7 +1509,7 @@ test("§10.3: a run stopped by an operator says so, even with the breaker trippe
 		frontier: async () => ({ claimable: [42, 91], members: [42, 91].map((ticket) => ({ ticket, labels: [] })) }),
 		execute: async (request) => {
 			const answered = await lane.execute(request);
-			if (request.ticket === 91) await runStop({ repoRoot: context.cwd, agentDir: context.agentDir });
+			if (request.ticket === 91) await runStop({ cwd: context.cwd, agentDir: context.agentDir });
 			return answered;
 		},
 	});

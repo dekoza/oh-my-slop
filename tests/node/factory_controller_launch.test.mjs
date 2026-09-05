@@ -5,14 +5,22 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { EXIT_OK, EXIT_REFUSED } from "../../factory/lib/cli/exit-codes.mjs";
-import { runCli } from "../../factory/lib/cli/main.mjs";
-import { CONTROLLER_PANE_ENV } from "../../factory/lib/controller/launch.mjs";
+import { parseArgv, runCli } from "../../factory/lib/cli/main.mjs";
+import { VERB_TABLE } from "../../factory/lib/cli/verbs.mjs";
+import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
+import { ENTRY_MODES } from "../../factory/lib/controller/entry.mjs";
+import { CONTROLLER_PANE_ENV, FOREGROUND_FLAG, relaunchArgs } from "../../factory/lib/controller/launch.mjs";
+import { PARENT_FLAG, parseScope, SCOPE_FORMS } from "../../factory/lib/controller/scope.mjs";
+import { NEW_RUN_FLAG } from "../../factory/lib/controller/start.mjs";
 import { CONTROLLER_LEASE } from "../../factory/lib/domain/vocabulary.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
+import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
+import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
-import { makeRepo } from "./helpers/factory-repo.mjs";
+import { cloneConfigWithRoutingSet, makeRepo } from "./helpers/factory-repo.mjs";
 import { herdrAnswering, leaseIdentity, makeAgentDir, makeHome } from "./helpers/factory-store.mjs";
+import { fakeGitea, giteaIssue } from "./helpers/factory-tracker.mjs";
 import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 /**
@@ -29,12 +37,12 @@ import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 const AVAILABLE = herdrAnswering();
 const UNAVAILABLE = herdrAnswering(false);
 
-function invocation(t, { herdr = AVAILABLE, runHerdr = null } = {}) {
+function invocation(t, { herdr = AVAILABLE, runHerdr = null, config } = {}) {
 	const root = makePackage(t);
 	const executable = join(root, "factory", "bin", "factory.mjs");
 
 	const context = {
-		cwd: makeRepo(t),
+		cwd: makeRepo(t, { config }),
 		agentDir: makeAgentDir(t),
 		executable,
 		env: { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" },
@@ -81,8 +89,11 @@ function createdWorkspace(label) {
 	};
 }
 
-/** A live lease-holder the way a controller mid-run leaves it. */
-async function liveRunIn(context, { runId, scope }) {
+/**
+ * A run in the repository: with the lease, the live holder a controller mid-run
+ * leaves; without it, the orphan §10.4 re-enters and `--new-run` refuses to.
+ */
+async function runIn(context, { runId, scope, lease = true }) {
 	const store = await openStore({ repoRoot: context.cwd, agentDir: context.agentDir });
 	store.append({
 		kind: "run.started",
@@ -90,9 +101,11 @@ async function liveRunIn(context, { runId, scope }) {
 		run: runId,
 		occurredAt: Date.now(),
 		observedAt: Date.now(),
-		payload: { scope, mode: "started", pane: "w1:p3" },
+		payload: { scope, mode: ENTRY_MODES.started, pane: "w1:p3" },
 	});
-	openLeases(store).acquire({ name: "controller", identity: leaseIdentity({ run: runId, pane: "w1:p3" }) });
+	if (lease) {
+		openLeases(store).acquire({ name: "controller", identity: leaseIdentity({ run: runId, pane: "w1:p3" }) });
+	}
 	store.close();
 }
 
@@ -157,9 +170,33 @@ test("the launcher creates the workspace and runs the foreground start in its ro
 	assert.deepEqual(calls[1].slice(3), [context.executable, "start", "--foreground", "42"]);
 });
 
+test("--routing-set is re-typed onto the detached controller's line (§11.5)", async (t) => {
+	// The launcher loads the config only to answer §10.4; the controller it
+	// starts loads it again from its own argv. A selector dropped here would run
+	// the whole run under the routing the operator did not ask for.
+	const { runner, calls } = scriptedHerdr();
+	const context = invocation(t, { runHerdr: runner, config: cloneConfigWithRoutingSet() });
+
+	const { exitCode, value } = await runCli(["start", "42", "--routing-set=post-subscription"], context);
+	const line = [context.executable, "start", "--foreground", "--routing-set=post-subscription", "42"];
+
+	assert.equal(exitCode, EXIT_OK);
+	assert.deepEqual(value.report.command, line);
+	assert.deepEqual(calls[1].slice(3), line, "the launched line dropped the selection");
+	assert.match(value.report.foreground_alternative, /--routing-set=post-subscription/);
+});
+
+test("a start with no --routing-set launches the line it always did", async (t) => {
+	const context = invocation(t, { runHerdr: scriptedHerdr().runner, config: cloneConfigWithRoutingSet() });
+
+	const { value } = await runCli(["start", "42"], context);
+
+	assert.deepEqual(value.report.command, [context.executable, "start", "--foreground", "42"]);
+});
+
 test("a live run containing the scope resolves before any Herdr contact", async (t) => {
 	const context = invocation(t, { runHerdr: scriptedHerdr().runner });
-	await liveRunIn(context, { runId: "live-run-1", scope: { kind: "direct-ticket", tickets: [40, 42] } });
+	await runIn(context, { runId: "live-run-1", scope: { kind: "direct-ticket", tickets: [40, 42] } });
 
 	const { exitCode, value, herdrCalls } = await withCalls(context, ["start", "42"]);
 
@@ -172,7 +209,7 @@ test("a live run containing the scope resolves before any Herdr contact", async 
 
 test("a live run that does not cover the scope refuses before any Herdr contact", async (t) => {
 	const context = invocation(t, { runHerdr: scriptedHerdr().runner });
-	await liveRunIn(context, { runId: "live-run-2", scope: { kind: "direct-ticket", tickets: [40] } });
+	await runIn(context, { runId: "live-run-2", scope: { kind: "direct-ticket", tickets: [40] } });
 
 	const { exitCode, value, herdrCalls } = await withCalls(context, ["start", "42"]);
 
@@ -249,6 +286,146 @@ test("a failed pane run names the workspace it created", async (t) => {
 	assert.match(value.error.message, /pane run/);
 	assert.equal(value.error.workspace, "w9", "the operator cannot find what exists");
 	assert.equal(calls.length, 2);
+});
+
+// ── The relaunched line carries the whole invocation (§10.1, #213) ───────────
+
+/**
+ * #213: the relaunch used to carry the positional scope alone, so every flag the
+ * operator typed was dropped between the two processes and neither refused. The
+ * tests below run the line the launcher *says* it ran, which is the only way the
+ * disagreement shows: `--parent 75` reaching the pane as a bare `75` is a
+ * perfectly ordinary invocation of a different scope.
+ */
+
+/**
+ * A tracker and a pipeline for the tests that follow the relaunched line into a
+ * run. The rest of this file drives the launcher alone and keeps `pipeline:
+ * null`, which is what stops those tests reading a tracker at all.
+ */
+function executing(context, world, lanes) {
+	const gitea = fakeGitea(world);
+	const { config } = loadFactoryConfig({ cwd: context.cwd });
+	const where = { repo: config.tracker.repo, login: config.tracker.login };
+
+	return {
+		tracker: createGiteaReader({ ...where, request: gitea.request }),
+		trackerWriter: createGiteaWriter({ ...where, request: gitea.write }),
+		pipeline: async (lane) => {
+			lanes.push(lane);
+			return { disposition: "published", pr: { number: 7, url: "http://gitea.example/acme/widgets/pulls/7" } };
+		},
+	};
+}
+
+/** The scope a line resolves to, read the way `main.mjs` sorts its tokens. */
+function scopeOf(line) {
+	// The CLI's own reader, not a second one: a test that re-derived "a token
+	// starting with `-` is a flag" would agree with itself while the launcher and
+	// the pane disagreed, which is the whole of what #213 was.
+	const parsed = parseArgv(["start", ...line]);
+	return parseScope(parsed.args, { parent: parsed.flags.includes(PARENT_FLAG) });
+}
+
+test("a detached --parent start runs the parent's members in the pane, not the parent (#213)", async (t) => {
+	const context = invocation(t, { runHerdr: scriptedHerdr().runner });
+	const lanes = [];
+	// #213's case: a parent carrying no `wayfinder:map`, so #182's resolution
+	// cannot recover the membership a dropped `--parent` lost.
+	const world = { issues: [giteaIssue({ number: 75 }), giteaIssue({ number: 120, body: "Part of #75" })] };
+	Object.assign(context, executing(context, world, lanes));
+
+	const { value } = await runCli(["start", PARENT_FLAG, "75"], context);
+	assert.deepEqual(value.report.command, [context.executable, "start", FOREGROUND_FLAG, PARENT_FLAG, "75"]);
+
+	// The line the launcher reported, run: the controller resolves it again, and
+	// must reach the same scope the launcher did.
+	const relaunched = await runCli(value.report.command.slice(1), context);
+
+	assert.equal(relaunched.exitCode, EXIT_OK);
+	assert.equal(relaunched.value.report.scope.kind, SCOPE_FORMS.parent);
+	assert.equal(relaunched.value.report.scope.parent, 75);
+	assert.deepEqual(
+		lanes.map((lane) => lane.ticket),
+		[120],
+		"the pane claimed the parent itself rather than the members of its scope",
+	);
+});
+
+test("a detached --new-run start opens a fresh run in the pane rather than re-entering (#213)", async (t) => {
+	const context = invocation(t, { runHerdr: scriptedHerdr().runner });
+	await runIn(context, { runId: "orphan-run-1", scope: { kind: "direct-ticket", tickets: [42] }, lease: false });
+
+	// The scope is the orphan's own, deliberately. A *different* scope makes the
+	// dropped flag refuse as `scope-immutable`, which is loud; re-entry is silent
+	// only when the line the pane receives would have been a legitimate re-entry,
+	// and that is the failure this test exists to catch.
+	const { value } = await runCli(["start", NEW_RUN_FLAG, "42"], context);
+	assert.deepEqual(value.report.command, [context.executable, "start", FOREGROUND_FLAG, NEW_RUN_FLAG, "42"]);
+
+	const relaunched = await runCli(value.report.command.slice(1), context);
+
+	assert.equal(relaunched.exitCode, EXIT_OK);
+	assert.equal(relaunched.value.report.entry.mode, ENTRY_MODES.forced);
+	assert.notEqual(relaunched.value.report.run, "orphan-run-1", "the pane re-entered the run it was told to refuse");
+});
+
+test("every flag `start` declares reaches the relaunched line, and both sides resolve one scope (#213)", () => {
+	// Read from the one place the line is built rather than from a run driven per
+	// flag: a future flag's *value* is config-dependent — `--routing-set=v` names
+	// a set no file declares and refuses at config load, above the launcher — so
+	// an invented value cannot survive a round trip. The tests either side of this
+	// one pin the launcher to `relaunchArgs`; what this one holds is that
+	// `relaunchArgs` forwards whatever the verb table declares, so the next flag
+	// added there needs no second edit.
+	for (const [flag, declared] of Object.entries(VERB_TABLE.start.flags)) {
+		if (flag === FOREGROUND_FLAG) continue; // it is what the relaunch adds
+
+		const value = declared.value === undefined ? null : "a-declared-value";
+		const typed = value === null ? flag : `${flag}=${value}`;
+		const operator = {
+			args: ["42"],
+			flags: new Set([flag]),
+			flagValues: new Map(value === null ? [] : [[flag, value]]),
+		};
+
+		const relaunched = relaunchArgs(operator);
+
+		assert.ok(relaunched.includes(typed), `${flag} did not reach the relaunched line: ${relaunched.join(" ")}`);
+		assert.deepEqual(
+			scopeOf(relaunched),
+			parseScope(operator.args, { parent: operator.flags.has(PARENT_FLAG) }),
+			`the launcher and the pane resolve different scopes for ${flag}`,
+		);
+	}
+});
+
+test("the report's command is the command Herdr was given, and the foreground remedy repeats it (#213)", async (t) => {
+	const { runner, calls } = scriptedHerdr();
+	const context = invocation(t, { runHerdr: runner });
+
+	const { value } = await runCli(["start", NEW_RUN_FLAG, "42", "43"], context);
+
+	assert.deepEqual(calls[1].slice(3), value.report.command, "the report named a command other than the one run");
+	assert.equal(value.report.foreground_alternative, `factory start ${FOREGROUND_FLAG} ${NEW_RUN_FLAG} 42 43`);
+});
+
+test("--json renders the launcher's own report and is the one flag left behind (#213)", async (t) => {
+	const context = invocation(t, { runHerdr: scriptedHerdr().runner });
+
+	const { json, value } = await runCli(["start", NEW_RUN_FLAG, "42", "--json"], context);
+
+	assert.equal(json, true, "the launcher rendered the shape the operator asked for");
+	assert.deepEqual(value.report.command, [context.executable, "start", FOREGROUND_FLAG, NEW_RUN_FLAG, "42"]);
+});
+
+test("the Herdr-unavailable remedy repeats every flag the operator typed (#213)", async (t) => {
+	const context = invocation(t, { herdr: UNAVAILABLE, runHerdr: scriptedHerdr().runner });
+
+	const { exitCode, value } = await runCli(["start", NEW_RUN_FLAG, "42"], context);
+
+	assert.equal(exitCode, EXIT_REFUSED);
+	assert.match(value.error.message, /factory start --foreground --new-run 42/);
 });
 
 // ── The structural guard (§13.B, §14.27) ─────────────────────────────────────
