@@ -445,6 +445,19 @@ test("providers the capacity-row grammar can spell still load", (t) => {
 	}
 });
 
+test("binding an endpoint is the loadable alternative to renaming an unspellable provider", (t) => {
+	const config = clone();
+	config.profiles.builder = {
+		kind: "pi",
+		model: "local_gpu/qwen3",
+		endpoint: { env: "PI_LOCAL_ROUTER_BASE_URL", url: "http://rico:11545" },
+	};
+	config.concurrency.resources = { "endpoint-rico-11545": 1 };
+
+	const profile = loaded(t, config).config.profiles.builder;
+	assert.equal(resourceClassOf(profile), "endpoint-rico-11545");
+});
+
 // ── Opus and Fable are Claude-only, checked at load (§11.5) ──────────────────
 
 test("Opus or Fable on a kind: pi profile refuses and names the offending profile", (t) => {
