@@ -1,5 +1,8 @@
-import { writeArtifact } from "../artifacts/writes.mjs";
+import { FactoryArtifactError } from "../artifacts/errors.mjs";
+import { readArtifact } from "../artifacts/ledger.mjs";
+import { artifactWriteKey, writeArtifact } from "../artifacts/writes.mjs";
 import { CHECK_RESULTS, FINDING_SEVERITIES, PHASE_INTEGRATE, PHASE_REVIEW } from "../domain/vocabulary.mjs";
+import { effectByKey } from "../effects/records.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 import { stageResults } from "./stages.mjs";
 
@@ -46,6 +49,13 @@ export const ATTESTATION_SCHEMA_VERSION = 1;
 const ATTESTATION_MEDIA_TYPE = "application/json";
 
 /**
+ * §12.1's role this module writes and reads back under. Named once, because the
+ * write and the read have to agree about it or the reader finds nothing and
+ * says so as "nobody wrote one".
+ */
+const ATTESTATION_ROLE = "attestation";
+
+/**
  * Assemble §8.7's document.
  *
  * @param {object} store an open store
@@ -57,8 +67,11 @@ const ATTESTATION_MEDIA_TYPE = "application/json";
  * @param {string} what.branch the attempt branch it is pushed as
  * @param {string} what.baseCommit the base it was rebased onto and verified at
  * @param {string | null} what.packageRevision the pinned revision this ran under (§11.7)
- * @param {ReadonlyArray<object>} what.checks `checkRecord`s from the run that
- *   attested `publishedCommit` — every declared check, required and advisory
+ * @param {ReadonlyArray<object>} what.declared the validated `checks` block
+ *   (§11.6) — the list the document is held complete against
+ * @param {ReadonlyArray<object>} what.checks `checkRecord`s measuring
+ *   `publishedCommit`, from every set that ran: §8.1's `verify` and #211's
+ *   publication boundary alike, in any order
  * @param {object} what.integration what §7.5's steps did: the rebase, the
  *   evidence ref, and §7.4's predicate verdict
  * @returns {Readonly<object>}
@@ -66,10 +79,10 @@ const ATTESTATION_MEDIA_TYPE = "application/json";
  */
 export function buildAttestation(
 	store,
-	{ run, ticket, attempt, publishedCommit, branch, baseCommit, packageRevision = null, checks, integration },
+	{ run, ticket, attempt, publishedCommit, branch, baseCommit, packageRevision = null, declared, checks, integration },
 ) {
 	requireCommit(publishedCommit);
-	requireChecks(checks);
+	const attested = attestedChecks(declared, checks);
 	const verdicts = reviewVerdicts(store, { run, ticket, attempt });
 
 	return Object.freeze({
@@ -81,10 +94,7 @@ export function buildAttestation(
 			base_commit: baseCommit,
 			package_revision: packageRevision,
 		},
-		// §8.7 names the required flag explicitly, so it is a field rather than
-		// something a reader derives from `severity` — the two words are the same
-		// fact, and a reader that had to know that is a reader that can get it wrong.
-		checks: checks.map((check) => ({ ...check, required: check.severity === "required" })),
+		checks: attested,
 		review: {
 			verdicts,
 			blocking: verdicts.flatMap((axis) => axis.blocking),
@@ -149,7 +159,7 @@ export function writeAttestation(store, { hold, actor, at, ...what }) {
 	const written = writeArtifact(store, {
 		content: `${JSON.stringify(document, null, 2)}\n`,
 		mediaType: ATTESTATION_MEDIA_TYPE,
-		role: "attestation",
+		role: ATTESTATION_ROLE,
 		run: what.run,
 		ticket: what.ticket,
 		phase: PHASE_INTEGRATE,
@@ -232,14 +242,142 @@ function requireCommit(commit) {
 	);
 }
 
-function requireChecks(checks) {
-	if (Array.isArray(checks) && checks.length > 0) return;
+/**
+ * §8.7's check list: **every declared check exactly once, in declaration order.**
+ *
+ * Before #211 that was a property of the caller — one `verify` ran the whole
+ * list, so handing its results over could not lose one. Now two sets measure the
+ * published commit at two moments (§8.2's `verify` and `publication`
+ * selections), and "the attestation carries every check" stops being arithmetic
+ * the caller cannot get wrong. So it is asserted here, against the declaration
+ * itself, and asserted as a **refusal**: a document missing a declared check is
+ * a claim about a set that was never completed, and §14.16 makes the
+ * controller's own rerun the only attestation boundary there is. Publishing on
+ * an incomplete one is the automation failing quietly, which is the one way this
+ * artifact stops being a checkable claim.
+ *
+ * Order is the declaration's, never arrival's: two sets arriving in two moments
+ * would otherwise put the checks in whichever order the publication path
+ * happened to concatenate them, and a diff between two attestations would show
+ * a reordering as a change.
+ *
+ * `required` is derived from the **declaration's** severity rather than the
+ * record's, because the declaration is what §11.6 validated. §8.7 names the flag
+ * explicitly, so it is a field rather than something a reader derives from
+ * `severity` — the two words are the same fact, and a reader that had to know
+ * that is a reader that can get it wrong.
+ */
+function attestedChecks(declared, recorded) {
+	requireDeclaration(declared);
+	requireRecords(recorded);
 
-	throw new FactoryPipelineError(
-		"attestation-incomplete",
+	const byName = new Map();
+	for (const record of recorded) {
+		if (byName.has(record.name)) {
+			throw refuseChecks(
+				`§8.7 records every declared check **exactly once**, and two records name "${record.name}". Two results ` +
+					"for one check is two answers to what that check said at the published commit, and an artifact that " +
+					"carries both is not a claim anybody can check.",
+				{ at: "checks", found: record.name },
+			);
+		}
+		byName.set(record.name, record);
+	}
+
+	const attested = declared.map((check) => {
+		const record = byName.get(check.name);
+		if (record === undefined) {
+			throw refuseChecks(
+				`§8.7 records **every check** with its command, exit code, duration, and required flag, and the declared ` +
+					`check "${check.name}" has no result here. §14.16 makes the controller's rerun the only attestation ` +
+					"boundary, so a document short of a declared check attests a set that was never completed (#211).",
+				{ at: "checks", found: [...byName.keys()], expected: check.name },
+			);
+		}
+		byName.delete(check.name);
+		return Object.freeze({ ...record, required: check.severity === "required" });
+	});
+
+	if (byName.size > 0) {
+		throw refuseChecks(
+			`§8.7's check list is the declared one, and ${[...byName.keys()].join(", ")} names no declared check. A result ` +
+				"for a check the config does not declare is a set nobody can reproduce from the repository (§8.2).",
+			{ at: "checks", found: [...byName.keys()] },
+		);
+	}
+
+	return Object.freeze(attested);
+}
+
+function requireDeclaration(declared) {
+	if (Array.isArray(declared) && declared.length > 0) return;
+
+	throw refuseChecks(
+		"§8.7's check list is held complete against the declared `checks` block (§11.6), and this attestation was handed " +
+			"no declaration to hold it against. Verification is declared, never discovered (§8.2).",
+		{ at: "declared", found: Array.isArray(declared) ? declared.length : null },
+	);
+}
+
+function requireRecords(recorded) {
+	if (Array.isArray(recorded) && recorded.length > 0) return;
+
+	throw refuseChecks(
 		"§8.7 records **every check** with its command, exit code, duration, and required flag, and this attestation was " +
 			"handed none. §14.16 makes the controller's rerun the only attestation boundary, so an artifact with no " +
 			"check results is a claim with nothing behind it.",
-		{ at: "checks", found: Array.isArray(checks) ? checks.length : null },
+		{ at: "checks", found: Array.isArray(recorded) ? recorded.length : null },
 	);
+}
+
+function refuseChecks(message, details) {
+	return new FactoryPipelineError("attestation-incomplete", message, details);
+}
+
+/**
+ * The attestation this attempt already wrote, or `null` when it has not written
+ * one.
+ *
+ * §8.7's artifact is written **before** the push, so a re-entry after any crash
+ * from that moment on finds the controller's own record of what it measured. It
+ * is read back through the effect that wrote it and the ledger that holds the
+ * bytes — never by path (§14.28) — which makes it the durable answer to "what
+ * did this publication already establish", the question #211's deferred advisory
+ * set has to ask before spending ten minutes answering it again.
+ *
+ * **`null` means the write has not resolved, and nothing else.** A resolved
+ * write whose bytes cannot be read back — expired at §12.2's horizon,
+ * tombstoned, failing its re-hash, or not parseable — is a **typed refusal**,
+ * because the alternative is worse than it looks: §4.5 keys the write by
+ * content, so a caller that treated an unreadable record as no record would
+ * re-measure, build a document that differs in a duration, and meet the key's
+ * payload conflict at a point where the branch may already be pushed. The
+ * refusal names the automation failure it is (§8.10 retries it) instead of
+ * letting §4.5 report it as a disagreement about what was checked.
+ *
+ * @param {object} store an open store
+ * @param {{ run: string, ticket: number, attempt: string }} where
+ * @returns {Readonly<object> | null} the §8.7 document as it was written
+ * @throws {FactoryPipelineError} `attestation-unreadable`
+ */
+export function attestedDocument(store, { run, ticket, attempt }) {
+	const written = effectByKey(
+		store,
+		artifactWriteKey({ role: ATTESTATION_ROLE, run, ticket, phase: PHASE_INTEGRATE, attempt }),
+	);
+	if (written?.state !== "resolved" || written.result === null) return null;
+
+	try {
+		return Object.freeze(JSON.parse(readArtifact(store, written.result).toString("utf8")));
+	} catch (error) {
+		if (!(error instanceof FactoryArtifactError) && !(error instanceof SyntaxError)) throw error;
+
+		throw new FactoryPipelineError(
+			"attestation-unreadable",
+			`Ticket execution ${run}/${ticket} has written its §8.7 attestation, and its bytes cannot be read back: ` +
+				`${error.message}. The document is content-addressed (§4.5), so it cannot be rebuilt from a second ` +
+				"measurement — this is an automation failure over evidence storage, not a verdict on the work.",
+			{ at: "attestation", run, ticket, attempt, digest: written.result.digest ?? null },
+		);
+	}
 }

@@ -41,7 +41,35 @@ const git = (dir, args) => execFileSync("git", ["-C", dir, ...args], { encoding:
 const GREEN = [{ name: "unit", command: "git rev-parse HEAD", timeout: 60, severity: "required", expectedFailureExitCodes: [1] }];
 const RED = [{ name: "unit", command: "exit 1", timeout: 60, severity: "required", expectedFailureExitCodes: [1] }];
 
-async function integrating(t, { status = {}, repairs = [], ...options } = {}) {
+/**
+ * An advisory check that feeds nothing — #211's deferred set. It prints the head
+ * of the worktree it ran in, so its recorded output is proof of *which commit*
+ * the publication boundary measured.
+ */
+const deferred = (overrides = {}) => ({
+	name: "e2e",
+	command: "git rev-parse HEAD",
+	timeout: 60,
+	severity: "advisory",
+	expectedFailureExitCodes: [1],
+	...overrides,
+});
+
+/** §8.7's document, as the publication actually wrote it. */
+function attestationOf(fixture, integrated) {
+	return JSON.parse(readArtifact(fixture.store, integrated.detail.attestation).toString("utf8"));
+}
+
+/** How many executions of one check's output the store recorded (§4.5, §8.7). */
+function recordedOutputs(fixture, name) {
+	return fixture.store.read((db) =>
+		db
+			.prepare("SELECT count(*) AS n FROM effect WHERE effect_key LIKE ?")
+			.get(`%/artifact-write/check-output/${name}-%`),
+	).n;
+}
+
+async function integrating(t, { status = {}, repairs = [], checks = GREEN, ...options } = {}) {
 	let fixture = await workedAttempt(t, options);
 	for (const repair of repairs) {
 		fixture = await repairAttempt(fixture, repair);
@@ -64,7 +92,7 @@ async function integrating(t, { status = {}, repairs = [], ...options } = {}) {
 		attempt: fixture.attempt,
 		branch: fixture.branch,
 		baseBranch: "main",
-		checks: GREEN,
+		checks,
 		reader: createGiteaReader({ repo: "acme/widgets", login: "gitea", request: gitea.request }),
 		writer: createGiteaWriter({ repo: "acme/widgets", login: "gitea", request: gitea.write }),
 		ticketTitle: "feat: the work",
@@ -318,6 +346,81 @@ test("integrate publishes: predicates, plain push, one PR, and §8.7's attestati
 	assert.equal(existsSync(integrationWorktreePath(fixture.store.storeDir, fixture.attempt)), false);
 	assert.equal(integrated.detail.branch_cleanup_eligible, true);
 	assert.equal(fixture.leases.inspect(LEASE_NAMES.integration), null);
+});
+
+test("#211: the deferred advisory set is paid at the publication boundary, at the commit being pushed", async (t) => {
+	const fixture = await integrating(t, { checks: [...GREEN, deferred()] });
+
+	const verified = await integrationVerify(fixture.store, fixture.clone, fixture.context);
+	recordVerify(fixture, verified);
+	recordReview(fixture);
+
+	// Every verify — after the implement and after each repair — leaves it
+	// outstanding rather than running it.
+	assert.deepEqual(
+		verified.detail.checks.map((check) => check.name),
+		["unit"],
+	);
+	assert.deepEqual(verified.detail.deferred, ["e2e"]);
+	assert.equal(recordedOutputs(fixture, "e2e"), 0);
+
+	const integrated = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(integrated.outcome, "integrated");
+	assert.deepEqual(integrated.detail.publication_checks, { names: ["e2e"], reused: false });
+
+	// §8.7 still carries every declared check exactly once, in declaration order,
+	// with its required flag — assembled from the two sets that measured this
+	// commit rather than from one run of the whole list.
+	const document = attestationOf(fixture, integrated);
+	assert.deepEqual(
+		document.checks.map((check) => [check.name, check.result, check.required]),
+		[
+			["unit", "passed", true],
+			["e2e", "passed", false],
+		],
+	);
+	// And it ran at the **candidate commit**: the check printed the head of the
+	// worktree it was given, and that head is the one that was pushed.
+	assert.equal(readArtifact(fixture.store, document.checks[1].output).toString("utf8").trim(), integrated.detail.head);
+	assert.equal(git(fixture.remote, ["rev-parse", `refs/heads/${fixture.branch}`]), integrated.detail.head);
+});
+
+test("#211: a re-entered publication stands on the recorded result rather than paying for the tier twice", async (t) => {
+	const fixture = await integrating(t, { checks: [...GREEN, deferred()] });
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+	const published = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	// §8.10 routes `integrate × push-failed` to an automation retry, and a human
+	// merging this very PR moves the base under it (#146).
+	moveRemoteBase(t, fixture.remote);
+	const retried = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(retried.outcome, "integrated");
+	assert.deepEqual(retried.detail.publication_checks, { names: ["e2e"], reused: true });
+	assert.equal(recordedOutputs(fixture, "e2e"), 1, "the retry re-ran a set the attestation already recorded");
+	assert.equal(retried.detail.attestation.digest, published.detail.attestation.digest);
+});
+
+test("#211: a deferred advisory check that fails is evidence on the attestation and publishes anyway (§8.2)", async (t) => {
+	const fixture = await integrating(t, { checks: [...GREEN, deferred({ command: "echo survivors; exit 1" })] });
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+
+	const integrated = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(integrated.outcome, "integrated", "an advisory result at the boundary blocked a publication");
+	const document = attestationOf(fixture, integrated);
+	assert.deepEqual(
+		document.checks.map((check) => [check.name, check.result]),
+		[
+			["unit", "passed"],
+			["e2e", "failed"],
+		],
+	);
+	assert.match(integrated.detail.summary, /1 of 1 required check\(s\) green/);
+	assert.match(integrated.detail.summary, /1 advisory recorded/);
 });
 
 test("the base moving during review re-rebases and re-verifies, consuming no budget (§9.5, §15 case 10)", async (t) => {

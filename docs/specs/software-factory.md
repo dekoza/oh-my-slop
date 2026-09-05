@@ -1264,6 +1264,12 @@ Only the controller integrates, in a controller-owned integration worktree.
 5. **Plain push, never force**, of the final attempt branch only.
 6. **One PR per ticket** against the default branch.
 
+**Between the predicates and the push sits §8.2's `publication` selection** (#211): the advisory
+checks that feed nothing run there, at the commit step 4 verified and step 5 is about to push, and
+their results join §8.7's attestation before it is written. A branch the predicates refuse pays for
+none of them, and a re-entry publishing the same commit stands on what the attestation already
+records rather than running them twice.
+
 **PR shape.** Title: the ticket title (with a conventional prefix when the ticket provides one)
 plus `(#N)`. Body: a machine-parseable fenced key-value block — attempt identity tuple, base
 commit, package revision, evidence links, attestation digest — followed by **`Closes #N`**, so
@@ -1341,10 +1347,32 @@ exit-code contract** (§11.6).
 - **The controller reruns the full required set itself**, in a controller-owned verification
   worktree, **at the exact post-rebase commit that will be pushed**. One rule, no conditional
   re-check paths. Worker-reported test evidence remains **context only**.
-- **`verify` runs the advisory checks alongside the required ones**, and judges on the required
-  set alone. That is the one place "advisory checks record evidence and never block" can happen:
-  §8.3's baseline runs the required set by itself, and §8.7's attestation carries *every* check
-  with its required flag.
+- **A check is paid for where its evidence is read, and `feeds` is the line** (#211). Severity says
+  what a red result *does*; it never said what one *costs*. Four closed selections name the sets:
+  `required` is §8.3's baseline gate, `all` is the operator's explicit `doctor --baseline` (§10.5),
+  and the two that the pipeline runs automatically **partition the declaration**, so every declared
+  check has exactly one home:
+  - **`verify` runs the required set plus every advisory check that feeds a later agent phase**,
+    and judges on the required set alone. A fed check's captured output reaches the next prompt, so
+    every run of it is read, and the attempt is where it has to be paid for.
+  - **`publication` runs the advisory checks that feed nothing**, once, at §7.5's publication
+    boundary: after both review axes approve and §7.4's integration-side predicates pass, at the
+    exact candidate commit, and **before the attestation and the push**. Verify runs after every
+    implement *and* after every repair, while an unfed advisory result is read only on the
+    attestation of the commit that gets published — so running one per attempt bills every
+    superseded attempt for evidence nobody opens. The tradeoff is stated rather than hidden:
+    discovery moves later, and a workflow that needs a worker or a reviewer to see advisory output
+    mid-attempt declares `feeds`, which is exactly what keeps a check on the verify path.
+
+  Either way advisory results are in the evidence and out of the verdict, which is what "never
+  block" means: §8.3's baseline runs the required set by itself, and §8.7's attestation carries
+  *every* declared check with its required flag.
+- **A publication-boundary result is durable for its exact candidate commit.** An automation retry
+  or a controller re-entry publishing the same commit reads it back off the attestation that commit
+  already has, rather than paying for the set again; a §9.5 re-rebase that produces a *different*
+  candidate commit measured a different tree, so the set runs again for it. An advisory `failed` or
+  `unrunnable` at that boundary is evidence and blocks nothing, but a failure to record the evidence
+  or to assemble a complete attestation is an automation failure and **does** stop the publication.
 - **A required set in which one check was `unrunnable` is `unrunnable`, even beside a genuine
   failure.** §14.16 makes the controller's rerun the only attestation boundary, so an incomplete
   rerun attests nothing; calling the phase `failed` would charge the worker's repair budget for a
@@ -1386,7 +1414,9 @@ array it never re-ran.
 exit codes** is a genuine failure → repair. **Anything else — timeout, signal, exec-not-found —
 is `unrunnable`, an automation failure, never a worker failure.** Advisory checks record
 evidence and never block; expensive or environment-fragile classes (E2E, browser, network)
-default to advisory with an explicit opt-in to required.
+default to advisory with an explicit opt-in to required — and, when they feed nothing, are paid
+for once per published ticket rather than once per attempt (#211, above). A long tier nobody reads
+belongs outside the factory altogether; advisory is a severity, never a discount.
 
 ### 8.3 Baseline: green at base, or the run does not start
 
@@ -1667,6 +1697,19 @@ each naming the base and head it was rendered against (§8.4, #165); the before/
 guard result; and **every published commit §7.3 correlated by its attempt segment rather than by
 its prefix**, with the trailer as the worker wrote it (#210) — the record of what integration
 accepted damaged, and empty on all but the rare attempt.
+
+**Every declared check appears exactly once, in declaration order** (#211). Two sets measure the
+published commit at two moments — §8.2's `verify` selection and its `publication` one — so the
+document is assembled against the declared `checks` block rather than taken from one run of it, and
+a document short of a declared check is refused rather than published. That refusal is the
+automation failing, not a verdict on the work: §14.16 makes the controller's own rerun the only
+attestation boundary there is, and an artifact missing a check attests a set nobody completed.
+
+The artifact is also **read back**, by the publication boundary that reuses what it records. A
+write that has resolved but whose bytes cannot be returned — expired at §12.2's horizon,
+tombstoned, failing its re-hash — is a named automation failure and never an invitation to measure
+again: the document is content-addressed, two runs of one check differ in a duration, and a
+re-measure would meet §4.5's payload conflict at a point where the branch may already be pushed.
 
 A summary lands in §7.5's machine-parseable PR-body block and in the ticket comment — advisory
 findings surfaced there, blocking findings never. This is what makes "the controller verified
@@ -2318,10 +2361,12 @@ anything from policy stay fail-closed.
   at, stating plainly that it was **not** re-run.
 - **`--baseline` executes all declared checks**, including advisory mutation and complexity
   recipes, inside §7.1's factory-private clone in a **throwaway worktree** — never the
-  operator's checkout. Only required failures make the baseline gate red; advisory results are
-  reported with their severity. An advisory recipe the host cannot run — the registry it fetches
-  its tool from unreachable, the tool absent — reports `unrunnable` beside that severity and
-  colours nothing (§8.2, §11.6).
+  operator's checkout. It keeps the `all` selection whatever §8.2 defers on the pipeline's own
+  path: a diagnostic asked for by hand is asked for by someone who wants everything, and #211's
+  publication boundary is about *automatic* timing. Only required failures make the baseline gate
+  red; advisory results are reported with their severity. An advisory recipe the host cannot run —
+  the registry it fetches its tool from unreachable, the tool absent — reports `unrunnable` beside
+  that severity and colours nothing (§8.2, §11.6).
 - Reports per-ticket repair / fresh-retry / automation counters, since "why did this stop" is
   usually a budget question.
 - Runs §11.7's package handshake in **report mode** (probing is a read), and reports
@@ -3294,3 +3339,4 @@ touching everything twice.
 | 2026-08-30 | #199 makes a cleared `factory:needs-human` boundary preserve committed work without preserving an execution. Before the new claim, the controller pins the default base, reads the latest factory-authored pause identity from the ticket snapshot, and asks git for that attempt branch's retained tip; a non-empty `rev-list <default>..<tip>` makes the new execution's first attempt branch directly from the tip, while absent/unparseable pause evidence, a missing branch, or an empty delta falls back to the pinned default base with the reason recorded on the claim. The new execution still receives a new history entry, attempt chain, budgets, and declared route. The prompt carries the whole pause/answer chain in comment order: worker questions stay inside §8.5's untrusted boundary; non-factory comments after a pause carry verified login/comment-id provenance at snapshot trust, render once rather than again in the raw comment list, and an empty answer set is stated as a controller fact. §7.3's integration trailer predicate accepts the controller-verified prior run ids in that chain, so inherited commits retain their honest original trailers while arbitrary same-ticket history remains refused. §§3.4, 7.2, 7.3, and 8.5 corrected in place. | #199 |
 | 2026-09-05 | #205 exempts `stop` from §11.2's config load, alongside `migrate` and for an unrelated reason: it ends a run whose controller loaded its policy once, at start, so a config the loader now rejects is not the config the drain is using — and every remaining ending destroys work, since killing the pane abandons in-flight ticket executions mid-flight. Found by an operator who raised `concurrency.maxTicketExecutions` mid-drain and lost `stop` to the ceiling refusal, with the run still going. The exemption is not leniency: `stop` reads no policy file at all, walking up to the repo root the way §11.1's discovery does and working from the run, the lease row, and the stream it appends to. Both the first request and its escalation stand under an unloadable config; with no run to address the refusal is the verb's own `no-run`, and an invocation belonging to no repository refuses as `no-repo-root` with §10.3's exit 1 — the answer `migrate`, the other exemption, already gives. §§10.5 and 11.2 amended; `start` and every other verb that decides anything from policy stay fail-closed. | #205 |
 | 2026-09-05 | #210 stops a fumbled token discarding a finished deliverable. Evidence: `minder/nukem2_again` run 01M1QMBNB4F797JVZ3T8YD8PY1 ticket 1315 reached the end of the chain — verify passed, both axes approved — and integrate refused it `trailer-missing` over one commit whose trailer read `…/IÓN1315/…-t1315-a7` where `1315` belongs; the same worker had stamped its two previous commits correctly. The ticket was disposed `failed` / `automation`, and the work survived only because §7.7 retains the branch in the private clone. §7.3 now says what the predicate was always free to read: **where the `<run>/<ticket>` prefix does not match, the attempt segment is read before the commit is called uncorrelated**. It is `<run>-t<ticket>-a<n>`, `attemptBranch` refuses a pair that disagrees, and `factoryAttemptTrailer` derives both it and the prefix from one tuple — so a segment that survived damage elsewhere answers the predicate's own question with more of the tuple than the prefix carries. Those commits are **misstamped, not untrailed**: they publish, and the text as the worker wrote it is recorded. Recognition is anchored at both ends of a whole segment (`isAttemptIdFor`, which is `attemptBranch`'s rule as a predicate rather than a refusal, so §2.1's grammar keeps one owner), so nothing but this ticket's own execution is recognisable and §6.5's refusal of somebody else's trailer is untouched; a commit with no `Factory-Attempt:` line at all stays the refusal it was, which is the half of `trailer-missing` a human should look at. **Nothing is repaired**: §7.5's step 4 verified the exact commit that will be pushed and §7.4 compares the pushed shas against it, so amending a message would move the work off the commit that was measured — which is why the read is widened rather than the message rewritten. §8.7's list gains the damaged trailers, since a spec that promised the record without naming it in the section describing the artifact would leave `attestation.mjs`'s "exactly §8.7's list, not negotiable per caller" contradicted; the field is additive, so the schema version does not move and a v1 reader stays correct. **Verify records the reading, and integrate attests that record** rather than re-deriving it at publication, the rule the commit list is already under; an empty list and a null are kept apart, because the `no-commits` and `diff-check` refusals return before the trailer walk runs and an unclassified range attested as a clean one is the silent-wrong-answer class §15 calls load-bearing. A refusal that also found damaged trailers says so, so an operator handed a sha list is not sent to audit the commits that are fine. | #210 |
+| 2026-09-05 | #211 makes a check paid for **where its evidence is read**. An advisory check can never change an outcome, so running the whole advisory set on every verify — after every implement and after every repair — pays for it once per *attempt* to produce evidence that is read once per *published ticket*. Measured on `minder/nukem2_again`'s first three drains of the #1246 map: E2E was 112 of 215 check-minutes, ~10.2 min a run, across 11 verifies that produced one published ticket. §8.2 gains two selections beside `required` and `all`, and they **partition the declaration** so §8.7 can still hold every declared check exactly once: `verify` is the required set plus every advisory check declaring `feeds`, whose captured output reaches a later prompt and is therefore read every run; `publication` is the rest, run once at §7.5's boundary — after both review axes approve, after §7.4's predicates, at the exact candidate commit, before the attestation and the push. **Durable per candidate commit**: a retry or re-entry publishing that same commit reads the results back off the attestation it already has, which is also what keeps §4.5's content-addressed attestation key answerable by a re-entry; a §9.5 re-rebase to a different commit measured a different tree and runs the set again. Advisory results still block nothing, but a failure to record the evidence or to assemble a complete attestation is an automation failure that stops the publication. `doctor --baseline` keeps `all`, because a diagnostic asked for by hand is asked for by someone who wants everything (§10.5). The tradeoff, stated rather than hidden: discovery moves later, and the answer for a workflow that needs advisory output mid-attempt is `feeds`. | #211 |
