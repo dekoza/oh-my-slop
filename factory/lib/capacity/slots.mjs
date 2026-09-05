@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { capacityModelSlot, capacityTicketSlot, isSuperseded, parseCapacitySlot, POOLS } from "../state/leases.mjs";
 import {
 	classAvailability,
@@ -76,7 +77,7 @@ export const RETAINED_REASONS = Object.freeze({
  *   the pool owns the memo, the wiring owns the runtime
  * @returns {Readonly<object>} the pool
  */
-export function openCapacity(store, { leases, plan, run, hold, now = Date.now, probeClass = null }) {
+export function openCapacity(store, { leases, plan, run, hold, now = Date.now, probeClass = null, interrupted = () => false }) {
 	/**
 	 * Which lanes have already announced a block, per pool. §9.7 emits
 	 * `capacity.waiting` **once when a lane first blocks on a class, never per
@@ -88,6 +89,11 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 	 * waiting lanes this one does.
 	 */
 	const announced = new Set();
+
+	function assertActive() {
+		if (interrupted()) throw new DOMException("Capacity wait abandoned (§9.6).", "AbortError");
+		hold.fence();
+	}
 
 	/**
 	 * §9.4's acquisition: **the ticket slot and the implement attempt's model slot
@@ -117,17 +123,16 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 			return null;
 		}
 
-		const ticketSlot = take({ pool: POOLS.ticket, resourceClass: null, index: ticketIndex, ticket, attempt, at });
-
+		const shapes = [
+			{ pool: POOLS.ticket, resourceClass: null, index: ticketIndex, ticket, attempt, at },
+			{ pool: POOLS.model, resourceClass, index: modelIndex, ticket, attempt, at },
+		];
 		try {
-			const modelSlot = take({ pool: POOLS.model, resourceClass, index: modelIndex, ticket, attempt, at });
+			const held = leases.acquireAll(shapes.map(grantRequest));
 			clearWait({ ticket, resourceClass });
-			return Object.freeze({ ticket: ticketSlot, model: modelSlot });
+			return Object.freeze({ ticket: slotHold(held[0], shapes[0]), model: slotHold(held[1], shapes[1]) });
 		} catch (error) {
-			// Nothing else writes these rows while this controller holds the lease,
-			// so this is a genuine surprise rather than contention. The ticket slot
-			// is given back rather than left held by a lane that never started.
-			ticketSlot.release({ reason: "acquisition-failed", at });
+			if (error instanceof FactoryStateError && error.reason === "lease-held") return null;
 			throw error;
 		}
 	}
@@ -147,9 +152,15 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 			return null;
 		}
 
-		const slot = take({ pool: POOLS.model, resourceClass, index, ticket, attempt, at });
-		clearWait({ ticket, resourceClass });
-		return slot;
+		const shape = { pool: POOLS.model, resourceClass, index, ticket, attempt, at };
+		try {
+			const slot = slotHold(leases.acquire(grantRequest(shape)), shape);
+			clearWait({ ticket, resourceClass });
+			return slot;
+		} catch (error) {
+			if (error instanceof FactoryStateError && error.reason === "lease-held") return null;
+			throw error;
+		}
 	}
 
 	/**
@@ -200,10 +211,10 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 	 * own** (§9.4): a slot is fenced to the lease that took it, so a stale
 	 * controller's row is recognisable as superseded however late it was written.
 	 */
-	function take({ pool, resourceClass, index, ticket, attempt, at }) {
+	function grantRequest({ pool, resourceClass, index, ticket, attempt, at }) {
 		const name = slotName(pool, resourceClass, index);
 		const fence = hold.fence();
-		const held = leases.acquire({
+		return {
 			name,
 			fencedTo: fence.generation,
 			identity: { run, ticket, attempt, pool, class: resourceClass },
@@ -223,9 +234,7 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 					fencing_generation: fence.generation,
 				},
 			},
-		});
-
-		return slotHold(held, { pool, resourceClass, index, ticket, attempt });
+		};
 	}
 
 	/**
@@ -304,8 +313,8 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 	}
 
 	/** A lane that was granted may announce a later block on the same class. */
-	function clearWait({ ticket, resourceClass }) {
-		announced.delete(laneKey({ ticket, resourceClass }));
+	function clearWait({ ticket }) {
+		for (const key of announced) if (key.startsWith(`${ticket}:`)) announced.delete(key);
 	}
 
 	/**
@@ -642,9 +651,27 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 
 	return Object.freeze({
 		plan,
+		assertActive,
+		/** Bounded-rate waits still observe abandon and lease loss during long memo windows. */
+		async wait({ ms = 25 } = {}) {
+			assertActive();
+			for (let remaining = ms; remaining > 0; remaining -= 25) {
+				await delay(Math.min(25, remaining));
+				assertActive();
+			}
+		},
 		acquireLane,
 		acquireModel,
+		ticketAvailable: () => freeIndex(POOLS.ticket, null) !== null,
 		exhaustion,
+		/** All held rows count, including other roles and superseded/adopted lanes. */
+		occupancy: () => {
+			const held = rows().map((row) => parseCapacitySlot(row.name));
+			return plan.classes.map(({ class: className, size }) => Object.freeze({
+				class: className, size,
+				held: held.filter((row) => row?.pool === POOLS.model && row.class === className).length,
+			}));
+		},
 
 		/**
 		 * The rows occupying an index under a **dead generation** — the slots a

@@ -15,8 +15,8 @@ import { IDENTIFIER_PATTERN, requireArray, requireDeclared, requireExactKeys, re
 const ROUTING_ROLES = Object.freeze(["implement", "freshRetry", "review"]);
 const REVIEW_ATTEMPTS = 2;
 
-const ROUTING_KEYS = Object.freeze(["roles", "rules", "fallbacks", "sets", "activeSet"]);
-const SET_KEYS = Object.freeze(["roles", "rules", "fallbacks"]);
+const ROUTING_KEYS = Object.freeze(["roles", "rules", "fallbacks", "pooling", "sets", "activeSet"]);
+const SET_KEYS = Object.freeze(["roles", "rules", "fallbacks", "pooling"]);
 const RULE_KEYS = Object.freeze(["labelsAny", "role", "profile"]);
 const NO_ROUTING_DEFAULTS =
 	"A routing declares its roles and its rules; an empty rule list is written out, never assumed.";
@@ -108,13 +108,14 @@ export function validateRouting(routing, profiles, selected, configPath) {
 		roles: defaultRouting.roles,
 		rules: defaultRouting.rules,
 		fallbacks: defaultRouting.fallbacks,
+		pooling: defaultRouting.pooling,
 		...(defaultName === null ? {} : { activeSet: defaultName }),
 		...(routing.sets === undefined
 			? {}
 			: {
 					sets: Object.freeze(
 						Object.fromEntries(
-							sets.map((set) => [set.name, { roles: set.roles, rules: set.rules, fallbacks: set.fallbacks }]),
+							sets.map((set) => [set.name, { roles: set.roles, rules: set.rules, fallbacks: set.fallbacks, pooling: set.pooling }]),
 						),
 					),
 				}),
@@ -182,7 +183,8 @@ function validateRoutingSet(routing, profiles, at, configPath, name = null) {
 	const roles = validateRoles(routing.roles, profiles, `${at}.roles`, configPath);
 	const rules = validateRules(routing.rules, profiles, `${at}.rules`, configPath);
 	const fallbacks = validateFallbacks(routing.fallbacks, profiles, `${at}.fallbacks`, configPath);
-	const routed = { name, roles, rules, fallbacks };
+	const pooling = validatePooling(routing.pooling, profiles, fallbacks, `${at}.pooling`, configPath);
+	const routed = { name, roles, rules, fallbacks, pooling };
 
 	return { ...routed, profiles: profilesReachedBy(routed) };
 }
@@ -260,6 +262,37 @@ function fallbackOrder(order, profiles, at, configPath) {
 	}
 
 	return Object.freeze(names);
+}
+
+/** #223: absence grants no pooling permission; null disables one review axis. */
+export function poolingOf(routing, role, axis = null) {
+	if (role === "review") return routing.pooling?.review?.[axis] ?? null;
+	return role === "implement" ? routing.pooling?.implement ?? null : null;
+}
+
+function validatePooling(pooling, profiles, fallbacks, at, configPath) {
+	if (pooling === undefined) return Object.freeze({});
+	requireObject(pooling, at, configPath, at);
+	requireNoUnknownKeys(pooling, ["implement", "review"], at, configPath);
+	const result = {};
+	const candidates = (value, fallback, path) => {
+		const order = fallbackOrder(value, profiles, path, configPath);
+		if (order.length === 0 || fallback.length !== 0) {
+			throw new FactoryConfigError("invalid-value", `${configPath}: ${path} needs a non-empty candidate list and no same-role/axis fallback order (§11.5).`, { file: configPath, at: path });
+		}
+		return order;
+	};
+	if (pooling.implement !== undefined) {
+		result.implement = candidates(pooling.implement, fallbacks.implement, `${at}.implement`);
+	}
+	if (pooling.review !== undefined) {
+		if (!Array.isArray(pooling.review) || pooling.review.length !== REVIEW_ATTEMPTS) {
+			throw new FactoryConfigError("invalid-value", `${configPath}: ${at}.review must have two candidate lists or null entries, one per axis.`, { file: configPath, at: `${at}.review` });
+		}
+		result.review = Object.freeze(pooling.review.map((order, index) =>
+			order === null ? null : candidates(order, fallbacks.review[index], `${at}.review[${index}]`)));
+	}
+	return Object.freeze(result);
 }
 
 function validateRoles(roles, profiles, at, configPath) {
@@ -427,7 +460,8 @@ export function profilesReachedBy(routing) {
  * @returns {Set<string>}
  */
 export function profilesForRole(routing, role) {
-	const reached = new Set([routing.roles[role]].flat());
+	const defaults = [routing.roles[role]].flat();
+	const reached = new Set(defaults.flatMap((profile, axis) => poolingOf(routing, role, axis) ?? [profile]));
 	for (const rule of routing.rules) {
 		if (rule.role === role) for (const profile of [rule.profile].flat()) reached.add(profile);
 	}

@@ -1,6 +1,6 @@
 import { classesReachedBy } from "../config/profiles.mjs";
 import { profilesForRole, profilesReachedBy } from "../config/routing.mjs";
-import { dispatchOrder, selectRoute } from "../worker/dispatch.mjs";
+import { dispatchOrder, pooledCandidates, selectRoute } from "../worker/dispatch.mjs";
 import { FactoryWorkerError } from "../worker/errors.mjs";
 import { FactoryCapacityError } from "./errors.mjs";
 
@@ -123,9 +123,11 @@ export function capacityPlan({ concurrency, profiles, activeRouting }) {
  * @returns {Promise<Readonly<object>>} `worker/dispatch.mjs`'s route record
  * @throws {FactoryCapacityError} `routing-ambiguous`
  */
-export async function implementDispatch({ profiles, activeRouting }, member, { exhaustion, at }) {
+export async function implementDispatch({ profiles, activeRouting }, member, { exhaustion, at, capacity = null }) {
 	return selectRoute({
 		order: implementOrder(activeRouting, member),
+		pooled: pooledCandidates(activeRouting, { role: "implement", labels: member.labels }) !== null,
+		capacity,
 		profiles,
 		exhaustion,
 		at,

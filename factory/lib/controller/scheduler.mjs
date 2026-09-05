@@ -8,7 +8,7 @@ import { FactoryStateError } from "../state/errors.mjs";
  *
  * > *While a slot is free and the live frontier is non-empty, take the
  * > lowest-numbered claimable ticket; otherwise wait for a ticket execution to
- * > terminate.*
+ * > terminate or relevant model capacity to become available.*
  *
  * **There is no queue object.** The map rules out a private generated task
  * graph and §10 rules out the resident work queue; an in-memory ready-queue is
@@ -136,12 +136,11 @@ export async function schedule({
 	let frontierAtDecision = null;
 
 	/**
-	 * Wait for **a** ticket execution to terminate — §9.6's `otherwise` — while
-	 * still honoring an abandon that arrives after the wait began. A stop drains
-	 * and therefore keeps waiting; abandon is the only request that wakes this
-	 * boundary without a lane result.
+	 * Wait for a lane result, or a changed capacity observation when scheduling
+	 * pooled work. Only the local rows are polled, never the tracker; a due memo
+	 * wakes the probe gate too. During drain, only abandon interrupts the wait.
 	 */
-	async function awaitOne() {
+	async function awaitOne({ observed = null, retry = false, readmitAt = null } = {}) {
 		for (;;) {
 			const lane = await Promise.race([
 				...[...lanes.values()].map((live) => live.promise),
@@ -149,6 +148,12 @@ export async function schedule({
 			]);
 			if (lane === null) {
 				if (abandoning()) return false;
+				capacity.assertActive();
+				if (observed !== null) {
+					const changed = JSON.stringify(capacity.occupancy()) !== observed;
+					const probeDue = readmitAt !== null && at() >= readmitAt;
+					if (!claiming() || retry || changed || probeDue) return false;
+				}
 				continue;
 			}
 			lanes.delete(lane.ticket);
@@ -194,6 +199,8 @@ export async function schedule({
 	}
 
 	while (claiming() && !abandoning()) {
+		capacity.assertActive();
+		const occupancyAtDecision = JSON.stringify(capacity.occupancy());
 		// Re-read, every time. §3.1: membership is recomputed at every scheduling
 		// decision, and direct-ticket sets are pinned by definition but their
 		// states are still read live.
@@ -211,6 +218,8 @@ export async function schedule({
 		 * like §11.5's routing refusal, which the run remembers for good.
 		 */
 		const memoBlocked = new Map();
+		const busy = new Set();
+		let readmitAt = null;
 		// §2.1: a run has **one** ticket execution per ticket, so a ticket this
 		// run already executed is not a candidate again — whatever the tracker
 		// still says about it. §8.9's dispositions are what remove it from the
@@ -220,7 +229,7 @@ export async function schedule({
 				running: lanes.keys(),
 				executed: [...settled, ...released].map((lane) => lane.ticket),
 				refused: refused.map((entry) => entry.ticket),
-				blocked: memoBlocked.keys(),
+				blocked: [...memoBlocked.keys(), ...busy],
 			});
 		let candidate = claimNext();
 
@@ -252,7 +261,15 @@ export async function schedule({
 			// statement than #154's single blocked class — every profile the role
 			// can reach was tried, and the seam's record says which and why.
 			if (route.profile === null) {
-				memoBlocked.set(candidate.ticket, blockedMember(candidate.ticket, route));
+				for (const seen of route.considered) {
+					if (seen.state === "blocked" && seen.until !== null) readmitAt = Math.min(readmitAt ?? Infinity, seen.until);
+				}
+				if (route.considered.some((seen) => seen.state === "busy")) {
+					busy.add(candidate.ticket);
+					for (const seen of route.considered.filter((seen) => seen.state === "busy")) {
+						capacity.exhaustion.wait({ ticket: candidate.ticket, resourceClass: seen.class, at: at() });
+					}
+				} else memoBlocked.set(candidate.ticket, blockedMember(candidate.ticket, route));
 				candidate = claimNext();
 				continue;
 			}
@@ -264,8 +281,8 @@ export async function schedule({
 			// Nothing claimable now. With lanes running, one terminating may change
 			// that; with none, the scope is drained as far as this loop can take it.
 			exhaustedAtDecision = [...memoBlocked.values()];
-			if (lanes.size === 0) break;
-			await awaitOne();
+			if (lanes.size === 0 && busy.size === 0) break;
+			await awaitOne({ observed: busy.size > 0 ? occupancyAtDecision : null, readmitAt });
 			continue;
 		}
 
@@ -288,8 +305,8 @@ export async function schedule({
 		const slots = capacity.acquireLane({ ticket: candidate.ticket, resourceClass: route.class, at: at() });
 		if (slots === null) {
 			exhaustedAtDecision = [...memoBlocked.values()];
-			if (lanes.size === 0) break;
-			await awaitOne();
+			if (lanes.size === 0 && !route.pooling) break;
+			await awaitOne({ observed: occupancyAtDecision, retry: Boolean(route.pooling) && capacity.ticketAvailable() });
 			continue;
 		}
 

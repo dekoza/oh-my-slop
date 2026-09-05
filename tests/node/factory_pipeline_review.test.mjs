@@ -541,6 +541,24 @@ test("an axis retried for a dead pane keeps its profile: a flake is not a rerout
 	);
 });
 
+test("#223: pooled automation retry and recovery keep the minted profile and original decision", async (t) => {
+	const context = await reviewable(t);
+	let turn = 0;
+	let selections = 0;
+	const { seam, run } = review(context, { answers: {
+		"review-standards": () => turn++ === 0 ? { outcome: "dead-worker", record: null } : APPROVING,
+		"review-spec": APPROVING,
+	} });
+	const routeAxis = async ({ index }) => {
+		const profile = index === 0 && selections++ === 0 ? "reader-a" : "cloud-reader";
+		return { profile, declared: "reader-a", considered: [], pooling: { order: ["reader-a", "cloud-reader"], selected: { profile, held: 0, size: 1 } } };
+	};
+	await run({ routeAxis, automationRetry: async () => {} });
+	assert.deepEqual(seam.asked.filter((request) => request.axis.name === "review-standards").map((request) => request.profile), ["reader-a", "reader-a"]);
+	await run({ routeAxis: async () => { throw new Error("recovery must not select capacity again for a minted axis"); } });
+	assert.equal(selections, 1);
+});
+
 test("an axis reroute is free: it spends no automation budget and asks for none (§8.6, #155)", async (t) => {
 	const context = await reviewable(t);
 	const asked = [];

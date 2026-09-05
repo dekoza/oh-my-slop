@@ -34,6 +34,45 @@ function loaded(t, config, { routingSet = null } = {}) {
 	return loadFactoryConfig({ cwd: makeRepo(t, { config }), routingSet });
 }
 
+test("#223: pooling-only profiles reach active capacity and named sets without changing the ticket ceiling", (t) => {
+	const config = clone();
+	config.profiles.cloud = { kind: "claude", model: "opus" };
+	config.concurrency.resources["claude-code"] = 5;
+	config.routing.pooling = { implement: ["builder", "cloud"], review: [["cloud", "builder"], null] };
+	const result = loaded(t, config);
+	assert.deepEqual(result.activeRouting.pooling, config.routing.pooling);
+	assert.equal(result.config.concurrency.maxTicketExecutions, 1);
+	config.routing.sets = { pooled: { ...config.routing } };
+	delete config.routing.pooling;
+	assert.deepEqual(loaded(t, config, { routingSet: "pooled" }).activeRouting.pooling, result.activeRouting.pooling);
+});
+
+test("#223: pooling rejects unknown, empty, repeated and ambiguous candidate declarations", (t) => {
+	for (const pooling of [
+		{ implement: [] }, { implement: ["missing"] }, { implement: ["builder", "builder"] },
+		{ implement: null }, { implement: "builder" }, { freshRetry: ["builder"] }, { repair: ["builder"] },
+		{ review: [["builder"]] }, { review: [["builder"], []] }, { review: ["builder", "builder"] },
+	]) {
+		const config = clone();
+		config.routing.pooling = pooling;
+		assert.match(loadFailure(t, config).details.at, /^routing.pooling/);
+	}
+	for (const pooling of [{ implement: ["builder"] }, { review: [null, ["builder"]] }]) {
+		const config = clone();
+		config.routing.pooling = pooling;
+		config.routing.fallbacks = { implement: ["builder"], review: [[], ["builder"]] };
+		assert.equal(loadFailure(t, config).reason, "invalid-value");
+	}
+	const config = clone();
+	config.profiles.remote = { kind: "claude", model: "opus" };
+	config.routing.pooling = { implement: ["remote"] };
+	assert.equal(loadFailure(t, config).reason, "resource-unsized");
+	const ambiguous = clone();
+	ambiguous.routing.pooling = { implement: ["builder"] };
+	ambiguous.routing.rules = [{ labelsAny: ["a"], role: "implement", profile: "builder", pooling: ["builder"] }];
+	assert.equal(loadFailure(t, ambiguous).reason, "unknown-key");
+});
+
 // ── Checks: five required fields and one declared feed (§11.6) ──────────────
 
 test("every check declares all five fields, and a missing one names itself", (t) => {

@@ -234,6 +234,27 @@ test("runStart composes the production pipeline through publication without inje
 	assert.equal(git(repoRoot, "status", "--porcelain=v1", "--untracked-files=all"), checkoutBefore);
 });
 
+test("#223: production review axes mint and launch only their independently pooled profiles", async (t) => {
+	const config = cloneValidConfig();
+	config.profiles.remote = { kind: "pi", model: "openrouter/model" };
+	config.routing.pooling = { review: [["remote"], ["builder"]] };
+	config.concurrency.resources.openrouter = 1;
+	const { answer, repoRoot, agentDir } = await runProduction(t, {
+		config, models: [{ provider: "local", id: "qwen3", baseUrl: "http://127.0.0.1:9/v1" }, { provider: "openrouter", id: "model", baseUrl: "http://127.0.0.1:9/v1" }],
+	});
+	assert.equal(answer.report.execution.members[0]?.disposition, "published", JSON.stringify(answer));
+	const store = await openStore({ repoRoot, agentDir });
+	t.after(() => store.close());
+	const axes = store.readEvents({ kind: "attempt.launched" }).filter((event) => event.phase === "review");
+	assert.deepEqual(axes.map((event) => event.payload.profile), ["remote", "builder"]);
+	for (const axis of axes) {
+		const granted = store.readEvents({ kind: "capacity.granted" }).filter((event) => event.ticket === axis.ticket && event.seq < axis.seq && event.payload.pool === "model").at(-1);
+		assert.equal(granted.payload.resource_class, axis.payload.routing.pooling.selected.class);
+		assert.ok(granted.seq < axis.seq, "a pooled review reserves before minting its decision");
+	}
+	assert.equal(store.readEvents({ kind: "stage.resolved" }).filter((event) => event.payload.budget !== null && event.payload.budget !== undefined).length, 0);
+});
+
 test("every launched worker pane carries the controller-owned runtime binding, not the source pane's environment (§6.8)", async (t) => {
 	const { answer, herdr, repoRoot, agentDir } = await runProduction(t);
 	assert.equal(answer.report.execution.members[0].disposition, "published");

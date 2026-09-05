@@ -1,4 +1,5 @@
 import { BASE_KINDS, RETRY_TIERS, STAGE_ACTIONS } from "../domain/vocabulary.mjs";
+import { mintedDispatch } from "../worker/attempt.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 import {
 	FRESH_RETRY_ROLE,
@@ -124,6 +125,7 @@ export function createRetrySeam(
 				failure,
 				priorResult,
 				route: await routed({
+					prior,
 					role: prior.role,
 					dispatched: refusedProfiles(store, { run, ticket, role: prior.role }),
 					action,
@@ -140,7 +142,7 @@ export function createRetrySeam(
 			priorResult,
 			route:
 				action === STAGE_ACTIONS.freshRetry
-					? await routed({ role: FRESH_RETRY_ROLE.name, dispatched: [], action, failure })
+					? await routed({ prior, role: FRESH_RETRY_ROLE.name, dispatched: [], action, failure })
 					: null,
 		});
 	}
@@ -152,7 +154,16 @@ export function createRetrySeam(
 	 * walk turns `routes-exhausted` into §8.10's budgetless release, so the
 	 * refusal is thrown here rather than returned as a plan naming no profile.
 	 */
-	async function routed({ role, dispatched, action, failure }) {
+	async function routed({ prior, role, dispatched, action, failure }) {
+		// A recovered lane may already hold this retry's live model slot. Its
+		// mint precedes every launch; reselecting here would reserve a second
+		// slot while replaying the prior attempt's resolved reroute (#223).
+		const existing = store.readEvents({ stream: `run:${run}`, kind: "attempt.launched" }).find((event) =>
+			event.ticket === ticket && event.payload.tier === action && event.payload.prior_attempt === prior.attempt);
+		if (existing !== undefined) {
+			const recorded = mintedDispatch(store, { run, ticket, attempt: existing.attempt });
+			if (recorded?.routing !== null) return recorded.routing;
+		}
 		if (typeof selectRoute !== "function") {
 			throw new FactoryPipelineError(
 				"retry-unplannable",
