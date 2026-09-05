@@ -127,14 +127,14 @@ The loader refuses every key it does not understand and defaults almost nothing,
 blocks are **asked for or scaffolded, never emitted as holes**:
 
 - **`checks`** — the mechanical commands the controller reruns itself. Each one declares all
-  five fields: `name` (lower-case identifier), `command`, `timeout` (whole seconds),
-  `severity` (`required` or `advisory`), and `expectedFailureExitCodes`. Nothing here is
-  discovered or defaulted, `expectedFailureExitCodes` least of all: it is the only line
-  between "the worker's code failed this check" and "this check is broken", and pytest,
-  ruff, tsc and a shell script do not agree on it. Seed the list from the repo's
-  `## Mandatory commands` section in `AGENTS.md` when it has one — that is the same section
-  `factory migrate` reads — otherwise from its Justfile, Makefile, or CI workflow, and
-  confirm every field with the user.
+  five required fields: `name` (lower-case identifier), `command`, `timeout` (whole seconds),
+  `severity` (`required` or `advisory`), and `expectedFailureExitCodes`; an advisory check may
+  also declare `feeds`. Nothing here is discovered or defaulted, `expectedFailureExitCodes`
+  least of all: it is the only line between "the worker's code failed this check" and "this
+  check is broken", and pytest, ruff, tsc and a shell script do not agree on it. Seed the list
+  from the repo's `## Mandatory commands` section in `AGENTS.md` when it has one — that is the
+  same section `factory migrate` reads — otherwise from its Justfile, Makefile, or CI workflow,
+  and confirm every field with the user.
 - **`concurrency`** — `maxTicketExecutions` (currently capped at 1; the loader refuses more)
   plus a `resources` map of resource class → slot count.
 - **`budgets`** — `repair`, `freshRetry`, and `automation`, each 1 or 2, plus
@@ -150,8 +150,8 @@ binary's own code — per-install names would make the tracker graph un-auditabl
 — and a config carrying that key is refused by name. Section B's label answers still govern
 the workflow skills; they just do not reach this file.
 
-Two traps are worth spending a question on, because each one produces a file that looks
-right and costs a whole run:
+Three traps are worth spending a question on, because each one produces a file that looks
+right and costs real time:
 
 1. **Scaffold check commands in their runner-prefixed form.** A command naming a
    dev-dependency binary directly — `just test unit`, `pytest`, `ruff check` — exits 127
@@ -167,6 +167,18 @@ right and costs a whole run:
    the active routing reaches refuses the load, and so does a sized class no declared
    routing set reaches ("Dead config lies about what will run"). Writing a `local` resource
    beside a routing that only names Claude profiles produces a file that cannot load.
+3. **`severity` says what a red result does, never what it costs.** Both severities run on
+   every verify — after every implement *and* after every repair — and `required` is
+   additionally the set the pre-run baseline executes. So an advisory check is paid for once
+   per attempt while its evidence is read once per *published* ticket: on a ticket that takes
+   two repair rounds, a ten-minute browser tier runs thirty minutes to inform one publication.
+   Advisory is the right severity for an expensive or environment-fragile class **once you
+   have decided to declare it** — what this list makes you decide first is whether it belongs
+   in `checks` at all. Declare an advisory check whose output somebody reads: a short smoke
+   suite, a mutation or complexity score, or one whose `feeds` list hands its captured output
+   to a later phase, which is the one case where every run of it is read. A long tier nobody
+   reads belongs in CI outside the factory, and saying so is a better answer than either
+   severity.
 
 After acceptance, inventory only the runtimes the user permits. `claude --version` verifies
 Claude Code without spending a model turn. Ask before contacting a self-hosted model
