@@ -3,7 +3,13 @@ import { existsSync, rmSync } from "node:fs";
 import { PHASE_INTEGRATE } from "../domain/vocabulary.mjs";
 import { requestEffect, resolveEffect } from "../effects/records.mjs";
 import { FactoryGitError, isMissingRef } from "./errors.mjs";
-import { assertFactoryRef, attemptWorktreePath, evidenceRef, integrationWorktreePath } from "./isolation.mjs";
+import {
+	assertFactoryRef,
+	attemptWorktreePath,
+	evidenceRef,
+	integrationWorktreePath,
+	isAttemptIdFor,
+} from "./isolation.mjs";
 
 /**
  * §7.5's git steps, and §7.4's **integration-side** predicates — the controller's
@@ -355,12 +361,17 @@ export async function adoptRebasedHead(clone, { branch, from, to }) {
  *    published commit nothing correlates back to a ticket execution is one the
  *    monitor, the attestation, and an incident review all lose.
  *
- * The trailer is matched on **run and ticket**, not on the attempt: §8.5's
+ * The trailer is matched on **run and ticket**, not on which attempt: §8.5's
  * repair branches from the prior attempt's tip, so its commits are legitimately
  * stamped with the attempt before it. #199 adds one explicit exception across
  * runs: a resumed execution carries the paused history's controller-verified run
  * ids, because those retained commits keep their original trailers. An arbitrary
  * run for the same ticket remains refused.
+ *
+ * **A damaged trailer is not a missing one** (#210). Where the `<run>/<ticket>`
+ * prefix does not match, the attempt segment is read as the identity it is, and
+ * a commit it correlates is `misstamped` rather than `untrailed` —
+ * `classifyTrailers` holds the whole reading.
  *
  * **It needs no worktree.** Every question here is about commits and trees —
  * `rev-list`, `diff --check` between two revisions, trailers off a log — which
@@ -378,7 +389,9 @@ export async function adoptRebasedHead(clone, { branch, from, to }) {
  * @param {ReadonlyArray<string>} [what.acceptedRuns] prior paused executions
  *   whose retained commits are deliberately inherited by #199
  * @returns {Promise<Readonly<object>>} a verdict: `pushable`, the commit list,
- *   and — when it is not — the refusal and what git said about it
+ *   the `misstamped` trailers §8.7 records (`null` when an earlier refusal
+ *   returned before the trailer walk), and — when it is not — the refusal and
+ *   what git said about it
  */
 export async function assessIntegration(
 	clone,
@@ -400,7 +413,7 @@ export async function assessIntegration(
 	}
 
 	const allowedRuns = [...new Set([run, ...acceptedRuns])];
-	const untrailed = await untrailedCommits(clone, {
+	const { untrailed, misstamped } = await classifyTrailers(clone, {
 		worktreePath,
 		baseCommit,
 		head,
@@ -413,13 +426,22 @@ export async function assessIntegration(
 			reason: INTEGRATION_REFUSALS.trailerMissing,
 			commits,
 			untrailed,
+			misstamped,
 			detail:
-				`${untrailed.length} commit(s) carry no accepted \`${TRAILER_KEY}: <run>/${ticket}/…\` trailer. ` +
-				"§7.3 makes it mandatory and verified here, so a published commit always names an execution in this ticket's declared continuation chain.",
+				`${untrailed.length} commit(s) carry no accepted \`${TRAILER_KEY}\` trailer — neither the ` +
+				`\`<run>/${ticket}/…\` prefix nor an attempt segment naming an execution of this ticket. ` +
+				"§7.3 makes it mandatory and verified here, so a published commit always names an execution in this ticket's declared continuation chain." +
+				// Said out loud, because an operator handed a refusal and a list of
+				// shas reads every damaged trailer on the branch as the fault until
+				// something tells them it is not (#210).
+				(misstamped.length === 0
+					? ""
+					: ` ${misstamped.length} further commit(s) carry a damaged trailer whose attempt segment still names this ` +
+						"execution; those are correlated, and are not why this refused."),
 		});
 	}
 
-	return verdict({ pushable: true, commits });
+	return verdict({ pushable: true, commits, misstamped });
 }
 
 /**
@@ -597,24 +619,63 @@ async function diffCheck(clone, { worktreePath, baseCommit, head }) {
 	}
 }
 
-/** The commits with no §7.3 trailer naming an accepted ticket execution, oldest first. */
-async function untrailedCommits(clone, { worktreePath, baseCommit, head, runs, ticket }) {
+/**
+ * Every commit in the range §7.3's trailer does not plainly correlate, split by
+ * *which* of the two failures it is — oldest first, in both lists.
+ *
+ * **`untrailed`**: no `Factory-Attempt:` line at all, or one naming a ticket
+ * execution that is not among the accepted ones. Nobody stamped this commit for
+ * this ticket, and that is the case a human should look at.
+ *
+ * **`misstamped`** (#210): a line whose `<run>/<ticket>` prefix is damaged while
+ * one of its `/`-separated segments is still an accepted execution's own attempt
+ * id. A worker followed the rule and fumbled a token — and the commit is
+ * correlated regardless, because the attempt id *is* the identity tuple: §2.1
+ * spells it `<run>-t<ticket>-a<n>`, `attemptBranch` refuses a pair that
+ * disagrees, and `factoryAttemptTrailer` derives the prefix and the attempt
+ * segment from one tuple. The segment that survived therefore answers the
+ * question this predicate asks — *which ticket execution produced this commit* —
+ * carrying strictly more of the tuple than the prefix does, and reading it as
+ * unstamped discards a verified, doubly approved deliverable over a spelling.
+ *
+ * The two are told apart by `isAttemptIdFor` on a **whole** segment, so nothing
+ * but this ticket's own execution can be recognised and a trailer naming
+ * somebody else's stays a refusal.
+ *
+ * **Damage is never repaired here.** §7.5's step 4 verifies at the exact commit
+ * that will be pushed, and §7.4 compares the pushed shas against the ones
+ * verification attested — so amending a message would move the commit off the
+ * one that was measured, which is the whole failure both rules exist to make
+ * impossible. The misspelling is therefore published as the worker wrote it,
+ * and §8.7's attestation records it beside the commit.
+ */
+async function classifyTrailers(clone, { worktreePath, baseCommit, head, runs, ticket }) {
 	const format = `%H${BETWEEN_FIELDS}%(trailers:key=${TRAILER_KEY},valueonly,separator=${escaped(BETWEEN_VALUES)})${escaped(BETWEEN_COMMITS)}`;
 	const listed = await clone.git(["log", "--reverse", `--format=${format}`, `${baseCommit}..${head}`], where(worktreePath));
 
 	const wanted = runs.map((acceptedRun) => `${acceptedRun}/${ticket}/`);
-	return listed
-		.split(BETWEEN_COMMITS)
-		.map((record) => record.trim())
-		.filter((record) => record !== "")
-		.map((record) => record.split(BETWEEN_FIELDS))
-		.filter(
-			([, values = ""]) =>
-				!values
-					.split(BETWEEN_VALUES)
-					.some((value) => wanted.some((prefix) => value.trim().startsWith(prefix))),
-		)
-		.map(([sha]) => sha);
+	const untrailed = [];
+	const misstamped = [];
+
+	const namesAnAcceptedAttempt = (segment) =>
+		runs.some((acceptedRun) => isAttemptIdFor(segment, { run: acceptedRun, ticket }));
+
+	for (const record of listed.split(BETWEEN_COMMITS).map((line) => line.trim())) {
+		if (record === "") continue;
+		const [sha, values = ""] = record.split(BETWEEN_FIELDS);
+		const trailers = values
+			.split(BETWEEN_VALUES)
+			.map((value) => value.trim())
+			.filter((value) => value !== "");
+
+		if (trailers.some((value) => wanted.some((prefix) => value.startsWith(prefix)))) continue;
+
+		const damaged = trailers.find((value) => value.split("/").some((segment) => namesAnAcceptedAttempt(segment)));
+		if (damaged === undefined) untrailed.push(sha);
+		else misstamped.push(Object.freeze({ commit: sha, trailer: damaged }));
+	}
+
+	return Object.freeze({ untrailed, misstamped });
 }
 
 /** `%x1d` and friends: the byte a git format string spells in hex. */
@@ -708,13 +769,19 @@ async function asEffect(store, { hold, run, ticket, attempt, actor, at, operatio
 	});
 }
 
-function verdict({ pushable, reason = null, commits, untrailed = [], detail = null }) {
+function verdict({ pushable, reason = null, commits, untrailed = [], misstamped = null, detail = null }) {
 	return Object.freeze({
 		pushable,
 		reason,
 		detail,
 		commits: Object.freeze([...commits]),
 		untrailed: Object.freeze([...untrailed]),
+		// **An empty list and `null` are different answers**, and the earlier
+		// refusals are why: `no-commits` and `diff-check` return before the trailer
+		// walk runs at all. `[]` is "asked, and every trailer was well spelled";
+		// `null` is "never asked" — and a reader that could not tell them apart
+		// would record an unclassified range in §8.7 as a clean one.
+		misstamped: misstamped === null ? null : Object.freeze(misstamped.map((entry) => Object.freeze({ ...entry }))),
 	});
 }
 
