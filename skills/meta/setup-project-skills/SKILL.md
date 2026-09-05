@@ -167,18 +167,19 @@ right and costs real time:
    the active routing reaches refuses the load, and so does a sized class no declared
    routing set reaches ("Dead config lies about what will run"). Writing a `local` resource
    beside a routing that only names Claude profiles produces a file that cannot load.
-3. **`severity` says what a red result does, never what it costs.** Both severities run on
-   every verify — after every implement *and* after every repair — and `required` is
-   additionally the set the pre-run baseline executes. So an advisory check is paid for once
-   per attempt while its evidence is read once per *published* ticket: on a ticket that takes
-   two repair rounds, a ten-minute browser tier runs thirty minutes to inform one publication.
-   Advisory is the right severity for an expensive or environment-fragile class **once you
-   have decided to declare it** — what this list makes you decide first is whether it belongs
-   in `checks` at all. Declare an advisory check whose output somebody reads: a short smoke
-   suite, a mutation or complexity score, or one whose `feeds` list hands its captured output
-   to a later phase, which is the one case where every run of it is read. A long tier nobody
-   reads belongs in CI outside the factory, and saying so is a better answer than either
-   severity.
+3. **`severity` says what a red result does; `feeds` says what it costs.** A required check
+   runs on every verify — after every implement *and* after every repair — and is the set the
+   pre-run baseline executes. An advisory check is paid for where its evidence is read, and
+   the `feeds` list is what states that: one that feeds a later phase runs on every verify
+   too, because its captured output reaches the next prompt; one that feeds nothing runs
+   **once per published ticket**, at the publication boundary, where the attestation a human
+   opens is its only reader. So a ten-minute browser tier declared advisory with no `feeds`
+   costs ten minutes a ticket rather than thirty on a ticket that takes two repair rounds —
+   and the tradeoff is that its result appears on the pull request rather than mid-attempt.
+   Give a check `feeds` when a worker or a repair must actually see its output; leave it off
+   when only the reader of the PR will. What the list still makes you decide first is whether
+   the check belongs in `checks` at all: a long tier nobody reads belongs in CI outside the
+   factory, and saying so is a better answer than any severity.
 
 After acceptance, inventory only the runtimes the user permits. `claude --version` verifies
 Claude Code without spending a model turn. Ask before contacting a self-hosted model

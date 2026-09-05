@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { CHECK_SELECTIONS, checkRecord, runChecks } from "../../factory/lib/checks/run.mjs";
+import { CHECK_SELECTIONS, checkRecord, runChecks, selectedChecks } from "../../factory/lib/checks/run.mjs";
 import { CHECK_RESULTS } from "../../factory/lib/domain/vocabulary.mjs";
 
 /**
@@ -24,9 +24,14 @@ function workspace(t) {
 	return dir;
 }
 
-/** A declared check, with §11.6's five fields and nothing defaulted here either. */
-function check({ name = "unit", command, timeout = 30, severity = "required", expectedFailureExitCodes = [1] }) {
-	return { name, command, timeout, severity, expectedFailureExitCodes };
+/**
+ * A declared check, with §11.6's five fields and nothing defaulted here either.
+ * `feeds` is §11.6's one optional field, and the loader's own default for it is
+ * `[]` — so a check that leaves it out here means what a config leaving it out
+ * means: nothing downstream reads this check's output.
+ */
+function check({ name = "unit", command, timeout = 30, severity = "required", expectedFailureExitCodes = [1], feeds }) {
+	return { name, command, timeout, severity, expectedFailureExitCodes, ...(feeds === undefined ? {} : { feeds }) };
 }
 
 function resultOf(answer, name = "unit") {
@@ -73,7 +78,7 @@ test("nothing is inferred from a manifest or a Makefile — only the declared li
 	assert.throws(() => readFileSync(join(cwd, "inferred")), /ENOENT/);
 });
 
-test("there is no per-surface targeting: the selector is required or all, and nothing else", async () => {
+test("there is no per-surface targeting: the selector is one of §8.2's four sets, and nothing else", async () => {
 	const declared = [check({ command: "true" })];
 
 	await assert.rejects(() => runChecks(declared, { select: "changed-files", cwd: process.cwd() }), (error) => {
@@ -244,6 +249,69 @@ test("the required selection runs the required set alone, and says which it skip
 	);
 	assert.deepEqual(answer.skipped, ["e2e"]);
 	assert.equal(readFileSync(join(cwd, "ran"), "utf8"), "unit\n");
+});
+
+test("#211: the verify selection is the required set plus the advisory checks that feed a later phase", async (t) => {
+	const cwd = workspace(t);
+
+	const answer = await runChecks(
+		[
+			check({ name: "unit", command: "echo unit >> ran" }),
+			check({ name: "mutation", command: "echo mutation >> ran", severity: "advisory", feeds: ["implement"] }),
+			check({ name: "e2e", command: "echo e2e >> ran", severity: "advisory" }),
+		],
+		{ select: CHECK_SELECTIONS.verify, cwd },
+	);
+
+	// A fed check's captured output reaches the next prompt, so every run of it is
+	// read and the attempt is where it has to be paid for. The unfed one is read
+	// once, on the published attestation, and waits for the publication boundary.
+	assert.deepEqual(
+		answer.results.map((result) => result.name),
+		["unit", "mutation"],
+	);
+	assert.deepEqual(answer.skipped, ["e2e"]);
+	assert.equal(readFileSync(join(cwd, "ran"), "utf8"), "unit\nmutation\n");
+});
+
+test("#211: the publication selection is the advisory checks that feed nothing", async (t) => {
+	const cwd = workspace(t);
+
+	const answer = await runChecks(
+		[
+			check({ name: "unit", command: "echo unit >> ran" }),
+			check({ name: "mutation", command: "echo mutation >> ran", severity: "advisory", feeds: ["implement"] }),
+			check({ name: "e2e", command: "echo e2e >> ran", severity: "advisory" }),
+		],
+		{ select: CHECK_SELECTIONS.publication, cwd },
+	);
+
+	assert.deepEqual(
+		answer.results.map((result) => result.name),
+		["e2e"],
+	);
+	assert.equal(answer.ok, true, "an advisory-only set answered a verdict it has no required check to base on");
+	assert.equal(readFileSync(join(cwd, "ran"), "utf8"), "e2e\n");
+});
+
+test("#211: verify and publication partition the declaration, so §8.7 can hold every check exactly once", () => {
+	// The property the attestation depends on, asserted on the selector rather
+	// than inferred from two runs: every declared check has exactly one home, and
+	// a severity nobody here thought about lands in `publication` rather than
+	// falling out of both.
+	const declared = [
+		check({ name: "unit", command: "true" }),
+		check({ name: "mutation", command: "true", severity: "advisory", feeds: ["implement"] }),
+		check({ name: "e2e", command: "true", severity: "advisory" }),
+		check({ name: "odd", command: "true", severity: "something-nobody-declared" }),
+	];
+
+	const verify = selectedChecks(declared, CHECK_SELECTIONS.verify).map((entry) => entry.name);
+	const publication = selectedChecks(declared, CHECK_SELECTIONS.publication).map((entry) => entry.name);
+
+	assert.deepEqual(verify, ["unit", "mutation"]);
+	assert.deepEqual(publication, ["e2e", "odd"]);
+	assert.deepEqual([...verify, ...publication].sort(), declared.map((entry) => entry.name).sort());
 });
 
 // ── Output is evidence, and never embedded (§8.7, §12.1) ─────────────────────

@@ -108,6 +108,10 @@ function validateCheck(check, at, configPath) {
  * §8.2's `feeds`: the agent-borne phases an advisory check's captured output
  * reaches. Absent means `[]`; a feed on a required check, an unknown phase, or
  * `review` refuses the config rather than becoming inert policy (§11.6).
+ *
+ * **It also decides when the check is paid for** — `checks/run.mjs` states the
+ * partition and why. There is deliberately no second `phase` key here to get out
+ * of step with this one (#211).
  */
 function validateFeeds(value, severity, at, configPath) {
 	if (value === undefined) return Object.freeze([]);

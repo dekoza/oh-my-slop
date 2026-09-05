@@ -84,11 +84,16 @@ export async function harvestPhase(clone, { worktreePath, branch, baseCommit, on
  *
  * The full required set runs every time (§8.2) — per-surface targeting is
  * exactly the inference that goes wrong silently, so this function never takes a
- * caller's subset. It selects **all** of them, because §8.2's "advisory checks
- * record evidence and never block" has nowhere else to happen: §8.3's baseline
- * runs the required set alone, and §8.7's attestation carries *every* check with
- * its required flag. Advisory results are therefore in the evidence and out of
- * the verdict, which is what "never block" means.
+ * caller's subset. It selects `verify`: the required set **plus every advisory
+ * check that feeds a later agent phase**. Advisory results are therefore in the
+ * evidence and out of the verdict, which is what "never block" means.
+ *
+ * **The advisory checks that feed nothing are deferred, not dropped** (#211):
+ * they run at §7.5's publication boundary instead (`pipeline/publication.mjs`),
+ * and §8.7's attestation still carries *every* declared check with its required
+ * flag. This phase names them in `deferred` — a slot of its own rather than
+ * `runChecks`' `skipped`, because "will never run" and "runs one phase later"
+ * are different answers to an operator asking what is still outstanding.
  *
  * @param {ReadonlyArray<object>} declared the validated `checks` block (§11.6)
  * @param {{ cwd: string, env?: object, now?: () => number,
@@ -99,7 +104,7 @@ export async function harvestPhase(clone, { worktreePath, branch, baseCommit, on
  */
 export async function verifyPhase(declared, { cwd, env, now, record = (results) => results.map((result) => checkRecord(result)) }) {
 	const run = await runChecks(declared, {
-		select: CHECK_SELECTIONS.all,
+		select: CHECK_SELECTIONS.verify,
 		cwd,
 		...(env === undefined ? {} : { env }),
 		...(now === undefined ? {} : { now }),
@@ -122,7 +127,7 @@ export async function verifyPhase(declared, { cwd, env, now, record = (results) 
 			checks: Object.freeze([...records]),
 			red: Object.freeze([...run.red]),
 			unrunnable: Object.freeze(unrunnable.map((result) => result.name)),
-			skipped: Object.freeze([...run.skipped]),
+			deferred: Object.freeze([...run.skipped]),
 		}),
 	});
 }

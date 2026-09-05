@@ -92,8 +92,8 @@ test("#194: the harvest phase refuses an unstated rebase target rather than defa
 	);
 });
 
-test("a green required set verifies as passed, and every check rides as evidence (§8.2)", async (t) => {
-	const resolved = await verifyPhase([check({}), check({ name: "lint", severity: "advisory" })], {
+test("a green required set verifies as passed, and every check the attempt pays for rides as evidence (§8.2)", async (t) => {
+	const resolved = await verifyPhase([check({}), check({ name: "lint", severity: "advisory", feeds: ["implement"] })], {
 		cwd: workspace(t),
 		now: () => FIXED_NOW,
 	});
@@ -107,6 +107,7 @@ test("a green required set verifies as passed, and every check rides as evidence
 		],
 	);
 	assert.deepEqual(resolved.detail.red, []);
+	assert.deepEqual(resolved.detail.deferred, [], "a fed advisory check was deferred, and its output feeds the next prompt");
 });
 
 test("a required check failing inside its declared codes is the worker's failure (§8.2)", async (t) => {
@@ -130,12 +131,39 @@ test("a required check nobody could run is unrunnable, and outranks a genuine fa
 	assert.deepEqual(resolved.detail.unrunnable, ["types"]);
 });
 
-test("an advisory check records evidence and never blocks (§8.2)", async (t) => {
-	const resolved = await verifyPhase([check({}), check({ name: "e2e", command: "exit 3", severity: "advisory" })], {
-		cwd: workspace(t),
-		now: () => FIXED_NOW,
-	});
+test("a fed advisory check records evidence and never blocks (§8.2)", async (t) => {
+	const resolved = await verifyPhase(
+		[check({}), check({ name: "e2e", command: "exit 3", severity: "advisory", feeds: ["implement"] })],
+		{ cwd: workspace(t), now: () => FIXED_NOW },
+	);
 
 	assert.equal(resolved.outcome, "passed");
 	assert.equal(resolved.detail.checks.find((entry) => entry.name === "e2e").result, "unrunnable");
+});
+
+test("#211: an advisory check that feeds nothing is deferred to the publication boundary, and named as deferred", async (t) => {
+	// The whole of #211 at this seam. Verify runs after every implement *and*
+	// after every repair, while an unfed advisory result is read exactly once —
+	// on the attestation of the commit that gets published — so paying for it
+	// here bills every superseded attempt for evidence nobody opens. `sleep 30`
+	// is the assertion: a check that ran would make this test take half a minute,
+	// so the deferral is what makes it fast rather than what makes it pass.
+	const resolved = await verifyPhase(
+		[
+			check({}),
+			check({ name: "e2e", command: "sleep 30", severity: "advisory", timeout: 60, expectedFailureExitCodes: [] }),
+			check({ name: "mutation", command: "true", severity: "advisory", feeds: ["implement"] }),
+		],
+		{ cwd: workspace(t), now: () => FIXED_NOW },
+	);
+
+	assert.equal(resolved.outcome, "passed");
+	assert.deepEqual(
+		resolved.detail.checks.map((entry) => entry.name),
+		["unit", "mutation"],
+		"the verify set is the required checks plus the advisory ones that feed a later phase",
+	);
+	// Deferred, never silently dropped: an operator reading a verify record can
+	// see which set is still outstanding.
+	assert.deepEqual(resolved.detail.deferred, ["e2e"]);
 });
