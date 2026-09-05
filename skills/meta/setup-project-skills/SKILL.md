@@ -32,6 +32,15 @@ Most repos here have **two** surfaces, and conflating them is the failure this c
 The standing rule: **agents never open work tickets on the intake tracker.** A repo
 may have only an agent work tracker; the intake binding is optional.
 
+## Reference routing
+
+When both trackers are configured, write a `## Reference routing` section into the
+tracker doc. Route unqualified issue numbers (`#<number>` and `<number>`) to the agent
+work tracker and require an explicit forge qualifier for intake references. For a GitHub intake tracker, accept
+`gh:<number>` and `github:<number>`. Full tracker URLs select their own tracker. Make
+routing deterministic: a missing number on the selected tracker is an error, not a
+reason to probe the other tracker.
+
 ## Process
 
 ### 1. Explore
@@ -330,11 +339,11 @@ Then write the docs files, seeding from the templates in this skill folder:
 - [domain.md](./domain.md) — domain doc layout and consumer rules
 
 When both an agent work tracker and an intake tracker are configured, write one
-`docs/agents/issue-tracker.md` containing an **Agent work** section seeded from that
-forge's template and an **Intake** section seeded from the other's, each keeping its
-own conventions. For an "other" tracker (Jira, Linear, …), write the file from scratch
-from the user's description, keeping the same section headings — those headings are
-what consumer skills dereference.
+`docs/agents/issue-tracker.md` containing the shared `## Reference routing` section,
+an **Agent work** section seeded from that forge's template, and an **Intake** section
+seeded from the other's, each keeping its own conventions. For an "other" tracker
+(Jira, Linear, …), write the file from scratch from the user's description, keeping
+the same section headings — those headings are what consumer skills dereference.
 
 ### 5. Done
 
@@ -354,10 +363,11 @@ mechanics since these files were written, and the installed files catch up witho
 losing what the user answered or edited.
 
 One split governs every file: **answers are the user's, scaffolding is the
-template's.** Answers — the tracker bindings, label overrides, flags like "PRs as a
+skill's.** Answers — the tracker bindings, label overrides, flags like "PRs as a
 request surface", and any local edits — are preserved verbatim. Scaffolding — the
-load-bearing headings, the command mechanics under them, sections the template has
-gained (e.g. `## Robot comments`) — is brought up to the current template.
+shared sections declared above, the template headings, and their command mechanics —
+is brought up to the current skill (e.g. `## Reference routing` and
+`## Robot comments`).
 
 Per file: diff the installed doc against its template, apply the scaffolding changes,
 carry the answers over, and show the result before writing. Where a local edit and a
@@ -378,8 +388,10 @@ and, where the skill needs tracker-specific mechanics, name the section it needs
 
 > Consult the tracker doc's "Wayfinding operations" section for how _this_ repo expresses them.
 
-Every tracker template provides the same load-bearing headings, so a consumer can
-dereference them without knowing which forge is in play:
+Every tracker template provides the same load-bearing headings, and a two-tracker doc
+adds the shared routing heading, so a consumer can dereference them without knowing
+which forge is in play:
 
-`## Conventions` · `## Robot comments` · `## When a skill says "publish to the issue tracker"` ·
+`## Reference routing` (two-tracker docs) · `## Conventions` · `## Robot comments` ·
+`## When a skill says "publish to the issue tracker"` ·
 `## When a skill says "fetch the relevant ticket"` · `## Wayfinding operations`

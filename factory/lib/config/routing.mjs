@@ -15,7 +15,7 @@ import { IDENTIFIER_PATTERN, requireArray, requireDeclared, requireExactKeys, re
 const ROUTING_ROLES = Object.freeze(["implement", "freshRetry", "review"]);
 const REVIEW_ATTEMPTS = 2;
 
-const ROUTING_KEYS = Object.freeze(["roles", "rules", "fallbacks", "sets"]);
+const ROUTING_KEYS = Object.freeze(["roles", "rules", "fallbacks", "sets", "activeSet"]);
 const SET_KEYS = Object.freeze(["roles", "rules", "fallbacks"]);
 const RULE_KEYS = Object.freeze(["labelsAny", "role", "profile"]);
 const NO_ROUTING_DEFAULTS =
@@ -64,9 +64,20 @@ export function fallbacksOf(routing, role = null) {
 }
 
 /**
+ * §11.5 makes a named set first-class rather than the dormant `_postSubscription`
+ * key the loader used to ignore, and a set is selected two ways: `activeSet`,
+ * the routing this repository runs by default, and `--routing-set` on the line,
+ * for one invocation that departs from it.
+ *
+ * **The precedence is written once, here: the flag, then `activeSet`, then the
+ * file-level routing.** The two sources arrive by different routes — the flag as
+ * a per-run argument to the load, `activeSet` off the parsed document — and two
+ * places that each decide which wins are two places that come to disagree.
+ *
  * @param {object} routing the `routing` block
  * @param {Record<string, object>} profiles the validated profile table
- * @param {string | null} selected the named set this run selects, or null for the declared default
+ * @param {string | null} selected the named set this run selects, or null to take
+ *   the file's own default
  * @returns {{ block: object, active: { name: string | null, roles: object, rules: object[] }, declared: object[] }}
  *   `declared` is every routing the config carries — the default plus each named
  *   set — because §11.6's reachability question is asked of all of them.
@@ -77,10 +88,27 @@ export function validateRouting(routing, profiles, selected, configPath) {
 	const defaultRouting = validateRoutingSet(routing, profiles, "routing", configPath);
 	const sets = validateNamedSets(routing.sets, profiles, configPath);
 
+	// Resolved **whether or not this run departs from it**, for the reason a
+	// dormant set is validated as strictly as the active one: a declared default
+	// naming a set the file does not declare is broken config, and a
+	// `--routing-set` on today's line is not a repair of it.
+	const defaultName =
+		routing.activeSet === undefined
+			? null
+			: requireNonEmptyString(routing.activeSet, "routing.activeSet", configPath);
+	const declaredDefault =
+		defaultName === null ? null : requireDeclaredSet(defaultName, sets, "routing.activeSet", configPath);
+
+	const selection =
+		selected === null || selected === undefined
+			? declaredDefault
+			: requireDeclaredSet(selected, sets, "routing.sets", configPath);
+
 	const block = Object.freeze({
 		roles: defaultRouting.roles,
 		rules: defaultRouting.rules,
 		fallbacks: defaultRouting.fallbacks,
+		...(defaultName === null ? {} : { activeSet: defaultName }),
 		...(routing.sets === undefined
 			? {}
 			: {
@@ -92,25 +120,33 @@ export function validateRouting(routing, profiles, selected, configPath) {
 				}),
 	});
 
-	return { block, active: selectActive(defaultRouting, sets, selected, configPath), declared: [defaultRouting, ...sets] };
+	return { block, active: selection ?? defaultRouting, declared: [defaultRouting, ...sets] };
 }
 
 /**
- * §11.5 makes a named set first-class rather than the dormant `_postSubscription`
- * key the loader used to ignore, so the selection is a per-run input to the load
- * and an unknown name is a refusal, not a silent fall back to the default.
+ * One named set, resolved against the sets the file declares.
+ *
+ * Both §11.5 selectors come through here and **only `at` differs**: a declared
+ * default naming a set that does not exist is the same mistake as a typed one,
+ * and answering them differently is how one of the two comes to fall back to the
+ * default silently — which is precisely §11.3's refusal.
+ *
+ * @param {string} name the set asked for
+ * @param {Array<{ name: string | null }>} sets the validated named sets
+ * @param {string} at which of the two inputs asked — `routing.activeSet` for the
+ *   declared default, `routing.sets` for a name the line carried, whose mistake is
+ *   not in the file at all and whose refusal points at the sets that are
+ * @returns {object} the named set
  */
-function selectActive(defaultRouting, sets, selected, configPath) {
-	if (selected === null || selected === undefined) return defaultRouting;
-
-	const set = sets.find((candidate) => candidate.name === selected);
+function requireDeclaredSet(name, sets, at, configPath) {
+	const set = sets.find((candidate) => candidate.name === name);
 	if (set !== undefined) return set;
 
 	const declared = sets.map((candidate) => candidate.name);
 	throw new FactoryConfigError(
 		"unknown-routing-set",
-		`${configPath} declares no routing set "${selected}". Declared sets: ${declared.length === 0 ? "(none)" : declared.join(", ")}.`,
-		{ file: configPath, at: "routing.sets", found: selected, expected: declared.join("|") },
+		`${configPath} declares no routing set "${name}". Declared sets: ${declared.length === 0 ? "(none)" : declared.join(", ")}.`,
+		{ file: configPath, at, found: name, expected: declared.join("|") },
 	);
 }
 

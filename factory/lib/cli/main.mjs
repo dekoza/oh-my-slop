@@ -1,9 +1,10 @@
 import { registerArtifactProbes } from "../artifacts/probes.mjs";
 import { FactoryConfigError } from "../config/errors.mjs";
-import { loadFactoryConfig } from "../config/load.mjs";
+import { loadFactoryConfig, ROUTING_SET_FLAG } from "../config/load.mjs";
 import { registerGitProbes } from "../git/probes.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
 import { EXIT_NOT_IMPLEMENTED, EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "./exit-codes.mjs";
+import { JSON_FLAG } from "./flags.mjs";
 import { renderReport } from "./render.mjs";
 import { VERB_TABLE, VERBS } from "./verbs.mjs";
 
@@ -34,8 +35,8 @@ registerArtifactProbes(PROBES);
  */
 const OUTPUT_SCHEMA_VERSION = 1;
 
-const SYNOPSIS = "factory <verb> [args] [--json]";
-const KNOWN_FLAGS = new Set(["--json", "--help", "-h"]);
+const SYNOPSIS = `factory <verb> [args] [${JSON_FLAG}]`;
+const KNOWN_FLAGS = new Set([JSON_FLAG, "--help", "-h"]);
 
 /**
  * @param {string[]} argv arguments after the program name
@@ -135,7 +136,15 @@ async function dispatch(parsed, context) {
 	let loaded = null;
 	if (verb.requiresConfig) {
 		try {
-			loaded = loadFactoryConfig({ cwd: context.cwd });
+			// §11.5's per-run selector, read here because the load is what it
+			// changes: a verb handler could not apply it without loading the config
+			// a second time. A verb that does not declare the flag never reaches
+			// this line with one — an undeclared flag refused as unknown above — so
+			// the value is read without asking which verb is running.
+			loaded = loadFactoryConfig({
+				cwd: context.cwd,
+				routingSet: parsed.values.get(ROUTING_SET_FLAG) ?? null,
+			});
 		} catch (error) {
 			if (!(error instanceof FactoryConfigError)) throw error;
 			return failure(
@@ -176,10 +185,12 @@ async function dispatch(parsed, context) {
  */
 async function run(parsed, verb, loaded, context) {
 	const answered = await verb.handler({
-		// `loaded` is null for the one verb §11.8 exempts from the load, and every
+		// `loaded` is null for the two verbs exempt from the load, and every
 		// config-derived field is null with it — `migrate` reads the file this
-		// binary could not load, from `cwd`, which is why the invocation directory
-		// is handed over beside the settled config rather than instead of it.
+		// binary could not load and `stop` walks up to the repository whose state
+		// holds the run, both from `cwd`, which is why the invocation directory is
+		// handed over beside the settled config rather than instead of it
+		// (§10.5, §11.8).
 		cwd: context.cwd,
 		repoRoot: loaded?.repoRoot ?? null,
 		configPath: loaded?.configPath ?? null,
@@ -291,11 +302,22 @@ export function renderHuman(value) {
 	return `${lines.join("\n")}\n`;
 }
 
-function parseArgv(argv) {
+/**
+ * The token sort every invocation goes through: verb, positionals, flags, and
+ * the values riding them.
+ *
+ * Exported for one reason — #213's relaunched line has to be read back by the
+ * same reader the pane's controller will read it with. A suite that re-derived
+ * "a token starting with `-` is a flag" would agree with itself while the two
+ * processes disagreed, which is the failure that ticket is about.
+ *
+ * @param {string[]} argv arguments after the program name
+ */
+export function parseArgv(argv) {
 	const args = [];
 	const flags = [];
 	const values = new Map();
-	const json = argv.includes("--json");
+	const json = argv.includes(JSON_FLAG);
 	let verb = null;
 	let help = false;
 

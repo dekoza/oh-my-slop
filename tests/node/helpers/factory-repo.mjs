@@ -53,6 +53,33 @@ export function cloneValidConfig() {
 }
 
 /**
+ * `VALID_CONFIG` plus one alternative §11.5 routing set, and a profile only that
+ * set reaches — so a selection is visible in the capacity plan as a different
+ * resource class rather than only as a different profile name.
+ *
+ * One fixture rather than one per suite: the loader's semantics, the CLI's flag,
+ * and the detached launcher's argv all need a config with a set to select, and
+ * three copies of it are three things to keep in step.
+ *
+ * @param {{ activeSet?: string }} [options] `activeSet` declares the set as the
+ *   file's own default; omitted, the file-level routing stays the default
+ */
+export function cloneConfigWithRoutingSet({ activeSet } = {}) {
+	const config = cloneValidConfig();
+	config.profiles.remote = { kind: "pi", model: "openrouter/glm-5.2" };
+	config.routing.sets = {
+		"post-subscription": {
+			roles: { implement: "remote", freshRetry: "remote", review: ["remote", "remote"] },
+			rules: [],
+		},
+	};
+	config.concurrency.resources.openrouter = 2;
+	if (activeSet !== undefined) config.routing.activeSet = activeSet;
+
+	return config;
+}
+
+/**
  * A legacy `version: 1` file, modelled on the one this repository shipped: every
  * key §11.8 tabulates is present exactly once, so a migration test can assert
  * the whole disposition list rather than the rows a fixture happened to carry.
