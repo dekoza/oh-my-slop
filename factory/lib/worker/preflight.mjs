@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 
-import { CLAUDE_RESOURCE_CLASS, resourceClassOf } from "../config/profiles.mjs";
+import { CLAUDE_RESOURCE_CLASS } from "../config/profiles.mjs";
 import { privateClonePath, worktreesRoot } from "../git/isolation.mjs";
 import { createClaudeAdapter, proveClaudeProfileFlags } from "./claude.mjs";
 import { readSkillInventory, skillClosure, validateClosureReferences } from "./closure.mjs";
@@ -697,7 +697,6 @@ function adapterFor(kind, { state, handshake, config, cacheRoot, environment, tr
 			skillsRoots: state.skillsRoots,
 			profiles: piProfiles,
 			declaredResources,
-			requiredClasses: [...new Set(piProfiles.map((profile) => resourceClassOf({ kind: "pi", model: profile.model })))],
 			session,
 			...(transport === undefined ? {} : { transport }),
 		});

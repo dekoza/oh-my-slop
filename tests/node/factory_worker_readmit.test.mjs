@@ -160,3 +160,32 @@ test("the claude probe carries the worker binding's settings and the model flag"
 	assert.ok(args.includes("opus"));
 	assert.equal(options.env.CLAUDE_CONFIG_DIR, "/state/worker/claude");
 });
+
+test("an endpoint-bound class is probed on the machine the memo locked (#209)", async () => {
+	const endpoint = { env: "PI_LOCAL_ROUTER_BASE_URL", url: "http://gerda:11545" };
+	const bindings = [];
+	const calls = [];
+	const probeClass = createReadmissionProbe({
+		plan: { classes: [{ class: "endpoint-gerda-11545", size: 1, profiles: ["bound"] }] },
+		profiles: { bound: { kind: "pi", model: "local/qwen3", endpoint } },
+		environment: {
+			binding(session) {
+				bindings.push(session);
+				return { env: { [endpoint.env]: endpoint.url }, args: [] };
+			},
+		},
+		repoRoot: "/repo",
+		transport: {
+			runCommand: async (command, args, options) => {
+				calls.push(options);
+				return { status: 0, stdout: "ok\n", stderr: "" };
+			},
+		},
+	});
+
+	const result = await probeClass("endpoint-gerda-11545");
+
+	assert.equal(result.verdict, "admitted");
+	assert.deepEqual(bindings, [{ kind: "pi", posture: "builder", endpoint }]);
+	assert.equal(calls[0].env.PI_LOCAL_ROUTER_BASE_URL, "http://gerda:11545");
+});

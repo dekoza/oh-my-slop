@@ -85,6 +85,52 @@ test("a class only a dormant routing set reaches is not in the plan", (t) => {
 	);
 });
 
+test("the loader's reachability and the plan's pools name the same endpoint-derived classes (#209)", (t) => {
+	// §11.6 asks `classesReachedBy` for reachability across every declared
+	// routing; §9.1's plan asks it of the active one. Endpoint-derived classes
+	// are the case where the two could drift apart silently — the loader would
+	// size a machine the scheduler never arbitrates over — so this asks both.
+	const bind = (url) => ({ env: "PI_LOCAL_ROUTER_BASE_URL", url });
+	const { config, activeRouting } = loaded(t, (draft) => {
+		draft.profiles.builder = { kind: "pi", model: "local/qwen3", endpoint: bind("http://rico:11545") };
+		draft.profiles.second = { kind: "pi", model: "local/qwen3", endpoint: bind("http://gerda:11545") };
+		draft.routing.roles.review = ["second", "second"];
+		draft.concurrency.resources = { "endpoint-rico-11545": 1, "endpoint-gerda-11545": 1 };
+	});
+
+	const plan = capacityPlan({ concurrency: config.concurrency, profiles: config.profiles, activeRouting });
+
+	assert.deepEqual(
+		plan.classes.map((entry) => entry.class).sort(),
+		Object.keys(config.concurrency.resources).sort(),
+		"a sized class the plan does not hold is a pool nothing arbitrates over",
+	);
+	assert.deepEqual(plan.classes, [
+		{ class: "endpoint-gerda-11545", size: 1, profiles: ["second"] },
+		{ class: "endpoint-rico-11545", size: 1, profiles: ["builder"] },
+	]);
+});
+
+test("sizing the old provider class after an endpoint is bound refuses, naming the new one (#209)", (t) => {
+	const config = cloneValidConfig();
+	config.profiles.builder = {
+		kind: "pi",
+		model: "local/qwen3",
+		endpoint: { env: "PI_LOCAL_ROUTER_BASE_URL", url: "http://rico:11545" },
+	};
+
+	assert.throws(
+		() => loadFactoryConfig({ cwd: makeRepo(t, { config }) }),
+		(error) => {
+			// The class the routing reaches is unsized, and the sentence names the
+			// key an operator migrating a `resources` map has to write instead.
+			assert.equal(error.reason, "resource-unsized");
+			assert.equal(error.details.class, "endpoint-rico-11545");
+			return true;
+		},
+	);
+});
+
 // ── Effective concurrency (§9.2, §15 case 19) ────────────────────────────────
 
 test("effective concurrency is the declared ceiling when the pools can carry it", (t) => {

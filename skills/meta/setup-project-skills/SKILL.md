@@ -121,7 +121,9 @@ A yes writes `.pi/factory.json` — the single policy file the `factory` binary 
 repository root — with the resolved repository, remote, explicit `tea` login name,
 authenticated assignee, default branch, worker profiles, routing, mechanical checks,
 concurrency sizes, and retry budgets. It also ensures `.worktrees/` is ignored. The file
-contains executable automation policy and model selectors, never endpoints or credentials.
+contains executable automation policy and model selectors, never credentials, and no
+per-profile `endpoint` — that key names a second machine, which the operator binds once
+they have one.
 For another tracker, state that the first factory release supports Gitea only and skip the
 file.
 
@@ -172,10 +174,12 @@ right and costs real time:
 2. **Derive `concurrency.resources` from the profiles you just wrote, never from a menu.**
    A class is `claude-code` for every `kind: claude` profile, and the provider segment of
    the model selector for every `kind: pi` one — `local` for `local/qwen3`, `openrouter` for
-   `openrouter/z-ai/glm-5.2`. Size exactly the classes the routing reaches: an unsized class
-   the active routing reaches refuses the load, and so does a sized class no declared
-   routing set reaches ("Dead config lies about what will run"). Writing a `local` resource
-   beside a routing that only names Claude profiles produces a file that cannot load.
+   `openrouter/z-ai/glm-5.2`. (A profile binding an `endpoint` derives its class from that
+   address instead; a setup run writes none.) Size exactly the classes the routing reaches:
+   an unsized class the active routing reaches refuses the load, and so does a sized class
+   no declared routing set reaches ("Dead config lies about what will run"). Writing a
+   `local` resource beside a routing that only names Claude profiles produces a file that
+   cannot load.
 3. **`severity` says what a red result does; `feeds` says what it costs.** A required check
    runs on every verify — after every implement *and* after every repair — and is the set the
    pre-run baseline executes. An advisory check is paid for where its evidence is read, and

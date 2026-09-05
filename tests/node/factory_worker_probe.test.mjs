@@ -34,7 +34,6 @@ function piContext(root, transport, overrides = {}) {
 		skillsRoots: [join(root, "skills")],
 		profiles: [{ name: "builder", model: "local/qwen3" }],
 		declaredResources: { local: 1 },
-		requiredClasses: ["local"],
 		transport,
 		...overrides,
 	};
@@ -179,7 +178,6 @@ test("a cloud-shaped endpoint with no router fact stays declared-only, and is no
 		piContext(root, fake.transport, {
 			profiles: [{ name: "cloudy", model: "openrouter/glm" }],
 			declaredResources: { openrouter: 4 },
-			requiredClasses: ["openrouter"],
 		}),
 	);
 
@@ -192,6 +190,58 @@ test("a cloud-shaped endpoint with no router fact stays declared-only, and is no
 		reachable: true,
 		max_instances: null,
 	});
+});
+
+test("an endpoint-bound class is observed at the address the profile declares (#209)", async (t) => {
+	const root = fixturePackage(t);
+	const fake = piTransport({ commands: skillCommandsOf(root) });
+
+	const probed = await probePiRuntime(
+		piContext(root, fake.transport, {
+			profiles: [
+				{ name: "builder", model: "local/qwen3", endpoint: { env: "PI_LOCAL_ROUTER_BASE_URL", url: "http://gerda:11545" } },
+			],
+			declaredResources: { "endpoint-gerda-11545": 1 },
+		}),
+	);
+
+	assert.equal(probed.ok, true);
+	// The class is the machine, so `/props` is asked of the machine — not of the
+	// baseUrl pi's own catalogue happens to carry for the provider.
+	assert.deepEqual(fake.calls.httpGet, ["http://gerda:11545/props"]);
+	assert.deepEqual(probed.classes["endpoint-gerda-11545"], {
+		class: "endpoint-gerda-11545",
+		declared: 1,
+		models: ["qwen3"],
+		endpoint: "http://gerda:11545",
+		reachable: true,
+		max_instances: 1,
+	});
+});
+
+test("two profiles on one endpoint are observed once, as the one pool they share (#209)", async (t) => {
+	const root = fixturePackage(t);
+	const fake = piTransport({
+		commands: skillCommandsOf(root),
+		models: [
+			{ id: "qwen3", provider: "local", baseUrl: "http://127.0.0.1:9/v1" },
+			{ id: "mistral", provider: "local", baseUrl: "http://127.0.0.1:9/v1" },
+		],
+	});
+	const endpoint = { env: "PI_LOCAL_ROUTER_BASE_URL", url: "http://gerda:11545" };
+
+	const probed = await probePiRuntime(
+		piContext(root, fake.transport, {
+			profiles: [
+				{ name: "builder", model: "local/qwen3", endpoint },
+				{ name: "reviewer", model: "local/mistral", endpoint },
+			],
+			declaredResources: { "endpoint-gerda-11545": 1 },
+		}),
+	);
+
+	assert.deepEqual(Object.keys(probed.classes), ["endpoint-gerda-11545"]);
+	assert.deepEqual(fake.calls.httpGet, ["http://gerda:11545/props"]);
 });
 
 test("an unprobeable pi runtime is a named automation failure, not an inference", async (t) => {

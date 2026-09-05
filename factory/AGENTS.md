@@ -43,6 +43,9 @@ question is which rows have become the module's job to state, not what the ceili
 - **Budget bounds are per-key**, never one block-wide `max`. — `config/defaults.mjs` · §11.6
 - **§6.8's `worker` block is *additions* to floors that live in code**, so its absent form is the
   empty addition, spelled once so no consumer branches on `undefined`. — `config/worker.mjs` · §6.8
+- **What a config may declare as a worker's environment is one predicate**, wherever it is
+  declared: UPPER_SNAKE, never a controller-owned or secret-shaped name, never an empty or
+  multi-line value. — `config/declared-env.mjs` · §6.5, §6.8
 - **A named routing set is selected by the flag, then `routing.activeSet`, then the file-level
   routing**, resolved in one place; both names refuse as `unknown-routing-set`, and `activeSet` is
   validated whether or not the flag departs from it. — `config/routing.mjs` · §11.5
@@ -162,6 +165,11 @@ question is which rows have become the module's job to state, not what the ceili
   — `capacity/slots.mjs` · §9.4, §15
 - **The resource class is derived from the profile (`resourceClassOf`), never declared**, and the
   pane bound is derived from the ceiling — **so no pane knob exists in config.** — `capacity/plan.mjs`
+- **A pool is a machine: the class is the endpoint a `kind: pi` profile binds**, and the provider
+  segment only for one binding none; the derived name is a `capacity:model:<class>:<i>` segment, so a
+  host it cannot spell refuses at load. — `config/profiles.mjs` · §9.1, §11.4
+- **A bound endpoint rides that profile's panes alone**, over the run-wide extension declaration and
+  under §6.8's isolation variables. — `worker/environment.mjs` · §11.4
 - **Slots carry no TTL**: a row records the generation of the *controller*
   lease that took it, and a superseded row is settled by probing its holder.
   — `reclaim` in `capacity/slots.mjs`, over `worker/adoption.mjs`'s probe · §5.5

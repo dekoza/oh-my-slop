@@ -43,6 +43,30 @@ if (!CONFIG_LOAD_REASONS.includes(NO_REPO_ROOT.reason)) {
 	throw new Error(`"${NO_REPO_ROOT.reason}" is the shared repo-less refusal but is not one of §11.2's reasons.`);
 }
 
+/**
+ * An `invalid-value` refusal bound to one field: `refuse(sentence, expected)`.
+ *
+ * A field with several ways to be wrong — an endpoint URL, a declared variable
+ * name — then states each of them in one sentence instead of in its own
+ * seven-line throw, and the `file`/`at`/`found` triple is written once per
+ * field rather than once per reason.
+ *
+ * @param {string} configPath
+ * @param {string} at where the offending value is written
+ * @param {unknown} found the value itself, for the structured details
+ * @returns {(sentence: string, expected: string) => never}
+ */
+export function invalidValueRefusal(configPath, at, found) {
+	return (sentence, expected) => {
+		throw new FactoryConfigError("invalid-value", `${configPath}: ${at} ${sentence}`, {
+			file: configPath,
+			at,
+			found,
+			expected,
+		});
+	};
+}
+
 export class FactoryConfigError extends Error {
 	/**
 	 * @param {string} reason machine-readable cause, one of CONFIG_LOAD_REASONS

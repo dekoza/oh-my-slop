@@ -254,7 +254,6 @@ test("a pi worker is started with exactly the binding the probe proved, plus the
 		skillsRoots,
 		profiles: [{ name: "builder", model: "local/qwen3" }],
 		declaredResources: { local: 1 },
-		requiredClasses: ["local"],
 		session: { sessionArgs },
 		transport: fake.transport,
 	});

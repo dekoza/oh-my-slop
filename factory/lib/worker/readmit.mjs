@@ -56,8 +56,9 @@ export function createReadmissionProbe({
 		}
 
 		// The class is the arbitration unit — one endpoint, one cap — so any
-		// profile on it probes the same provider. The first in declared order,
-		// deterministically.
+		// profile on it probes the same endpoint, whether that endpoint is the
+		// profile's own binding or the provider's (#209). The first in declared
+		// order, deterministically.
 		const profileName = entry.profiles[0];
 		const profile = profiles[profileName];
 		if (profile === undefined) {
@@ -67,7 +68,9 @@ export function createReadmissionProbe({
 			});
 		}
 		const kind = profile.kind;
-		const binding = environment.binding({ kind, posture: "builder" });
+		// The probe has to reach the machine the memo locked; a re-admission read
+		// off a different address would open a class nothing answered for.
+		const binding = environment.binding({ kind, posture: "builder", endpoint: profile.endpoint ?? null });
 
 		const args =
 			kind === "pi"

@@ -336,6 +336,47 @@ test("a declared extension's environment reaches the pi session, its pane export
 	assert.deepEqual(recorded.env, { PI_LOCAL_ROUTER_BASE_URL: "http://router.lab:11545" });
 });
 
+test("a profile's own endpoint overrides the run-wide extension declaration on that pane (#209)", (t) => {
+	const context = lab(t);
+	mkdirSync(join(context.home, ".pi", "agent", "extensions", "local-router"), { recursive: true });
+	writeFileSync(join(context.home, ".pi", "agent", "extensions", "local-router", "index.ts"), "export default {};\n");
+
+	const environment = prepare(context, {
+		...NO_OVERRIDES,
+		piExtensions: [
+			{
+				path: "~/.pi/agent/extensions/local-router/index.ts",
+				env: { PI_LOCAL_ROUTER_BASE_URL: "http://router.lab:11545" },
+			},
+		],
+	});
+
+	// §9.1's pool identity is the machine, so the profile's binding is what the
+	// pane must talk to — the run-wide declaration is the address for profiles
+	// that bind none.
+	const endpoint = { env: "PI_LOCAL_ROUTER_BASE_URL", url: "http://gerda:11545" };
+	const bound = environment.binding({ kind: "pi", posture: "builder", endpoint });
+	assert.equal(bound.env.PI_LOCAL_ROUTER_BASE_URL, "http://gerda:11545");
+	assert.equal(bound.paneEnv.PI_LOCAL_ROUTER_BASE_URL, "http://gerda:11545");
+
+	const unbound = environment.binding({ kind: "pi", posture: "builder" });
+	assert.equal(unbound.env.PI_LOCAL_ROUTER_BASE_URL, "http://router.lab:11545");
+	assert.equal(unbound.paneEnv.PI_LOCAL_ROUTER_BASE_URL, "http://router.lab:11545");
+});
+
+test("a bound endpoint cannot displace the isolation variables either (#209)", (t) => {
+	const context = lab(t);
+
+	const pi = prepare(context).binding({
+		kind: "pi",
+		posture: "builder",
+		endpoint: { env: "PI_CODING_AGENT_DIR", url: "http://gerda:11545" },
+	});
+
+	assert.equal(pi.env.PI_CODING_AGENT_DIR, workerConfigRoots(context.storeDir).pi);
+	assert.equal(pi.paneEnv.PI_CODING_AGENT_DIR, workerConfigRoots(context.storeDir).pi);
+});
+
 test("a declared extension environment cannot displace the isolation variables (§6.8)", (t) => {
 	const context = lab(t);
 	mkdirSync(join(context.home, ".pi", "agent", "extensions", "rogue"), { recursive: true });

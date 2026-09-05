@@ -1954,10 +1954,39 @@ pane knob is rejected for a second reason: `maxTicketExecutions: 2, maxWorkerPan
 deadlocks the review phase, and catching that statically would mean encoding the pipeline's
 pane arithmetic into the config loader anyway.
 
-**Resource classes are derived, not declared per profile.** For `kind: pi`, the class is the
-**provider segment of the model id** (`local/thinkingcap-qwen3.6-27b` → `local`); for
-`kind: claude`, the constant `claude-code`. Two profiles naming different presets on the same
-endpoint then correctly share one slot pool, **because they share one GPU**.
+**Resource classes are derived, not declared per profile.** Two profiles naming different
+presets on the same endpoint correctly share one slot pool, **because they share one GPU** —
+which is what the class is: **the endpoint a profile talks to** (#209).
+
+- **`kind: pi` with a bound `endpoint`** (§11.4) — `endpoint-<host>-<port>`, the port the
+  scheme implies when the URL omits it (`http://192.168.129.7:11545` →
+  `endpoint-192.168.129.7-11545`). The scheme is not part of the name: one host and port is one
+  machine. A host the name cannot spell — an IPv6 literal — is a **load error**, because the
+  name becomes a segment of §9.4's `capacity:model:<class>:<i>` row and that row is read back on
+  recovery.
+- **`kind: pi` with no endpoint bound** — the **provider segment of the model id**
+  (`local/thinkingcap-qwen3.6-27b` → `local`). One prefix then fronts exactly one address, pi's
+  own, so prefix and endpoint name the same pool. This is what every profile written before
+  #209 keeps. **`endpoint-…` is reserved**: a model whose provider segment claims that
+  namespace is a load error, because a provider free to spell itself into it could silently
+  share a pool with a machine.
+- **`kind: claude`** — the constant `claude-code`. Hosted providers bind no endpoint by design:
+  for Claude and for OpenRouter the pool is an **account quota** rather than a machine, and
+  `claude-code` and `openrouter` already name it.
+
+**Provider-prefix derivation held only while one prefix fronted one machine.** A second local
+box, and `local/qwen3.8-27b` on each derives one class, `local`; sizing it 2 then permits two
+attempts that may both land on the same GPU. The alternative — a router prefix per machine —
+separates the classes but leaves `worker.piExtensions[].env`'s single address global, putting
+the machine inventory in model strings where nothing validates it.
+
+> **Migration.** Binding an endpoint **changes the profile's class name**, and
+> `concurrency.resources` is keyed by class. A map that sized `local` must rename that key to
+> the endpoint-derived class for every profile that now binds one — keeping `local` only while
+> some reachable profile still binds none. The rename cannot be half-done: §11.6's two
+> reachability rules refuse an unsized active class (`resource-unsized`, which names the class
+> to write) and a sized class no routing reaches (`resource-unreachable`). A config that binds
+> no endpoint anywhere is unaffected.
 
 ### 9.2 The operator constraint is arithmetic, not a rule
 
@@ -2479,6 +2508,16 @@ Profiles carry `kind`, `model`, and optionally `effort` / `thinking` / `startupT
 because non-passing is a **recordable observation** in the handshake, not an inference. The
 last two are §6.6's two clocks, each with a code-owned default when the profile does not
 declare it.
+
+**A `kind: pi` profile may bind an `endpoint`** — `{ "env": <variable>, "url": <address> }`,
+the machine that profile's sessions talk to (#209). Both halves are declared: a variable with
+no address exports emptiness, an address no variable carries reaches no process, and the
+variable belongs to the extension supplying the provider rather than to the factory. It is the
+one profile key §9.1 derives the resource class from, and it rides only that profile's panes —
+spread over `worker.piExtensions[].env`'s run-wide declaration, under §6.8's isolation
+variables, and recorded in the run manifest beside the profile's model. **The class itself
+stays underivable from anything declared**: two profiles on one endpoint cannot be talked into
+separate pools.
 
 **`permissionMode` is removed from author control.** Permissions derive from the **role** a
 profile is bound to at dispatch. Both Claude postures use the non-interactive `dontAsk` mode,
@@ -3349,3 +3388,4 @@ touching everything twice.
 | 2026-09-05 | #210 stops a fumbled token discarding a finished deliverable. Evidence: `minder/nukem2_again` run 01M1QMBNB4F797JVZ3T8YD8PY1 ticket 1315 reached the end of the chain — verify passed, both axes approved — and integrate refused it `trailer-missing` over one commit whose trailer read `…/IÓN1315/…-t1315-a7` where `1315` belongs; the same worker had stamped its two previous commits correctly. The ticket was disposed `failed` / `automation`, and the work survived only because §7.7 retains the branch in the private clone. §7.3 now says what the predicate was always free to read: **where the `<run>/<ticket>` prefix does not match, the attempt segment is read before the commit is called uncorrelated**. It is `<run>-t<ticket>-a<n>`, `attemptBranch` refuses a pair that disagrees, and `factoryAttemptTrailer` derives both it and the prefix from one tuple — so a segment that survived damage elsewhere answers the predicate's own question with more of the tuple than the prefix carries. Those commits are **misstamped, not untrailed**: they publish, and the text as the worker wrote it is recorded. Recognition is anchored at both ends of a whole segment (`isAttemptIdFor`, which is `attemptBranch`'s rule as a predicate rather than a refusal, so §2.1's grammar keeps one owner), so nothing but this ticket's own execution is recognisable and §6.5's refusal of somebody else's trailer is untouched; a commit with no `Factory-Attempt:` line at all stays the refusal it was, which is the half of `trailer-missing` a human should look at. **Nothing is repaired**: §7.5's step 4 verified the exact commit that will be pushed and §7.4 compares the pushed shas against it, so amending a message would move the work off the commit that was measured — which is why the read is widened rather than the message rewritten. §8.7's list gains the damaged trailers, since a spec that promised the record without naming it in the section describing the artifact would leave `attestation.mjs`'s "exactly §8.7's list, not negotiable per caller" contradicted; the field is additive, so the schema version does not move and a v1 reader stays correct. **Verify records the reading, and integrate attests that record** rather than re-deriving it at publication, the rule the commit list is already under; an empty list and a null are kept apart, because the `no-commits` and `diff-check` refusals return before the trailer walk runs and an unclassified range attested as a clean one is the silent-wrong-answer class §15 calls load-bearing. A refusal that also found damaged trailers says so, so an operator handed a sha list is not sent to audit the commits that are fine. | #210 |
 | 2026-09-05 | #211 makes a check paid for **where its evidence is read**. An advisory check can never change an outcome, so running the whole advisory set on every verify — after every implement and after every repair — pays for it once per *attempt* to produce evidence that is read once per *published ticket*. Measured on `minder/nukem2_again`'s first three drains of the #1246 map: E2E was 112 of 215 check-minutes, ~10.2 min a run, across 11 verifies that produced one published ticket. §8.2 gains two selections beside `required` and `all`, and they **partition the declaration** so §8.7 can still hold every declared check exactly once: `verify` is the required set plus every advisory check declaring `feeds`, whose captured output reaches a later prompt and is therefore read every run; `publication` is the rest, run once at §7.5's boundary — after both review axes approve, after §7.4's predicates, at the exact candidate commit, before the attestation and the push. **Durable per candidate commit**: a retry or re-entry publishing that same commit reads the results back off the attestation it already has, which is also what keeps §4.5's content-addressed attestation key answerable by a re-entry; a §9.5 re-rebase to a different commit measured a different tree and runs the set again. Advisory results still block nothing, but a failure to record the evidence or to assemble a complete attestation is an automation failure that stops the publication. `doctor --baseline` keeps `all`, because a diagnostic asked for by hand is asked for by someone who wants everything (§10.5). The tradeoff, stated rather than hidden: discovery moves later, and the answer for a workflow that needs advisory output mid-attempt is `feeds`. | #211 |
 | 2026-09-05 | #217 makes §10.5's repo-less refusal one source instead of two statements that happened to agree. After #205 the reason string, the `{ from }` detail, and §10.3's exit 1 were spelled independently in `config/discover.mjs` and `controller/stop.mjs`, and every test still passed if one side drifted — while a `--json` consumer branching on the refusal, exactly the script an operator writes after losing their escape hatch to a bad config, would start reading two answers from one verb set. `cli/no-repo-root.mjs` now holds the three: both sites read the reason and the detail from it, and the exempt verb reads the exit code, which the load reaches as the whole class of config-load failures already does. An import-time check in each closed reason set refuses a set the reason has fallen out of, and `tests/node/factory_controller_stop.test.mjs` drives a repo-less `stop` and a repo-less load and compares reason, detail keys, and exit code — the only check that covers the exit code from both directions. Not merged into one error class: the two situations differ, so the error types and the operator prose stay distinct and the test asserts the prose does not converge. §10.5 amended. | #217 |
+| 2026-09-05 | #209 makes §9.1's resource class **endpoint-derived**: a `kind: pi` profile may bind its own `endpoint` (§11.4), and its class becomes `endpoint-<host>-<port>` rather than the provider segment, which survives only as what a profile binding none derives. Provider-prefix derivation was an approximation that held while one prefix fronted one machine; a second local box makes two profiles derive one class and a size of 2 double-books one GPU, and `worker.piExtensions[].env` is run-wide, so the second machine had no address at all. The rejected alternative — a router prefix per machine — separates the classes but puts the machine inventory in model strings where nothing validates it. Hosted providers are unchanged: `claude-code` and `openrouter` name an account quota, which is what their pool is. The class stays derived, never declared; §9.1 carries the `concurrency.resources` migration. | #209 |

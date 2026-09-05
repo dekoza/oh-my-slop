@@ -183,7 +183,15 @@ function recordedScope(scope) {
 
 function profilePin(profiles, name) {
 	const profile = profiles[name];
-	return { profile: name, kind: profile.kind, model: profile.model };
+	// The endpoint rides along when one is bound: with two profiles free to name
+	// one model on two machines (#209), the model alone no longer says which
+	// machine an attempt ran on, and that is the fact this pin exists to keep.
+	return {
+		profile: name,
+		kind: profile.kind,
+		model: profile.model,
+		...(profile.endpoint === undefined ? {} : { endpoint: profile.endpoint.url }),
+	};
 }
 
 /**

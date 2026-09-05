@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { RETAINED_REASONS } from "../../factory/lib/capacity/slots.mjs";
 import { ADOPTION_VERDICTS } from "../../factory/lib/domain/vocabulary.mjs";
 import { runStream } from "../../factory/lib/state/events.mjs";
+import { parseCapacitySlot } from "../../factory/lib/state/leases.mjs";
 import {
 	attemptLaunched,
 	capacityPlanOf as plan,
@@ -75,6 +76,23 @@ test("the grant is an ordinary journal event on the run stream, never an effect"
 		0,
 		"nothing external mutates, so no probe is owed (§9.7)",
 	);
+});
+
+test("an endpoint-derived class takes and reads back its row, dotted host and all (#209)", async (t) => {
+	// §9.1 spells a host into the class segment, so the row grammar has to admit
+	// one — in the spelling `acquire` gates on as much as in the one that parses
+	// it back. A config that loads and plans and then cannot take a slot is the
+	// failure this asks about.
+	const className = "endpoint-192.168.129.7-11545";
+	const { store, capacity } = await openPool(t, {
+		plan: plan({ classes: [{ class: className, size: 1, profiles: ["builder"] }] }),
+	});
+
+	const lane = capacity.acquireLane({ ticket: 42, resourceClass: className, at: T0 });
+
+	assert.equal(lane.model.name, `capacity:model:${className}:0`);
+	assert.equal(JSON.parse(rowOf(store, lane.model.name).identity).class, className);
+	assert.deepEqual({ ...parseCapacitySlot(lane.model.name) }, { pool: "model", class: className, index: 0 });
 });
 
 // ── Waiting is announced once, never per poll (§9.7) ─────────────────────────
