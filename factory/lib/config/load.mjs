@@ -203,6 +203,7 @@ function validateConfig(document, configPath, routingSet) {
 			roles: routings.active.roles,
 			rules: routings.active.rules,
 			fallbacks: routings.active.fallbacks,
+			pooling: routings.active.pooling,
 		}),
 	};
 }

@@ -34,6 +34,19 @@ function loaded(t, config, { routingSet = null } = {}) {
 	return loadFactoryConfig({ cwd: makeRepo(t, { config }), routingSet });
 }
 
+test("#223: pooling-only profiles reach active capacity and named sets without changing the ticket ceiling", (t) => {
+	const config = clone();
+	config.profiles.cloud = { kind: "claude", model: "opus" };
+	config.concurrency.resources["claude-code"] = 5;
+	config.routing.pooling = { implement: ["builder", "cloud"], review: [["cloud", "builder"], null] };
+	const result = loaded(t, config);
+	assert.deepEqual(result.activeRouting.pooling, config.routing.pooling);
+	assert.equal(result.config.concurrency.maxTicketExecutions, 1);
+	config.routing.sets = { pooled: { ...config.routing } };
+	delete config.routing.pooling;
+	assert.deepEqual(loaded(t, config, { routingSet: "pooled" }).activeRouting.pooling, result.activeRouting.pooling);
+});
+
 // ── Checks: five required fields and one declared feed (§11.6) ──────────────
 
 test("every check declares all five fields, and a missing one names itself", (t) => {

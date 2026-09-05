@@ -1988,6 +1988,11 @@ the machine inventory in model strings where nothing validates it.
 > to write) and a sized class no routing reaches (`resource-unreachable`). A config that binds
 > no endpoint anywhere is unaffected.
 
+**Automatic pooling (#223) does not add capacity.** Explicit §11.5 candidate lists choose among
+these same classes by held model slots / declared size. All roles and adopted holds count;
+multiple profiles sharing a class neither multiply its capacity nor weight its rank. The sum of
+model pools is not permission to run that many tickets; §9.3's ceiling remains 1.
+
 ### 9.2 The operator constraint is arithmetic, not a rule
 
 > Local work runs on a single GPU on `rico`, one model at a time; bounded parallelism requires
@@ -2026,6 +2031,12 @@ being parametric rather than special-cased at 1.
 attempt's model-resource slot together, before the Gitea claim** (§3.3). This is also what
 makes local-only-is-sequential *structurally* true rather than merely arithmetically true: a
 second ticket can never be claimed while rico's one slot is held.
+
+**Pooled selection is provisional until acquisition succeeds.** Acquisition of the initial pair
+is atomic: failure leaves neither newly held. An acquisition race reconsiders current eligible
+capacity before any claim or launch. Each review attempt acquires its own model slot under the
+already-held ticket slot, before minting a new pooled decision. Recovery uses the minted profile
+and its class, not a new utilization decision; observations never prove ownership.
 
 **Representation: discrete named rows, not a counter** — `capacity:ticket:0…N-1` and
 `capacity:model:<class>:0…M-1`, each CAS-held on §4.6's lease primitive. **A slot row names its
@@ -2077,7 +2088,8 @@ map rules out a private generated task graph and §10 rules out the resident wor
 in-memory ready-queue is that same object with a shorter lifetime.
 
 The loop is: *while a slot is free and the live frontier is non-empty, take the lowest-numbered
-claimable ticket; otherwise wait for a ticket execution to terminate.*
+claimable ticket; otherwise wait for a ticket execution to terminate or relevant model capacity
+to become free, including between phases while its ticket remains in progress.*
 
 > **Starvation is structurally impossible rather than defended against.** The frontier is
 > finite, every ticket execution reaches a terminal disposition, and §8.9's dispositions remove
@@ -2085,6 +2097,10 @@ claimable ticket; otherwise wait for a ticket execution to terminate.*
 
 **Backpressure is simply not claiming.** The tracker holds the backlog; an unclaimed ticket is
 the honest representation of unstarted work. Nothing is buffered and no intent is queued.
+
+With pooling, all admitted candidate classes busy means wait: no claim, worker launch, budget
+charge, or failure attribution. Waiting is bounded-rate and interruptible by stop, abandon, and
+lease loss; it never busy-spins. Provider-exhausted candidates retain §9.8's separate semantics.
 
 **Draining** = stop claiming new tickets; let every in-flight ticket execution run to its
 terminal disposition, integration included. Slots are released and never refilled; the run exits
@@ -2128,6 +2144,10 @@ working or all of them are queued behind rico's single slot:
 - `status` and `doctor` print the **declared ceiling, the effective concurrency, and per class:
   size, held, waiting.** A config saying 4 while routing resolves entirely to `local` is a
   comfortable lie, and effective concurrency is what makes it visible.
+- Every selectable pooled profile participates in preflight; capacity planning and human/JSON
+  reports include each reachable class once. A pooled route records candidate order, per-profile
+  availability, class held count and declared size, and the selected profile/class. These are
+  decision observations, never substitutes for the slot leases.
 - **No monitor amendment is needed** — the monitor is parallel-ready by construction and the
   `(run, ticket)` node already carries multiple live ticket executions.
 
@@ -2171,6 +2191,10 @@ whose every route is memo-locked at its final scheduling decision ends `capacity
 report rather than draining as though the work were done (§9.7's green-looking run that did nothing). The
 memo is the input §9.9's rerouting consumes; nothing here chooses a different profile.
 
+**Busy is not exhausted (#223).** Pooling may prefer another admitted class because of occupancy;
+that writes no exhaustion memo and spends no retry budget. Empty slots do not readmit an exhausted
+provider: the same probe gate still applies, including fallback and terminal-outcome semantics.
+
 ### 9.9 Dispatch reroutes around an exhausted class (#155)
 
 §9.8 remembers that a class is unavailable and holds dispatch off it. Holding is the right answer when
@@ -2187,6 +2211,15 @@ blip is a poor moment to discover which one the code picked. **An unknown profil
 (§11.3), never a silent fall back to the default; a repeat within one order is one too. An absent block
 is the empty addition, in the shape §6.8's `worker` block already has, and a routing that declares none
 dispatches exactly as it did before this existed.
+
+**Explicit pooling (#223).** For a pooled role/axis, §11.5's candidate order replaces the legacy
+head-plus-fallback order, without appending any inferred or fallback profiles. Exclude profiles
+already refused for this attempt's routing role, memo-blocked classes, and classes with no free
+slot. Rank the remaining distinct classes by `held / size` ascending, comparing ratios exactly
+by cross multiplication. Ties use first appearance in candidate order; the first eligible profile
+of the winning class runs. No randomness, round-robin state, or inferred model candidates.
+Repair and fresh-retry policy are unchanged; review axes remain sequential and independent,
+with both verdicts completed and their blocking sets unioned in axis order.
 
 **A route is one decision, made once and recorded once.** §11.5's dispatch and §9.8's memo are one
 question — *which profile may this run spend, and from which pool* — because the class names the slot
@@ -2583,6 +2616,30 @@ fallback**.
   question — nothing was judged, a provider declined to serve the attempt, and the work has to happen
   somewhere else.
 
+**Opt-in pooling (#223)** is an optional `pooling` block in the file-level routing or a named
+set, for `implement` and each `review` axis only:
+
+```json
+"pooling": {
+  "implement": ["gpt", "claude"],
+  "review": [["gpt", "claude"], null]
+}
+```
+
+Absent keys (or a `null` review axis) keep legacy routing; an enabled list must be non-empty,
+contain declared profiles once each, and have every reached active class sized. Review, when
+present, has exactly two entries. `freshRetry` and repair cannot be pooled. A non-empty fallback
+order and pooling for the same role/axis is ambiguous and refuses at load time: eligibility and
+provider-exhaustion fallback are different permissions. A matching label rule is authoritative
+and **disables pooling for that role** (both axes for a review rule), retaining its existing
+profile and exhaustion-fallback semantics. Multiple matching rules still refuse before work.
+No rule-level pooling shorthand exists; unknown keys refuse rather than guessing an override.
+
+**Migration/no-change path.** Existing configurations require no edit: fallbacks alone never
+enable balancing. To opt in, declare the ordered list, move any same-role fallback permissions
+into it deliberately, and size its newly reachable classes. Removing the block restores legacy
+routing; remove resource sizes only when no declared routing reaches those classes anymore.
+
 **Opus/Fable on pi is a load-time validation error naming the offending profile, never
 coercion** — then re-asserted at launch against the *observed* runtime. A config that validates
 still proves nothing about what executes.
@@ -2634,7 +2691,7 @@ by hand.
 
 - `1 ≤ maxTicketExecutions ≤ MAX_SUPPORTED_TICKET_CONCURRENCY`; every size `≥ 1`.
 - A class reachable from the **active** routing **must** have an entry — missing is a load
-  error, never an assumed 1. **Reachable includes §11.5's `fallbacks`**: §9.9 dispatches into a
+  error, never an assumed 1. **Reachable includes §11.5's `pooling` and `fallbacks`**: §9.9 dispatches into a
   fallback's class and takes a slot from that class's pool, so an unsized one would surface at the
   moment a quota blip made it the only way forward.
 - A class reachable from any **declared named set** **may** have one, so sizing `local` today
@@ -3193,6 +3250,20 @@ proves the knob and not the scheduler):
 > Cases **5, 7, 10, and 17** are the load-bearing ones: each is a **silent wrong answer** rather
 > than a crash, and those are the failures that survive into production disguised as "it seems
 > slow" or "it said it was done".
+
+**Automatic pooling (#223), hermetic obligations — not the live ceiling gate.** With candidate
+classes GPT then Claude sized 2 and 5: empty ties choose GPT reproducibly; with GPT held 1/2,
+Claude at 0/5 or 2/5 wins. GPT full and Claude empty admits implementation and review on Claude;
+both full wait without new claims, launches, budget or attribution. Release between phases wakes
+waiting eligible work without ending the releasing ticket; waits remain stoppable and bounded-rate.
+Mixed-role demand, competing acquisitions, shared-class profiles, and adopted holds never exceed
+class sizes or skew ranking. Lost acquisition leaks neither slot nor claim. Exhausted providers
+stay excluded until probe admission; legacy routing and label overrides remain unchanged. Both
+review axes use only their candidates and preserve verdict order/union; repair remains pinned.
+Loader, preflight, human/JSON reports and recovery agree on reachable classes, selected profiles
+and held slots. Invalid/ambiguous declarations fail closed. Exercise multiple ticket lanes through
+the capacity-parametric seam; keep `MAX_SUPPORTED_TICKET_CONCURRENCY = 1`, with no override switch.
+No live model sessions or consumer configuration changes belong to these obligations.
 
 **Retention and cleanup.** malicious `../` artifact paths (unexpressible by construction) · binary
 logs · digest mismatch · stale cleanup plans · live leases and sessions · failed and paused runs ·
