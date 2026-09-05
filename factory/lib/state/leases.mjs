@@ -39,6 +39,9 @@ export const LEASE_NAMES = Object.freeze({
  */
 const CLASS_SEGMENT = "[0-9A-Za-z.-]+";
 
+/** The same segment as a predicate for declarations that derive a model row. */
+export const CAPACITY_MODEL_CLASS_PATTERN = new RegExp(`^${CLASS_SEGMENT}$`);
+
 /**
  * §4.6's objects are a closed set, and `acquire` refuses anything outside it.
  * That is what makes "**there is no worktree lease**" a property of the code
