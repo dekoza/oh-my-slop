@@ -1,5 +1,4 @@
 import { reserveModelRoute } from "../capacity/selection.mjs";
-
 import { FactoryCapacityError } from "../capacity/errors.mjs";
 import { DEFAULT_EXHAUSTION_MEMO_MS } from "../capacity/exhaustion.mjs";
 import { resourceClassOf } from "../config/profiles.mjs";
@@ -140,7 +139,10 @@ export function createProductionPipeline(store, context) {
 		// implement model slot were taken for (§9.4, #155). Resolving it again
 		// here could reach a different answer — the memo moves — and the lane
 		// would then be running on a pool it never took.
-		const initialRoute = requireLaneRoute(mintedDispatch(store, { run: runOfAttempt(attempt), ticket, attempt })?.routing ?? route, { ticket, attempt });
+		const initialRoute = requireLaneRoute(
+			mintedDispatch(store, { run: runOfAttempt(attempt), ticket, attempt })?.routing ?? route,
+			{ ticket, attempt },
+		);
 		const initial = await openInitialAttempt({
 			store,
 			clone,
@@ -178,7 +180,6 @@ export function createProductionPipeline(store, context) {
 			env,
 			now,
 			capacity,
-			initialAttempt: attempt,
 			acceptedRuns: preparation.acceptedRuns,
 		};
 
@@ -197,19 +198,19 @@ export function createProductionPipeline(store, context) {
 
 		try {
 			return await walkStages(store, {
-			hold,
-			run: initial.identity.run,
-			ticket,
-			attempt,
-			phases: phaseExecutors(common),
-			nextAttempt: async (request) => {
-				const opened = await nextAttempt(request);
-				retryPlans.set(opened.attempt, opened.plan);
-				return opened;
-			},
-			budgets: lane.budgets,
-			actor: "controller",
-			now,
+				hold,
+				run: initial.identity.run,
+				ticket,
+				attempt,
+				phases: phaseExecutors(common),
+				nextAttempt: async (request) => {
+					const opened = await nextAttempt(request);
+					retryPlans.set(opened.attempt, opened.plan);
+					return opened;
+				},
+				budgets: lane.budgets,
+				actor: "controller",
+				now,
 			});
 		} finally {
 			modelReservation.slot?.release({ reason: "unused-reservation", at: now() });
@@ -460,7 +461,10 @@ async function withAttemptModelSlot(context, opened, attempt, work) {
 	let slot = context.modelReservation.slot;
 	if (slot !== null) {
 		if (slot.class !== className || (slot.attempt !== null && slot.attempt !== attempt)) {
-			throw new FactoryWorkerError("routing-ambiguous", "The held model slot does not match the minted attempt (§9.4).", { attempt, class: className, slot: slot.name });
+			throw new FactoryWorkerError(
+				"routing-ambiguous", "The held model slot does not match the minted attempt (§9.4).",
+				{ attempt, class: className, slot: slot.name },
+			);
 		}
 		context.modelReservation.slot = null;
 	}

@@ -194,6 +194,47 @@ test("#223: mixed busy/exhausted waiting wakes for a due readmission probe", asy
 	} finally { claiming = false; await running; for (const slot of held) slot.release({ reason: "test" }); }
 });
 
+test("#223: a full ticket ceiling does not repeatedly reread the tracker for spare model slots", async (t) => {
+	const { capacity } = await openCapacityPool(t, { plan: { ...plan, ticketSlots: 1 } });
+	let finish;
+	const gate = new Promise((resolve) => { finish = resolve; });
+	let reads = 0;
+	const running = schedule({ capacity, frontier: async () => { reads++; return { claimable: [1, 2] }; }, dispatch: () => dispatch(capacity),
+		execute: async () => { await gate; return { disposition: "published" }; } });
+	try {
+		await delay(60);
+		const waitingReads = reads;
+		await delay(80);
+		assert.equal(reads, waitingReads);
+	} finally { finish(); await running; }
+});
+
+test("#223: multiple ticket lanes share model limits across implementation and both review axes", async (t) => {
+	const { capacity, leases } = await openCapacityPool(t, { plan });
+	const roles = [];
+	const tickets = [1, 2, 3, 4, 5, 6];
+	await schedule({ capacity, frontier: async () => ({ claimable: tickets }), dispatch: (member) => dispatch(capacity, activeRouting, member.ticket),
+		execute: async ({ ticket, route, slots }) => {
+			assert.equal(route.class, slots.model.class);
+			roles.push([ticket, "implement"]);
+			await delay(5);
+			slots.model.release({ reason: "implement-ended" });
+			for (let axis = 0; axis < 2; axis++) {
+				const reserved = await reserveModelRoute({ capacity, ticket, profiles, order: dispatchOrder(activeRouting, { role: "review", axis }) });
+				roles.push([ticket, `review-${axis}`]);
+				assert.equal(reserved.slot.class, reserved.route.class);
+				for (const entry of capacity.occupancy()) assert.ok(entry.held <= entry.size);
+				assert.ok(leases.inspect(slots.ticket.name), "the ticket slot spans review");
+				await delay(5);
+				reserved.slot.release({ reason: "review-ended" });
+			}
+			return { disposition: "published" };
+		},
+	});
+	for (const ticket of tickets) assert.deepEqual(roles.filter(([number]) => number === ticket).map(([, role]) => role), ["implement", "review-0", "review-1"]);
+	assert.equal(leases.list("capacity:").length, 0);
+});
+
 const profiles = {
 	gpt: { kind: "pi", model: "gpt/model" },
 	claude: { kind: "claude", model: "opus" },

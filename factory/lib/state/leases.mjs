@@ -121,15 +121,7 @@ export function parseCapacitySlot(name) {
 	return null;
 }
 
-/**
- * **There is no worktree lease.** Attempt identity already makes a worktree
- * single-writer (§4.6, invariant 23), so a lock over one would be a second,
- * weaker answer to a question already settled by construction.
- *
- * @param {object} store an open store (§4.1)
- * @param {{ now?: () => number }} [options] the clock, injectable for tests
- * @returns {Readonly<object>} the registry
- */
+/** One grant inside the caller's transaction, shared by single and paired acquisition. */
 function acquireLease({ db, appendEvent }, { name, identity, event = null, fencedTo = null }, at) {
 	requireLeaseName(name);
 	const ttlMs = LEASE_TTLS[name] ?? null;
@@ -150,6 +142,15 @@ function acquireLease({ db, appendEvent }, { name, identity, event = null, fence
 	return Object.freeze({ name, token, fencingGeneration: generation, expiresAt, renewedAt: at, ttlMs, identity });
 }
 
+/**
+ * **There is no worktree lease.** Attempt identity already makes a worktree
+ * single-writer (§4.6, invariant 23), so a lock over one would be a second,
+ * weaker answer to a question already settled by construction.
+ *
+ * @param {object} store an open store (§4.1)
+ * @param {{ now?: () => number }} [options] the clock, injectable for tests
+ * @returns {Readonly<object>} the registry
+ */
 export function openLeases(store, { now = Date.now } = {}) {
 	return Object.freeze({
 		/** The registry's clock, so a holder cannot keep a second, disagreeing one. */

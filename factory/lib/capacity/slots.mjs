@@ -662,6 +662,7 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 		},
 		acquireLane,
 		acquireModel,
+		ticketAvailable: () => freeIndex(POOLS.ticket, null) !== null,
 		exhaustion,
 		/** All held rows count, including other roles and superseded/adopted lanes. */
 		occupancy: () => {

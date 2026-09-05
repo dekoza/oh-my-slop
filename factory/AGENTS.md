@@ -188,9 +188,17 @@ question is which rows have become the module's job to state, not what the ceili
   `capacity.admitted`. — `worker/readmit.mjs` · §9.8
 - **A run left holding claimable work whose every route is memo-locked at the final scheduling
   decision ends `capacity-exhausted` (exit 9)** rather than draining. — `controller/scheduler.mjs` · §9.8
-- **Dispatch answers with a route, not a class**: `dispatchOrder` is the declared profile then
-  §11.5's fallbacks for that role, and `selectRoute` takes the first candidate whose class the memo
-  has not locked. — `worker/dispatch.mjs` · §9.9, §11.5
+- **Dispatch answers with a route, not a class**: legacy uses the declared profile then fallbacks;
+  explicit pooling ranks admitted free classes by exact held/size, ties by candidate class order.
+  — `worker/dispatch.mjs` · §9.9, §11.5
+- **Pooling is opt-in per implement role and review axis**, separate from fallbacks; label rules
+  disable it, and reachability includes only selectable profiles. — `config/routing.mjs` · §11.5
+- **Initial grants commit as one lease pair; a lost acquisition holds neither** and selection is
+  reconsidered before claim or launch. — `state/leases.mjs`, `capacity/slots.mjs` · §9.4
+- **Pooled model reservations precede a new decision's mint**, and busy waits spend no budget;
+  the returned slot is a capability, never part of a route record. — `capacity/selection.mjs` · §9.4
+- **Model capacity becoming free between phases wakes scheduling**, without polling the tracker
+  on unchanged occupancy; waits honor stop, abandon and lease loss. — `controller/scheduler.mjs` · §9.6
 - **There is one implementation of §11.5's resolution**; `capacity/plan.mjs` translates its refusal
   into a capacity one and adds nothing. — `capacity/plan.mjs` · §11.5
 - **The decision is made before the claim and travels with the lane**, riding every mint
@@ -202,8 +210,8 @@ question is which rows have become the module's job to state, not what the ceili
   — `pipeline/retry.mjs` · §8.10
 - **Running out is `routes-exhausted`, one of §8.10's phase-less rows** — no attempt has it.
   — `pipeline/stages.mjs` · §8.10
-- **A route is decided by the memo alone, never by the preflight**, which proves a profile's flag
-  spelling and not that its model value resolves. — `worker/dispatch.mjs`
+- **Preflight never chooses a route**: it proves flag spelling, not model admission or available
+  slots; dispatch reads the memo and, for pooling, current occupancy. — `worker/dispatch.mjs`
 
 ## The worker seam
 
@@ -520,9 +528,8 @@ question is which rows have become the module's job to state, not what the ceili
 - **The review phase fans out from the controller**: two read-only attempts, each with its
   own entry skill, outbox, attempt identity, and **its own worktree at the reviewed commit.**
   — `pipeline/review.mjs` · §7.3, §8.4
-- **The axes run in sequence and both to completion** — neither is cancelled on
-  the other's rejection — and §11.5's `review` pair maps onto them positionally.
-  — `pipeline/review.mjs` · §8.4, §11.5, §15
+- **The axes run in sequence and both to completion**, mapped positionally; pooled automation
+  retries and recovered axes keep their minted profile and decision. — `pipeline/review.mjs` · §8.4, §11.5, §15
 - **Each axis resolves its own `stage.resolved` under its own attempt**, and the phase's own result
   is resolved by the walk under the *builder* attempt. — `pipeline/review.mjs` · §8.10
 - **`STAGE_ACTIONS.verdict` is never the walk's to take** — reaching it there means an executor

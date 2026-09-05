@@ -8,7 +8,7 @@ import { FactoryStateError } from "../state/errors.mjs";
  *
  * > *While a slot is free and the live frontier is non-empty, take the
  * > lowest-numbered claimable ticket; otherwise wait for a ticket execution to
- * > terminate.*
+ * > terminate or relevant model capacity to become available.*
  *
  * **There is no queue object.** The map rules out a private generated task
  * graph and §10 rules out the resident work queue; an in-memory ready-queue is
@@ -136,10 +136,9 @@ export async function schedule({
 	let frontierAtDecision = null;
 
 	/**
-	 * Wait for **a** ticket execution to terminate — §9.6's `otherwise` — while
-	 * still honoring an abandon that arrives after the wait began. A stop drains
-	 * and therefore keeps waiting; abandon is the only request that wakes this
-	 * boundary without a lane result.
+	 * Wait for a lane result, or a changed capacity observation when scheduling
+	 * pooled work. Only the local rows are polled, never the tracker; a due memo
+	 * wakes the probe gate too. During drain, only abandon interrupts the wait.
 	 */
 	async function awaitOne({ observed = null, retry = false, readmitAt = null } = {}) {
 		for (;;) {
@@ -150,7 +149,11 @@ export async function schedule({
 			if (lane === null) {
 				if (abandoning()) return false;
 				capacity.assertActive();
-				if (observed !== null && (!claiming() || retry || JSON.stringify(capacity.occupancy()) !== observed || (readmitAt !== null && at() >= readmitAt))) return false;
+				if (observed !== null) {
+					const changed = JSON.stringify(capacity.occupancy()) !== observed;
+					const probeDue = readmitAt !== null && at() >= readmitAt;
+					if (!claiming() || retry || changed || probeDue) return false;
+				}
 				continue;
 			}
 			lanes.delete(lane.ticket);
@@ -303,7 +306,7 @@ export async function schedule({
 		if (slots === null) {
 			exhaustedAtDecision = [...memoBlocked.values()];
 			if (lanes.size === 0 && !route.pooling) break;
-			await awaitOne({ observed: occupancyAtDecision, retry: Boolean(route.pooling) });
+			await awaitOne({ observed: occupancyAtDecision, retry: Boolean(route.pooling) && capacity.ticketAvailable() });
 			continue;
 		}
 
