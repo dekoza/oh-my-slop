@@ -1,5 +1,5 @@
 import { resourceClassOf } from "../config/profiles.mjs";
-import { fallbacksOf } from "../config/routing.mjs";
+import { fallbacksOf, poolingOf } from "../config/routing.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
 import { profileForRole, REVIEW_ROUTING_ROLE } from "./roles.mjs";
 
@@ -56,8 +56,9 @@ import { profileForRole, REVIEW_ROUTING_ROLE } from "./roles.mjs";
 export function dispatchOrder(activeRouting, { role, labels = [], axis = null }) {
 	const dispatched = profileForRole(activeRouting, { role, labels });
 
+	const candidates = pooledCandidates(activeRouting, { role, labels, axis });
 	if (role !== REVIEW_ROUTING_ROLE) {
-		return dedupe([dispatched, ...fallbacksOf(activeRouting, role)]);
+		return candidates ?? dedupe([dispatched, ...fallbacksOf(activeRouting, role)]);
 	}
 
 	const pair = Array.isArray(dispatched) ? dispatched : [dispatched];
@@ -71,7 +72,7 @@ export function dispatchOrder(activeRouting, { role, labels = [], axis = null })
 		);
 	}
 
-	return dedupe([pair[axis], ...(fallbacksOf(activeRouting, role)[axis] ?? [])]);
+	return candidates ?? dedupe([pair[axis], ...(fallbacksOf(activeRouting, role)[axis] ?? [])]);
 }
 
 /**
@@ -104,7 +105,8 @@ export function dispatchOrder(activeRouting, { role, labels = [], axis = null })
  * @param {number} [request.at]
  * @returns {Promise<Readonly<object>>}
  */
-export async function selectRoute({ order, profiles, exhaustion, dispatched = [], at = Date.now() }) {
+export async function selectRoute({ order, profiles, exhaustion, dispatched = [], at = Date.now(), pooled = false, capacity = null }) {
+	if (pooled) return selectPooledRoute({ order, profiles, exhaustion, dispatched, at, capacity });
 	const declared = order[0] ?? null;
 	const considered = [];
 
@@ -127,6 +129,42 @@ export async function selectRoute({ order, profiles, exhaustion, dispatched = []
 	}
 
 	return route({ profile: null, class: null, declared, considered });
+}
+
+/** Matching explicit label rules turn pooling off, never widen their permission. */
+export function pooledCandidates(routing, { role, labels = [], axis = null }) {
+	if (routing.rules.some((rule) => rule.role === role && rule.labelsAny.some((label) => labels.includes(label)))) return null;
+	return poolingOf(routing, role, axis);
+}
+
+async function selectPooledRoute({ order, profiles, exhaustion, dispatched, at, capacity }) {
+	if (capacity === null) throw new FactoryWorkerError("routing-ambiguous", "Pooled dispatch requires current capacity observations (§9.9).", { at: "capacity" });
+	const gates = new Map();
+	for (const name of order) {
+		const className = resourceClassOf(requireProfile(profiles, name));
+		if (!dispatched.includes(name) && !gates.has(className)) gates.set(className, await exhaustion.settle(className, { at }));
+	}
+	// Read all occupancy AFTER asynchronous probes. No per-profile await splits
+	// the ranking snapshot; leases, not this observation, arbitrate acquisition.
+	const occupancy = new Map(capacity.occupancy().map((seen) => [seen.class, seen]));
+	const considered = order.map((profile) => {
+		const className = resourceClassOf(requireProfile(profiles, profile));
+		const observed = occupancy.get(className);
+		if (observed === undefined) throw new FactoryWorkerError("routing-ambiguous", `Pooled class ${className} has no declared capacity.`, { at: "capacity", class: className });
+		const gate = gates.get(className);
+		const state = dispatched.includes(profile) ? "already-dispatched" : gate.state !== "available" ? "blocked" : observed.held >= observed.size ? "busy" : "available";
+		return entry({ profile, class: className, state, until: gate?.until ?? null, held: observed.held, size: observed.size });
+	});
+	let winner = null;
+	for (const seen of considered) {
+		if (seen.state !== "available") continue;
+		if (winner === null || BigInt(seen.held) * BigInt(winner.size) < BigInt(winner.held) * BigInt(seen.size)) winner = seen;
+	}
+	return Object.freeze({
+		...route({ profile: winner?.profile ?? null, class: winner?.class ?? null, declared: order[0] ?? null, considered }),
+		reason: "least-utilized eligible class; ties follow declared candidate order",
+		pooling: Object.freeze({ order: Object.freeze([...order]), selected: winner }),
+	});
 }
 
 function route({ profile, class: className, declared, considered }) {
@@ -183,6 +221,7 @@ export function routeSummary(route) {
 		rerouted: route?.rerouted ?? false,
 		reason: route?.reason ?? null,
 		considered: Object.freeze(route?.considered ?? []),
+		...(route?.pooling ? { pooling: route.pooling } : {}),
 	});
 }
 

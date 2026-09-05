@@ -645,6 +645,14 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 		acquireLane,
 		acquireModel,
 		exhaustion,
+		/** All held rows count, including other roles and superseded/adopted lanes. */
+		occupancy: () => {
+			const held = rows().map((row) => parseCapacitySlot(row.name));
+			return plan.classes.map(({ class: className, size }) => Object.freeze({
+				class: className, size,
+				held: held.filter((row) => row?.pool === POOLS.model && row.class === className).length,
+			}));
+		},
 
 		/**
 		 * The rows occupying an index under a **dead generation** — the slots a
