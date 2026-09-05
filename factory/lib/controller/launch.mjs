@@ -141,6 +141,13 @@ export async function launch({
 	// Herdr execs, so it says the resolved path this process was started from
 	// (§11.7). One string for both would be wrong for whichever it was not written
 	// for.
+	//
+	// The advice is human-facing in the other direction too: it inherits
+	// `relaunchArgs`' `JSON_FLAG` exclusion, so an operator who typed `--json`,
+	// read the refusal as JSON, and retyped this line gets human output from the
+	// foreground run. That is the right default for the reader the sentence is
+	// written for, and the wrong one for a script — which should build its line
+	// from the `--json` envelope's fields rather than from a sentence.
 	const controllerArgs = [FOREGROUND_FLAG, ...relaunchArgs({ args, flags, flagValues })];
 	const foregroundLine = `factory start ${controllerArgs.join(" ")}`;
 

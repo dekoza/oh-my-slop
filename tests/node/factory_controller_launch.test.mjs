@@ -356,8 +356,12 @@ test("a detached --new-run start opens a fresh run in the pane rather than re-en
 	const context = invocation(t, { runHerdr: scriptedHerdr().runner });
 	await runIn(context, { runId: "orphan-run-1", scope: { kind: "direct-ticket", tickets: [42] }, lease: false });
 
-	const { value } = await runCli(["start", NEW_RUN_FLAG, "43"], context);
-	assert.deepEqual(value.report.command, [context.executable, "start", FOREGROUND_FLAG, NEW_RUN_FLAG, "43"]);
+	// The scope is the orphan's own, deliberately. A *different* scope makes the
+	// dropped flag refuse as `scope-immutable`, which is loud; re-entry is silent
+	// only when the line the pane receives would have been a legitimate re-entry,
+	// and that is the failure this test exists to catch.
+	const { value } = await runCli(["start", NEW_RUN_FLAG, "42"], context);
+	assert.deepEqual(value.report.command, [context.executable, "start", FOREGROUND_FLAG, NEW_RUN_FLAG, "42"]);
 
 	const relaunched = await runCli(value.report.command.slice(1), context);
 
