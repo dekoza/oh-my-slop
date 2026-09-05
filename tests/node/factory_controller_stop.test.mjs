@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { EXIT_OK, EXIT_REFUSED } from "../../factory/lib/cli/exit-codes.mjs";
+import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "../../factory/lib/cli/exit-codes.mjs";
 import { runCli } from "../../factory/lib/cli/main.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
@@ -20,7 +21,7 @@ import { runStream } from "../../factory/lib/state/events.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
-import { makeRepo } from "./helpers/factory-repo.mjs";
+import { cloneValidConfig, makeRepo } from "./helpers/factory-repo.mjs";
 import { FIXED_NOW, herdrAnswering, leaseIdentity, makeAgentDir, makeHome } from "./helpers/factory-store.mjs";
 import { dispositionBlockIn, fakeGitea, giteaIssue } from "./helpers/factory-tracker.mjs";
 import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
@@ -228,6 +229,86 @@ test("a stop against a crashed controller still records the request: the record 
 	);
 });
 
+// ── The stop an unloadable config cannot take down (#205, §10.5) ────────────
+
+/**
+ * The operator's edit from #205: a file that loaded when the drain started and
+ * is rejected now. The running controller read its policy once, at start, so
+ * the edit never reaches the drain — and the one verb that brings that drain to
+ * a clean boundary must not be the verb the edit takes down.
+ */
+function breakConfig(context) {
+	const rejected = cloneValidConfig();
+	rejected.concurrency.maxTicketExecutions = 2;
+	writeFileSync(join(context.cwd, ".pi", "factory.json"), JSON.stringify(rejected, null, 2), "utf8");
+}
+
+test("a stop lands while the config is unloadable: the drain it ends is not reading that file", async (t) => {
+	const context = invocation(t);
+	const runId = await liveRun(context);
+	breakConfig(context);
+
+	const { exitCode, value } = await runCli(["stop"], context);
+
+	assert.equal(exitCode, EXIT_OK, "a config the drain is not reading refused the stop");
+	assert.equal(value.report.run, runId);
+
+	const store = await storeOf(t, context);
+	assert.equal(
+		store.readEvents({ stream: runStream(runId), kind: "run.stop-requested" }).length,
+		1,
+		"the stop request did not reach the run's stream",
+	);
+
+	// The same file read by a verb that does require it: the fixture is a config
+	// the loader really rejects, and the load stays fail-closed for starting work.
+	const started = await runCli(["start"], context);
+	assert.equal(started.exitCode, EXIT_USAGE);
+	assert.equal(started.value.error.kind, "config-load");
+	assert.equal(started.value.error.reason, "concurrency-ceiling");
+});
+
+test("the escalation survives the same unloadable config", async (t) => {
+	const context = invocation(t);
+	const runId = await liveRun(context);
+	breakConfig(context);
+
+	await runCli(["stop"], context);
+	const { exitCode, value } = await runCli(["stop"], context);
+
+	assert.equal(exitCode, EXIT_OK);
+	assert.equal(value.report.action, "abandon-escalated");
+
+	const store = await storeOf(t, context);
+	assert.equal(
+		store.readEvents({ stream: runStream(runId), kind: "run.abandon-requested" }).length,
+		1,
+		"the escalation did not reach the run's stream",
+	);
+});
+
+test("with no run to address, an unloadable config still gets the stop's own refusal", async (t) => {
+	const context = invocation(t);
+	breakConfig(context);
+
+	const { exitCode, value } = await runCli(["stop"], context);
+
+	assert.equal(exitCode, EXIT_REFUSED);
+	assert.equal(value.error.kind, "no-run", "the operator was answered about their config, not their run");
+});
+
+test("a stop outside any repository refuses as no-repo-root: there is no state to address", async (t) => {
+	const outside = mkdtempSync(join(tmpdir(), "factory-outside-"));
+	t.after(() => rmSync(outside, { recursive: true, force: true }));
+
+	const { exitCode, value } = await runCli(["stop"], { cwd: outside, agentDir: makeAgentDir(t) });
+
+	// §10.3's exit 1 is the operator's line being wrong, which standing outside a
+	// repository is — the same answer `migrate`, the other exempt verb, gives.
+	assert.equal(exitCode, EXIT_USAGE);
+	assert.equal(value.error.kind, "no-repo-root");
+});
+
 // ── Structure ────────────────────────────────────────────────────────────────
 
 test("the stop verb never takes the lease: it cannot race the controller it addresses", () => {
@@ -244,7 +325,7 @@ test("runStop answers from the same structured value as the CLI does", async (t)
 	const context = invocation(t);
 	const runId = await liveRun(context);
 
-	const answered = await runStop({ repoRoot: context.cwd, agentDir: context.agentDir });
+	const answered = await runStop({ cwd: context.cwd, agentDir: context.agentDir });
 
 	assert.equal(answered.exitCode, EXIT_OK);
 	assert.equal(answered.report.run, runId);

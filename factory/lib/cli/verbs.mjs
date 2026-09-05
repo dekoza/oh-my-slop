@@ -14,9 +14,22 @@ import { runStatus } from "../status/verb.mjs";
  * binary — nothing is reachable only from a pi session, because the moment
  * `doctor` matters most is when the controller is dead and possibly pi with it.
  *
- * `requiresConfig` is false for exactly one verb: `migrate` is what turns an
- * unloadable v1 file into a loadable one, so making it depend on a successful
- * load would make it unreachable precisely when it is needed.
+ * `requiresConfig` is false for two verbs, for two unrelated reasons, and for
+ * no other: the load is §11.2's fail-closed core, and every verb that decides
+ * anything from policy is gated by it.
+ *
+ * - `migrate` is what turns an unloadable v1 file into a loadable one, so
+ *   making it depend on a successful load would make it unreachable precisely
+ *   when it is needed (§11.8).
+ * - `stop` ends a run that is **already going**. The controller loaded its
+ *   policy once, at start, so an edit that breaks the file never reaches the
+ *   drain — and the verb whose whole job is to bring that drain to a clean
+ *   boundary must not be the one the edit takes down (§10.5). Its record is
+ *   written from durable repository state alone, which is why it needs nothing
+ *   the load would have settled.
+ *
+ * Both read what they need from the invocation directory, which every handler
+ * is handed whether or not a config was loaded.
  *
  * `missing` and `spec` are what a not-yet-built verb says instead of going
  * quiet: the subsystem that owes it, and the section that specifies it. A verb
@@ -87,7 +100,7 @@ export const VERB_TABLE = Object.freeze({
 		spec: "§5.4, §10.5",
 	},
 	stop: {
-		requiresConfig: true,
+		requiresConfig: false,
 		handler: runStop,
 		summary: "request a drain at the next ticket boundary",
 		spec: "§10.5",

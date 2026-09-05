@@ -46,8 +46,16 @@ question is which rows have become the module's job to state, not what the ceili
 - **A named routing set is selected by the flag, then `routing.activeSet`, then the file-level
   routing**, resolved in one place; both names refuse as `unknown-routing-set`, and `activeSet` is
   validated whether or not the flag departs from it. — `config/routing.mjs` · §11.5
-- **`factory migrate` is the only verb that writes the operator's config**, and the only verb exempt
-  from the load. — `migrate/verb.mjs` · §11.8
+- **`--routing-set` is re-typed onto the detached controller's line**, because that controller is a
+  separate process loading the config again from its own argv. — `controller/launch.mjs` · §11.5
+- **`factory migrate` is the only verb that writes the operator's config**, and one of the two
+  exempt from the load. — `migrate/verb.mjs` · §11.8
+- **`stop` is the other exemption, and the table carries both**: it ends a run whose controller
+  loaded its policy at start, so a config the loader rejects must not take it down; the load stays
+  fail-closed for every verb that decides anything from policy. — `cli/verbs.mjs` · §10.5, §11.2
+- **The exempt `stop` walks up to the repo root itself** and reads no policy file: its run, lease
+  row, and stream are durable state, and its refusals stay its own — including `no-repo-root`, the
+  one that exits 1 with §10.3's usage class. — `controller/stop.mjs` · §10.3, §10.5, §11.1
 - **§11.8's legacy-key disposition table is data**: one row maps and reports, a legacy key no row
   names refuses the migration, the five holes it leaves are `TODO` sentinels the loader hard-fails
   on, and `.pi/factory.v1.json` is preserved before anything is written. — `migrate/document.mjs` · §11.8
