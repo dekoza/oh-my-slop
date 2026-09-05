@@ -590,6 +590,9 @@ question is which rows have become the module's job to state, not what the ceili
   — `controller/start.mjs` · §3.1, §10.4
 - **Against a live holder it resolves rather than queueing**, and refuses whatever it cannot decide
   from durable state. — `controller/start.mjs` · §19
+- **The detached relaunch carries the operator's whole line**, every flag reconstructed from what
+  the verb table already validated rather than from a list of its own, so the launcher and the
+  controller it starts resolve one invocation. — `controller/launch.mjs` · §10.1
 - **A run ends at most once, and every ended run has a reason**: `run.ended` and the controller
   lease release commit in one token-checked transaction. — `controller/start.mjs`
 - **Preflight is observable, not a gate**: every check writes a `preflight.checked` stage on the

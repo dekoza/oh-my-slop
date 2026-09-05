@@ -93,6 +93,8 @@ export const NEW_RUN_FLAG = "--new-run";
  * @param {string} invocation.repoRoot
  * @param {string[]} invocation.args the scope on the line
  * @param {ReadonlySet<string>} invocation.flags
+ * @param {ReadonlyMap<string, string>} [invocation.flagValues] the values riding the
+ *   flags, which the detached launch re-types onto the line it relaunches (#213)
  * @param {object} invocation.config the validated configuration
  * @param {string} invocation.configPath
  * @param {object} invocation.activeRouting
@@ -130,6 +132,7 @@ export async function runStart({
 	repoRoot,
 	args = [],
 	flags = new Set(),
+	flagValues = new Map(),
 	config,
 	configPath,
 	activeRouting,
@@ -163,9 +166,11 @@ export async function runStart({
 	//
 	// A tracker that cannot be read is the **controller's** refusal, typed. The
 	// launcher's read serves only §10.4's answer — the controller it launches
-	// resolves the line again from `rawArgs` and refuses if it cannot — so a
-	// launcher that could not read carries the parsed scope through rather than
-	// refusing on behalf of a process that has not looked yet.
+	// resolves the relaunched line again and refuses if it cannot — so a launcher
+	// that could not read carries the parsed scope through rather than refusing
+	// on behalf of a process that has not looked yet. That relaunched line is the
+	// operator's whole invocation and not its scope alone (#213), which is what
+	// makes the second resolution reach the first one's answer.
 	const foreground = flags.has(FOREGROUND_FLAG);
 	let requested;
 	let resolvedFrom = null;
@@ -192,7 +197,9 @@ export async function runStart({
 		return launch({
 			repoRoot,
 			requested,
-			rawArgs: args,
+			args,
+			flags,
+			flagValues,
 			agentDir,
 			executable,
 			env,

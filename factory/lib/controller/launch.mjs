@@ -53,10 +53,55 @@ export const FOREGROUND_FLAG = "--foreground";
 export const CONTROLLER_PANE_ENV = "FACTORY_CONTROLLER_PANE";
 
 /**
+ * The flags that address **this** process rather than the controller, and are
+ * therefore the only ones the relaunched line leaves behind: `--foreground` is
+ * what the relaunch itself adds, and `--json` renders the launcher's report —
+ * the pane's controller prints its own.
+ */
+const LAUNCHER_FLAGS = new Set([FOREGROUND_FLAG, "--json"]);
+
+/**
+ * The operator's invocation as the relaunched controller receives it: **every
+ * flag they typed, not the scope alone.**
+ *
+ * #213: the relaunch carried the positionals only, so `factory start --parent 75`
+ * reached the pane as `factory start --foreground 75` and the controller claimed
+ * ticket 75 rather than the members of its scope, while `--new-run`, dropped the
+ * same way, re-entered the run it was told to refuse. Neither process refused,
+ * because neither compared what was asked with what was run.
+ *
+ * The line is built from **what reached the verb**, never from a list kept here.
+ * `cli/main.mjs` has already judged every flag against the verb table's
+ * declaration for `start` and refused the unknown and the misshapen, so what
+ * arrives is exactly the operator's flags — which is what makes a flag added to
+ * that table reach the pane without a second edit here. A per-flag fix closes one
+ * dropped flag and leaves the next one to be found the same way.
+ *
+ * A value rides its flag as `--name=value`, the one form `parseArgv` reads back.
+ * Flags lead and the scope follows: `parseArgv` sorts the two apart before either
+ * is used, so this is one deterministic rendering of the invocation rather than a
+ * transcript of the operator's keystrokes.
+ *
+ * @param {object} typed the invocation's line, as the CLI parsed it
+ * @param {string[]} typed.args the positional scope
+ * @param {ReadonlySet<string>} typed.flags the flags the line carried, in the order typed
+ * @param {ReadonlyMap<string, string>} typed.flagValues the values riding them
+ * @returns {string[]} the arguments after `start`
+ */
+export function relaunchArgs({ args, flags, flagValues }) {
+	const forwarded = [...flags]
+		.filter((flag) => !LAUNCHER_FLAGS.has(flag))
+		.map((flag) => (flagValues.has(flag) ? `${flag}=${flagValues.get(flag)}` : flag));
+	return [...forwarded, ...args];
+}
+
+/**
  * @param {object} invocation as the CLI assembles it
  * @param {string} invocation.repoRoot
  * @param {object | null} invocation.requested §3.1's parsed selector, or null
- * @param {string[]} invocation.rawArgs the scope exactly as the line carried it
+ * @param {string[]} invocation.args the scope exactly as the line carried it
+ * @param {ReadonlySet<string>} [invocation.flags] the flags the line carried
+ * @param {ReadonlyMap<string, string>} [invocation.flagValues] the values riding them
  * @param {string | null} [invocation.agentDir]
  * @param {string} [invocation.executable] the running binary — §11.7's anchor
  * @param {Record<string, string | undefined>} [invocation.env]
@@ -71,7 +116,9 @@ export const CONTROLLER_PANE_ENV = "FACTORY_CONTROLLER_PANE";
 export async function launch({
 	repoRoot,
 	requested,
-	rawArgs,
+	args,
+	flags = new Set(),
+	flagValues = new Map(),
 	agentDir = null,
 	executable,
 	env,
@@ -80,6 +127,14 @@ export async function launch({
 	now = Date.now,
 	mint = newUlid,
 }) {
+	// One rendering of the operator's line, read once and used by every sentence
+	// that names it: the command run in the pane, the remedy a missing Herdr
+	// prints, and the report's foreground alternative. Three renderings would be
+	// three chances for the printed line and the run one to disagree, which is
+	// #213's failure in a smaller form.
+	const relaunch = relaunchArgs({ args, flags, flagValues });
+	const foregroundLine = ["factory", "start", FOREGROUND_FLAG, ...relaunch].join(" ");
+
 	const store = await openStore({ repoRoot, agentDir });
 	try {
 		// The lock-free read: the launcher takes no lease. §10.4's resolution is
@@ -118,8 +173,7 @@ export async function launch({
 					command: availability.command,
 					message:
 						`${availability.message} The default launch is a detached Herdr pane (§10.1); ` +
-						`\`${FOREGROUND_FLAG}\` runs the run in this terminal instead: ` +
-						`factory start ${FOREGROUND_FLAG} ${rawArgs.join(" ")}`,
+						`\`${FOREGROUND_FLAG}\` runs the run in this terminal instead: ${foregroundLine}`,
 				},
 				exitCode: EXIT_REFUSED,
 			};
@@ -163,7 +217,7 @@ export async function launch({
 			};
 		}
 
-		const command = [executable, "start", FOREGROUND_FLAG, ...rawArgs];
+		const command = [executable, "start", FOREGROUND_FLAG, ...relaunch];
 		const ran = await run(["pane", "run", result.root_pane.pane_id, ...command], {
 			env,
 			binary: availability.binary,
@@ -184,7 +238,7 @@ export async function launch({
 				pane: result.root_pane.pane_id,
 				label,
 				command,
-				foreground_alternative: `factory start ${FOREGROUND_FLAG} ${rawArgs.join(" ")}`,
+				foreground_alternative: foregroundLine,
 			},
 			exitCode: EXIT_OK,
 		};
