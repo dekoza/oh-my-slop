@@ -264,6 +264,21 @@ test("#155: a provider-refused attempt is rerouted onto a profile this execution
 	);
 });
 
+test("#223: a recovered pooled builder reroute reuses its mint without reserving another model slot", async (t) => {
+	let selections = 0;
+	const context = await executing(t, { selectRoute: async () => {
+		if (selections++ > 0) throw new Error("a minted reroute must not select or reserve again");
+		return { declared: "builder", profile: "big-builder", class: "local", considered: [], pooling: { order: ["big-builder"], selected: { class: "local", held: 0, size: 1 } } };
+	} });
+	const request = asking("implement", "provider-refused", { attempt: context.attempt });
+	const first = await context.ask(request);
+	const again = await context.ask(request);
+	assert.equal(again.attempt, first.attempt);
+	assert.equal(again.plan.profile, first.plan.profile);
+	assert.deepEqual(again.plan.routing.pooling, first.plan.routing.pooling);
+	assert.equal(selections, 1);
+});
+
 test("#155: a reroute with no routable profile left refuses as its own typed answer, not as a plan", async (t) => {
 	const context = await executing(t, {
 		selectRoute: async () => ({
