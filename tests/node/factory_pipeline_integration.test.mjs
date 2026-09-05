@@ -17,7 +17,14 @@ import { resolveStage } from "../../factory/lib/pipeline/stages.mjs";
 import { LEASE_NAMES, openLeases } from "../../factory/lib/state/leases.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
-import { commitInto, moveRemoteBase, repairAttempt, workedAttempt } from "./helpers/factory-git.mjs";
+import {
+	commitInto,
+	damagedTicketSegment,
+	damagedTicketSegmentValue,
+	moveRemoteBase,
+	repairAttempt,
+	workedAttempt,
+} from "./helpers/factory-git.mjs";
 import { fakeGitea, giteaIssue, giteaPull } from "./helpers/factory-tracker.mjs";
 import { FIXED_NOW, manualTimers } from "./helpers/factory-store.mjs";
 
@@ -34,7 +41,35 @@ const git = (dir, args) => execFileSync("git", ["-C", dir, ...args], { encoding:
 const GREEN = [{ name: "unit", command: "git rev-parse HEAD", timeout: 60, severity: "required", expectedFailureExitCodes: [1] }];
 const RED = [{ name: "unit", command: "exit 1", timeout: 60, severity: "required", expectedFailureExitCodes: [1] }];
 
-async function integrating(t, { status = {}, repairs = [], ...options } = {}) {
+/**
+ * An advisory check that feeds nothing — #211's deferred set. It prints the head
+ * of the worktree it ran in, so its recorded output is proof of *which commit*
+ * the publication boundary measured.
+ */
+const deferred = (overrides = {}) => ({
+	name: "e2e",
+	command: "git rev-parse HEAD",
+	timeout: 60,
+	severity: "advisory",
+	expectedFailureExitCodes: [1],
+	...overrides,
+});
+
+/** §8.7's document, as the publication actually wrote it. */
+function attestationOf(fixture, integrated) {
+	return JSON.parse(readArtifact(fixture.store, integrated.detail.attestation).toString("utf8"));
+}
+
+/** How many executions of one check's output the store recorded (§4.5, §8.7). */
+function recordedOutputs(fixture, name) {
+	return fixture.store.read((db) =>
+		db
+			.prepare("SELECT count(*) AS n FROM effect WHERE effect_key LIKE ?")
+			.get(`%/artifact-write/check-output/${name}-%`),
+	).n;
+}
+
+async function integrating(t, { status = {}, repairs = [], checks = GREEN, ...options } = {}) {
 	let fixture = await workedAttempt(t, options);
 	for (const repair of repairs) {
 		fixture = await repairAttempt(fixture, repair);
@@ -57,7 +92,7 @@ async function integrating(t, { status = {}, repairs = [], ...options } = {}) {
 		attempt: fixture.attempt,
 		branch: fixture.branch,
 		baseBranch: "main",
-		checks: GREEN,
+		checks,
 		reader: createGiteaReader({ repo: "acme/widgets", login: "gitea", request: gitea.request }),
 		writer: createGiteaWriter({ repo: "acme/widgets", login: "gitea", request: gitea.write }),
 		ticketTitle: "feat: the work",
@@ -313,6 +348,81 @@ test("integrate publishes: predicates, plain push, one PR, and §8.7's attestati
 	assert.equal(fixture.leases.inspect(LEASE_NAMES.integration), null);
 });
 
+test("#211: the deferred advisory set is paid at the publication boundary, at the commit being pushed", async (t) => {
+	const fixture = await integrating(t, { checks: [...GREEN, deferred()] });
+
+	const verified = await integrationVerify(fixture.store, fixture.clone, fixture.context);
+	recordVerify(fixture, verified);
+	recordReview(fixture);
+
+	// Every verify — after the implement and after each repair — leaves it
+	// outstanding rather than running it.
+	assert.deepEqual(
+		verified.detail.checks.map((check) => check.name),
+		["unit"],
+	);
+	assert.deepEqual(verified.detail.deferred, ["e2e"]);
+	assert.equal(recordedOutputs(fixture, "e2e"), 0);
+
+	const integrated = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(integrated.outcome, "integrated");
+	assert.deepEqual(integrated.detail.publication_checks, { names: ["e2e"], reused: false });
+
+	// §8.7 still carries every declared check exactly once, in declaration order,
+	// with its required flag — assembled from the two sets that measured this
+	// commit rather than from one run of the whole list.
+	const document = attestationOf(fixture, integrated);
+	assert.deepEqual(
+		document.checks.map((check) => [check.name, check.result, check.required]),
+		[
+			["unit", "passed", true],
+			["e2e", "passed", false],
+		],
+	);
+	// And it ran at the **candidate commit**: the check printed the head of the
+	// worktree it was given, and that head is the one that was pushed.
+	assert.equal(readArtifact(fixture.store, document.checks[1].output).toString("utf8").trim(), integrated.detail.head);
+	assert.equal(git(fixture.remote, ["rev-parse", `refs/heads/${fixture.branch}`]), integrated.detail.head);
+});
+
+test("#211: a re-entered publication stands on the recorded result rather than paying for the tier twice", async (t) => {
+	const fixture = await integrating(t, { checks: [...GREEN, deferred()] });
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+	const published = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	// §8.10 routes `integrate × push-failed` to an automation retry, and a human
+	// merging this very PR moves the base under it (#146).
+	moveRemoteBase(t, fixture.remote);
+	const retried = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(retried.outcome, "integrated");
+	assert.deepEqual(retried.detail.publication_checks, { names: ["e2e"], reused: true });
+	assert.equal(recordedOutputs(fixture, "e2e"), 1, "the retry re-ran a set the attestation already recorded");
+	assert.equal(retried.detail.attestation.digest, published.detail.attestation.digest);
+});
+
+test("#211: a deferred advisory check that fails is evidence on the attestation and publishes anyway (§8.2)", async (t) => {
+	const fixture = await integrating(t, { checks: [...GREEN, deferred({ command: "echo survivors; exit 1" })] });
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+
+	const integrated = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(integrated.outcome, "integrated", "an advisory result at the boundary blocked a publication");
+	const document = attestationOf(fixture, integrated);
+	assert.deepEqual(
+		document.checks.map((check) => [check.name, check.result]),
+		[
+			["unit", "passed"],
+			["e2e", "failed"],
+		],
+	);
+	assert.match(integrated.detail.summary, /1 of 1 required check\(s\) green/);
+	assert.match(integrated.detail.summary, /1 advisory recorded/);
+});
+
 test("the base moving during review re-rebases and re-verifies, consuming no budget (§9.5, §15 case 10)", async (t) => {
 	const fixture = await integrating(t);
 	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
@@ -452,6 +562,64 @@ test("a commit with no §7.3 correlation trailer stops the publication (§7.3, �
 	assert.deepEqual([...integrated.detail.untrailed], [fixture.head]);
 	assert.throws(() => git(fixture.remote, ["rev-parse", "--verify", `refs/heads/${fixture.branch}`]));
 	assert.equal(fixture.gitea.pulls.length, 0);
+});
+
+test("the phase that read the trailers is the phase that records them (§8.7, #210)", async (t) => {
+	// §8.7 attests what verify measured at the commit it measured. Re-deriving the
+	// reading at publication would be a second answer to a question durable state
+	// already holds — the same rule the commit list is under.
+	const fixture = await integrating(t, { trailer: damagedTicketSegment });
+
+	const verified = await integrationVerify(fixture.store, fixture.clone, fixture.context);
+
+	assert.deepEqual(
+		verified.detail.misstamped.map((entry) => ({ ...entry })),
+		[{ commit: verified.detail.head, trailer: damagedTicketSegmentValue(fixture) }],
+	);
+});
+
+test("a fumbled trailer segment publishes, and §8.7 records that it did (§7.3, #210)", async (t) => {
+	// The whole pipeline said yes — verify passed and both axes approved — and the
+	// only thing wrong was one mangled segment of a string the worker itself
+	// wrote. Discarding the deliverable over it is the defect this closes.
+	const fixture = await integrating(t, { trailer: damagedTicketSegment });
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+
+	const integrated = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(integrated.outcome, "integrated");
+	assert.equal(fixture.gitea.pulls.length, 1);
+	const misspelling = damagedTicketSegmentValue(fixture);
+	assert.deepEqual(
+		integrated.detail.misstamped.map((entry) => ({ ...entry })),
+		[{ commit: integrated.detail.head, trailer: misspelling }],
+	);
+
+	// Recorded where an incident review reads, not only in the journal: §8.7's
+	// attestation is the immutable statement of what was published.
+	const attested = JSON.parse(readArtifact(fixture.store, integrated.detail.attestation).toString("utf8"));
+	assert.deepEqual(attested.integration.misstamped, [{ commit: integrated.detail.head, trailer: misspelling }]);
+});
+
+test("a verify record written before #210 is attested from the re-derivation, never as clean (§8.7, #210)", async (t) => {
+	// The upgrade window: an execution that verified under the old code reaches
+	// integrate with no trailer reading on its record. Attesting that absence as
+	// an empty list would state the damaged trailer was not there, so the range —
+	// which is the recorded one, at the recorded head — is read again instead.
+	const fixture = await integrating(t, { trailer: damagedTicketSegment });
+	const verified = await integrationVerify(fixture.store, fixture.clone, fixture.context);
+	const { misstamped, ...beforeThisTicket } = verified.detail;
+	recordVerify(fixture, { outcome: verified.outcome, detail: beforeThisTicket });
+	recordReview(fixture);
+
+	const integrated = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(integrated.outcome, "integrated");
+	const attested = JSON.parse(readArtifact(fixture.store, integrated.detail.attestation).toString("utf8"));
+	assert.deepEqual(attested.integration.misstamped, [
+		{ commit: integrated.detail.head, trailer: damagedTicketSegmentValue(fixture) },
+	]);
 });
 
 test("publishing twice is the committed publication, not a second PR or a second push (§7.7)", async (t) => {

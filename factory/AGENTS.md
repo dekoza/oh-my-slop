@@ -398,6 +398,9 @@ question is which rows have become the module's job to state, not what the ceili
 - **§7.4's integration-side predicates are commits-ahead, `git diff --check`, and §7.3's correlation
   trailer on every commit**, accepting only the current run/ticket and §3.4's verified inherited
   runs; they need no worktree. — `git/integrate.mjs` · §3.4, §7.3, §7.4
+- **A trailer whose prefix is damaged while its `<run>-t<ticket>-a<n>` segment names an accepted
+  execution is misstamped, not untrailed**: it publishes unrepaired, and the verify phase that
+  read it is what §8.7 attests. — `git/integrate.mjs`, `pipeline/integration.mjs` · §7.3, §8.7
 
 ## Tracker
 
@@ -553,10 +556,15 @@ question is which rows have become the module's job to state, not what the ceili
 - **The controller never classifies a citation.** — `pipeline/review.mjs` · §8.4
 - **The integration lease is acquired twice, and is a row *and* an in-process turn**: `[lease] fetch
   → evidence ref → rebase → the required set [release]`, then the two review axes with no lease
-  held, then `[lease] base unchanged? → predicates → push → PR [release]`. The row is what reconcile
-  finds after a crash, the chain is what makes a second lane wait. — `pipeline/integration.mjs` · §9.5
+  held, then `[lease] base unchanged? → predicates → deferred advisory set → attest → push → PR
+  [release]`. The row is what reconcile finds after a crash, the chain is what makes a second lane
+  wait. — `pipeline/integration.mjs` · §9.5
 - **The rebase is in `verify`, not in `integrate`** — the checks always run at the post-rebase
-  commit that will be pushed. — `pipeline/integration.mjs` · §8.2, §14.13
+  commit that will be pushed, and #211's deferred set runs at that same commit one phase later.
+  — `pipeline/integration.mjs` · §8.2, §14.13
+- **§8.7's check list is held complete against the declaration**: every declared check exactly
+  once, in declaration order, assembled from the two sets that measured the published commit — a
+  document short of one is refused rather than published. — `pipeline/attestation.mjs` · §8.7, §14.16
 - **`integrate` re-acquires under a base-commit identity precondition and loops back to re-rebase
   and re-verify, consuming no budget.** — `pipeline/integration.mjs` · §9.5
 - **A red re-verify inside §9.5's loop is `integration-red`**, carrying no automation fault.
@@ -566,8 +574,12 @@ question is which rows have become the module's job to state, not what the ceili
 
 - **The checks are declared, never discovered**: the validated `checks` block and nothing else — no
   manifest, no Makefile, and `AGENTS.md` prose is never parsed at runtime — with the selector the
-  closed pair `required | all`, so per-surface targeting is not a question the API can be asked.
-  — `checks/run.mjs` · §8.2, §14.34
+  closed set `required | all | verify | publication`, each naming where a set is paid for, so
+  per-surface targeting is not a question the API can be asked. — `checks/run.mjs` · §8.2, §14.34
+- **`verify` and `publication` partition the declaration, and `feeds` is the line**: the required
+  set plus every advisory check feeding a later phase is paid per attempt; an advisory check
+  feeding nothing is paid once, at publication. Every declared check has exactly one home.
+  — `checks/run.mjs` · §8.2
 - **`feeds` is advisory-only and names agent-borne phases**, unique, defaulting to empty; unknown
   phases and `review` refuse the config rather than becoming inert policy. — `config/checks.mjs` · §8.2, §11.6
 - **Fed evidence is selected from policy plus the verify record** and resolved through the artifact
@@ -585,6 +597,12 @@ question is which rows have become the module's job to state, not what the ceili
 - **Running a check is not an effect, but recording its output is** — keyed by the *execution*, not
   by the check alone; stdout/stderr is content-addressed and later reachable only through its ledger
   row. — `checks/artifacts.mjs` · §4.5, §8.7
+- **The deferred advisory set runs after the predicates and before the attestation**, at the exact
+  candidate commit, and a re-entry reads it back off the attestation that commit already has;
+  a different candidate commit measures again. — `pipeline/publication.mjs` · §7.5, §8.2, §8.7
+- **A resolved attestation whose bytes will not come back is `attestation-unreadable`, never a
+  re-measure**: the document is content-addressed, so a second measurement cannot rebuild it and
+  would meet §4.5's payload conflict instead. — `pipeline/attestation.mjs` · §4.5, §8.7
 - **§8.3's baseline gate is a detached throwaway worktree** under `baselines/`, deleted eagerly when
   green and retained when red, writing nothing durable; `doctor --baseline` shares that isolation
   path but not preflight's selection, running `all` and reporting advisory severity while preflight

@@ -178,7 +178,7 @@ export function attemptBranch({ ticket, attempt }) {
 		);
 	}
 	requireIdentitySegment(attempt, "attempt");
-	if (!new RegExp(`-t${ticket}-a\\d+$`).test(attempt)) {
+	if (!namesTicket(attempt, ticket)) {
 		throw new FactoryGitError(
 			"identity-mismatch",
 			`Attempt id ${attempt} does not name ticket ${ticket} (§2.1); the tuple must be readable off the branch.`,
@@ -186,6 +186,38 @@ export function attemptBranch({ ticket, attempt }) {
 		);
 	}
 	return `${FACTORY_BRANCH_PREFIX}t${ticket}/a${attempt}`;
+}
+
+/** §2.1's attempt-id tail, `-t<ticket>-a<n>` — the grammar this module owns. */
+function namesTicket(attempt, ticket) {
+	return new RegExp(`-t${ticket}-a\\d+$`).test(attempt);
+}
+
+/** The head of the same id, once the run it was minted under is known. */
+function mintedUnder(run, ticket) {
+	return `${run}-t${ticket}-a`;
+}
+
+/**
+ * Whether a string is one execution's **whole** §2.1 attempt id,
+ * `<run>-t<ticket>-a<n>` — `attemptBranch`'s rule as a predicate rather than a
+ * refusal, for the one caller that must ask without throwing.
+ *
+ * It lives here, beside the branch minter, because §2.1's grammar has exactly
+ * one owner: `attempt.mjs` already warns that two independent readers of the
+ * trailer's spelling are the drift §7.3's "verified at integration" cannot
+ * survive, and a second reader of the *attempt id's* spelling is the same
+ * hazard one field down.
+ *
+ * @param {string} candidate
+ * @param {{ run: string, ticket: number }} identity
+ * @returns {boolean}
+ */
+export function isAttemptIdFor(candidate, { run, ticket }) {
+	// Anchored at both ends — the head names the run and the ticket, the tail is
+	// the grammar `attemptBranch` refuses on — so nothing but an attempt id of
+	// this run's execution of this ticket can satisfy it.
+	return candidate.startsWith(mintedUnder(run, ticket)) && namesTicket(candidate, ticket);
 }
 
 /** §7.2's pin lands here: where one base branch's fetched tip is kept (§14.11). */

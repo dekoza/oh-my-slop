@@ -107,6 +107,21 @@ export const PIPELINE_ERROR_REASONS = Object.freeze([
 	 * it makes the claim weaker while looking exactly as strong (§14.16).
 	 */
 	"attestation-incomplete",
+	/**
+	 * §8.7: the attestation this attempt already wrote cannot be read back — its
+	 * blob expired at §12.2's horizon, was tombstoned, failed its re-hash, or will
+	 * not parse. It is separate from `attestation-incomplete` because it says
+	 * nothing about what was measured: the document was complete when it was
+	 * written, and the storage under it is what failed.
+	 *
+	 * It is fail-closed for §4.5's reason rather than §14.16's. The write is keyed
+	 * by content, so the document cannot be rebuilt from a second measurement —
+	 * two runs of one check differ in a duration — and a caller that re-measured
+	 * would meet the key's payload conflict at a point where the branch may
+	 * already be pushed. Naming the storage failure is the honest report; §8.10
+	 * retries it on the automation budget (#211).
+	 */
+	"attestation-unreadable",
 ]);
 
 export class FactoryPipelineError extends Error {
