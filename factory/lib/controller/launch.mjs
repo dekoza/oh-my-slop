@@ -1,4 +1,5 @@
 import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "../cli/exit-codes.mjs";
+import { JSON_FLAG } from "../cli/flags.mjs";
 import { newUlid } from "../identity/ulid.mjs";
 import { hasLapsed, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
@@ -53,14 +54,6 @@ export const FOREGROUND_FLAG = "--foreground";
 export const CONTROLLER_PANE_ENV = "FACTORY_CONTROLLER_PANE";
 
 /**
- * The flags that address **this** process rather than the controller, and are
- * therefore the only ones the relaunched line leaves behind: `--foreground` is
- * what the relaunch itself adds, and `--json` renders the launcher's report —
- * the pane's controller prints its own.
- */
-const LAUNCHER_FLAGS = new Set([FOREGROUND_FLAG, "--json"]);
-
-/**
  * The operator's invocation as the relaunched controller receives it: **every
  * flag they typed, not the scope alone.**
  *
@@ -70,12 +63,22 @@ const LAUNCHER_FLAGS = new Set([FOREGROUND_FLAG, "--json"]);
  * same way, re-entered the run it was told to refuse. Neither process refused,
  * because neither compared what was asked with what was run.
  *
- * The line is built from **what reached the verb**, never from a list kept here.
- * `cli/main.mjs` has already judged every flag against the verb table's
- * declaration for `start` and refused the unknown and the misshapen, so what
- * arrives is exactly the operator's flags — which is what makes a flag added to
- * that table reach the pane without a second edit here. A per-flag fix closes one
- * dropped flag and leaves the next one to be found the same way.
+ * **It forwards by exclusion**, and the exclusion is one flag long. `cli/main.mjs`
+ * has already judged every flag on the line against the verb table's declaration
+ * for `start` and refused the unknown and the misshapen, so what arrives here is
+ * exactly the operator's flags — and forwarding all of them is what makes a flag
+ * added to that table reach the pane without a second edit here. Naming the
+ * forwarded ones instead would be a second declaration of the verb's flags, and a
+ * per-flag fix closes one dropped flag while leaving the next to be found the
+ * same way.
+ *
+ * Every flag has to be re-typed rather than inherited, `--routing-set` included:
+ * the controller is a separate process that resolves its scope and loads its
+ * config again from its own argv, so a flag left behind here runs the whole run
+ * under a default nobody asked for (§11.5). The one exception is `JSON_FLAG`,
+ * which selects a rendering rather than a run — of *this* process's report, which
+ * the pane's controller does not print. `FOREGROUND_FLAG` needs no exclusion: the
+ * caller reaches this only on the branch where the operator did not type it.
  *
  * A value rides its flag as `--name=value`, the one form `parseArgv` reads back.
  * Flags lead and the scope follows: `parseArgv` sorts the two apart before either
@@ -90,7 +93,7 @@ const LAUNCHER_FLAGS = new Set([FOREGROUND_FLAG, "--json"]);
  */
 export function relaunchArgs({ args, flags, flagValues }) {
 	const forwarded = [...flags]
-		.filter((flag) => !LAUNCHER_FLAGS.has(flag))
+		.filter((flag) => flag !== JSON_FLAG)
 		.map((flag) => (flagValues.has(flag) ? `${flag}=${flagValues.get(flag)}` : flag));
 	return [...forwarded, ...args];
 }
@@ -127,13 +130,19 @@ export async function launch({
 	now = Date.now,
 	mint = newUlid,
 }) {
-	// One rendering of the operator's line, read once and used by every sentence
-	// that names it: the command run in the pane, the remedy a missing Herdr
-	// prints, and the report's foreground alternative. Three renderings would be
-	// three chances for the printed line and the run one to disagree, which is
-	// #213's failure in a smaller form.
-	const relaunch = relaunchArgs({ args, flags, flagValues });
-	const foregroundLine = ["factory", "start", FOREGROUND_FLAG, ...relaunch].join(" ");
+	// The controller's own line, minus the binary: §10.1's process-shape flag and
+	// then the operator's whole invocation. The **arguments** are built once
+	// because they are printed twice — in the `--foreground` advice a refusal
+	// carries, and as the launched command — and two spellings of one argument
+	// list is how the advice comes to drop a flag.
+	//
+	// The binary in front of them deliberately differs between the two. The advice
+	// is something a human retypes, so it says `factory`; the command is something
+	// Herdr execs, so it says the resolved path this process was started from
+	// (§11.7). One string for both would be wrong for whichever it was not written
+	// for.
+	const controllerArgs = [FOREGROUND_FLAG, ...relaunchArgs({ args, flags, flagValues })];
+	const foregroundLine = `factory start ${controllerArgs.join(" ")}`;
 
 	const store = await openStore({ repoRoot, agentDir });
 	try {
@@ -217,7 +226,7 @@ export async function launch({
 			};
 		}
 
-		const command = [executable, "start", FOREGROUND_FLAG, ...relaunch];
+		const command = [executable, "start", ...controllerArgs];
 		const ran = await run(["pane", "run", result.root_pane.pane_id, ...command], {
 			env,
 			binary: availability.binary,

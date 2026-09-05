@@ -93,8 +93,8 @@ export const NEW_RUN_FLAG = "--new-run";
  * @param {string} invocation.repoRoot
  * @param {string[]} invocation.args the scope on the line
  * @param {ReadonlySet<string>} invocation.flags
- * @param {ReadonlyMap<string, string>} [invocation.flagValues] the values riding the
- *   flags, which the detached launch re-types onto the line it relaunches (#213)
+ * @param {ReadonlyMap<string, string>} [invocation.flagValues] the values beside
+ *   them, read only to be re-typed onto the line the detached launch relaunches
  * @param {object} invocation.config the validated configuration
  * @param {string} invocation.configPath
  * @param {object} invocation.activeRouting
@@ -197,6 +197,9 @@ export async function runStart({
 		return launch({
 			repoRoot,
 			requested,
+			// The whole line, not the scope alone: the detached controller resolves
+			// its scope and loads its config again from its own argv, so every flag
+			// the operator typed has to reach it (#213).
 			args,
 			flags,
 			flagValues,

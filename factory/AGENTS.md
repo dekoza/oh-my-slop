@@ -43,6 +43,9 @@ question is which rows have become the module's job to state, not what the ceili
 - **Budget bounds are per-key**, never one block-wide `max`. — `config/defaults.mjs` · §11.6
 - **§6.8's `worker` block is *additions* to floors that live in code**, so its absent form is the
   empty addition, spelled once so no consumer branches on `undefined`. — `config/worker.mjs` · §6.8
+- **A named routing set is selected by the flag, then `routing.activeSet`, then the file-level
+  routing**, resolved in one place; both names refuse as `unknown-routing-set`, and `activeSet` is
+  validated whether or not the flag departs from it. — `config/routing.mjs` · §11.5
 - **`factory migrate` is the only verb that writes the operator's config**, and the only verb exempt
   from the load. — `migrate/verb.mjs` · §11.8
 - **§11.8's legacy-key disposition table is data**: one row maps and reports, a legacy key no row
@@ -590,9 +593,10 @@ question is which rows have become the module's job to state, not what the ceili
   — `controller/start.mjs` · §3.1, §10.4
 - **Against a live holder it resolves rather than queueing**, and refuses whatever it cannot decide
   from durable state. — `controller/start.mjs` · §19
-- **The detached relaunch carries the operator's whole line**, every flag reconstructed from what
-  the verb table already validated rather than from a list of its own, so the launcher and the
-  controller it starts resolve one invocation. — `controller/launch.mjs` · §10.1
+- **The detached relaunch carries the operator's whole line**, `--routing-set` included, every flag
+  reconstructed from what the verb table already validated rather than from a list of its own — the
+  controller resolves its scope and loads its config again from its own argv, so a flag left behind
+  runs a different invocation and neither process says so. — `controller/launch.mjs` · §10.1, §11.5
 - **A run ends at most once, and every ended run has a reason**: `run.ended` and the controller
   lease release commit in one token-checked transaction. — `controller/start.mjs`
 - **Preflight is observable, not a gate**: every check writes a `preflight.checked` stage on the

@@ -29,8 +29,11 @@ who can see what is takeable without opening it.
   real repos, and `/setup-project-skills` writes it per project.
 - Both remotes exist in every clone (`gitea` and `origin`), so `tea` and `gh` both
   mis-infer. Passing `--repo` explicitly is not defensive noise; it is required.
-- `triage` reads from intake and can move a request across the boundary by filing the
-  resulting work on Gitea. Nothing moves the other way.
+- `triage` discovery reads from intake. Explicit references route by syntax:
+  unqualified `#<number>` / `<number>` selects Gitea, while `gh:<number>` /
+  `github:<number>` selects GitHub. A missing reference fails on the selected tracker
+  rather than probing the other one. Triage can move an intake request across the
+  boundary by filing resulting work on Gitea; nothing moves the other way.
 - Our tracker vocabulary is a **superset** of upstream's, not a divergence from it.
   Upstream's GitHub-only assumptions are the degenerate case where both roles land on
   one tracker — which is exactly what `/setup-project-skills` emits for a repo with

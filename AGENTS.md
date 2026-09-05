@@ -152,9 +152,10 @@ replacement, a survey note, or a README callout) — never a silent rename:
   (`find_skill_dir()`). Bucket moves are free; renames are breaking.
 - **Prompt-template names** — the `/command` surface: muscle memory plus README rows.
 - **The `docs/agents/` contract** — the file names, the `## Agent skills` pointer
-  block, and the tracker templates' load-bearing headings (`## Conventions` ·
-  `## Robot comments` · the two "when a skill says…" headings · `## Wayfinding
-  operations`) that consumer skills dereference in installed repos.
+  block, and the tracker docs' load-bearing headings (`## Reference routing` in
+  two-tracker docs · `## Conventions` · `## Robot comments` · the two "when a skill
+  says…" headings · `## Wayfinding operations`) that consumer skills dereference in
+  installed repos.
 - **Install surfaces** — `package.json`'s `pi` block and each extension's declared
   entrypoint.
 
