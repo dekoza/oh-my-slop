@@ -8,6 +8,7 @@ license: MIT (adapted from mattpocock/skills)
 #disable-model-invocation: true
 requires:
   - construction-craft
+  - domain-modeling
   - git-discipline
   - review-spec
   - review-standards
@@ -49,13 +50,19 @@ Read each axis for what it will cite, and gather the same sources it will:
   the default you would otherwise reach for. It also applies a fixed smell baseline that
   holds even where the repo documents nothing.
 - **Spec axis** — it cites the originating ticket. Turn the ticket into an explicit list of
-  requirements and acceptance criteria before you build, and keep the list. A requirement
-  satisfied for the cases you happened to think of and open for the rest is a finding, not a
-  nitpick: a guard keyed on field names while the schema admits other shapes, a format
-  normalised on one code path and not on its twin, a rule enforced in the happy path only.
+  requirements and acceptance criteria before you build, and keep the list: it is the same
+  list the requirement trace below is built from, and starting it now is what makes the trace
+  a record rather than a reconstruction. A requirement satisfied for the cases you happened to
+  think of and open for the rest is a finding, not a nitpick: a guard keyed on field names
+  while the schema admits other shapes, a format normalised on one code path and not on its
+  twin, a rule enforced in the happy path only.
 
 Neither axis rejects on taste — every finding it may raise carries a citation. So the way to
 pass it is to have read what it will cite.
+
+## Read the shared language before the first edit
+
+When the target repo has a `CONTEXT.md` — or whatever its domain doc layout (the one `/setup-project-skills` writes) names as the glossary — read it before editing, and use its terms in identifiers, tests, and commit messages. Parallel builders drift into synonymous vocabularies when each reads only its own ticket; one shared language is an input to every builder, not something the reviewer catches afterwards. When the slice needs a term the glossary lacks, or changes what an existing term means, do not coin a synonym: name the gap the way the `domain-modeling` skill would, in the PR body and completion report, and leave the glossary edit to the map's owner — `CONTEXT.md` is one file shared by every slice running beside yours. A repo with no glossary gets no new one from this step: proceed silently.
 
 ## Build and verify
 
@@ -85,6 +92,12 @@ Report the PR URL when reporting completion.
 
 If anything in this session started Docker containers — test infrastructure, a dev stack, a one-off `docker compose run`, a warm E2E environment — bring down each stack **you** started before reporting completion, using the same compose file you started it with (`docker compose -f compose.test.yml down`, etc.). Dev and test stacks have independent lifecycles, so bringing one down does not touch the other (see `docker-discipline`). Add `-v` only for volumes this session created. Leave stacks that were already running when the session began exactly as they were.
 
+## Requirement trace
+
+The completion report carries a **requirement trace**: one row per requirement the ticket states, in the ticket's order. Each row quotes the ticket's own line — never a paraphrase — and names the path that answers it and, where one exists, the test that proves it. A short advisory note per row is fine.
+
+Build the trace by re-reading the ticket and every source it references, not from memory of what you did: a ticket line no row answers is unfinished work, and a row naming a path the diff never touched is a claim the spec reviewer will reject. The trace is what lets that reviewer check coverage row by row instead of re-deriving it from the diff.
+
 ## Completion
 
-The invocation is complete when this one ticket-sized slice meets its acceptance criteria, affected checks pass under the project's test policy, both review axes have completed with no blocking finding left open, the worktree's branch contains the committed result, and its PR is open and reported by URL (or, on a forge-less repo, the branch is pushed and named). Every Docker stack this session started is down. No other frontier ticket has been started.
+The invocation is complete when this one ticket-sized slice meets its acceptance criteria, affected checks pass under the project's test policy, both review axes have completed with no blocking finding left open, the worktree's branch contains the committed result, its requirement trace is in the completion report, and its PR is open and reported by URL (or, on a forge-less repo, the branch is pushed and named). Every Docker stack this session started is down. No other frontier ticket has been started.

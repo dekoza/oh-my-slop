@@ -83,7 +83,7 @@ export function resolveStage(
 	store,
 	{ hold, run, ticket, phase, attempt, try: tryNumber = FIRST_TRY, outcome, detail = null, actor, at },
 ) {
-	const row = routeOutcome(phase, outcome);
+	const routed = routeOutcome(phase, outcome);
 	const committedDigest = resultDigest({ outcome, detail });
 
 	const existing = recordedStage(store, { run, ticket, phase, attempt, try: tryNumber });
@@ -96,7 +96,7 @@ export function resolveStage(
 				state: "already-resolved",
 				outcome: existing.payload.outcome,
 				detail: existing.payload.detail,
-				row,
+				row: recordedRow(routed, existing.payload.action),
 			});
 		}
 
@@ -119,6 +119,7 @@ export function resolveStage(
 		);
 	}
 
+	const row = boundedRow(store, { run, ticket, row: routed });
 	hold.append({
 		kind: "stage.resolved",
 		source: "controller",
@@ -150,6 +151,45 @@ export function resolveStage(
 	});
 
 	return Object.freeze({ state: "resolved", outcome, detail, row });
+}
+
+/**
+ * §8.10's row for a resolution, once the journal has been asked whether the
+ * row's own bound is spent (#194).
+ *
+ * A row carrying `thereafter` is taken **once per ticket execution**, and the
+ * once is read exactly as §8.6 reads a budget and §9.9 bounds a reroute: a
+ * count of the `stage.resolved` records that already routed to this action,
+ * never a counter. It is read **before** the append, so the resolution being
+ * written is not its own bound — the first conflict finds none and takes the
+ * row, the second finds one and takes `thereafter`. A controller that died
+ * between resolving and minting reads the same answer back through
+ * `recordedRow`, which is why the two are separate readers: this one asks the
+ * journal, that one asks the record.
+ */
+function boundedRow(store, { run, ticket, row }) {
+	if (row.thereafter === null) return row;
+
+	const taken = stageRecords(store, { run, ticket }).some((record) => record.payload.action === row.action);
+	return taken ? row.thereafter : row;
+}
+
+/**
+ * The row a committed record was resolved under, read off the record's own
+ * `action` rather than off the journal's current count (#194).
+ *
+ * A re-entry meets its own record: the resolution that routed to a
+ * rebase-repair is now on the chain, so `boundedRow` would answer `thereafter`
+ * for a record that says `rebase-repair`, and the walk would mint a fresh-retry
+ * for a conflict the journal already answered. The record is the fact; the
+ * count is how the fact was arrived at. A record naming neither the routed
+ * action nor its `thereafter` — a journal written under an older table — is
+ * answered with the routed row, which is the answer every record got before
+ * a row carried a bound at all.
+ */
+function recordedRow(routed, action) {
+	if (routed.thereafter !== null && routed.thereafter.action === action) return routed.thereafter;
+	return routed;
 }
 
 /**
@@ -273,15 +313,36 @@ export async function walkStages(
 			// It re-enters the phase it left, like §8.10's automation retry and
 			// unlike §8.5's tiers: nothing about the work was judged, so there is
 			// nothing to rebuild from the top.
-			if (resolved.row.action === STAGE_ACTIONS.reroute) {
-				attempt = await retried(nextAttempt, {
+			// Every row below that mints asks the seam the same way: the failure that
+			// routed here, whole. One closure, so three branches cannot come to hand
+			// the seam three different accounts of one resolution.
+			const relaunched = () =>
+				retried(nextAttempt, {
 					attempt,
 					phase,
 					outcome: resolved.outcome,
 					detail: resolved.detail,
 					row: resolved.row,
 				});
+
+			if (resolved.row.action === STAGE_ACTIONS.reroute) {
+				attempt = await relaunched();
 				tryNumber = FIRST_TRY;
+				continue;
+			}
+
+			// #194: **the same work, rebased by a builder attempt, charged to
+			// nothing.** Outside the budget branch for the reroute's reason — a
+			// row that passed through `requireBudget` would have to be given a
+			// budget to be free of one — and unlike the reroute it re-enters
+			// `implement`: it is one of §8.5's tiers, its subject is the work, and
+			// the rebased result is harvested, verified and reviewed from the top.
+			// What bounds it is the row itself: `resolveStage` answers `thereafter`
+			// — today's fresh-retry — once this ticket execution has routed here.
+			if (resolved.row.action === STAGE_ACTIONS.rebaseRepair) {
+				attempt = await relaunched();
+				tryNumber = FIRST_TRY;
+				phase = PHASE_IMPLEMENT;
 				continue;
 			}
 
@@ -305,13 +366,7 @@ export async function walkStages(
 					continue;
 				}
 
-				attempt = await retried(nextAttempt, {
-					attempt,
-					phase,
-					outcome: resolved.outcome,
-					detail: resolved.detail,
-					row: resolved.row,
-				});
+				attempt = await relaunched();
 				// A fresh attempt is a fresh worker run, and its first pass through any
 				// phase is its first: the try counts passes within one attempt.
 				tryNumber = FIRST_TRY;
@@ -585,15 +640,15 @@ function unbuilt({ row, phase }) {
 		);
 	}
 
-	// Every action §8.10 declares now advances, disposes, reroutes, or spends a
-	// budget, so the walk reaching here means the table grew an action nothing
-	// routes. It is a refusal rather than a fallthrough for the reason the whole
-	// file is: the plausible fallthrough is "carry on to the next phase", which is
-	// how a failing attempt becomes a publication.
+	// Every action §8.10 declares now advances, disposes, reroutes, rebase-repairs,
+	// or spends a budget, so the walk reaching here means the table grew an
+	// action nothing routes. It is a refusal rather than a fallthrough for the
+	// reason the whole file is: the plausible fallthrough is "carry on to the next
+	// phase", which is how a failing attempt becomes a publication.
 	return new FactoryPipelineError(
 		"not-yet-implemented",
 		`§8.10 routes ${phase} × ${row.outcome} to ${row.action}, which no slice claims: the walk advances, disposes, ` +
-			"reroutes, and spends the three budgets, and this is none of them (§8.10).",
+			"reroutes, rebase-repairs, and spends the three budgets, and this is none of them (§8.10).",
 		{ at: "action", phase, outcome: row.outcome, action: row.action, budget: row.budget, missing: null, spec: "§8.10" },
 	);
 }
@@ -612,9 +667,20 @@ function unbuilt({ row, phase }) {
  */
 export function outcomeChain(store, { run, ticket }) {
 	return Object.freeze(
-		stageRecords(store, { run, ticket }).map((record) =>
-			Object.freeze({ phase: record.phase, outcome: record.payload.outcome, attempt: record.attempt }),
-		),
+		stageRecords(store, { run, ticket }).map((record) => {
+			// #189: a step the controller refused carries the controller's own
+			// problems — which block was missing or malformed — so §8.9's disposition
+			// comment names it. The key is present only where there are any: the
+			// chain is digested into the disposition block, and an absent key is one
+			// spelling rather than two for "nothing to say".
+			const problems = record.payload.detail?.problems;
+			return Object.freeze({
+				phase: record.phase,
+				outcome: record.payload.outcome,
+				attempt: record.attempt,
+				...(Array.isArray(problems) && problems.length > 0 ? { problems: Object.freeze([...problems]) } : {}),
+			});
+		}),
 	);
 }
 

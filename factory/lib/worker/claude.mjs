@@ -80,6 +80,41 @@ export const CLAUDE_PROBE_ONLY_FLAGS = Object.freeze([
 export const CLAUDE_DISCOVERY_FENCE = Object.freeze(["--setting-sources", "user"]);
 
 /**
+ * §6.8's browser fence — the discovery fence's sibling, and load-bearing for the
+ * same kind of reason: it keeps an **interstitial** off a pane nobody is
+ * watching (#178).
+ *
+ * Claude's Chrome integration is gated on a cache key the harness warms itself.
+ * Measured live on Claude Code 2.1.241, at zero model cost, in a
+ * controller-shaped config directory holding promoted credentials: an
+ * interactive startup writes `cachedChromeExtensionInstalled: true` into
+ * `.claude.json` — startup 1 already, silently — and a later startup reads that
+ * warm key and raises a "Claude will use your Chrome browser by default"
+ * prompt waiting on a keypress. A worker has nobody to supply one.
+ *
+ * Two properties make it worse than an ordinary hang, and both are why the flag
+ * is on the **worker binding** rather than handled at the screen. Herdr reads
+ * that pane as `agent_status: "idle"` — a settled status, so §6.6's table sees
+ * a settled worker with no outbox — and the config environment does not clear
+ * it between runs: the rebuild overwrites named files while the pre-trust writer
+ * merges unknown keys forward, so once any session in that store warms the key,
+ * every attempt in every later run meets the prompt until a human deletes the
+ * directory.
+ *
+ * `--no-chrome` stops the detection from running at all, which is why the
+ * acceptance assertion is an **absence**: three successive interactive sessions
+ * under the flag left `cachedChromeExtensionInstalled` absent, and three without
+ * it had the key after the first (`tests/live/claude-chrome-cache.mjs`).
+ *
+ * It rides `claudeWorkerArguments` **unconditionally**, outside the `fenced`
+ * switch: the one deliberately unfenced session — the discovery fence's own
+ * control probe — is as capable of warming the cache as any other, and a control
+ * session that warmed it would make the absence unprovable even with every
+ * worker fenced.
+ */
+export const CLAUDE_BROWSER_FENCE = Object.freeze(["--no-chrome"]);
+
+/**
  * The production flag set — what every Claude **worker** session is launched
  * with, and therefore what the probe must prove.
  *
@@ -101,7 +136,14 @@ export const CLAUDE_DISCOVERY_FENCE = Object.freeze(["--setting-sources", "user"
  * @returns {string[]}
  */
 export function claudeWorkerArguments(pluginDir, sessionArgs = [], { fenced = true } = {}) {
-	return ["--plugin-dir", pluginDir, ...(fenced ? CLAUDE_DISCOVERY_FENCE : []), ...sessionArgs];
+	return [
+		"--plugin-dir",
+		pluginDir,
+		// Outside the `fenced` switch on purpose — see `CLAUDE_BROWSER_FENCE`.
+		...CLAUDE_BROWSER_FENCE,
+		...(fenced ? CLAUDE_DISCOVERY_FENCE : []),
+		...sessionArgs,
+	];
 }
 
 /**

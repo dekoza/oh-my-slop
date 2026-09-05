@@ -58,6 +58,7 @@ const row = ({
 	evidence = null,
 	anomaly = null,
 	retryable = true,
+	thereafter = null,
 }) =>
 	Object.freeze({
 		phase,
@@ -72,7 +73,58 @@ const row = ({
 		evidence,
 		anomaly,
 		retryable,
+		thereafter,
 	});
+
+/**
+ * #194: **a rebase conflict routes to a `rebase-repair` before any fresh-retry,
+ * and charges nothing** — with the bound carried on the row as data.
+ *
+ * `thereafter` is the row taken once this ticket execution has already routed
+ * to the action of the row it hangs off, read from the journal by
+ * `resolveStage` exactly as §9.9 bounds a reroute and §8.6 counts a budget: a
+ * count of `stage.resolved` records, never a counter. The row it names is
+ * **the pre-#194 row unchanged** — fresh-retry on the `freshRetry` number,
+ * exhausted into `failed` / `rebase-conflict` — so the bound is spent into the
+ * same chain the table already had rather than into a ladder of its own. It is
+ * a full row and not an override patch because `requireBudget`,
+ * `exhaustionOf` and `dispositionOf` all read a row, and a half-row would be a
+ * second shape for every one of them to learn.
+ *
+ * **Why the conflict rows alone carry a bound**: the pipeline owns the
+ * mechanical answer to "did the base movement invalidate the work" — the
+ * required set at the rebased commit, then both review axes — and discarding
+ * the work before asking it is the defect this row removes. What the second
+ * conflict says is different: the work was rebased once already and conflicts
+ * again, so the base is moving under it faster than one repair can follow, and
+ * that is the fresh-retry's question. The controller still resolves nothing;
+ * the model that resolves stays inside a worker attempt (§8.10).
+ *
+ * Both phases carry the identical pair, for #113's reason: §9.5 puts a rebase
+ * in each, and the row is the same in both.
+ */
+function rebaseConflictRow(phase) {
+	const exhausted = Object.freeze({ reasonClass: "rebase-conflict" });
+	return row({
+		phase,
+		outcome: "rebase-conflict",
+		action: STAGE_ACTIONS.rebaseRepair,
+		// The conflict facts — the base commit, the previous base, the paths git
+		// could not merge, the base's own movement — are the controller's reading
+		// of the repository, and every prompt this outcome produces carries them
+		// under the fact heading (#194). §8.5's "no fresh-retry row carries
+		// untrusted evidence" (#110) holds: these are facts, not a worker's words.
+		evidence: EVIDENCE_TRUST.fact,
+		thereafter: row({
+			phase,
+			outcome: "rebase-conflict",
+			action: STAGE_ACTIONS.freshRetry,
+			budget: BUDGET_KINDS.repair,
+			evidence: EVIDENCE_TRUST.fact,
+			exhausted,
+		}),
+	});
+}
 
 export const OUTCOME_TABLE = Object.freeze([
 	// ── implement: no phase result of its own — its result is its attempt's (§8.1)
@@ -90,7 +142,16 @@ export const OUTCOME_TABLE = Object.freeze([
 	// for a worker that failed at its own job, and a worker that wrote nothing
 	// readable by the end of its turn did exactly that. Only a pane that died
 	// under it, or the automation refusing to run, is the automation's failure.
-	row({ phase: PHASE_IMPLEMENT, outcome: "invalid-result", action: STAGE_ACTIONS.freshRetry, budget: BUDGET_KINDS.repair }),
+	// An invalid result's detail is the controller's own schema and role
+	// judgement — which block was missing or malformed — and never the record
+	// it refused, so it is presented to the fresh attempt as fact (#189).
+	row({
+		phase: PHASE_IMPLEMENT,
+		outcome: "invalid-result",
+		action: STAGE_ACTIONS.freshRetry,
+		budget: BUDGET_KINDS.repair,
+		evidence: EVIDENCE_TRUST.fact,
+	}),
 	row({ phase: PHASE_IMPLEMENT, outcome: "no-result", action: STAGE_ACTIONS.freshRetry, budget: BUDGET_KINDS.repair }),
 	row({ phase: PHASE_IMPLEMENT, outcome: "timeout", action: STAGE_ACTIONS.freshRetry, budget: BUDGET_KINDS.repair }),
 	row({
@@ -102,6 +163,15 @@ export const OUTCOME_TABLE = Object.freeze([
 	}),
 	row({ phase: PHASE_IMPLEMENT, outcome: "dead-worker", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_IMPLEMENT, outcome: "automation-failure", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
+	/**
+	 * #178: the pane was never observed working, so the two silence rows above it
+	 * are describing a turn that never happened. A worker sitting on a first-run
+	 * interstitial reports `idle` to Herdr — a settled status — and the
+	 * fresh-retry rows would then charge the **repair** budget, at seconds per
+	 * attempt, for "ended its turn without writing". This is the same fault class
+	 * as `dead-worker`: the automation could not get a worker onto the work.
+	 */
+	row({ phase: PHASE_IMPLEMENT, outcome: "worker-never-started", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_IMPLEMENT, outcome: "cancelled", action: STAGE_ACTIONS.dispose, disposition: "released" }),
 	/**
 	 * #154: the provider refused the attempt — quota, rate limit, a usage cap —
@@ -147,18 +217,12 @@ export const OUTCOME_TABLE = Object.freeze([
 	}),
 	/**
 	 * §9.5 puts the rebase in this phase, so a conflict ends it here (§20, #113).
-	 * Routed exactly as `integrate × rebase-conflict` is, and for the same reason:
-	 * the prior tip is precisely what conflicts, so the tier is a **fresh-retry
-	 * from the new base tip** rather than a repair, and a second conflict is
-	 * `failed` / `rebase-conflict` with no automatic resolution attempted.
+	 * Routed exactly as `integrate × rebase-conflict` is, and for the same reason
+	 * (#194, `rebaseConflictRow`): once to a rebase-repair that charges nothing,
+	 * then as a fresh-retry from the new base tip, then `failed` /
+	 * `rebase-conflict` — with no automatic resolution attempted by the controller.
 	 */
-	row({
-		phase: PHASE_VERIFY,
-		outcome: "rebase-conflict",
-		action: STAGE_ACTIONS.freshRetry,
-		budget: BUDGET_KINDS.repair,
-		exhausted: Object.freeze({ reasonClass: "rebase-conflict" }),
-	}),
+	rebaseConflictRow(PHASE_VERIFY),
 
 	// ── review (§8.4): the three verdict-shaped results, then the attempt-level
 	// outcomes a reviewer attempt can end with instead of a verdict. Both levels
@@ -194,6 +258,12 @@ export const OUTCOME_TABLE = Object.freeze([
 	row({ phase: PHASE_REVIEW, outcome: "dead-worker", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_REVIEW, outcome: "timeout", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_REVIEW, outcome: "automation-failure", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
+	// #178's outcome is reachable from any agent-borne phase, so it is routed for
+	// both. The row is written because the table is **total** over its declared
+	// domain (§8.10) — not because review misattributes: every silence row here
+	// already charges automation, so this one changes nothing but the word an
+	// operator reads.
+	row({ phase: PHASE_REVIEW, outcome: "worker-never-started", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_REVIEW, outcome: "wrote-but-hung", action: STAGE_ACTIONS.verdict, anomaly: ANOMALY_WROTE_BUT_HUNG }),
 	row({ phase: PHASE_REVIEW, outcome: "cancelled", action: STAGE_ACTIONS.dispose, disposition: "released" }),
 	// #154, #155: a reviewer attempt its provider refused is the implement row's
@@ -205,18 +275,14 @@ export const OUTCOME_TABLE = Object.freeze([
 	// ── integrate (§7.5) ─────────────────────────────────────────────────────
 	row({ phase: PHASE_INTEGRATE, outcome: "integrated", action: STAGE_ACTIONS.dispose, disposition: "published" }),
 	/**
-	 * §8.10: a rebase conflict consumes a **fresh-retry, not a repair**, because
-	 * the prior tip is precisely what conflicts. A second conflict is `failed` /
-	 * `rebase-conflict`, and the controller never attempts automatic resolution —
-	 * that would put a model inside a controller phase.
+	 * §8.10, #194: a rebase conflict is a **rebase-repair first** — the prior tip
+	 * is what conflicts textually, and whether that invalidates the work is the
+	 * pipeline's question to answer at the rebased commit, not the controller's
+	 * to answer by discarding. The controller never attempts automatic resolution
+	 * — that would put a model inside a controller phase — so the model that
+	 * resolves is a builder attempt. Thereafter, the pre-#194 chain.
 	 */
-	row({
-		phase: PHASE_INTEGRATE,
-		outcome: "rebase-conflict",
-		action: STAGE_ACTIONS.freshRetry,
-		budget: BUDGET_KINDS.repair,
-		exhausted: Object.freeze({ reasonClass: "rebase-conflict" }),
-	}),
+	rebaseConflictRow(PHASE_INTEGRATE),
 	row({ phase: PHASE_INTEGRATE, outcome: "predicate-failed", action: STAGE_ACTIONS.dispose, fault: BUDGET_KINDS.automation }),
 	row({ phase: PHASE_INTEGRATE, outcome: "push-failed", action: STAGE_ACTIONS.retry, budget: BUDGET_KINDS.automation }),
 	/**

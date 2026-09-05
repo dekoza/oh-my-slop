@@ -2,23 +2,29 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { addressOfContent, deleteArtifactBlob } from "../../factory/lib/artifacts/blobs.mjs";
 import { EXIT_OK } from "../../factory/lib/cli/exit-codes.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { FACTORY_ATTEMPT_TOKEN } from "../../factory/lib/controller/herdr-control.mjs";
 import { FOREGROUND_FLAG } from "../../factory/lib/controller/launch.mjs";
 import { runStart } from "../../factory/lib/controller/start.mjs";
 import { privateClonePath } from "../../factory/lib/git/isolation.mjs";
+import { budgetSpend } from "../../factory/lib/pipeline/budgets.mjs";
+import { builderResult } from "../../factory/lib/pipeline/production.mjs";
+import { PIPELINE_ROLES } from "../../factory/lib/worker/roles.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
+import { resolveStorePaths } from "../../factory/lib/state/location.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { workerConfigRoots } from "../../factory/lib/worker/environment.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
-import { cloneValidConfig, makeRepo } from "./helpers/factory-repo.mjs";
+import { cloneValidConfig, makeRemote, makeRepo } from "./helpers/factory-repo.mjs";
 import { makeAgentDir, makeHome, herdrAnswering } from "./helpers/factory-store.mjs";
-import { dispositionBlockIn as blockIn, fakeGitea, giteaIssue } from "./helpers/factory-tracker.mjs";
+import { dispositionBlockIn as blockIn, fakeGitea, giteaComment, giteaIssue } from "./helpers/factory-tracker.mjs";
 import { fakeHerdr, workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
@@ -28,16 +34,28 @@ const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encodi
  * without claiming it — a timeout, a refusal, a dead pane. The commit is in the
  * worktree and nothing in the outbox mentions it.
  */
-function workerTurn({ builderStatuses = ["completed"], commitsAlways = false, onAbandon = null } = {}) {
+/**
+ * `withoutTrace` names the builder turns (zero-based) that end `completed`
+ * without #189's trace — the omission the controller refuses as an invalid
+ * result. `prompts` collects every prompt a worker was handed, by phase, so a
+ * test can read what the next attempt was told.
+ */
+function workerTurn({
+	builderStatuses = ["completed"],
+	commitsAlways = false,
+	onAbandon = null,
+	withoutTrace = [],
+	prompts = null,
+} = {}) {
 	let builderTurn = 0;
 	return async ({ pane, text }) => {
 		// The environment the pane's tab was created under (#157) — which is what a
 		// real worker reads out of its own process, rather than off the scrollback.
 		const identity = pane.env;
+		prompts?.push({ phase: identity.FACTORY_PHASE, attempt: identity.FACTORY_ATTEMPT, text });
+		const thisTurn = identity.FACTORY_PHASE === "implement" ? builderTurn++ : null;
 		const status =
-			identity.FACTORY_PHASE === "implement"
-				? (builderStatuses[Math.min(builderTurn++, builderStatuses.length - 1)] ?? "completed")
-				: "completed";
+			thisTurn !== null ? (builderStatuses[Math.min(thisTurn, builderStatuses.length - 1)] ?? "completed") : "completed";
 		if (status === "abandon") {
 			// #159: the commit comes first where the fixture asks for one, because the
 			// abandon this models is an operator's — a builder mid-work whose commits
@@ -76,6 +94,11 @@ function workerTurn({ builderStatuses = ["completed"], commitsAlways = false, on
 
 		if (identity.FACTORY_PHASE === "implement" && status === "completed") {
 			result.commits = [git(pane.cwd, "rev-parse", "HEAD")];
+			// #189: one row per requirement, quoting the ticket's own line — here the
+			// title, which is the whole of what the fixture issue states.
+			if (!withoutTrace.includes(thisTurn)) {
+				result.trace = [{ requirement: "feat: production pipeline", evidence: "implemented.txt" }];
+			}
 		} else if (status === "needs-human") {
 			result.reason_class = "product-ambiguity";
 			result.question = "Which behavior should the implementation preserve?";
@@ -128,18 +151,37 @@ async function runProduction(
 		// visible at all: §9.8's memo is class-scoped, and the class is the provider
 		// segment of the model id (§9.1).
 		models = undefined,
+		// The remote's seed tree, for a fixture whose conflict needs a file that
+		// exists at the base (#194).
+		remoteFiles = undefined,
+		// The controller's clock, built once the store's location is known. A test
+		// that must act *between* two controller steps — after verify recorded a
+		// blob, before the repair launch reads it — has no other synchronous seam:
+		// the controller reads its clock at every stage resolution and every mint.
+		clock = null,
+		world = null,
 	} = {},
 ) {
-	const packageRoot = makePackage(t);
-	const executable = join(packageRoot, "factory", "bin", "factory.mjs");
-	const repoRoot = makeRepo(t, config === undefined ? {} : { config });
-	const agentDir = makeAgentDir(t);
-	const env = { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" };
-	const loaded = loadFactoryConfig({ cwd: repoRoot });
-	const tracker = fakeGitea({
-		issues: [issue],
-		onWrite: (write, world) => onTrackerWrite?.({ write, world, loaded }),
-	});
+	let fixture = world;
+	if (fixture === null) {
+		const packageRoot = makePackage(t);
+		const executable = join(packageRoot, "factory", "bin", "factory.mjs");
+		const repoRoot = makeRepo(t, {
+			...(config === undefined ? {} : { config }),
+			...(remoteFiles === undefined ? {} : { remotes: { gitea: makeRemote(t, { files: remoteFiles }) } }),
+		});
+		const agentDir = makeAgentDir(t);
+		const now = clock === null ? undefined : clock({ storeDir: resolveStorePaths({ repoRoot, agentDir }).primary.dir });
+		const env = { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" };
+		const loaded = loadFactoryConfig({ cwd: repoRoot });
+		const tracker = fakeGitea({
+			issues: [issue],
+			commentAuthor: loaded.config.tracker.login,
+			onWrite: (write, trackerWorld) => onTrackerWrite?.({ write, world: trackerWorld, loaded }),
+		});
+		fixture = { packageRoot, executable, repoRoot, agentDir, env, loaded, tracker, issue, now };
+	}
+	const { packageRoot, executable, repoRoot, agentDir, env, loaded, tracker, now } = fixture;
 	const where = { repo: loaded.config.tracker.repo, login: loaded.config.tracker.login };
 	const herdr = fakeHerdr({ onPrompt: turn, paneOutput });
 	const checkoutBefore = git(repoRoot, "status", "--porcelain=v1", "--untracked-files=all");
@@ -149,7 +191,7 @@ async function runProduction(
 		agentDir,
 		executable,
 		env,
-		args: ["147"],
+		args: [String(fixture.issue.number)],
 		flags: new Set([FOREGROUND_FLAG]),
 		herdr: herdrAnswering(true),
 		runHerdr: herdr.run,
@@ -157,9 +199,10 @@ async function runProduction(
 		tracker: createGiteaReader({ ...where, request: tracker.request }),
 		trackerWriter: createGiteaWriter({ ...where, request: tracker.write }),
 		...(signal === undefined ? {} : { signal }),
+		...(now === undefined ? {} : { now }),
 	});
 
-	return { answer, tracker, loaded, repoRoot, agentDir, herdr, checkoutBefore };
+	return { answer, tracker, loaded, repoRoot, agentDir, herdr, checkoutBefore, world: fixture };
 }
 
 test("runStart composes the production pipeline through publication without injected pipeline or execute (#147)", async (t) => {
@@ -249,6 +292,157 @@ test("a builder question reaches a durable paused disposition instead of escapin
 	assert.match(tracker.comments.at(-1).body, /product-ambiguity/);
 });
 
+test("#199: clearing needs-human starts a new execution from the paused committed tip with the operator answer", async (t) => {
+	const issue = giteaIssue({ number: 199, title: "Resume the paused implementation" });
+	const first = await runProduction(t, {
+		issue,
+		turn: workerTurn({ builderStatuses: ["needs-human"], commitsAlways: true }),
+	});
+	assert.equal(first.answer.report.execution.members[0].disposition, "paused");
+
+	const paused = blockIn(first.tracker.comments.at(-1).body);
+	const pausedBranch = paused.attempt_branches.branches.at(-1);
+	assert.equal(pausedBranch.commits_ahead, 1, "the fixture did not retain committed work to resume");
+
+	first.tracker.issues[0].labels = first.tracker.issues[0].labels.filter((label) => label.name !== "factory:needs-human");
+	first.tracker.comments.push(
+		giteaComment({
+			id: 9500,
+			ticket: 199,
+			author: "minder",
+			body: "Preserve the cancellation-time behavior.",
+			createdAt: "2026-08-15T14:01:00Z",
+			updatedAt: "2026-08-15T14:01:00Z",
+		}),
+	);
+
+	const prompts = [];
+	const second = await runProduction(t, {
+		world: first.world,
+		turn: workerTurn({ prompts }),
+	});
+
+	assert.equal(
+		second.answer.report.execution.members[0].disposition,
+		"published",
+		JSON.stringify({ member: second.answer.report.execution.members[0], comments: second.tracker.comments }, null, 2),
+	);
+	const store = await openStore({ repoRoot: second.repoRoot, agentDir: second.agentDir });
+	t.after(() => store.close());
+	const runs = store.readEvents({ kind: "run.started" });
+	assert.equal(runs.length, 2, "the cleared ticket was folded back into the paused run");
+	assert.equal(new Set(runs.map((event) => event.run)).size, 2);
+
+	const builders = store
+		.readEvents({ kind: "attempt.launched" })
+		.filter((event) => event.phase === "implement");
+	assert.equal(builders.length, 2);
+	// `readEvents({ kind })` spans run streams and promises no cross-stream order;
+	// identify the new execution from the paused comment's durable run identity.
+	const resumedBuilder = builders.find((event) => event.run !== paused.identity.run);
+	assert.ok(resumedBuilder !== undefined);
+	assert.equal(resumedBuilder.payload.base_commit, pausedBranch.head);
+	assert.equal(resumedBuilder.payload.profile, "builder", "the resumed execution bypassed declared routing");
+	assert.match(resumedBuilder.attempt, /-a1$/, "the resumed execution inherited the old run's attempt budget");
+
+	const resumedPrompt = prompts.find((prompt) => prompt.phase === "implement").text;
+	assert.match(resumedPrompt, /Which behavior should the implementation preserve\?/);
+	assert.equal(resumedPrompt.split("Preserve the cancellation-time behavior.").length - 1, 1);
+
+	const resumedClaim = second.tracker.comments
+		.filter((entry) => entry.body.includes("🤖 **factory — claimed**"))
+		.at(-1).body;
+	assert.ok(resumedClaim.includes(`paused_attempt: ${paused.identity.attempt}`));
+	assert.match(resumedClaim, /reason_class: product-ambiguity/);
+	assert.match(resumedClaim, /pause_comment: [0-9]+/);
+	assert.match(resumedClaim, /answering_comments: minder#9500/);
+	assert.ok(resumedClaim.includes(`resumed_from: ${pausedBranch.head}`));
+});
+
+test("#189: a builder that ends completed without a trace is an invalid result naming the block, and the fresh attempt is told why", async (t) => {
+	const prompts = [];
+	const { answer, tracker, repoRoot, agentDir } = await runProduction(t, {
+		turn: workerTurn({ builderStatuses: ["completed", "completed"], withoutTrace: [0], prompts }),
+	});
+
+	// §8.10's row is unchanged: invalid-result is a fresh retry on the repair
+	// budget, and the second builder's branch is what gets published.
+	assert.equal(answer.report.execution.members[0].disposition, "published");
+	assert.match(tracker.pulls[0].head.ref, /-a2$/);
+
+	const store = await openStore({ repoRoot, agentDir });
+	t.after(() => store.close());
+	const implemented = store
+		.readEvents({ kind: "stage.resolved" })
+		.filter((event) => event.phase === "implement")
+		.map((event) => [event.attempt.endsWith("-a1"), event.payload.outcome, event.payload.detail?.problems ?? null]);
+	assert.equal(implemented.length, 2);
+	assert.equal(implemented[0][0], true);
+	assert.equal(implemented[0][1], "invalid-result");
+	assert.match(implemented[0][2][0], /wrote no trace/, "the record names the missing block");
+	assert.equal(implemented[1][1], "completed");
+
+	// The worker did end `completed`; the controller's role judgement, not §6.6's
+	// schema judgement, is what refused it — and the record says which.
+	const [first] = store.readEvents({ kind: "attempt.ended" });
+	assert.equal(first.payload.outcome, "completed");
+	assert.equal(first.payload.result.trace, null);
+
+	// §8.9's disposition comment carries the chain, and the refused step on it
+	// names the block — a human reading the ticket sees why a2 exists.
+	const posted = tracker.comments.filter((comment) => comment.body.includes('"disposition"'));
+	const refused = blockIn(posted.at(-1).body).outcome_chain.find((step) => step.outcome === "invalid-result");
+	assert.match(refused.problems[0], /wrote no trace/, "the disposition comment does not name the missing block");
+
+	// The fresh attempt is told, as a controller-verified fact, why it exists.
+	const builders = prompts.filter((prompt) => prompt.phase === "implement");
+	assert.equal(builders.length, 2);
+	assert.match(builders[1].text, /This attempt is a \*\*fresh-retry\*\*/);
+	assert.match(builders[1].text, /Controller-verified facts/);
+	assert.match(builders[1].text, /wrote no trace/, "the next builder is not told what the last one omitted");
+	assert.match(builders[1].text, /### Requirement trace/, "and is told the obligation again");
+});
+
+test("#189: builderResult asks the owed-ness of the record whatever the outcome, and passes everything else through", () => {
+	const builder = PIPELINE_ROLES.find((role) => role.name === "implement");
+	const traced = { status: "completed", commits: ["a1b2c3d"], trace: [{ requirement: "r", evidence: "e", note: null }] };
+	const traceless = { status: "completed", commits: ["a1b2c3d"], trace: null };
+
+	assert.deepEqual(builderResult(builder, { outcome: "completed", record: traced }), { outcome: "completed", detail: traced });
+	assert.equal(builderResult(builder, { outcome: "completed", record: traceless }).outcome, "invalid-result");
+	// A builder still alive with a valid completed file is wrote-but-hung, which
+	// §8.10 harvests as a completion — the trace is owed there too.
+	const hung = builderResult(builder, { outcome: "wrote-but-hung", record: traceless });
+	assert.equal(hung.outcome, "invalid-result");
+	assert.match(hung.detail.problems[0], /wrote no trace/);
+	// A pause owes none, and §6.6's own refusal keeps the problems it named.
+	const paused = { status: "needs-human", reason_class: "product-ambiguity", question: "?" };
+	assert.deepEqual(builderResult(builder, { outcome: "needs-human", record: paused }), { outcome: "needs-human", detail: paused });
+	assert.deepEqual(builderResult(builder, { outcome: "invalid-result", record: null, problems: ["trace is an empty list"] }), {
+		outcome: "invalid-result",
+		detail: { problems: ["trace is an empty list"] },
+	});
+});
+
+test("#189: the spec axis is prompted with the builder's trace inside the untrusted block; the standards axis is not", async (t) => {
+	const prompts = [];
+	const { answer } = await runProduction(t, { turn: workerTurn({ prompts }) });
+	assert.equal(answer.report.execution.members[0].disposition, "published");
+
+	const spec = prompts.find((prompt) => prompt.phase === "review" && prompt.text.startsWith("/skill:review-spec"));
+	const standards = prompts.find((prompt) => prompt.phase === "review" && prompt.text.startsWith("/skill:review-standards"));
+	assert.ok(spec !== undefined && standards !== undefined, "both axes were prompted");
+
+	const [before, quoted] = spec.text.split(/--- BEGIN UNTRUSTED [0-9a-f]+ ---\n/);
+	assert.ok(quoted !== undefined, "the spec axis's prompt carries no untrusted block");
+	assert.match(before, /you are the judge of its truth/);
+	assert.ok(quoted.split(/--- END UNTRUSTED/)[0].includes('"requirement": "feat: production pipeline"'));
+	assert.ok(quoted.split(/--- END UNTRUSTED/)[0].includes('"evidence": "implemented.txt"'));
+
+	assert.doesNotMatch(standards.text, /BEGIN UNTRUSTED/);
+	assert.ok(!standards.text.includes("implemented.txt"), "the trace reached the axis whose question it does not answer");
+});
+
 test("a repair re-enters through nextAttempt and publishes the repairing builder branch (#147, §8.5)", async (t) => {
 	const { answer, tracker } = await runProduction(t, {
 		turn: workerTurn({ builderStatuses: ["worker-failed", "completed"] }),
@@ -256,6 +450,219 @@ test("a repair re-enters through nextAttempt and publishes the repairing builder
 
 	assert.equal(answer.report.execution.members[0].disposition, "published");
 	assert.match(tracker.pulls[0].head.ref, /\/a.*-a2$/);
+});
+
+// ── #194: the #188/#178 case — two lanes append a row at one table position ──
+
+const LOG_HEADER = "| Date | Change | By |\n|---|---|---|\n| 2026-08-30 | the seed row | #0 |\n";
+const HUMAN_ROW = "| 2026-08-30 | #178 answers the hazard | #178 |\n";
+const ATTEMPT_ROW = "| 2026-08-30 | #188 adds validated feeds | #188 |\n";
+
+/**
+ * #194's builder. Its first turn appends a row to the log and — while it runs —
+ * a human merges the other lane's row at the same position, so the controller's
+ * rebase cannot replay the attempt. Its second turn is the rebase-repair: it
+ * reads the base commit off its prompt, rebases, keeps both rows, and ends
+ * `completed`. Every other role is the ordinary fixture worker's.
+ */
+function conflictingTurn({ prompts }) {
+	const plain = workerTurn({ prompts });
+	let builderTurn = 0;
+	return async (call) => {
+		const { pane, text } = call;
+		const identity = pane.env;
+		if (identity.FACTORY_PHASE !== "implement") return plain(call);
+		prompts.push({ phase: identity.FACTORY_PHASE, attempt: identity.FACTORY_ATTEMPT, text });
+		const turn = builderTurn++;
+		const log = join(pane.cwd, "docs", "log.md");
+		const trailer = `Factory-Attempt: ${identity.FACTORY_RUN}/${identity.FACTORY_TICKET}/${identity.FACTORY_ATTEMPT}`;
+
+		if (turn === 0) {
+			writeFileSync(log, LOG_HEADER + ATTEMPT_ROW, "utf8");
+			git(pane.cwd, "add", "docs/log.md");
+			git(pane.cwd, "commit", "--quiet", "--message", `docs: add the #188 log row\n\n${trailer}`);
+
+			// The human merge, landing on the remote the worktree fetches from.
+			const remote = git(pane.cwd, "remote", "get-url", "origin");
+			const mover = join(tmpdir(), `factory-mover-${identity.FACTORY_ATTEMPT}`);
+			execFileSync("git", ["clone", "--quiet", remote, mover]);
+			writeFileSync(join(mover, "docs", "log.md"), LOG_HEADER + HUMAN_ROW, "utf8");
+			git(mover, "add", "docs/log.md");
+			git(mover, "-c", "user.name=Human", "-c", "user.email=human@example.invalid", "commit", "--quiet", "-m", "docs: add the #178 log row");
+			git(mover, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+			rmSync(mover, { recursive: true, force: true });
+		} else {
+			assert.match(text, /This attempt is a \*\*rebase-repair\*\*/, "the second builder turn is the rebase-repair");
+			const onto = /git rebase ([0-9a-f]{40})/.exec(text)?.[1];
+			assert.ok(onto, "the prompt names the base commit to rebase onto");
+			let conflicted = false;
+			try {
+				execFileSync("git", ["-C", pane.cwd, "rebase", "--quiet", onto], { stdio: "pipe" });
+			} catch {
+				conflicted = true;
+			}
+			assert.equal(conflicted, true, "the worker meets the conflict the controller could not resolve");
+			assert.equal(git(pane.cwd, "diff", "--name-only", "--diff-filter=U"), "docs/log.md");
+			writeFileSync(log, LOG_HEADER + HUMAN_ROW + ATTEMPT_ROW, "utf8");
+			git(pane.cwd, "add", "docs/log.md");
+			git(pane.cwd, "-c", "core.editor=true", "rebase", "--continue");
+		}
+
+		const result = {
+			schema_version: 1,
+			status: "completed",
+			run: identity.FACTORY_RUN,
+			ticket: Number(identity.FACTORY_TICKET),
+			phase: identity.FACTORY_PHASE,
+			attempt: identity.FACTORY_ATTEMPT,
+			summary: turn === 0 ? "appended the #188 log row" : "rebased onto the moved base and kept both rows",
+			commits: [git(pane.cwd, "rev-parse", "HEAD")],
+			trace: [{ requirement: "feat: production pipeline", evidence: "docs/log.md" }],
+		};
+		writeFileSync(identity.FACTORY_OUTBOX, `${JSON.stringify(result)}\n`, "utf8");
+	};
+}
+
+test("#194: two lanes appending a row at one table position integrate with one rebase-repair and no product budget spent", async (t) => {
+	const prompts = [];
+	const { answer, tracker, repoRoot, agentDir, loaded } = await runProduction(t, {
+		turn: conflictingTurn({ prompts }),
+		remoteFiles: { "README.md": "seed\n", "docs/log.md": LOG_HEADER },
+	});
+
+	assert.equal(
+		answer.report.execution.members[0].disposition,
+		"published",
+		JSON.stringify({ member: answer.report.execution.members[0], comments: tracker.comments }, null, 2),
+	);
+	assert.match(tracker.pulls[0].head.ref, /-a2$/, "the rebase-repair's branch is what was published");
+
+	// The chain: one conflict, one rebase-repair, then green — and nothing spent.
+	const store = await openStore({ repoRoot, agentDir });
+	t.after(() => store.close());
+	const resolved = store.readEvents({ kind: "stage.resolved" });
+	assert.deepEqual(
+		resolved.filter((record) => record.phase === "verify").map((record) => [record.payload.outcome, record.payload.action]),
+		[
+			["rebase-conflict", "rebase-repair"],
+			["passed", "advance"],
+		],
+	);
+	assert.deepEqual(budgetSpend(store, { run: resolved[0].run, ticket: 147 }), { repair: 0, freshRetry: 0, automation: 0 });
+	// §7.4 under the tier: the human's commit is on the branch now, and is not
+	// counted as the worker's.
+	assert.deepEqual(
+		resolved.filter((record) => record.phase === "harvest").map((record) => record.payload.detail.commits_ahead),
+		[1, 1],
+	);
+
+	// The rebase-repair was told which file conflicted and how the base moved.
+	const briefed = prompts.find((prompt) => /rebase-repair\*\*/.test(prompt.text));
+	assert.match(briefed.text, /"conflicts": \[\s*"docs\/log\.md"\s*\]/);
+	assert.match(briefed.text, /docs\/log\.md \|/, "the base movement's --stat names the path");
+	assert.match(briefed.text, /appended the #188 log row/, "the prior worker's summary rides in the untrusted block");
+
+	// What landed is both rows, in the order a human keeping both would leave.
+	const published = execFileSync(
+		"git",
+		["-C", loaded.remote.url, "show", `refs/heads/${tracker.pulls[0].head.ref}:docs/log.md`],
+		{ encoding: "utf8" },
+	);
+	assert.equal(published, LOG_HEADER + HUMAN_ROW + ATTEMPT_ROW);
+});
+
+test("a verify-fed advisory check reaches the repair prompt and an unfed check does not (§8.2, §8.5)", async (t) => {
+	const config = cloneValidConfig();
+	config.checks = [
+		{
+			name: "reject-first-attempt",
+			command: "! grep -q -- '-a1' implemented.txt",
+			timeout: 30,
+			severity: "required",
+			expectedFailureExitCodes: [1],
+		},
+		{
+			name: "mutation",
+			command: "echo 'survivor from mutation'",
+			timeout: 30,
+			severity: "advisory",
+			expectedFailureExitCodes: [1],
+			feeds: ["implement"],
+		},
+		{
+			name: "browser",
+			command: "node -e 'console.log(Buffer.from(\"dW5mZWQgYnJvd3NlciBvdXRwdXQ=\", \"base64\").toString())'",
+			timeout: 30,
+			severity: "advisory",
+			expectedFailureExitCodes: [1],
+		},
+	];
+	const prompts = [];
+	const turn = workerTurn();
+
+	const { answer } = await runProduction(t, {
+		config,
+		turn: async (input) => {
+			if (input.pane.env.FACTORY_PHASE === "implement") prompts.push(input.text);
+			return turn(input);
+		},
+	});
+
+	assert.equal(answer.report.execution.members[0].disposition, "published");
+	assert.equal(prompts.length, 2, "the failing verify did not route through a repair attempt");
+	assert.doesNotMatch(prompts[0], /Trusted evidence/);
+	assert.match(prompts[1], /Trusted evidence — controller-captured advisory checks/);
+	assert.match(prompts[1], /survivor from mutation/);
+	assert.doesNotMatch(prompts[1], /unfed browser output/);
+	assert.doesNotMatch(prompts[1], /\"name\": \"browser\"/, "an unfed advisory check still appeared in repair facts");
+});
+
+test("a repair launched after its fed check's blob is gone renders the slot as a sentence naming the digest, and the launch does not throw (#196, §12.5)", async (t) => {
+	const survivor = "survivor from mutation\n";
+	const address = addressOfContent(Buffer.from(survivor));
+	const config = cloneValidConfig();
+	config.checks = [
+		{
+			name: "reject-first-attempt",
+			command: "! grep -q -- '-a1' implemented.txt",
+			timeout: 30,
+			severity: "required",
+			expectedFailureExitCodes: [1],
+		},
+		{
+			name: "mutation",
+			command: `echo '${survivor.trimEnd()}'`,
+			timeout: 30,
+			severity: "advisory",
+			expectedFailureExitCodes: [1],
+			feeds: ["implement"],
+		},
+	];
+	const prompts = [];
+	let dropped = false;
+
+	const { answer } = await runProduction(t, {
+		config,
+		turn: workerTurn({ prompts }),
+		// §12.2's horizon, or a swept blob: the bytes verify recorded are gone by
+		// the time the repair reads them. The clock is read after the verify stage
+		// resolves and again when the repair is minted, so the first tick that
+		// finds the blob on disk removes it — before the launch resolves evidence.
+		clock:
+			({ storeDir }) =>
+			() => {
+				if (!dropped && deleteArtifactBlob(storeDir, address)) dropped = true;
+				return Date.now();
+			},
+	});
+
+	assert.equal(dropped, true, "the fixture never saw the blob it meant to expire");
+	assert.equal(answer.report.execution.members[0].disposition, "published", "the absent evidence failed the lane");
+	const repair = prompts.filter((prompt) => prompt.phase === "implement").at(-1).text;
+	assert.match(repair, /Trusted evidence — controller-captured advisory checks/);
+	assert.match(repair, /#### mutation/);
+	assert.ok(repair.includes(`The recorded output ${address.digest} could not be read back`), "the slot names the digest");
+	assert.doesNotMatch(repair, /Captured output:/, "bytes the ledger cannot vouch for were quoted anyway");
 });
 
 test("an exhausted builder failure reaches a durable failed disposition instead of escaping the claimed lane (#147, §8.10)", async (t) => {

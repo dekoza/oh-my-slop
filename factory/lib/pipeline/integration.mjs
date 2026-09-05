@@ -1,3 +1,4 @@
+import { recordCheckOutputs } from "../checks/artifacts.mjs";
 import { CHECK_RESULTS, PHASE_IMPLEMENT, PHASE_INTEGRATE, PHASE_VERIFY } from "../domain/vocabulary.mjs";
 import { effectKey } from "../effects/keys.mjs";
 import { effectByKey } from "../effects/records.mjs";
@@ -14,6 +15,7 @@ import {
 	releaseIntegrationWorktree,
 } from "../git/integrate.mjs";
 import { FactoryGitError } from "../git/errors.mjs";
+import { newUlid } from "../identity/ulid.mjs";
 import { LEASE_NAMES } from "../state/leases.mjs";
 import { createTurnstile } from "../state/turnstile.mjs";
 import { publishPullRequest, pullTitle, renderPullBody } from "../tracker/pulls.mjs";
@@ -153,7 +155,11 @@ export async function integrationVerify(store, clone, context) {
  * whenever the base moved. **One function, so the two can never disagree about
  * what "verified" means** — which is the whole of §14.13.
  */
-async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branch, baseBranch, checks, env, actor, now }) {
+async function rebaseAndVerify(
+	store,
+	clone,
+	{ hold, run, ticket, attempt, branch, baseBranch, checks, env, acceptedRuns = [], actor, now },
+) {
 	const fresh = await clone.fetchBase({ baseBranch });
 	const opened = await openIntegrationWorktree(clone, { storeDir: store.storeDir, attempt, branch });
 
@@ -176,13 +182,27 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
 
 	const rebased = await rebaseAttempt(clone, { worktreePath: opened.path, onto: fresh.commit });
 	if (rebased.result === REBASE_RESULTS.conflict) {
-		// The worktree is left where it is (§12.7): a conflict is exactly when an
-		// operator wants to `cd` in and see what would not replay.
+		// The worktree is retained (§12.7) **at the attempt's tip, not mid-conflict**:
+		// `rebaseAttempt` aborts a conflicting rebase, so what an operator finds
+		// here is a clean detached checkout of the head the worker left, with the
+		// pre-rebase head under `refs/factory/evidence/<attempt>`. To see what
+		// would not replay, `cd` in and run `git rebase <base_commit>` (#194).
 		return answer("rebase-conflict", {
 			base_commit: fresh.commit,
 			previous_base: rebased.previousBase,
 			head: rebased.head,
 			conflicts: rebased.conflicts,
+			// #194: the base's own movement, as the controller read it — what the
+			// rebase-repair and the fresh-retry after it are briefed with, under the
+			// fact heading. It rides the detail rather than the artifact store
+			// because it is the one line per path a worker needs to place the
+			// conflict, bounded by `--stat`'s own count cap; the bytes are not
+			// the diff.
+			base_movement: await baseMovement(clone, {
+				worktreePath: opened.path,
+				from: rebased.previousBase,
+				to: fresh.commit,
+			}),
 			evidence_ref: evidence?.ref ?? null,
 			worktree: opened.path,
 		});
@@ -193,15 +213,40 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
 	// the push against a branch, not against a detached head only this step saw.
 	await adoptRebasedHead(clone, { branch, from: opened.head, to: rebased.head });
 
-	const verified = await verifyPhase(checks, { cwd: opened.path, ...(env === undefined ? {} : { env }), now });
+	const verifiedAt = now();
+	const execution = newUlid(verifiedAt);
+	const verified = await verifyPhase(checks, {
+		cwd: opened.path,
+		...(env === undefined ? {} : { env }),
+		now,
+		record: (results) =>
+			recordCheckOutputs(store, results, {
+				execution,
+				run,
+				ticket,
+				attempt,
+				phase: PHASE_VERIFY,
+				actor,
+				fencingGeneration: hold.fence().generation,
+				at: verifiedAt,
+			}),
+	});
 	// The commit list only when there is something to publish: a red set stops
 	// here, and reading the range would be work whose answer nobody uses. The
 	// worktree stays either way — §9.5's second lease publishes from it on the
 	// green path, and §12.7 retains it on the red one.
 	const commits =
 		verified.outcome === CHECK_RESULTS.passed
-			? (await assessIntegration(clone, { worktreePath: opened.path, baseCommit: fresh.commit, head: rebased.head, run, ticket }))
-					.commits
+			? (
+					await assessIntegration(clone, {
+						worktreePath: opened.path,
+						baseCommit: fresh.commit,
+						head: rebased.head,
+						run,
+						ticket,
+						acceptedRuns,
+					})
+				).commits
 			: [];
 
 	return answer(verified.outcome, {
@@ -215,6 +260,26 @@ async function rebaseAndVerify(store, clone, { hold, run, ticket, attempt, branc
 		commits,
 		worktree: opened.path,
 	});
+}
+
+/**
+ * How many paths `base_movement` lists before `--stat` summarises the rest —
+ * a code constant for `MAX_BASE_MOVES`' reason: nobody tunes how long a
+ * prompt's fact block may be, and the summary line carries the total either
+ * way.
+ */
+const BASE_MOVEMENT_PATHS = 200;
+
+/**
+ * `git diff --stat previous_base..base_commit`, as read by the controller
+ * (#194): what the base branch gained while the attempt ran, one line per
+ * path. `null` when there is no previous base to diff from — unrelated
+ * histories — which is a fact the worker is better told than shown an empty
+ * stat for.
+ */
+async function baseMovement(clone, { worktreePath, from, to }) {
+	if (from === null) return null;
+	return clone.git(["diff", `--stat=120,90,${BASE_MOVEMENT_PATHS}`, `${from}..${to}`], { cwd: worktreePath });
 }
 
 /**
@@ -339,7 +404,7 @@ function reverified({ outcome, detail }) {
  * pull request names always exists.
  */
 async function publish(store, clone, context) {
-	const { hold, run, ticket, attempt, branch, baseBranch, verified, actor, now } = context;
+	const { hold, run, ticket, attempt, branch, baseBranch, verified, acceptedRuns = [], actor, now } = context;
 
 	// No worktree: every predicate is a question about commits and trees, which
 	// the bare clone answers — and that is what lets a re-entry after a success
@@ -349,6 +414,7 @@ async function publish(store, clone, context) {
 		head: verified.head,
 		run,
 		ticket,
+		acceptedRuns,
 	});
 	if (!predicates.pushable) {
 		// Retained (§12.7): the branch is unpushed, so the worktree and it are the

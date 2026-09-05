@@ -20,7 +20,8 @@ import {
 	requireAttemptIdentity,
 } from "../worker/attempt.mjs";
 import { dispatchOrder, selectRoute } from "../worker/dispatch.mjs";
-import { PIPELINE_ROLES, postureOf } from "../worker/roles.mjs";
+import { missingResult, PIPELINE_ROLES, postureOf } from "../worker/roles.mjs";
+import { fedCheckEvidence } from "./feeds.mjs";
 import { createRetrySeam } from "./retry.mjs";
 import { harvestPhase } from "./phases.mjs";
 import { integrationVerify, integratePublish } from "./integration.mjs";
@@ -28,6 +29,7 @@ import { reviewPhase } from "./review.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 import { walkStages } from "./stages.mjs";
 import { reviewAutomationRetry } from "./budgets.mjs";
+import { planTicketContinuation } from "./resume.mjs";
 
 /**
  * #147's production composition of §8.1.
@@ -55,9 +57,25 @@ export function createProductionPipeline(store, context) {
 	const retryPlans = new Map();
 	const adapters = workerAdapters({ herdr, socket, now, worker });
 
-	return async function productionPipeline(lane) {
+	return Object.freeze({ prepare: prepareExecution, execute: productionPipeline });
+
+	async function prepareExecution({ ticket }) {
+		// Pin immediately before the decision (§7.2), then snapshot immediately
+		// before the claim. The resulting object is the one value used by the claim,
+		// mint, and prompt; none of those layers re-derive #199's answer.
+		const base = await clone.fetchBase({ baseBranch: config.git.baseBranch });
+		const ticketSnapshot = await snapshotTicket(tracker, ticket);
+		return planTicketContinuation({
+			clone,
+			baseCommit: base.commit,
+			ticketSnapshot,
+			trackerLogin: config.tracker.login,
+		});
+	}
+
+	async function productionPipeline(lane) {
 		return withAttemptBranches(lane, await settled(lane));
-	};
+	}
 
 	async function settled(lane) {
 		try {
@@ -106,8 +124,15 @@ export function createProductionPipeline(store, context) {
 	}
 
 	async function executeProduction(lane) {
-		const { ticket, attempt, slots, capacity, route } = lane;
-		const ticketSnapshot = await snapshotTicket(tracker, ticket);
+		const { ticket, attempt, slots, capacity, route, preparation } = lane;
+		if (preparation === null || preparation === undefined) {
+			throw new FactoryPipelineError(
+				"phase-unwired",
+				`Ticket ${ticket}'s production lane reached attempt ${attempt} without its pre-claim continuation plan (#199).`,
+				{ at: "continuation", ticket, attempt },
+			);
+		}
+		const ticketSnapshot = preparation.ticketSnapshot;
 		const labels = ticketSnapshot.labels;
 		// §11.5's dispatch for this ticket is the scheduler's, made before the
 		// claim and against the memo, and it is what the ticket slot and the
@@ -123,10 +148,12 @@ export function createProductionPipeline(store, context) {
 			ticket,
 			attempt,
 			route: initialRoute,
-			baseBranch: config.git.baseBranch,
+			baseCommit: preparation.baseCommit,
 			workerConfig: worker.environment,
 			now,
 		});
+
+		if (preparation.brief !== null) retryPlans.set(attempt, Object.freeze({ brief: preparation.brief }));
 
 		const common = {
 			store,
@@ -148,6 +175,7 @@ export function createProductionPipeline(store, context) {
 			capacity,
 			initialAttempt: attempt,
 			initialModelSlot: slots.model,
+			acceptedRuns: preparation.acceptedRuns,
 		};
 
 		const nextAttempt = createRetrySeam(store, clone, {
@@ -199,6 +227,9 @@ function phaseExecutors(context) {
 				worktreePath: opened.worktree,
 				branch: opened.branch,
 				baseCommit: opened.baseCommit,
+				// #194: a rebase-repair's mint names the base it was told to rebase
+				// onto, and §7.4's boundary under that tier is the merge-base with it.
+				onto: opened.onto,
 			});
 		},
 		verify: async ({ run, ticket, attempt }) => {
@@ -229,6 +260,42 @@ async function implement(context, identity) {
 			review: null,
 		}),
 	);
+	return builderResult(roleFor(context.worker.roles, opened.role), result);
+}
+
+/**
+ * The builder's phase result from its attempt's outcome — **the builder-side
+ * half of §8.4's "two levels, two owners"** (#189).
+ *
+ * §6.6's schema judgement already happened in `worker/outbox.mjs`, and a record
+ * it refused arrives here as `invalid-result` with the problems it named. What
+ * is judged here is what the *role* owes: a `completed` builder record with no
+ * trace produced no result for its role, exactly as a `completed` reviewer with
+ * no verdict produces none for its (`pipeline/review.mjs`). Both are
+ * `invalid-result`, and §8.10's row for this phase — fresh-retry on the repair
+ * budget — is unchanged.
+ *
+ * The owed-ness is asked of **the record, whatever the attempt's outcome**: a
+ * builder still alive at turn end with a valid `completed` file is
+ * `wrote-but-hung`, which §8.10 harvests exactly as a completion — so a
+ * traceless record there is the same invalid result, rather than a review
+ * reached with nothing to brief the spec axis with.
+ *
+ * **The detail on an invalid result is the controller's own sentences and
+ * never the record.** The row marks its evidence as fact so §8.5's brief tells
+ * the fresh attempt why it exists; a record put on that detail would reach the
+ * next builder as controller-verified fact, which no worker's prose is.
+ *
+ * @param {Readonly<object>} role the attempt's pipeline role
+ * @param {{ outcome: string, record: object | null, problems?: ReadonlyArray<string> }} result
+ * @returns {{ outcome: string, detail: object | null }}
+ */
+export function builderResult(role, result) {
+	if (result.outcome === "invalid-result") {
+		return { outcome: result.outcome, detail: { problems: [...(result.problems ?? [])] } };
+	}
+	const missing = missingResult(role, result.record ?? null);
+	if (missing !== null) return { outcome: "invalid-result", detail: { problems: [missing] } };
 	return { outcome: result.outcome, detail: result.record };
 }
 
@@ -256,7 +323,9 @@ async function review(context, { run, ticket, attempt }) {
 					identity: axis.identity,
 					opened: axisOpened,
 					repair: null,
-					review: { baseCommit: axis.baseCommit, reviewedCommit: axis.reviewedCommit },
+					// #189: the builder's trace rides with the fixed point, and the
+					// template renders it for the axis whose expectations check it.
+					review: { baseCommit: axis.baseCommit, reviewedCommit: axis.reviewedCommit, trace: axis.trace },
 				}),
 			);
 		},
@@ -325,6 +394,12 @@ async function launched(context, { identity, opened, repair, review }) {
 		ticketSnapshot: context.ticketSnapshot,
 		repair,
 		review,
+		trustedEvidence: fedCheckEvidence(context.store, {
+			run: identity.run,
+			ticket: identity.ticket,
+			phase: identity.phase,
+			checks: context.config.checks,
+		}),
 		sessionArgs: binding.args,
 		sessionEnv: binding.paneEnv,
 		// §6.6's two clocks: the profile's declared ceiling and no-progress window,
@@ -424,6 +499,7 @@ function integrationContext(context, { run, ticket, attempt, opened }) {
 		checks: context.config.checks,
 		reader: context.tracker,
 		writer: context.trackerWriter,
+		acceptedRuns: context.acceptedRuns,
 		actor: "controller",
 		now: context.now,
 	};
@@ -478,7 +554,7 @@ function requireLaneRoute(route, { ticket, attempt }) {
 	);
 }
 
-async function openInitialAttempt({ store, clone, hold, run, ticket, attempt, route, baseBranch, workerConfig, now }) {
+async function openInitialAttempt({ store, clone, hold, run, ticket, attempt, route, baseCommit, workerConfig, now }) {
 	const purpose = { initial: true };
 	const allocated = allocateAttempt(store, { run, ticket, purpose });
 	if (allocated.attempt !== attempt) {
@@ -489,14 +565,13 @@ async function openInitialAttempt({ store, clone, hold, run, ticket, attempt, ro
 		);
 	}
 	const identity = requireAttemptIdentity({ run, ticket, phase: PHASE_IMPLEMENT, attempt });
-	const base = await clone.fetchBase({ baseBranch });
 	mintAttempt(store, {
 		hold,
 		identity,
 		role: PHASE_IMPLEMENT,
 		profile: route.profile,
 		routing: route,
-		baseCommit: base.commit,
+		baseCommit,
 		purpose,
 		at: now(),
 	});
@@ -506,7 +581,7 @@ async function openInitialAttempt({ store, clone, hold, run, ticket, attempt, ro
 		ticket,
 		attempt,
 		phase: PHASE_IMPLEMENT,
-		baseCommit: base.commit,
+		baseCommit,
 		workerConfig,
 		actor: "controller",
 		at: now(),
@@ -540,6 +615,9 @@ function attemptRecord(store, { run, attempt }) {
 		role: event.payload.role,
 		profile: event.payload.profile,
 		baseCommit: event.payload.base_commit,
+		// The base a rebase-repair was told to rebase onto, off its purpose
+		// (`pipeline/repair.mjs`); `null` on every other attempt (#194).
+		onto: event.payload.onto ?? null,
 		branch: event.payload.branch ?? attemptBranch({ ticket: event.ticket, attempt }),
 		worktree: event.payload.worktree,
 	};
@@ -562,7 +640,14 @@ function endedAttempt(store, run, attempt) {
 }
 
 function outcomeFromEnd(event) {
-	return Object.freeze({ outcome: event.payload.outcome, record: event.payload.result, refusal: event.payload.refusal ?? null });
+	return Object.freeze({
+		outcome: event.payload.outcome,
+		record: event.payload.result,
+		// §6.6's schema problems ride the ending too, so a re-entry's invalid
+		// result names the same block the first controller's did (#189).
+		problems: Object.freeze([...(event.payload.problems ?? [])]),
+		refusal: event.payload.refusal ?? null,
+	});
 }
 
 function roleFor(roles, name) {

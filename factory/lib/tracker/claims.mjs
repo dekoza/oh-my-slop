@@ -93,12 +93,25 @@ const CLAIM_MARKER = "<!-- factory-claim -->";
  *   typed payload conflict rather than as a second comment.
  * @param {string} claim.assignee the factory's own tracker identity (`tracker.assignee`)
  * @param {number} claim.at
+ * @param {Readonly<object> | null} [claim.continuation] #199's controller-verified
+ *   resume decision, or its explicit fresh-execution fallback
  * @param {number} [claim.staleAfterMs] §3.3's foreign staleness window
  * @returns {Promise<Readonly<object>>} the outcome, and the evidence behind it
  */
 export async function claimTicket(
 	store,
-	{ reader, writer, hold, run, ticket, attempt, assignee, at, staleAfterMs = FOREIGN_STALE_AFTER_MS },
+	{
+		reader,
+		writer,
+		hold,
+		run,
+		ticket,
+		attempt,
+		assignee,
+		at,
+		continuation = null,
+		staleAfterMs = FOREIGN_STALE_AFTER_MS,
+	},
 ) {
 	const issue = await reader.readIssue(ticket);
 
@@ -166,14 +179,14 @@ export async function claimTicket(
 		ticket,
 		at,
 		operand: COMMENT_OPERANDS.claim,
-		body: claimBody({ run, ticket, attempt, at }),
+		body: claimBody({ run, ticket, attempt, at, continuation }),
 		// **§3.3's three identities, and not its timestamp.** The comment carries the
 		// stamp because §3.3 asks for it; the *intent* is which run claims which
 		// ticket under which attempt, and digesting the rendered body instead would
 		// make a re-entered claim a §4.5 payload conflict for no reason but the hour
 		// it happened at — the one failure that leaves a ticket permanently
 		// unclaimable by the run that already holds it.
-		payload: { run, ticket, attempt },
+		payload: { run, ticket, attempt, ...(continuation === null ? {} : { continuation }) },
 	});
 
 	// §3.3's re-read. Two things can have happened while the two writes above were
@@ -458,7 +471,7 @@ async function lastTrace(reader, issue) {
  * §3.3's structured claim comment: **run id, ticket, attempt id, and timestamp**,
  * in a block a machine can read and a human can skim.
  */
-function claimBody({ run, ticket, attempt, at }) {
+function claimBody({ run, ticket, attempt, at, continuation }) {
 	return [
 		CLAIM_MARKER,
 		"🤖 **factory — claimed**",
@@ -468,8 +481,29 @@ function claimBody({ run, ticket, attempt, at }) {
 		`ticket: ${ticket}`,
 		`attempt: ${attempt}`,
 		`at: ${new Date(at).toISOString()}`,
+		...continuationLines(continuation),
 		"```",
 	].join("\n");
+}
+
+function continuationLines(continuation) {
+	if (continuation === null) return [];
+	if (continuation.kind === "resume") {
+		const answers = continuation.answering_comments.map(({ author, id }) => `${author}#${id}`).join(", ");
+		return [
+			"continuation: resume",
+			`paused_attempt: ${continuation.paused_attempt}`,
+			`reason_class: ${continuation.reason_class}`,
+			`pause_comment: ${continuation.pause_comment}`,
+			`answering_comments: ${answers || "none"}`,
+			`resumed_from: ${continuation.resumed_from}`,
+		];
+	}
+	return [
+		"continuation: fresh",
+		`resume_fallback_code: ${continuation.fallback_reason.code}`,
+		`resume_fallback: ${continuation.fallback_reason.message}`,
+	];
 }
 
 /**

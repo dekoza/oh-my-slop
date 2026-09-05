@@ -7,6 +7,7 @@ import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mj
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { validateRole } from "../../factory/lib/worker/adapter.mjs";
 import {
+	CLAUDE_BROWSER_FENCE,
 	CLAUDE_DISCOVERY_FENCE,
 	CLAUDE_PROBE_ONLY_FLAGS,
 	claudeProbeArguments,
@@ -16,10 +17,11 @@ import {
 import {
 	createPiAdapter,
 	PI_PROBE_ONLY_FLAGS,
+	PI_TRUST_APPROVAL,
 	piProbeArguments,
 	piWorkerArguments,
 } from "../../factory/lib/worker/pi.mjs";
-import { claudeSessionArguments } from "../../factory/lib/worker/permissions.mjs";
+import { claudeSessionArguments, piSessionArguments } from "../../factory/lib/worker/permissions.mjs";
 import { pluginCachePath } from "../../factory/lib/worker/plugin.mjs";
 import { PIPELINE_ROLES } from "../../factory/lib/worker/roles.mjs";
 import { makeTree, realGeneratorFiles, skillMarkdown } from "./helpers/factory-package.mjs";
@@ -45,8 +47,34 @@ import { claudeTransport, fakeHerdr, piTransport, skillCommandsOf } from "./help
 test("a pi worker session suppresses default skill discovery and loads the pinned roots only", () => {
 	assert.deepEqual(
 		piWorkerArguments(["/pin/skills", "/pin/extra"], ["--exclude-tools", "edit,write"]),
-		["--no-skills", "--skill", "/pin/skills", "--skill", "/pin/extra", "--exclude-tools", "edit,write"],
+		[
+			"--no-skills",
+			"--approve",
+			"--skill",
+			"/pin/skills",
+			"--skill",
+			"/pin/extra",
+			"--exclude-tools",
+			"edit,write",
+		],
 	);
+});
+
+/**
+ * #178: every pi session resolves project trust on the command line as well as
+ * in the store. The store is keyed by a path, and a key the harness spells
+ * differently reads back as no decision — which is the dialog, on a pane nobody
+ * is watching.
+ */
+test("every pi session carries the trust approval, the reviewer's included (§6.8, #178)", () => {
+	assert.deepEqual(PI_TRUST_APPROVAL, ["--approve"]);
+	for (const posture of ["builder", "reviewer"]) {
+		const args = piWorkerArguments(["/pin/skills"], piSessionArguments({ posture }));
+		assert.ok(args.includes("--approve"), `the pi ${posture} binding lost its trust approval`);
+	}
+	// And the probe, by composition — the session the factory runs itself is as
+	// capable of meeting the dialog as a worker's is.
+	assert.ok(piProbeArguments(["/pin/skills"]).includes("--approve"));
 });
 
 test("the pi probe runs the worker binding plus its two disposability flags, and nothing else", () => {
@@ -69,12 +97,39 @@ test("a Claude worker session loads the §6.3 plugin — the closure's only deli
 		[
 			"--plugin-dir",
 			"/store/plugins/rev-1",
+			"--no-chrome",
 			"--setting-sources",
 			"user",
 			"--settings",
 			"/cfg/settings-builder.json",
 		],
 	);
+});
+
+/**
+ * #178: the Chrome integration is gated on a cache key the harness warms itself,
+ * and a warm key raises an interstitial in an interactive pane that Herdr reads
+ * as `idle`. The flag stops the detection running at all, so it belongs to the
+ * worker binding beside the discovery fence — on **both** postures and on the
+ * probe, which is a prime candidate for warming the very cache the acceptance
+ * assertion is an absence of.
+ */
+test("every Claude session disables the browser integration — builder, reviewer and probe (§6.8, #178)", () => {
+	assert.deepEqual(CLAUDE_BROWSER_FENCE, ["--no-chrome"]);
+
+	for (const posture of ["builder", "reviewer"]) {
+		const args = claudeWorkerArguments(
+			"/store/plugins/rev-1",
+			claudeSessionArguments({ posture, settingsPath: `/cfg/settings-${posture}.json` }),
+		);
+		assert.ok(args.includes("--no-chrome"), `the Claude ${posture} binding lost its browser fence`);
+	}
+
+	assert.ok(claudeProbeArguments("/store/plugins/rev-1").includes("--no-chrome"));
+	// The one deliberately unfenced session — the discovery fence's own control —
+	// keeps it too: a control session that warmed the cache would make the absence
+	// unprovable even with every worker fenced.
+	assert.ok(claudeProbeArguments("/store/plugins/rev-1", [], { fenced: false }).includes("--no-chrome"));
 });
 
 /**
@@ -86,13 +141,15 @@ test("a Claude worker session loads the §6.3 plugin — the closure's only deli
 test("a Claude worker session fences the project skill discovery its cwd would otherwise supply", () => {
 	assert.deepEqual(CLAUDE_DISCOVERY_FENCE, ["--setting-sources", "user"]);
 	const worker = claudeWorkerArguments("/store/plugins/rev-1");
-	assert.deepEqual(worker.slice(2), [...CLAUDE_DISCOVERY_FENCE]);
+	assert.deepEqual(worker.slice(2 + CLAUDE_BROWSER_FENCE.length), [...CLAUDE_DISCOVERY_FENCE]);
 
 	// The one session the factory runs unfenced is the fence proof's own control
-	// (§6.2), and it is a probe, never a worker.
+	// (§6.2), and it is a probe, never a worker. It drops the *discovery* fence
+	// and nothing else — the browser fence is not part of what it controls for.
 	assert.deepEqual(claudeWorkerArguments("/store/plugins/rev-1", [], { fenced: false }), [
 		"--plugin-dir",
 		"/store/plugins/rev-1",
+		...CLAUDE_BROWSER_FENCE,
 	]);
 });
 

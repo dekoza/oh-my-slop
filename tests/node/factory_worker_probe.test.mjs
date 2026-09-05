@@ -62,7 +62,15 @@ test("a green pi probe proves the closure, the models, and the observed capacity
 
 	// The production flag set, verbatim (§6.2).
 	const [session] = fake.calls.lineSession;
-	assert.deepEqual(session.args, ["--mode", "rpc", "--no-session", "--no-skills", "--skill", join(root, "skills")]);
+	assert.deepEqual(session.args, [
+		"--mode",
+		"rpc",
+		"--no-session",
+		"--no-skills",
+		"--approve",
+		"--skill",
+		join(root, "skills"),
+	]);
 	// The capacity fold: the same probe pass asked the endpoint, not a second subsystem.
 	assert.deepEqual(fake.calls.httpGet, ["http://127.0.0.1:9/props"]);
 });
@@ -287,6 +295,7 @@ test("a green Claude probe validates strictly, diffs components, and proves the 
 	assert.deepEqual(claudeCalls[2].slice(3), ["plugin", "details", "oh-my-slop"]);
 	const [session] = fake.calls.lineSession;
 	assert.deepEqual(session.args.slice(2), [
+		"--no-chrome",
 		"--setting-sources",
 		"user",
 		"--input-format",
@@ -410,10 +419,11 @@ test("the Claude probe runs the posture's own flags, so the installed binary is 
 	});
 
 	const [session] = fake.calls.lineSession;
-	// The worker binding first — plugin dir, the discovery fence, then the
-	// posture's flags — with the probe-only IO flags after it (#160's restored
-	// invariant, #163's fence inside it).
-	assert.deepEqual(session.args.slice(2, 8), [
+	// The worker binding first — plugin dir, the browser fence, the discovery
+	// fence, then the posture's flags — with the probe-only IO flags after it
+	// (#160's restored invariant, #163's fence inside it, #178's beside it).
+	assert.deepEqual(session.args.slice(2, 9), [
+		"--no-chrome",
 		"--setting-sources",
 		"user",
 		"--settings",
@@ -453,8 +463,11 @@ test("the fence proof plants a canary in the probe's cwd, proves both sides, and
 	const [production, control] = fake.calls.lineSession;
 	assert.ok(production.args.includes("--setting-sources"));
 	assert.ok(!control.args.includes("--setting-sources"));
-	assert.deepEqual(production.args.slice(2, 4), ["--setting-sources", "user"]);
-	assert.deepEqual(control.args, [...production.args.slice(0, 2), ...production.args.slice(4)]);
+	assert.deepEqual(production.args.slice(3, 5), ["--setting-sources", "user"]);
+	assert.deepEqual(control.args, [...production.args.slice(0, 3), ...production.args.slice(5)]);
+	// #178: the control drops the discovery fence and nothing else — a control
+	// session that warmed the Chrome cache would hang a later worker pane.
+	assert.ok(control.args.includes("--no-chrome"));
 	assert.equal(control.cwd, cwd);
 
 	// The canary is the controller's, not the repository's: it does not outlive

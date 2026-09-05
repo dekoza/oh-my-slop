@@ -19,7 +19,9 @@ import { assertFactoryRef, attemptWorktreePath, evidenceRef, integrationWorktree
  * **Nothing here resolves a conflict.** §8.10 is explicit that the controller
  * never attempts automatic resolution — that would put a model inside a
  * controller phase — so a conflicting rebase is aborted, reported with the paths
- * git named, and left for §8.5's fresh-retry from the new base tip.
+ * git named, and left for §8.5's rebase-repair: a builder attempt from the
+ * same tip, told to rebase it (#194), and thereafter the fresh-retry from the
+ * new base tip.
  *
  * **Nothing here force-updates anything.** The one local ref move is a
  * compare-and-swap naming the value it replaces, and the one push is plain and
@@ -208,9 +210,11 @@ export async function basedOn(clone, { worktreePath, commit }) {
  * compares heads) while publishing half the work.
  *
  * **A conflict is aborted here, never resolved and never left in progress.**
- * §8.10 gives the conflict a fresh-retry from the new base tip and says plainly
- * that the controller attempts no automatic resolution; a rebase left mid-flight
- * would also be the state a re-entry, a second lane, or a human walks into.
+ * §8.10 gives the conflict a rebase-repair — the model that resolves it stays
+ * inside a worker attempt (#194) — and says plainly that the controller attempts
+ * no automatic resolution; a rebase left mid-flight would also be the state a
+ * re-entry, a second lane, or a human walks into. The worktree this leaves is
+ * therefore the branch's own tip, clean and detached.
  *
  * @param {object} clone the private clone's handle
  * @param {object} what
@@ -353,8 +357,10 @@ export async function adoptRebasedHead(clone, { branch, from, to }) {
  *
  * The trailer is matched on **run and ticket**, not on the attempt: §8.5's
  * repair branches from the prior attempt's tip, so its commits are legitimately
- * stamped with the attempt before it. What must never appear is a commit
- * belonging to a different ticket execution.
+ * stamped with the attempt before it. #199 adds one explicit exception across
+ * runs: a resumed execution carries the paused history's controller-verified run
+ * ids, because those retained commits keep their original trailers. An arbitrary
+ * run for the same ticket remains refused.
  *
  * **It needs no worktree.** Every question here is about commits and trees —
  * `rev-list`, `diff --check` between two revisions, trailers off a log — which
@@ -369,10 +375,15 @@ export async function adoptRebasedHead(clone, { branch, from, to }) {
  * @param {string} what.head the commit that will be pushed
  * @param {string} what.run
  * @param {number} what.ticket
+ * @param {ReadonlyArray<string>} [what.acceptedRuns] prior paused executions
+ *   whose retained commits are deliberately inherited by #199
  * @returns {Promise<Readonly<object>>} a verdict: `pushable`, the commit list,
  *   and — when it is not — the refusal and what git said about it
  */
-export async function assessIntegration(clone, { worktreePath = null, baseCommit, head, run, ticket }) {
+export async function assessIntegration(
+	clone,
+	{ worktreePath = null, baseCommit, head, run, ticket, acceptedRuns = [] },
+) {
 	const commits = await commitsBetween(clone, { worktreePath, baseCommit, head });
 	if (commits.length === 0) {
 		return verdict({
@@ -388,7 +399,14 @@ export async function assessIntegration(clone, { worktreePath = null, baseCommit
 		return verdict({ pushable: false, reason: INTEGRATION_REFUSALS.diffCheck, commits, detail: damage });
 	}
 
-	const untrailed = await untrailedCommits(clone, { worktreePath, baseCommit, head, run, ticket });
+	const allowedRuns = [...new Set([run, ...acceptedRuns])];
+	const untrailed = await untrailedCommits(clone, {
+		worktreePath,
+		baseCommit,
+		head,
+		runs: allowedRuns,
+		ticket,
+	});
 	if (untrailed.length > 0) {
 		return verdict({
 			pushable: false,
@@ -396,8 +414,8 @@ export async function assessIntegration(clone, { worktreePath = null, baseCommit
 			commits,
 			untrailed,
 			detail:
-				`${untrailed.length} commit(s) carry no \`${TRAILER_KEY}: ${run}/${ticket}/…\` trailer. §7.3 makes it ` +
-				"mandatory and verified here, so a published commit always names the ticket execution that produced it.",
+				`${untrailed.length} commit(s) carry no accepted \`${TRAILER_KEY}: <run>/${ticket}/…\` trailer. ` +
+				"§7.3 makes it mandatory and verified here, so a published commit always names an execution in this ticket's declared continuation chain.",
 		});
 	}
 
@@ -579,18 +597,23 @@ async function diffCheck(clone, { worktreePath, baseCommit, head }) {
 	}
 }
 
-/** The commits with no §7.3 trailer naming this ticket execution, oldest first. */
-async function untrailedCommits(clone, { worktreePath, baseCommit, head, run, ticket }) {
+/** The commits with no §7.3 trailer naming an accepted ticket execution, oldest first. */
+async function untrailedCommits(clone, { worktreePath, baseCommit, head, runs, ticket }) {
 	const format = `%H${BETWEEN_FIELDS}%(trailers:key=${TRAILER_KEY},valueonly,separator=${escaped(BETWEEN_VALUES)})${escaped(BETWEEN_COMMITS)}`;
 	const listed = await clone.git(["log", "--reverse", `--format=${format}`, `${baseCommit}..${head}`], where(worktreePath));
 
-	const wanted = `${run}/${ticket}/`;
+	const wanted = runs.map((acceptedRun) => `${acceptedRun}/${ticket}/`);
 	return listed
 		.split(BETWEEN_COMMITS)
 		.map((record) => record.trim())
 		.filter((record) => record !== "")
 		.map((record) => record.split(BETWEEN_FIELDS))
-		.filter(([, values = ""]) => !values.split(BETWEEN_VALUES).some((value) => value.trim().startsWith(wanted)))
+		.filter(
+			([, values = ""]) =>
+				!values
+					.split(BETWEEN_VALUES)
+					.some((value) => wanted.some((prefix) => value.trim().startsWith(prefix))),
+		)
 		.map(([sha]) => sha);
 }
 

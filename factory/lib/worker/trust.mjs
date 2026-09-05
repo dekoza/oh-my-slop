@@ -1,6 +1,8 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
+import { canonicalPath } from "../identity/paths.mjs";
+
 /**
  * §6.8's trust half: **the controller pre-trusts its own worktrees
  * mechanically, per attempt, in controller-owned config scope for both
@@ -17,8 +19,20 @@ import { dirname, join, resolve } from "node:path";
  *
  * - **pi** keys `trust.json` by directory and walks *up* to the nearest entry
  *   (`core/trust-manager.js`), so one entry on the worktrees root covers every
- *   attempt worktree beneath it.
- * - **Claude** keys `.claude.json`'s `projects` map **exactly**, and for a
+ *   attempt worktree beneath it. It **canonicalizes the directory first**,
+ *   resolving symlinks, both before keying and before the ancestor walk — so
+ *   this module does too (#178). Resolving without following symlinks put the
+ *   two spellings on different keys for any store path with a symlink in it,
+ *   the pre-trust silently failed to apply, and the trust dialog fired: the
+ *   exact §6.8 hang the preflight check exists to prove impossible, latent on a
+ *   plain host and live wherever a temporary directory is a symlink (macOS
+ *   `/tmp` and `/var` among them).
+ * - **Claude** keys `.claude.json`'s `projects` map **exactly**, on a path
+ *   `resolve`d and not realpath'd — deliberately not pi's spelling, because
+ *   whether Claude canonicalizes has never been measured and mirroring a rule
+ *   nobody observed is the guess this module exists to avoid. What covers the
+ *   case if it does is `untrustedProjects`, which names any key the runtime
+ *   recorded that nobody trusted. For a
  *   linked worktree the key it writes is the **repository's git common
  *   directory**, not the worktree path. Verified live against Claude Code
  *   2.1.233: a session run in a worktree of `<store>/clone.git` recorded
@@ -43,11 +57,23 @@ const CLAUDE_STATE_FILE = ".claude.json";
  * repository with `@`-imports in its `CLAUDE.md` raises, and a pane blocked on
  * that one is just as hung.
  */
-const CLAUDE_PROJECT_TRUST = Object.freeze({
+export const CLAUDE_PROJECT_TRUST = Object.freeze({
 	hasTrustDialogAccepted: true,
 	hasClaudeMdExternalIncludesApproved: true,
 	hasClaudeMdExternalIncludesWarningShown: true,
 });
+
+/**
+ * What the writer settles on the state **as a whole** rather than per project:
+ * the onboarding flow, which is a full-screen interstitial on a pane nobody is
+ * watching.
+ *
+ * It is a named constant beside the per-project set for one reason (#178): the
+ * `worker-trust` preflight check reads back **everything this module writes**,
+ * derived from these two constants rather than hand-listed, so a fifth settled
+ * key cannot become a fourth unproven one.
+ */
+export const CLAUDE_STATE_SETTLED = Object.freeze({ hasCompletedOnboarding: true });
 
 /**
  * pi's own rule, mirrored: the nearest ancestor with an entry decides, and no
@@ -58,7 +84,9 @@ const CLAUDE_PROJECT_TRUST = Object.freeze({
  * @returns {boolean | null}
  */
 export function piTrustDecision(map, path) {
-	let current = resolve(path);
+	// Canonical, because that is what pi looks the key up under. The walk then
+	// runs over canonical spellings all the way to the root, exactly as pi's does.
+	let current = canonicalPath(path);
 	for (;;) {
 		const decision = map[current];
 		if (decision === true || decision === false) return decision;
@@ -94,7 +122,7 @@ export function readPiTrust(agentDir) {
  */
 export function pretrustPi(agentDir, paths) {
 	const map = readPiTrust(agentDir);
-	for (const path of paths) map[resolve(path)] = true;
+	for (const path of paths) map[canonicalPath(path)] = true;
 
 	const sorted = {};
 	for (const key of Object.keys(map).sort()) sorted[key] = map[key];
@@ -150,18 +178,50 @@ export function pretrustClaude(configDir, keys) {
 		projects[resolve(key)] = { ...projects[resolve(key)], ...CLAUDE_PROJECT_TRUST };
 	}
 
-	const written = { ...state, hasCompletedOnboarding: true, projects };
+	const written = { ...state, ...CLAUDE_STATE_SETTLED, projects };
 	writeAtomic(join(configDir, CLAUDE_STATE_FILE), `${JSON.stringify(written, null, 2)}\n`);
 	return written;
 }
 
 /**
+ * Which of the settled keys did **not** read back for this project (#178).
+ *
+ * The writer settles four things — the trust dialog, both external-includes
+ * keys, and the onboarding flag — and the check that proved one of them proved
+ * one interstitial while three more were written and never read. Each of those
+ * is a modal that hangs an interactive pane exactly as thoroughly as the trust
+ * dialog does, so the readback is over the constants themselves: what is written
+ * is what is proven, by construction rather than by anyone remembering.
+ *
+ * @param {object} state what `readClaudeConfigState` answered
+ * @param {string} key one project key
+ * @returns {ReadonlyArray<string>} the key names that failed to read back, in
+ *   the order the constants declare them; empty when every one is settled
+ */
+export function claudeUnsettledKeys(state, key) {
+	return Object.freeze([
+		...unsettledIn(state, CLAUDE_STATE_SETTLED),
+		...unsettledIn(state.projects?.[resolve(key)], CLAUDE_PROJECT_TRUST),
+	]);
+}
+
+/** The names in `expectations` that `carrier` does not answer with the expected value. */
+function unsettledIn(carrier, expectations) {
+	return Object.entries(expectations)
+		.filter(([name, expected]) => (carrier ?? {})[name] !== expected)
+		.map(([name]) => name);
+}
+
+/**
+ * Whether one project reads back as fully settled — **every** key the writer
+ * writes, not the trust dialog alone (#178).
+ *
  * @param {object} state what `readClaudeConfigState` answered
  * @param {string} key one project key
  * @returns {boolean}
  */
 export function claudeTrustDecision(state, key) {
-	return state.projects?.[resolve(key)]?.hasTrustDialogAccepted === true;
+	return claudeUnsettledKeys(state, key).length === 0;
 }
 
 /**

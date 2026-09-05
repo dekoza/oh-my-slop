@@ -1,3 +1,4 @@
+import { AGENT_BORNE_PHASES, PHASE_REVIEW } from "../domain/vocabulary.mjs";
 import { FactoryConfigError } from "./errors.mjs";
 import {
 	IDENTIFIER_PATTERN,
@@ -16,25 +17,36 @@ import {
  * because §8.2 rules out inferring them from `pyproject.toml`, `package.json`,
  * a Makefile, or `AGENTS.md` prose.
  *
- * All five fields are required. `expectedFailureExitCodes` in particular has no
- * default: it is the sole line between "the worker's code failed this check" and
- * "this check is broken", and pytest's 1/2/5, ruff, tsc, and a shell script do
- * not agree on it.
+ * Five fields are required. `feeds` is the one optional field: absence is the
+ * empty declaration, while a named phase is checked against the agent-borne
+ * pipeline vocabulary. `expectedFailureExitCodes` in particular has no default:
+ * it is the sole line between "the worker's code failed this check" and "this
+ * check is broken", and pytest's 1/2/5, ruff, tsc, and a shell script do not
+ * agree on it.
  */
 
-const CHECK_KEYS = Object.freeze([
+const REQUIRED_CHECK_KEYS = Object.freeze([
 	"name",
 	"command",
 	"timeout",
 	"severity",
 	"expectedFailureExitCodes",
 ]);
+const CHECK_KEYS = Object.freeze([...REQUIRED_CHECK_KEYS, "feeds"]);
+
+/**
+ * Review remains independent (§8.4): its only inputs are the snapshot and diff.
+ * Every other agent-borne phase may consume controller-captured advisory output.
+ * Derived from the phase vocabulary so the sibling harden slice makes `harden`
+ * legal by adding the phase once, not by updating a second list here.
+ */
+export const FEEDABLE_PHASES = Object.freeze(AGENT_BORNE_PHASES.filter((phase) => phase !== PHASE_REVIEW));
 
 const CHECK_SEVERITIES = Object.freeze(["required", "advisory"]);
 const EVERY_CHECK_FIELD = "Every check declares all five fields, none of them defaulted.";
 
 /**
- * @returns {ReadonlyArray<{ name: string, command: string, timeout: number, severity: string, expectedFailureExitCodes: number[] }>}
+ * @returns {ReadonlyArray<{ name: string, command: string, timeout: number, severity: string, expectedFailureExitCodes: number[], feeds: ReadonlyArray<string> }>}
  */
 export function validateChecks(checks, configPath) {
 	if (checks.length === 0) {
@@ -70,9 +82,12 @@ function validateCheck(check, at, configPath) {
 	requireNoUnknownKeys(check, CHECK_KEYS, at, configPath);
 	requireExpectedFailureExitCodes(check, at, configPath);
 
-	for (const key of CHECK_KEYS) {
+	for (const key of REQUIRED_CHECK_KEYS) {
 		requireDeclared(check[key], `${at}.${key}`, configPath, EVERY_CHECK_FIELD);
 	}
+
+	const severity = requireOneOf(check.severity, CHECK_SEVERITIES, `${at}.severity`, configPath);
+	const feeds = validateFeeds(check.feeds, severity, at, configPath);
 
 	return Object.freeze({
 		name: requireCheckName(check.name, `${at}.name`, configPath),
@@ -83,9 +98,50 @@ function validateCheck(check, at, configPath) {
 		timeout: requireInteger(check.timeout, `${at}.timeout`, configPath, {
 			because: "A check without a mandatory timeout is a run that can hang forever. It is a whole number of seconds.",
 		}),
-		severity: requireOneOf(check.severity, CHECK_SEVERITIES, `${at}.severity`, configPath),
+		severity,
 		expectedFailureExitCodes: Object.freeze([...check.expectedFailureExitCodes]),
+		feeds,
 	});
+}
+
+/**
+ * §8.2's `feeds`: the agent-borne phases an advisory check's captured output
+ * reaches. Absent means `[]`; a feed on a required check, an unknown phase, or
+ * `review` refuses the config rather than becoming inert policy (§11.6).
+ */
+function validateFeeds(value, severity, at, configPath) {
+	if (value === undefined) return Object.freeze([]);
+	requireArray(value, `${at}.feeds`, configPath, `${at}.feeds`);
+
+	if (severity !== "advisory") {
+		throw new FactoryConfigError(
+			"invalid-value",
+			`${configPath}: ${at}.feeds is only valid on an advisory check. Required checks already gate every phase; feeding their output would make the prompt declaration misleading.`,
+			{ file: configPath, at: `${at}.feeds`, found: severity, expected: "advisory" },
+		);
+	}
+
+	const seen = new Set();
+	for (const [index, phase] of value.entries()) {
+		const path = `${at}.feeds[${index}]`;
+		if (typeof phase !== "string" || !FEEDABLE_PHASES.includes(phase)) {
+			throw new FactoryConfigError(
+				"invalid-value",
+				`${configPath}: ${path} must name a feedable agent phase (${FEEDABLE_PHASES.join(", ") || "none"}); found ${JSON.stringify(phase ?? null)}. Unknown phases refuse at load (§11.2).`,
+				{ file: configPath, at: path, found: phase ?? null, expected: FEEDABLE_PHASES.join("|") },
+			);
+		}
+		if (seen.has(phase)) {
+			throw new FactoryConfigError(
+				"invalid-value",
+				`${configPath}: ${path} repeats phase "${phase}".`,
+				{ file: configPath, at: path, found: phase, expected: "a phase listed once" },
+			);
+		}
+		seen.add(phase);
+	}
+
+	return Object.freeze([...value]);
 }
 
 /**
