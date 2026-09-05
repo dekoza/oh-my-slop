@@ -176,10 +176,12 @@ async function dispatch(parsed, context) {
  */
 async function run(parsed, verb, loaded, context) {
 	const answered = await verb.handler({
-		// `loaded` is null for the one verb §11.8 exempts from the load, and every
+		// `loaded` is null for the two verbs exempt from the load, and every
 		// config-derived field is null with it — `migrate` reads the file this
-		// binary could not load, from `cwd`, which is why the invocation directory
-		// is handed over beside the settled config rather than instead of it.
+		// binary could not load and `stop` walks up to the repository whose state
+		// holds the run, both from `cwd`, which is why the invocation directory is
+		// handed over beside the settled config rather than instead of it
+		// (§10.5, §11.8).
 		cwd: context.cwd,
 		repoRoot: loaded?.repoRoot ?? null,
 		configPath: loaded?.configPath ?? null,

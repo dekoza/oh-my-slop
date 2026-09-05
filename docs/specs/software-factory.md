@@ -2285,6 +2285,17 @@ states in its output that a second one escalates. **Worker panes are left runnin
 panes destroys the evidence a confused operator needs, and tearing down worktrees belongs to
 cleanup's reviewed plan.
 
+**`stop` is one of the two verbs exempt from §11.2's config load**, and the only one exempt for
+this reason: it ends a run that is *already going*, and the controller driving that run loaded
+its policy once, at start. A config edit the loader rejects therefore never reaches the drain,
+while every remaining ending destroys work — killing the pane abandons in-flight ticket
+executions mid-flight. **The verb that brings a live drain to a clean boundary must not be the
+one a broken config takes down**, and it needs nothing from that config to do it: the run, the
+lease row, and the stream it appends to are all durable repository state. Both the first request
+and its escalation stand under an unloadable config; with no run to address, the refusal is the
+verb's own (`no-run`), never a config-load failure. **The exemption is `stop` and `migrate` and
+nothing else** — `start` and every other verb that decides anything from policy stay fail-closed.
+
 **`doctor`:**
 
 - **By default reports the last baseline result**, with its `as-of` and the base commit it ran
@@ -2363,6 +2374,11 @@ different schemas, even if the key is renamed or read loosely.
 `extensions/config-loader.ts`'s fallback-on-parse-error semantics are explicitly **not** used
 for factory config — that function's silent defaulting is the failure mode this section exists
 to end.
+
+**Two verbs are exempt from the load, and they are exempt rather than lenient**: neither reads a
+degraded config, because neither reads the config at all. `migrate` is what turns an unloadable
+file into a loadable one (§11.8), and `stop` ends a run whose controller is not using the file
+(§10.5). Every other verb refuses a load failure with exit 1.
 
 ### 11.3 Block inventory
 

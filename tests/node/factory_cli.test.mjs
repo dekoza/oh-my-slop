@@ -182,7 +182,7 @@ test("a config-load failure refuses the verb with exit code 1", async (t) => {
 test("every config-requiring verb refuses on a bad config rather than running", async (t) => {
 	const cwd = makeRepo(t, { config: { schemaVersion: 1 } });
 
-	for (const verb of VERBS.filter((candidate) => candidate !== "migrate")) {
+	for (const verb of VERBS.filter((candidate) => VERB_TABLE[candidate].requiresConfig)) {
 		const { exitCode, value } = await runCli([verb], { cwd });
 
 		assert.equal(exitCode, EXIT_USAGE, verb);
@@ -190,13 +190,23 @@ test("every config-requiring verb refuses on a bad config rather than running", 
 	}
 });
 
+test("exactly two verbs are exempt from the load, and each says why (#205)", () => {
+	// The set is asserted here rather than left to the loop above, because the
+	// loop's `filter` reads the table it is meant to police: a verb that quietly
+	// gained the exemption would make the loop skip it and pass.
+	assert.deepEqual(
+		VERBS.filter((verb) => !VERB_TABLE[verb].requiresConfig),
+		["stop", "migrate"],
+	);
+});
+
 test("migrate does not require a loadable config — it is the verb that repairs one", async (t) => {
 	const cwd = makeRepo(t, { config: cloneLegacyConfig() });
 
 	const { exitCode, value } = await runCli(["migrate"], { cwd });
 
-	// Every other verb refuses this file at load; this one reads it and rewrites
-	// it, which is why its table row is the one with `requiresConfig: false`.
+	// Every loading verb refuses this file at load; this one reads it and rewrites
+	// it, which is why its table row carries `requiresConfig: false`.
 	assert.equal(exitCode, EXIT_OK);
 	assert.equal(value.command, "migrate");
 	assert.equal(JSON.parse(readFileSync(join(cwd, ".pi", "factory.json"), "utf8")).schemaVersion, 2);

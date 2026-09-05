@@ -1276,7 +1276,7 @@ test("a stop honoured at a ticket boundary stops the loop claiming, and the run 
 		execute: async ({ ticket }) => {
 			executed.push(ticket);
 			// The operator asks, from another terminal, while this lane runs.
-			await runStop({ repoRoot: context.cwd, agentDir: context.agentDir });
+			await runStop({ cwd: context.cwd, agentDir: context.agentDir });
 			return { disposition: "published" };
 		},
 	});
@@ -1462,7 +1462,7 @@ test("§10.3: a run stopped by an operator says so, even with the breaker trippe
 		frontier: async () => ({ claimable: [42, 91], members: [42, 91].map((ticket) => ({ ticket, labels: [] })) }),
 		execute: async (request) => {
 			const answered = await lane.execute(request);
-			if (request.ticket === 91) await runStop({ repoRoot: context.cwd, agentDir: context.agentDir });
+			if (request.ticket === 91) await runStop({ cwd: context.cwd, agentDir: context.agentDir });
 			return answered;
 		},
 	});

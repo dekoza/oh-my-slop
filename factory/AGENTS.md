@@ -43,8 +43,13 @@ question is which rows have become the module's job to state, not what the ceili
 - **Budget bounds are per-key**, never one block-wide `max`. — `config/defaults.mjs` · §11.6
 - **§6.8's `worker` block is *additions* to floors that live in code**, so its absent form is the
   empty addition, spelled once so no consumer branches on `undefined`. — `config/worker.mjs` · §6.8
-- **`factory migrate` is the only verb that writes the operator's config**, and the only verb exempt
-  from the load. — `migrate/verb.mjs` · §11.8
+- **`factory migrate` is the only verb that writes the operator's config**, and one of the two
+  exempt from the load. — `migrate/verb.mjs` · §11.8
+- **`stop` is the other exemption, and the table carries both**: it ends a run whose controller
+  loaded its policy at start, so a config the loader rejects must not take it down; the load stays
+  fail-closed for every verb that decides anything from policy. — `cli/verbs.mjs` · §10.5, §11.2
+- **The exempt `stop` walks up to the repo root itself** and reads no file: its run, lease row, and
+  stream are durable state, and its refusals stay its own. — `controller/stop.mjs` · §10.5, §11.1
 - **§11.8's legacy-key disposition table is data**: one row maps and reports, a legacy key no row
   names refuses the migration, the five holes it leaves are `TODO` sentinels the loader hard-fails
   on, and `.pi/factory.v1.json` is preserved before anything is written. — `migrate/document.mjs` · §11.8
