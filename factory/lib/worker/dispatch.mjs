@@ -147,13 +147,19 @@ async function selectPooledRoute({ order, profiles, exhaustion, dispatched, at, 
 	// Read all occupancy AFTER asynchronous probes. No per-profile await splits
 	// the ranking snapshot; leases, not this observation, arbitrate acquisition.
 	const occupancy = new Map(capacity.occupancy().map((seen) => [seen.class, seen]));
+	// Another lane may refuse an earlier class while a later probe is awaited.
+	// Read admission beside occupancy, not from those earlier async answers.
+	const memos = new Map(exhaustion.ledger({ at }).map((memo) => [memo.class, memo]));
 	const considered = order.map((profile) => {
 		const className = resourceClassOf(requireProfile(profiles, profile));
 		const observed = occupancy.get(className);
 		if (observed === undefined) throw new FactoryWorkerError("routing-ambiguous", `Pooled class ${className} has no declared capacity.`, { at: "capacity", class: className });
 		const gate = gates.get(className);
-		const state = dispatched.includes(profile) ? "already-dispatched" : gate.state !== "available" ? "blocked" : observed.held >= observed.size ? "busy" : "available";
-		return entry({ profile, class: className, state, until: gate?.until ?? null, held: observed.held, size: observed.size });
+		const memo = memos.get(className);
+		const admitted = memo === undefined || memo.status === "available";
+		const state = dispatched.includes(profile) ? "already-dispatched" : !admitted ? "blocked" : observed.held >= observed.size ? "busy" : "available";
+		const until = memo?.status === "exhausted" ? memo.until : gate?.until ?? null;
+		return entry({ profile, class: className, state, until, held: observed.held, size: observed.size });
 	});
 	// Class order comes from its first appearance, even if that profile was
 	// refused. Within each class the first permitted profile is the candidate.

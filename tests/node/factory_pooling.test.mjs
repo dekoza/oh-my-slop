@@ -95,6 +95,19 @@ test("#223: exhausted empty pools remain excluded until probe-driven admission",
 	assert.equal(probes, 1);
 });
 
+test("#223: a refusal arriving during another class's probe invalidates an earlier admission", async (t) => {
+	let capacity;
+	({ capacity } = await openCapacityPool(t, { plan, now: () => FIXED_NOW, probeClass: async () => {
+		capacity.exhaustion.record("gpt", { until: FIXED_NOW + 1000 });
+		return { verdict: "admitted" };
+	} }));
+	capacity.exhaustion.record("claude-code", { until: FIXED_NOW - 1 });
+	const selected = await selectRoute({ order: ["gpt", "claude"], profiles, capacity, exhaustion: capacity.exhaustion, pooled: true, at: FIXED_NOW });
+	assert.equal(selected.profile, "claude");
+	assert.equal(selected.considered[0].state, "blocked");
+	assert.equal(selected.considered[0].until, FIXED_NOW + 1000);
+});
+
 test("#223: competing pooled attempt reservations reconsider capacity and never overbook", async (t) => {
 	const { capacity, leases } = await openCapacityPool(t, { plan });
 	const reservations = await Promise.all(Array.from({ length: 7 }, (_, index) => reserveModelRoute({ capacity, ticket: index + 1, order: ["gpt", "claude"], profiles })));
