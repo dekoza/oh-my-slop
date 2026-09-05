@@ -6,6 +6,7 @@ import {
 	EXIT_USAGE,
 	exitCodeForEndReason,
 } from "../cli/exit-codes.mjs";
+import { ROUTING_SET_FLAG } from "../config/load.mjs";
 import {
 	CONTROLLER_EXIT_LEASE_LOST,
 	DISPOSITION_RELEASED,
@@ -93,6 +94,9 @@ export const NEW_RUN_FLAG = "--new-run";
  * @param {string} invocation.repoRoot
  * @param {string[]} invocation.args the scope on the line
  * @param {ReadonlySet<string>} invocation.flags
+ * @param {ReadonlyMap<string, string>} [invocation.flagValues] the values beside
+ *   them — §11.5's `--routing-set` is the one this verb reads, and it reads it
+ *   only to carry it onto the detached controller's line
  * @param {object} invocation.config the validated configuration
  * @param {string} invocation.configPath
  * @param {object} invocation.activeRouting
@@ -130,6 +134,7 @@ export async function runStart({
 	repoRoot,
 	args = [],
 	flags = new Set(),
+	flagValues = new Map(),
 	config,
 	configPath,
 	activeRouting,
@@ -193,6 +198,12 @@ export async function runStart({
 			repoRoot,
 			requested,
 			rawArgs: args,
+			// §11.5's selection is a property of the *run*, and the detached
+			// controller is the process that starts it. This invocation loaded the
+			// config only to answer §10.4; the controller loads it again from its own
+			// line, so a selector left behind here would launch a run under the
+			// routing the operator did not ask for and say nothing about it.
+			routingSet: flagValues.get(ROUTING_SET_FLAG) ?? null,
 			agentDir,
 			executable,
 			env,

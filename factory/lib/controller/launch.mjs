@@ -1,4 +1,5 @@
 import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "../cli/exit-codes.mjs";
+import { ROUTING_SET_FLAG } from "../config/load.mjs";
 import { newUlid } from "../identity/ulid.mjs";
 import { hasLapsed, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
@@ -57,6 +58,8 @@ export const CONTROLLER_PANE_ENV = "FACTORY_CONTROLLER_PANE";
  * @param {string} invocation.repoRoot
  * @param {object | null} invocation.requested §3.1's parsed selector, or null
  * @param {string[]} invocation.rawArgs the scope exactly as the line carried it
+ * @param {string | null} [invocation.routingSet] §11.5's selection, re-typed onto
+ *   the controller's line so the detached run routes the way the operator asked
  * @param {string | null} [invocation.agentDir]
  * @param {string} [invocation.executable] the running binary — §11.7's anchor
  * @param {Record<string, string | undefined>} [invocation.env]
@@ -72,6 +75,7 @@ export async function launch({
 	repoRoot,
 	requested,
 	rawArgs,
+	routingSet = null,
 	agentDir = null,
 	executable,
 	env,
@@ -80,6 +84,21 @@ export async function launch({
 	now = Date.now,
 	mint = newUlid,
 }) {
+	// The controller's own line, minus the binary: §10.1's process-shape flag,
+	// §11.5's selection when the operator made one, and the scope exactly as it
+	// was typed. Built once because the line is printed twice — in the
+	// `--foreground` advice a refusal carries, and as the launched command — and
+	// two spellings of one line is how the advice comes to drop a flag.
+	//
+	// The selection has to be re-typed rather than inherited: the controller is a
+	// separate process that loads the config again from its own argv, so a flag
+	// left behind here would silently run the whole run under the file's default
+	// routing.
+	const controllerArgs = [
+		FOREGROUND_FLAG,
+		...(routingSet === null ? [] : [`${ROUTING_SET_FLAG}=${routingSet}`]),
+		...rawArgs,
+	];
 	const store = await openStore({ repoRoot, agentDir });
 	try {
 		// The lock-free read: the launcher takes no lease. §10.4's resolution is
@@ -119,7 +138,7 @@ export async function launch({
 					message:
 						`${availability.message} The default launch is a detached Herdr pane (§10.1); ` +
 						`\`${FOREGROUND_FLAG}\` runs the run in this terminal instead: ` +
-						`factory start ${FOREGROUND_FLAG} ${rawArgs.join(" ")}`,
+						`factory start ${controllerArgs.join(" ")}`,
 				},
 				exitCode: EXIT_REFUSED,
 			};
@@ -163,7 +182,7 @@ export async function launch({
 			};
 		}
 
-		const command = [executable, "start", FOREGROUND_FLAG, ...rawArgs];
+		const command = [executable, "start", ...controllerArgs];
 		const ran = await run(["pane", "run", result.root_pane.pane_id, ...command], {
 			env,
 			binary: availability.binary,
@@ -184,7 +203,7 @@ export async function launch({
 				pane: result.root_pane.pane_id,
 				label,
 				command,
-				foreground_alternative: `factory start ${FOREGROUND_FLAG} ${rawArgs.join(" ")}`,
+				foreground_alternative: `factory start ${controllerArgs.join(" ")}`,
 			},
 			exitCode: EXIT_OK,
 		};

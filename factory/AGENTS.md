@@ -43,6 +43,13 @@ question is which rows have become the module's job to state, not what the ceili
 - **§6.8's `worker` block is *additions* to floors that live in code**, so its absent form is the
   empty addition, spelled once so no consumer branches on `undefined`. — `config/worker.mjs` ·
   §6.8
+- **A named routing set is selected by the flag, then `routing.activeSet`, then the file-level
+  routing** — one precedence, resolved once, with both names refusing as `unknown-routing-set`
+  and `activeSet` validated whether or not the flag departs from it. — `config/routing.mjs` ·
+  §11.5
+- **`--routing-set` is re-typed onto the detached controller's line**, because the controller is
+  a separate process that loads the config again from its own argv. — `controller/launch.mjs` ·
+  §10.1, §11.5
 - **`factory migrate` is the only verb that writes the operator's config**, and the only verb
   exempt from the load — which is why it is a sibling of `doctor` rather than a flag on it. —
   `migrate/verb.mjs` · §11.8

@@ -2228,7 +2228,25 @@ fallback**.
   is a **ticket-scoped automation failure surfaced at claim time before any work**. Never
   legacy's positional first-match.
 - **`_postSubscription` becomes a first-class named routing set** (`routing.sets.*`), selectable
-  per run. Dormant config the loader ignores is exactly the drift this section ends.
+  per run. Dormant config the loader ignores is exactly the drift this section ends — and a set
+  nothing can select is dormant config with extra steps, so a set is selected two ways:
+  - **`routing.activeSet` names the set this repository runs by default.** Absent means the
+    file-level `routing`, exactly as before. It is validated like the per-run selector — an
+    unknown name refuses the load as `unknown-routing-set` rather than silently leaving the
+    default active — and it is validated whether or not the invocation departs from it, for the
+    same reason a dormant set is validated as strictly as the active one.
+  - **`--routing-set=<name>`, on `start` and `doctor`,** is one invocation that departs from the
+    declared default. On a detached `start` it is re-typed onto the controller's own line, since
+    the controller is a separate process that loads the config again.
+  - **The precedence is the flag, then `activeSet`, then the file-level routing**, written in
+    exactly one place in the loader. **The selected set's name is recorded in the run manifest**
+    (§6.8's model choices) and reported beside the capacity plan by `status` and `doctor`, so a
+    later reader can tell which routing produced the attempts, and an operator can read a set's
+    capacity plan before starting a run under it.
+
+  Switching sets can refuse a file that loaded yesterday: §11.6 sizes the classes the **active**
+  routing reaches, so a set reaching a class nothing sized is `resource-unsized`, naming the set.
+  That is the load-time refusal doing its job, one selection earlier than the run.
 - **An optional `fallbacks` block declares §9.9's reroute order** — per role, the profiles dispatch
   may take next when the one the role resolves to belongs to a class §9.8's memo has recorded
   unavailable. `implement` and `freshRetry` declare one order each; **`review` declares two, one per

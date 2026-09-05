@@ -12,7 +12,7 @@ import { VERB_TABLE } from "../../factory/lib/cli/verbs.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
-import { cloneLegacyConfig, makeRepo, VALID_CONFIG } from "./helpers/factory-repo.mjs";
+import { cloneConfigWithRoutingSet, cloneLegacyConfig, makeRepo, VALID_CONFIG } from "./helpers/factory-repo.mjs";
 import { herdrAnswering, leaseIdentity, makeAgentDir, makeHome } from "./helpers/factory-store.mjs";
 import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
@@ -259,12 +259,12 @@ test("human output is the default and carries every fact the JSON carries", asyn
 // ── doctor and reconcile (§5.4, §10.5) ───────────────────────────────────────
 
 /** The process facts a test drives instead of inheriting from the test runner. */
-function invocation(t) {
+function invocation(t, { config } = {}) {
 	const root = makePackage(t);
 	const executable = join(root, "factory", "bin", "factory.mjs");
 
 	return {
-		cwd: makeRepo(t),
+		cwd: makeRepo(t, { config }),
 		agentDir: makeAgentDir(t),
 		executable,
 		env: { PATH: onPath(t, executable), HOME: makeHome(t) },
@@ -277,6 +277,74 @@ function invocation(t) {
 		pipeline: null,
 	};
 }
+
+// ── §11.5's selector, on the two verbs that take it ──────────────────────────
+
+test("doctor --routing-set reports the capacity plan for that set, not the default's", async (t) => {
+	const context = invocation(t, { config: cloneConfigWithRoutingSet() });
+
+	const selected = await runCli(["doctor", "--routing-set=post-subscription"], context);
+	const declared = await runCli(["doctor"], context);
+
+	assert.equal(selected.exitCode, EXIT_OK);
+	assert.equal(selected.value.report.capacity.routing_set, "post-subscription");
+	assert.deepEqual(
+		selected.value.report.capacity.classes.map((entry) => [entry.class, entry.size]),
+		[["openrouter", 2]],
+	);
+
+	// The same repository, one flag apart: the default routing reaches a
+	// different class entirely, which is the whole point of parking one beside
+	// the other rather than rewriting `routing` in place.
+	assert.equal(declared.value.report.capacity.routing_set, null);
+	assert.deepEqual(
+		declared.value.report.capacity.classes.map((entry) => [entry.class, entry.size]),
+		[["local", 1]],
+	);
+});
+
+test("routing.activeSet decides what doctor reports when no flag is on the line", async (t) => {
+	const context = invocation(t, { config: cloneConfigWithRoutingSet({ activeSet: "post-subscription" }) });
+
+	const { exitCode, value } = await runCli(["doctor"], context);
+
+	assert.equal(exitCode, EXIT_OK);
+	assert.equal(value.report.capacity.routing_set, "post-subscription");
+});
+
+test("--routing-set names a set that must exist, and the refusal is the config load's", async (t) => {
+	const context = invocation(t, { config: cloneConfigWithRoutingSet() });
+
+	const { exitCode, value } = await runCli(["doctor", "--routing-set=pre-subscription"], context);
+
+	assert.equal(exitCode, EXIT_USAGE);
+	assert.equal(value.error.kind, "config-load");
+	assert.equal(value.error.reason, "unknown-routing-set");
+	assert.match(value.error.message, /post-subscription/);
+});
+
+test("--routing-set carries its value on the flag, and the bare form says so", async (t) => {
+	const context = invocation(t, { config: cloneConfigWithRoutingSet() });
+
+	const { exitCode, value } = await runCli(["doctor", "--routing-set"], context);
+
+	assert.equal(exitCode, EXIT_USAGE);
+	assert.match(value.error.message, /--routing-set=<routing set>/);
+});
+
+test("--routing-set is start's and doctor's alone, and --help says which verbs take it", async (t) => {
+	const context = invocation(t, { config: cloneConfigWithRoutingSet() });
+
+	// A verb that does not declare it refuses the flag rather than loading the
+	// config under a routing its report would then not mention.
+	const elsewhere = await runCli(["status", "--routing-set=post-subscription"], context);
+	assert.equal(elsewhere.exitCode, EXIT_USAGE);
+	assert.equal(elsewhere.value.error.flag, "--routing-set");
+
+	const { value } = await runCli(["--help"], context);
+	assert.ok(value.usage.flags.start.includes("--routing-set=<routing set>"));
+	assert.ok(value.usage.flags.doctor.includes("--routing-set=<routing set>"));
+});
 
 test("doctor diagnoses the repository and exits zero, having written nothing", async (t) => {
 	const context = invocation(t);
