@@ -141,7 +141,7 @@ export async function schedule({
 	 * and therefore keeps waiting; abandon is the only request that wakes this
 	 * boundary without a lane result.
 	 */
-	async function awaitOne({ observed = null, retry = false } = {}) {
+	async function awaitOne({ observed = null, retry = false, readmitAt = null } = {}) {
 		for (;;) {
 			const lane = await Promise.race([
 				...[...lanes.values()].map((live) => live.promise),
@@ -150,7 +150,7 @@ export async function schedule({
 			if (lane === null) {
 				if (abandoning()) return false;
 				capacity.assertActive();
-				if (observed !== null && (!claiming() || retry || JSON.stringify(capacity.occupancy()) !== observed)) return false;
+				if (observed !== null && (!claiming() || retry || JSON.stringify(capacity.occupancy()) !== observed || (readmitAt !== null && at() >= readmitAt))) return false;
 				continue;
 			}
 			lanes.delete(lane.ticket);
@@ -216,6 +216,7 @@ export async function schedule({
 		 */
 		const memoBlocked = new Map();
 		const busy = new Set();
+		let readmitAt = null;
 		// §2.1: a run has **one** ticket execution per ticket, so a ticket this
 		// run already executed is not a candidate again — whatever the tracker
 		// still says about it. §8.9's dispositions are what remove it from the
@@ -257,6 +258,9 @@ export async function schedule({
 			// statement than #154's single blocked class — every profile the role
 			// can reach was tried, and the seam's record says which and why.
 			if (route.profile === null) {
+				for (const seen of route.considered) {
+					if (seen.state === "blocked" && seen.until !== null) readmitAt = Math.min(readmitAt ?? Infinity, seen.until);
+				}
 				if (route.considered.some((seen) => seen.state === "busy")) {
 					busy.add(candidate.ticket);
 					for (const seen of route.considered.filter((seen) => seen.state === "busy")) {
@@ -275,7 +279,7 @@ export async function schedule({
 			// that; with none, the scope is drained as far as this loop can take it.
 			exhaustedAtDecision = [...memoBlocked.values()];
 			if (lanes.size === 0 && busy.size === 0) break;
-			await awaitOne({ observed: busy.size > 0 ? occupancyAtDecision : null });
+			await awaitOne({ observed: busy.size > 0 ? occupancyAtDecision : null, readmitAt });
 			continue;
 		}
 

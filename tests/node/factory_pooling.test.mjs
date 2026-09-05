@@ -175,6 +175,25 @@ test("#223: capacity planning does not count a default replaced by pooling as im
 	assert.equal(planned.effectiveConcurrency, 5);
 });
 
+test("#223: mixed busy/exhausted waiting wakes for a due readmission probe", async (t) => {
+	let clock = FIXED_NOW;
+	const { capacity } = await openCapacityPool(t, { plan, now: () => clock, probeClass: async () => ({ verdict: "admitted" }) });
+	const held = [capacity.acquireModel({ ticket: 90, resourceClass: "gpt" }), capacity.acquireModel({ ticket: 91, resourceClass: "gpt" })];
+	capacity.exhaustion.record("claude-code", { until: clock + 100 });
+	let claiming = true;
+	const launched = [];
+	const running = schedule({ capacity, at: () => clock, claiming: () => claiming, frontier: async () => ({ claimable: [1] }),
+		dispatch: () => implementDispatch({ profiles, activeRouting }, { ticket: 1 }, { capacity, exhaustion: capacity.exhaustion, at: clock }),
+		execute: ({ route }) => { launched.push(route.profile); return { disposition: "published" }; } });
+	try {
+		await delay(50);
+		assert.deepEqual(launched, []);
+		clock += 101;
+		await delay(80);
+		assert.deepEqual(launched, ["claude"]);
+	} finally { claiming = false; await running; for (const slot of held) slot.release({ reason: "test" }); }
+});
+
 const profiles = {
 	gpt: { kind: "pi", model: "gpt/model" },
 	claude: { kind: "claude", model: "opus" },
