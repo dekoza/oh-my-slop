@@ -435,6 +435,16 @@ test("an endpointless pi provider the capacity-row grammar cannot spell refuses 
 	}
 });
 
+test("providers the capacity-row grammar can spell still load", (t) => {
+	for (const provider of ["local", "openai-codex", "my.box"]) {
+		const config = clone();
+		config.profiles.builder.model = `${provider}/qwen3`;
+		config.concurrency.resources = { [provider]: 1 };
+
+		assert.equal(loaded(t, config).config.profiles.builder.model, `${provider}/qwen3`);
+	}
+});
+
 // ── Opus and Fable are Claude-only, checked at load (§11.5) ──────────────────
 
 test("Opus or Fable on a kind: pi profile refuses and names the offending profile", (t) => {
