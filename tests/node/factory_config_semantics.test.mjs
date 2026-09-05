@@ -417,6 +417,47 @@ test("a pi profile's model must be an exact provider/model selector", (t) => {
 	assert.equal(error.details.at, "profiles.builder.model");
 });
 
+test("an endpointless pi provider the capacity-row grammar cannot spell refuses at load", (t) => {
+	for (const provider of ["local_gpu", "a+b"]) {
+		const config = clone();
+		config.profiles.builder.model = `${provider}/qwen3`;
+		config.concurrency.resources = { [provider]: 1 };
+
+		const error = loadFailure(t, config);
+
+		assert.equal(error.reason, "invalid-value", provider);
+		assert.equal(error.details.at, "profiles.builder.model");
+		assert.match(error.message, new RegExp(`provider segment "${provider.replace("+", "\\+")}"`));
+		assert.match(error.message, /\[0-9A-Za-z\.\-\]\+/);
+		assert.match(error.message, /capacity:model:<class>:<i>/);
+		assert.match(error.message, /rename the provider/i);
+		assert.match(error.message, /bind the profile's endpoint/i);
+	}
+});
+
+test("providers the capacity-row grammar can spell still load", (t) => {
+	for (const provider of ["local", "openai-codex", "my.box"]) {
+		const config = clone();
+		config.profiles.builder.model = `${provider}/qwen3`;
+		config.concurrency.resources = { [provider]: 1 };
+
+		assert.equal(loaded(t, config).config.profiles.builder.model, `${provider}/qwen3`);
+	}
+});
+
+test("binding an endpoint is the loadable alternative to renaming an unspellable provider", (t) => {
+	const config = clone();
+	config.profiles.builder = {
+		kind: "pi",
+		model: "local_gpu/qwen3",
+		endpoint: { env: "PI_LOCAL_ROUTER_BASE_URL", url: "http://rico:11545" },
+	};
+	config.concurrency.resources = { "endpoint-rico-11545": 1 };
+
+	const profile = loaded(t, config).config.profiles.builder;
+	assert.equal(resourceClassOf(profile), "endpoint-rico-11545");
+});
+
 // ── Opus and Fable are Claude-only, checked at load (§11.5) ──────────────────
 
 test("Opus or Fable on a kind: pi profile refuses and names the offending profile", (t) => {

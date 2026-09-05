@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { RETAINED_REASONS } from "../../factory/lib/capacity/slots.mjs";
+import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
+import { resourceClassOf } from "../../factory/lib/config/profiles.mjs";
 import { ADOPTION_VERDICTS } from "../../factory/lib/domain/vocabulary.mjs";
 import { runStream } from "../../factory/lib/state/events.mjs";
 import { parseCapacitySlot } from "../../factory/lib/state/leases.mjs";
@@ -12,6 +14,7 @@ import {
 	leaveSupersededSlot,
 	openCapacityPool as openPool,
 } from "./helpers/factory-store.mjs";
+import { cloneValidConfig as clone, makeRepo } from "./helpers/factory-repo.mjs";
 
 /**
  * §9.4's capacity slots: **discrete named rows on the lease primitive**, never a
@@ -76,6 +79,23 @@ test("the grant is an ordinary journal event on the run stream, never an effect"
 		0,
 		"nothing external mutates, so no probe is owed (§9.7)",
 	);
+});
+
+test("an accepted provider-derived class takes and reads back a real capacity slot", async (t) => {
+	const config = clone();
+	config.profiles.builder.model = "my.box/qwen3";
+	config.concurrency.resources = { "my.box": 1 };
+	const validated = loadFactoryConfig({ cwd: makeRepo(t, { config }) }).config;
+	const className = resourceClassOf(validated.profiles.builder);
+	const { store, capacity } = await openPool(t, {
+		plan: plan({ classes: [{ class: className, size: 1, profiles: ["builder"] }] }),
+	});
+
+	const lane = capacity.acquireLane({ ticket: 42, resourceClass: className, at: T0 });
+
+	assert.equal(lane.model.name, "capacity:model:my.box:0");
+	assert.equal(JSON.parse(rowOf(store, lane.model.name).identity).class, "my.box");
+	assert.deepEqual({ ...parseCapacitySlot(lane.model.name) }, { pool: "model", class: "my.box", index: 0 });
 });
 
 test("an endpoint-derived class takes and reads back its row, dotted host and all (#209)", async (t) => {

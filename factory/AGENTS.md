@@ -167,7 +167,7 @@ question is which rows have become the module's job to state, not what the ceili
   pane bound is derived from the ceiling — **so no pane knob exists in config.** — `capacity/plan.mjs`
 - **A pool is a machine: the class is the endpoint a `kind: pi` profile binds**, and the provider
   segment only for one binding none; the derived name is a `capacity:model:<class>:<i>` segment, so a
-  host it cannot spell refuses at load. — `config/profiles.mjs` · §9.1, §11.4
+  bound host or unbound provider it cannot spell refuses at load. — `config/profiles.mjs` · §9.1, §11.4
 - **A bound endpoint rides that profile's panes alone**, over the run-wide extension declaration and
   under §6.8's isolation variables. — `worker/environment.mjs` · §11.4
 - **Slots carry no TTL**: a row records the generation of the *controller*

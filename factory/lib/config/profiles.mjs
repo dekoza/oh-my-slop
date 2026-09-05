@@ -1,4 +1,5 @@
 import { requireDeclarableEnvName, requireDeclarableEnvValue } from "./declared-env.mjs";
+import { CAPACITY_MODEL_CLASS_PATTERN } from "../state/leases.mjs";
 import { FactoryConfigError, invalidValueRefusal } from "./errors.mjs";
 import { IDENTIFIER_PATTERN, requireDeclared, requireExactKeys, requireInteger, requireNoUnknownKeys, requireNonEmptyString, requireObject, requireOneOf } from "./shape.mjs";
 
@@ -49,9 +50,6 @@ const ENDPOINT_KEYS = Object.freeze(["env", "url"]);
 
 /** The two schemes a model endpoint answers on, and what each implies for the port. */
 const DEFAULT_PORTS = Object.freeze({ "http:": "80", "https:": "443" });
-
-/** What a host may be for `endpointClass` to spell it into a slot-row segment. */
-const ENDPOINT_HOST_PATTERN = /^[A-Za-z0-9.-]+$/;
 
 /**
  * Opus and Fable are reachable only through the Claude harness. §11.5 makes
@@ -196,7 +194,7 @@ function validateProfile(name, profile, configPath) {
 
 	const validated = { kind, model };
 	if (kind === "pi") {
-		requirePiModel(name, model, at, configPath);
+		requirePiModel(name, model, at, configPath, profile.endpoint !== undefined);
 		if (profile.thinking !== undefined) {
 			validated.thinking = requireOneOf(profile.thinking, THINKING_LEVELS, `${at}.thinking`, configPath);
 		}
@@ -264,24 +262,42 @@ function requireEndpointUrl(value, at, configPath) {
 			"an address with no userinfo",
 		);
 	}
-	if (!ENDPOINT_HOST_PATTERN.test(address.hostname)) {
+	if (!CAPACITY_MODEL_CLASS_PATTERN.test(address.hostname)) {
 		refuse(
 			`names a host §9.1 cannot derive a class name from ("${address.hostname}"): the name becomes a segment of ` +
 				`§9.4's "capacity:model:<class>:<i>" row, which is read back on recovery. Name the host the way the row ` +
-				`grammar can spell it (letters, digits, "." and "-") rather than by an address it cannot.`,
-			`a host matching ${ENDPOINT_HOST_PATTERN}`,
+				`grammar can spell it (${CAPACITY_MODEL_CLASS_PATTERN}) rather than by an address it cannot.`,
+			`a host matching ${CAPACITY_MODEL_CLASS_PATTERN}`,
 		);
 	}
 
 	return value;
 }
 
-function requirePiModel(name, model, at, configPath) {
+function requirePiModel(name, model, at, configPath, endpointBound) {
 	if (!PI_MODEL_PATTERN.test(model)) {
 		throw new FactoryConfigError(
 			"invalid-value",
 			`${configPath}: ${at}.model must be an exact provider/model selector, because §9.1 derives the resource class from its provider segment when the profile binds no endpoint of its own; found "${model}".`,
 			{ file: configPath, at: `${at}.model`, found: model, expected: "provider/model" },
+		);
+	}
+
+	const provider = providerOf(model);
+	if (!endpointBound && !CAPACITY_MODEL_CLASS_PATTERN.test(provider)) {
+		throw new FactoryConfigError(
+			"invalid-value",
+			`${configPath}: ${at}.model names provider segment "${provider}", which §9.1 derives as the resource class ` +
+				`when the profile binds no endpoint. It cannot be spelled by §9.4's capacity:model:<class>:<i> row ` +
+				`grammar (${CAPACITY_MODEL_CLASS_PATTERN}), so recovery could not read its slot back. Rename the provider in ` +
+				`pi's model catalogue to use letters, digits, "." and "-", or bind the profile's endpoint so §9.1 derives ` +
+				"the class from that endpoint instead.",
+			{
+				file: configPath,
+				at: `${at}.model`,
+				found: provider,
+				expected: `a provider segment matching ${CAPACITY_MODEL_CLASS_PATTERN}, or a bound endpoint`,
+			},
 		);
 	}
 
