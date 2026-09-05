@@ -18,6 +18,15 @@ import { EXIT_USAGE } from "./exit-codes.mjs";
  * — started getting two answers from one verb set. The three things a consumer
  * reads therefore live here, and both sites read them from here.
  *
+ * It lives under `cli/` deliberately, and that makes `config/` import from here
+ * — the first edge in that direction. The alternative homes are worse: `config/`
+ * would put the verb explicitly exempt from the config load on an import from
+ * the module tree it is exempt from, and `git/repo.mjs`, whose null both callers
+ * are answering, is a module of git facts that would acquire an exit code to
+ * hold this. What these three things are is a published wire answer, and `cli/`
+ * is where this binary's published wire answers live — §10.3's exit table next
+ * door, the `--json` envelope in `main.mjs`.
+ *
  * `exitCode` is not a third opinion about §10.3's table: it names the class this
  * reason belongs to, which is the usage class `EXIT_USAGE` publishes and the one
  * the config-load path already carries wholesale for every reason it refuses

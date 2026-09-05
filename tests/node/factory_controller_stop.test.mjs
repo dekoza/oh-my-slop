@@ -310,6 +310,20 @@ test("a stop outside any repository refuses as no-repo-root: there is no state t
 	assert.equal(value.error.kind, "no-repo-root");
 });
 
+/**
+ * An error's structured detail: every field the envelope's own framing keys do
+ * not account for. The two envelopes frame differently — the load names its
+ * whole class and the reason beside it, the exempt verb has no class to name —
+ * so what a consumer reads as detail is what remains once each envelope's own
+ * keys are taken out.
+ *
+ * @param {Record<string, unknown>} error one `--json` error envelope
+ * @param {string[]} framingKeys that envelope's own keys, detail excluded
+ */
+function detailsOf(error, framingKeys) {
+	return Object.fromEntries(Object.entries(error).filter(([key]) => !framingKeys.includes(key)));
+}
+
 test("the two repo-less refusals answer with one contract, not two agreements (#217)", async (t) => {
 	// §10.5 asserts `stop`'s repo-less refusal carries the same reason, the same
 	// detail, and the same exit code as the config load's — two modules that are
@@ -344,11 +358,6 @@ test("the two repo-less refusals answer with one contract, not two agreements (#
 	// the operator prose stays two sentences and merging them is the wrong fix.
 	assert.notEqual(stopped.value.error.message, loaded.value.error.message);
 });
-
-/** An error envelope's structured detail: everything the envelope itself does not frame. */
-function detailsOf(error, envelope) {
-	return Object.fromEntries(Object.entries(error).filter(([key]) => !envelope.includes(key)));
-}
 
 // ── Structure ────────────────────────────────────────────────────────────────
 

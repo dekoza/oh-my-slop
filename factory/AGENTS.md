@@ -54,10 +54,11 @@ question is which rows have become the module's job to state, not what the ceili
   loaded its policy at start, so a config the loader rejects must not take it down; the load stays
   fail-closed for every verb that decides anything from policy. — `cli/verbs.mjs` · §10.5, §11.2
 - **The exempt `stop` walks up to the repo root itself** and reads no policy file: its run, lease
-  row, and stream are durable state, and its refusals stay its own. — `controller/stop.mjs` · §10.3, §10.5, §11.1
-- **A repo-less invocation gets one refusal contract, not two that agree**: the reason, its
-  `{ from }` detail, and §10.3's exit 1 are read from one module by both the loader and the exempt
-  `stop`, whose error types and operator prose stay distinct. — `cli/no-repo-root.mjs` · §10.5, §11.1
+  row, and stream are durable state; its refusals stay its own. — `controller/stop.mjs` · §10.3, §10.5, §11.1
+- **A repo-less invocation gets one refusal contract, not two that agree**: the loader and the
+  exempt `stop` read the reason and its `{ from }` detail from one module, which also states
+  §10.3's exit 1 for the verb; their error types and operator prose stay distinct, and a test
+  compares the two answers. — `cli/no-repo-root.mjs` · §10.5, §11.1
 - **§11.8's legacy-key disposition table is data**: one row maps and reports, a legacy key no row
   names refuses the migration, the five holes it leaves are `TODO` sentinels the loader hard-fails
   on, and `.pi/factory.v1.json` is preserved before anything is written. — `migrate/document.mjs` · §11.8
