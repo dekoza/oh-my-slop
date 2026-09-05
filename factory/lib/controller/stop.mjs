@@ -1,4 +1,5 @@
-import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "../cli/exit-codes.mjs";
+import { EXIT_OK, EXIT_REFUSED } from "../cli/exit-codes.mjs";
+import { NO_REPO_ROOT } from "../cli/no-repo-root.mjs";
 import { CONTROLLER_LEASE, RUN_LIFECYCLE } from "../domain/vocabulary.mjs";
 import { resolveRepoRoot } from "../git/repo.mjs";
 import { runStream } from "../state/events.mjs";
@@ -80,9 +81,10 @@ export const STOP_ERROR_REASONS = Object.freeze([
 	/**
 	 * The invocation directory belongs to no repository, so there is no per-repo
 	 * state root to address and nothing to record a request on. It is the one
-	 * refusal here about the operator's line rather than about a run, and it
-	 * exits with §10.3's usage code accordingly — the answer `migrate`, the
-	 * other config-exempt verb, already gives a repo-less invocation.
+	 * refusal here about the operator's line rather than about a run, and the
+	 * only one the config load this verb is exempt from also gives — so what a
+	 * caller reads off it, down to §10.3's usage code, is `cli/no-repo-root.mjs`'s
+	 * to state rather than this set's.
 	 */
 	"no-repo-root",
 	/** No run in this repository to stop. */
@@ -106,8 +108,14 @@ export const STOP_ERROR_REASONS = Object.freeze([
  * splitting them is how a member acquires whichever code its throw site
  * happened to be near. Every refusal *about the run* is `refused` (8); the
  * exception is listed, because it is the one about the operator's line.
+ *
+ * That exception is also the one refusal this verb shares with the config load
+ * it is exempt from, so both its key and its code are read off
+ * `cli/no-repo-root.mjs` rather than spelled again here (#217). The check below
+ * therefore holds a second thing: a rename inside `STOP_ERROR_REASONS` that
+ * left the shared contract behind fails at import.
  */
-const STOP_ERROR_EXIT_CODES = Object.freeze({ "no-repo-root": EXIT_USAGE });
+const STOP_ERROR_EXIT_CODES = Object.freeze({ [NO_REPO_ROOT.reason]: NO_REPO_ROOT.exitCode });
 
 // The co-location made mechanical, the way `cli/exit-codes.mjs` makes §10.3's:
 // the lookup falls back to `refused`, so a row naming no reason — a typo, or a
@@ -149,10 +157,13 @@ export async function runStop({ cwd, agentDir = null, now = Date.now }) {
 	const repoRoot = resolveRepoRoot(cwd);
 	if (repoRoot === null) {
 		return refusal(
+			// The prose is this verb's own — a stop that has no run to address, not
+			// a load that found no root — while the reason and the detail are the
+			// shared contract's, so the two answers cannot drift (§10.5, #217).
 			new FactoryStopError(
-				"no-repo-root",
+				NO_REPO_ROOT.reason,
 				`No git repository root above ${cwd}; \`factory stop\` addresses the run recorded for one repository.`,
-				{ from: cwd },
+				NO_REPO_ROOT.details(cwd),
 			),
 		);
 	}

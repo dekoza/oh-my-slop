@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "../../factory/lib/cli/exit-codes.mjs";
 import { runCli } from "../../factory/lib/cli/main.mjs";
+import { NO_REPO_ROOT } from "../../factory/lib/cli/no-repo-root.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { createGiteaWriter, TRACKER_WRITES } from "../../factory/lib/tracker/writer.mjs";
@@ -308,6 +309,46 @@ test("a stop outside any repository refuses as no-repo-root: there is no state t
 	assert.equal(exitCode, EXIT_USAGE);
 	assert.equal(value.error.kind, "no-repo-root");
 });
+
+test("the two repo-less refusals answer with one contract, not two agreements (#217)", async (t) => {
+	// §10.5 asserts `stop`'s repo-less refusal carries the same reason, the same
+	// detail, and the same exit code as the config load's — two modules that are
+	// deliberately not one error class. This is the check that holds them
+	// together: rename the reason, reshape the detail, or move either exit code
+	// on one side, and a `--json` consumer starts getting two answers from one
+	// verb set. `status` stands in for every verb that still loads the config.
+	const outside = mkdtempSync(join(tmpdir(), "factory-outside-"));
+	t.after(() => rmSync(outside, { recursive: true, force: true }));
+	const context = { cwd: outside, agentDir: makeAgentDir(t) };
+
+	const stopped = await runCli(["stop"], context);
+	const loaded = await runCli(["status"], context);
+
+	// The reason, keyed by each envelope's own framing: the load reports its
+	// whole class as `config-load` and names the reason beside it, while the
+	// exempt verb has no class to report and the reason is the kind.
+	assert.equal(stopped.value.error.kind, NO_REPO_ROOT.reason);
+	assert.equal(loaded.value.error.reason, NO_REPO_ROOT.reason);
+
+	// The detail, byte for byte, and read off the one source rather than a
+	// second spelling of it.
+	assert.deepEqual(detailsOf(stopped.value.error, ["kind", "message"]), NO_REPO_ROOT.details(outside));
+	assert.deepEqual(detailsOf(loaded.value.error, ["kind", "reason", "message"]), NO_REPO_ROOT.details(outside));
+
+	// The exit code, from both invocations and from the contract.
+	assert.equal(stopped.exitCode, NO_REPO_ROOT.exitCode);
+	assert.equal(loaded.exitCode, NO_REPO_ROOT.exitCode);
+
+	// What must *not* converge: the two situations differ — a load that cannot
+	// find a repository root, and a verb that no longer does a load at all — so
+	// the operator prose stays two sentences and merging them is the wrong fix.
+	assert.notEqual(stopped.value.error.message, loaded.value.error.message);
+});
+
+/** An error envelope's structured detail: everything the envelope itself does not frame. */
+function detailsOf(error, envelope) {
+	return Object.fromEntries(Object.entries(error).filter(([key]) => !envelope.includes(key)));
+}
 
 // ── Structure ────────────────────────────────────────────────────────────────
 
