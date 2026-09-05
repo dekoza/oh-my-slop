@@ -1,5 +1,5 @@
 import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "../cli/exit-codes.mjs";
-import { ROUTING_SET_FLAG } from "../config/load.mjs";
+import { JSON_FLAG } from "../cli/flags.mjs";
 import { newUlid } from "../identity/ulid.mjs";
 import { hasLapsed, openLeases } from "../state/leases.mjs";
 import { openStore } from "../state/store.mjs";
@@ -54,12 +54,57 @@ export const FOREGROUND_FLAG = "--foreground";
 export const CONTROLLER_PANE_ENV = "FACTORY_CONTROLLER_PANE";
 
 /**
+ * The operator's invocation as the relaunched controller receives it: **every
+ * flag they typed, not the scope alone.**
+ *
+ * #213: the relaunch carried the positionals only, so `factory start --parent 75`
+ * reached the pane as `factory start --foreground 75` and the controller claimed
+ * ticket 75 rather than the members of its scope, while `--new-run`, dropped the
+ * same way, re-entered the run it was told to refuse. Neither process refused,
+ * because neither compared what was asked with what was run.
+ *
+ * **It forwards by exclusion**, and the exclusion is one flag long. `cli/main.mjs`
+ * has already judged every flag on the line against the verb table's declaration
+ * for `start` and refused the unknown and the misshapen, so what arrives here is
+ * exactly the operator's flags — and forwarding all of them is what makes a flag
+ * added to that table reach the pane without a second edit here. Naming the
+ * forwarded ones instead would be a second declaration of the verb's flags, and a
+ * per-flag fix closes one dropped flag while leaving the next to be found the
+ * same way.
+ *
+ * Every flag has to be re-typed rather than inherited, `--routing-set` included:
+ * the controller is a separate process that resolves its scope and loads its
+ * config again from its own argv, so a flag left behind here runs the whole run
+ * under a default nobody asked for (§11.5). The one exception is `JSON_FLAG`,
+ * which selects a rendering rather than a run — of *this* process's report, which
+ * the pane's controller does not print. `FOREGROUND_FLAG` needs no exclusion: the
+ * caller reaches this only on the branch where the operator did not type it.
+ *
+ * A value rides its flag as `--name=value`, the one form `parseArgv` reads back.
+ * Flags lead and the scope follows: `parseArgv` sorts the two apart before either
+ * is used, so this is one deterministic rendering of the invocation rather than a
+ * transcript of the operator's keystrokes.
+ *
+ * @param {object} typed the invocation's line, as the CLI parsed it
+ * @param {string[]} typed.args the positional scope
+ * @param {ReadonlySet<string>} typed.flags the flags the line carried, in the order typed
+ * @param {ReadonlyMap<string, string>} typed.flagValues the values riding them
+ * @returns {string[]} the arguments after `start`
+ */
+export function relaunchArgs({ args, flags, flagValues }) {
+	const forwarded = [...flags]
+		.filter((flag) => flag !== JSON_FLAG)
+		.map((flag) => (flagValues.has(flag) ? `${flag}=${flagValues.get(flag)}` : flag));
+	return [...forwarded, ...args];
+}
+
+/**
  * @param {object} invocation as the CLI assembles it
  * @param {string} invocation.repoRoot
  * @param {object | null} invocation.requested §3.1's parsed selector, or null
- * @param {string[]} invocation.rawArgs the scope exactly as the line carried it
- * @param {string | null} [invocation.routingSet] §11.5's selection, re-typed onto
- *   the controller's line so the detached run routes the way the operator asked
+ * @param {string[]} invocation.args the scope exactly as the line carried it
+ * @param {ReadonlySet<string>} [invocation.flags] the flags the line carried
+ * @param {ReadonlyMap<string, string>} [invocation.flagValues] the values riding them
  * @param {string | null} [invocation.agentDir]
  * @param {string} [invocation.executable] the running binary — §11.7's anchor
  * @param {Record<string, string | undefined>} [invocation.env]
@@ -74,8 +119,9 @@ export const CONTROLLER_PANE_ENV = "FACTORY_CONTROLLER_PANE";
 export async function launch({
 	repoRoot,
 	requested,
-	rawArgs,
-	routingSet = null,
+	args,
+	flags = new Set(),
+	flagValues = new Map(),
 	agentDir = null,
 	executable,
 	env,
@@ -84,21 +130,27 @@ export async function launch({
 	now = Date.now,
 	mint = newUlid,
 }) {
-	// The controller's own line, minus the binary: §10.1's process-shape flag,
-	// §11.5's selection when the operator made one, and the scope exactly as it
-	// was typed. Built once because the line is printed twice — in the
-	// `--foreground` advice a refusal carries, and as the launched command — and
-	// two spellings of one line is how the advice comes to drop a flag.
+	// The controller's own line, minus the binary: §10.1's process-shape flag and
+	// then the operator's whole invocation. The **arguments** are built once
+	// because they are printed twice — in the `--foreground` advice a refusal
+	// carries, and as the launched command — and two spellings of one argument
+	// list is how the advice comes to drop a flag.
 	//
-	// The selection has to be re-typed rather than inherited: the controller is a
-	// separate process that loads the config again from its own argv, so a flag
-	// left behind here would silently run the whole run under the file's default
-	// routing.
-	const controllerArgs = [
-		FOREGROUND_FLAG,
-		...(routingSet === null ? [] : [`${ROUTING_SET_FLAG}=${routingSet}`]),
-		...rawArgs,
-	];
+	// The binary in front of them deliberately differs between the two. The advice
+	// is something a human retypes, so it says `factory`; the command is something
+	// Herdr execs, so it says the resolved path this process was started from
+	// (§11.7). One string for both would be wrong for whichever it was not written
+	// for.
+	//
+	// The advice is human-facing in the other direction too: it inherits
+	// `relaunchArgs`' `JSON_FLAG` exclusion, so an operator who typed `--json`,
+	// read the refusal as JSON, and retyped this line gets human output from the
+	// foreground run. That is the right default for the reader the sentence is
+	// written for, and the wrong one for a script — which should build its line
+	// from the `--json` envelope's fields rather than from a sentence.
+	const controllerArgs = [FOREGROUND_FLAG, ...relaunchArgs({ args, flags, flagValues })];
+	const foregroundLine = `factory start ${controllerArgs.join(" ")}`;
+
 	const store = await openStore({ repoRoot, agentDir });
 	try {
 		// The lock-free read: the launcher takes no lease. §10.4's resolution is
@@ -137,8 +189,7 @@ export async function launch({
 					command: availability.command,
 					message:
 						`${availability.message} The default launch is a detached Herdr pane (§10.1); ` +
-						`\`${FOREGROUND_FLAG}\` runs the run in this terminal instead: ` +
-						`factory start ${controllerArgs.join(" ")}`,
+						`\`${FOREGROUND_FLAG}\` runs the run in this terminal instead: ${foregroundLine}`,
 				},
 				exitCode: EXIT_REFUSED,
 			};
@@ -203,7 +254,7 @@ export async function launch({
 				pane: result.root_pane.pane_id,
 				label,
 				command,
-				foreground_alternative: `factory start ${controllerArgs.join(" ")}`,
+				foreground_alternative: foregroundLine,
 			},
 			exitCode: EXIT_OK,
 		};

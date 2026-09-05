@@ -6,7 +6,6 @@ import {
 	EXIT_USAGE,
 	exitCodeForEndReason,
 } from "../cli/exit-codes.mjs";
-import { ROUTING_SET_FLAG } from "../config/load.mjs";
 import {
 	CONTROLLER_EXIT_LEASE_LOST,
 	DISPOSITION_RELEASED,
@@ -95,8 +94,7 @@ export const NEW_RUN_FLAG = "--new-run";
  * @param {string[]} invocation.args the scope on the line
  * @param {ReadonlySet<string>} invocation.flags
  * @param {ReadonlyMap<string, string>} [invocation.flagValues] the values beside
- *   them — §11.5's `--routing-set` is the one this verb reads, and it reads it
- *   only to carry it onto the detached controller's line
+ *   them, read only to be re-typed onto the line the detached launch relaunches
  * @param {object} invocation.config the validated configuration
  * @param {string} invocation.configPath
  * @param {object} invocation.activeRouting
@@ -168,9 +166,11 @@ export async function runStart({
 	//
 	// A tracker that cannot be read is the **controller's** refusal, typed. The
 	// launcher's read serves only §10.4's answer — the controller it launches
-	// resolves the line again from `rawArgs` and refuses if it cannot — so a
-	// launcher that could not read carries the parsed scope through rather than
-	// refusing on behalf of a process that has not looked yet.
+	// resolves the relaunched line again and refuses if it cannot — so a launcher
+	// that could not read carries the parsed scope through rather than refusing
+	// on behalf of a process that has not looked yet. That relaunched line is the
+	// operator's whole invocation and not its scope alone (#213), which is what
+	// makes the second resolution reach the first one's answer.
 	const foreground = flags.has(FOREGROUND_FLAG);
 	let requested;
 	let resolvedFrom = null;
@@ -197,13 +197,12 @@ export async function runStart({
 		return launch({
 			repoRoot,
 			requested,
-			rawArgs: args,
-			// §11.5's selection is a property of the *run*, and the detached
-			// controller is the process that starts it. This invocation loaded the
-			// config only to answer §10.4; the controller loads it again from its own
-			// line, so a selector left behind here would launch a run under the
-			// routing the operator did not ask for and say nothing about it.
-			routingSet: flagValues.get(ROUTING_SET_FLAG) ?? null,
+			// The whole line, not the scope alone: the detached controller resolves
+			// its scope and loads its config again from its own argv, so every flag
+			// the operator typed has to reach it (#213).
+			args,
+			flags,
+			flagValues,
 			agentDir,
 			executable,
 			env,

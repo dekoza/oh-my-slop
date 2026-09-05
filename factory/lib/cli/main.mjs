@@ -4,6 +4,7 @@ import { loadFactoryConfig, ROUTING_SET_FLAG } from "../config/load.mjs";
 import { registerGitProbes } from "../git/probes.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
 import { EXIT_NOT_IMPLEMENTED, EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "./exit-codes.mjs";
+import { JSON_FLAG } from "./flags.mjs";
 import { renderReport } from "./render.mjs";
 import { VERB_TABLE, VERBS } from "./verbs.mjs";
 
@@ -34,8 +35,8 @@ registerArtifactProbes(PROBES);
  */
 const OUTPUT_SCHEMA_VERSION = 1;
 
-const SYNOPSIS = "factory <verb> [args] [--json]";
-const KNOWN_FLAGS = new Set(["--json", "--help", "-h"]);
+const SYNOPSIS = `factory <verb> [args] [${JSON_FLAG}]`;
+const KNOWN_FLAGS = new Set([JSON_FLAG, "--help", "-h"]);
 
 /**
  * @param {string[]} argv arguments after the program name
@@ -299,11 +300,22 @@ export function renderHuman(value) {
 	return `${lines.join("\n")}\n`;
 }
 
-function parseArgv(argv) {
+/**
+ * The token sort every invocation goes through: verb, positionals, flags, and
+ * the values riding them.
+ *
+ * Exported for one reason — #213's relaunched line has to be read back by the
+ * same reader the pane's controller will read it with. A suite that re-derived
+ * "a token starting with `-` is a flag" would agree with itself while the two
+ * processes disagreed, which is the failure that ticket is about.
+ *
+ * @param {string[]} argv arguments after the program name
+ */
+export function parseArgv(argv) {
 	const args = [];
 	const flags = [];
 	const values = new Map();
-	const json = argv.includes("--json");
+	const json = argv.includes(JSON_FLAG);
 	let verb = null;
 	let help = false;
 
