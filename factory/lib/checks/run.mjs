@@ -13,9 +13,12 @@ import { FactoryCheckError } from "./errors.mjs";
  * never parsed at runtime** (§14.34) — the only input is the validated list the
  * caller was handed by the loader.
  *
- * **The full required set runs every time.** The selector is two closed values,
- * so "which area did this touch" is not a question this API can be asked; §8.2
- * names per-surface targeting as exactly the inference that goes wrong silently.
+ * **A selection names where a set is paid for, never which area a change
+ * touched.** The selector is four closed values, so "which files did this
+ * touch" is not a question this API can be asked; §8.2 names per-surface
+ * targeting as exactly the inference that goes wrong silently. Within a
+ * selection the whole of it runs — a selection is never narrowed by a diff —
+ * and every selection that gates anything runs the **full required set**.
  *
  * **Fault attribution is the point of the classification** (§8.8's three words):
  * a required check exiting non-zero *within its declared expected-failure exit
@@ -33,14 +36,80 @@ import { FactoryCheckError } from "./errors.mjs";
  */
 
 /**
- * §8.2's two selections, and there is no third.
+ * §8.2's selections — **where a set is paid for**, and there is no fifth.
  *
  * `required` is §8.3's baseline set — the checks whose failure stops a run.
- * `all` adds the advisory ones, which **record evidence and never block**, and
- * is what verification runs so the attestation carries every declared check
- * (§8.7).
+ * `all` adds the advisory ones and belongs to the operator's explicit
+ * `doctor --baseline` diagnostic (§10.5), which is asked for by hand and
+ * therefore runs everything it can be asked for.
+ *
+ * `verify` and `publication` **partition the declared list**, and that partition
+ * is the whole of #211. An advisory check records evidence and never blocks, so
+ * running every one of them on every verify pays for it once per *attempt* to
+ * produce evidence that is read once per *published ticket* — a ten-minute
+ * browser tier billed three times, on a ticket that takes two repair rounds, to
+ * inform one publication. The line between the two halves is `feeds`, because
+ * that is the repository's own declaration of where the output is read:
+ *
+ * - `verify` — the required set, plus every advisory check that **feeds** a
+ *   later agent phase. A fed check's captured output reaches the next prompt
+ *   (§8.2), so every run of it is read, and the attempt is where it must be paid
+ *   for.
+ * - `publication` — the advisory checks that feed nothing. Their only reader is
+ *   the attestation on the commit that gets published (§8.7), so they run once,
+ *   at §7.5's publication boundary, against the exact candidate commit.
+ *
+ * **Severity still says what a red result does; it never said what it costs.**
+ * Neither half can block: `ok` is computed over the required results alone
+ * wherever the selection came from.
  */
-export const CHECK_SELECTIONS = Object.freeze({ required: "required", all: "all" });
+export const CHECK_SELECTIONS = Object.freeze({
+	required: "required",
+	all: "all",
+	verify: "verify",
+	publication: "publication",
+});
+
+/**
+ * The one place a selection becomes a predicate — so the four cannot drift into
+ * four call sites that happen to agree.
+ *
+ * `feeds` is read tolerantly: §11.6 turns an absent list into `[]` at load, and
+ * a declaration that never went through the loader means the same thing by
+ * leaving the key out.
+ */
+const SELECTED_BY = Object.freeze({
+	[CHECK_SELECTIONS.required]: (check) => check.severity === "required",
+	[CHECK_SELECTIONS.all]: () => true,
+	[CHECK_SELECTIONS.verify]: (check) => check.severity === "required" || feedsOf(check).length > 0,
+	// **`!== "required"`, not `=== "advisory"`**, so the two halves are a
+	// partition rather than two overlapping filters: every declared check has
+	// exactly one home, and §8.7's "every declared check exactly once" cannot be
+	// lost to a severity nobody here thought about.
+	[CHECK_SELECTIONS.publication]: (check) => check.severity !== "required" && feedsOf(check).length === 0,
+});
+
+function feedsOf(check) {
+	return check.feeds ?? [];
+}
+
+/**
+ * Which declared checks a selection names, without running any of them.
+ *
+ * §7.5's publication boundary has to know whether it owes a run at all before it
+ * has a worktree to run one in, and #211's partition is only an invariant while
+ * one function answers it. A caller re-deriving "the advisory ones that feed
+ * nothing" is the second opinion this export exists to refuse.
+ *
+ * @param {ReadonlyArray<object>} declared the validated `checks` block (§11.6)
+ * @param {string} select one of `CHECK_SELECTIONS`
+ * @returns {ReadonlyArray<object>} in declaration order
+ * @throws {FactoryCheckError} `check-selection-unknown`
+ */
+export function selectedChecks(declared, select) {
+	requireSelection(select);
+	return Object.freeze(declared.filter(SELECTED_BY[select]));
+}
 
 /**
  * Why a check could not be run, as opposed to having failed. Closed, because
@@ -120,8 +189,7 @@ const serialized = createTurnstile();
 export async function runChecks(declared, { select, cwd, env = process.env, maxOutputBytes = MAX_OUTPUT_BYTES, now = Date.now }) {
 	// Before the lane, so a caller asking for something §8.2 does not offer waits
 	// for nothing and starts nothing.
-	requireSelection(select);
-	const selected = declared.filter((check) => select === CHECK_SELECTIONS.all || check.severity === "required");
+	const selected = selectedChecks(declared, select);
 
 	return serialized(async () => {
 		const results = [];
@@ -351,7 +419,7 @@ function requireSelection(select) {
 	throw new FactoryCheckError(
 		"check-selection-unknown",
 		`A check selection is one of ${Object.values(CHECK_SELECTIONS).join(", ")} (§8.2); found ${JSON.stringify(select ?? null)}. ` +
-			"There is no per-surface targeting: the full required set runs every time.",
+			"A selection names where a set is paid for, never which area a change touched: there is no per-surface targeting.",
 		{ at: "select", found: select ?? null, expected: Object.values(CHECK_SELECTIONS).join("|") },
 	);
 }

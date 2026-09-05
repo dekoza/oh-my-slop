@@ -22,6 +22,7 @@ import { publishPullRequest, pullTitle, renderPullBody } from "../tracker/pulls.
 import { writeAttestation } from "./attestation.mjs";
 import { FactoryPipelineError } from "./errors.mjs";
 import { verifyPhase } from "./phases.mjs";
+import { publicationChecks } from "./publication.mjs";
 import { stageResults } from "./stages.mjs";
 
 /**
@@ -34,10 +35,17 @@ import { stageResults } from "./stages.mjs";
  * destroys the throughput it was added to protect. So:
  *
  * ```
- * verify:    [ lease ] fetch → evidence ref → rebase → run the required set [ release ]
+ * verify:    [ lease ] fetch → evidence ref → rebase → run the verify set [ release ]
  * review:    (no lease at all — two model calls, one per axis)
- * integrate: [ lease ] base still the same? → predicates → push → PR [ release ]
+ * integrate: [ lease ] base still the same? → predicates → run the deferred
+ *            advisory set → attest → push → PR [ release ]
  * ```
+ *
+ * **The deferred advisory set is in `integrate` and nowhere else** (#211): an
+ * advisory check that feeds no later phase is read only on the attestation of
+ * the commit that gets published, so it is paid for once per published ticket
+ * instead of once per attempt. `pipeline/publication.mjs` owns which checks
+ * those are and how a re-entry stands on what an earlier pass already measured.
  *
  * **The rebase is in `verify`, not in `integrate`, and that is what makes
  * §8.2's invariant literally true**: the checks always run at the post-rebase
@@ -231,23 +239,21 @@ async function rebaseAndVerify(
 				at: verifiedAt,
 			}),
 	});
-	// The commit list only when there is something to publish: a red set stops
+	// The predicates only when there is something to publish: a red set stops
 	// here, and reading the range would be work whose answer nobody uses. The
 	// worktree stays either way — §9.5's second lease publishes from it on the
 	// green path, and §12.7 retains it on the red one.
-	const commits =
+	const assessed =
 		verified.outcome === CHECK_RESULTS.passed
-			? (
-					await assessIntegration(clone, {
-						worktreePath: opened.path,
-						baseCommit: fresh.commit,
-						head: rebased.head,
-						run,
-						ticket,
-						acceptedRuns,
-					})
-				).commits
-			: [];
+			? await assessIntegration(clone, {
+					worktreePath: opened.path,
+					baseCommit: fresh.commit,
+					head: rebased.head,
+					run,
+					ticket,
+					acceptedRuns,
+				})
+			: null;
 
 	return answer(verified.outcome, {
 		...verified.detail,
@@ -257,7 +263,12 @@ async function rebaseAndVerify(
 		rebased: rebased.result === REBASE_RESULTS.rebased,
 		evidence_ref: evidence?.ref ?? null,
 		evidence_sha: evidence?.sha ?? null,
-		commits,
+		commits: assessed?.commits ?? [],
+		// Recorded here for the same reason the commit list is: §8.7 attests what
+		// **this** phase measured at the commit it measured, and re-deriving it at
+		// publication would be a second answer to a question durable state already
+		// holds (#210).
+		misstamped: assessed?.misstamped ?? null,
 		worktree: opened.path,
 	});
 }
@@ -330,6 +341,16 @@ export async function integratePublish(store, clone, context) {
 	// them and the resolution is exactly what a re-entry exists to finish. Nothing
 	// in `publish` fetches, rebases, or moves a ref; every mutation in it is an
 	// effect that has already resolved or has not happened yet.
+	//
+	// **#211's deferred set does not break that**, and the reason is worth being
+	// precise about, because on the first pass it does spawn processes and write
+	// artifacts. A landed publication has its attestation — §8.7's artifact is
+	// written *before* the push — so `publicationChecks` answers off that record
+	// here and runs nothing: no process, no artifact write, and no read of the
+	// integration worktree this same path has already reclaimed. A resolved
+	// attestation whose bytes will not come back is the one case that is neither,
+	// and it refuses by name (`attestation-unreadable`) rather than re-measuring
+	// into §4.5's payload conflict on a branch that is already out there.
 	if (publicationLanded(store, { run, ticket, branch })) {
 		return underIntegrationLease(leases, { hold, run, ticket, attempt, span: "integrate+publish" }, () =>
 			publish(store, clone, { ...context, verified }),
@@ -402,13 +423,24 @@ function reverified({ outcome, detail }) {
  * recomputes the same digest — while a PR body naming a digest nothing wrote
  * would be a link to nothing. The push comes next, then the PR, so the branch a
  * pull request names always exists.
+ *
+ * #211's deferred advisory set runs one step earlier still, between the
+ * predicates and the attestation, and **that placement is what keeps the digest
+ * recomputable**: its results are in the document, so a re-entry that re-ran the
+ * set would offer §4.5 a second payload under one key. `publicationChecks`
+ * answers a re-entry from the attestation the first pass wrote, which is the
+ * same durable state every other step here reads.
  */
 async function publish(store, clone, context) {
 	const { hold, run, ticket, attempt, branch, baseBranch, verified, acceptedRuns = [], actor, now } = context;
 
 	// No worktree: every predicate is a question about commits and trees, which
 	// the bare clone answers — and that is what lets a re-entry after a success
-	// that already reclaimed the worktree re-derive the same verdict (§7.7).
+	// that already reclaimed the worktree re-derive the same verdict (§7.7). The
+	// deferred set below is the one step here that *does* need the worktree, and
+	// it needs it only on the pass that measures: a re-entry past a written
+	// attestation reads its results back instead, which is what keeps this
+	// function's worktree-free re-entry true (#211).
 	const predicates = await assessIntegration(clone, {
 		baseCommit: verified.baseCommit,
 		head: verified.head,
@@ -423,10 +455,28 @@ async function publish(store, clone, context) {
 			reason: predicates.reason,
 			detail: predicates.detail,
 			untrailed: predicates.untrailed,
+			misstamped: predicates.misstamped,
 			head: verified.head,
 			base_commit: verified.baseCommit,
 		});
 	}
+
+	// #211's deferred advisory set, at the exact commit that is about to be
+	// pushed — after the predicates, because a branch nothing will publish has no
+	// attestation for the evidence to land on, and before the attestation,
+	// because that artifact is its only reader.
+	const publication = await publicationChecks(store, {
+		hold,
+		run,
+		ticket,
+		attempt,
+		checks: context.checks,
+		candidateCommit: verified.head,
+		cwd: verified.worktree,
+		...(context.env === undefined ? {} : { env: context.env }),
+		actor,
+		now,
+	});
 
 	const attested = writeAttestation(store, {
 		hold,
@@ -439,7 +489,13 @@ async function publish(store, clone, context) {
 		branch,
 		baseCommit: verified.baseCommit,
 		packageRevision: context.packageRevision ?? null,
-		checks: verified.checks,
+		declared: context.checks,
+		// The two sets that measured this commit, in one list: §8.1's verify ran
+		// the required set and the fed advisory checks, and the boundary above ran
+		// the rest. `buildAttestation` puts them back into declaration order and
+		// refuses a list short of a declared check, so "the attestation carries
+		// every check" is asserted rather than assumed of the caller (§8.7).
+		checks: [...verified.checks, ...publication.records],
 		integration: {
 			rebased: verified.rebased ?? null,
 			evidence_ref: verified.evidenceRef ?? null,
@@ -450,6 +506,18 @@ async function publish(store, clone, context) {
 			// "which commits were measured", which is the second opinion this
 			// module's own `attestedByVerify` exists to refuse.
 			commits: [...verified.commits],
+			// §7.3's trailer as the workers actually wrote it (#210). A commit whose
+			// trailer is damaged but whose attempt segment still names this execution
+			// is published, so the misspelling is on the record here — the one
+			// immutable statement of what was published — rather than nowhere.
+			//
+			// **The verify record's list, for the reason immediately above**: the
+			// phase that measured the commit is the phase that read its trailers. A
+			// record written before #210 carries none, and the re-derivation over the
+			// same recorded range is the honest answer there rather than a `null`
+			// that would read as "nothing was damaged" — the predicates ran on this
+			// path, so it is always a list.
+			misstamped: (verified.misstamped ?? predicates.misstamped).map((entry) => ({ ...entry })),
 		},
 	});
 
@@ -538,6 +606,12 @@ async function publish(store, clone, context) {
 		attestation: { algorithm: attested.reference.algorithm, digest: attested.reference.digest },
 		summary: attested.summary,
 		advisory: attested.document.review.advisory,
+		misstamped: attested.document.integration.misstamped,
+		// #211: which checks the publication boundary owed, and whether this pass
+		// paid them or stood on a record an earlier pass at this same commit left.
+		// The results are in the attestation; what an operator cannot read there is
+		// whether a re-entry re-ran a ten-minute tier.
+		publication_checks: Object.freeze({ names: publication.names, reused: publication.reused }),
 		worktrees_reclaimed: [verified.worktree, reclaimed.path],
 		branch_cleanup_eligible: true,
 	});
@@ -628,6 +702,7 @@ function attestedBy(detail) {
 		baseCommit: detail.base_commit,
 		head: detail.head,
 		commits: detail.commits,
+		misstamped: detail.misstamped ?? null,
 		checks: detail.checks,
 		worktree: detail.worktree,
 		rebased: detail.rebased,

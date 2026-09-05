@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import { NO_REPO_ROOT } from "../cli/no-repo-root.mjs";
 import { resolveRepoRoot } from "../git/repo.mjs";
 import { FactoryConfigError } from "./errors.mjs";
 
@@ -18,10 +19,13 @@ const CONFIG_FILE_NAME = "factory.json";
 export function discoverConfigPath(cwd) {
 	const repoRoot = resolveRepoRoot(cwd);
 	if (repoRoot === null) {
+		// The reason and the detail come from the contract the exempt `stop` reads
+		// too: the two refusals are different error types on purpose, and identical
+		// on the wire by construction rather than by agreement (§10.5, #217).
 		throw new FactoryConfigError(
-			"no-repo-root",
+			NO_REPO_ROOT.reason,
 			`No git repository root above ${cwd}; factory configuration is repo-bound and there is no --config override.`,
-			{ from: cwd },
+			NO_REPO_ROOT.details(cwd),
 		);
 	}
 

@@ -46,8 +46,22 @@ question is which rows have become the module's job to state, not what the ceili
 - **What a config may declare as a worker's environment is one predicate**, wherever it is
   declared: UPPER_SNAKE, never a controller-owned or secret-shaped name, never an empty or
   multi-line value. — `config/declared-env.mjs` · §6.5, §6.8
-- **`factory migrate` is the only verb that writes the operator's config**, and the only verb exempt
-  from the load. — `migrate/verb.mjs` · §11.8
+- **A named routing set is selected by the flag, then `routing.activeSet`, then the file-level
+  routing**, resolved in one place; both names refuse as `unknown-routing-set`, and `activeSet` is
+  validated whether or not the flag departs from it. — `config/routing.mjs` · §11.5
+- **`--routing-set` is re-typed onto the detached controller's line**, because that controller is a
+  separate process loading the config again from its own argv. — `controller/launch.mjs` · §11.5
+- **`factory migrate` is the only verb that writes the operator's config**, and one of the two
+  exempt from the load. — `migrate/verb.mjs` · §11.8
+- **`stop` is the other exemption, and the table carries both**: it ends a run whose controller
+  loaded its policy at start, so a config the loader rejects must not take it down; the load stays
+  fail-closed for every verb that decides anything from policy. — `cli/verbs.mjs` · §10.5, §11.2
+- **The exempt `stop` walks up to the repo root itself** and reads no policy file: its run, lease
+  row, and stream are durable state; its refusals stay its own. — `controller/stop.mjs` · §10.3, §10.5, §11.1
+- **A repo-less invocation gets one refusal contract, not two that agree**: the loader and the
+  exempt `stop` read the reason and its `{ from }` detail from one module, which also states
+  §10.3's exit 1 for the verb; their error types and operator prose stay distinct, and a test
+  compares the two answers. — `cli/no-repo-root.mjs` · §10.5, §11.1
 - **§11.8's legacy-key disposition table is data**: one row maps and reports, a legacy key no row
   names refuses the migration, the five holes it leaves are `TODO` sentinels the loader hard-fails
   on, and `.pi/factory.v1.json` is preserved before anything is written. — `migrate/document.mjs` · §11.8
@@ -392,6 +406,9 @@ question is which rows have become the module's job to state, not what the ceili
 - **§7.4's integration-side predicates are commits-ahead, `git diff --check`, and §7.3's correlation
   trailer on every commit**, accepting only the current run/ticket and §3.4's verified inherited
   runs; they need no worktree. — `git/integrate.mjs` · §3.4, §7.3, §7.4
+- **A trailer whose prefix is damaged while its `<run>-t<ticket>-a<n>` segment names an accepted
+  execution is misstamped, not untrailed**: it publishes unrepaired, and the verify phase that
+  read it is what §8.7 attests. — `git/integrate.mjs`, `pipeline/integration.mjs` · §7.3, §8.7
 
 ## Tracker
 
@@ -547,10 +564,15 @@ question is which rows have become the module's job to state, not what the ceili
 - **The controller never classifies a citation.** — `pipeline/review.mjs` · §8.4
 - **The integration lease is acquired twice, and is a row *and* an in-process turn**: `[lease] fetch
   → evidence ref → rebase → the required set [release]`, then the two review axes with no lease
-  held, then `[lease] base unchanged? → predicates → push → PR [release]`. The row is what reconcile
-  finds after a crash, the chain is what makes a second lane wait. — `pipeline/integration.mjs` · §9.5
+  held, then `[lease] base unchanged? → predicates → deferred advisory set → attest → push → PR
+  [release]`. The row is what reconcile finds after a crash, the chain is what makes a second lane
+  wait. — `pipeline/integration.mjs` · §9.5
 - **The rebase is in `verify`, not in `integrate`** — the checks always run at the post-rebase
-  commit that will be pushed. — `pipeline/integration.mjs` · §8.2, §14.13
+  commit that will be pushed, and #211's deferred set runs at that same commit one phase later.
+  — `pipeline/integration.mjs` · §8.2, §14.13
+- **§8.7's check list is held complete against the declaration**: every declared check exactly
+  once, in declaration order, assembled from the two sets that measured the published commit — a
+  document short of one is refused rather than published. — `pipeline/attestation.mjs` · §8.7, §14.16
 - **`integrate` re-acquires under a base-commit identity precondition and loops back to re-rebase
   and re-verify, consuming no budget.** — `pipeline/integration.mjs` · §9.5
 - **A red re-verify inside §9.5's loop is `integration-red`**, carrying no automation fault.
@@ -560,8 +582,12 @@ question is which rows have become the module's job to state, not what the ceili
 
 - **The checks are declared, never discovered**: the validated `checks` block and nothing else — no
   manifest, no Makefile, and `AGENTS.md` prose is never parsed at runtime — with the selector the
-  closed pair `required | all`, so per-surface targeting is not a question the API can be asked.
-  — `checks/run.mjs` · §8.2, §14.34
+  closed set `required | all | verify | publication`, each naming where a set is paid for, so
+  per-surface targeting is not a question the API can be asked. — `checks/run.mjs` · §8.2, §14.34
+- **`verify` and `publication` partition the declaration, and `feeds` is the line**: the required
+  set plus every advisory check feeding a later phase is paid per attempt; an advisory check
+  feeding nothing is paid once, at publication. Every declared check has exactly one home.
+  — `checks/run.mjs` · §8.2
 - **`feeds` is advisory-only and names agent-borne phases**, unique, defaulting to empty; unknown
   phases and `review` refuse the config rather than becoming inert policy. — `config/checks.mjs` · §8.2, §11.6
 - **Fed evidence is selected from policy plus the verify record** and resolved through the artifact
@@ -579,6 +605,12 @@ question is which rows have become the module's job to state, not what the ceili
 - **Running a check is not an effect, but recording its output is** — keyed by the *execution*, not
   by the check alone; stdout/stderr is content-addressed and later reachable only through its ledger
   row. — `checks/artifacts.mjs` · §4.5, §8.7
+- **The deferred advisory set runs after the predicates and before the attestation**, at the exact
+  candidate commit, and a re-entry reads it back off the attestation that commit already has;
+  a different candidate commit measures again. — `pipeline/publication.mjs` · §7.5, §8.2, §8.7
+- **A resolved attestation whose bytes will not come back is `attestation-unreadable`, never a
+  re-measure**: the document is content-addressed, so a second measurement cannot rebuild it and
+  would meet §4.5's payload conflict instead. — `pipeline/attestation.mjs` · §4.5, §8.7
 - **§8.3's baseline gate is a detached throwaway worktree** under `baselines/`, deleted eagerly when
   green and retained when red, writing nothing durable; `doctor --baseline` shares that isolation
   path but not preflight's selection, running `all` and reporting advisory severity while preflight
@@ -598,6 +630,10 @@ question is which rows have become the module's job to state, not what the ceili
   — `controller/start.mjs` · §3.1, §10.4
 - **Against a live holder it resolves rather than queueing**, and refuses whatever it cannot decide
   from durable state. — `controller/start.mjs` · §19
+- **The detached relaunch carries the operator's whole line**, `--routing-set` included, every flag
+  reconstructed from what the verb table already validated rather than from a list of its own — the
+  controller resolves its scope and loads its config again from its own argv, so a flag left behind
+  runs a different invocation and neither process says so. — `controller/launch.mjs` · §10.1, §11.5
 - **A run ends at most once, and every ended run has a reason**: `run.ended` and the controller
   lease release commit in one token-checked transaction. — `controller/start.mjs`
 - **Preflight is observable, not a gate**: every check writes a `preflight.checked` stage on the

@@ -15,7 +15,15 @@ import {
 	releaseIntegrationWorktree,
 } from "../../factory/lib/git/integrate.mjs";
 import { evidenceRef, integrationWorktreePath } from "../../factory/lib/git/isolation.mjs";
-import { commitInto, moveRemoteBase, repairAttempt, TEST_HOLD as HOLD, workedAttempt } from "./helpers/factory-git.mjs";
+import {
+	commitInto,
+	damagedTicketSegment,
+	damagedTicketSegmentValue,
+	moveRemoteBase,
+	repairAttempt,
+	TEST_HOLD as HOLD,
+	workedAttempt,
+} from "./helpers/factory-git.mjs";
 import { FIXED_NOW } from "./helpers/factory-store.mjs";
 
 /**
@@ -240,6 +248,9 @@ test("§7.4's integration-side predicates pass on the branch the worker actually
 
 	assert.equal(verdict.pushable, true);
 	assert.deepEqual([...verdict.commits], [head]);
+	// Asked, and every trailer was well spelled — which is not the same answer as
+	// the `null` an earlier refusal returns without asking (#210).
+	assert.deepEqual([...verdict.misstamped], []);
 });
 
 test("whitespace damage the worker committed stops the push (§7.4)", async (t) => {
@@ -264,6 +275,9 @@ test("whitespace damage the worker committed stops the push (§7.4)", async (t) 
 	assert.equal(verdict.pushable, false);
 	assert.equal(verdict.reason, INTEGRATION_REFUSALS.diffCheck);
 	assert.ok(verdict.detail.length > 0, "git's own diagnosis was dropped");
+	// This refusal returns before the trailer walk, so it reports no reading at
+	// all rather than a clean one (#210).
+	assert.equal(verdict.misstamped, null);
 });
 
 test("a commit missing §7.3's correlation trailer is caught at integration, where §7.3 says it is", async (t) => {
@@ -281,6 +295,73 @@ test("a commit missing §7.3's correlation trailer is caught at integration, whe
 	assert.equal(verdict.pushable, false);
 	assert.equal(verdict.reason, INTEGRATION_REFUSALS.trailerMissing);
 	assert.deepEqual([...verdict.untrailed], [head]);
+});
+
+test("a fumbled ticket segment is still the execution its attempt segment names (§7.3, #210)", async (t) => {
+	// The incident: a worker stamped two commits correctly and mangled one segment
+	// of the third. The attempt id it still carries is the whole identity tuple,
+	// so the commit correlates — it is misspelled, not unstamped.
+	const { store, clone, base, run, ticket, attempt, branch, head } = await workedAttempt(t, {
+		trailer: damagedTicketSegment,
+	});
+	const opened = await openIntegrationWorktree(clone, { storeDir: store.storeDir, attempt, branch });
+
+	const verdict = await assessIntegration(clone, {
+		worktreePath: opened.path,
+		baseCommit: base.commit,
+		head,
+		run,
+		ticket,
+	});
+
+	assert.equal(verdict.pushable, true);
+	assert.deepEqual([...verdict.untrailed], []);
+	assert.deepEqual(
+		verdict.misstamped.map((entry) => ({ ...entry })),
+		[{ commit: head, trailer: damagedTicketSegmentValue({ run, ticket, attempt }) }],
+	);
+});
+
+test("a damaged run segment is read the same way: the attempt id carries the run too (§7.3, #210)", async (t) => {
+	const damaged = ({ run, ticket, attempt }) => `Factory-Attempt: xx${run}/${ticket}/${attempt}`;
+	const { store, clone, base, run, ticket, attempt, branch, head } = await workedAttempt(t, { trailer: damaged });
+	const opened = await openIntegrationWorktree(clone, { storeDir: store.storeDir, attempt, branch });
+
+	const verdict = await assessIntegration(clone, {
+		worktreePath: opened.path,
+		baseCommit: base.commit,
+		head,
+		run,
+		ticket,
+	});
+
+	assert.equal(verdict.pushable, true);
+	assert.deepEqual([...verdict.untrailed], []);
+	assert.equal(verdict.misstamped.length, 1);
+});
+
+test("an unstamped commit beside a misspelled one is still the refusal, and names only itself (§7.4, #210)", async (t) => {
+	const { store, clone, base, run, ticket, attempt, branch } = await workedAttempt(t, {
+		trailer: damagedTicketSegment,
+	});
+	const opened = await openIntegrationWorktree(clone, { storeDir: store.storeDir, attempt, branch });
+	const head = commitInto(opened.path, { "loose.txt": "nobody stamped this\n" }, { message: "chore: loose", trailer: null });
+
+	const verdict = await assessIntegration(clone, {
+		worktreePath: opened.path,
+		baseCommit: base.commit,
+		head,
+		run,
+		ticket,
+	});
+
+	assert.equal(verdict.pushable, false);
+	assert.equal(verdict.reason, INTEGRATION_REFUSALS.trailerMissing);
+	// The operator is sent to the commit that is genuinely unstamped, and told
+	// which of the others is not why the push refused.
+	assert.deepEqual([...verdict.untrailed], [head]);
+	assert.equal(verdict.misstamped.length, 1);
+	assert.match(verdict.detail, /damaged trailer/);
 });
 
 test("a trailer naming somebody else's ticket execution is not this attempt's correlation (§6.5)", async (t) => {

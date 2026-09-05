@@ -1,3 +1,5 @@
+import { NO_REPO_ROOT } from "../cli/no-repo-root.mjs";
+
 /**
  * Config load refusals (§11.2). Every one of them stops the run: the loader
  * never warns and continues, so there is no severity axis here — only a reason
@@ -31,6 +33,15 @@ export const CONFIG_LOAD_REASONS = Object.freeze([
 	"resource-unsized",
 	"resource-unreachable",
 ]);
+
+// One reason is shared with the verb exempt from this load, and `cli/no-repo-root.mjs`
+// is what holds the sharing. The set still spells its wire strings out, so this is
+// the direction worth checking: a rename here that left the contract behind would
+// surface as an unknown-reason throw the first time a repo-less invocation reached
+// the loader — an operator's problem rather than a load-time one.
+if (!CONFIG_LOAD_REASONS.includes(NO_REPO_ROOT.reason)) {
+	throw new Error(`"${NO_REPO_ROOT.reason}" is the shared repo-less refusal but is not one of §11.2's reasons.`);
+}
 
 /**
  * An `invalid-value` refusal bound to one field: `refuse(sentence, expected)`.

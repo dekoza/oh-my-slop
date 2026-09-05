@@ -81,10 +81,24 @@ const TODO_SENTINEL_PATTERN = /^TODO\b/;
 const PACKAGE_EXPECT_KEYS = Object.freeze(["name", "version"]);
 
 /**
+ * §11.5's per-run selector, as an operator types it: the flag whose value
+ * becomes this loader's `routingSet`.
+ *
+ * It is declared beside the parameter it fills rather than beside either verb
+ * that accepts it, because a flag constant living with one of `start` and
+ * `doctor` would have to be imported by the other — and because the load is what
+ * the flag changes. Nothing downstream of the load branches on it: the run reads
+ * `activeRouting`, which is already the selection resolved against
+ * `routing.activeSet` and the file-level routing.
+ */
+export const ROUTING_SET_FLAG = "--routing-set";
+
+/**
  * @param {{ cwd: string, routingSet?: string | null }} invocation `routingSet` is
- *   the run's §11.5 selection: a name from `routing.sets`, or null for the
- *   declared default. It is a per-run input rather than config, so an unknown
- *   name refuses instead of quietly leaving the default active.
+ *   the run's §11.5 selection — what `--routing-set` carried — or null to take
+ *   the file's own default: `routing.activeSet` when it declares one, the
+ *   file-level routing otherwise. It is a per-run input rather than config, so an
+ *   unknown name refuses instead of quietly leaving the default active.
  * @returns {{ repoRoot: string, configPath: string, config: object, activeRouting: { set: string | null, roles: object, rules: ReadonlyArray<object> }, declared: Record<string, ReadonlyArray<string>>, remote: { name: string, url: string, slug: string } }}
  *   `config.routing` is what the file declares, sets and all; `activeRouting` is
  *   the one this run routes by; `declared` is which override keys the file

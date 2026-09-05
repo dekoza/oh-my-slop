@@ -69,9 +69,11 @@ export async function mintedAttempt(t, { ticket = 42 } = {}) {
  * `ls-remote` identity compare — and none of them is observable through a stub.
  *
  * @param {import("node:test").TestContext} t
- * @param {{ ticket?: number, files?: Record<string, string>, trailer?: boolean }} [options]
+ * @param {{ ticket?: number, files?: Record<string, string>, trailer?: boolean | ((identity: object) => string) }} [options]
  *   `trailer: false` builds the branch a worker that ignored its prompt would
- *   leave, which §7.3 says integration is where it is caught
+ *   leave, which §7.3 says integration is where it is caught; a **function**
+ *   is handed the minted identity tuple and returns the line verbatim, which is
+ *   how a worker that followed the rule and fumbled a token is built (#210)
  */
 export async function workedAttempt(t, { ticket = 42, files = { "worker.txt": "attempt work\n" }, trailer = true } = {}) {
 	const fixture = await mintedAttempt(t, { ticket });
@@ -89,7 +91,7 @@ export async function workedAttempt(t, { ticket = 42, files = { "worker.txt": "a
 
 	commitInto(worktreePath, files, {
 		message: "feat: the work",
-		trailer: trailer ? factoryAttemptTrailer({ run: fixture.run, ticket, attempt: fixture.attempt }) : null,
+		trailer: trailerLine(trailer, { run: fixture.run, ticket, attempt: fixture.attempt }),
 	});
 
 	return {
@@ -100,6 +102,29 @@ export async function workedAttempt(t, { ticket = 42, files = { "worker.txt": "a
 			encoding: "utf8",
 		}).trim(),
 	};
+}
+
+/**
+ * The trailer #210 is about: §7.3's own line with one segment of the tuple
+ * mangled, the way the incident's worker wrote it. Shared, because every test of
+ * that path needs the same damage and four spellings of it would be four things
+ * to keep in step.
+ */
+export const damagedTicketSegment = (identity) => `Factory-Attempt: ${damagedTicketSegmentValue(identity)}`;
+
+/** The same line's value alone, which is what a verdict reports. */
+export const damagedTicketSegmentValue = ({ run, ticket, attempt }) => `${run}/IÓN${ticket}/${attempt}`;
+
+/**
+ * What `workedAttempt`'s `trailer` option means: §7.3's own line, no line at
+ * all, or one the caller spells off the minted identity — which is the only way
+ * a *damaged* line can be written, since the run and attempt ids do not exist
+ * until the attempt is minted.
+ */
+function trailerLine(trailer, identity) {
+	if (trailer === false) return null;
+	if (trailer === true) return factoryAttemptTrailer(identity);
+	return trailer(identity);
 }
 
 /**

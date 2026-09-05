@@ -5,6 +5,7 @@ import { readArtifactBlob } from "../../factory/lib/artifacts/blobs.mjs";
 import {
 	ATTESTATION_SCHEMA_VERSION,
 	attestationSummary,
+	attestedDocument,
 	buildAttestation,
 	writeAttestation,
 } from "../../factory/lib/pipeline/attestation.mjs";
@@ -34,6 +35,18 @@ const CHECKS = Object.freeze([
 	{ name: "unit", command: "uv run pytest", severity: "required", result: "passed", exit_code: 0, duration_ms: 4200 },
 	{ name: "lint", command: "ruff check", severity: "required", result: "passed", exit_code: 0, duration_ms: 300 },
 	{ name: "e2e", command: "npm run e2e", severity: "advisory", result: "failed", exit_code: 1, duration_ms: 90_000 },
+]);
+
+/**
+ * The `checks` block those records answer. §8.7's list is held complete against
+ * the declaration (#211): two sets measure the published commit at two moments,
+ * so "every declared check exactly once" is asserted rather than left as
+ * arithmetic the caller cannot get wrong.
+ */
+const DECLARED = Object.freeze([
+	{ name: "unit", command: "uv run pytest", timeout: 900, severity: "required", expectedFailureExitCodes: [1], feeds: [] },
+	{ name: "lint", command: "ruff check", timeout: 120, severity: "required", expectedFailureExitCodes: [1], feeds: [] },
+	{ name: "e2e", command: "npm run e2e", timeout: 900, severity: "advisory", expectedFailureExitCodes: [1], feeds: [] },
 ]);
 
 const INTEGRATION = Object.freeze({
@@ -116,6 +129,7 @@ function attesting({ run, attempt }, overrides = {}) {
 		branch: `factory/t${TICKET}/a${attempt}`,
 		baseCommit: "c".repeat(40),
 		packageRevision: "d".repeat(64),
+		declared: DECLARED,
 		checks: CHECKS,
 		integration: INTEGRATION,
 		...overrides,
@@ -294,12 +308,107 @@ test("an attestation is refused rather than written with a hole in it (§14.16)"
 				publishedCommit: COMMIT,
 				branch: "factory/t42/a1",
 				baseCommit: "c".repeat(40),
+				declared: DECLARED,
 				checks: CHECKS,
 				integration: INTEGRATION,
 			}),
 		).reason,
 		"attestation-incomplete",
 	);
+});
+
+test("#211: the check list is the declaration's, in the declaration's order, whatever order the sets arrive in", async (t) => {
+	const context = await reviewed(t);
+
+	// Two sets measure the published commit at two moments — §8.2's `verify`
+	// selection and its `publication` one — and the publication path concatenates
+	// them, so arrival order is an accident of composition. Here the deferred
+	// check arrives first, and the document must still read as the config does:
+	// two attestations of one commit that differ only in check order would show a
+	// reordering as a change.
+	const document = build(context.store, context, { checks: [CHECKS[2], CHECKS[0], CHECKS[1]] });
+
+	assert.deepEqual(
+		document.checks.map((check) => check.name),
+		["unit", "lint", "e2e"],
+	);
+	// And `required` comes off the **declaration**, not off whatever severity the
+	// record happened to carry.
+	assert.deepEqual(
+		document.checks.map((check) => check.required),
+		[true, true, false],
+	);
+});
+
+test("#211: an attestation short of a declared check is refused rather than published (§8.7, §14.16)", async (t) => {
+	const context = await reviewed(t);
+
+	// The failure mode the assembly exists to stop: the publication boundary's set
+	// never ran, or its records were dropped between the run and the write, and
+	// the document goes out claiming a set nobody completed.
+	const refusal = refusalOf(() => build(context.store, context, { checks: CHECKS.slice(0, 2) }));
+
+	assert.equal(refusal.reason, "attestation-incomplete");
+	assert.equal(refusal.details.expected, "e2e");
+	assert.match(refusal.message, /e2e/);
+});
+
+test("#211: the assembly refuses a duplicate result, a stray one, and no declaration at all (§8.7)", async (t) => {
+	const context = await reviewed(t);
+
+	// Two records for one check are two answers to what that check said at the
+	// published commit.
+	const duplicated = refusalOf(() => build(context.store, context, { checks: [...CHECKS, CHECKS[2]] }));
+	assert.equal(duplicated.reason, "attestation-incomplete");
+	assert.equal(duplicated.details.found, "e2e");
+
+	// A result for a check the config does not declare is a set nobody can
+	// reproduce from the repository.
+	const stray = refusalOf(() =>
+		build(context.store, context, { checks: [...CHECKS, { ...CHECKS[2], name: "undeclared" }] }),
+	);
+	assert.equal(stray.reason, "attestation-incomplete");
+	assert.deepEqual(stray.details.found, ["undeclared"]);
+
+	// And a document held complete against nothing is not held complete at all.
+	const undeclared = refusalOf(() => build(context.store, context, { declared: [] }));
+	assert.equal(undeclared.reason, "attestation-incomplete");
+	assert.equal(undeclared.details.at, "declared");
+});
+
+test("#211: a written attestation is read back for the boundary that has to reuse it (§8.7)", async (t) => {
+	const context = await reviewed(t);
+	const wrote = { hold: context.hold, actor: "controller", at: FIXED_NOW };
+
+	assert.equal(attestedDocument(context.store, { run: context.run, ticket: TICKET, attempt: context.attempt }), null);
+
+	const written = writeAttestation(context.store, { ...wrote, ...attesting(context) });
+	const read = attestedDocument(context.store, { run: context.run, ticket: TICKET, attempt: context.attempt });
+
+	// Found through the effect the write composed and the ledger that holds the
+	// bytes — the same key, not a second spelling of it.
+	assert.deepEqual(read, JSON.parse(JSON.stringify(written.document)));
+	assert.equal(read.published.commit, COMMIT);
+});
+
+test("#211: an attestation written but unreadable refuses by name rather than inviting a re-measure (§4.5, §8.7)", async (t) => {
+	const context = await reviewed(t);
+	writeAttestation(context.store, { hold: context.hold, actor: "controller", at: FIXED_NOW, ...attesting(context) });
+
+	// The blob goes, the effect stays: §12.2's horizon on a long-idle run, a
+	// tombstone, a failed re-hash. Treating that as "nobody wrote one" would send
+	// the publication boundary off to measure again, and §4.5 keys that write by
+	// content — two runs of one check differ in a duration, so the rebuilt
+	// document would meet a payload conflict on a branch that may already be out
+	// there. The storage failure is named instead.
+	context.store.transaction((tx) => tx.db.prepare("DELETE FROM artifact").run());
+
+	const refusal = refusalOf(() =>
+		attestedDocument(context.store, { run: context.run, ticket: TICKET, attempt: context.attempt }),
+	);
+
+	assert.equal(refusal.reason, "attestation-unreadable");
+	assert.match(refusal.message, /cannot be read back/);
 });
 
 test("it is written once, referenced by digest, and re-entering returns the same reference (§12.1, §14.28)", async (t) => {
@@ -350,6 +459,7 @@ test("the summary counts what the checks *did*, not how many were required (§8.
 	// convincingly.
 	const summary = attestationSummary(
 		build(context.store, context, {
+			declared: DECLARED.slice(0, 2),
 			checks: [
 				{ name: "unit", command: "uv run pytest", severity: "required", result: "failed", exit_code: 1, duration_ms: 10 },
 				{ name: "lint", command: "ruff check", severity: "required", result: "passed", exit_code: 0, duration_ms: 10 },

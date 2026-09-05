@@ -32,6 +32,15 @@ Most repos here have **two** surfaces, and conflating them is the failure this c
 The standing rule: **agents never open work tickets on the intake tracker.** A repo
 may have only an agent work tracker; the intake binding is optional.
 
+## Reference routing
+
+When both trackers are configured, write a `## Reference routing` section into the
+tracker doc. Route unqualified issue numbers (`#<number>` and `<number>`) to the agent
+work tracker and require an explicit forge qualifier for intake references. For a GitHub intake tracker, accept
+`gh:<number>` and `github:<number>`. Full tracker URLs select their own tracker. Make
+routing deterministic: a missing number on the selected tracker is an error, not a
+reason to probe the other tracker.
+
 ## Process
 
 ### 1. Explore
@@ -112,9 +121,9 @@ A yes writes `.pi/factory.json` — the single policy file the `factory` binary 
 repository root — with the resolved repository, remote, explicit `tea` login name,
 authenticated assignee, default branch, worker profiles, routing, mechanical checks,
 concurrency sizes, and retry budgets. It also ensures `.worktrees/` is ignored. The file
-contains executable automation policy and model selectors, never credentials. A setup run
-writes no per-profile `endpoint` either: that key names a second machine behind one provider
-prefix, which is a decision the operator makes once they have one.
+contains executable automation policy and model selectors, never credentials, and no
+per-profile `endpoint` — that key names a second machine, which the operator binds once
+they have one.
 For another tracker, state that the first factory release supports Gitea only and skip the
 file.
 
@@ -165,24 +174,25 @@ right and costs real time:
 2. **Derive `concurrency.resources` from the profiles you just wrote, never from a menu.**
    A class is `claude-code` for every `kind: claude` profile, and the provider segment of
    the model selector for every `kind: pi` one — `local` for `local/qwen3`, `openrouter` for
-   `openrouter/z-ai/glm-5.2`. (A `kind: pi` profile that binds its own `endpoint` derives the
-   class from that address instead; a setup run writes none, so the provider segment is the
-   whole rule here.) Size exactly the classes the routing reaches: an unsized class
-   the active routing reaches refuses the load, and so does a sized class no declared
-   routing set reaches ("Dead config lies about what will run"). Writing a `local` resource
-   beside a routing that only names Claude profiles produces a file that cannot load.
-3. **`severity` says what a red result does, never what it costs.** Both severities run on
-   every verify — after every implement *and* after every repair — and `required` is
-   additionally the set the pre-run baseline executes. So an advisory check is paid for once
-   per attempt while its evidence is read once per *published* ticket: on a ticket that takes
-   two repair rounds, a ten-minute browser tier runs thirty minutes to inform one publication.
-   Advisory is the right severity for an expensive or environment-fragile class **once you
-   have decided to declare it** — what this list makes you decide first is whether it belongs
-   in `checks` at all. Declare an advisory check whose output somebody reads: a short smoke
-   suite, a mutation or complexity score, or one whose `feeds` list hands its captured output
-   to a later phase, which is the one case where every run of it is read. A long tier nobody
-   reads belongs in CI outside the factory, and saying so is a better answer than either
-   severity.
+   `openrouter/z-ai/glm-5.2`. (A profile binding an `endpoint` derives its class from that
+   address instead; a setup run writes none.) Size exactly the classes the routing reaches:
+   an unsized class the active routing reaches refuses the load, and so does a sized class
+   no declared routing set reaches ("Dead config lies about what will run"). Writing a
+   `local` resource beside a routing that only names Claude profiles produces a file that
+   cannot load.
+3. **`severity` says what a red result does; `feeds` says what it costs.** A required check
+   runs on every verify — after every implement *and* after every repair — and is the set the
+   pre-run baseline executes. An advisory check is paid for where its evidence is read, and
+   the `feeds` list is what states that: one that feeds a later phase runs on every verify
+   too, because its captured output reaches the next prompt; one that feeds nothing runs
+   **once per published ticket**, at the publication boundary, where the attestation a human
+   opens is its only reader. So a ten-minute browser tier declared advisory with no `feeds`
+   costs ten minutes a ticket rather than thirty on a ticket that takes two repair rounds —
+   and the tradeoff is that its result appears on the pull request rather than mid-attempt.
+   Give a check `feeds` when a worker or a repair must actually see its output; leave it off
+   when only the reader of the PR will. What the list still makes you decide first is whether
+   the check belongs in `checks` at all: a long tier nobody reads belongs in CI outside the
+   factory, and saying so is a better answer than any severity.
 
 After acceptance, inventory only the runtimes the user permits. `claude --version` verifies
 Claude Code without spending a model turn. Ask before contacting a self-hosted model
@@ -333,11 +343,11 @@ Then write the docs files, seeding from the templates in this skill folder:
 - [domain.md](./domain.md) — domain doc layout and consumer rules
 
 When both an agent work tracker and an intake tracker are configured, write one
-`docs/agents/issue-tracker.md` containing an **Agent work** section seeded from that
-forge's template and an **Intake** section seeded from the other's, each keeping its
-own conventions. For an "other" tracker (Jira, Linear, …), write the file from scratch
-from the user's description, keeping the same section headings — those headings are
-what consumer skills dereference.
+`docs/agents/issue-tracker.md` containing the shared `## Reference routing` section,
+an **Agent work** section seeded from that forge's template, and an **Intake** section
+seeded from the other's, each keeping its own conventions. For an "other" tracker
+(Jira, Linear, …), write the file from scratch from the user's description, keeping
+the same section headings — those headings are what consumer skills dereference.
 
 ### 5. Done
 
@@ -357,10 +367,11 @@ mechanics since these files were written, and the installed files catch up witho
 losing what the user answered or edited.
 
 One split governs every file: **answers are the user's, scaffolding is the
-template's.** Answers — the tracker bindings, label overrides, flags like "PRs as a
+skill's.** Answers — the tracker bindings, label overrides, flags like "PRs as a
 request surface", and any local edits — are preserved verbatim. Scaffolding — the
-load-bearing headings, the command mechanics under them, sections the template has
-gained (e.g. `## Robot comments`) — is brought up to the current template.
+shared sections declared above, the template headings, and their command mechanics —
+is brought up to the current skill (e.g. `## Reference routing` and
+`## Robot comments`).
 
 Per file: diff the installed doc against its template, apply the scaffolding changes,
 carry the answers over, and show the result before writing. Where a local edit and a
@@ -381,8 +392,10 @@ and, where the skill needs tracker-specific mechanics, name the section it needs
 
 > Consult the tracker doc's "Wayfinding operations" section for how _this_ repo expresses them.
 
-Every tracker template provides the same load-bearing headings, so a consumer can
-dereference them without knowing which forge is in play:
+Every tracker template provides the same load-bearing headings, and a two-tracker doc
+adds the shared routing heading, so a consumer can dereference them without knowing
+which forge is in play:
 
-`## Conventions` · `## Robot comments` · `## When a skill says "publish to the issue tracker"` ·
+`## Reference routing` (two-tracker docs) · `## Conventions` · `## Robot comments` ·
+`## When a skill says "publish to the issue tracker"` ·
 `## When a skill says "fetch the relevant ticket"` · `## Wayfinding operations`

@@ -10,6 +10,18 @@ exists to prevent:
 
 The standing rule: **agents never open work tickets on the intake tracker.**
 
+## Reference routing
+
+Route an explicitly named issue before querying either tracker:
+
+- `#213` and `213` resolve to Gitea (`minder/oh-my-slop`).
+- `gh:213` and `github:213` resolve to GitHub (`dekoza/oh-my-slop`); remove the
+  qualifier before passing the number to `gh`.
+- A full tracker URL resolves to the tracker named by that URL.
+
+Do not probe one tracker and silently fall back to another. These forms route explicit
+references only; triage discovery still queries the intake tracker.
+
 ---
 
 # Agent work: Gitea
@@ -178,8 +190,9 @@ When set to `yes`, PRs run through the same labels and states as issues, using t
   means for this repo.
 - **Comment / label / close**: `gh pr comment`, `gh pr edit --add-label` / `--remove-label`, `gh pr close`.
 
-GitHub shares one number space across issues and PRs, so a bare `#42` may be either —
-resolve with `gh pr view 42` and fall back to `gh issue view 42`.
+After `gh:` / `github:` or a GitHub URL selects this surface, the number may name
+an issue or PR because GitHub shares one number space across both. Resolve it with
+`gh pr view <number>` and fall back to `gh issue view <number>`.
 
 ## When a skill says "publish to the issue tracker"
 
@@ -187,8 +200,9 @@ Publish to the **agent work tracker** (Gitea). This surface is intake-only.
 
 ## When a skill says "fetch the relevant ticket"
 
-If the ticket is a human-filed intake issue, `gh issue view <number> --comments`.
-Otherwise it lives on Gitea — see the agent work section above.
+For a `gh:` / `github:` reference or GitHub URL, run
+`gh issue view <number> --comments`. Unqualified references resolve to Gitea — see
+the agent work section above.
 
 ## Wayfinding operations
 

@@ -1,3 +1,4 @@
+import { effectKey } from "../effects/keys.mjs";
 import { requestEffect, resolveEffectIn } from "../effects/records.mjs";
 import { addressOfContent, writeArtifactBlob } from "./blobs.mjs";
 import { FactoryArtifactError } from "./errors.mjs";
@@ -52,6 +53,36 @@ const DEFAULT_OPERATION = "artifact-write";
  * the day a third role gets its own operation.
  */
 export const ARTIFACT_WRITE_OPERATIONS = Object.freeze([DEFAULT_OPERATION, ...Object.values(OPERATION_BY_ROLE)]);
+
+/**
+ * The key an artifact write **would** take, for a reader that has to find one
+ * back rather than make one.
+ *
+ * §8.7's own module needs it: #211's publication-boundary checks reuse what an
+ * attestation already recorded rather than paying for the set twice, and finding
+ * that attestation means naming the key `writeArtifact` composed. The key is
+ * built here, beside the writer, for §4.5's reason — a reader that re-spelled
+ * the operation and the operand would go on matching until the day either
+ * changed, and then silently stop.
+ *
+ * @param {{ role: string, name?: string | null, run?: string | null,
+ *   ticket?: number | null, phase: string, attempt?: string | null }} write
+ *   the same identity `writeArtifact` is handed
+ * @returns {string} §4.5's effect key
+ */
+export function artifactWriteKey({ role, name = null, run = null, ticket = null, phase, attempt = null }) {
+	requireRole(role);
+	if (name !== null) requireName(name);
+
+	return effectKey({
+		operation: OPERATION_BY_ROLE[role] ?? DEFAULT_OPERATION,
+		operand: operandFor(role, name),
+		run,
+		ticket,
+		phase,
+		attempt,
+	});
+}
 
 /**
  * A short natural discriminator for two artifacts of the same role in one
