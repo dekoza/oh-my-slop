@@ -7,7 +7,12 @@ import { MAX_SUPPORTED_TICKET_CONCURRENCY } from "../../factory/lib/config/concu
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
 import { resourceClassOf } from "../../factory/lib/config/profiles.mjs";
 import { FACTORY_LABELS } from "../../factory/lib/tracker/labels.mjs";
-import { cloneValidConfig as clone, factorySources, makeRepo } from "./helpers/factory-repo.mjs";
+import {
+	cloneConfigWithRoutingSet as withSet,
+	cloneValidConfig as clone,
+	factorySources,
+	makeRepo,
+} from "./helpers/factory-repo.mjs";
 
 /**
  * §11.3–§11.6 block semantics: a config that loads is coherent, not merely
@@ -715,6 +720,107 @@ test("a named set missing a role refuses like the active routing does", (t) => {
 
 	assert.equal(error.reason, "missing-key");
 	assert.equal(error.details.at, "routing.sets.post-subscription.roles.freshRetry");
+});
+
+// ── Selecting a set: the flag, then activeSet, then the file-level routing ───
+
+test("routing.activeSet selects a declared set at load, with no flag on the line", (t) => {
+	const config = withSet();
+	config.routing.activeSet = "post-subscription";
+
+	const { activeRouting, config: validated } = loaded(t, config);
+
+	assert.equal(activeRouting.set, "post-subscription");
+	assert.equal(activeRouting.roles.implement, "remote");
+	assert.equal(validated.routing.activeSet, "post-subscription", "the declared default survives into the block");
+});
+
+test("routing.activeSet naming a set the file does not declare refuses with unknown-routing-set", (t) => {
+	const config = withSet();
+	config.routing.activeSet = "pre-subscription";
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "unknown-routing-set");
+	assert.equal(error.details.at, "routing.activeSet", "the refusal names the line to fix");
+	assert.match(error.message, /post-subscription/);
+});
+
+test("an unknown activeSet refuses even when --routing-set overrides it — the file is still broken", (t) => {
+	const config = withSet();
+	config.routing.activeSet = "pre-subscription";
+
+	const error = loadFailure(t, config, { routingSet: "post-subscription" });
+
+	assert.equal(error.reason, "unknown-routing-set");
+	assert.equal(error.details.at, "routing.activeSet");
+});
+
+test("an empty activeSet refuses rather than reading as the file-level routing", (t) => {
+	const config = withSet();
+	config.routing.activeSet = "";
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "invalid-value");
+	assert.equal(error.details.at, "routing.activeSet");
+});
+
+test("precedence at each level: the flag, then activeSet, then the file-level routing", (t) => {
+	// **Three routings that resolve `implement` three different ways**, so each
+	// level's answer is distinguishable from the other two. Two sources naming
+	// one set would hold whichever of them won, which is a test of nothing.
+	function twoSets() {
+		const config = withSet();
+		config.profiles.spot = { kind: "pi", model: "openrouter/deepseek" };
+		config.routing.sets.stopgap = {
+			roles: { implement: "spot", freshRetry: "spot", review: ["spot", "spot"] },
+			rules: [],
+		};
+
+		return config;
+	}
+
+	const declared = twoSets();
+	declared.routing.activeSet = "post-subscription";
+	const bare = twoSets();
+
+	const flagged = loaded(t, declared, { routingSet: "stopgap" });
+	assert.equal(flagged.activeRouting.set, "stopgap", "the flag lost to the declared default");
+	assert.equal(flagged.activeRouting.roles.implement, "spot");
+
+	assert.equal(loaded(t, declared).activeRouting.set, "post-subscription", "activeSet decides with no flag");
+	assert.equal(loaded(t, declared).activeRouting.roles.implement, "remote");
+
+	// `null` is the set-less file-level routing: what a declared default departs
+	// from, and what a file declaring none runs.
+	assert.equal(loaded(t, bare).activeRouting.set, null, "no flag and no activeSet is the file-level routing");
+	assert.equal(loaded(t, bare).activeRouting.roles.implement, "builder");
+});
+
+test("activeSet is refused as a key of a named set — a set does not select a set", (t) => {
+	const config = withSet();
+	config.routing.sets["post-subscription"].activeSet = "post-subscription";
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "unknown-key");
+	assert.equal(error.details.at, "routing.sets.post-subscription.activeSet");
+});
+
+test("selecting a set that reaches an unsized class refuses, naming the set that reaches it", (t) => {
+	// §11.6 sizes the classes the **active** routing reaches, so switching sets
+	// can refuse a file that loaded yesterday. The refusal has to name the set,
+	// or it reads as a missing size the operator never touched.
+	const config = withSet();
+	delete config.concurrency.resources.openrouter;
+	config.routing.activeSet = "post-subscription";
+
+	const error = loadFailure(t, config);
+
+	assert.equal(error.reason, "resource-unsized");
+	assert.equal(error.details.class, "openrouter");
+	assert.equal(error.details.routingSet, "post-subscription");
 });
 
 // ── Concurrency: both keys declared, the ceiling enforced here only (§9.3) ────
