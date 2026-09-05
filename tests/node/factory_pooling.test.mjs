@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { reserveModelRoute } from "../../factory/lib/capacity/selection.mjs";
+import { openCapacity } from "../../factory/lib/capacity/slots.mjs";
 import { implementDispatch, capacityPlan } from "../../factory/lib/capacity/plan.mjs";
 import { dispatchOrder, selectRoute } from "../../factory/lib/worker/dispatch.mjs";
 import { schedule } from "../../factory/lib/controller/scheduler.mjs";
 import { setTimeout as delay } from "node:timers/promises";
-import { openCapacityPool, capacityPlanOf } from "./helpers/factory-store.mjs";
+import { openCapacityPool, capacityPlanOf, leaveSupersededSlot, FIXED_NOW } from "./helpers/factory-store.mjs";
 
 test("#223: a competing model hold rolls back the entire initial lease pair", async (t) => {
 	const { leases } = await openCapacityPool(t);
@@ -15,6 +17,13 @@ test("#223: a competing model hold rolls back the entire initial lease pair", as
 	]), { reason: "lease-held" });
 	assert.equal(leases.inspect("capacity:ticket:0"), null);
 	assert.equal(leases.inspect(model).token, occupied.token);
+});
+
+test("#223: a class keeps its declared tie position when its first profile is already refused", async (t) => {
+	const { capacity } = await openCapacityPool(t, { plan });
+	const route = await selectRoute({ order: ["gpt", "claude", "sibling"], profiles: { ...profiles, sibling: profiles.gpt },
+		dispatched: ["gpt"], exhaustion: capacity.exhaustion, pooled: true, capacity });
+	assert.equal(route.profile, "sibling");
 });
 
 const profiles = {

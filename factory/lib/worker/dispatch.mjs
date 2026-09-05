@@ -155,9 +155,15 @@ async function selectPooledRoute({ order, profiles, exhaustion, dispatched, at, 
 		const state = dispatched.includes(profile) ? "already-dispatched" : gate.state !== "available" ? "blocked" : observed.held >= observed.size ? "busy" : "available";
 		return entry({ profile, class: className, state, until: gate?.until ?? null, held: observed.held, size: observed.size });
 	});
-	let winner = null;
+	// Class order comes from its first appearance, even if that profile was
+	// refused. Within each class the first permitted profile is the candidate.
+	const classes = new Map(considered.map((seen) => [seen.class, null]));
 	for (const seen of considered) {
-		if (seen.state !== "available") continue;
+		if (seen.state === "available" && classes.get(seen.class) === null) classes.set(seen.class, seen);
+	}
+	let winner = null;
+	for (const seen of classes.values()) {
+		if (seen === null) continue;
 		if (winner === null || BigInt(seen.held) * BigInt(winner.size) < BigInt(winner.held) * BigInt(seen.size)) winner = seen;
 	}
 	return Object.freeze({
