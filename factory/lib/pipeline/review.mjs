@@ -268,6 +268,7 @@ function builderTrace(store, { run, ticket, attempt }) {
 async function walkAxis(store, clone, context) {
 	const { hold, run, ticket, axis, index, routeAxis, actor, now } = context;
 	let tryNumber = 1;
+	let pinnedRetry = null;
 
 	for (;;) {
 		// #155: dispatched per pass, not once per axis, because a pass is entered
@@ -283,7 +284,7 @@ async function walkAxis(store, clone, context) {
 		// an exhausted class walks each down its own declared order.
 		const allocated = allocateAttempt(store, { run, ticket, purpose: axisPurpose({ axis, builderAttempt: context.builderAttempt, tryNumber }) });
 		const existing = mintedDispatch(store, { run, ticket, attempt: allocated.attempt });
-		const route = existing?.routing ?? await routeAxis({
+		const route = existing?.routing ?? pinnedRetry ?? await routeAxis({
 			axis: axis.name,
 			index,
 			dispatched: refusedProfiles(store, { run, ticket, role: axis.name }),
@@ -314,6 +315,9 @@ async function walkAxis(store, clone, context) {
 
 		if (resolved.row.action === STAGE_ACTIONS.retry) {
 			tryNumber = await grantedRetry(store, { ...context, attempt: opened.attempt, resolved, tryNumber });
+			// An infrastructure retry is not a new load-balancing decision.
+			// Replaying earlier tries reconstructs this pin after a crash too.
+			pinnedRetry = opened.route.pooling ? opened.route : null;
 			continue;
 		}
 
@@ -331,6 +335,7 @@ async function walkAxis(store, clone, context) {
 			// reservation. A call here to "take" the ordinal would write nothing and
 			// answer a question the next line asks again.
 			tryNumber += 1;
+			pinnedRetry = null;
 			continue;
 		}
 
