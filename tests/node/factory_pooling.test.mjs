@@ -26,6 +26,18 @@ test("#223: a class keeps its declared tie position when its first profile is al
 	assert.equal(route.profile, "sibling");
 });
 
+test("#223: one lane waiting on two alternatives is counted once and a grant clears both waits", async (t) => {
+	const { capacity } = await openCapacityPool(t, { plan });
+	capacity.exhaustion.wait({ ticket: 1, resourceClass: "gpt" });
+	capacity.exhaustion.wait({ ticket: 1, resourceClass: "claude-code" });
+	assert.equal(capacity.snapshot().lanes.waiting, 1);
+	const slot = capacity.acquireModel({ ticket: 1, resourceClass: "claude-code" });
+	assert.deepEqual(capacity.snapshot().classes.map((entry) => entry.waiting), [0, 0]);
+	slot.release({ reason: "test" });
+	capacity.exhaustion.wait({ ticket: 1, resourceClass: "gpt" });
+	assert.equal(capacity.snapshot().lanes.waiting, 1, "a later wait must be announced again");
+});
+
 const profiles = {
 	gpt: { kind: "pi", model: "gpt/model" },
 	claude: { kind: "claude", model: "opus" },

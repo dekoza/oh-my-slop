@@ -313,8 +313,8 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 	}
 
 	/** A lane that was granted may announce a later block on the same class. */
-	function clearWait({ ticket, resourceClass }) {
-		announced.delete(laneKey({ ticket, resourceClass }));
+	function clearWait({ ticket }) {
+		for (const key of announced) if (key.startsWith(`${ticket}:`)) announced.delete(key);
 	}
 
 	/**

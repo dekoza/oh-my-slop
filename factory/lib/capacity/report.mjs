@@ -122,7 +122,7 @@ export function capacitySnapshot(store, { plan, run, rows, generation, at = Date
 		 */
 		lanes: Object.freeze({
 			running: ticket.held,
-			waiting: classes.reduce((total, entry) => total + entry.waiting, 0),
+			waiting: new Set(waiting.map((lane) => lane.ticket)).size,
 		}),
 		/**
 		 * A slot row **names its holder**, which is the whole reason §9.4 refuses a
@@ -211,7 +211,13 @@ function waitingLanes(store, run) {
 
 		const key = laneKey({ ticket: record.ticket, resourceClass });
 		if (record.kind === "capacity.waiting") blocked.set(key, { ticket: record.ticket, class: resourceClass });
-		else blocked.delete(key);
+		else {
+			// A lane holds only one model slot. Winning any alternative ends
+			// its wait on every class, not just the winning class (#223).
+			for (const [waitingKey, lane] of blocked) {
+				if (lane.ticket === record.ticket) blocked.delete(waitingKey);
+			}
+		}
 	}
 
 	return [...blocked.values()];
