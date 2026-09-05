@@ -384,6 +384,9 @@ question is which rows have become the module's job to state, not what the ceili
 - **§7.4's integration-side predicates are commits-ahead, `git diff --check`, and §7.3's correlation
   trailer on every commit**, accepting only the current run/ticket and §3.4's verified inherited
   runs; they need no worktree. — `git/integrate.mjs` · §3.4, §7.3, §7.4
+- **A trailer whose prefix is damaged while its `<run>-t<ticket>-a<n>` segment names an accepted
+  execution is misstamped, not untrailed**: it publishes unrepaired, and the verify phase that
+  read it is what §8.7 attests. — `git/integrate.mjs`, `pipeline/integration.mjs` · §7.3, §8.7
 
 ## Tracker
 

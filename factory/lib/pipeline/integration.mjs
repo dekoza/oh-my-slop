@@ -231,23 +231,21 @@ async function rebaseAndVerify(
 				at: verifiedAt,
 			}),
 	});
-	// The commit list only when there is something to publish: a red set stops
+	// The predicates only when there is something to publish: a red set stops
 	// here, and reading the range would be work whose answer nobody uses. The
 	// worktree stays either way — §9.5's second lease publishes from it on the
 	// green path, and §12.7 retains it on the red one.
-	const commits =
+	const assessed =
 		verified.outcome === CHECK_RESULTS.passed
-			? (
-					await assessIntegration(clone, {
-						worktreePath: opened.path,
-						baseCommit: fresh.commit,
-						head: rebased.head,
-						run,
-						ticket,
-						acceptedRuns,
-					})
-				).commits
-			: [];
+			? await assessIntegration(clone, {
+					worktreePath: opened.path,
+					baseCommit: fresh.commit,
+					head: rebased.head,
+					run,
+					ticket,
+					acceptedRuns,
+				})
+			: null;
 
 	return answer(verified.outcome, {
 		...verified.detail,
@@ -257,7 +255,12 @@ async function rebaseAndVerify(
 		rebased: rebased.result === REBASE_RESULTS.rebased,
 		evidence_ref: evidence?.ref ?? null,
 		evidence_sha: evidence?.sha ?? null,
-		commits,
+		commits: assessed?.commits ?? [],
+		// Recorded here for the same reason the commit list is: §8.7 attests what
+		// **this** phase measured at the commit it measured, and re-deriving it at
+		// publication would be a second answer to a question durable state already
+		// holds (#210).
+		misstamped: assessed?.misstamped ?? null,
 		worktree: opened.path,
 	});
 }
@@ -423,6 +426,7 @@ async function publish(store, clone, context) {
 			reason: predicates.reason,
 			detail: predicates.detail,
 			untrailed: predicates.untrailed,
+			misstamped: predicates.misstamped,
 			head: verified.head,
 			base_commit: verified.baseCommit,
 		});
@@ -450,6 +454,18 @@ async function publish(store, clone, context) {
 			// "which commits were measured", which is the second opinion this
 			// module's own `attestedByVerify` exists to refuse.
 			commits: [...verified.commits],
+			// §7.3's trailer as the workers actually wrote it (#210). A commit whose
+			// trailer is damaged but whose attempt segment still names this execution
+			// is published, so the misspelling is on the record here — the one
+			// immutable statement of what was published — rather than nowhere.
+			//
+			// **The verify record's list, for the reason immediately above**: the
+			// phase that measured the commit is the phase that read its trailers. A
+			// record written before #210 carries none, and the re-derivation over the
+			// same recorded range is the honest answer there rather than a `null`
+			// that would read as "nothing was damaged" — the predicates ran on this
+			// path, so it is always a list.
+			misstamped: (verified.misstamped ?? predicates.misstamped).map((entry) => ({ ...entry })),
 		},
 	});
 
@@ -538,6 +554,7 @@ async function publish(store, clone, context) {
 		attestation: { algorithm: attested.reference.algorithm, digest: attested.reference.digest },
 		summary: attested.summary,
 		advisory: attested.document.review.advisory,
+		misstamped: attested.document.integration.misstamped,
 		worktrees_reclaimed: [verified.worktree, reclaimed.path],
 		branch_cleanup_eligible: true,
 	});
@@ -628,6 +645,7 @@ function attestedBy(detail) {
 		baseCommit: detail.base_commit,
 		head: detail.head,
 		commits: detail.commits,
+		misstamped: detail.misstamped ?? null,
 		checks: detail.checks,
 		worktree: detail.worktree,
 		rebased: detail.rebased,
