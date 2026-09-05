@@ -39,6 +39,11 @@ import { FOREIGN_ID_KINDS, foreignId, sinceParameter } from "./gitea.mjs";
  * scopes that event to the Herdr socket falling back to polling — Gitea *is*
  * polled, so there is no degraded mode to announce, and a tracker that cannot be
  * read is a refusal rather than a quieter kind of success.
+ *
+ * **The `observation_cursor` row is canonical, not a projection** (§5.1), and
+ * there is no rebuild path to fall back on: the records that would anchor a
+ * rebuilt watermark live on run streams that expire, so a rebuild would silently
+ * re-poll a repository's whole history.
  */
 
 /** §5.1's cadence. Not 5s: the factory's tempo is minutes. */

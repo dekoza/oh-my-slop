@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
+	CLAUDE_PROJECT_TRUST,
+	CLAUDE_STATE_SETTLED,
 	claudeTrustDecision,
 	claudeTrustKeys,
+	claudeUnsettledKeys,
 	pretrustClaude,
 	pretrustPi,
 	piTrustDecision,
@@ -120,6 +123,69 @@ test("a project the runtime recorded that nobody pre-trusted is named, because t
 	);
 
 	assert.deepEqual(untrustedProjects(readClaudeConfigState(configDir)), ["/home/operator/somewhere"]);
+});
+
+/**
+ * #178: pi canonicalizes a directory — resolving symlinks — before keying its
+ * trust map and before walking to the nearest ancestor entry. A writer that
+ * resolved without following them put the two spellings on different keys, the
+ * pre-trust silently failed to apply, and the pane met the trust dialog: the
+ * exact §6.8 hang the preflight check exists to prove impossible.
+ */
+test("pi's trust reads back through a symlinked ancestor, because that is the key pi looks under", (t) => {
+	const dir = scratch(t);
+	const agentDir = join(dir, "agent");
+	const real = join(dir, "real-state");
+	mkdirSync(join(agentDir), { recursive: true });
+	mkdirSync(join(real, "worktrees", "run-t1-a1"), { recursive: true });
+	// The store reached through a symlinked ancestor — macOS's `/tmp` and `/var`
+	// are exactly this, so it is the ordinary case there rather than a corner.
+	symlinkSync(real, join(dir, "state"));
+	const linked = join(dir, "state", "worktrees");
+
+	pretrustPi(agentDir, [linked]);
+
+	// Written under the canonical spelling, which is what pi will look up...
+	assert.deepEqual(Object.keys(readPiTrust(agentDir)), [join(real, "worktrees")]);
+	// ...and read back as trusted through **either** spelling of the path, and
+	// through an attempt worktree beneath it, which is the walk pi performs.
+	assert.equal(piTrustDecision(readPiTrust(agentDir), linked), true);
+	assert.equal(piTrustDecision(readPiTrust(agentDir), join(real, "worktrees")), true);
+	assert.equal(piTrustDecision(readPiTrust(agentDir), join(linked, "run-t1-a1")), true);
+});
+
+/**
+ * #178: the writer settles four things and the `worker-trust` check read back
+ * exactly one. Three interstitials were written and never proven, each as
+ * capable of hanging an interactive pane as the trust dialog. The predicate is
+ * derived from the constants, so a fifth settled key cannot become a fourth
+ * unproven one.
+ */
+test("every key the pre-trust writer writes is part of the readback, derived from the constants", (t) => {
+	const configDir = scratch(t);
+	const project = "/state/clone.git";
+	pretrustClaude(configDir, [project]);
+
+	const settled = readClaudeConfigState(configDir);
+	assert.deepEqual(claudeUnsettledKeys(settled, project), []);
+
+	for (const key of Object.keys(CLAUDE_PROJECT_TRUST)) {
+		const damaged = {
+			...settled,
+			projects: { ...settled.projects, [project]: { ...settled.projects[project], [key]: undefined } },
+		};
+		assert.deepEqual(claudeUnsettledKeys(damaged, project), [key]);
+		assert.equal(claudeTrustDecision(damaged, project), false, `${key} did not read back and trust still said yes`);
+	}
+
+	for (const key of Object.keys(CLAUDE_STATE_SETTLED)) {
+		const damaged = { ...settled, [key]: undefined };
+		assert.deepEqual(claudeUnsettledKeys(damaged, project), [key]);
+		assert.equal(claudeTrustDecision(damaged, project), false);
+	}
+
+	// A project nobody trusted names every key at once rather than the first.
+	assert.deepEqual(claudeUnsettledKeys(settled, "/state/somewhere-else"), Object.keys(CLAUDE_PROJECT_TRUST));
 });
 
 test("a missing or unparsable store reads as empty rather than throwing at a caller mid-preflight", (t) => {

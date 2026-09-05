@@ -14,8 +14,8 @@ guessing at it:
   human-reported intake
 - **Triage labels** — the strings behind the canonical triage roles
 - **Domain docs** — where the glossary and ADRs live
-- **Software factory policy** — optional machine-readable Gitea, Git, Herdr, worker-profile,
-  routing, retry, and completion settings for the `software-factory` extension
+- **Software factory policy** — optional machine-readable Gitea, Git, worker-profile,
+  routing, check, concurrency, and budget settings for the `factory` binary
 
 This writes into the **project you are working in**, not into the skills repo.
 It is prompt-driven, not a script: explore, present what you found, confirm, then write.
@@ -106,22 +106,89 @@ Offer **multi-context** — a root `CONTEXT-MAP.md` pointing at per-context
 **Section D — Software factory.** Offer this only when the agent work tracker is Gitea.
 Ask one question:
 
-> Configure the opt-in Herdr software factory? (recommended: **yes** when `herdr` is installed)
+> Configure the opt-in software factory? (recommended: **yes** when `factory` is on `PATH`)
 
-A yes writes `.pi/factory.json` with the resolved repository, remote, explicit `tea`
-login name, authenticated assignee, default branch, label mappings, and worker routing. It
-also ensures `.worktrees/` is ignored. The file contains executable automation policy and
-model selectors, never endpoints or credentials. For another tracker, state that the first
-factory release supports Gitea only and skip the file.
+A yes writes `.pi/factory.json` — the single policy file the `factory` binary reads, at the
+repository root — with the resolved repository, remote, explicit `tea` login name,
+authenticated assignee, default branch, worker profiles, routing, mechanical checks,
+concurrency sizes, and retry budgets. It also ensures `.worktrees/` is ignored. The file
+contains executable automation policy and model selectors, never endpoints or credentials.
+For another tracker, state that the first factory release supports Gitea only and skip the
+file.
+
+**Write the current schema, `schemaVersion: 2`.** `factory migrate` is for configs written
+before that schema existed and is never a step in a fresh setup — it deliberately leaves
+`TODO` holes the loader hard-fails on (the checks, the concurrency sizes, the automation
+budget) for a human to fill in by hand. A setup run has those answers in front of it, so it
+asks for them and emits a file that loads on the first verb. A run that ends with the user
+having to run `migrate` and hand-edit holes is this section failing.
+
+The loader refuses every key it does not understand and defaults almost nothing, so these
+blocks are **asked for or scaffolded, never emitted as holes**:
+
+- **`checks`** — the mechanical commands the controller reruns itself. Each one declares all
+  five required fields: `name` (lower-case identifier), `command`, `timeout` (whole seconds),
+  `severity` (`required` or `advisory`), and `expectedFailureExitCodes`; an advisory check may
+  also declare `feeds`. Nothing here is discovered or defaulted, `expectedFailureExitCodes`
+  least of all: it is the only line between "the worker's code failed this check" and "this
+  check is broken", and pytest, ruff, tsc and a shell script do not agree on it. Seed the list
+  from the repo's `## Mandatory commands` section in `AGENTS.md` when it has one — that is the
+  same section `factory migrate` reads — otherwise from its Justfile, Makefile, or CI workflow,
+  and confirm every field with the user.
+- **`concurrency`** — `maxTicketExecutions` (currently capped at 1; the loader refuses more)
+  plus a `resources` map of resource class → slot count.
+- **`budgets`** — `repair`, `freshRetry`, and `automation`, each 1 or 2, plus
+  `circuitBreaker`. These do have upstream defaults, but write them out: the automation
+  budget is the one number a migrated file cannot supply, and a config that states it is one
+  fewer thing for the operator to discover from a refusal.
+- **`routing`** — `roles` naming a profile for `implement`, `freshRetry`, and `review`
+  (a **two-element pair**, one per review axis), plus `rules` written out even when empty.
+  There is no `finalReview` role and no implicit fallback between roles.
+
+`tracker.labels` is **not** written. The factory's label vocabulary is fixed constants in the
+binary's own code — per-install names would make the tracker graph un-auditable across repos
+— and a config carrying that key is refused by name. Section B's label answers still govern
+the workflow skills; they just do not reach this file.
+
+Three traps are worth spending a question on, because each one produces a file that looks
+right and costs real time:
+
+1. **Scaffold check commands in their runner-prefixed form.** A command naming a
+   dev-dependency binary directly — `just test unit`, `pytest`, `ruff check` — exits 127
+   when that binary is not on the controller's `PATH`, and the runner classifies 127 as
+   `exec-not-found`: the check is unrunnable, which is not the same outcome as failing. In a
+   uv project the form that always works is `uv run just test unit`. Read the runner off the
+   project (`uv`, `poetry run`, `npm run`, `pnpm exec`) and write the command through it,
+   even when it works in your own shell.
+2. **Derive `concurrency.resources` from the profiles you just wrote, never from a menu.**
+   A class is `claude-code` for every `kind: claude` profile, and the provider segment of
+   the model selector for every `kind: pi` one — `local` for `local/qwen3`, `openrouter` for
+   `openrouter/z-ai/glm-5.2`. Size exactly the classes the routing reaches: an unsized class
+   the active routing reaches refuses the load, and so does a sized class no declared
+   routing set reaches ("Dead config lies about what will run"). Writing a `local` resource
+   beside a routing that only names Claude profiles produces a file that cannot load.
+3. **`severity` says what a red result does, never what it costs.** Both severities run on
+   every verify — after every implement *and* after every repair — and `required` is
+   additionally the set the pre-run baseline executes. So an advisory check is paid for once
+   per attempt while its evidence is read once per *published* ticket: on a ticket that takes
+   two repair rounds, a ten-minute browser tier runs thirty minutes to inform one publication.
+   Advisory is the right severity for an expensive or environment-fragile class **once you
+   have decided to declare it** — what this list makes you decide first is whether it belongs
+   in `checks` at all. Declare an advisory check whose output somebody reads: a short smoke
+   suite, a mutation or complexity score, or one whose `feeds` list hands its captured output
+   to a later phase, which is the one case where every run of it is read. A long tier nobody
+   reads belongs in CI outside the factory, and saying so is a better answer than either
+   severity.
 
 After acceptance, inventory only the runtimes the user permits. `claude --version` verifies
-Claude Code without spending a model turn. Ask before contacting a self-hosted model endpoint;
-after permission, `pi --list-models <pattern>` verifies each proposed pi selector without
-running an implementation prompt. Present named profiles and deterministic label/phase rules
-in the JSON draft. Default to one explicit implementation profile, a fresh-retry profile, an
-independent ticket-review profile, and a final integration-review profile. Keep same-worker
-repair on the implementation profile. A fully local policy maps every default phase to one
-local pi profile; the scheduler itself remains deterministic and model-free.
+Claude Code without spending a model turn. Ask before contacting a self-hosted model
+endpoint; after permission, `pi --list-models <pattern>` verifies each proposed pi selector
+without running an implementation prompt. Present named profiles and deterministic
+`labelsAny × role → profile` rules in the JSON draft. Default to one implementation profile,
+a fresh-retry profile on a different model, and two independent review profiles — model
+diversity across the two axes is the point of the pair. Repair is not routable: it is pinned
+to the originating attempt's profile. A fully local policy maps every role to one local pi
+profile and sizes that one class; the scheduler itself stays deterministic and model-free.
 
 ### 3. Confirm and edit
 
@@ -164,80 +231,91 @@ Include the `### Triage labels` sub-block and write `docs/agents/triage-labels.m
 The workflow skills need the state mapping and `workflow:implement` routing label
 even when the standalone `triage` skill is not installed.
 
-When Section D was accepted, write this shape using the answers already resolved above:
+When Section D was accepted, write this shape using the answers already resolved above. The
+angle-bracketed values are the per-repo answers; every other value is a real default you may
+change, and none of it may be left as a placeholder — the loader refuses a file that still
+carries a `TODO` anywhere in it.
 
 ```json
 {
-  "version": 1,
+  "schemaVersion": 2,
   "tracker": {
     "kind": "gitea",
     "repo": "<owner/repository>",
     "remote": "<gitea-remote>",
     "login": "<tea-login-name>",
-    "assignee": "<authenticated-gitea-user>",
-    "labels": {
-      "implementation": "workflow:implement",
-      "readyForAgent": "<configured ready-for-agent label>",
-      "readyForHuman": "<configured ready-for-human label>"
-    }
+    "assignee": "<authenticated-gitea-user>"
   },
   "git": {
     "baseBranch": "<default-branch>",
     "remote": "<gitea-remote>"
   },
-  "herdr": {
-    "maxWorkers": 1
-  },
-  "workers": {
-    "profiles": {
-      "implement": {
-        "kind": "pi",
-        "model": "<provider/model>",
-        "thinking": "high"
-      },
-      "fresh-retry": {
-        "kind": "pi",
-        "model": "<provider/model>",
-        "thinking": "high"
-      },
-      "review": {
-        "kind": "pi",
-        "model": "<provider/model>",
-        "thinking": "high"
-      },
-      "final-review": {
-        "kind": "claude",
-        "model": "fable",
-        "effort": "high",
-        "permissionMode": "dontAsk"
-      }
+  "profiles": {
+    "builder": {
+      "kind": "claude",
+      "model": "opus",
+      "effort": "high"
     },
-    "routing": {
-      "defaults": {
-        "implement": "implement",
-        "freshRetry": "fresh-retry",
-        "review": "review",
-        "finalReview": "final-review"
-      },
-      "rules": []
+    "fresh-retry": {
+      "kind": "pi",
+      "model": "openai-codex/gpt-5.6-sol",
+      "thinking": "high"
+    },
+    "reviewer": {
+      "kind": "claude",
+      "model": "fable",
+      "effort": "high"
     }
   },
-  "retry": {
-    "repairAttempts": 1,
-    "freshAgentRetries": 1
+  "routing": {
+    "roles": {
+      "implement": "builder",
+      "freshRetry": "fresh-retry",
+      "review": ["reviewer", "reviewer"]
+    },
+    "rules": []
   },
-  "completion": {
-    "closeAfterIntegration": true,
-    "finalMerge": "manual",
-    "createPullRequest": true,
-    "deploy": false
+  "checks": [
+    {
+      "name": "python-test-suite",
+      "command": "uv run pytest",
+      "timeout": 900,
+      "severity": "required",
+      "expectedFailureExitCodes": [1]
+    }
+  ],
+  "budgets": {
+    "repair": 1,
+    "freshRetry": 1,
+    "automation": 1,
+    "circuitBreaker": 2
+  },
+  "concurrency": {
+    "maxTicketExecutions": 1,
+    "resources": {
+      "claude-code": 2,
+      "openai-codex": 1
+    }
   }
 }
 ```
 
+Read the example's `concurrency.resources` against its `profiles`: `builder` and `reviewer`
+are `kind: claude`, so both draw on the one `claude-code` class; `fresh-retry` names
+`openai-codex/gpt-5.6-sol`, whose provider segment is the class `openai-codex`. Change a
+profile and that map changes with it — those two entries are not a default to copy.
+
+Before showing the draft, load it: `factory doctor` in the target repository reads the file
+and reports what it refuses. A draft that does not load is not ready to show.
+
 Preserve an existing `.pi/factory.json` as a user answer during re-sync. Validate it
 against this shape and ask before changing policy values. Never replace explicit profile
-models or routing rules merely because another model is currently available. Add `.worktrees/` to an
+models or routing rules merely because another model is currently available. An existing
+file declaring `version: 1` is the one case that is **not** rewritten from this template:
+tell the user to run `factory migrate`, which preserves their file as `factory.v1.json` and
+prints every key it maps, drops, or leaves as a hole — then help them fill the holes it
+names. Rewriting a v1 file from here would silently discard routing rules a machine cannot
+re-author. Add `.worktrees/` to an
 existing ignore file without disturbing its other lines; if no ignore file exists,
 show the proposed new file during confirmation.
 
@@ -260,8 +338,10 @@ what consumer skills dereference.
 ### 5. Done
 
 Tell the user setup is complete and which skills now read from these files. When the
-factory was configured, name `.pi/factory.json`, say that `/factory start <ticket-or-parent>`
-must run inside Herdr, and state that final merge remains manual. Mention they can edit
+factory was configured, name `.pi/factory.json`, say that `factory doctor` verifies it
+without running anything and that `factory start <ticket-or-parent>` detaches into a Herdr
+pane by default (`--foreground` runs the controller in the invoking terminal instead), and
+state that final merge remains manual. Mention they can edit
 `docs/agents/*.md` and `.pi/factory.json` directly later; re-running this skill is only
 needed to switch trackers, to re-sync after a skills update (below), or to start over.
 

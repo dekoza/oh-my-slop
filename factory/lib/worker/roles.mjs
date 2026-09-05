@@ -1,6 +1,7 @@
 import { profilesForRole } from "../config/routing.mjs";
 import { REVIEW_VERDICTS, WORKER_WRITABLE_OUTCOMES } from "../domain/vocabulary.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
+import { traceWritten } from "./outbox.mjs";
 import { WORKER_POSTURES } from "./permissions.mjs";
 import { renderAttemptPrompt } from "./prompt.mjs";
 
@@ -30,15 +31,63 @@ import { renderAttemptPrompt } from "./prompt.mjs";
 /** §11.5's routing role both review axes dispatch through. */
 export const REVIEW_ROUTING_ROLE = "review";
 
-const BUILDER_EXPECTATIONS = Object.freeze({ statuses: WORKER_WRITABLE_OUTCOMES });
+/**
+ * #189's requirement trace is declared on the expectations from both ends.
+ * `writesTrace` is the builder's obligation — a `completed` record owes one,
+ * and `missingResult` below reads the same flag back — and `checksTrace` is the
+ * spec axis's: the one reviewer whose question the trace answers (does the
+ * change cover what the ticket asked) is briefed with it. The standards axis
+ * is deliberately neither: coverage of the ticket is not its axis, and a
+ * second reader of the trace would be the cross-axis ranking §8.4 forbids.
+ */
+const BUILDER_EXPECTATIONS = Object.freeze({ statuses: WORKER_WRITABLE_OUTCOMES, writesTrace: true });
 const REVIEW_EXPECTATIONS = Object.freeze({ statuses: WORKER_WRITABLE_OUTCOMES, verdicts: REVIEW_VERDICTS });
+const REVIEW_SPEC_EXPECTATIONS = Object.freeze({ ...REVIEW_EXPECTATIONS, checksTrace: true });
 
 export const PIPELINE_ROLES = Object.freeze([
 	declare("implement", { entrySkill: "implement", routingRole: "implement", expectations: BUILDER_EXPECTATIONS }),
 	declare("fresh-retry", { entrySkill: "implement", routingRole: "freshRetry", expectations: BUILDER_EXPECTATIONS }),
 	declare("review-standards", { entrySkill: "review-standards", routingRole: REVIEW_ROUTING_ROLE, expectations: REVIEW_EXPECTATIONS }),
-	declare("review-spec", { entrySkill: "review-spec", routingRole: REVIEW_ROUTING_ROLE, expectations: REVIEW_EXPECTATIONS }),
+	declare("review-spec", { entrySkill: "review-spec", routingRole: REVIEW_ROUTING_ROLE, expectations: REVIEW_SPEC_EXPECTATIONS }),
 ]);
+
+/**
+ * What a `completed` record **owes its role** and did not write, or `null`.
+ *
+ * This is the builder-side half of §8.4's "two levels, two owners". `outbox.mjs`
+ * judges the shape of a trace that *is* written and has never known which roles
+ * exist; whether one is owed is read off the role's own expectations here — the
+ * same expectations `prompt.mjs` rendered into the completion protocol, so the
+ * obligation the worker was told and the one it is held to are one value. A
+ * builder that ended `completed` without a trace produced no result for its
+ * role, which is what `invalid-result` means (§6.6) and routes to §8.10's
+ * fresh-retry row; the sentence names the block so the next attempt's brief
+ * and the journal both say why.
+ *
+ * Only absence is judged. A trace that is present is `outbox.mjs`'s to judge
+ * for shape and review-spec's to judge for truth — the controller reads the
+ * rows and never their content (#189).
+ *
+ * **The record's own status decides, not the attempt's outcome.** A builder
+ * still alive at turn end with a valid `completed` file is `wrote-but-hung`,
+ * which §8.10 harvests exactly as a completion — so the trace is owed there
+ * too, and a `needs-human` record owes none under either outcome.
+ *
+ * @param {Readonly<object>} role a pipeline role
+ * @param {Readonly<object> | null} record the normalised outbox record
+ * @returns {string | null}
+ */
+export function missingResult(role, record) {
+	if (role.resultExpectations.writesTrace !== true) return null;
+	if (record?.status !== "completed") return null;
+	if (traceWritten(record.trace)) return null;
+
+	return (
+		"the attempt ended completed and wrote no trace, so this builder produced no result for its role: a completed " +
+		"builder record carries a `trace` — one {requirement, evidence} row per line of the ticket it was briefed " +
+		"with — and the controller reads its rows, never their truth (§6.6, #189)"
+	);
+}
 
 /**
  * §8.4's two axes, **in the order §11.5's `review` pair is written in**.

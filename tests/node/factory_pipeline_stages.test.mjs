@@ -92,6 +92,22 @@ test("a resolved stage is recorded, and answers with §8.10's own row", async (t
 	);
 });
 
+test("a refused step carries the controller's problems on the chain, and an accepted one carries no key (§8.9, #189)", async (t) => {
+	const context = await executing(t);
+
+	context.resolve("implement", "invalid-result", {
+		detail: { problems: ["the attempt ended completed and wrote no trace (§6.6, #189)"] },
+	});
+
+	const [step] = outcomeChain(context.store, { run: context.run, ticket: context.ticket });
+	assert.deepEqual(step, {
+		phase: "implement",
+		outcome: "invalid-result",
+		attempt: context.attempt,
+		problems: ["the attempt ended completed and wrote no trace (§6.6, #189)"],
+	});
+});
+
 test("a duplicate identical result returns the committed one, and records nothing new (§8.10)", async (t) => {
 	const context = await executing(t);
 	context.resolve("implement", "completed", { detail: { commits: ["a1b2c3d"] } });

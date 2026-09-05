@@ -159,7 +159,10 @@ test("the trust check proves both runtimes' own resolution rules for the paths p
 	assert.equal(checked.result, "passed");
 	assert.deepEqual(checked.detail.decisions, { pi: true, claude: true });
 	assert.equal(checked.detail.worktrees, worktreesRoot(context.storeDir));
-	assert.match(checked.message, /No trust dialog can reach a worker pane/);
+	assert.match(checked.message, /None of the dialogs those keys answer can reach a worker pane/);
+	// #178: the writer settles four keys and the check reads back all four, so
+	// adding a fifth cannot add a fourth that nothing proves.
+	assert.deepEqual(checked.detail.unsettled, []);
 });
 
 test("a trust store that cannot be written is this check's red, never a crash mid-preflight", (t) => {

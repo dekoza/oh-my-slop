@@ -192,6 +192,9 @@ export const METADATA_SOURCE = "software-factory";
  * measured with `tests/live/herdr-agent-quit-sequence.mjs`, whose run table is
  * in `tests/live/README.md`; pi quits under either shape, so one sequence still
  * serves both harnesses.
+ *
+ * A change to either half is a claim about somebody else's TUI: re-run that
+ * probe rather than reasoning about it.
  */
 export const AGENT_STOP_KEY_CALLS = Object.freeze([Object.freeze(["esc"]), Object.freeze(["ctrl+c", "ctrl+c"])]);
 

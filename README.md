@@ -54,14 +54,18 @@ member says which ticket it is waiting on.
 
 The checks a run verifies against are **declared, never discovered**: the `checks`
 block in `.pi/factory.json` names each command, its timeout, whether it is required or
-advisory, and which exit codes count as a genuine failure. Nothing is inferred from a
-`pyproject.toml`, a `package.json`, or a Makefile, and `AGENTS.md` prose is never
-parsed at runtime. The controller runs the full required set at the pinned base before
-it claims anything, and a red base aborts the run naming the check that was red rather
-than blaming the first worker for it. `factory doctor --baseline` runs the same set on
-demand, in a throwaway worktree inside the factory-private clone — never your
-checkout — deleted when it passes and kept when it fails, which is when you want to
-`cd` into it.
+advisory, and which exit codes count as a genuine failure. Advisory checks can opt their
+controller-captured output into a later agent phase with `feeds`; output is persisted by
+digest and rendered as trusted, digest-labelled evidence inside a controller-owned section
+that marks it as data, never as ticket instructions. Nothing is inferred from a
+`pyproject.toml`, a `package.json`, or a Makefile, and `AGENTS.md` prose is never parsed at
+runtime. The controller runs the full required set at the pinned base before it claims
+anything, and a red base aborts the run naming the check that was red rather than blaming the
+first worker for it. `factory doctor --baseline`
+runs **all** declared checks on demand — reporting advisory mutation and complexity results
+without turning them into gates — in a throwaway worktree inside the factory-private clone,
+never your checkout. The worktree is deleted when required checks pass and kept when they fail,
+which is when you want to `cd` into it.
 
 The `software-factory` extension was **retired** in `fe80c5d` and archived under
 `extensions/.legacy/`. Its replacement is the **`factory`** extension and the **`factory`
@@ -230,7 +234,7 @@ Rituals you run — session and tracker state, from interview through implementa
 | **[To Questionnaire](skills/workflow/to-questionnaire/SKILL.md)** | Turn a decision you can't answer alone into a Markdown questionnaire for the one person who can fill it in — grills the send (who, expertise, need) not the subject, then writes a structured, ordered file. |
 | **[To Spec](skills/workflow/to-spec/SKILL.md)** | Turn the current conversation into a spec — problem statement, user stories, implementation and testing decisions — published to the issue tracker or `docs/specs/`. No interview, pure synthesis. |
 | **[Wizard](skills/workflow/wizard/SKILL.md)** | Generate an interactive bash wizard that walks a human through a manual setup or migration procedure — opening URLs, capturing values, confirming each step, and writing `.env` files and CI secrets (GitHub and Gitea/Forgejo Actions). |
-| **[To Tickets](skills/workflow/to-tickets/SKILL.md)** | Break a plan, spec, or conversation into tracer-bullet tickets — vertical slices with explicit blocking edges — published to the tracker or one local file per ticket. Expand–contract sequencing for wide refactors. |
+| **[To Tickets](skills/workflow/to-tickets/SKILL.md)** | Break a plan, spec, or conversation into tracer-bullet tickets — vertical slices with explicit blocking edges — published to the tracker or one local file per ticket. Walking skeleton as the first implementation ticket; a contract ticket per cross-component interface, blocking its dependents; expand–contract sequencing for wide refactors. |
 | **[Triage](skills/workflow/triage/SKILL.md)** | Issue/PR triage state machine — categorise, verify the claim, grill into shape, write durable agent briefs, maintain an .out-of-scope/ knowledge base of rejected requests. |
 | **[Two-Axis Review](skills/workflow/two-axis-review/SKILL.md)** | Run both review axes over the changes since a fixed point and aggregate them without reranking — sub-agents when the harness has them, sequentially when it does not. |
 | **[Wayfinder](skills/workflow/wayfinder/SKILL.md)** | Plan work too big for one session as a shared map of decision tickets on the issue tracker — destination, frontier, fog of war — resolved one ticket per session until the way is clear. |

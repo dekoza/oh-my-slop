@@ -205,6 +205,28 @@ test("an advisory check that cannot run blocks nothing either", async (t) => {
 	assert.equal(answer.ok, true);
 });
 
+test("an advisory mutation run that outlives its timeout is unrunnable and blocks nothing (§8.2)", async (t) => {
+	// The case §8.2's advisory default exists for: mutation testing is the
+	// expensive, environment-fragile class, and a slow host must not turn a
+	// declared recipe into a red ticket. Two separate properties, both asserted on
+	// one check — the *classification* is `unrunnable`, so nobody is blamed for
+	// it, and the *verdict* is green, so nothing waits on it.
+	const answer = await runChecks(
+		[
+			check({ name: "unit", command: "true" }),
+			check({ name: "mutation", command: "sleep 30", severity: "advisory", timeout: 1, expectedFailureExitCodes: [] }),
+		],
+		{ select: CHECK_SELECTIONS.all, cwd: workspace(t) },
+	);
+
+	const mutation = resultOf(answer, "mutation");
+	assert.equal(mutation.result, CHECK_RESULTS.unrunnable);
+	assert.equal(mutation.reason, "timeout");
+	assert.match(mutation.message, /outran its declared timeout of 1s/);
+	assert.equal(answer.ok, true);
+	assert.deepEqual([...answer.red], []);
+});
+
 test("the required selection runs the required set alone, and says which it skipped", async (t) => {
 	const cwd = workspace(t);
 

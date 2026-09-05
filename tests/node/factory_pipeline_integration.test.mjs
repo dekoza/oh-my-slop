@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
+import { readArtifact } from "../../factory/lib/artifacts/ledger.mjs";
 import { holdControllerLease } from "../../factory/lib/controller/lease-guard.mjs";
 import { unresolvedEffects } from "../../factory/lib/effects/records.mjs";
 import { registerGitProbes } from "../../factory/lib/git/probes.mjs";
@@ -131,6 +132,9 @@ test("verify rebases onto the fresh base and runs the set at the result, under t
 	// §14.13: the commit the checks ran at is the one the branch now is.
 	assert.equal(git(fixture.clone.dir, ["rev-parse", `refs/heads/${fixture.branch}`]), verified.detail.head);
 	assert.deepEqual([...verified.detail.commits], [verified.detail.head]);
+	const output = verified.detail.checks[0].output;
+	assert.match(output.digest, /^[0-9a-f]{64}$/, "verify did not retain the captured output by digest");
+	assert.match(readArtifact(fixture.store, output).toString("utf8"), new RegExp(verified.detail.head));
 
 	// §7.5: the pre-rebase head survives by contract.
 	assert.equal(verified.detail.evidence_ref, evidenceRef(fixture.attempt));
@@ -256,10 +260,18 @@ test("a rebase conflict ends verify as a typed outcome and keeps the worktree (�
 	assert.equal(verified.outcome, "rebase-conflict");
 	assert.deepEqual([...verified.detail.conflicts], ["contested.txt"]);
 	assert.equal(existsSync(integrationWorktreePath(fixture.store.storeDir, fixture.attempt)), true);
-	// The branch is untouched: nothing was adopted, so §8.5's fresh-retry starts
-	// from a branch that still holds exactly what the worker wrote.
+	// The branch is untouched: nothing was adopted, so §8.5's rebase-repair starts
+	// from a branch that still holds exactly what the worker wrote (#194).
 	assert.equal(git(fixture.clone.dir, ["rev-parse", `refs/heads/${fixture.branch}`]), fixture.head);
 	assert.equal(fixture.leases.inspect(LEASE_NAMES.integration), null);
+	// #194: the retained worktree is the attempt's tip — the rebase was aborted —
+	// with the pre-rebase head under the evidence ref; and the base's own movement
+	// rides the detail as the controller read it, for the prompt to carry.
+	assert.equal(git(integrationWorktreePath(fixture.store.storeDir, fixture.attempt), ["rev-parse", "HEAD"]), fixture.head);
+	assert.equal(git(fixture.clone.dir, ["rev-parse", verified.detail.evidence_ref]), fixture.head);
+	assert.equal(verified.detail.previous_base, fixture.base.commit);
+	assert.match(verified.detail.base_movement, /contested\.txt/);
+	assert.match(verified.detail.base_movement, /1 file changed/);
 });
 
 test("a red required set is verify's own failure, and nothing is published (§14.15)", async (t) => {

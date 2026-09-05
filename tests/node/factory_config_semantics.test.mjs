@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { MAX_SUPPORTED_TICKET_CONCURRENCY } from "../../factory/lib/config/concurrency.mjs";
 import { loadFactoryConfig } from "../../factory/lib/config/load.mjs";
@@ -33,7 +34,7 @@ function loaded(t, config, { routingSet = null } = {}) {
 	return loadFactoryConfig({ cwd: makeRepo(t, { config }), routingSet });
 }
 
-// ── Checks: five fields, none of them defaulted (§11.6) ──────────────────────
+// ── Checks: five required fields and one declared feed (§11.6) ──────────────
 
 test("every check declares all five fields, and a missing one names itself", (t) => {
 	for (const field of ["name", "command", "timeout", "severity", "expectedFailureExitCodes"]) {
@@ -76,6 +77,35 @@ test("an unknown key inside a check refuses and names its path", (t) => {
 
 	assert.equal(error.reason, "unknown-key");
 	assert.equal(error.details.at, "checks[0].parallelSafe");
+});
+
+test("feeds is optional and loads as the explicit phases an advisory check supplies", (t) => {
+	const absent = loaded(t, clone()).config.checks[0];
+	assert.deepEqual(absent.feeds, []);
+
+	const config = clone();
+	config.checks[0].severity = "advisory";
+	config.checks[0].feeds = ["implement"];
+
+	assert.deepEqual(loaded(t, config).config.checks[0].feeds, ["implement"]);
+});
+
+test("a check feed names a feedable agent phase, once, and only on an advisory check", (t) => {
+	for (const [feeds, severity, at] of [
+		[["harden"], "advisory", "checks[0].feeds[0]"],
+		[["review"], "advisory", "checks[0].feeds[0]"],
+		[["implement", "implement"], "advisory", "checks[0].feeds[1]"],
+		["implement", "advisory", "checks[0].feeds"],
+		[["implement"], "required", "checks[0].feeds"],
+	]) {
+		const config = clone();
+		config.checks[0].severity = severity;
+		config.checks[0].feeds = feeds;
+
+		const error = loadFailure(t, config);
+		assert.equal(error.reason, "invalid-value", JSON.stringify({ feeds, severity }));
+		assert.equal(error.details.at, at);
+	}
 });
 
 test("expectedFailureExitCodes must hold distinct non-zero exit codes", (t) => {
@@ -1132,4 +1162,25 @@ test("an unknown key in the worker block refuses, like every other block", (t) =
 
 	assert.equal(error.reason, "unknown-key");
 	assert.equal(error.details.at, "worker.permissionMode");
+});
+
+// ── The repository's own declaration, through the loader (§8.2, §11.6) ──────
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+test("the repository's own three advisory recipes load as feedable checks with mandatory timeouts (§8.2)", () => {
+	// Through `loadFactoryConfig`, not the raw JSON: what matters is how the loader
+	// treats the recipes, and a retuned threshold or exit-code set must not fail
+	// this test — the literals belong to the tools' own files.
+	const { config } = loadFactoryConfig({ cwd: REPO_ROOT });
+	const recipes = config.checks.filter((check) => check.severity === "advisory");
+
+	assert.deepEqual(
+		recipes.map((recipe) => recipe.name).sort(),
+		["complexity-crap-python", "mutation-node", "mutation-python"],
+	);
+	for (const recipe of recipes) {
+		assert.deepEqual(recipe.feeds, ["implement"], `${recipe.name} feeds the repair tier`);
+		assert.ok(Number.isInteger(recipe.timeout) && recipe.timeout > 0, `${recipe.name} declares its timeout`);
+	}
 });

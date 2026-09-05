@@ -60,7 +60,8 @@ export const VERB_TABLE = Object.freeze({
 		requiresConfig: true,
 		handler: runDoctor,
 		summary: "diagnose the factory without mutating it, and classify a scope's members",
-		// §10.5's `--baseline` executes the declared required set in a throwaway
+		// §10.5's `--baseline` executes every declared check, verdict over the
+		// required set (`doctor/report.mjs` selects `all`), in a throwaway
 		// worktree inside the factory-private clone. Without it, `doctor` reports
 		// the last recorded result and re-runs nothing — the expensive mode is
 		// asked for, never inferred from how stale the record looks.

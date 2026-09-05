@@ -70,20 +70,29 @@ def test_project_setup_can_emit_machine_readable_factory_policy() -> None:
     ).read_text(encoding="utf-8")
 
     assert ".pi/factory.json" in setup_skill_text
+    assert '"schemaVersion": 2' in setup_skill_text
     assert '"kind": "gitea"' in setup_skill_text
     assert '"login": "<tea-login-name>"' in setup_skill_text
-    assert '"maxWorkers": 1' in setup_skill_text
-    assert '"workers"' in setup_skill_text
     assert '"profiles"' in setup_skill_text
     assert '"freshRetry"' in setup_skill_text
-    assert '"finalReview": "final-review"' in setup_skill_text
     assert '"model": "fable"' in setup_skill_text
     assert "pi --list-models" in setup_skill_text
     assert "claude --version" in setup_skill_text
-    assert '"repairAttempts": 1' in setup_skill_text
-    assert '"freshAgentRetries": 1' in setup_skill_text
-    assert '"finalMerge": "manual"' in setup_skill_text
-    assert '"deploy": false' in setup_skill_text
+
+    # The blocks a v1 template left out and `factory migrate` leaves as holes.
+    # A setup run has these answers, so it writes them rather than emitting a
+    # file whose first verb refuses.
+    assert '"checks"' in setup_skill_text
+    assert '"expectedFailureExitCodes"' in setup_skill_text
+    assert '"concurrency"' in setup_skill_text
+    assert '"maxTicketExecutions"' in setup_skill_text
+    assert '"automation"' in setup_skill_text
+
+    # The v1 spelling, gone: these keys are refused or unknown to the loader,
+    # and `tests/node/factory_setup_template.test.mjs` loads the template for real.
+    for legacy in ('"version": 1', '"maxWorkers"', '"workers"', '"finalReview"',
+                   '"repairAttempts"', '"completion"', '"permissionMode"', '"labels"'):
+        assert legacy not in setup_skill_text, f"the setup template still carries {legacy}"
 
 
 def test_wayfinder_evals_cover_implementation_handoff_and_label_orthogonality() -> None:

@@ -32,8 +32,30 @@ import {
  * outright.
  */
 
+/**
+ * **A problem sentence never embeds what the worker wrote.** The problems this
+ * reader names ride `attempt.ended`, the implement stage's detail, and — on
+ * §8.10's `implement × invalid-result` row, whose evidence is marked fact — the
+ * fresh attempt's "controller-verified facts" (§8.5). A sentence quoting a
+ * refused `status` would carry whatever the worker typed there into that block
+ * under the controller's own name. So every sentence names the field and the
+ * closed set it missed, and the value stays in the file it came from.
+ */
+
 /** The outbox's own shape version, carried by every record (§6.6). */
 export const OUTBOX_SCHEMA_VERSION = 1;
+
+/**
+ * Whether a trace was written at all: a non-empty list (#189). The one
+ * predicate the three readers of a trace — the role's owed-ness, the fan-out's
+ * read, the template's refusal — share, so "written" has one spelling.
+ *
+ * @param {unknown} trace
+ * @returns {boolean}
+ */
+export function traceWritten(trace) {
+	return Array.isArray(trace) && trace.length > 0;
+}
 
 /** The states this reader answers in. Closed, so a caller can branch exhaustively. */
 export const OUTBOX_STATES = Object.freeze(["absent", "unreadable", "invalid", "foreign", "valid"]);
@@ -122,14 +144,14 @@ function shapeProblems(parsed) {
 
 	if (parsed.schema_version !== OUTBOX_SCHEMA_VERSION) {
 		problems.push(
-			`schema_version is ${JSON.stringify(parsed.schema_version ?? null)}; this controller reads ` +
-				`${OUTBOX_SCHEMA_VERSION}`,
+			`schema_version is ${absentOr(parsed.schema_version, `not ${OUTBOX_SCHEMA_VERSION}`)}; this controller ` +
+				`reads ${OUTBOX_SCHEMA_VERSION} (§6.6)`,
 		);
 	}
 	if (!WORKER_WRITABLE_OUTCOMES.includes(parsed.status)) {
 		problems.push(
-			`status is ${JSON.stringify(parsed.status ?? null)}; the worker-writable set is exactly ` +
-				`${WORKER_WRITABLE_OUTCOMES.join(", ")} — every other outcome is controller-derived (§6.6, §8.8)`,
+			`status is ${absentOr(parsed.status, "not one of the worker-writable set")}; the worker-writable set is ` +
+				`exactly ${WORKER_WRITABLE_OUTCOMES.join(", ")} — every other outcome is controller-derived (§6.6, §8.8)`,
 		);
 	}
 	for (const field of ["run", "phase", "attempt"]) {
@@ -143,8 +165,58 @@ function shapeProblems(parsed) {
 
 	problems.push(...statusProblems(parsed));
 	problems.push(...verdictProblems(parsed));
+	problems.push(...traceProblems(parsed));
 	problems.push(...referenceProblems(parsed));
 
+	return problems;
+}
+
+/**
+ * #189's requirement trace, held to its shape wherever one appears: a
+ * non-empty list of `{requirement, evidence}` rows, both non-empty text, with
+ * an optional `note` beside them.
+ *
+ * **The judgement is structural and never semantic.** Whether `requirement`
+ * really quotes a line of the ticket, and whether `evidence` names a path the
+ * diff touched, are review-spec's questions (§8.4) — the reviewer is the judge
+ * of truth, and a controller that checked a row against the snapshot would be a
+ * third reviewer with no verdict slot to write in. What the controller can hold
+ * is that the rows *exist* to be checked: an empty list is a trace in name only
+ * and is refused as one, because a reviewer briefed with it has nothing to
+ * check against and would pass the ticket's coverage question back to the diff
+ * alone, which is the state this block exists to end.
+ *
+ * **Whether a trace is *owed* is role knowledge and lives elsewhere** — with
+ * the builder's phase executor, the way whether a verdict is owed lives with
+ * the fan-out. This reader has never known which roles exist, and a reviewer's
+ * record legitimately carries none.
+ */
+function traceProblems(parsed) {
+	const trace = parsed.trace;
+	if (trace === undefined || trace === null) return [];
+	if (!Array.isArray(trace)) {
+		return [`trace is a ${typeof trace}, not a list of {requirement, evidence} rows (§6.6)`];
+	}
+	if (trace.length === 0) {
+		return ["trace is an empty list; a trace carries one row per requirement the attempt was briefed with (§6.6)"];
+	}
+
+	const problems = [];
+	for (const [index, row] of trace.entries()) {
+		if (row === null || typeof row !== "object" || Array.isArray(row)) {
+			problems.push(`trace[${index}] is not a {requirement, evidence} row (§6.6)`);
+			continue;
+		}
+		for (const field of ["requirement", "evidence"]) {
+			if (nonEmptyText(row[field])) continue;
+			problems.push(
+				`trace[${index}] carries no ${field}; every row quotes a ticket line and names the path and test that answer it (§6.6)`,
+			);
+		}
+		if (row.note !== undefined && row.note !== null && typeof row.note !== "string") {
+			problems.push(`trace[${index}].note is not text (§6.6)`);
+		}
+	}
 	return problems;
 }
 
@@ -174,7 +246,8 @@ function verdictProblems(parsed) {
 	const problems = [];
 	if (!REVIEW_VERDICTS.includes(parsed.verdict)) {
 		problems.push(
-			`verdict is ${JSON.stringify(parsed.verdict ?? null)}; §8.4's verdict is one of ${REVIEW_VERDICTS.join(", ")}`,
+			`verdict is ${absentOr(parsed.verdict, "not one of the closed pair")}; §8.4's verdict is one of ` +
+				`${REVIEW_VERDICTS.join(", ")}`,
 		);
 	}
 
@@ -221,12 +294,12 @@ function findingProblems(finding, index) {
 	const problems = [];
 	if (!Object.values(FINDING_SEVERITIES).includes(finding.severity)) {
 		problems.push(
-			`findings[${index}].severity is ${JSON.stringify(finding.severity ?? null)}; the set is exactly ` +
-				`${Object.values(FINDING_SEVERITIES).join(", ")} (§8.4)`,
+			`findings[${index}].severity is ${absentOr(finding.severity, "not one of the closed pair")}; the set is ` +
+				`exactly ${Object.values(FINDING_SEVERITIES).join(", ")} (§8.4)`,
 		);
 	}
 	for (const field of ["citation", "statement"]) {
-		if (typeof finding[field] === "string" && finding[field].trim().length > 0) continue;
+		if (nonEmptyText(finding[field])) continue;
 		problems.push(`findings[${index}] carries no ${field}; every finding carries a mandatory citation (§8.4)`);
 	}
 
@@ -245,11 +318,11 @@ function statusProblems(parsed) {
 			// second kind could file its own ticket as an infrastructure failure —
 			// or claim a budget it cannot see has run out (§6.6, §8.8).
 			problems.push(
-				`reason_class is ${JSON.stringify(parsed.reason_class)}; the worker-writable set is exactly ` +
+				`reason_class is not one of the worker-writable set, which is exactly ` +
 					`${WORKER_WRITABLE_REASON_CLASSES.join(", ")} — every other class is controller-derived (§6.6, §8.8)`,
 			);
 		}
-		if (typeof parsed.question !== "string" || parsed.question.trim().length === 0) {
+		if (!nonEmptyText(parsed.question)) {
 			// "the exact question", not a summary: the human's reply is what
 			// resumes the ticket, and a vague pause costs a round trip.
 			problems.push("needs-human carries the exact question a human must answer (§6.6)");
@@ -258,9 +331,7 @@ function statusProblems(parsed) {
 	}
 
 	if (parsed.status === "worker-failed") {
-		return typeof parsed.explanation === "string" && parsed.explanation.trim().length > 0
-			? []
-			: ["worker-failed carries a classification and an explanation (§6.6)"];
+		return nonEmptyText(parsed.explanation) ? [] : ["worker-failed carries a classification and an explanation (§6.6)"];
 	}
 
 	if (parsed.status === "completed") {
@@ -310,11 +381,24 @@ function identityProblems(parsed, identity) {
 	// and comparing one of those against an outbox would fail every record.
 	for (const field of ["run", "ticket", "phase", "attempt"]) {
 		if (parsed[field] === identity[field]) continue;
+		// The minted value is the controller's own and may be named; the value the
+		// file echoes is somebody else's and stays in the file. (An absent slot
+		// never reaches here — `shapeProblems` refused it first.)
 		problems.push(
-			`${field} echoes ${JSON.stringify(parsed[field] ?? null)}, and the controller minted ${JSON.stringify(identity[field] ?? null)}`,
+			`${field} echoes a value other than what the controller minted, ${JSON.stringify(identity[field] ?? null)}`,
 		);
 	}
 	return problems;
+}
+
+/** A field that says something: text with at least one non-blank character. */
+function nonEmptyText(value) {
+	return typeof value === "string" && value.trim().length > 0;
+}
+
+/** "absent", or the caller's description of a value that is present and wrong — never the value. */
+function absentOr(value, otherwise) {
+	return value === undefined || value === null ? "absent" : otherwise;
 }
 
 /**
@@ -348,7 +432,22 @@ function normalise(parsed) {
 		// controller's own rerun is the attestation boundary, so this rides as a
 		// string and is never parsed into a pass/fail anything acts on.
 		test_evidence: typeof parsed.test_evidence === "string" ? parsed.test_evidence : null,
+		// #189's trace rides **as written and in the order written**, for the same
+		// reason the findings do: review-spec checks it row by row against the
+		// ticket, and a reader that sorted or merged rows would be editing the
+		// object under review. Absent is carried as `null`, never as an empty
+		// list — the two are different answers to "was one written".
+		trace: Array.isArray(parsed.trace) ? Object.freeze(parsed.trace.map(traceRow)) : null,
 		evidence: Object.freeze(Array.isArray(parsed.evidence) ? parsed.evidence.map(reference) : []),
+	});
+}
+
+/** One trace row's three fields (§6.6), and nothing a worker added beside them. */
+function traceRow(entry) {
+	return Object.freeze({
+		requirement: entry.requirement,
+		evidence: entry.evidence,
+		note: typeof entry.note === "string" ? entry.note : null,
 	});
 }
 

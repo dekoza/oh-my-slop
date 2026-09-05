@@ -482,25 +482,27 @@ async function driveRun(store, hold, context, signals) {
 		// The composition this run would execute a lane with, decided **before** the
 		// reclaim below: §5.5's adoption is only worth doing for a run that can
 		// actually resume the lane it adopts.
-		const scheduling =
-			checked.ok && context.pipeline === undefined
-				? {
-						...context,
-						pipeline: createProductionPipeline(store, {
-							hold,
-							leases: context.leases,
-							config: context.config,
-							activeRouting: context.activeRouting,
-							tracker: context.tracker,
-							trackerWriter: context.trackerWriter,
-							herdr: context.herdrControl,
-							preflight: checked.production,
-							executable: context.executable,
-							env: context.env,
-							now: context.now,
-						}),
-					}
-				: context;
+		let scheduling = context;
+		if (checked.ok && context.pipeline === undefined) {
+			const production = createProductionPipeline(store, {
+				hold,
+				leases: context.leases,
+				config: context.config,
+				activeRouting: context.activeRouting,
+				tracker: context.tracker,
+				trackerWriter: context.trackerWriter,
+				herdr: context.herdrControl,
+				preflight: checked.production,
+				executable: context.executable,
+				env: context.env,
+				now: context.now,
+			});
+			scheduling = {
+				...context,
+				pipeline: production.execute,
+				prepareExecution: production.prepare,
+			};
+		}
 		const executor = checked.ok ? executorFor(store, entry, hold, scheduling) : null;
 
 		// §9.4: a slot a previous controller left held is settled **by probing its
@@ -829,6 +831,13 @@ function ticketExecution(store, entry, hold, context) {
 		// §7.3's deterministic identity, so a re-entered run rebuilds the same one
 		// and §4.5's duplicate check returns the claim already committed.
 		const attempt = attemptIdOf({ run: entry.run, ticket, ordinal: 1 });
+		// #199: production decides continuation before the claim because the claim
+		// comment is the durable human-facing record of that decision. Injected
+		// pipelines keep the old interface and need no preparation.
+		const preparation =
+			context.prepareExecution === undefined
+				? null
+				: await context.prepareExecution({ ticket, member, attempt, route });
 		const claim = await claimTicket(store, {
 			reader: context.tracker,
 			writer: context.trackerWriter,
@@ -838,6 +847,7 @@ function ticketExecution(store, entry, hold, context) {
 			attempt,
 			assignee: context.config.tracker.assignee,
 			at: context.now(),
+			continuation: preparation?.claim ?? null,
 		});
 
 		// §3.3's four refusing outcomes each end the lane having written nothing.
@@ -880,6 +890,7 @@ function ticketExecution(store, entry, hold, context) {
 			attempt,
 			claim,
 			capacity,
+			preparation,
 			// §11.5's dispatch decision, made before the claim and against §9.8's
 			// memo (#155). It travels with the lane for the same reason §11.6's
 			// budgets do: the route this lane's model slot was taken for and the

@@ -330,6 +330,40 @@
       "expectedFailureExitCodes": [
         1
       ]
+    },
+    {
+      "name": "mutation-python",
+      "command": "uv run --group quality mutmut run",
+      "timeout": 900,
+      "severity": "advisory",
+      "expectedFailureExitCodes": [],
+      "feeds": [
+        "implement"
+      ]
+    },
+    {
+      "name": "mutation-node",
+      "command": "node scripts/stryker.mjs",
+      "timeout": 900,
+      "severity": "advisory",
+      "expectedFailureExitCodes": [
+        1
+      ],
+      "feeds": [
+        "implement"
+      ]
+    },
+    {
+      "name": "complexity-crap-python",
+      "command": "tmp=\"$(mktemp -d)\"; trap 'rm -rf \"$tmp\"' EXIT; COVERAGE_FILE=\"$tmp/.coverage\" uv run --group quality coverage run -m pytest && COVERAGE_FILE=\"$tmp/.coverage\" uv run --group quality coverage json -o \"$tmp/coverage.json\" && uv run --group quality radon cc -j scripts > \"$tmp/radon.json\" && uv run --group quality python scripts/crap.py \"$tmp/radon.json\" \"$tmp/coverage.json\" --max 30",
+      "timeout": 900,
+      "severity": "advisory",
+      "expectedFailureExitCodes": [
+        1
+      ],
+      "feeds": [
+        "implement"
+      ]
     }
   ],
   "concurrency": {

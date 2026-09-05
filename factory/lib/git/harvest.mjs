@@ -17,6 +17,15 @@ import { assertFactoryRef } from "./isolation.mjs";
  * commits the attempt before it made, and a repair worker that committed nothing
  * would harvest as `completed`.
  *
+ * **Under a rebase-repair the boundary is the merge-base with the base the
+ * worker was told to rebase onto** (#194). Its own base is the prior tip, and
+ * after a rebase the prior tip is no longer an ancestor at all: `rev-list
+ * --count priorTip..branch` would count every commit of the base's movement as
+ * the worker's, and a rebase-repair that rebased nothing but a branch full of
+ * base commits would read as productive. The merge-base with `onto` is the
+ * point the worker's own commits — the replayed ones and any it added — sit
+ * on, whether the branch was rebased or left where it was.
+ *
  * The answer is a typed verdict, never an action. A dirty worktree is reported
  * with its leftovers exactly as `git status` names them and is **never
  * auto-committed**; mapping the verdict onto §8.8's outcome taxonomy is the
@@ -28,12 +37,15 @@ import { assertFactoryRef } from "./isolation.mjs";
  * @param {string} attempt.branch the attempt's branch name
  * @param {string} attempt.baseCommit the attempt's own base — §7.2's pinned base
  *   for a first attempt and a fresh-retry, the prior attempt's tip for a repair (§7.3, §8.5)
+ * @param {string | null} [attempt.onto] the base commit a rebase-repair was told
+ *   to rebase onto (§8.5, #194); `null` for every other tier, whose boundary is
+ *   `baseCommit` itself
  * @returns {Promise<Readonly<
  *   { harvestable: true, head: string, commitsAhead: number } |
  *   { harvestable: false, reason: "worktree-dirty", leftovers: ReadonlyArray<string> } |
  *   { harvestable: false, reason: "no-commits", commitsAhead: 0 }>>}
  */
-export async function assessHarvest(clone, { worktreePath, branch, baseCommit }) {
+export async function assessHarvest(clone, { worktreePath, branch, baseCommit, onto = null }) {
 	assertFactoryRef(branch);
 
 	const status = await clone.git(["status", "--porcelain"], { cwd: worktreePath });
@@ -45,8 +57,13 @@ export async function assessHarvest(clone, { worktreePath, branch, baseCommit })
 		});
 	}
 
+	// A merge-base git cannot find — unrelated histories — is a typed git
+	// refusal, left to propagate: a rebase-repair whose branch shares nothing
+	// with the base it was told to rebase onto is not a harvest question.
+	const boundary =
+		onto === null ? baseCommit : await clone.git(["merge-base", onto, `refs/heads/${branch}`]);
 	const ahead = Number.parseInt(
-		await clone.git(["rev-list", "--count", `${baseCommit}..refs/heads/${branch}`]),
+		await clone.git(["rev-list", "--count", `${boundary}..refs/heads/${branch}`]),
 		10,
 	);
 	if (ahead === 0) {

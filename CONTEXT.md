@@ -29,8 +29,14 @@ An **Issue** this skill set authored onto the **agent work tracker**. Every tick
 an issue; not every issue is a ticket. Two kinds, distinguished by label and never
 carried at once: a **Decision ticket** (`wayfinder:<type>`) and an *implementation
 ticket* (`workflow:implement` plus a state label), which holds a slice of a build to
-execute. Use **Issue** for the tracker's unit and **Ticket** for work we put there —
-the seam that makes `to-tickets` and `triage` read correctly side by side.
+execute. `to-tickets` cuts three special implementation tickets: a **contract ticket**
+(fixes one cross-component interface, owned by the higher-level component, immutable
+once accepted, blocking every ticket that reads the shape), the **walking skeleton**
+(the first behaviour-producing ticket of a new product or top-level component, one
+runnable entry point the rest extend), and the **review ticket** (the last, marked
+`ready-for-human`, blocked by every other ticket of the run). Use **Issue** for the
+tracker's unit and **Ticket** for work we put there — the seam that makes
+`to-tickets` and `triage` read correctly side by side.
 _Avoid_: task, work item
 
 **Decision ticket**:

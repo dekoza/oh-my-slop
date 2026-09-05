@@ -29,6 +29,29 @@ def test_implement_owns_one_frontier_ticket_not_graph_orchestration() -> None:
     assert "Never implement in the primary checkout" in body
 
 
+def test_the_review_rubrics_are_read_before_the_build_not_after_it() -> None:
+    """A first-round rejection costs a fresh implementation plus a fresh verify.
+
+    Both rubrics are already in this skill's closure, so the axes are reachable;
+    what makes them cheap is reading them *before* the first edit. The order in
+    the body is the contract: the rubric section precedes the build section, and
+    the self-review is a gate on committing rather than a trailing formality.
+    """
+    frontmatter, body = skill_parts()
+    requires = frontmatter["requires"]
+
+    assert "review-standards" in requires
+    assert "review-spec" in requires
+
+    rubrics = body.index("## Read the rubrics before you build")
+    build = body.index("## Build and verify")
+    assert rubrics < build, "the rubrics are read before the first edit, not after the last"
+
+    assert "before the first edit" in body
+    assert "Fix every blocking finding" in body
+    assert "no blocking finding left open" in body
+
+
 def test_readme_describes_the_worker_scope() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     implement_row = next(

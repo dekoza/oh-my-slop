@@ -271,16 +271,71 @@ test("neither planner answers for the other: a tier is not an automation retry (
 	);
 });
 
-test("a rebase conflict consumes a fresh-retry, not a repair — the prior tip is what conflicts (§8.10)", () => {
-	const row = routeOutcome("integrate", "rebase-conflict");
+/** A rebase conflict's detail, as `pipeline/integration.mjs` records one (#194). */
+const CONFLICT = Object.freeze({
+	base_commit: "b".repeat(40),
+	previous_base: "a".repeat(40),
+	head: "c".repeat(40),
+	conflicts: Object.freeze(["docs/specs/software-factory.md"]),
+	base_movement: " docs/specs/software-factory.md | 1 +\n 1 file changed, 1 insertion(+)",
+	evidence_ref: `refs/factory/evidence/${RUN}-t${TICKET}-a1`,
+	worktree: "/store/integration/a1",
+});
+
+test("#194: a rebase conflict is a rebase-repair — pinned to the prior attempt, from its tip, told the base to rebase onto", () => {
+	for (const phase of ["verify", "integrate"]) {
+		const row = routeOutcome(phase, "rebase-conflict");
+		assert.equal(row.action, "rebase-repair");
+
+		// A dispatch decision is handed in on purpose, as the repair test does: a
+		// rebase-repair keeps the work, so it keeps the profile that wrote it.
+		const plan = planRetry({ prior: prior(), failure: failing(phase, "rebase-conflict", CONFLICT), route: route("opus") });
+
+		assert.equal(plan.tier, "rebase-repair");
+		assert.equal(plan.from.kind, RETRY_BASES["rebase-repair"]);
+		assert.equal(plan.from.of, prior().branch, "the branch starts at the tip that would not replay");
+		assert.equal(plan.inheritsWork, true);
+		assert.equal(plan.profile, "builder", "pinned, never routed: the working line continues");
+		assert.equal(plan.routed, false);
+		assert.equal(plan.role, "implement");
+		assert.equal(plan.onto, CONFLICT.base_commit, "the base the worker is told to rebase onto is the failure's own fact");
+	}
+});
+
+test("#194: a rebase-repair with no base commit on the failure is refused, never guessed from the routing or the clone", () => {
+	assert.throws(
+		() => planRetry({ prior: prior(), failure: failing("verify", "rebase-conflict", { conflicts: ["x"] }) }),
+		(error) => {
+			assert.equal(error.reason, "retry-unplannable");
+			assert.equal(error.details.at, "onto");
+			return true;
+		},
+	);
+});
+
+test("#194: the brief carries the conflict facts as git's own, and the fresh-retry after the bound carries the same", () => {
+	const first = routeOutcome("verify", "rebase-conflict");
+	for (const row of [first, first.thereafter]) {
+		const brief = repairBrief({ tier: row.action, prior: prior(), phase: "verify", outcome: "rebase-conflict", detail: CONFLICT, row });
+
+		const rebase = brief.facts.find((fact) => fact.label === "rebase");
+		assert.equal(rebase.producer, "git", `${row.action}: the controller read the repository; no check ran`);
+		assert.equal(rebase.value.base_commit, CONFLICT.base_commit);
+		assert.equal(rebase.value.previous_base, CONFLICT.previous_base);
+		assert.deepEqual([...rebase.value.conflicts], [...CONFLICT.conflicts]);
+		assert.equal(rebase.value.base_movement, CONFLICT.base_movement);
+		assert.deepEqual(brief.untrusted, [], "nothing on the detail is a worker's words");
+	}
+});
+
+test("#194: the thereafter row is the fresh-retry as it was — routed, from the pin, work discarded", () => {
+	const row = routeOutcome("integrate", "rebase-conflict").thereafter;
 
 	assert.equal(row.action, "fresh-retry");
 	assert.equal(row.budget, "repair");
-	assert.equal(
-		planRetry({ prior: prior(), failure: failing("integrate", "rebase-conflict"), route: route("big-builder") }).from.kind,
-		RETRY_BASES["fresh-retry"],
-		"a repair would branch from precisely the tip that failed to rebase",
-	);
+	const plan = planRetry({ prior: prior(), failure: { ...failing("integrate", "rebase-conflict", CONFLICT), row }, route: route("big-builder") });
+	assert.equal(plan.from.kind, RETRY_BASES["fresh-retry"], "a second conflict discards: the base is moving faster than one repair follows");
+	assert.equal(plan.onto, undefined, "nothing to rebase — the branch starts at the fresh pin");
 });
 
 // ── The originating attempt, read from the journal (§8.5, §11.5) ─────────────

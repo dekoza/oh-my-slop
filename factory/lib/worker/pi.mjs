@@ -53,6 +53,24 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 export const PI_PROBE_ONLY_FLAGS = Object.freeze(["--mode", "rpc", "--no-session"]);
 
 /**
+ * §6.8's trust approval, carried on every pi session (#178).
+ *
+ * The pre-trust store settles the **project trust** question ahead of the pane,
+ * and this flag settles it again on the command line, for the same reason
+ * §6.8's permission mode rides both the settings file and the flag: a store the
+ * harness keys differently than the factory mirrored is a store that reads back
+ * as no decision, and no decision is the dialog. Belt and suspenders over an
+ * interstitial, where the cost of the belt is one argument and the cost of the
+ * missing suspenders is a pane hung on a keypress nobody will supply.
+ *
+ * It resolves trust **for the run**, which is exactly the scope a worker
+ * session has: an attempt worktree holds the operator's own repository at a
+ * pinned commit, so §6.8's "auto-trust weakens nothing" is the same sentence
+ * here as it is at the store.
+ */
+export const PI_TRUST_APPROVAL = Object.freeze(["--approve"]);
+
+/**
  * §6.2's production flag set — what every pi **worker** session is launched
  * with, and therefore what the probe must prove.
  *
@@ -71,7 +89,12 @@ export const PI_PROBE_ONLY_FLAGS = Object.freeze(["--mode", "rpc", "--no-session
  * @returns {string[]}
  */
 export function piWorkerArguments(skillsRoots, sessionArgs = []) {
-	return ["--no-skills", ...skillsRoots.flatMap((root) => ["--skill", root]), ...sessionArgs];
+	return [
+		"--no-skills",
+		...PI_TRUST_APPROVAL,
+		...skillsRoots.flatMap((root) => ["--skill", root]),
+		...sessionArgs,
+	];
 }
 
 /**
