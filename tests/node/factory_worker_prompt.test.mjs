@@ -385,7 +385,12 @@ test("the verdict obligation lives only in the template, never inside a package 
 	// a JSON verdict schema would be a factory dependency inside a product the
 	// factory does not own — so the skills carry the *judgement* and the factory
 	// carries the shape it wants that judgement written in.
-	const schema = /"verdict"\s*:|"findings"\s*:|"severity"\s*:/;
+	// The markers are the verdict record's own fields. `"severity"` is deliberately
+	// **not** one of them: §11.6's `checks` block declares a severity too, and
+	// `setup-project-skills` ships the policy file it writes as a JSON template —
+	// flagging that would be this test reading a config schema as a verdict schema.
+	// `"citation"` is the discriminator, and it belongs to no config block.
+	const schema = /"verdict"\s*:|"findings"\s*:|"citation"\s*:/;
 	const offenders = [];
 	for (const file of markdownUnder(join(REPO_ROOT, "skills"))) {
 		if (schema.test(readFileSync(file, "utf8"))) offenders.push(file);
