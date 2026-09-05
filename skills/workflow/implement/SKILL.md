@@ -9,6 +9,8 @@ license: MIT (adapted from mattpocock/skills)
 requires:
   - construction-craft
   - git-discipline
+  - review-spec
+  - review-standards
   - tdd
   - testing-workflow
   - two-axis-review
@@ -30,13 +32,40 @@ Never implement in the primary checkout. If the session is not already inside a 
 
 Every edit, test run, and git command targets **that worktree's directory** — no `git -C` back into the primary checkout, no edits outside the worktree path. Leave the worktree in place when the session ends; removing it is the caller's call.
 
+## Read the rubrics before you build
+
+This work is judged on two independent axes, and the rubrics they judge against ship beside
+you: `review-standards` and `review-spec`. **Read both before the first edit, not after the
+last one.** A rejection on the first review round costs a whole fresh implementation plus a
+fresh verification run — several times what any other part of this loop costs — and the
+findings that cause it are overwhelmingly things the rubric would have told you.
+
+Read each axis for what it will cite, and gather the same sources it will:
+
+- **Standards axis** — it cites this repo's own documented standards, so find them the way it
+  will: `AGENTS.md`, `CLAUDE.md`, and whatever those point at. Note the rules that touch the
+  surface you are about to change — required test markers and decorators, layering and import
+  rules, naming, error handling, logging — and treat a rule this repo states as outranking
+  the default you would otherwise reach for. It also applies a fixed smell baseline that
+  holds even where the repo documents nothing.
+- **Spec axis** — it cites the originating ticket. Turn the ticket into an explicit list of
+  requirements and acceptance criteria before you build, and keep the list. A requirement
+  satisfied for the cases you happened to think of and open for the rest is a finding, not a
+  nitpick: a guard keyed on field names while the schema admits other shapes, a format
+  normalised on one code path and not on its twin, a rule enforced in the happy path only.
+
+Neither axis rejects on taste — every finding it may raise carries a citation. So the way to
+pass it is to have read what it will cite.
+
 ## Build and verify
 
 Use the `tdd` skill, at pre-agreed seams.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end. For E2E tests, follow the `testing-workflow` skill's "E2E policy for implementation runs" — per-slice targeted runs, full E2E delegated to the PR's CI check, never a full in-session E2E run without consent. Follow the project's mandatory checks (AGENTS.md / CLAUDE.md) if it declares any.
 
-Once done, use the `two-axis-review` skill to review the work against both the repo's standards and the originating spec.
+Once done, use the `two-axis-review` skill to review the work against both the repo's standards and the originating spec, with the standards notes and the requirement list you gathered before building in hand.
+
+**Fix every blocking finding it raises, in this session, and re-run the axis that raised it.** A blocking finding you leave standing is the round-trip this step exists to prevent: the independent reviewers will raise it again, and by then the fix costs a fresh implementation instead of an edit.
 
 Commit your work to the worktree's branch.
 
@@ -58,4 +87,4 @@ If anything in this session started Docker containers — test infrastructure, a
 
 ## Completion
 
-The invocation is complete when this one ticket-sized slice meets its acceptance criteria, affected checks pass under the project's test policy, both review axes have completed, the worktree's branch contains the committed result, and its PR is open and reported by URL (or, on a forge-less repo, the branch is pushed and named). Every Docker stack this session started is down. No other frontier ticket has been started.
+The invocation is complete when this one ticket-sized slice meets its acceptance criteria, affected checks pass under the project's test policy, both review axes have completed with no blocking finding left open, the worktree's branch contains the committed result, and its PR is open and reported by URL (or, on a forge-less repo, the branch is pushed and named). Every Docker stack this session started is down. No other frontier ticket has been started.
