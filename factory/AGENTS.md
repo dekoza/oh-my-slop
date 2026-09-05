@@ -48,8 +48,9 @@ question is which rows have become the module's job to state, not what the ceili
 - **`stop` is the other exemption, and the table carries both**: it ends a run whose controller
   loaded its policy at start, so a config the loader rejects must not take it down; the load stays
   fail-closed for every verb that decides anything from policy. — `cli/verbs.mjs` · §10.5, §11.2
-- **The exempt `stop` walks up to the repo root itself** and reads no file: its run, lease row, and
-  stream are durable state, and its refusals stay its own. — `controller/stop.mjs` · §10.5, §11.1
+- **The exempt `stop` walks up to the repo root itself** and reads no policy file: its run, lease
+  row, and stream are durable state, and its refusals stay its own — including `no-repo-root`, the
+  one that exits 1 with §10.3's usage class. — `controller/stop.mjs` · §10.3, §10.5, §11.1
 - **§11.8's legacy-key disposition table is data**: one row maps and reports, a legacy key no row
   names refuses the migration, the five holes it leaves are `TODO` sentinels the loader hard-fails
   on, and `.pi/factory.v1.json` is preserved before anything is written. — `migrate/document.mjs` · §11.8

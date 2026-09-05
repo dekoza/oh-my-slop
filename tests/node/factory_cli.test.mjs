@@ -190,13 +190,14 @@ test("every config-requiring verb refuses on a bad config rather than running", 
 	}
 });
 
-test("exactly two verbs are exempt from the load, and each says why (#205)", () => {
+test("exactly two verbs are exempt from the load: stop and migrate (#205)", () => {
 	// The set is asserted here rather than left to the loop above, because the
 	// loop's `filter` reads the table it is meant to police: a verb that quietly
-	// gained the exemption would make the loop skip it and pass.
+	// gained the exemption would make the loop skip it and pass. Sorted, because
+	// the membership is the invariant and the table's row order is not.
 	assert.deepEqual(
-		VERBS.filter((verb) => !VERB_TABLE[verb].requiresConfig),
-		["stop", "migrate"],
+		VERBS.filter((verb) => !VERB_TABLE[verb].requiresConfig).toSorted(),
+		["migrate", "stop"],
 	);
 });
 

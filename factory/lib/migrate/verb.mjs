@@ -16,9 +16,12 @@ import { readMandatoryCommands } from "./matrix.mjs";
  * putting the two behind one verb would mean doctor's read-only reputation
  * needed an asterisk.
  *
- * It is also the one verb that does **not** require a loadable config: it is
- * what turns an unloadable v1 file into a loadable one, so depending on a
- * successful load would make it unreachable exactly when it is needed.
+ * It is also one of the two verbs that do **not** require a loadable config: it
+ * is what turns an unloadable v1 file into a loadable one, so depending on a
+ * successful load would make it unreachable exactly when it is needed. The
+ * other is `stop` (§10.5), exempt for an unrelated reason — it ends a run whose
+ * controller is not reading the file — and neither reads a *degraded* config:
+ * this one reads the rejected document itself, and that one reads none.
  *
  * Two things are true of everything below, and they are why the order is what it
  * is. **Nothing is written until the whole migration has succeeded**, so a

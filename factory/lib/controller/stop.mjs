@@ -24,7 +24,10 @@ import { openStore } from "../state/store.mjs";
  * in-flight ticket executions are abandoned mid-flight. The load stays
  * fail-closed for every verb that decides something from policy; this one
  * decides nothing from it, and so it walks up to the repo root itself, exactly
- * as discovery would (§11.1), and reads no file at all.
+ * as discovery would (§11.1), and opens the store from there without reading
+ * the policy file. An invocation that belongs to no repository has no state
+ * root to address, and refuses as `no-repo-root` rather than crashing on a
+ * root that is null.
  *
  * The record is the interface. There is deliberately no pid here and no
  * signal: the controller polls its own run's stream, and a request written to
@@ -97,6 +100,15 @@ export const STOP_ERROR_REASONS = Object.freeze([
 	"run-ambiguous",
 ]);
 
+/**
+ * §10.3's exit code per reason, beside the set rather than at the call site
+ * that refuses: a reason and the code it exits with are one decision, and
+ * splitting them is how a member acquires whichever code its throw site
+ * happened to be near. Every refusal *about the run* is `refused` (8); the
+ * exception is listed, because it is the one about the operator's line.
+ */
+const STOP_ERROR_EXIT_CODES = Object.freeze({ "no-repo-root": EXIT_USAGE });
+
 export class FactoryStopError extends Error {
 	/**
 	 * @param {string} reason one of STOP_ERROR_REASONS
@@ -131,7 +143,6 @@ export async function runStop({ cwd, agentDir = null, now = Date.now }) {
 				`No git repository root above ${cwd}; \`factory stop\` addresses the run recorded for one repository.`,
 				{ from: cwd },
 			),
-			EXIT_USAGE,
 		);
 	}
 
@@ -315,6 +326,9 @@ export function requestReport(event) {
 	return { kind: event.kind, actor: event.payload.actor, at: event.occurred_at, seq: event.seq };
 }
 
-function refusal(error, exitCode = EXIT_REFUSED) {
-	return { error: { kind: error.reason, message: error.message, ...error.details }, exitCode };
+function refusal(error) {
+	return {
+		error: { kind: error.reason, message: error.message, ...error.details },
+		exitCode: STOP_ERROR_EXIT_CODES[error.reason] ?? EXIT_REFUSED,
+	};
 }
