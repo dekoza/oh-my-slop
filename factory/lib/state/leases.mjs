@@ -130,6 +130,26 @@ export function parseCapacitySlot(name) {
  * @param {{ now?: () => number }} [options] the clock, injectable for tests
  * @returns {Readonly<object>} the registry
  */
+function acquireLease({ db, appendEvent }, { name, identity, event = null, fencedTo = null }, at) {
+	requireLeaseName(name);
+	const ttlMs = LEASE_TTLS[name] ?? null;
+	const incumbent = readLease(db, name);
+	if (incumbent !== null) {
+		if (!hasLapsed(incumbent, at)) refuseHeld(name, incumbent);
+		// Only the controller has a TTL. Capacity never expires by the clock.
+		deleteLease(db, name, incumbent.token);
+	}
+	const generation = fencedTo ?? mintGeneration(db);
+	const token = randomBytes(16).toString("hex");
+	const expiresAt = ttlMs === null ? null : at + ttlMs;
+	db.prepare(
+		`INSERT INTO lease(name, holder_token, fencing_generation, expires_at, renewed_at, identity)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+	).run(name, token, generation, expiresAt, at, JSON.stringify(identity));
+	if (event !== null) appendEvent(event);
+	return Object.freeze({ name, token, fencingGeneration: generation, expiresAt, renewedAt: at, ttlMs, identity });
+}
+
 export function openLeases(store, { now = Date.now } = {}) {
 	return Object.freeze({
 		/** The registry's clock, so a holder cannot keep a second, disagreeing one. */
@@ -154,40 +174,13 @@ export function openLeases(store, { now = Date.now } = {}) {
 		 * @returns {Readonly<object>} the hold, whose token is the ownership proof
 		 * @throws {FactoryStateError} `lease-held` when a live holder has it
 		 */
-		acquire: ({ name, identity, event = null, fencedTo = null }) =>
-			store.transaction(({ db, appendEvent }) => {
-				requireLeaseName(name);
-				const at = now();
-				const ttlMs = LEASE_TTLS[name] ?? null;
-				const incumbent = readLease(db, name);
-				if (incumbent !== null) {
-					if (!hasLapsed(incumbent, at)) refuseHeld(name, incumbent);
-					// §10.4: a controller lease that is free *or expired* is adopted.
-					// Nothing probes the previous holder's process to decide that —
-					// the clock and the new generation are the whole mechanism.
-					deleteLease(db, name, incumbent.token);
-				}
+		acquire: (request) => store.transaction((tx) => acquireLease(tx, request, now())),
 
-				const generation = fencedTo ?? mintGeneration(db);
-				const token = randomBytes(16).toString("hex");
-				const expiresAt = ttlMs === null ? null : at + ttlMs;
-
-				db.prepare(
-					`INSERT INTO lease(name, holder_token, fencing_generation, expires_at, renewed_at, identity)
-					 VALUES (?, ?, ?, ?, ?, ?)`,
-				).run(name, token, generation, expiresAt, at, JSON.stringify(identity));
-				if (event !== null) appendEvent(event);
-
-				return Object.freeze({
-					name,
-					token,
-					fencingGeneration: generation,
-					expiresAt,
-					renewedAt: at,
-					ttlMs,
-					identity,
-				});
-			}),
+		/** §9.4: initial ticket/model grants commit together or neither does. */
+		acquireAll: (requests) => store.transaction((tx) => {
+			const at = now();
+			return Object.freeze(requests.map((request) => acquireLease(tx, request, at)));
+		}),
 
 		/**
 		 * §4.8's liveness write. The generation is untouched — a renewal is the

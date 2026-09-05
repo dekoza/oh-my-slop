@@ -6,6 +6,17 @@ import { schedule } from "../../factory/lib/controller/scheduler.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import { openCapacityPool, capacityPlanOf } from "./helpers/factory-store.mjs";
 
+test("#223: a competing model hold rolls back the entire initial lease pair", async (t) => {
+	const { leases } = await openCapacityPool(t);
+	const model = "capacity:model:local:0";
+	const occupied = leases.acquire({ name: model, identity: {} });
+	assert.throws(() => leases.acquireAll([
+		{ name: "capacity:ticket:0", identity: {} }, { name: model, identity: {} },
+	]), { reason: "lease-held" });
+	assert.equal(leases.inspect("capacity:ticket:0"), null);
+	assert.equal(leases.inspect(model).token, occupied.token);
+});
+
 const profiles = {
 	gpt: { kind: "pi", model: "gpt/model" },
 	claude: { kind: "claude", model: "opus" },

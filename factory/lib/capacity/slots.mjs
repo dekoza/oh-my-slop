@@ -117,17 +117,16 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 			return null;
 		}
 
-		const ticketSlot = take({ pool: POOLS.ticket, resourceClass: null, index: ticketIndex, ticket, attempt, at });
-
+		const shapes = [
+			{ pool: POOLS.ticket, resourceClass: null, index: ticketIndex, ticket, attempt, at },
+			{ pool: POOLS.model, resourceClass, index: modelIndex, ticket, attempt, at },
+		];
 		try {
-			const modelSlot = take({ pool: POOLS.model, resourceClass, index: modelIndex, ticket, attempt, at });
+			const held = leases.acquireAll(shapes.map(grantRequest));
 			clearWait({ ticket, resourceClass });
-			return Object.freeze({ ticket: ticketSlot, model: modelSlot });
+			return Object.freeze({ ticket: slotHold(held[0], shapes[0]), model: slotHold(held[1], shapes[1]) });
 		} catch (error) {
-			// Nothing else writes these rows while this controller holds the lease,
-			// so this is a genuine surprise rather than contention. The ticket slot
-			// is given back rather than left held by a lane that never started.
-			ticketSlot.release({ reason: "acquisition-failed", at });
+			if (error instanceof FactoryStateError && error.reason === "lease-held") return null;
 			throw error;
 		}
 	}
@@ -147,9 +146,15 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 			return null;
 		}
 
-		const slot = take({ pool: POOLS.model, resourceClass, index, ticket, attempt, at });
-		clearWait({ ticket, resourceClass });
-		return slot;
+		const shape = { pool: POOLS.model, resourceClass, index, ticket, attempt, at };
+		try {
+			const slot = slotHold(leases.acquire(grantRequest(shape)), shape);
+			clearWait({ ticket, resourceClass });
+			return slot;
+		} catch (error) {
+			if (error instanceof FactoryStateError && error.reason === "lease-held") return null;
+			throw error;
+		}
 	}
 
 	/**
@@ -200,10 +205,10 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 	 * own** (§9.4): a slot is fenced to the lease that took it, so a stale
 	 * controller's row is recognisable as superseded however late it was written.
 	 */
-	function take({ pool, resourceClass, index, ticket, attempt, at }) {
+	function grantRequest({ pool, resourceClass, index, ticket, attempt, at }) {
 		const name = slotName(pool, resourceClass, index);
 		const fence = hold.fence();
-		const held = leases.acquire({
+		return {
 			name,
 			fencedTo: fence.generation,
 			identity: { run, ticket, attempt, pool, class: resourceClass },
@@ -223,9 +228,7 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 					fencing_generation: fence.generation,
 				},
 			},
-		});
-
-		return slotHold(held, { pool, resourceClass, index, ticket, attempt });
+		};
 	}
 
 	/**
