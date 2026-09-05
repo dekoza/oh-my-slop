@@ -109,6 +109,17 @@ export const STOP_ERROR_REASONS = Object.freeze([
  */
 const STOP_ERROR_EXIT_CODES = Object.freeze({ "no-repo-root": EXIT_USAGE });
 
+// The co-location made mechanical, the way `cli/exit-codes.mjs` makes §10.3's:
+// the lookup falls back to `refused`, so a row naming no reason — a typo, or a
+// reason since renamed — would cost nothing at all and quietly hand its verb
+// the default. Only this direction can be checked: a reason with no row *is*
+// the fallback, and that is the rule rather than an omission.
+for (const reason of Object.keys(STOP_ERROR_EXIT_CODES)) {
+	if (!STOP_ERROR_REASONS.includes(reason)) {
+		throw new Error(`Stop exit-code row "${reason}" is not one of this verb's refusal reasons.`);
+	}
+}
+
 export class FactoryStopError extends Error {
 	/**
 	 * @param {string} reason one of STOP_ERROR_REASONS
