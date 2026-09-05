@@ -17,7 +17,14 @@ import { resolveStage } from "../../factory/lib/pipeline/stages.mjs";
 import { LEASE_NAMES, openLeases } from "../../factory/lib/state/leases.mjs";
 import { createGiteaReader } from "../../factory/lib/tracker/gitea.mjs";
 import { createGiteaWriter } from "../../factory/lib/tracker/writer.mjs";
-import { commitInto, moveRemoteBase, repairAttempt, workedAttempt } from "./helpers/factory-git.mjs";
+import {
+	commitInto,
+	damagedTicketSegment,
+	damagedTicketSegmentValue,
+	moveRemoteBase,
+	repairAttempt,
+	workedAttempt,
+} from "./helpers/factory-git.mjs";
 import { fakeGitea, giteaIssue, giteaPull } from "./helpers/factory-tracker.mjs";
 import { FIXED_NOW, manualTimers } from "./helpers/factory-store.mjs";
 
@@ -555,6 +562,64 @@ test("a commit with no §7.3 correlation trailer stops the publication (§7.3, �
 	assert.deepEqual([...integrated.detail.untrailed], [fixture.head]);
 	assert.throws(() => git(fixture.remote, ["rev-parse", "--verify", `refs/heads/${fixture.branch}`]));
 	assert.equal(fixture.gitea.pulls.length, 0);
+});
+
+test("the phase that read the trailers is the phase that records them (§8.7, #210)", async (t) => {
+	// §8.7 attests what verify measured at the commit it measured. Re-deriving the
+	// reading at publication would be a second answer to a question durable state
+	// already holds — the same rule the commit list is under.
+	const fixture = await integrating(t, { trailer: damagedTicketSegment });
+
+	const verified = await integrationVerify(fixture.store, fixture.clone, fixture.context);
+
+	assert.deepEqual(
+		verified.detail.misstamped.map((entry) => ({ ...entry })),
+		[{ commit: verified.detail.head, trailer: damagedTicketSegmentValue(fixture) }],
+	);
+});
+
+test("a fumbled trailer segment publishes, and §8.7 records that it did (§7.3, #210)", async (t) => {
+	// The whole pipeline said yes — verify passed and both axes approved — and the
+	// only thing wrong was one mangled segment of a string the worker itself
+	// wrote. Discarding the deliverable over it is the defect this closes.
+	const fixture = await integrating(t, { trailer: damagedTicketSegment });
+	recordVerify(fixture, await integrationVerify(fixture.store, fixture.clone, fixture.context));
+	recordReview(fixture);
+
+	const integrated = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(integrated.outcome, "integrated");
+	assert.equal(fixture.gitea.pulls.length, 1);
+	const misspelling = damagedTicketSegmentValue(fixture);
+	assert.deepEqual(
+		integrated.detail.misstamped.map((entry) => ({ ...entry })),
+		[{ commit: integrated.detail.head, trailer: misspelling }],
+	);
+
+	// Recorded where an incident review reads, not only in the journal: §8.7's
+	// attestation is the immutable statement of what was published.
+	const attested = JSON.parse(readArtifact(fixture.store, integrated.detail.attestation).toString("utf8"));
+	assert.deepEqual(attested.integration.misstamped, [{ commit: integrated.detail.head, trailer: misspelling }]);
+});
+
+test("a verify record written before #210 is attested from the re-derivation, never as clean (§8.7, #210)", async (t) => {
+	// The upgrade window: an execution that verified under the old code reaches
+	// integrate with no trailer reading on its record. Attesting that absence as
+	// an empty list would state the damaged trailer was not there, so the range —
+	// which is the recorded one, at the recorded head — is read again instead.
+	const fixture = await integrating(t, { trailer: damagedTicketSegment });
+	const verified = await integrationVerify(fixture.store, fixture.clone, fixture.context);
+	const { misstamped, ...beforeThisTicket } = verified.detail;
+	recordVerify(fixture, { outcome: verified.outcome, detail: beforeThisTicket });
+	recordReview(fixture);
+
+	const integrated = await integratePublish(fixture.store, fixture.clone, fixture.context);
+
+	assert.equal(integrated.outcome, "integrated");
+	const attested = JSON.parse(readArtifact(fixture.store, integrated.detail.attestation).toString("utf8"));
+	assert.deepEqual(attested.integration.misstamped, [
+		{ commit: integrated.detail.head, trailer: damagedTicketSegmentValue(fixture) },
+	]);
 });
 
 test("publishing twice is the committed publication, not a second PR or a second push (§7.7)", async (t) => {

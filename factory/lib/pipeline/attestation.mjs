@@ -22,7 +22,11 @@ import { stageResults } from "./stages.mjs";
  *   blocking set is here even though §8.7 keeps it off the PR, because the
  *   artifact is the record and the PR is the summary;
  * - **the before/after HEAD guard result** for each axis, which is §6.8's
- *   authoritative proof that a read-only role stayed read-only.
+ *   authoritative proof that a read-only role stayed read-only;
+ * - **every published commit whose §7.3 trailer was damaged**, with the text as
+ *   the worker wrote it (#210) — integration accepts one whose attempt segment
+ *   still names the execution, and this is the only place that acceptance is
+ *   written down.
  *
  * **It is built from durable state, never from the caller's memory.** The review
  * half is read back off the stage records the fan-out resolved, so a controller
