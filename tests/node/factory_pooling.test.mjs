@@ -168,6 +168,13 @@ test("#223: losing the initial acquisition retries on free capacity without a le
 	for (const slot of competing) fixture.leases.release(slot);
 });
 
+test("#223: capacity planning does not count a default replaced by pooling as implement capacity", () => {
+	const onlyClaude = { ...activeRouting, pooling: { implement: ["claude"] } };
+	const planned = capacityPlan({ concurrency: { maxTicketExecutions: 6, resources: { gpt: 2, "claude-code": 5 } }, profiles, activeRouting: onlyClaude });
+	assert.equal(planned.implementSlots, 5);
+	assert.equal(planned.effectiveConcurrency, 5);
+});
+
 const profiles = {
 	gpt: { kind: "pi", model: "gpt/model" },
 	claude: { kind: "claude", model: "opus" },

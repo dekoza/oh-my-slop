@@ -460,14 +460,12 @@ export function profilesReachedBy(routing) {
  * @returns {Set<string>}
  */
 export function profilesForRole(routing, role) {
-	const reached = new Set([routing.roles[role]].flat());
+	const defaults = [routing.roles[role]].flat();
+	const reached = new Set(defaults.flatMap((profile, axis) => poolingOf(routing, role, axis) ?? [profile]));
 	for (const rule of routing.rules) {
 		if (rule.role === role) for (const profile of [rule.profile].flat()) reached.add(profile);
 	}
 	for (const profile of [fallbacksOf(routing, role)].flat(2)) reached.add(profile);
-	for (const profile of [poolingOf(routing, role, 0), poolingOf(routing, role, 1)].flat()) {
-		if (profile !== null) reached.add(profile);
-	}
 
 	return reached;
 }
