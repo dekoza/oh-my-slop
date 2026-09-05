@@ -694,7 +694,7 @@ function runScheduler(store, capacity, entry, hold, context, { executor, resumed
 			implementDispatch(
 				{ profiles: context.config.profiles, activeRouting: context.activeRouting },
 				member,
-				{ exhaustion: capacity.exhaustion, at },
+				{ exhaustion: capacity.exhaustion, capacity, at },
 			),
 		execute: executor ?? refuseExecution,
 		// §10.5: the stop request is **polled at ticket boundaries**, which is

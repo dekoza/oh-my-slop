@@ -141,7 +141,7 @@ export async function schedule({
 	 * and therefore keeps waiting; abandon is the only request that wakes this
 	 * boundary without a lane result.
 	 */
-	async function awaitOne() {
+	async function awaitOne({ observed = null, retry = false } = {}) {
 		for (;;) {
 			const lane = await Promise.race([
 				...[...lanes.values()].map((live) => live.promise),
@@ -149,6 +149,8 @@ export async function schedule({
 			]);
 			if (lane === null) {
 				if (abandoning()) return false;
+				capacity.assertActive();
+				if (observed !== null && (!claiming() || retry || JSON.stringify(capacity.occupancy()) !== observed)) return false;
 				continue;
 			}
 			lanes.delete(lane.ticket);
@@ -194,6 +196,8 @@ export async function schedule({
 	}
 
 	while (claiming() && !abandoning()) {
+		capacity.assertActive();
+		const occupancyAtDecision = JSON.stringify(capacity.occupancy());
 		// Re-read, every time. §3.1: membership is recomputed at every scheduling
 		// decision, and direct-ticket sets are pinned by definition but their
 		// states are still read live.
@@ -211,6 +215,7 @@ export async function schedule({
 		 * like §11.5's routing refusal, which the run remembers for good.
 		 */
 		const memoBlocked = new Map();
+		const busy = new Set();
 		// §2.1: a run has **one** ticket execution per ticket, so a ticket this
 		// run already executed is not a candidate again — whatever the tracker
 		// still says about it. §8.9's dispositions are what remove it from the
@@ -220,7 +225,7 @@ export async function schedule({
 				running: lanes.keys(),
 				executed: [...settled, ...released].map((lane) => lane.ticket),
 				refused: refused.map((entry) => entry.ticket),
-				blocked: memoBlocked.keys(),
+				blocked: [...memoBlocked.keys(), ...busy],
 			});
 		let candidate = claimNext();
 
@@ -252,7 +257,12 @@ export async function schedule({
 			// statement than #154's single blocked class — every profile the role
 			// can reach was tried, and the seam's record says which and why.
 			if (route.profile === null) {
-				memoBlocked.set(candidate.ticket, blockedMember(candidate.ticket, route));
+				if (route.considered.some((seen) => seen.state === "busy")) {
+					busy.add(candidate.ticket);
+					for (const seen of route.considered.filter((seen) => seen.state === "busy")) {
+						capacity.exhaustion.wait({ ticket: candidate.ticket, resourceClass: seen.class, at: at() });
+					}
+				} else memoBlocked.set(candidate.ticket, blockedMember(candidate.ticket, route));
 				candidate = claimNext();
 				continue;
 			}
@@ -264,8 +274,8 @@ export async function schedule({
 			// Nothing claimable now. With lanes running, one terminating may change
 			// that; with none, the scope is drained as far as this loop can take it.
 			exhaustedAtDecision = [...memoBlocked.values()];
-			if (lanes.size === 0) break;
-			await awaitOne();
+			if (lanes.size === 0 && busy.size === 0) break;
+			await awaitOne({ observed: busy.size > 0 ? occupancyAtDecision : null });
 			continue;
 		}
 
@@ -288,8 +298,8 @@ export async function schedule({
 		const slots = capacity.acquireLane({ ticket: candidate.ticket, resourceClass: route.class, at: at() });
 		if (slots === null) {
 			exhaustedAtDecision = [...memoBlocked.values()];
-			if (lanes.size === 0) break;
-			await awaitOne();
+			if (lanes.size === 0 && !route.pooling) break;
+			await awaitOne({ observed: occupancyAtDecision, retry: Boolean(route.pooling) });
 			continue;
 		}
 

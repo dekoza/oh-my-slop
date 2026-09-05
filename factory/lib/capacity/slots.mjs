@@ -642,6 +642,7 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 
 	return Object.freeze({
 		plan,
+		assertActive: () => hold.fence(),
 		acquireLane,
 		acquireModel,
 		exhaustion,

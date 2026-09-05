@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { implementDispatch, capacityPlan } from "../../factory/lib/capacity/plan.mjs";
 import { dispatchOrder, selectRoute } from "../../factory/lib/worker/dispatch.mjs";
+import { schedule } from "../../factory/lib/controller/scheduler.mjs";
+import { setTimeout as delay } from "node:timers/promises";
 import { openCapacityPool, capacityPlanOf } from "./helpers/factory-store.mjs";
 
 const profiles = {
@@ -32,4 +34,33 @@ test("#223: held attempts choose GPT first, then Claude by proportional occupanc
 	assert.deepEqual(second.pooling.order, ["gpt", "claude"]);
 	held.model.release({ reason: "test" });
 	held.ticket.release({ reason: "test" });
+});
+
+test("#223: a relevant model release admits another lane before the releasing ticket terminates", async (t) => {
+	const { capacity } = await openCapacityPool(t, { plan: capacityPlanOf({ ticketSlots: 2, classes: [{ class: "gpt", size: 1, profiles: ["gpt"] }] }) });
+	const routing = { ...activeRouting, pooling: { implement: ["gpt"] } };
+	let releaseFirst;
+	const gate = new Promise((resolve) => { releaseFirst = resolve; });
+	let firstSlot;
+	const launched = [];
+	let reads = 0;
+	const running = schedule({ capacity,
+		frontier: async () => { reads++; return { claimable: [1, 2] }; },
+		dispatch: (member) => dispatch(capacity, routing, member.ticket),
+		execute: async ({ ticket, slots }) => {
+			launched.push(ticket);
+			if (ticket === 1) { firstSlot = slots.model; await gate; }
+			return { disposition: "published" };
+		},
+	});
+	try {
+		await delay(80);
+		assert.deepEqual(launched, [1]);
+		const waitingReads = reads;
+		await delay(80);
+		assert.equal(reads, waitingReads, "unchanged capacity must not poll the tracker");
+		firstSlot.release({ reason: "between-phases" });
+		await delay(80);
+		assert.deepEqual(launched, [1, 2]);
+	} finally { releaseFirst(); await running; }
 });
