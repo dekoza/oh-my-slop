@@ -1,3 +1,4 @@
+import { providerOf, resourceClassOf } from "../config/profiles.mjs";
 import { createWorkerAdapter } from "./adapter.mjs";
 import { containsPath, realpathOrNull } from "./closure.mjs";
 import { FactoryWorkerError } from "./errors.mjs";
@@ -15,7 +16,8 @@ import * as realTransport from "./transports.mjs";
 
 /**
  * The pi half of §6.1's adapter: every pi difference — RPC mode, skill flags,
- * provider-derived resource classes — lives here and nowhere else.
+ * the model catalogue a resource class is observed through — lives here and
+ * nowhere else.
  *
  * §6.2's layer 2 is **a disposable RPC session with the exact production skill
  * flags** (`--no-skills --skill <root>`), required to answer `skill:<name>`
@@ -150,10 +152,10 @@ export function piSpellingArguments(skillsRoots, sessionArgs, profile) {
  *
  * @param {object} input
  * @param {ReadonlyArray<string>} input.skillsRoots the handshake's skills-root participants
- * @param {ReadonlyArray<{ name: string, model: string }>} input.profiles the pi
- *   profiles the active routing reaches
+ * @param {ReadonlyArray<{ name: string, model: string, endpoint?: { url: string } }>} input.profiles
+ *   the pi profiles the active routing reaches, which are also what the classes
+ *   this probe must observe are derived from (#209)
  * @param {Record<string, number>} input.declaredResources `concurrency.resources`
- * @param {ReadonlyArray<string>} input.requiredClasses the pi classes those profiles derive
  * @param {{ env?: object, sessionArgs?: ReadonlyArray<string>, cwd?: string }} [input.session]
  *   §6.8's controller-owned binding: the config-directory variable, the posture's
  *   flags, and the directory a worker pane runs in
@@ -167,7 +169,6 @@ export async function probePiRuntime({
 	skillsRoots,
 	profiles,
 	declaredResources,
-	requiredClasses,
 	session: binding = {},
 	transport = {},
 	binary = "pi",
@@ -205,10 +206,12 @@ export async function probePiRuntime({
 		}
 	}
 
+	const required = requiredClasses(profiles);
 	const classes = {};
-	for (const className of [...requiredClasses].sort()) {
+	for (const className of [...required.keys()].sort()) {
 		classes[className] = await observeClass(io, {
 			className,
+			...required.get(className),
 			models,
 			declared: declaredResources[className] ?? null,
 			timeoutMs,
@@ -464,14 +467,45 @@ function modelInventory(data) {
 }
 
 /**
- * §9.7's capacity observation for one class: the endpoint from the inventory,
- * `max_instances` from the endpoint's own `/props`. A class whose endpoint
- * answers without the router fact — a cloud provider — has nothing to observe
- * and stays declared-only; a class whose endpoint does not answer at all is
- * the named preflight failure, never capacity 0.
+ * The classes the probe must observe, and what each one is observed **with**.
+ *
+ * A class name no longer implies a provider (#209), so both come from the
+ * profiles rather than from the name: the provider segments say which models in
+ * the session's one catalogue belong to the class, and a bound profile's own
+ * address is what `/props` is asked of. Derived here, from the same profiles
+ * §11.5's model check reads, because a caller-supplied class list would be a
+ * second derivation of `resourceClassOf` free to disagree with the loader's.
+ *
+ * @param {ReadonlyArray<{ name: string, model: string, endpoint?: { url: string } }>} profiles
+ * @returns {Map<string, { providers: Set<string>, declaredEndpoint: string | null }>}
  */
-async function observeClass(io, { className, models, declared, timeoutMs, failures }) {
-	const inventory = models.filter((model) => model.provider === className);
+function requiredClasses(profiles) {
+	const required = new Map();
+	for (const profile of profiles) {
+		const className = resourceClassOf({ ...profile, kind: "pi" });
+		if (!required.has(className)) {
+			required.set(className, { providers: new Set(), declaredEndpoint: profile.endpoint?.url ?? null });
+		}
+		required.get(className).providers.add(providerOf(profile.model));
+	}
+
+	return required;
+}
+
+/**
+ * §9.7's capacity observation for one class: the endpoint the profile bound or,
+ * for a class nothing bound, the one pi's inventory names; `max_instances` from
+ * that endpoint's own `/props`. A class whose endpoint answers without the
+ * router fact — a cloud provider — has nothing to observe and stays
+ * declared-only; a class whose endpoint does not answer at all is the named
+ * preflight failure, never capacity 0.
+ *
+ * The inventory is the probe session's single catalogue, so for a bound class it
+ * proves the **provider** is installed rather than what that machine holds; the
+ * machine itself is what the `/props` call answers for.
+ */
+async function observeClass(io, { className, providers, declaredEndpoint, models, declared, timeoutMs, failures }) {
+	const inventory = models.filter((model) => providers.has(model.provider));
 	const record = (fields) =>
 		Object.freeze({ class: className, declared, models: Object.freeze(inventory.map((model) => model.id)), ...fields });
 
@@ -480,16 +514,18 @@ async function observeClass(io, { className, models, declared, timeoutMs, failur
 			probeFinding(
 				"class-unreachable",
 				`Resource class "${className}" is required by the active routing, and the live pi session's inventory has ` +
-					`no ${className}/… model, so there is no endpoint to reach. The fix is to install or enable the ` +
-					`provider's models in pi, or to route away from it — continuing as capacity 0 would drain a run that did ` +
-					`nothing (§9.7).`,
+					`no model from ${[...providers].sort().join(", ")}, so there is no endpoint to reach. The fix is to ` +
+					`install or enable the provider's models in pi, or to route away from it — continuing as capacity 0 ` +
+					`would drain a run that did nothing (§9.7).`,
 				{ class: className, endpoint: null },
 			),
 		);
 		return record({ endpoint: null, reachable: false, max_instances: null });
 	}
 
-	const endpoint = inventory.find((model) => model.endpoint !== null)?.endpoint ?? null;
+	// A bound endpoint is the address by construction — it is what the class *is*
+	// (#209) and what the pane will talk to, so pi's catalogue cannot answer for it.
+	const endpoint = declaredEndpoint ?? inventory.find((model) => model.endpoint !== null)?.endpoint ?? null;
 	if (endpoint === null) {
 		failures.push(
 			probeFinding(

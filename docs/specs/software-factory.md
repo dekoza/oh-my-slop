@@ -1899,10 +1899,39 @@ pane knob is rejected for a second reason: `maxTicketExecutions: 2, maxWorkerPan
 deadlocks the review phase, and catching that statically would mean encoding the pipeline's
 pane arithmetic into the config loader anyway.
 
-**Resource classes are derived, not declared per profile.** For `kind: pi`, the class is the
-**provider segment of the model id** (`local/thinkingcap-qwen3.6-27b` → `local`); for
-`kind: claude`, the constant `claude-code`. Two profiles naming different presets on the same
-endpoint then correctly share one slot pool, **because they share one GPU**.
+**Resource classes are derived, not declared per profile.** Two profiles naming different
+presets on the same endpoint correctly share one slot pool, **because they share one GPU** —
+which is what the class is: **the endpoint a profile talks to** (#209).
+
+- **`kind: pi` with a bound `endpoint`** (§11.4) — `endpoint-<host>-<port>`, the port the
+  scheme implies when the URL omits it (`http://192.168.129.7:11545` →
+  `endpoint-192.168.129.7-11545`). The scheme is not part of the name: one host and port is one
+  machine. A host the name cannot spell — an IPv6 literal — is a **load error**, because the
+  name becomes a segment of §9.4's `capacity:model:<class>:<i>` row and that row is read back on
+  recovery.
+- **`kind: pi` with no endpoint bound** — the **provider segment of the model id**
+  (`local/thinkingcap-qwen3.6-27b` → `local`). One prefix then fronts exactly one address, pi's
+  own, so prefix and endpoint name the same pool. This is what every profile written before
+  #209 keeps. **`endpoint-…` is reserved**: a model whose provider segment claims that
+  namespace is a load error, because a provider free to spell itself into it could silently
+  share a pool with a machine.
+- **`kind: claude`** — the constant `claude-code`. Hosted providers bind no endpoint by design:
+  for Claude and for OpenRouter the pool is an **account quota** rather than a machine, and
+  `claude-code` and `openrouter` already name it.
+
+**Provider-prefix derivation held only while one prefix fronted one machine.** A second local
+box, and `local/qwen3.8-27b` on each derives one class, `local`; sizing it 2 then permits two
+attempts that may both land on the same GPU. The alternative — a router prefix per machine —
+separates the classes but leaves `worker.piExtensions[].env`'s single address global, putting
+the machine inventory in model strings where nothing validates it.
+
+> **Migration.** Binding an endpoint **changes the profile's class name**, and
+> `concurrency.resources` is keyed by class. A map that sized `local` must rename that key to
+> the endpoint-derived class for every profile that now binds one — keeping `local` only while
+> some reachable profile still binds none. The rename cannot be half-done: §11.6's two
+> reachability rules refuse an unsized active class (`resource-unsized`, which names the class
+> to write) and a sized class no routing reaches (`resource-unreachable`). A config that binds
+> no endpoint anywhere is unaffected.
 
 ### 9.2 The operator constraint is arithmetic, not a rule
 
@@ -2394,6 +2423,16 @@ Profiles carry `kind`, `model`, and optionally `effort` / `thinking` / `startupT
 because non-passing is a **recordable observation** in the handshake, not an inference. The
 last two are §6.6's two clocks, each with a code-owned default when the profile does not
 declare it.
+
+**A `kind: pi` profile may bind an `endpoint`** — `{ "env": <variable>, "url": <address> }`,
+the machine that profile's sessions talk to (#209). Both halves are declared: a variable with
+no address exports emptiness, an address no variable carries reaches no process, and the
+variable belongs to the extension supplying the provider rather than to the factory. It is the
+one profile key §9.1 derives the resource class from, and it rides only that profile's panes —
+spread over `worker.piExtensions[].env`'s run-wide declaration, under §6.8's isolation
+variables, and recorded in the run manifest beside the profile's model. **The class itself
+stays underivable from anything declared**: two profiles on one endpoint cannot be talked into
+separate pools.
 
 **`permissionMode` is removed from author control.** Permissions derive from the **role** a
 profile is bound to at dispatch. Both Claude postures use the non-interactive `dontAsk` mode,
@@ -3242,3 +3281,4 @@ touching everything twice.
 | 2026-08-30 | #189 gives the builder outbox a **mandatory requirement trace** and makes review-spec its judge — the substance of SwarmForge's two-call audit (`docs/surveys/swarm-forge-adoption-survey-2026-08-30.md`, item 3) without its mechanism: no second model turn, and no self-attestation the same agent grades. §6.6's `completed` gains `trace`, a non-empty list of `{requirement, evidence}` rows quoting a ticket line and naming a path and test, stated as a **prompt obligation** in the builder template like §7.3's trailer, and named as a deliverable in the `implement` skill's closing checklist so a worker under pi or Claude produces it from the skill as well. **Two levels, two owners**, exactly §8.4's split for the verdict: `worker/outbox.mjs` judges a written trace's shape — non-empty, both fields text, malformed is `invalid-result` naming the row — and never its truth; whether one is owed is the role's own expectations (`writesTrace`), read back by the builder executor, so a `completed` builder record with none is `invalid-result` on §8.10's unchanged fresh-retry row. Two things had to change for the refusal to be readable: an invalid result's stage detail now carries the controller's problems rather than `null`, and §8.10's `implement × invalid-result` row marks its evidence **fact** — the detail is the controller's schema and role judgement and never the refused record — so §8.5's brief tells the fresh attempt which block it omitted instead of leaving it to repeat the omission. §8.4: the fan-out reads the trace off the reviewed attempt's own implement record — never a parameter, #165's reason — hands every axis the same context, and the template renders it for the role whose expectations say `checksTrace`, inside the same computed untrusted boundary §8.5 uses, with the two checks stated: an unaddressed ticket line is blocking citing the line, a row the diff does not bear out is blocking citing the row. The reviewer, not the controller, judges truth; a review reached with no trace on the record refuses rather than briefing the axis blind. Not done, by design: the controller never compares a row to the snapshot, because a controller that did would be a third reviewer with no verdict slot to write in. | #189 |
 | 2026-08-30 | #194 routes a **rebase conflict to a `rebase-repair` before any fresh-retry, spending no product budget**. Evidence: run 01M18SGJZJ9NGS2ENVEB9AMR3C discarded attempt …-t188-a1 — 1774 node + 885 pytest green, one hunk conflicting with the sibling lane's §20 row — and paid 58 minutes of pipeline for a marginally weaker replacement, because §8.10 conflated *the tip conflicts textually* with *the work is invalid*, and its fresh-retry budget of 1 made a conflict every #75 member is structurally guaranteed to meet a throughput failure. §8.5 gains a third tier: a builder attempt at the prior tip, with the base branch fetched into the worker's reach, briefed under the controller-verified heading with `base_commit`, `previous_base`, the conflict paths, and `git diff --stat previous_base..base_commit` as the controller read it, and with the prior outbox summary untrusted as a repair's is; the worker rebases, resolves, keeps the intent, or ends `needs-human`, and the result is harvested, verified, reviewed and integrated as any attempt's — nothing new is trusted, and the controller still resolves nothing. §8.6: it spends nothing and is bounded once per ticket execution, read from the journal as §9.9 bounds a reroute; §11.6 declares no number for it. §8.10's two `rebase-conflict` rows carry the bound as data — the row taken thereafter is the pre-#194 row unchanged — and the stated property is corrected; every prompt a conflict produces, the fresh-retry's included, carries the facts, which #110's "no fresh-retry row carries untrusted evidence" survives, since they are facts. §7.4's harvest predicate under the tier reads commits-ahead against the merge-base with the fetched base, since after a rebase the prior tip is no ancestor and the base's movement would count as the worker's. Found alongside: `pipeline/integration.mjs` promised an operator a conflict to `cd` into while `rebaseAttempt` had aborted it — the retained worktree is the attempt's tip plus the evidence ref, and `git rebase <base_commit>` is how to see what would not replay. | #194 |
 | 2026-08-30 | #199 makes a cleared `factory:needs-human` boundary preserve committed work without preserving an execution. Before the new claim, the controller pins the default base, reads the latest factory-authored pause identity from the ticket snapshot, and asks git for that attempt branch's retained tip; a non-empty `rev-list <default>..<tip>` makes the new execution's first attempt branch directly from the tip, while absent/unparseable pause evidence, a missing branch, or an empty delta falls back to the pinned default base with the reason recorded on the claim. The new execution still receives a new history entry, attempt chain, budgets, and declared route. The prompt carries the whole pause/answer chain in comment order: worker questions stay inside §8.5's untrusted boundary; non-factory comments after a pause carry verified login/comment-id provenance at snapshot trust, render once rather than again in the raw comment list, and an empty answer set is stated as a controller fact. §7.3's integration trailer predicate accepts the controller-verified prior run ids in that chain, so inherited commits retain their honest original trailers while arbitrary same-ticket history remains refused. §§3.4, 7.2, 7.3, and 8.5 corrected in place. | #199 |
+| 2026-09-05 | #209 makes §9.1's resource class **endpoint-derived**: a `kind: pi` profile may bind its own `endpoint` (§11.4), and its class becomes `endpoint-<host>-<port>` rather than the provider segment, which survives only as what a profile binding none derives. Provider-prefix derivation was an approximation that held while one prefix fronted one machine; a second local box makes two profiles derive one class and a size of 2 double-books one GPU, and `worker.piExtensions[].env` is run-wide, so the second machine had no address at all. The rejected alternative — a router prefix per machine — separates the classes but puts the machine inventory in model strings where nothing validates it. Hosted providers are unchanged: `claude-code` and `openrouter` name an account quota, which is what their pool is. The class stays derived, never declared; §9.1 carries the `concurrency.resources` migration. | #209 |

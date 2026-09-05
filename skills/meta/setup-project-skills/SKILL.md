@@ -112,7 +112,9 @@ A yes writes `.pi/factory.json` — the single policy file the `factory` binary 
 repository root — with the resolved repository, remote, explicit `tea` login name,
 authenticated assignee, default branch, worker profiles, routing, mechanical checks,
 concurrency sizes, and retry budgets. It also ensures `.worktrees/` is ignored. The file
-contains executable automation policy and model selectors, never endpoints or credentials.
+contains executable automation policy and model selectors, never credentials. A setup run
+writes no per-profile `endpoint` either: that key names a second machine behind one provider
+prefix, which is a decision the operator makes once they have one.
 For another tracker, state that the first factory release supports Gitea only and skip the
 file.
 
@@ -163,7 +165,9 @@ right and costs real time:
 2. **Derive `concurrency.resources` from the profiles you just wrote, never from a menu.**
    A class is `claude-code` for every `kind: claude` profile, and the provider segment of
    the model selector for every `kind: pi` one — `local` for `local/qwen3`, `openrouter` for
-   `openrouter/z-ai/glm-5.2`. Size exactly the classes the routing reaches: an unsized class
+   `openrouter/z-ai/glm-5.2`. (A `kind: pi` profile that binds its own `endpoint` derives the
+   class from that address instead; a setup run writes none, so the provider segment is the
+   whole rule here.) Size exactly the classes the routing reaches: an unsized class
    the active routing reaches refuses the load, and so does a sized class no declared
    routing set reaches ("Dead config lies about what will run"). Writing a `local` resource
    beside a routing that only names Claude profiles produces a file that cannot load.

@@ -410,6 +410,143 @@ test("every Claude profile shares the one claude-code class, whatever its model"
 	assert.equal(resourceClassOf({ kind: "claude", model: "fable" }), "claude-code");
 });
 
+// ── An endpoint-bound class is the endpoint, not the model prefix (§9.1, #209) ─
+
+/** A config whose builder talks to a machine of its own. */
+function boundToEndpoint(url) {
+	return { kind: "pi", model: "local/qwen3", endpoint: { env: "PI_LOCAL_ROUTER_BASE_URL", url } };
+}
+
+test("a pi profile that binds an endpoint derives its class from that endpoint", () => {
+	assert.equal(
+		resourceClassOf(boundToEndpoint("http://192.168.129.7:11545")),
+		"endpoint-192.168.129.7-11545",
+	);
+	assert.equal(resourceClassOf(boundToEndpoint("https://rico.lab/v1")), "endpoint-rico.lab-443");
+});
+
+test("two profiles naming one model on two machines derive two classes", (t) => {
+	const config = clone();
+	config.profiles.builder = boundToEndpoint("http://192.168.129.7:11545");
+	config.profiles.second = boundToEndpoint("http://192.168.129.8:11545");
+	config.routing.roles.review = ["second", "second"];
+	config.concurrency.resources = { "endpoint-192.168.129.7-11545": 1, "endpoint-192.168.129.8-11545": 1 };
+
+	const { config: loadedConfig } = loaded(t, config);
+	assert.notEqual(
+		resourceClassOf(loadedConfig.profiles.builder),
+		resourceClassOf(loadedConfig.profiles.second),
+	);
+});
+
+test("two profiles on one endpoint share one class, whatever models they name", (t) => {
+	const config = clone();
+	config.profiles.builder = boundToEndpoint("http://192.168.129.7:11545");
+	config.profiles.second = { ...boundToEndpoint("http://192.168.129.7:11545"), model: "local/mistral" };
+	config.routing.roles.review = ["second", "second"];
+	config.concurrency.resources = { "endpoint-192.168.129.7-11545": 1 };
+
+	const { config: loadedConfig } = loaded(t, config);
+	assert.equal(
+		resourceClassOf(loadedConfig.profiles.builder),
+		resourceClassOf(loadedConfig.profiles.second),
+	);
+});
+
+test("a profile that binds no endpoint keeps the class it already had", (t) => {
+	const config = clone();
+	config.profiles.hosted = { kind: "pi", model: "openrouter/z-ai/glm-5.2" };
+	config.profiles.reviewer = { kind: "claude", model: "opus" };
+	config.routing.roles.freshRetry = "hosted";
+	config.routing.roles.review = ["reviewer", "reviewer"];
+	config.concurrency.resources = { local: 1, openrouter: 1, "claude-code": 1 };
+
+	const { config: loadedConfig } = loaded(t, config);
+	assert.equal(resourceClassOf(loadedConfig.profiles.builder), "local");
+	assert.equal(resourceClassOf(loadedConfig.profiles.hosted), "openrouter");
+	assert.equal(resourceClassOf(loadedConfig.profiles.reviewer), "claude-code");
+});
+
+test("the endpoint is never a declared class: a profile naming its own class is refused", (t) => {
+	for (const declared of [{ class: "rico" }, { resourceClass: "rico" }]) {
+		const config = clone();
+		Object.assign(config.profiles.builder, declared);
+
+		const error = loadFailure(t, config);
+		assert.equal(error.reason, "unknown-key");
+		assert.match(error.message, /profiles\.builder/);
+	}
+});
+
+test("an endpoint is refused on a kind: claude profile, which has no machine to bind", (t) => {
+	const config = clone();
+	config.profiles.reviewer = {
+		kind: "claude",
+		model: "opus",
+		endpoint: { env: "PI_LOCAL_ROUTER_BASE_URL", url: "http://192.168.129.7:11545" },
+	};
+	config.routing.roles.review = ["reviewer", "reviewer"];
+	config.concurrency.resources["claude-code"] = 1;
+
+	const error = loadFailure(t, config);
+	assert.equal(error.reason, "unknown-key");
+	assert.match(error.message, /profiles\.reviewer/);
+});
+
+test("an endpoint the slot-row grammar cannot name is refused at load, never mangled", (t) => {
+	const refusals = [
+		["ftp://192.168.129.7:11545", /http or https/],
+		["http://[::1]:11545", /class name/],
+		["http://operator:hunter2@192.168.129.7:11545", /credential/],
+		["not-a-url", /absolute/],
+	];
+
+	for (const [url, expected] of refusals) {
+		const config = clone();
+		config.profiles.builder = boundToEndpoint(url);
+		config.concurrency.resources = { "endpoint-192.168.129.7-11545": 1 };
+
+		const error = loadFailure(t, config);
+		assert.equal(error.reason, "invalid-value");
+		assert.equal(error.details.at, "profiles.builder.endpoint.url");
+		assert.match(error.message, expected);
+	}
+});
+
+test("the endpoint's variable is judged by the rules a promoted extension's environment is", (t) => {
+	for (const name of ["lower_case", "HOME", "FACTORY_RUN", "ROUTER_API_TOKEN"]) {
+		const config = clone();
+		config.profiles.builder = { kind: "pi", model: "local/qwen3", endpoint: { env: name, url: "http://rico:11545" } };
+		config.concurrency.resources = { "endpoint-rico-11545": 1 };
+
+		const error = loadFailure(t, config);
+		assert.equal(error.reason, "invalid-value");
+		assert.equal(error.details.at, "profiles.builder.endpoint.env");
+	}
+});
+
+test("an endpoint binding declares both halves: a variable with no address binds nothing", (t) => {
+	for (const endpoint of [{ env: "PI_LOCAL_ROUTER_BASE_URL" }, { url: "http://rico:11545" }, "http://rico:11545"]) {
+		const config = clone();
+		config.profiles.builder = { kind: "pi", model: "local/qwen3", endpoint };
+		config.concurrency.resources = { "endpoint-rico-11545": 1 };
+
+		const error = loadFailure(t, config);
+		assert.equal(error.reason, typeof endpoint === "string" ? "invalid-value" : "missing-key");
+		assert.match(error.details.at, /^profiles\.builder\.endpoint/);
+	}
+});
+
+test("a model whose provider segment claims the derived-class namespace is refused", (t) => {
+	const config = clone();
+	config.profiles.builder = { kind: "pi", model: "endpoint-rico-11545/qwen3" };
+	config.concurrency.resources = { "endpoint-rico-11545": 1 };
+
+	const error = loadFailure(t, config);
+	assert.equal(error.reason, "invalid-value");
+	assert.equal(error.details.at, "profiles.builder.model");
+});
+
 // ── Routing: three roles, no implicit fallback, review written twice (§11.5) ──
 
 test("all three routing roles are required, and a missing one refuses by name", (t) => {

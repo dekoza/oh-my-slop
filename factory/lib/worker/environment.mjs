@@ -213,10 +213,15 @@ export function prepareWorkerEnvironment({
 		 * environment exists to close. Declared rather than typed, so the set does
 		 * not also become pane scrollback the operator and every `pane read` sees.
 		 *
-		 * @param {{ kind: string, posture: string }} session
+		 * `endpoint` is §11.4's per-profile binding, when the profile dispatched
+		 * has one: the machine that profile's class is derived from (#209), so the
+		 * pane has to talk to it rather than to whatever address the run-wide
+		 * extension declaration names.
+		 *
+		 * @param {{ kind: string, posture: string, endpoint?: { env: string, url: string } | null }} session
 		 * @returns {{ env: Record<string, string | undefined>, paneEnv: Record<string, string>, args: ReadonlyArray<string> }}
 		 */
-		binding({ kind, posture }) {
+		binding({ kind, posture, endpoint = null }) {
 			// **Both** variables, in both bindings. A pi worker that shells out to
 			// `claude` — or the reverse — would otherwise land in the operator's own
 			// config with all their skills and hooks, which is the one thing this
@@ -230,9 +235,13 @@ export function prepareWorkerEnvironment({
 				// the extensions, and the isolation variables are spread after it, so
 				// no declared value can displace them even in an unvalidated block.
 				const extensionEnv = Object.assign({}, ...extensions.map((extension) => extension.env));
+				// The profile's own endpoint is spread over the run-wide one: the
+				// extension declaration is the address for profiles that bind none,
+				// and a bound profile's pane must reach the machine its slot came from.
+				const endpointEnv = endpoint === null ? {} : { [endpoint.env]: endpoint.url };
 				return Object.freeze({
-					env: Object.freeze({ ...env, ...extensionEnv, ...configDirs }),
-					paneEnv: Object.freeze({ ...extensionEnv, ...configDirs }),
+					env: Object.freeze({ ...env, ...extensionEnv, ...endpointEnv, ...configDirs }),
+					paneEnv: Object.freeze({ ...extensionEnv, ...endpointEnv, ...configDirs }),
 					args: Object.freeze([
 						...piSessionArguments({ posture }),
 						...extensions.flatMap((extension) => ["--extension", extension.path]),

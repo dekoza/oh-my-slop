@@ -31,13 +31,25 @@ export const LEASE_NAMES = Object.freeze({
 });
 
 /**
+ * The class segment of a model row, **spelled once** and used by all three
+ * grammars below — the name this module builds, the set `acquire` admits, and
+ * the parse that reads a name back. §9.1's endpoint-derived classes put a host
+ * in this segment (#209), so it carries dots; it can never carry the `:` the
+ * grammar separates on.
+ */
+const CLASS_SEGMENT = "[0-9A-Za-z.-]+";
+
+/**
  * §4.6's objects are a closed set, and `acquire` refuses anything outside it.
  * That is what makes "**there is no worktree lease**" a property of the code
  * rather than a note in a document: no caller can mint one.
  */
 export const LEASE_NAME_PATTERN = new RegExp(
-	`^(${LEASE_NAMES.controller}|${LEASE_NAMES.integration}|capacity:ticket:\\d+|capacity:model:[0-9A-Za-z-]+:\\d+)$`,
+	`^(${LEASE_NAMES.controller}|${LEASE_NAMES.integration}|capacity:ticket:\\d+|capacity:model:${CLASS_SEGMENT}:\\d+)$`,
 );
+
+/** The same grammar as a reader: one capture for the class, one for the index. */
+const MODEL_SLOT_PATTERN = new RegExp(`^capacity:model:(${CLASS_SEGMENT}):(\\d+)$`);
 
 /** §4.8: the controller row is renewed every 10s — that is the liveness fact. */
 export const LEASE_RENEWAL_MS = 10_000;
@@ -103,7 +115,7 @@ export function parseCapacitySlot(name) {
 	const ticket = /^capacity:ticket:(\d+)$/.exec(name ?? "");
 	if (ticket !== null) return Object.freeze({ pool: POOLS.ticket, class: null, index: Number(ticket[1]) });
 
-	const model = /^capacity:model:([0-9A-Za-z-]+):(\d+)$/.exec(name ?? "");
+	const model = MODEL_SLOT_PATTERN.exec(name ?? "");
 	if (model !== null) return Object.freeze({ pool: POOLS.model, class: model[1], index: Number(model[2]) });
 
 	return null;

@@ -2,6 +2,7 @@ import { isAbsolute, normalize } from "node:path";
 
 import { FactoryWorkerError } from "../worker/errors.mjs";
 import { mergeDenies } from "../worker/permissions.mjs";
+import { requireDeclarableEnvName, requireDeclarableEnvValue } from "./declared-env.mjs";
 import { FactoryConfigError } from "./errors.mjs";
 import { requireArray, requireNoUnknownKeys, requireNonEmptyString, requireObject } from "./shape.mjs";
 
@@ -137,27 +138,10 @@ function anchoredPath(path, at, configPath) {
 	);
 }
 
-/** The variables the launch declares on a worker pane's tab (§6.5's channel). */
-const RESERVED_ENV_NAMES = Object.freeze(["PI_CODING_AGENT_DIR", "CLAUDE_CONFIG_DIR", "HOME", "PATH"]);
-const ENV_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
-const SECRET_SHAPED = /TOKEN|SECRET|PASSWORD|CREDENTIAL|API_?KEY/;
-
 /**
  * A declared environment the launch can carry to a worker pane and an operator
- * report can show.
- *
- * **A secret-shaped name is refused because it has a channel and this is not
- * it** — §6.8's promoted capability artifacts — not because of where the value
- * would be displayed. Since #157 the set is declared on the pane's tab rather
- * than typed at its shell, so it no longer enters the scrollback; it does still
- * become the worker process's environment, readable by any same-user process,
- * which is the bound §6.8 already records for ambient credentials on this host.
- * A refusal reason that named the scrollback would now be a false explanation
- * of a correct refusal.
- *
- * The isolation and identity variables are refused too — the binding would win
- * anyway (it spreads them last), but a declaration that silently loses is
- * worse than one that is refused with the reason.
+ * report can show. What a name and a value may be is `declared-env.mjs`'s, so
+ * §11.4's per-profile endpoint binding is judged by the same predicate.
  */
 function validateExtensionEnv(env, at, configPath) {
 	if (env === undefined) return Object.freeze({});
@@ -165,39 +149,8 @@ function validateExtensionEnv(env, at, configPath) {
 	requireObject(env, `${at}.env`, configPath, `${at}.env`);
 	for (const [name, value] of Object.entries(env)) {
 		const envAt = `${at}.env.${name}`;
-		const refuse = (sentence, expected) => {
-			throw new FactoryConfigError("invalid-value", `${configPath}: ${envAt} ${sentence}`, {
-				file: configPath,
-				at: envAt,
-				found: name,
-				expected,
-			});
-		};
-
-		if (!ENV_NAME_PATTERN.test(name)) {
-			refuse(`is not a portable environment variable name (${ENV_NAME_PATTERN}).`, "an UPPER_SNAKE_CASE name");
-		}
-		if (RESERVED_ENV_NAMES.includes(name) || name.startsWith("FACTORY_")) {
-			refuse(
-				`names a variable the controller owns: the isolation and identity channels are not declarable (§6.5, §6.8).`,
-				"a name outside the controller-owned set",
-			);
-		}
-		if (SECRET_SHAPED.test(name)) {
-			refuse(
-				`looks like a credential, and a declared value becomes the worker process's environment, readable by any ` +
-					`same-user process. Credentials cross only as §6.8's promoted capability artifacts.`,
-				"a non-secret capability value, such as an endpoint URL",
-			);
-		}
-		if (typeof value !== "string" || value === "" || /[\p{Cc}]/u.test(value)) {
-			throw new FactoryConfigError(
-				"invalid-value",
-				`${configPath}: ${envAt} must be a non-empty single-line string. It is recorded in the run manifest and ` +
-					`printed in operator reports, where an empty value declares nothing and a control character is unreadable.`,
-				{ file: configPath, at: envAt, found: typeof value, expected: "a non-empty string without control characters" },
-			);
-		}
+		requireDeclarableEnvName(name, envAt, configPath);
+		requireDeclarableEnvValue(value, envAt, configPath);
 	}
 
 	return Object.freeze({ ...env });
