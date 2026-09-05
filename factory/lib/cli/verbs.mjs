@@ -1,4 +1,5 @@
 import { KIND_FLAG, RUN_FLAG, runCleanupExecute, runCleanupPlan } from "../cleanup/verb.mjs";
+import { ROUTING_SET_FLAG } from "../config/load.mjs";
 import { FOREGROUND_FLAG } from "../controller/launch.mjs";
 import { PARENT_FLAG } from "../controller/scope.mjs";
 import { NEW_RUN_FLAG, runStart } from "../controller/start.mjs";
@@ -50,10 +51,15 @@ export const VERB_TABLE = Object.freeze({
 		// detached into a Herdr pane, and the flag runs the invocation as the
 		// controller in the invoking terminal — the shape a dying SSH connection
 		// would otherwise take with it.
+		//
+		// `--routing-set` is §11.5's per-run departure from the routing the file
+		// declares. It carries its value on the flag for the reason `--run` does,
+		// and it is read before the verb runs — the config load is what it changes.
 		flags: {
 			[NEW_RUN_FLAG]: { spec: "§10.4" },
 			[PARENT_FLAG]: { spec: "§3.1" },
 			[FOREGROUND_FLAG]: { spec: "§10.1" },
+			[ROUTING_SET_FLAG]: { spec: "§11.5", value: "routing set" },
 		},
 		spec: "§10.1, §10.3",
 	},
@@ -79,6 +85,11 @@ export const VERB_TABLE = Object.freeze({
 			// `doctor` reads what `start` would claim, so the two must be asked the
 			// question in exactly one way.
 			[PARENT_FLAG]: { spec: "§3.1" },
+			// The same selector `start` takes, for the same reason: `doctor` is
+			// where an operator reads the capacity plan a set would run under
+			// *before* starting a run under it, and a plan for the routing they did
+			// not select answers the wrong question.
+			[ROUTING_SET_FLAG]: { spec: "§11.5", value: "routing set" },
 		},
 		spec: "§3.1, §3.2, §10.5",
 	},

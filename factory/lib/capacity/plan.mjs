@@ -34,9 +34,10 @@ export const MAX_PANES_PER_TICKET = 2;
  * @param {object} inputs
  * @param {{ maxTicketExecutions: number, resources: Record<string, number> }} inputs.concurrency
  * @param {Record<string, object>} inputs.profiles the validated profile table
- * @param {{ roles: object, rules: ReadonlyArray<object> }} inputs.activeRouting the
- *   routing **this run** selected, because a dormant set's classes are sized but
- *   never in play (§11.5)
+ * @param {{ set?: string | null, roles: object, rules: ReadonlyArray<object> }} inputs.activeRouting
+ *   the routing **this run** selected, because a dormant set's classes are sized
+ *   but never in play (§11.5). `set` is its name, or null for the file-level
+ *   routing; a routing composed by hand carries no `set` and is read as that
  * @returns {Readonly<object>} the pool, and the two numbers §9.7 asks `status`
  *   and `doctor` to print beside each other
  */
@@ -63,6 +64,21 @@ export function capacityPlan({ concurrency, profiles, activeRouting }) {
 	].reduce((total, className) => total + concurrency.resources[className], 0);
 
 	return Object.freeze({
+		/**
+		 * Which §11.5 routing these numbers are the plan *for* — a named set, or
+		 * null for the file-level routing.
+		 *
+		 * It rides the plan rather than being fetched beside it because the plan is
+		 * what every reader already holds: `status` and `doctor` print the set
+		 * against the sizes it produced, so an operator reading a capacity section
+		 * can tell a comfortable ceiling under one routing from the same ceiling
+		 * under another.
+		 *
+		 * **The absent form is spelled here and nowhere downstream**, the way
+		 * `fallbacksOf` spells its own: a hand-composed routing has no name, and a
+		 * second `?? null` at the reader would be a second opinion about that.
+		 */
+		set: activeRouting.set ?? null,
 		declaredCeiling: concurrency.maxTicketExecutions,
 		ticketSlots: concurrency.maxTicketExecutions,
 		classes,

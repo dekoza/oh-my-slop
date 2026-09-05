@@ -11,7 +11,7 @@ import { CONTROLLER_LEASE } from "../../factory/lib/domain/vocabulary.mjs";
 import { openLeases } from "../../factory/lib/state/leases.mjs";
 import { openStore } from "../../factory/lib/state/store.mjs";
 import { makePackage, onPath } from "./helpers/factory-package.mjs";
-import { makeRepo } from "./helpers/factory-repo.mjs";
+import { cloneConfigWithRoutingSet, makeRepo } from "./helpers/factory-repo.mjs";
 import { herdrAnswering, leaseIdentity, makeAgentDir, makeHome } from "./helpers/factory-store.mjs";
 import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 
@@ -29,12 +29,12 @@ import { workerTransportsAnswering } from "./helpers/factory-worker.mjs";
 const AVAILABLE = herdrAnswering();
 const UNAVAILABLE = herdrAnswering(false);
 
-function invocation(t, { herdr = AVAILABLE, runHerdr = null } = {}) {
+function invocation(t, { herdr = AVAILABLE, runHerdr = null, config } = {}) {
 	const root = makePackage(t);
 	const executable = join(root, "factory", "bin", "factory.mjs");
 
 	const context = {
-		cwd: makeRepo(t),
+		cwd: makeRepo(t, { config }),
 		agentDir: makeAgentDir(t),
 		executable,
 		env: { PATH: onPath(t, executable), HOME: makeHome(t), HERDR_PANE_ID: "w1:p7" },
@@ -155,6 +155,30 @@ test("the launcher creates the workspace and runs the foreground start in its ro
 	assert.equal(calls[1][1], "run");
 	assert.equal(calls[1][2], "w9:p1");
 	assert.deepEqual(calls[1].slice(3), [context.executable, "start", "--foreground", "42"]);
+});
+
+test("--routing-set is re-typed onto the detached controller's line (§11.5)", async (t) => {
+	// The launcher loads the config only to answer §10.4; the controller it
+	// starts loads it again from its own argv. A selector dropped here would run
+	// the whole run under the routing the operator did not ask for.
+	const { runner, calls } = scriptedHerdr();
+	const context = invocation(t, { runHerdr: runner, config: cloneConfigWithRoutingSet() });
+
+	const { exitCode, value } = await runCli(["start", "42", "--routing-set=post-subscription"], context);
+	const line = [context.executable, "start", "--foreground", "--routing-set=post-subscription", "42"];
+
+	assert.equal(exitCode, EXIT_OK);
+	assert.deepEqual(value.report.command, line);
+	assert.deepEqual(calls[1].slice(3), line, "the launched line dropped the selection");
+	assert.match(value.report.foreground_alternative, /--routing-set=post-subscription/);
+});
+
+test("a start with no --routing-set launches the line it always did", async (t) => {
+	const context = invocation(t, { runHerdr: scriptedHerdr().runner, config: cloneConfigWithRoutingSet() });
+
+	const { value } = await runCli(["start", "42"], context);
+
+	assert.deepEqual(value.report.command, [context.executable, "start", "--foreground", "42"]);
 });
 
 test("a live run containing the scope resolves before any Herdr contact", async (t) => {

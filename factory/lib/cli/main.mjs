@@ -1,6 +1,6 @@
 import { registerArtifactProbes } from "../artifacts/probes.mjs";
 import { FactoryConfigError } from "../config/errors.mjs";
-import { loadFactoryConfig } from "../config/load.mjs";
+import { loadFactoryConfig, ROUTING_SET_FLAG } from "../config/load.mjs";
 import { registerGitProbes } from "../git/probes.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
 import { EXIT_NOT_IMPLEMENTED, EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "./exit-codes.mjs";
@@ -135,7 +135,15 @@ async function dispatch(parsed, context) {
 	let loaded = null;
 	if (verb.requiresConfig) {
 		try {
-			loaded = loadFactoryConfig({ cwd: context.cwd });
+			// §11.5's per-run selector, read here because the load is what it
+			// changes: a verb handler could not apply it without loading the config
+			// a second time. A verb that does not declare the flag never reaches
+			// this line with one — an undeclared flag refused as unknown above — so
+			// the value is read without asking which verb is running.
+			loaded = loadFactoryConfig({
+				cwd: context.cwd,
+				routingSet: parsed.values.get(ROUTING_SET_FLAG) ?? null,
+			});
 		} catch (error) {
 			if (!(error instanceof FactoryConfigError)) throw error;
 			return failure(

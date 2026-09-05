@@ -43,6 +43,11 @@ question is which rows have become the module's job to state, not what the ceili
 - **Budget bounds are per-key**, never one block-wide `max`. — `config/defaults.mjs` · §11.6
 - **§6.8's `worker` block is *additions* to floors that live in code**, so its absent form is the
   empty addition, spelled once so no consumer branches on `undefined`. — `config/worker.mjs` · §6.8
+- **A named routing set is selected by the flag, then `routing.activeSet`, then the file-level
+  routing**, resolved in one place; both names refuse as `unknown-routing-set`, and `activeSet` is
+  validated whether or not the flag departs from it. — `config/routing.mjs` · §11.5
+- **`--routing-set` is re-typed onto the detached controller's line**, because that controller is a
+  separate process loading the config again from its own argv. — `controller/launch.mjs` · §11.5
 - **`factory migrate` is the only verb that writes the operator's config**, and one of the two
   exempt from the load. — `migrate/verb.mjs` · §11.8
 - **`stop` is the other exemption, and the table carries both**: it ends a run whose controller

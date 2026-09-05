@@ -95,6 +95,13 @@ export function capacitySnapshot(store, { plan, run, rows, generation, at = Date
 
 	return Object.freeze({
 		at,
+		/**
+		 * §11.5's active set, or null for the file-level routing — the routing
+		 * every number below is the plan for. An operator who selected a set with
+		 * `--routing-set` reads back which one answered, and one who selected none
+		 * reads that the file's own routing did.
+		 */
+		routing_set: plan.set,
 		declared_ceiling: plan.declaredCeiling,
 		/**
 		 * §9.2: `local` is a resource class of size 1, so routing that resolves
