@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { capacityModelSlot, capacityTicketSlot, isSuperseded, parseCapacitySlot, POOLS } from "../state/leases.mjs";
 import {
 	classAvailability,
@@ -76,7 +77,7 @@ export const RETAINED_REASONS = Object.freeze({
  *   the pool owns the memo, the wiring owns the runtime
  * @returns {Readonly<object>} the pool
  */
-export function openCapacity(store, { leases, plan, run, hold, now = Date.now, probeClass = null }) {
+export function openCapacity(store, { leases, plan, run, hold, now = Date.now, probeClass = null, interrupted = () => false }) {
 	/**
 	 * Which lanes have already announced a block, per pool. §9.7 emits
 	 * `capacity.waiting` **once when a lane first blocks on a class, never per
@@ -88,6 +89,11 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 	 * waiting lanes this one does.
 	 */
 	const announced = new Set();
+
+	function assertActive() {
+		if (interrupted()) throw new DOMException("Capacity wait abandoned (§9.6).", "AbortError");
+		hold.fence();
+	}
 
 	/**
 	 * §9.4's acquisition: **the ticket slot and the implement attempt's model slot
@@ -645,7 +651,15 @@ export function openCapacity(store, { leases, plan, run, hold, now = Date.now, p
 
 	return Object.freeze({
 		plan,
-		assertActive: () => hold.fence(),
+		assertActive,
+		/** Bounded-rate waits still observe abandon and lease loss during long memo windows. */
+		async wait({ ms = 25 } = {}) {
+			assertActive();
+			for (let remaining = ms; remaining > 0; remaining -= 25) {
+				await delay(Math.min(25, remaining));
+				assertActive();
+			}
+		},
 		acquireLane,
 		acquireModel,
 		exhaustion,

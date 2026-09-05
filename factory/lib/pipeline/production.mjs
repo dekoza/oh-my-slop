@@ -1,4 +1,4 @@
-import { setTimeout as delay } from "node:timers/promises";
+import { reserveModelRoute } from "../capacity/selection.mjs";
 
 import { FactoryCapacityError } from "../capacity/errors.mjs";
 import { DEFAULT_EXHAUSTION_MEMO_MS } from "../capacity/exhaustion.mjs";
@@ -16,10 +16,11 @@ import { createPiAdapter } from "../worker/pi.mjs";
 import {
 	allocateAttempt,
 	mintAttempt,
+	mintedDispatch,
 	mintedAttemptBranches,
 	requireAttemptIdentity,
 } from "../worker/attempt.mjs";
-import { dispatchOrder, selectRoute } from "../worker/dispatch.mjs";
+import { dispatchOrder, pooledCandidates, selectRoute } from "../worker/dispatch.mjs";
 import { missingResult, PIPELINE_ROLES, postureOf } from "../worker/roles.mjs";
 import { fedCheckEvidence } from "./feeds.mjs";
 import { createRetrySeam } from "./retry.mjs";
@@ -139,7 +140,7 @@ export function createProductionPipeline(store, context) {
 		// implement model slot were taken for (§9.4, #155). Resolving it again
 		// here could reach a different answer — the memo moves — and the lane
 		// would then be running on a pool it never took.
-		const initialRoute = requireLaneRoute(route, { ticket, attempt });
+		const initialRoute = requireLaneRoute(mintedDispatch(store, { run: runOfAttempt(attempt), ticket, attempt })?.routing ?? route, { ticket, attempt });
 		const initial = await openInitialAttempt({
 			store,
 			clone,
@@ -155,7 +156,11 @@ export function createProductionPipeline(store, context) {
 
 		if (preparation.brief !== null) retryPlans.set(attempt, Object.freeze({ brief: preparation.brief }));
 
+		// One outstanding reservation per lane, consumed by the attempt that
+		// launches. Recovery may bring the live reviewer's slot rather than a1's.
+		const modelReservation = { slot: slots.model };
 		const common = {
+			modelReservation,
 			store,
 			clone,
 			hold,
@@ -174,7 +179,6 @@ export function createProductionPipeline(store, context) {
 			now,
 			capacity,
 			initialAttempt: attempt,
-			initialModelSlot: slots.model,
 			acceptedRuns: preparation.acceptedRuns,
 		};
 
@@ -184,14 +188,15 @@ export function createProductionPipeline(store, context) {
 			ticket,
 			baseBranch: config.git.baseBranch,
 			selectRoute: (request) =>
-				roleRoute({ config, activeRouting, capacity, labels, now }, { ticket, ...request }),
+				roleRoute(common, { ticket, ...request }),
 			workerConfig: worker.environment,
 			readResult: (prior) => endedAttempt(store, initial.identity.run, prior)?.payload.result ?? null,
 			actor: "controller",
 			now,
 		});
 
-		return walkStages(store, {
+		try {
+			return await walkStages(store, {
 			hold,
 			run: initial.identity.run,
 			ticket,
@@ -205,7 +210,10 @@ export function createProductionPipeline(store, context) {
 			budgets: lane.budgets,
 			actor: "controller",
 			now,
-		});
+			});
+		} finally {
+			modelReservation.slot?.release({ reason: "unused-reservation", at: now() });
+		}
 	}
 }
 
@@ -448,11 +456,15 @@ async function withAttemptModelSlot(context, opened, attempt, work) {
 	// adoptable and whose model row is not, and that lane asks the pool for one
 	// here like any later attempt does. The ticket row is what spans the
 	// execution; the model row is per attempt (§9.4).
-	const first = attempt === context.initialAttempt && context.initialModelSlot !== null;
-	let slot = first ? context.initialModelSlot : null;
-	if (!first) {
-		const profile = namedProfile(context.config.profiles, opened.profile);
-		const className = resourceClassOf(profile);
+	const className = resourceClassOf(namedProfile(context.config.profiles, opened.profile));
+	let slot = context.modelReservation.slot;
+	if (slot !== null) {
+		if (slot.class !== className || (slot.attempt !== null && slot.attempt !== attempt)) {
+			throw new FactoryWorkerError("routing-ambiguous", "The held model slot does not match the minted attempt (§9.4).", { attempt, class: className, slot: slot.name });
+		}
+		context.modelReservation.slot = null;
+	}
+	if (slot === null) {
 		while (slot === null) {
 			// #154: an exhausted class is not launched into again before its
 			// expiry, and the expiry is settled by probe, never by the clock —
@@ -468,7 +480,7 @@ async function withAttemptModelSlot(context, opened, attempt, work) {
 					at: context.now(),
 				});
 				const remaining = gate.until === null ? 15_000 : gate.until - context.now();
-				await delay(Math.max(250, Math.min(15_000, remaining)));
+				await context.capacity.wait({ ms: Math.max(250, Math.min(15_000, remaining)) });
 				continue;
 			}
 			slot = context.capacity.acquireModel({
@@ -477,7 +489,7 @@ async function withAttemptModelSlot(context, opened, attempt, work) {
 				attempt,
 				at: context.now(),
 			});
-			if (slot === null) await delay(25);
+			if (slot === null) await context.capacity.wait();
 		}
 	}
 
@@ -518,7 +530,7 @@ function integrationContext(context, { run, ticket, attempt, opened }) {
  * inventory is what knows which is which — a caller spelling the routing role
  * itself would be a second copy of that mapping.
  */
-async function roleRoute({ config, activeRouting, capacity, labels, now }, { ticket, role, axis = null, dispatched = [] }) {
+async function roleRoute({ config, activeRouting, capacity, labels, now, modelReservation }, { ticket, role, axis = null, dispatched = [] }) {
 	const declared = PIPELINE_ROLES.find((entry) => entry.name === role);
 	if (declared === undefined) {
 		throw new FactoryWorkerError("role-invalid", `"${role}" is not a pipeline role, so §11.5 has no order for it.`, {
@@ -529,13 +541,14 @@ async function roleRoute({ config, activeRouting, capacity, labels, now }, { tic
 		});
 	}
 
-	return selectRoute({
-		order: dispatchOrder(activeRouting, { role: declared.routingRole, labels, axis }),
-		profiles: config.profiles,
-		exhaustion: capacity.exhaustion,
-		dispatched,
-		at: now(),
-	});
+	const where = { role: declared.routingRole, labels, axis };
+	const selection = { order: dispatchOrder(activeRouting, where), profiles: config.profiles, dispatched, at: now() };
+	if (pooledCandidates(activeRouting, where) === null) {
+		return selectRoute({ ...selection, exhaustion: capacity.exhaustion });
+	}
+	const reserved = await reserveModelRoute({ ...selection, capacity, ticket, now });
+	modelReservation.slot = reserved.slot;
+	return reserved.route;
 }
 
 /**

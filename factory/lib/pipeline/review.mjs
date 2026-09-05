@@ -281,7 +281,9 @@ async function walkAxis(store, clone, context) {
 		// keyed on **this axis's own role**, which is what keeps §8.4's two axes
 		// independent under a reroute: the other axis's refusals are not in it, so
 		// an exhausted class walks each down its own declared order.
-		const route = await routeAxis({
+		const allocated = allocateAttempt(store, { run, ticket, purpose: axisPurpose({ axis, builderAttempt: context.builderAttempt, tryNumber }) });
+		const existing = mintedDispatch(store, { run, ticket, attempt: allocated.attempt });
+		const route = existing?.routing ?? await routeAxis({
 			axis: axis.name,
 			index,
 			dispatched: refusedProfiles(store, { run, ticket, role: axis.name }),

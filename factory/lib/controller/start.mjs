@@ -456,6 +456,7 @@ async function driveRun(store, hold, context, signals) {
 			activeRouting: context.activeRouting,
 		});
 		const capacity = openCapacity(store, {
+			interrupted: () => latestRequest(operatorRequests(store, entry.run))?.kind === "run.abandon-requested",
 			leases: context.leases,
 			plan,
 			run: entry.run,
