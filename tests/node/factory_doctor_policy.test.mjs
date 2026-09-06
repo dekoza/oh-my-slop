@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { runCli, renderHuman } from "../../factory/lib/cli/main.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
 import { policyFixture } from "./helpers/factory-policy.mjs";
@@ -85,4 +86,16 @@ test("duplicate JSON keys refuse even when escape spelling differs", async (t) =
 	const result = await inspect(fixture);
 	assert.equal(result.exitCode, 1);
 	assert.equal(result.value.error.reason, "invalid-document");
+});
+
+test("repository identity includes the selected login's forge host and SSH port", async (t) => {
+	const fixture = policyFixture(t);
+	for (const url of ["https://other.invalid/acme/widgets.git", "https://forge.invalid/acme/other.git", "ssh://git@forge.invalid:2222/acme/widgets.git"]) {
+		execFileSync("git", ["remote", "set-url", "gitea", url], { cwd: fixture.root });
+		const result = await inspect(fixture);
+		assert.equal(result.exitCode, 1, url);
+		assert.equal(result.value.error.reason, "identity-mismatch");
+	}
+	execFileSync("git", ["remote", "set-url", "gitea", "git@forge.invalid:acme/widgets.git"], { cwd: fixture.root });
+	assert.equal((await inspect(fixture)).exitCode, 0);
 });

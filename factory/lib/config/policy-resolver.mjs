@@ -4,12 +4,15 @@ import { dirname, join } from "node:path";
 import { assertOperatorInventory, assertPolicyRequest, assertPolicyResolution, assertRepositoryPolicy, OPERATOR_INVENTORY_FILE } from "./operator-policy-v1.mjs";
 import { validateRouting } from "./routing.mjs";
 import { policyDiagnostic } from "./policy-diagnostics.mjs";
+import { remoteUrlToRepoSlug, resolveRemoteUrl } from "../git/repo.mjs";
+import { readGiteaLoginIdentity } from "../tracker/gitea.mjs";
+import { FactoryTrackerError } from "../tracker/errors.mjs";
 
 /** §11.9 desired preview: source reads only, never application or admission.
  * Injection names a synthetic managed mount for filesystem tests. The binary
  * supplies no overrides; neither argv nor environment can select inventory.
  */
-export function createDesiredPolicyResolver({ operatorMount = dirname(OPERATOR_INVENTORY_FILE), operatorUid = 0 } = {}) {
+export function createDesiredPolicyResolver({ operatorMount = dirname(OPERATOR_INVENTORY_FILE), operatorUid = 0, readLogin = readGiteaLoginIdentity } = {}) {
 	return Object.freeze({ async resolve(request) {
 		assertPolicyRequest(request);
 		if (request.view !== "desired") throw new TypeError("This resolver only reads desired policy");
@@ -44,6 +47,7 @@ export function createDesiredPolicyResolver({ operatorMount = dirname(OPERATOR_I
 			document = parse(sources[1].bytes);
 			const repository = document;
 			assertRepositoryPolicy(repository, operator, request.routingSet);
+			await verifyRepositoryIdentity(request.repositoryRoot, repository.tracker, readLogin);
 			const routing = validateRouting(repository.routing, operator.profiles, request.routingSet, "operator-policy");
 			const mode = operator.modes[operator.activeMode];
 			const limits = {
@@ -70,6 +74,34 @@ export function createDesiredPolicyResolver({ operatorMount = dirname(OPERATOR_I
 		assertPolicyResolution(resolution, request);
 		return freeze(resolution);
 	} });
+}
+
+async function verifyRepositoryIdentity(root, tracker, readLogin) {
+	let login;
+	try { login = await readLogin(tracker.login); } catch (error) {
+		if (!(error instanceof FactoryTrackerError) && !(error instanceof TypeError) && !(error instanceof SyntaxError)) throw error;
+		refuse("source-unavailable", "tracker.login", "Make the selected tea login's nonsecret metadata readable; no tracker connection was attempted.");
+	}
+	if (login === null) refuse("unknown-reference", "tracker.login", "Configure the selected tea login before inspecting this repository.");
+	const remote = resolveRemoteUrl(root, tracker.remote);
+	let matches = false;
+	try {
+		const forge = new URL(login.url);
+		const scp = /^[^/@]+@([^/:]+):(.+)$/.exec(remote ?? "");
+		const url = scp ? new URL(`ssh://${scp[1]}/${scp[2]}`) : new URL(remote);
+		if (!["http:", "https:"].includes(forge.protocol) || forge.username || forge.password || forge.search || forge.hash) throw new TypeError("Invalid login URL");
+		if (url.protocol === "ssh:") {
+			const ssh = new URL(`ssh://${login.sshHost}`);
+			matches = url.hostname === ssh.hostname && (url.port || "22") === (ssh.port || "22");
+		} else {
+			matches = url.origin === forge.origin && url.pathname.startsWith(`${forge.pathname.replace(/\/$/, "")}/`);
+		}
+		matches &&= !url.password && !url.search && !url.hash && remoteUrlToRepoSlug(remote)?.toLowerCase() === tracker.repo.toLowerCase();
+	} catch (error) {
+		if (!(error instanceof TypeError)) throw error;
+		// Invalid/unresolvable identity is a safe refusal, never source text.
+	}
+	if (!matches) refuse("identity-mismatch", "tracker.remote", "Match the repository remote's forge, port and owner/repository to the selected tea login and tracker.repo.");
 }
 
 function digest(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
