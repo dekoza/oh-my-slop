@@ -57,6 +57,27 @@ async function consume(authority, request) {
 	return assertAdmissionReply(response, request);
 }
 
+test("controller waits without a partial grant on busy, unavailable, revision and compatibility refusals", async () => {
+	const { request, grant } = scenario();
+	for (const fields of [
+		{ status: "busy", contenderId: request.contenderId, reason: "resource", cursor: 7 },
+		{ status: "unavailable", reason: "authority-unavailable", cursor: null, epoch: null },
+		{ status: "unavailable", reason: "ownership-inconclusive", cursor: 7 },
+		{ status: "refused", reason: "revision-conflict" },
+		{ status: "refused", reason: "stale-owner" },
+		{ status: "incompatible", supportedVersions: [2], epoch: null },
+	]) {
+		const response = reply(request, fields);
+		const result = await consume(stub(request, response), request);
+		assert.equal(result.status, fields.status);
+		assert.equal(Object.hasOwn(result, "grant"), false);
+		await assert.rejects(consume(stub(request, { ...response, grant }), request), TypeError);
+	}
+	await assert.rejects(consume(stub(request, reply(request, { status: "busy", contenderId: uuid(99), reason: "resource", cursor: 7 })), request), TypeError);
+	await assert.rejects(consume(stub(request, { ...reply(request, { status: "granted", grant }), contractVersion: 2 }), request), TypeError);
+	await assert.rejects(consume(stub(request, reply(request, { status: "refused", reason: "guess-and-retry" })), request), TypeError);
+});
+
 test("controller receives one indivisible aggregate/resource grant pinned to applied policy", async () => {
 	const { request, grant } = scenario();
 	const result = await consume(stub(request, reply(request, { status: "granted", grant })), request);

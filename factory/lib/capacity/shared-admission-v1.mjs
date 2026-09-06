@@ -90,9 +90,33 @@ export function assertAdmissionRequest(request) {
 /** Validate correlation and safety properties, not external evidence truth. */
 export function assertAdmissionReply(reply, request) {
 	assertAdmissionRequest(request);
+	requireThat(reply?.contractVersion === ADMISSION_CONTRACT_VERSION && reply.operation === request.operation && reply.requestId === request.requestId);
+	if (reply.epoch !== null) positive(reply.epoch);
+	else requireThat(reply.status === "incompatible" || (reply.status === "unavailable" && reply.reason === "authority-unavailable"));
+	if (reply.status === "incompatible") {
+		keys(reply, [...REPLY_BASE, "supportedVersions"]); unique(reply.supportedVersions, positive);
+		return reply;
+	}
+	if (reply.status === "unavailable") {
+		keys(reply, [...REPLY_BASE, "reason", "cursor"]);
+		member(reply.reason, ["authority-unavailable", "ownership-inconclusive", "policy-unavailable", "resource-disabled", "exhausted", "authentication", "endpoint-outage", "no-eligible-route"]);
+		if (reply.cursor !== null) integer(reply.cursor);
+		return reply;
+	}
+	if (reply.status === "refused") {
+		keys(reply, [...REPLY_BASE, "reason"]);
+		member(reply.reason, ["identity-mismatch", "boundary-unproven", "stale-owner", "epoch-mismatch", "revision-conflict", "payload-conflict", "invalid-transition", "unknown-grant"]);
+		return reply;
+	}
+	requireThat(reply.epoch === request.epoch);
+	if (reply.status === "busy") {
+		keys(reply, [...REPLY_BASE, "contenderId", "reason", "cursor"]);
+		requireThat(reply.contenderId === request.contenderId);
+		member(reply.reason, ["aggregate", "resource", "fair-turn", "readmission-in-flight"]); integer(reply.cursor);
+		return reply;
+	}
 	keys(reply, [...REPLY_BASE, "grant"]);
-	requireThat(reply.contractVersion === ADMISSION_CONTRACT_VERSION && reply.operation === request.operation && reply.requestId === request.requestId);
-	requireThat(reply.status === "granted" && reply.epoch === request.epoch);
+	requireThat(reply.status === "granted");
 	grant(reply.grant);
 	const value = reply.grant;
 	requireThat(same(value.owner, request.owner) && same(value.subject, request.subject));
