@@ -101,6 +101,15 @@ test("repository identity includes the selected login's forge host and SSH port"
 	assert.equal((await inspect(fixture)).exitCode, 0);
 });
 
+test("a dormant resource named constructor has zero configured capacity, not an inherited property", async (t) => {
+	const f = policyFixture(t);
+	f.operator.resources.constructor = { identity: { kind: "gpu", hostId: "test_host", deviceId: "other_device" }, enabled: true, limit: 1 };
+	f.save();
+	const result = await inspect(f);
+	assert.equal(result.exitCode, 0);
+	assert.deepEqual(result.value.report.policyResolution.policy.limits.resources, { gpu: 1, constructor: 0 });
+});
+
 test("a replaceable operator mount refuses rather than blessing repository-writable inventory", async (t) => {
 	const fixture = policyFixture(t);
 	chmodSync(dirname(fixture.mount), 0o777);

@@ -48,7 +48,7 @@ export function createDesiredPolicyResolver({ filesystemRoot = "/", operatorUid 
 			const mode = operator.modes[operator.activeMode];
 			const limits = {
 				aggregate: mode.aggregateLimit,
-				resources: Object.fromEntries(Object.entries(operator.resources).map(([name, resource]) => [name, resource.enabled ? (mode.resources[name] ?? 0) : 0])),
+				resources: Object.fromEntries(Object.entries(operator.resources).map(([name, resource]) => [name, resource.enabled && Object.hasOwn(mode.resources, name) ? mode.resources[name] : 0])),
 			};
 			const profileAvailability = Object.fromEntries(Object.entries(operator.profiles).map(([name, profile]) => {
 				const resourceId = operator.bindings[profile.bindingId].resourceId;
