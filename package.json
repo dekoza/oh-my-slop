@@ -22,7 +22,8 @@
     ],
     "extensions": [
       "./extensions/factory",
-      "./extensions/workflow-watchdog"
+      "./extensions/workflow-watchdog",
+      "./extensions/local-router"
     ]
   },
   "scripts": {

@@ -148,9 +148,33 @@ These ship in the repo and load automatically through the root `pi install` mani
 |---|---|---|
 | **[factory](extensions/factory/)** | Automatic | The `/factory` command: the `factory` binary's code run from a pi session — the same verbs, the same answer — plus the one-way monitor trigger (§10.2, §10.6). |
 | **[workflow-watchdog](extensions/workflow-watchdog/)** | Automatic | Monitors pi's workflow for failure patterns: loop detection, consecutive tool errors, and optional supervisor-model escalation. |
-| **[local-router](extensions/local-router/)** | Opt-in | Registers a `local` provider backed by an OpenAI-compatible router (default `http://127.0.0.1:8080`): models are discovered at load time and on refresh. Enable it in your pi settings. If discovery fails, pi continues without local models and warns once per outage (five-second discovery timeout). Use `/reload` after the router returns, or refresh the model catalog. |
+| **[local-router](extensions/local-router/)** | Automatic; requires configuration | Registers a `local` provider backed by the OpenAI-compatible router named by `PI_LOCAL_ROUTER_BASE_URL`. Without a nonblank URL it does nothing: no discovery requests or warnings. Models are discovered at load time and on refresh. If discovery fails, pi continues without local models and warns once per outage (five-second discovery timeout). Use `/reload` after the router returns, or refresh the model catalog. |
 
 </details>
+
+### Local router setup and migration
+
+The router extension now loads with oh-my-slop; a separate installed copy is no longer
+needed. Export your router's URL in the shell that starts pi, for example:
+
+```sh
+export PI_LOCAL_ROUTER_BASE_URL='http://127.0.0.1:8080'
+```
+
+Explicit extension loading also requires this variable now; the extension no longer
+probes localhost by default. Restart pi after changing your shell environment.
+
+If you previously installed a standalone copy at `~/.pi/agent/extensions/local-router/index.ts`,
+disable that copy in pi's global `settings.json` so it cannot register the same provider
+or fail startup. Add this entry to the existing `extensions` array (preserve other entries):
+
+```json
+"extensions": ["-~/.pi/agent/extensions/local-router/index.ts"]
+```
+
+This leaves the standalone files intact while the package supplies the maintained extension.
+Configured `local/*` model patterns may still produce nonfatal "No models match" warnings
+while the router is offline; use another provider until it returns.
 
 ## Skills
 

@@ -10,6 +10,9 @@ function discoverySignal(parent?: AbortSignal): AbortSignal {
 }
 
 export default async function localRouter(pi: ExtensionAPI) {
+	// This extension ships to every package user; only configured routers opt in.
+	if (!process.env.PI_LOCAL_ROUTER_BASE_URL?.trim()) return;
+
 	const { apiBaseUrl, modelsEndpoint } = resolveRouterUrls();
 	let discoveryFailed = false;
 	const loadModels = async (signal?: AbortSignal) => {

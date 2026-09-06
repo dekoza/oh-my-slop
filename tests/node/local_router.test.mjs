@@ -1,15 +1,39 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import test from "node:test";
+import test, { beforeEach } from "node:test";
 
 import localRouter from "../../extensions/local-router/index.ts";
 import { fetchRouterModels, parseRouterModels, resolveRouterUrls } from "../../extensions/local-router/lib/router.mjs";
 
 const TEST_TIMEOUT_MS = 60_000;
 
+beforeEach((t) => {
+	const previous = process.env.PI_LOCAL_ROUTER_BASE_URL;
+	process.env.PI_LOCAL_ROUTER_BASE_URL = "http://router.test:11545/";
+	t.after(() => {
+		if (previous === undefined) delete process.env.PI_LOCAL_ROUTER_BASE_URL;
+		else process.env.PI_LOCAL_ROUTER_BASE_URL = previous;
+	});
+});
+
+test("the bundled router stays silent and makes no requests without an explicit URL", { timeout: TEST_TIMEOUT_MS }, async (t) => {
+	const requests = t.mock.method(globalThis, "fetch", async () => Response.json({ data: [] }));
+	const warnings = t.mock.method(console, "warn", () => {});
+	const registrations = [];
+	for (const url of [undefined, "", "  "]) {
+		if (url === undefined) delete process.env.PI_LOCAL_ROUTER_BASE_URL;
+		else process.env.PI_LOCAL_ROUTER_BASE_URL = url;
+		await localRouter({ registerProvider: (...args) => registrations.push(args) });
+	}
+	assert.equal(requests.mock.callCount(), 0);
+	assert.equal(warnings.mock.callCount(), 0);
+	assert.deepEqual(registrations, []);
+});
+
 test("an offline router does not block extension startup and can recover on refresh", { timeout: TEST_TIMEOUT_MS }, async (t) => {
 	let online = false;
-	const fetchMock = t.mock.method(globalThis, "fetch", async (_url, { signal }) => {
+	const fetchMock = t.mock.method(globalThis, "fetch", async (url, { signal }) => {
+		assert.equal(url, "http://router.test:11545/v1/models");
 		assert.ok(signal instanceof AbortSignal);
 		if (!online) throw new TypeError("fetch failed: ECONNREFUSED");
 		return Response.json({ data: [{ id: "returned-model" }] });
@@ -22,6 +46,7 @@ test("an offline router does not block extension startup and can recover on refr
 	assert.equal(registrations.length, 1);
 	const [name, provider] = registrations[0];
 	assert.equal(name, "local");
+	assert.equal(provider.baseUrl, "http://router.test:11545/v1");
 	assert.deepEqual(provider.models, []);
 	assert.equal(warnings.mock.callCount(), 1);
 	assert.match(warnings.mock.calls[0].arguments[0], /local.*ECONNREFUSED/);
