@@ -30,13 +30,16 @@ question is which rows have become the module's job to state, not what the ceili
   entries under `extensions/`. — `factory/`
 - **One package, one version.** The binary ships from the root `package.json`'s `bin`; `factory/` is
   never separately installable and never grows its own `package.json`. — `package.json`
-- **`proof/` is the only area unreachable from the binary, deliberately.** §6.7's acceptance matrix
-  runs by hand from `tests/live/prove-skill-loading.mjs`, spends real turns, and records under
-  `docs/proofs/`. Nothing in a run may come to depend on it. — `proof/matrix.mjs` · §6.7
+- **`proof/` is deliberately unreachable from the binary.** §6.7's acceptance matrix runs by
+  hand, spends real turns, and records under `docs/proofs/`; no run may depend on it.
+  — `proof/matrix.mjs` · §6.7
+- **Contract-only value guards may precede their binary consumer**, without adding runtime IO
+  or dispatch: #227's walking-skeleton consumer belongs to #230.
+  — `config/operator-policy-v1.mjs` · §11.9
 
 ## Configuration
 
-- **Config is fail-closed and repo-bound**: one file at `<repo root>/.pi/factory.json`, no
+- **V2 config is fail-closed and repo-bound**: one file at `<repo root>/.pi/factory.json`, no
   `--config`, no env overrides, no merge layering, no warn-and-continue path. — `config/load.mjs` · §11.2
 - **Defaults exist only where an upstream decision already fixed the value** (`budgets`,
   `retention`); everywhere else absence refuses. — `config/defaults.mjs`
@@ -68,6 +71,15 @@ question is which rows have become the module's job to state, not what the ceili
 - **`AGENTS.md` is read in exactly one place**, once, at migration, only to draft the initial
   `checks` block for human review. No runtime parse, and no automated agreement check — thereafter
   this document and `checks` are kept in step by hand. — `migrate/matrix.mjs` · §11.6, §8.2
+
+- **Shared policy has disjoint owners and closed versioned values**, not a merged v2 config;
+  dormant inventory is valid, unknown references refuse. — `config/operator-policy-v1.mjs` · §11.9
+- **Shared resource identity is physical-device/account-quota identity**, not provider or port;
+  ambiguous bindings require enrollment evidence. — `config/operator-policy-v1.mjs` · §11.9
+- **A rejected policy read returns no usable policy**, even with a prior applied revision;
+  a successful read is not an admission grant. — `config/operator-policy-v1.mjs` · §11.9
+- **Shared migration requires enforced legacy exclusion and rollback requires reconciled drain**;
+  the contract guards deploy neither. — `config/operator-policy-v1.mjs` · §11.9
 
 ## Policy that is not configuration
 
