@@ -73,6 +73,37 @@ test("subprocess CLI explains full/local-only policy and never probes or mutates
 	assert.deepEqual(readFileSync(f.calls, "utf8").trim().split("\n").map(JSON.parse), Array(4).fill(["logins", "list", "--output", "json"]));
 });
 
+for (const scope of ["operator", "repository"]) {
+	for (const [open, close] of [["[", "]"], ['{"nested":', "}"]]) {
+		test(`subprocess CLI safely refuses deeply nested ${scope} policy (${open})`, (t) => {
+			const f = cliFixture(t);
+			const file = scope === "operator" ? f.operatorFile : join(f.root, ".pi", "factory.json");
+			const valid = readFileSync(file, "utf8").trim().slice(0, -1);
+			for (const depth of [10, 5000]) {
+				const source = `${valid},"NEVER_DISCLOSE_DEEP_KEY":${open.repeat(depth)}"NEVER_DISCLOSE_DEEP_VALUE"${close.repeat(depth)}}`;
+				writeFileSync(file, source);
+				const result = f.invoke(["--json"]);
+				assert.equal(result.status, 1, result.stderr);
+				assert.doesNotMatch(result.stderr, /RangeError|call stack/);
+				const value = JSON.parse(result.stdout);
+				const resolution = value.error.policyResolution;
+				assert.equal(resolution.state, "rejected");
+				assert.equal(resolution.policy, null);
+				assert.equal(value.error.reason, "invalid-document");
+				assert.equal(resolution.rejection.code, "invalid-document");
+				assert.equal(resolution.rejection.scope, scope);
+				assert.match(resolution.desiredRevision, /^[a-f0-9]{64}$/);
+				const human = f.invoke([]);
+				assert.equal(human.status, 1);
+				assert.equal(human.stdout, "");
+				assert.ok(human.stderr.includes(resolution.rejection.code));
+				assert.doesNotMatch(result.stdout + result.stderr + human.stderr, /NEVER_DISCLOSE|RangeError|call stack/);
+				assert.equal(readFileSync(file, "utf8"), source);
+			}
+		});
+	}
+}
+
 test("subprocess CLI records selected routing and a rejected revision without disclosing invalid bytes", (t) => {
 	const f = cliFixture(t);
 	const selected = f.invoke(["--routing-set=local", "--json"]);

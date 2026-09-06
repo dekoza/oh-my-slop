@@ -213,16 +213,31 @@ export function assertRepositoryPolicy(repository, inventory, routingSet = null)
 
 // Only JSON values cross the seam; TODO is a migration hole, never policy.
 function assertJson(value) {
-	if (typeof value === "string") { text(value); requireThat(!/^TODO\b/.test(value)); }
-	else if (typeof value === "number") requireThat(Number.isSafeInteger(value));
-	else if (Array.isArray(value)) value.forEach(assertJson);
-	else if (value !== null && typeof value === "object") {
-		object(value);
-		for (const [name, child] of Object.entries(value)) {
-			requireThat(!/^TODO\b/.test(name));
-			assertJson(child);
-		}
-	} else requireThat(value === null || typeof value === "boolean");
+	// §11.9 invalid documents must refuse, regardless of input depth. Use an
+	// explicit stack rather than consuming the JS call stack before schema checks.
+	const pending = [{ value }];
+	const ancestors = new Set();
+	while (pending.length) {
+		const { value, leaving } = pending.pop();
+		if (leaving) { ancestors.delete(value); continue; }
+		if (typeof value === "string") { text(value); requireThat(!/^TODO\b/.test(value)); }
+		else if (typeof value === "number") requireThat(Number.isSafeInteger(value));
+		else if (value !== null && typeof value === "object") {
+			// In-memory callers may supply cycles, which are not JSON. Shared
+			// acyclic children remain valid after their ancestor frame leaves.
+			requireThat(!ancestors.has(value));
+			ancestors.add(value);
+			pending.push({ value, leaving: true });
+			if (Array.isArray(value)) value.forEach((child) => pending.push({ value: child }));
+			else {
+				object(value);
+				for (const [name, child] of Object.entries(value)) {
+					requireThat(!/^TODO\b/.test(name));
+					pending.push({ value: child });
+				}
+			}
+		} else requireThat(value === null || typeof value === "boolean");
+	}
 }
 
 /** A policy snapshot is not permission to launch; admission rechecks revision. */
