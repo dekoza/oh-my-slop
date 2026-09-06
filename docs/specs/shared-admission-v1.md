@@ -90,8 +90,10 @@ request ID, then inspects/reconciles before any launch, replacement or capacity 
 Every request starts with `{ contractVersion: 1, operation, requestId: UUID, authority }`.
 Mutation requests additionally have `{ owner, epoch: positive integer }`; `attach` also uses
 these fields, with the epoch obtained from inspection. Each new logical mutation gets a new
-request ID recorded in the repository before sending it. Identical retries return the committed
-reply; same ID with different payload is `payload-conflict`. Mutable contender offers are new
+request ID recorded in the repository before sending it. After checking current fences,
+identical retries return the committed reply; same ID with different payload is
+`payload-conflict`. Stale callers are refused even when an old reply exists; inspection can
+still expose its tombstone, never fresh launch authority. Mutable contender offers are new
 requests with the **same contender ID**. After busy/wait, reconsideration uses a new request
 ID: replaying a busy request returns its original busy reply, not a new arbitration decision.
 Deduplication is scoped by authority and repository,
@@ -100,7 +102,7 @@ available until explicit drained protocol-version retirement; v1 has no clock-ba
 
 | Operation | Additional request fields | Success reply fields (beside envelope) |
 |---|---|---|
-| `inspect` | `repositoryId: UUID | null`; no owner/epoch | `status: "snapshot", snapshot` |
+| `inspect` | `repositoryId: UUID \| null`; no owner/epoch | `status: "snapshot", snapshot` |
 | `attach` | none beyond mutation fields | `status: "attached"` |
 | `acquire` | `contenderId: UUID, subject, policy: Policy, offers: ID[]` | `status: "granted", grant` |
 | `confirm` | `grant: Grant` | `status: "launch-authorized", grant` |
@@ -109,7 +111,7 @@ available until explicit drained protocol-version retirement; v1 has no clock-ba
 | `observe` | `grant: Grant, observation: RefusalObservation` | `status: "observed", availability: Availability` |
 | `readmit` | same fields as acquire plus `availabilityRevision: integer` | `status: "granted", grant` (readmission probe only) |
 | `wait` | `contenderId: UUID, after: integer` | `status: "changed", cursor: integer` |
-| `cancel` | `contenderId: UUID` | `status: "cancelled", contenderId: UUID, grantId: UUID | null, evidence: EndEvidence | null` |
+| `cancel` | `contenderId: UUID` | `status: "cancelled", contenderId: UUID, grantId: UUID \| null, evidence: EndEvidence \| null` |
 | `refresh` | `policyRequest` (#227 request with `view: "applied"`) | `status: "policy", resolution` (#227 resolution) |
 
 An `offers` array is nonempty, unique, and names policy-enabled profiles, in controller-ranked
@@ -158,8 +160,13 @@ substituted for an unavailable read.
   observationId: UUID | null }`; state is `available | disabled | exhausted | authentication |
   endpoint-outage | inconclusive`. `retryAfter` is authority-observed UTC epoch milliseconds,
   a not-before hint, never admission proof. Every non-available state blocks ordinary grants.
-- `Contender = { id: UUID, owner: Owner, subject: Subject, offers: ID[], state,
+- `Contender = { id: UUID, owner: Owner, subject: Subject, offers: ID[], state, reason,
   lastGrantSequence: integer, cursor: integer }`; state is `waiting | suspended | cancelled`.
+  Waiting requires one of the busy reasons above; suspended requires an unavailable/refused
+  reason; cancelled requires `reason: null`. The reason determines the operator action without
+  guessing from counts. Already granted demand is represented by Grant, not a waiting contender.
+  With no policy-enabled offer at all, a controller records its no-route wait locally instead
+  of manufacturing capacity demand; offers remain nonempty at the authority boundary.
 - `PolicyStatus = { repositoryId: UUID, desiredRevision: revision | null,
   appliedRevision: revision | null, state: "applied" | "rejected" | "unavailable",
   reason: ID | null }`. Reason is a redacted #227 rejection code, not source text.
@@ -202,8 +209,8 @@ repository store. No transaction covers both stores, Gitea and Herdr.
    checks requested revision and ownership, and registers/updates the persistent contender's
    offers. Busy preserves that waiting contender; policy/resource unavailability suspends it
    until fresh validation. A granted contender is no longer eligible to receive another grant;
-   its subject has at most one nonterminal grant. The authority then atomically owns **one aggregate and one
-   resource slot**, records the grant and advances the repository's fair turn. Busy/refused
+   its subject has at most one nonterminal grant. The authority then atomically owns **one
+   aggregate and one resource slot**, records the grant and advances the repository's fair turn. Busy/refused
    creates neither partial slot. All pending grants count, not merely visible worker activity.
 4. Record the returned grant and route locally. For an initial ticket execution, try its local
    ticket slot **nonblocking**, then record the capacity/claim intent and perform §3.3's claim
@@ -217,11 +224,12 @@ repository store. No transaction covers both stores, Gitea and Herdr.
    and the authority is available. It confirms the **admitted snapshot**, not a new policy
    decision: an earlier grant may launch after a mode change, lower limit or rejected edit.
 6. The managed launch gate consumes that launch ID **once**, checks current authority epoch
-   and both fences at execution, durably records launch-pending before invoking Herdr and
-   records running only after correlation. Retrying confirm returns the same ID; it does not
+   and both fences at execution, durably records launch-pending before invoking the registered
+   launcher (Herdr for workers, the managed headless-probe supervisor for probes), and records
+   running only after correlation. Retrying confirm returns the same ID; it does not
    authorize a second worker. An old reply is not an offline bearer permit. Authority loss
    bars consumption, while an already consumed launch remains accounted and is reconciled.
-   There is no claim that gate storage and Herdr start commit atomically. An ambiguous start
+   There is no claim that gate storage and process start commit atomically. An ambiguous start
    is probed, never blindly repeated; before an absent worker can be relaunched/released,
    exclude the old launcher and settle **every pending start invocation** so a delayed call
    cannot appear after the absence observation. If the adapter cannot prove that exclusion,
@@ -232,6 +240,10 @@ repository store. No transaction covers both stores, Gitea and Herdr.
    are **both** slots released in one authority commit. An idle pane alone uses no model slot;
    an interactive harness still able to issue model calls retains its grant until confirmed
    stopped. Mechanical checks use no model slot. No capacity TTL or result-based shortcut.
+   Before offering the next model phase of a ticket, settle/release its prior model grant.
+   The authority refuses a second nonterminal attempt grant for the same repository/run/ticket
+   as `invalid-transition`; sequential review axes do not bypass this rule. A phase cannot
+   hold a completed worker's grant while waiting for a second grant needed to finish its release.
 
 | Crash/race boundary | Required recovery, never inference |
 |---|---|
@@ -239,7 +251,7 @@ repository store. No transaction covers both stores, Gitea and Herdr.
 | Grant committed, local grant write absent/fails | Inspect finds the orphan grant; reconcile/cancel the whole grant. It cannot be partially reused or hidden by a missing repository record. |
 | Local ticket acquisition or tracker claim fails | Cancel the contender and unlaunched grant atomically at authority; locally release only owned ticket/claim records. An ambiguous Gitea claim is re-read; do not clear a winner's assignee. |
 | Claim committed, confirm not sent | Recover claim and local intent; continue under proven ownership or cancel the whole unused grant and settle the claim. |
-| Confirm committed or Herdr call unanswered | Probe the durable launch ID plus subject correlation and fence pending launchers; do not launch a replacement or release on timeout. |
+| Confirm committed or worker/probe start unanswered | Probe the durable launch ID plus subject correlation and fence pending launchers; do not launch a replacement or release on timeout. |
 | Worker ended, release reply absent | Reconcile or repeat identical release; released tombstone confirms the whole grant. Local release event can follow, never precede proof. |
 | Controller lease lost | Stale controller issues no new effects and exits 6, leaves run open. Successor attaches, reconciles all grants and pending requests; no local clock frees global holds. |
 | Authority/store loss or liveness unanswered | Stop new grants/authorizations globally; retain live/unknown occupancy and surface recovery-only state. Restore/reconcile the authority, never recreate an empty allocator. |
@@ -250,6 +262,22 @@ and releases the entire grant with EndEvidence. If a start is pending/live/unkno
 unavailable/refused and retains the grant. It never stops a worker. A confirmed cancellation
 cannot later be resurrected by a delayed acquire. Contender identity remains terminal; genuine
 new work uses a new subject/contender without resetting repository fairness history.
+
+## Headless probe ownership
+
+§6.4's disposable model probes remain headless, not invented Herdr panes. Their registered
+launcher/supervisor is inside the same managed boundary and uses the same grant/launch ID,
+one-shot gate and epoch/local-lease fences. Before spawning, it records that ID and registers
+the full subprocess lifetime, including model-using descendants. Controller death must not
+orphan an unregistered model client. The authority probes this supervisor, not Herdr, for
+proven-live, proven-ended or inconclusive ownership; EndEvidence points to its durable
+observation. A PID, a missing child-process handle after restart, a returned completion payload
+or an HTTP disconnect alone proves none of those endings. Proof requires the registered
+process lifetime to have ended and every pending spawn to be fenced/settled. An unreachable
+supervisor retains the entire grant and blocks new admission. A successor may monitor an
+identified live probe; it may neither restart it nor release it because its parent died.
+Implementation must prove supervisor restart and child survival with real subprocess fixtures;
+the contract consumer's probe replies are no claim that such a supervisor has shipped.
 
 ## Fair turns and shared readmission
 
@@ -281,7 +309,8 @@ disablement, zero limits, another probe, fencing or unknown ownership. Its probe
 policy-enabled/qualified runtime and the production binding.
 
 Readmission evidence is settled by `reconcile` on that probe grant: the authority obtains the
-correlated probe's result and liveness independently. Only a successful capability observation
+correlated probe's §9.8 result (`admitted | refused | inconclusive`) and liveness independently,
+via its registered supervisor and content-addressed result. Only a successful capability observation
 **and** proven probe termination can clear the same availability revision. A newer refusal
 wins over an older successful probe. Refused/inconclusive results retain or renew the shared
 block and an explicit not-before hint; a clock alone never reopens it. Releasing/cancelling a

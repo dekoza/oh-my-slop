@@ -552,7 +552,8 @@ inbound HTTP surface.
 
 **Shared-mode amendment (#228, §9.10):** the capacity authority owns global grants, fair turns,
 applied policy and resource availability. Herdr/managed launch-gate observations decide worker
-liveness and pending-start exclusion; the repository journal cannot establish those facts.
+liveness and pending-start exclusion; headless probes use their registered supervisor's process
+lifetime observations. The repository journal cannot establish those facts.
 Gitea retains readiness and claims. A well-shaped authority reply is not proof of its deployment.
 
 A global ranking always ends up asserting something the winning source does not know.
@@ -667,7 +668,9 @@ knows nothing about which roles exist.
 
 **Shared-mode amendment (#228, §9.10):** every model-using preflight/readmission probe has a
 persisted run-scoped probe identity and the same aggregate/resource admission and launch gate as
-an attempt. Static checks and non-model flag probes require no model grant. Disabled inventory
+an attempt. Their managed supervisor must retain launch identity and prove the full subprocess
+lifetime ended before release; a lost parent/HTTP connection is not proof. Static checks and
+non-model flag probes require no model grant. Disabled inventory
 is validated but not live-probed; waiting is visible, not a passing capability check.
 
 **Transitive skill requirements are a machine-readable `requires:` frontmatter declaration in

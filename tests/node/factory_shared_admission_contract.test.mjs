@@ -61,6 +61,17 @@ async function consume(authority, request) {
 	return assertAdmissionReply(response, request);
 }
 
+// Executable consumer recipe for the contract, not the runtime controller.
+// Local CAS and tracker authority stay outside the admission provider stub.
+async function acquireInitial(authority, request, local) {
+	const result = await consume(authority, request);
+	if (result.status !== "granted") return result;
+	if (!await local.takeTicket() || !await local.claim()) {
+		return consume(authority, operation(request, "cancel", { contenderId: result.grant.contenderId }));
+	}
+	return consume(authority, operation(request, "confirm", { grant: result.grant }));
+}
+
 test("controller waits without a partial grant on busy, unavailable, revision and compatibility refusals", async () => {
 	const { request, grant } = scenario();
 	for (const fields of [
@@ -121,28 +132,31 @@ test("controller confirms one launch identity and accepts only proven release or
 	await assert.rejects(consume(stub(stale, reply(stale, { status: "released", grantId: grant.id, evidence: { kind: "proven-ended", observationId: uuid(9) } })), stale), TypeError);
 });
 
-test("failed local acquisition or tracker claim cancels the whole grant before another offer", async () => {
-	for (const failure of ["ticket-slot", "tracker-claim"]) {
+test("initial-admission consumer cancels on acquisition/claim failure and confirms only a won claim", async () => {
+	for (const [takeTicket, claim, expected] of [
+		[false, true, ["acquire", "ticket-slot", "cancel"]],
+		[true, false, ["acquire", "ticket-slot", "tracker-claim", "cancel"]],
+		[true, true, ["acquire", "ticket-slot", "tracker-claim", "confirm"]],
+	]) {
 		const { request, grant } = scenario();
 		const calls = [];
 		const authority = { async exchange(actual) {
 			calls.push(actual.operation);
 			if (actual.operation === "acquire") return reply(actual, { status: "granted", grant });
-			assert.equal(actual.operation, "cancel", "failure must never reach confirm/launch");
+			if (actual.operation === "confirm") return reply(actual, { status: "launch-authorized", grant: { ...grant, state: "launch-pending", launchId: uuid(6) } });
+			assert.equal(actual.operation, "cancel");
 			assert.equal(actual.contenderId, grant.contenderId);
 			return reply(actual, { status: "cancelled", contenderId: grant.contenderId, grantId: grant.id, evidence: { kind: "never-launched", observationId: uuid(9) } });
 		} };
-		// Controller-side protocol recipe: local CAS is nonblocking, then claim.
-		// The stub is not evidence that a real authority implements compensation.
-		const admitted = await consume(authority, request);
-		assert.equal(admitted.status, "granted");
-		const ticketAcquired = failure !== "ticket-slot";
-		const claimWon = ticketAcquired && failure !== "tracker-claim";
-		assert.equal(claimWon, false);
-		const cancelled = await consume(authority, operation(request, "cancel", { contenderId: admitted.grant.contenderId }));
-		assert.equal(cancelled.grantId, grant.id);
-		assert.equal(cancelled.evidence.kind, "never-launched");
-		assert.deepEqual(calls, ["acquire", "cancel"]);
+		const result = await acquireInitial(authority, request, {
+			takeTicket: async () => { calls.push("ticket-slot"); return takeTicket; },
+			claim: async () => { calls.push("tracker-claim"); return claim; },
+		});
+		assert.deepEqual(calls, expected);
+		if (result.status === "cancelled") {
+			assert.equal(result.grantId, grant.id);
+			assert.equal(result.evidence.kind, "never-launched");
+		} else assert.equal(result.status, "launch-authorized");
 	}
 });
 
@@ -167,13 +181,18 @@ test("consumer inspects global occupancy without a lease and attaches only at th
 	const snapshot = {
 		cursor: 12, recovering: true, aggregate: { limit: 0, held: 1 },
 		resources: [{ resourceId: "gpu", occupancy: { limit: 0, held: 1 }, availability: { resourceId: "gpu", revision: 3, state: "disabled", retryAfter: null, observationId: null } }],
-		grants: [grant], contenders: [{ id: request.contenderId, owner: request.owner, subject: request.subject, offers: ["builder"], state: "suspended", lastGrantSequence: 11, cursor: 12 }],
+		grants: [grant], contenders: [{ id: request.contenderId, owner: request.owner, subject: request.subject, offers: ["builder"], state: "suspended", reason: "resource-disabled", lastGrantSequence: 11, cursor: 12 }],
 		policies: [{ repositoryId: request.owner.repositoryId, desiredRevision: "b".repeat(64), appliedRevision: "a".repeat(64), state: "rejected", reason: "invalid-document" }],
 	};
 	const observed = await consume(stub(inspect, reply(inspect, { status: "snapshot", snapshot, epoch: 2 })), inspect);
 	assert.deepEqual(observed.snapshot.aggregate, { limit: 0, held: 1 }, "lowered limits never erase excess occupancy");
 	assert.equal(observed.snapshot.contenders[0].lastGrantSequence, 11, "restart retains fair-turn history");
 	assert.equal(observed.snapshot.recovering, true);
+	assert.equal(observed.snapshot.contenders[0].reason, "resource-disabled");
+	for (const reason of [null, "invented-wait"]) {
+		const malformed = structuredClone(snapshot); malformed.contenders[0].reason = reason;
+		await assert.rejects(consume(stub(inspect, reply(inspect, { status: "snapshot", snapshot: malformed })), inspect), TypeError);
+	}
 	const attach = operation(request, "attach", { epoch: observed.epoch });
 	await consume(stub(attach, reply(attach, { status: "attached" })), attach);
 	await assert.rejects(consume(stub(attach, reply(attach, { status: "attached", epoch: 1 })), attach), TypeError);
@@ -214,6 +233,19 @@ test("preflight and coordinated readmission probes consume the same two dimensio
 			assert.throws(() => assertAdmissionRequest(ordinary), TypeError);
 			assert.throws(() => assertAdmissionRequest({ ...request, subject: { kind: "probe", id: uuid(40), purpose: "preflight" } }), TypeError);
 		}
+	}
+});
+
+test("headless probe recovery retains live and inconclusive grants and releases only proven endings", async () => {
+	const { request, grant } = scenario();
+	grant.subject = { kind: "probe", id: uuid(40), purpose: "preflight" };
+	Object.assign(grant, { state: "running", launchId: uuid(6) });
+	const reconcile = operation(request, "reconcile", { grant });
+	for (const liveness of ["proven-live", "inconclusive", "proven-ended"]) {
+		const recovered = { ...grant, state: liveness === "proven-ended" ? "released" : "running" };
+		const result = await consume(stub(reconcile, reply(reconcile, { status: "reconciled", grant: recovered, liveness, adoptable: liveness === "proven-live" })), reconcile);
+		assert.equal(result.grant.subject.id, uuid(40));
+		assert.equal(result.grant.state === "released", liveness === "proven-ended");
 	}
 });
 

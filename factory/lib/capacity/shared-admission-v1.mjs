@@ -11,6 +11,10 @@ export const ADMISSION_CONTRACT_VERSION = 1;
 export const ADMISSION_AUTHORITY_ROOT = "/var/lib/oh-my-slop/factory/authority";
 export const ADMISSION_RENDEZVOUS = "/run/oh-my-slop/factory/admission";
 
+const BUSY_REASONS = ["aggregate", "resource", "fair-turn", "readmission-in-flight"];
+const UNAVAILABLE_REASONS = ["authority-unavailable", "ownership-inconclusive", "policy-unavailable", "resource-disabled", "exhausted", "authentication", "endpoint-outage", "no-eligible-route"];
+const REFUSAL_REASONS = ["identity-mismatch", "boundary-unproven", "stale-owner", "epoch-mismatch", "revision-conflict", "payload-conflict", "invalid-transition", "unknown-grant"];
+
 function requireThat(condition) {
 	// Do not embed values: invalid fields can contain credentials or capability tokens.
 	if (!condition) throw new TypeError("Invalid shared-admission v1 contract value");
@@ -88,9 +92,11 @@ function snapshot(value, repositoryId) {
 	});
 	list(value.grants, (value) => { grant(value); if (repositoryId !== null) requireThat(value.owner.repositoryId === repositoryId); });
 	list(value.contenders, (contender) => {
-		keys(contender, ["id", "owner", "subject", "offers", "state", "lastGrantSequence", "cursor"]);
+		keys(contender, ["id", "owner", "subject", "offers", "state", "reason", "lastGrantSequence", "cursor"]);
 		uuid(contender.id); owner(contender.owner); subject(contender.subject, contender.owner); unique(contender.offers, id);
 		member(contender.state, ["waiting", "suspended", "cancelled"]);
+		if (contender.state === "cancelled") requireThat(contender.reason === null);
+		else member(contender.reason, contender.state === "waiting" ? BUSY_REASONS : [...UNAVAILABLE_REASONS, ...REFUSAL_REASONS]);
 		integer(contender.lastGrantSequence); integer(contender.cursor);
 		requireThat(contender.lastGrantSequence <= value.cursor && contender.cursor <= value.cursor);
 		if (repositoryId !== null) requireThat(contender.owner.repositoryId === repositoryId);
@@ -186,13 +192,13 @@ export function assertAdmissionReply(reply, request) {
 	}
 	if (reply.status === "unavailable") {
 		keys(reply, [...REPLY_BASE, "reason", "cursor"]);
-		member(reply.reason, ["authority-unavailable", "ownership-inconclusive", "policy-unavailable", "resource-disabled", "exhausted", "authentication", "endpoint-outage", "no-eligible-route"]);
+		member(reply.reason, UNAVAILABLE_REASONS);
 		if (reply.cursor !== null) integer(reply.cursor);
 		return reply;
 	}
 	if (reply.status === "refused") {
 		keys(reply, [...REPLY_BASE, "reason"]);
-		member(reply.reason, ["identity-mismatch", "boundary-unproven", "stale-owner", "epoch-mismatch", "revision-conflict", "payload-conflict", "invalid-transition", "unknown-grant"]);
+		member(reply.reason, REFUSAL_REASONS);
 		return reply;
 	}
 	if (reply.status === "snapshot") {
@@ -258,7 +264,7 @@ export function assertAdmissionReply(reply, request) {
 		member(request.operation, ["acquire", "readmit"]);
 		keys(reply, [...REPLY_BASE, "contenderId", "reason", "cursor"]);
 		requireThat(reply.contenderId === request.contenderId);
-		member(reply.reason, ["aggregate", "resource", "fair-turn", "readmission-in-flight"]); integer(reply.cursor);
+		member(reply.reason, BUSY_REASONS); integer(reply.cursor);
 		return reply;
 	}
 	keys(reply, [...REPLY_BASE, "grant"]);
