@@ -59,8 +59,9 @@ function entries(value) {
 
 /** Exact request; no policy override input exists. */
 export function assertPolicyRequest(request) {
-	keys(request, ["contractVersion", "repositoryRoot", "routingSet"]);
+	keys(request, ["contractVersion", "repositoryRoot", "routingSet", "view"]);
 	requireThat(request.contractVersion === POLICY_CONTRACT_VERSION);
+	requireThat(["desired", "applied"].includes(request.view));
 	absolute(request.repositoryRoot);
 	if (request.routingSet !== null) id(request.routingSet);
 	return request;
@@ -229,11 +230,13 @@ export function assertPolicyResolution(resolution, request) {
 	assertPolicyRequest(request);
 	keys(resolution, ["contractVersion", "state", "desiredRevision", "appliedRevision", "policy", "rejection"]);
 	requireThat(resolution.contractVersion === POLICY_CONTRACT_VERSION);
-	requireThat(["applied", "rejected", "unavailable"].includes(resolution.state));
+	requireThat(["preview", "applied", "rejected", "unavailable"].includes(resolution.state));
+	if (request.view === "desired") requireThat(resolution.appliedRevision === null && resolution.state !== "applied");
+	else requireThat(resolution.state !== "preview");
 	if (resolution.appliedRevision !== null) revision(resolution.appliedRevision);
 	if (resolution.desiredRevision !== null) revision(resolution.desiredRevision);
 	else requireThat(resolution.state === "unavailable");
-	if (resolution.state !== "applied") {
+	if (["rejected", "unavailable"].includes(resolution.state)) {
 		requireThat(resolution.policy === null);
 		keys(resolution.rejection, ["code", "scope", "at", "question"]);
 		const { code, scope, at, question } = resolution.rejection;
@@ -243,10 +246,13 @@ export function assertPolicyResolution(resolution, request) {
 		if (code === "ambiguous-binding") requireThat(question !== null);
 		requireThat((resolution.state === "unavailable") === ["source-unavailable", "authority-unavailable"].includes(code));
 		requireThat((resolution.desiredRevision === null) === (code === "authority-unavailable"));
+		if (request.view === "desired") requireThat(code !== "authority-unavailable");
 		return resolution;
 	}
-	requireThat(resolution.rejection === null && resolution.appliedRevision !== null);
-	requireThat(resolution.desiredRevision === resolution.appliedRevision);
+	requireThat(resolution.rejection === null);
+	if (resolution.state === "applied") {
+		requireThat(resolution.appliedRevision !== null && resolution.desiredRevision === resolution.appliedRevision);
+	}
 	const policy = resolution.policy;
 	keys(policy, ["operator", "repository", "routingSet", "limits", "profileAvailability", "provenance"]);
 	assertOperatorInventory(policy.operator);

@@ -2413,7 +2413,8 @@ command to start it** — the factory checks the operator's multiplexer, it does
 
 ### 10.5 Stopping, doctor, reconcile, cleanup
 
-**Shared-mode amendment (#227, §11.9):** a read-only policy diagnostic may return a rejected
+**Shared-mode amendment (#227, §11.9):** `factory doctor --policy` reads a desired-policy
+preview without contacting an authority or claiming applied state. It may return a rejected
 or unavailable resolution with `policy: null`, desired/applied revisions and a safe reason even
 when desired source files cannot load. This is not a usable degraded config, does not apply an
 edit, and grants nothing. Stop remains independent of configuration. The v2 verb behavior below
@@ -2875,7 +2876,8 @@ cannot pick which ticket labels were meant to survive, nor pick concurrency size
 ### 11.9 Operator inventory and effective-policy contract v1 (#227)
 
 The consumer-owned [operator-policy v1 contract](operator-policy-v1.md) fixes inventory v1,
-repository v3, the versioned request/resolution schema, disjoint ownership, resource identity,
+repository v3, desired-preview/applied request views, the versioned resolution schema,
+disjoint ownership, resource identity,
 revision/application semantics, and the approved managed deployment/rollback boundary. Its
 executable artifact is `factory/lib/config/operator-policy-v1.mjs`; it is a value guard, not a
 resolver, allocator, deployment or compatibility claim by the existing v2 binary.

@@ -21,7 +21,7 @@ function scenario() {
 		credentials: {}, profiles: { builder: { enabled: true, bindingId: "local", runtime } },
 		aggregateLimit: 1, modes: { normal: { aggregateLimit: 1, resources: { gpu: 1 } } }, activeMode: "normal",
 	};
-	const request = { contractVersion: 1, repositoryRoot: "/test/repository", routingSet: null };
+	const request = { contractVersion: 1, repositoryRoot: "/test/repository", routingSet: null, view: "applied" };
 	const response = {
 		contractVersion: 1, state: "applied", desiredRevision: "a".repeat(64), appliedRevision: "a".repeat(64), rejection: null,
 		policy: {
@@ -42,6 +42,7 @@ async function inspectPolicy(resolver, request) {
 	assertPolicyResolution(resolution, request);
 	// A policy read is not a grant. In particular, a rejected revision never
 	// hands a stale policy to a consumer, even if appliedRevision is still set.
+	if (resolution.state === "preview") return { desiredRevision: resolution.desiredRevision, policy: resolution.policy, appliedRevision: null };
 	return resolution.state === "applied"
 		? { revision: resolution.appliedRevision, policy: resolution.policy }
 		: { waiting: resolution.rejection.code, appliedRevision: resolution.appliedRevision };
@@ -59,6 +60,22 @@ test("consumer resolves explicit operator policy with repository routing and pro
 	assert.equal(result.policy.repository.routing.roles.implement, "builder");
 	assert.deepEqual(result.policy.limits, { aggregate: 1, resources: { gpu: 1 } });
 	assert.equal(result.policy.provenance.repositoryFile, "/test/repository/.pi/factory.json");
+});
+
+test("doctor can preview desired policy without claiming an authority applied it", async () => {
+	const { request, response } = scenario();
+	request.view = "desired";
+	response.state = "preview";
+	response.appliedRevision = null;
+	const result = await inspectPolicy(stub(request, response), request);
+	assert.equal(result.desiredRevision, "a".repeat(64));
+	assert.equal(result.appliedRevision, null);
+	assert.deepEqual(result.policy.limits, { aggregate: 1, resources: { gpu: 1 } });
+	request.view = "applied";
+	await assert.rejects(inspectPolicy(stub(request, response), request), TypeError);
+	request.view = "desired";
+	response.appliedRevision = response.desiredRevision;
+	await assert.rejects(inspectPolicy(stub(request, response), request), TypeError);
 });
 
 test("consumer retains a disabled resource without accepting dispatchable policy for it", async () => {

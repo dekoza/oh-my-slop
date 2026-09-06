@@ -7,6 +7,8 @@ contract-version ticket and blocking edges before affected consumers start.
 
 The executable boundary is [`factory/lib/config/operator-policy-v1.mjs`](../../factory/lib/config/operator-policy-v1.mjs).
 Its guards validate values, not files, credentials, host identity, revision history, or grants.
+`assertRepositoryPolicy` takes an already validated inventory. The guards return the input
+unchanged; callers must retain an immutable snapshot after validation.
 The resolver and application/admission implementation are deliberately absent in this slice.
 The [Software Factory specification](software-factory.md) §11.9 incorporates this contract;
 its v2 runtime remains unchanged until the migration and admission tickets land.
@@ -33,7 +35,10 @@ its v2 runtime remains unchanged until the migration and admission tickets land.
    residual `TODO` sentinels refuse. Unsupported versions never negotiate down silently.
 6. Repository/tracker remote identity checks still apply, including the forge host, not just
    the `owner/repo` slug. No read makes an unregistered repository a participating run.
-   Registration and authority transport belong to the shared-admission contract.
+   Registration and authority transport belong to the shared-admission contract. Desired-policy
+   preview validates source documents, binding declarations and repository identity without
+   contacting an authority, resolving secrets, proving host enrollment or testing the deployment
+   boundary. Those unobserved facts are not reported as verified; applied reads require them.
 
 ## Closed configuration schema
 
@@ -147,20 +152,30 @@ executable artifact. A transport or boundary-validation error permits no policy-
 work. Resolving is read-only: it neither applies edits, grants capacity, claims tickets, nor
 starts/probes models. The result is a snapshot, **never a launch permit**.
 
-Request: exactly `{ contractVersion: 1, repositoryRoot, routingSet }`.
+Request: exactly `{ contractVersion: 1, repositoryRoot, routingSet, view }`.
 `repositoryRoot` is the canonical absolute root discovered above; `routingSet` is an ID or
-`null`. There is no operator path, mode, capacity, credential, or env override input.
+`null`. `view` is `desired | applied`. Desired preview reads/validates files only; applied
+resolution reads the authority's application state too. There is no operator path, mode,
+capacity, credential, or env override input.
 
 Resolution: exactly `{ contractVersion: 1, state, desiredRevision, appliedRevision, policy,
 rejection }`.
 
 | Field | Rule |
 |---|---|
-| `state` | `applied | rejected | unavailable` |
+| `state` | `preview`, `applied`, `rejected`, or `unavailable` |
 | `desiredRevision` | observed candidate revision; `null` exactly for `authority-unavailable` |
-| `appliedRevision` | last committed effective revision or `null` before first application |
-| `policy` | EffectivePolicy only when `applied`; otherwise `null` (no stale dispatch object) |
-| `rejection` | `null` when applied; otherwise `{ code, scope, at, question }` |
+| `appliedRevision` | last committed effective revision; `null` before first application or when not observed by a desired preview |
+| `policy` | EffectivePolicy when `preview` or `applied`; otherwise `null` (no stale dispatch object) |
+| `rejection` | `null` when preview/applied; otherwise `{ code, scope, at, question }` |
+
+A desired read never returns `applied`, always has `appliedRevision: null` (not observed,
+not known absent), and never calls an authority or returns `authority-unavailable`. Its valid
+result is `preview`. An applied read never returns `preview`. Invalid source documents return
+`rejected`, unreadable/missing sources return `unavailable`, in either view; these have
+`policy: null`. Applied-read unavailable before first application is not a valid preview.
+Preview may show internally consistent configured identities without enrollment evidence;
+this does not resolve physical ambiguity for deployment or permit admission.
 
 `scope` is `operator | repository`; `at` is a safe structural location, never offending
 values or source text. `question` is a focused operator question or `null`; required for
@@ -196,6 +211,24 @@ provenance }`:
   routing semantics. Consumers keep revision/provenance in manifests and admission requests;
   the shared admission contract must reject stale revision preconditions atomically.
 
+### Read-only doctor operation (#230)
+
+The accepted CLI spelling is `factory doctor --policy [--routing-set=<name>] [--json]`.
+It calls `resolve` with `view: "desired"`. It neither connects to the authority nor applies,
+enrolls or migrates policy. A valid preview exits 0; rejected/unavailable configuration exits 1.
+`--json` keeps §10.3's existing envelope: success carries `report.policyResolution`;
+configuration refusal carries `error: { kind: "config-load", reason: <rejection code>,
+message: <safe explanation>, policyResolution: <complete resolution> }`. Usage/discovery
+failures before a source pair exists retain the existing CLI error shape. No `data` envelope
+or new envelope version is introduced. Human output derives from that same resolution, labels every ceiling
+as configured, and labels applied state, occupancy, deployment enforcement and provider
+capability **not observed**. It must never print those as zero, healthy or admitted.
+
+`--policy` cannot combine with `--baseline` or ticket/parent scope selectors; unknown/conflicting
+flags retain exit 1. Existing doctor modes remain unchanged. The operation can inspect a v3
+repository/inventory draft before enrollment and before an allocator exists, so #230 does not
+acquire a hidden blocking edge on #228. This ticket specifies the command, not its implementation.
+
 ## Revision and application lifecycle
 
 A source observation is `{ state: "read", digest: <SHA-256 of exact bytes> }`, or
@@ -224,6 +257,10 @@ then either apply the complete validated candidate or reject; never merge partia
   repository as `revision-conflict`; adoption/stop and already admitted attempts remain valid.
   Drain all its runs before applying the new repository policy. Operator mode/enablement/limit
   edits are different: they apply across running controllers immediately at admission order.
+  To finish a pipeline needing further model attempts, restore its pinned repository bytes
+  and revalidate before draining; otherwise explicitly abandon at the existing stop boundary,
+  retain the work, reconcile pending launches/holds, and apply only after every run has ended.
+  A pause cannot silently exempt reviews/repairs from admission just to finish draining.
 - **Malformed/invalid operator edits suspend all new participating admissions; malformed/invalid
   repository edits suspend that repository only.** Keep the last applied revision for history,
   reconciliation and already admitted attempts, but return `policy: null` on rejection.
