@@ -11,8 +11,24 @@ function discoverySignal(parent?: AbortSignal): AbortSignal {
 
 export default async function localRouter(pi: ExtensionAPI) {
 	const { apiBaseUrl, modelsEndpoint } = resolveRouterUrls();
-	const loadModels = (signal?: AbortSignal) =>
-		fetchRouterModels(modelsEndpoint, { signal: discoverySignal(signal) });
+	let discoveryFailed = false;
+	const loadModels = async (signal?: AbortSignal) => {
+		try {
+			const models = await fetchRouterModels(modelsEndpoint, { signal: discoverySignal(signal) });
+			discoveryFailed = false;
+			return models;
+		} catch (error) {
+			// Caller cancellation is not a router outage.
+			signal?.throwIfAborted();
+			if (!discoveryFailed) {
+				const reason = error instanceof Error ? error.message : String(error);
+				// stderr keeps model listings and RPC stdout machine-readable.
+				console.warn(`[local-router] Model discovery failed: ${reason}. Continuing without local models; use /reload when the router is available.`);
+			}
+			discoveryFailed = true;
+			return [];
+		}
+	};
 
 	pi.registerProvider("local", {
 		name: "Local OpenAI-compatible router",

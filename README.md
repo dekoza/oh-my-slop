@@ -148,7 +148,7 @@ These ship in the repo and load automatically through the root `pi install` mani
 |---|---|---|
 | **[factory](extensions/factory/)** | Automatic | The `/factory` command: the `factory` binary's code run from a pi session — the same verbs, the same answer — plus the one-way monitor trigger (§10.2, §10.6). |
 | **[workflow-watchdog](extensions/workflow-watchdog/)** | Automatic | Monitors pi's workflow for failure patterns: loop detection, consecutive tool errors, and optional supervisor-model escalation. |
-| **[local-router](extensions/local-router/)** | Opt-in | Registers a `local` provider backed by an OpenAI-compatible router (default `http://127.0.0.1:8080`): models are discovered at load time and on refresh. Enable it in your pi settings only when a router is reachable — without one, its discovery fails. |
+| **[local-router](extensions/local-router/)** | Opt-in | Registers a `local` provider backed by an OpenAI-compatible router (default `http://127.0.0.1:8080`): models are discovered at load time and on refresh. Enable it in your pi settings. If discovery fails, pi continues without local models and warns once per outage (five-second discovery timeout). Use `/reload` after the router returns, or refresh the model catalog. |
 
 </details>
 
