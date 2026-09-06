@@ -146,7 +146,10 @@ function bindOnce(bindings, key, resource) {
 
 function configGuard(validate) {
 	try { return validate(); } catch (error) {
-		if (!(error instanceof FactoryConfigError)) throw error;
+		// Legacy validators stringify invalid values in their diagnostics. Deep
+		// source values can overflow that formatting before FactoryConfigError is
+		// constructed; the wire guard still owes its redacted protocol refusal.
+		if (!(error instanceof FactoryConfigError) && !(error instanceof RangeError)) throw error;
 		requireThat(false);
 	}
 }

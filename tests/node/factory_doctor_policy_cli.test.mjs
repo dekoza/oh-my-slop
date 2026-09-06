@@ -123,6 +123,30 @@ for (const field of ["credentialId", "name"]) {
 	});
 }
 
+for (const field of ["timeout", "name", "severity"]) {
+	test(`subprocess CLI safely refuses deeply nested repository check ${field}`, (t) => {
+		const f = cliFixture(t);
+		f.repository.checks[0][field] = "DEEP_PLACEHOLDER";
+		for (const [open, close] of [["[", "]"], ['{"nested":', "}"]]) {
+			const nested = `${open.repeat(10000)}"NEVER_DISCLOSE_CHECK"${close.repeat(10000)}`;
+			writeFileSync(f.repositoryFile, JSON.stringify(f.repository).replace('"DEEP_PLACEHOLDER"', nested));
+			const result = f.invoke(["--json"]);
+			assert.equal(result.status, 1);
+			assert.doesNotMatch(result.stderr, /RangeError|call stack/);
+			const value = JSON.parse(result.stdout);
+			assert.equal(value.error.reason, "invalid-document");
+			assert.equal(value.error.policyResolution.state, "rejected");
+			assert.equal(value.error.policyResolution.policy, null);
+			assert.equal(value.error.policyResolution.rejection.scope, "repository");
+			const human = f.invoke([]);
+			assert.equal(human.status, 1);
+			assert.equal(human.stdout, "");
+			assert.match(human.stderr, /invalid-document/);
+			assert.doesNotMatch(result.stdout + result.stderr + human.stderr, /NEVER_DISCLOSE|RangeError|call stack/);
+		}
+	});
+}
+
 test("subprocess CLI records selected routing and a rejected revision without disclosing invalid bytes", (t) => {
 	const f = cliFixture(t);
 	const selected = f.invoke(["--routing-set=local", "--json"]);
