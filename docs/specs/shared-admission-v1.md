@@ -92,7 +92,9 @@ Mutation requests additionally have `{ owner, epoch: positive integer }`; `attac
 these fields, with the epoch obtained from inspection. Each new logical mutation gets a new
 request ID recorded in the repository before sending it. Identical retries return the committed
 reply; same ID with different payload is `payload-conflict`. Mutable contender offers are new
-requests with the **same contender ID**. Deduplication is scoped by authority and repository,
+requests with the **same contender ID**. After busy/wait, reconsideration uses a new request
+ID: replaying a busy request returns its original busy reply, not a new arbitration decision.
+Deduplication is scoped by authority and repository,
 not connection. Terminal request/grant/contender tombstones survive run expiry and remain
 available until explicit drained protocol-version retirement; v1 has no clock-based deletion.
 
@@ -144,7 +146,10 @@ wait/refusal spends a worker repair, fresh-retry or automation retry budget.
 `Snapshot = { cursor: integer, recovering: boolean, aggregate: Occupancy,
 resources: ResourceStatus[], grants: Grant[], contenders: Contender[], policies: PolicyStatus[] }`.
 Snapshot is one consistent authority read; a repository filter restricts grants/contenders/
-policies, **not global occupancy**. No stale cached success is substituted for an unavailable read.
+policies, **not global occupancy**. This is a privileged controller/operator interface, not a
+monitor response: the authenticated caller must be authorized for the requested repository or
+operator-wide view, and tokens are stripped before any reporting. No stale cached success is
+substituted for an unavailable read.
 
 - `Occupancy = { limit: integer, held: integer }`; excess is `max(0, held - limit)`, never
   clamped away. All held/pending/running grants, including inconclusive ones, count once.
@@ -194,7 +199,10 @@ repository store. No transaction covers both stores, Gitea and Herdr.
    global holds, and a global attachment cannot replace the local lease. Every mutation and
    launch gate checks both; repository generations from different stores are never compared.
 3. `acquire` observes current policy sources and applies/rejects them under #227's ordering,
-   checks requested revision and ownership, then atomically owns **one aggregate and one
+   checks requested revision and ownership, and registers/updates the persistent contender's
+   offers. Busy preserves that waiting contender; policy/resource unavailability suspends it
+   until fresh validation. A granted contender is no longer eligible to receive another grant;
+   its subject has at most one nonterminal grant. The authority then atomically owns **one aggregate and one
    resource slot**, records the grant and advances the repository's fair turn. Busy/refused
    creates neither partial slot. All pending grants count, not merely visible worker activity.
 4. Record the returned grant and route locally. For an initial ticket execution, try its local
@@ -291,6 +299,11 @@ new admissions; a repository edit suspends that repository. Applied and rejected
 revisions remain durable and observable. Already admitted grants retain their snapshots.
 Resource identity rebinding/removal waits for all live/unknown grants and pending starts.
 Lowered limits display excess occupancy and grant nothing in an overfull dimension.
+
+In Owner, `runId` names the work being addressed, not necessarily the successor's new run:
+under its current repository lease a successor can reconcile older/ended runs using their
+original run IDs. Attachment fences controller incarnations repository-wide. Grant run/subject
+identity is never moved into the successor's new run.
 
 A successor's reconciliation distinguishes **proven-live**, **proven-ended/never-launched**,
 and **inconclusive**. Proven-live adoption requires §5.5's complete worker identity plus both
