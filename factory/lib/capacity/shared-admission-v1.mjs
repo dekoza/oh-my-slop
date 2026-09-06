@@ -232,6 +232,7 @@ export function assertAdmissionReply(reply, request) {
 	if (reply.status === "released") {
 		requireThat(request.operation === "release"); keys(reply, [...REPLY_BASE, "grantId", "evidence"]);
 		requireThat(reply.grantId === request.grant.id); endEvidence(reply.evidence);
+		if (request.grant.state === "running") requireThat(reply.evidence.kind === "proven-ended");
 		return reply;
 	}
 	if (reply.status === "launch-authorized" || reply.status === "reconciled") {
@@ -243,6 +244,7 @@ export function assertAdmissionReply(reply, request) {
 		} else {
 			requireThat(request.operation === "reconcile");
 			member(reply.liveness, ["proven-live", "proven-ended", "never-launched", "inconclusive"]);
+			if (request.grant.state === "running") requireThat(reply.liveness !== "never-launched");
 			requireThat(typeof reply.adoptable === "boolean");
 			if (["proven-ended", "never-launched"].includes(reply.liveness)) requireThat(reply.grant.state === "released" && !reply.adoptable);
 			else requireThat(reply.grant.state !== "released");

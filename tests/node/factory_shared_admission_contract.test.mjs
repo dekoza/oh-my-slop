@@ -232,6 +232,70 @@ test("resource refusal observation distinguishes exhaustion, authentication and 
 	}
 });
 
+test("consumer rejects unknown versions, altered identities, routes and partial slot shapes", async () => {
+	for (const mutate of [
+		(r) => { r.contractVersion = 2; },
+		(r) => { r.operation = "force-acquire"; },
+		(r) => { r.capacityOverride = 2; },
+		(r) => { r.owner.pid = 123; },
+		(r) => { r.owner.generation = 0; },
+		(r) => { r.subject.id = `${runId}-t229-a1`; },
+		(r) => { r.authority.controllerHostId = "other_host"; },
+		(r) => { r.offers = ["unknown"]; },
+		(r) => { r.offers = ["builder", "builder"]; },
+	]) {
+		const { request } = scenario(); mutate(request);
+		assert.throws(() => assertAdmissionRequest(request), TypeError);
+	}
+	for (const mutate of [
+		(r) => { r.epoch = 2; },
+		(r) => { r.requestId = uuid(99); },
+		(r) => { r.operation = "readmit"; },
+		(r) => { r.grant.owner.controllerId = uuid(99); },
+		(r) => { r.grant.subject.ticket = 229; },
+		(r) => { r.grant.contenderId = uuid(99); },
+		(r) => { r.grant.policyRevision = "f".repeat(64); },
+		(r) => { r.grant.profileId = "unknown"; },
+		(r) => { r.grant.bindingId = "other_binding"; },
+		(r) => { r.grant.resourceId = "other_gpu"; },
+		(r) => { r.grant.aggregateSlot = 1; },
+		(r) => { r.grant.resourceSlot = 1; },
+		(r) => { delete r.grant.aggregateSlot; },
+		(r) => { r.grant.state = "running"; r.grant.launchId = uuid(6); },
+	]) {
+		const { request, grant } = scenario();
+		const response = reply(request, { status: "granted", grant }); mutate(response);
+		await assert.rejects(consume(stub(request, response), request), TypeError);
+	}
+});
+
+test("transport failure remains unknown success and does not turn into a new acquisition", async () => {
+	const { request, grant } = scenario();
+	const calls = [];
+	const failure = new Error("synthetic transport disconnect");
+	const authority = { async exchange(actual) {
+		calls.push(actual.requestId);
+		if (calls.length === 1) throw failure; // provider may already have committed
+		assert.deepEqual(actual, request, "recovery retries the persisted identity, never a new subject");
+		return reply(actual, { status: "granted", grant });
+	} };
+	await assert.rejects(consume(authority, request), (error) => error === failure);
+	assert.deepEqual(calls, [uuid(1)], "the consumer does not silently retry or fabricate busy");
+	const recovered = await consume(authority, structuredClone(request));
+	assert.equal(recovered.grant.id, uuid(5));
+	assert.deepEqual(calls, [uuid(1), uuid(1)]);
+});
+
+test("a running grant cannot become never-launched or have its launch identity erased", async () => {
+	const { request, grant } = scenario();
+	Object.assign(grant, { state: "running", launchId: uuid(6) });
+	const release = operation(request, "release", { grant });
+	await assert.rejects(consume(stub(release, reply(release, { status: "released", grantId: grant.id, evidence: { kind: "never-launched", observationId: uuid(9) } })), release), TypeError);
+	const reconcile = operation(request, "reconcile", { grant });
+	await assert.rejects(consume(stub(reconcile, reply(reconcile, { status: "reconciled", grant: { ...grant, state: "released" }, liveness: "never-launched", adoptable: false })), reconcile), TypeError);
+	await assert.rejects(consume(stub(reconcile, reply(reconcile, { status: "reconciled", grant: { ...grant, state: "held", launchId: null }, liveness: "inconclusive", adoptable: false })), reconcile), TypeError);
+});
+
 test("controller receives one indivisible aggregate/resource grant pinned to applied policy", async () => {
 	const { request, grant } = scenario();
 	const result = await consume(stub(request, reply(request, { status: "granted", grant })), request);
