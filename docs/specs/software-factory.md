@@ -125,6 +125,11 @@ un-auditable across repos. Making them configurable later is purely additive.
 
 ### 3.3 Claiming
 
+**Shared-mode amendment (#228, §9.10):** acquire the indivisible global grant, then try
+local ticket capacity nonblocking, before claiming. Failed local acquisition or claim cancels
+the entire unlaunched grant; unknown claim/launch outcomes require reconciliation. No global
+hold waits for a local ticket slot, and no contender alone justifies a Gitea claim.
+
 A claim is **assignee plus a structured claim comment** (run id, ticket, attempt id,
 timestamp), then a re-read.
 
@@ -196,6 +201,13 @@ same-transaction projections, canonical effect and lease rows, and durable obser
 cursors. The journal records **intent** and never establishes an external fact.
 
 ### 4.1 Substrate and location
+
+**Shared-mode amendment (#228, §9.10):** repository journals remain here; global grants,
+contenders, policy application, availability and turn history belong to the single enrolled
+operator authority at `/var/lib/oh-my-slop/factory/authority`. Its rendezvous is
+`/run/oh-my-slop/factory/admission`, independent of SDK roots. Repository identity binds the
+canonical Git/forge/store identities at enrollment. Separate stores never share a transaction;
+repository observations are not global ownership. This contract selects no database or daemon.
 
 - Path: `${PI_CODING_AGENT_DIR:-~/.pi/agent}/software-factory/repos/<slug>/state.db`, WAL,
   `synchronous=FULL`. The root is resolved by the pi SDK's **`getAgentDir()`**.
@@ -320,6 +332,12 @@ executions reverse index) · `run_digest` (tier 2, permanent).
 
 ### 4.5 Effects and idempotency
 
+**Shared-mode amendment (#228, §9.10):** mutations of the external capacity authority are
+requested/resolved effects too, with durable request IDs and payload conflicts. Inspection and
+liveness are observations. A lost reply is unknown success: inspect/reconcile the same
+contender/grant/launch identity, never retry under a new identity. Authority terminal tombstones
+outlive repository run expiry. No global grant is inferred from a local capacity event.
+
 **Every mutation outside the database is an effect** with a `requested` / `resolved` pair:
 Gitea writes (assign, claim comment, label add/remove, close, PR create, PR body update), Git
 writes (branch create, push, evidence ref, worktree create/delete), Herdr writes (workspace open,
@@ -399,6 +417,12 @@ embedded key survives edits to the visible text.
 
 ### 4.6 Leases and locks
 
+**Shared-mode amendment (#228, §9.10):** the primitive below remains repository-local.
+Global grants have separate authority epochs and indivisible aggregate/resource ownership;
+repository generations are not ordered across stores. Attach, mutation and launch verify both
+the registered local controller lease and authority fencing. A successor must exclude stale
+launchers and reconcile, not merely increment a local generation. No capacity TTL exists.
+
 **One primitive, several objects, all rows in the database with compare-and-swap.**
 
 Each row carries: lease name · random **128-bit holder token** · **fencing generation from a
@@ -445,6 +469,11 @@ to `.lock.stale` to escape it — and `job-pipeline`'s `releaseJobLock` was an u
 `rmSync`, so any process could drop any owner's lock.
 
 ### 4.7 Integrity failure
+
+**Shared-mode amendment (#228, §9.10):** repository quarantine/store replacement cannot
+register a fresh empty capacity identity. Global authority loss/corruption enters recovery-only
+service, never an empty replacement allocator. All live/unknown/pending grants survive as
+obligations; unavailable state prevents grants and launch authorization, not live worker survival.
 
 **Fail closed, two scopes, never repair.**
 
@@ -521,6 +550,12 @@ inbound HTTP surface.
 
 ### 5.2 Authority is per fact class
 
+**Shared-mode amendment (#228, §9.10):** the capacity authority owns global grants, fair turns,
+applied policy and resource availability. Herdr/managed launch-gate observations decide worker
+liveness and pending-start exclusion; headless probes use their registered supervisor's process
+lifetime observations. The repository journal cannot establish those facts.
+Gitea retains readiness and claims. A well-shaped authority reply is not proof of its deployment.
+
 A global ranking always ends up asserting something the winning source does not know.
 
 | Source | Authoritative for |
@@ -590,6 +625,12 @@ staying a comment.
 
 ### 5.5 Adopting a live worker
 
+**Shared-mode amendment (#228, §9.10):** distinguish proven-live, proven-ended/never-launched
+and inconclusive ownership. Failure of an adoption identity test does not prove a live worker
+ended. Retain its whole grant; adopt only after both fences and all identity tests pass.
+Unknown liveness prevents new global grants; neither it nor authority loss authorizes killing
+or replacing a live worker. Pending start calls must be fenced/settled before absence frees slots.
+
 Herdr runs in its own server process, so a resumed controller routinely finds a live worker
 session well into an implement phase. **Adopt when identity is provable; declare dead
 otherwise.** Discarding it would throw away real model work because the *controller* died.
@@ -624,6 +665,13 @@ where a role is `(name, entry skill, closure, prompt template, result expectatio
 knows nothing about which roles exist.
 
 ### 6.2 Skill closure and the three-layer preflight
+
+**Shared-mode amendment (#228, §9.10):** every model-using preflight/readmission probe has a
+persisted run-scoped probe identity and the same aggregate/resource admission and launch gate as
+an attempt. Their managed supervisor must retain launch identity and prove the full subprocess
+lifetime ended before release; a lost parent/HTTP connection is not proof. Static checks and
+non-model flag probes require no model grant. Disabled inventory
+is validated but not live-probed; waiting is visible, not a passing capability check.
 
 **Transitive skill requirements are a machine-readable `requires:` frontmatter declaration in
 the package's skills** — a package change this specification mandates. The factory computes
@@ -745,6 +793,12 @@ and so must be held by tests rather than by care:
 
 ### 6.4 Sessions and prompts
 
+**Shared-mode amendment (#228, §9.10):** record acquisition intent before asking the authority;
+record its grant and pinned route before the attempt mint/claim-to-launch sequence. A held grant
+is not a launch permit: confirm obtains one launch ID consumed once by the managed gate, which
+checks both fences at execution. Ambiguous Herdr starts are probed, never blindly repeated.
+Already admitted snapshots may launch after policy edits, but never through an unavailable gate.
+
 **All worker attempts run as interactive Herdr panes**; headless is reserved for disposable
 probes.
 
@@ -844,6 +898,11 @@ Herdr drops the reference at pane close and integration deletes the worktree the
 keyed on.
 
 ### 6.6 Typed completion — hybrid authority
+
+**Shared-mode amendment (#228, §9.10):** a valid result may settle the pipeline outcome but
+cannot release global model capacity while its harness may still use it. Release requires
+proven termination or fenced never-launch evidence and atomically frees both dimensions.
+An idle pane is free; a model-capable interactive harness retains its grant until stopped.
 
 **The attempt outbox file** — schema-versioned JSON at a controller-designated path *outside*
 the worktree — is the authoritative **domain** result. **Harness and Herdr lifecycle events**
@@ -1948,7 +2007,8 @@ human removing the label is what makes the label mean "someone has acknowledged 
 v2 only. Shared policy binds profiles through explicit account-quota or physical-device
 identities; URL aliases and ports cannot create capacity, and independent accounts do not
 collapse by provider. Operator inventory owns aggregate/per-resource worker ceilings; repository
-policy owns ticket concurrency. The admission/lease protocol remains #228's contract to settle.
+policy owns ticket concurrency. #228's §9.10 defines the shared admission/lease protocol:
+one aggregate and one explicit resource slot per model user, ticket slots remaining local.
 
 | Dimension | Bound |
 |---|---|
@@ -2044,6 +2104,13 @@ being parametric rather than special-cased at 1.
 
 ### 9.4 Acquisition, spans, and fencing
 
+**Shared-mode amendment (#228, §9.10):** the local atomic pair below is v2 only. Shared mode
+atomically acquires aggregate/resource slots at one authority, then tries the local ticket slot
+nonblocking before claim. Failed acquisition/claim cancels the whole unlaunched grant; a missing
+reply retains a recoverable obligation. Model capacity spans actual possible model use, including
+probes and ambiguous launches, not merely an attempt's result. Ticket slots retain their distinct
+execution span. Global grants are not reconstructed from local lease rows or freed on abandon.
+
 **Acquire before claiming.** A ticket execution acquires its **ticket slot and its implement
 attempt's model-resource slot together, before the Gitea claim** (§3.3). This is also what
 makes local-only-is-sequential *structurally* true rather than merely arithmetically true: a
@@ -2100,6 +2167,12 @@ the exact commit being published, with no conditional re-check path.
 
 ### 9.6 Fairness, backpressure, drain, abandon
 
+**Shared-mode amendment (#228, §9.10):** ascending issue number remains within a repository;
+across repositories durable least-recent-grant turns arbitrate eligible offers, skipping resources
+a repository cannot use. Contenders are persistent capacity demand, never a private work graph.
+No reservations or preemption. Stop/cancel interrupts waiting; abandon releases ticket claims
+but retains live/unknown global model holds for reconciliation, unlike v2's local release below.
+
 **There is no queue object.** Fairness is §3.2's ascending issue number and nothing else. The
 map rules out a private generated task graph and §10 rules out the resident work queue; an
 in-memory ready-queue is that same object with a shorter lifetime.
@@ -2142,7 +2215,13 @@ un-assigning there would clear **the winner's** claim, which is one field with t
 **Shared-mode amendment (#227, §11.9):** all inventory entries validate structurally, including
 dormant ones, but disabled profiles/resources are not live-probed. Policy-enabled is not proof
 of capability, quota, liveness, or a free slot. Effective policy reports revision/provenance and
-limits, never occupancy or a launch permit. Model-using probes will require #228's admission.
+limits, never occupancy or a launch permit. Model-using probes require #228's §9.10 admission.
+
+**Shared-admission reporting (#228):** §9.10's consistent inspection carries authority epoch/
+cursor, global and per-repository grants, limits/held/excess, contenders, shared cooldowns and
+applied/rejected policy revisions. Unknown occupancy is not zero; tokens are redacted. Local
+journal capacity events are not global facts. Monitor projection changes require #239's separate
+versioned read contract; the v2 "no monitor amendment" claim below does not cover shared mode.
 
 **Order inside preflight:** artifacts and config (cheap, local) → runtime probes including
 capacity observation → baseline checks (expensive). A wrong number fails before a full test
@@ -2174,6 +2253,12 @@ working or all of them are queued behind rico's single slot:
   `(run, ticket)` node already carries multiple live ticket executions.
 
 ### 9.8 Provider exhaustion — a time-boxed capacity state (#154)
+
+**Shared-mode amendment (#228, §9.10):** availability/cooldown is authority-owned and resource-
+identity scoped, with authentication and endpoint outages distinct from exhaustion. Coordinated
+readmission probes take ordinary aggregate/resource slots and fair turns; a not-before clock
+never clears the block. Successful evidence must match the current availability revision and
+the probe must end. Local memos and automatic exit-9 semantics below remain v2 behavior.
 
 A provider that refuses for quota or rate reasons is a typed fault of its own, and the refusal is
 remembered with an expiry. Before this, the worker started, was refused, wrote no outbox, and §6.6
@@ -2218,6 +2303,12 @@ that writes no exhaustion memo and spends no retry budget. Empty slots do not re
 provider: the same probe gate still applies, including fallback and terminal-outcome semantics.
 
 ### 9.9 Dispatch reroutes around an exhausted class (#155)
+
+**Shared-mode amendment (#228, §9.10):** controllers submit ranked, policy-enabled and
+role-qualified offers, and the authority grants the first currently usable offer on the
+repository's fair turn. It never invents a route or rewrites a mint. Busy/unavailable work waits
+budgetlessly and stoppably; it is not silently drained, downgraded or automatically terminated
+by a repository-local exhaustion memo. New-attempt continuation remains #229's contract.
 
 §9.8 remembers that a class is unavailable and holds dispatch off it. Holding is the right answer when
 the class is all a role has; it is the wrong one when the operator wrote down somewhere else to go, and
@@ -2294,9 +2385,30 @@ launch. Where the reroute does leave one profile between them, the verdict says 
 
 ---
 
+### 9.10 Shared admission contract v1 (#228)
+
+[Shared-admission v1](shared-admission-v1.md) fixes the repository-controller-owned interface:
+versioned request/reply guards, authority enrollment/epochs, indivisible grants, fenced launch
+confirmation, cross-store compensation/recovery, persistent fair turns, waiting/cancellation,
+shared refusal/readmission and #227 policy revision handling. It is proposed for acceptance,
+not an allocator or deployment. The executable contract and stub consumer tests ship before
+runtime integration; acceptance freezes the shape for dependent tickets.
+
+The authority arbitrates capacity, never ticket readiness. Global policy/grant state is separate
+from repository journals, and stale owners cannot launch even from a previously successful
+reply. A live/unknown worker's grant outlives its controller and run. Migration/rollback retains
+#227's enforced legacy exclusion and drain/reconciliation boundary; §9.3's proof gate stays 1.
+
+---
+
 ## 10. Controller lifecycle and the operator surface
 
 ### 10.1 Process shape
+
+**Shared-mode amendment (#228, §9.10):** controllers still run one invocation/run and exit.
+A shared authority may outlive runs but serves capacity requests only: no Gitea discovery,
+claiming, private graph or autonomous ticket scheduler. This contract does not choose a daemon.
+An absent authority is not permission to start an independent local allocator.
 
 > **The controller is a run-scoped child process; the operator surface is a deterministic
 > binary; the pi session is a launcher and a monitor host, never the executor.**
@@ -2351,6 +2463,12 @@ repo is itself the trust act**; no replacement gate is introduced.
 
 ### 10.3 Run lifecycle, end reasons, and exit codes
 
+**Shared-mode amendment (#228, §9.10):** capacity/policy/authority/no-route waits are separate
+observable wait reasons under preflight/running/draining, not new lifecycle states. They spend
+no retry budget and do not autonomously end a shared run with legacy exit 9 or success. Stop
+on unclaimed work ends at the boundary (3); draining claimed work may wait; abandon (4) retains
+unresolved global model holds; lease loss retains 6. No exit-code or envelope version changes.
+
 **Lifecycle:** `preflight` · `running` · `draining` · `ended`.
 
 **Run outcomes: seven run end reasons plus one controller exit outcome.** Every ended run
@@ -2397,6 +2515,11 @@ outcome. These are **run-scoped stages that hang off no tracker ticket**.
 command to start it** — the factory checks the operator's multiplexer, it does not manage it.
 
 ### 10.4 Recovery and re-entry
+
+**Shared-mode amendment (#228, §9.10):** re-entry attaches the new controller incarnation and
+reconciles all authority grants and pending operations for the repository, including ended
+runs and ticketless probes. It never resets fair-turn history, starts a replacement while
+liveness is unknown, or converts global holds into independent local slots.
 
 - **A restart re-enters an orphaned run, keeping its `run_id`.** Startup reconcile finds a run
   not `ended` whose lease is free or expired and adopts it. §5.5's pane-token worker adoption is
@@ -2957,6 +3080,11 @@ a complete digest up to the crash.
 
 ### 12.4 Pins — four, and they govern cleanup too
 
+**Shared-mode amendment (#228, §9.10):** unresolved global admission/launch/release operations
+and live/unknown grants pin their repository evidence even after run end. They remain in
+reconciliation scope; local expiry cannot erase global grant/request tombstones. Authority loss
+cannot be worked around by cleanup, store recreation or rollback to independent accounting.
+
 A run never leaves tier 1 while it has:
 
 1. **an open PR**, or
@@ -3483,10 +3611,10 @@ touching everything twice.
 
 ### 18.3 Operator-wide resources and fair dispatch — Draft
 
-**Status: Draft, with the policy interface specified by #227 (§11.9).** The operator has
-agreed the direction below. The inventory/effective-policy schema, revision rules, and managed
-migration boundary now have a versioned contract proposed for acceptance. Coordination,
-recovery, continuation and monitor interfaces still belong to their blocking contract tickets.
+**Status: Draft expansion; #227 specifies policy (§11.9), #228 admission (§9.10).** The operator
+has agreed the direction below. Inventory/effective-policy v1 is accepted; shared-admission v1
+now specifies coordination, recovery and fair-turn shapes for acceptance. Continuation and
+monitor interfaces still belong to their blocking contract tickets.
 The amended sections distinguish shared-mode requirements from the unchanged deployed v2
 behavior; nothing here claims the shared allocator or deployment has shipped.
 
@@ -3695,6 +3823,9 @@ is not permission to change the installed `.pi/factory.json` or raise its concur
 - The monitor UI itself — it belongs to
   [`software-factory-monitor.md`](software-factory-monitor.md).
 - Deleting the legacy implementations during this planning effort.
+- **Shared-mode clarification (#228, §9.10):** a persistent capacity authority is permitted,
+  not a resident ticket scheduler; it neither discovers nor claims Gitea work. Its implementation
+  topology remains undecided by the contract.
 - **A resident factory service with a work queue.** A private queue is the private task graph
   already excluded, and the run boundary is the spine of the locked monitor specification, so
   residency *invalidates* rather than adjusts it. **The tracker is already the queue** —
@@ -3704,6 +3835,13 @@ is not permission to change the installed `.pi/factory.json` or raise its concur
 ---
 
 ## 20. Amendment log
+
+#228 adds §9.10 and [shared-admission v1](shared-admission-v1.md), proposed for acceptance,
+not deployed. Explicit shared-mode amendments to §§3.3, 4.1, 4.5–4.7, 5.2, 5.5, 6.2, 6.4,
+6.6, 9.1, 9.4, 9.6–9.9, 10.1, 10.3–10.4, 12.4 and 19 separate global ownership from local
+state, add fenced launch/recovery, fair turns and shared availability, and retain model grants
+past results/abandon until proven safe to release. §18.3 and the monitor boundary are aligned.
+No allocator, resident work graph, paid trial, deployment or concurrency increase is shipped.
 
 #227 adds §11.9 and [operator-policy v1](operator-policy-v1.md): the inventory/effective-policy
 interface is specified, not deployed. Explicit shared-mode amendments to §§6.8, 9.1, 9.7, 10.5,

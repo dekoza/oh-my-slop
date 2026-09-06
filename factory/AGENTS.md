@@ -168,6 +168,15 @@ question is which rows have become the module's job to state, not what the ceili
 
 ## Capacity, exhaustion, and dispatch
 
+- **Shared admission v1 is a value contract, not a deployed allocator**; v2 rows below remain
+  local until integration. — `capacity/shared-admission-v1.mjs` · §9.10
+- **A shared grant indivisibly owns aggregate and resource slots**, including model probes;
+  ticket slots remain local and failed claims cancel the whole unused grant.
+  — `capacity/shared-admission-v1.mjs` · §9.10
+- **Global ownership requires both fences and confirmed launch identity**; results, controller
+  loss and unknown liveness never free model capacity. — `capacity/shared-admission-v1.mjs` · §9.10
+- **Shared fair turns, contenders, cooldowns and policy revisions survive runs**; the authority
+  owns no ticket readiness or resident work graph. — `capacity/shared-admission-v1.mjs` · §9.10
 - **Capacity is arbitrated by named rows, never by a counter**: `capacity:ticket:<i>` and
   `capacity:model:<class>:<i>` are compare-and-swap holds on the lease primitive, and a row settles
   three ways with a lane adopted whole or not at all — a provable holder is transferred onto this
