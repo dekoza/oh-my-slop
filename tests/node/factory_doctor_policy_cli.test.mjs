@@ -1,0 +1,89 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { policyFixture } from "./helpers/factory-policy.mjs";
+
+const HARNESS = fileURLToPath(new URL("./helpers/factory-policy-cli.mjs", import.meta.url));
+
+function cliFixture(t) {
+	const f = policyFixture(t);
+	f.operator.resources.hosted = { identity: { kind: "account", provider: "synthetic", accountId: "test_account", quotaId: "subscription" }, enabled: true, limit: 2 };
+	f.operator.credentials.hosted = { kind: "runtime-auth", runtime: "claude", name: "test_auth" };
+	f.operator.bindings.hosted = { resourceId: "hosted", credentialId: "hosted", endpoint: null };
+	f.operator.profiles.hosted = { enabled: true, bindingId: "hosted", runtime: { kind: "claude", model: "test-model", effort: "high" } };
+	f.operator.profiles.dormant = { ...structuredClone(f.operator.profiles.builder), enabled: false };
+	f.operator.resources.disabled = { identity: { kind: "account", provider: "synthetic", accountId: "other_account", quotaId: "credits" }, enabled: false, limit: 1 };
+	f.operator.credentials.disabled = { kind: "runtime-auth", runtime: "pi", name: "test_disabled_auth" };
+	f.operator.bindings.disabled = { resourceId: "disabled", credentialId: "disabled", endpoint: null };
+	f.operator.profiles.disabled = { enabled: true, bindingId: "disabled", runtime: { kind: "pi", model: "test-provider/test-model" } };
+	f.operator.aggregateLimit = 3;
+	f.operator.modes.full = { aggregateLimit: 3, resources: { gpu: 1, hosted: 2, disabled: 1 } };
+	f.repository.routing.roles = { implement: "hosted", freshRetry: "hosted", review: ["hosted", "builder"] };
+	f.repository.routing.fallbacks = { implement: ["builder"], freshRetry: ["builder"], review: [["builder"], []] };
+	f.repository.routing.sets = { local: { roles: { implement: "builder", freshRetry: "builder", review: ["builder", "builder"] }, rules: [] } };
+	f.save();
+	const bin = join(f.filesystemRoot, "bin");
+	mkdirSync(bin);
+	// Nonsecret login metadata is the only external read allowed. All other
+	// tool invocations fail loudly. No live tracker, authority or model is used.
+	const calls = join(f.filesystemRoot, "calls.jsonl");
+	writeFileSync(join(bin, "tea"), `#!${process.execPath}\nimport { appendFileSync } from 'node:fs';\nconst args = process.argv.slice(2);\nappendFileSync(${JSON.stringify(calls)}, JSON.stringify(args)+'\\n');\nif (JSON.stringify(args) !== JSON.stringify(['logins','list','--output','json'])) process.exit(99);\nconsole.log(JSON.stringify([{name:'gitea',url:'https://forge.invalid',ssh_host:'forge.invalid'}]));\n`, { mode: 0o755 });
+	for (const tool of ["pi", "claude", "herdr", "gh"]) writeFileSync(join(bin, tool), "#!/bin/sh\necho FORBIDDEN_TOOL >&2\nexit 99\n", { mode: 0o755 });
+	return { ...f, calls, invoke(args) {
+		return spawnSync(process.execPath, [HARNESS, f.filesystemRoot, "doctor", "--policy", ...args], {
+			cwd: f.cwd, encoding: "utf8", timeout: 30_000,
+			env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FACTORY_OPERATOR_FILE: "/nonexistent/ignored", FACTORY_MODE: "ignored" },
+		});
+	} };
+}
+
+function snapshot(root) {
+	return readdirSync(root, { recursive: true, withFileTypes: true }).filter((e) => e.isFile())
+		.map((e) => [join(e.parentPath, e.name), readFileSync(join(e.parentPath, e.name)).toString("hex")]);
+}
+
+test("subprocess CLI explains full/local-only policy and never probes or mutates sources", (t) => {
+	const f = cliFixture(t);
+	for (const mode of ["full", "local-only"]) {
+		f.operator.activeMode = mode;
+		f.save();
+		const before = snapshot(f.root);
+		const operatorBefore = readFileSync(f.operatorFile);
+		const json = f.invoke(["--json"]);
+		assert.equal(json.status, 0, json.stderr + json.stdout);
+		const value = JSON.parse(json.stdout);
+		assert.equal(value.schema_version, 1);
+		assert.equal(value.command, "doctor");
+		const { policy } = value.report.policyResolution;
+		assert.equal(policy.operator.activeMode, mode);
+		assert.deepEqual(policy.limits, { aggregate: mode === "full" ? 3 : 1, resources: { gpu: 1, hosted: mode === "full" ? 2 : 0, disabled: 0 } });
+		assert.deepEqual(policy.profileAvailability, { builder: "enabled", hosted: mode === "full" ? "enabled" : "mode-disabled", dormant: "profile-disabled", disabled: "resource-disabled" });
+		const human = f.invoke([]);
+		assert.equal(human.status, 0, human.stderr);
+		assert.match(human.stdout, /configured eligible profiles: builder(?:, hosted)?/);
+		assert.match(human.stdout, /applied state: not observed/);
+		assert.match(human.stdout, /occupancy: not observed/);
+		assert.doesNotMatch(human.stderr, /FORBIDDEN_TOOL/);
+		assert.deepEqual(snapshot(f.root), before);
+		assert.deepEqual(readFileSync(f.operatorFile), operatorBefore);
+	}
+	assert.deepEqual(readFileSync(f.calls, "utf8").trim().split("\n").map(JSON.parse), Array(4).fill(["logins", "list", "--output", "json"]));
+});
+
+test("subprocess CLI records selected routing and a rejected revision without disclosing invalid bytes", (t) => {
+	const f = cliFixture(t);
+	const selected = f.invoke(["--routing-set=local", "--json"]);
+	assert.equal(selected.status, 0, selected.stderr);
+	assert.equal(JSON.parse(selected.stdout).report.policyResolution.policy.routingSet, "local");
+	writeFileSync(f.operatorFile, '{"token":"NEVER_DISCLOSE_THIS",');
+	const result = f.invoke(["--json"]);
+	assert.equal(result.status, 1, result.stderr);
+	const value = JSON.parse(result.stdout);
+	assert.equal(value.error.reason, "invalid-document");
+	assert.equal(value.error.policyResolution.state, "rejected");
+	assert.equal(value.error.policyResolution.policy, null);
+	assert.doesNotMatch(result.stdout + result.stderr + f.invoke([]).stdout, /NEVER_DISCLOSE_THIS/);
+});

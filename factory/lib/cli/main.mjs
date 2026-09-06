@@ -1,6 +1,7 @@
 import { registerArtifactProbes } from "../artifacts/probes.mjs";
 import { FactoryConfigError } from "../config/errors.mjs";
 import { loadFactoryConfig, ROUTING_SET_FLAG } from "../config/load.mjs";
+import { renderPolicyResolution } from "../doctor/policy-render.mjs";
 import { registerGitProbes } from "../git/probes.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
 import { EXIT_NOT_IMPLEMENTED, EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "./exit-codes.mjs";
@@ -274,13 +275,15 @@ export function renderHuman(value) {
 	// exist.
 	if (value.error === undefined) {
 		lines.push(value.message);
-		if (value.report !== undefined) lines.push(...renderReport(value.report));
+		if (value.report?.policyResolution !== undefined) lines.push(...renderPolicyResolution(value.report.policyResolution));
+		else if (value.report !== undefined) lines.push(...renderReport(value.report));
 	} else {
 		const scope = value.command === null ? "factory" : `factory ${value.command}`;
 		lines.push(`${scope}: ${value.error.message}`);
 		for (const [key, detail] of Object.entries(value.error)) {
 			if (key === "message" || detail === null || detail === undefined) continue;
-			lines.push(`  ${key}: ${formatDetail(detail)}`);
+			if (key === "policyResolution") lines.push(...renderPolicyResolution(detail));
+			else lines.push(`  ${key}: ${formatDetail(detail)}`);
 		}
 	}
 
