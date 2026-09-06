@@ -107,19 +107,21 @@ async function verifyRepositoryIdentity(root, tracker, readLogin) {
 		const scp = /^[^/@]+@([^/:]+):(.+)$/.exec(remote ?? "");
 		const url = scp ? new URL(`ssh://${scp[1]}/${scp[2]}`) : new URL(remote);
 		if (!["http:", "https:"].includes(forge.protocol) || forge.username || forge.password || forge.search || forge.hash) throw new TypeError("Invalid login URL");
-		let expectedPath;
+		let namespacePrefix;
 		if (url.protocol === "ssh:") {
 			const ssh = new URL(`ssh://${login.sshHost}`);
 			matches = url.hostname === ssh.hostname && (url.port || "22") === (ssh.port || "22");
-			expectedPath = `/${tracker.repo}`;
+			namespacePrefix = "/";
 		} else {
 			matches = url.origin === forge.origin;
-			expectedPath = `${forge.pathname.replace(/\/+$/, "")}/${tracker.repo}`;
+			namespacePrefix = `${forge.pathname.replace(/\/+$/, "")}/`;
 		}
 		// Gitea's HTTP base path belongs to the forge; SSH paths begin at its
 		// repository namespace. A suffix-only slug match accepts another route.
 		const repositoryPath = url.pathname.replace(/\/+$/, "").replace(/\.git$/, "");
-		matches &&= repositoryPath.toLowerCase() === expectedPath.toLowerCase() && !url.password && !url.search && !url.hash;
+		matches &&= repositoryPath.startsWith(namespacePrefix)
+			&& repositoryPath.slice(namespacePrefix.length).toLowerCase() === tracker.repo.toLowerCase()
+			&& !url.password && !url.search && !url.hash;
 	} catch (error) {
 		if (!(error instanceof TypeError)) throw error;
 		// Invalid/unresolvable identity is a safe refusal, never source text.

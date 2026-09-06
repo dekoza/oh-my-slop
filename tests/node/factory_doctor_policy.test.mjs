@@ -106,6 +106,8 @@ test("a forge HTTP base path is exact and does not become an SSH repository pref
 	const login = { url: "https://forge.invalid/gitea", sshHost: "forge.invalid:2222" };
 	for (const [url, exitCode] of [
 		["https://forge.invalid/gitea/acme/widgets.git", 0],
+		["https://forge.invalid/gitea/ACME/WIDGETS.git", 0],
+		["https://forge.invalid/GITEA/acme/widgets.git", 1],
 		["ssh://git@forge.invalid:2222/acme/widgets.git", 0],
 		["https://forge.invalid/gitea/unrelated/acme/widgets.git", 1],
 		["ssh://git@forge.invalid:2222/gitea/acme/widgets.git", 1],
