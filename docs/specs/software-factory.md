@@ -995,6 +995,12 @@ suite. The judgement, the claim assessment and the document are `factory/lib/pro
 
 ### 6.8 Trust, permissions, and isolation
 
+**Shared-mode amendment (#227, §11.9):** inventory bindings own resource endpoints and
+credential references. Repository extension env cannot redeclare a binding's endpoint variable.
+The managed execution boundary must enforce actual resource access; promotion alone is not
+admission. Role permission floors and isolated worker settings below remain mandatory. This
+contract does not change v2 worker execution or install new credentials.
+
 **Trust.** The controller pre-trusts its own worktrees mechanically, per attempt — a factory
 worktree contains only the operator's repo at a pinned commit, so auto-trust weakens nothing.
 Claude: trust state written into the controller-owned config state file. pi: `trust.json` /
@@ -1938,6 +1944,12 @@ human removing the label is what makes the label mean "someone has acknowledged 
 
 ### 9.1 The capacity model — three dimensions, two declared
 
+**Shared-mode amendment (#227, §11.9):** endpoint/provider-derived classes below describe
+v2 only. Shared policy binds profiles through explicit account-quota or physical-device
+identities; URL aliases and ports cannot create capacity, and independent accounts do not
+collapse by provider. Operator inventory owns aggregate/per-resource worker ceilings; repository
+policy owns ticket concurrency. The admission/lease protocol remains #228's contract to settle.
+
 | Dimension | Bound |
 |---|---|
 | **Ticket execution** | the scheduler's unit, bounded by declared `maxTicketExecutions` |
@@ -2126,6 +2138,11 @@ un-assigning there would clear **the winner's** claim, which is one field with t
 **never derived from the lanes**, so it stays unambiguous however differently they ended.
 
 ### 9.7 Preflight ordering and saturation observability
+
+**Shared-mode amendment (#227, §11.9):** all inventory entries validate structurally, including
+dormant ones, but disabled profiles/resources are not live-probed. Policy-enabled is not proof
+of capability, quota, liveness, or a free slot. Effective policy reports revision/provenance and
+limits, never occupancy or a launch permit. Model-using probes will require #228's admission.
 
 **Order inside preflight:** artifacts and config (cheap, local) → runtime probes including
 capacity observation → baseline checks (expensive). A wrong number fails before a full test
@@ -2396,6 +2413,13 @@ command to start it** — the factory checks the operator's multiplexer, it does
 
 ### 10.5 Stopping, doctor, reconcile, cleanup
 
+**Shared-mode amendment (#227, §11.9):** `factory doctor --policy` reads a desired-policy
+preview without contacting an authority or claiming applied state. It may return a rejected
+or unavailable resolution with `policy: null`, desired/applied revisions and a safe reason even
+when desired source files cannot load. This is not a usable degraded config, does not apply an
+edit, and grants nothing. Stop remains independent of configuration. The v2 verb behavior below
+is unchanged; #230 owns wiring the shared-policy doctor surface.
+
 **`stop` writes a durable stop-request record** carrying §4.5's actor slot, polled by the
 controller at ticket boundaries. It works from any terminal without finding a pid, survives
 arrival mid-phase, needs no signal-handler reentrancy inside an async scheduler, and **makes
@@ -2483,6 +2507,12 @@ nothing about runtime policy is ever inferred.**
 
 ### 11.1 Files and discovery
 
+**Shared-mode amendment (#227, §11.9):** the single-file rule below is v2's. Repository v3
+keeps the same repo-root discovery and explicitly names one enrolled operator identity.
+Operator inventory v1 is mounted at `/etc/oh-my-slop/factory/operator.json` inside the managed
+boundary. Ownership is disjoint, not merge precedence; no env/path override selects inventory.
+The effective policy is a revisioned pair of snapshots, not another editable policy file.
+
 - **`.pi/factory.json`** (`schemaVersion: 2`) — the factory's single authoritative source. **No
   user-level defaults file, no env overrides for policy, no merge layering**; the effective
   policy always exists on disk exactly once. The only other input is §6.8's declared per-run
@@ -2504,6 +2534,13 @@ different schemas, even if the key is renamed or read loosely.
 
 ### 11.2 Strictness — the "no silent guessing" core
 
+**Shared-mode amendment (#227, §11.9):** strictness applies to both source documents, dormant
+references included. Invalid desired operator revisions suspend all new shared admissions;
+invalid repository revisions suspend that repository. Prior applied revisions remain historical
+and usable by already admitted attempts, never a last-known-good admission fallback. Read-only
+policy diagnostics return typed refusals, not a successful degraded load. The application owner
+records rejected revisions durably; restoring old valid bytes must clear suspension atomically.
+
 **Unrecognised `schemaVersion`, unknown key, missing required key, parse error, and any residual
 `TODO` sentinel are all hard load failures that refuse to start the run.** No warn-and-continue.
 
@@ -2517,6 +2554,11 @@ file into a loadable one (§11.8), and `stop` ends a run whose controller is not
 (§10.5). Every other verb refuses a load failure with exit 1.
 
 ### 11.3 Block inventory
+
+**Shared-mode amendment (#227, §11.9):** repository v3 removes `profiles` and
+`concurrency.resources`, adds required `operatorId`, and otherwise retains the project-owned
+blocks below. Operator inventory v1 owns `resources`, `bindings`, `credentials`, `profiles`,
+`aggregateLimit`, `modes`, and `activeMode`. Cross-owner keys refuse rather than merge.
 
 Surviving blocks: `tracker` (minus `labels`), `git`, `profiles`, `routing`, `checks`,
 `budgets`, `concurrency`, `retention`, and an optional `package.expect`.
@@ -2540,6 +2582,11 @@ for profiles and routing, and §11.8's migration must not confuse the two.
 - **`herdr.maxWorkers` is deleted** (superseded by §9). **`retry` → `budgets`.**
 
 ### 11.4 Profiles and permissions
+
+**Shared-mode amendment (#227, §11.9):** operator profiles are `{ enabled, bindingId, runtime }`.
+The `runtime` retains the flags and clocks below but has no `endpoint`; the inventory binding
+owns that endpoint and its credential reference. Physical/account identity, not runtime/model,
+determines shared resource identity. Disabled profiles remain valid and cannot dispatch.
 
 Profiles carry `kind`, `model`, and optionally `effort` / `thinking` / `startupTimeoutMs` /
 `attemptTimeoutMs` / `noProgressTimeoutMs`, where omission means "don't pass the flag" — safe
@@ -2565,6 +2612,13 @@ permissions requires a declared, manifest-recorded per-run override that can nev
 hard floor.
 
 ### 11.5 Routing
+
+**Shared-mode amendment (#227, §11.9):** repository routing retains this schema but names
+operator profiles, including valid disabled profiles. Selecting a named set never overrides
+operator mode, enablement, or ceilings. Repository policy is pinned during a run; edits suspend
+its new admissions until drain/reapplication. Operator mode/limit changes apply at admission
+order across running controllers. Repair/continuation semantics below are not changed by this
+policy interface; #229 owns any new-attempt cross-resource continuation contract.
 
 Roles are **`implement`, `freshRetry`, `review[2]`** — all three required, **no implicit
 fallback**.
@@ -2650,6 +2704,12 @@ coercion** — then re-asserted at launch against the *observed* runtime. A conf
 still proves nothing about what executes.
 
 ### 11.6 Checks, budgets, concurrency, retention
+
+**Shared-mode amendment (#227, §11.9):** project checks, budgets, retention and permission
+floors stay repository-owned. V3 `concurrency` contains only `maxTicketExecutions`, under the
+unchanged code-owned proof ceiling. Resource sizing/reachability rules below remain v2-only:
+shared inventory permits dormant resources and sizes all resources independently of repository
+reachability. Zero ceilings explicitly suspend admission; no worker-capacity default is added.
 
 All live **inline** in `.pi/factory.json` — one file, one atomic fail-closed load.
 
@@ -2783,6 +2843,13 @@ digest — **a recheck producing a different digest is a failure, not a new pin.
 
 ### 11.8 Command name and migration
 
+**Shared-mode amendment (#227, §11.9):** v2-to-v3 enrollment is a separate explicit migration
+from the v1-to-v2 mapping below. Preserve configs/state; drain and reconcile legacy work; resolve
+ambiguous identities with the operator. Shared mode requires OS/resource-enforced exclusion of
+legacy binaries, not a new marker they ignore. Rollback drains/reconciles every global hold and
+prevents shared restarts before independent accounting resumes. #227 specifies but deploys none
+of this; the detailed prerequisite and guarantee limits live in the versioned contract.
+
 - **`/factory` keeps its name** — that is the entire legacy compatibility promise. The verb set
   is §10.2's; legacy `start` / `status` semantics are not preserved.
 - **v1 configs are hard-rejected by `schemaVersion`**, with the error pointing at
@@ -2803,6 +2870,23 @@ cannot pick which ticket labels were meant to survive, nor pick concurrency size
   goes through §10.5's `cleanup-plan` / `cleanup-execute` as an explicit opt-in; **the new
   factory refuses to reuse any of them.** `removedExtensions` is dropped from the root
   `package.json` as dead metadata.
+
+---
+
+### 11.9 Operator inventory and effective-policy contract v1 (#227)
+
+The consumer-owned [operator-policy v1 contract](operator-policy-v1.md) fixes inventory v1,
+repository v3, desired-preview/applied request views, the versioned resolution schema,
+disjoint ownership, resource identity,
+revision/application semantics, and the approved managed deployment/rollback boundary. Its
+executable artifact is `factory/lib/config/operator-policy-v1.mjs`; it is a value guard, not a
+resolver, allocator, deployment or compatibility claim by the existing v2 binary.
+
+This interface is proposed for acceptance with #227 and immutable once accepted. Changes then
+require a new contract-version ticket and blocking edges to affected consumers. #228 owns the
+shared authority/admission protocol, #229 continuation, and #239 the monitor read contract;
+none is silently settled by this policy read seam. No installed configuration, model selector,
+secret, numeric capacity or supported ticket concurrency is changed by accepting this contract.
 
 ---
 
@@ -3399,10 +3483,12 @@ touching everything twice.
 
 ### 18.3 Operator-wide resources and fair dispatch — Draft
 
-**Status: Draft.** The operator has agreed the direction below. Schema, coordination protocol,
-recovery, and migration still need design before implementation tickets are build-ready. The
-locked contracts elsewhere in this document remain the current contract; this section records
-exactly where they must change rather than pretending the new behavior already exists.
+**Status: Draft, with the policy interface specified by #227 (§11.9).** The operator has
+agreed the direction below. The inventory/effective-policy schema, revision rules, and managed
+migration boundary now have a versioned contract proposed for acceptance. Coordination,
+recovery, continuation and monitor interfaces still belong to their blocking contract tickets.
+The amended sections distinguish shared-mode requirements from the unchanged deployed v2
+behavior; nothing here claims the shared allocator or deployment has shipped.
 
 #### Problem and destination
 
@@ -3618,6 +3704,13 @@ is not permission to change the installed `.pi/factory.json` or raise its concur
 ---
 
 ## 20. Amendment log
+
+#227 adds §11.9 and [operator-policy v1](operator-policy-v1.md): the inventory/effective-policy
+interface is specified, not deployed. Explicit shared-mode amendments to §§6.8, 9.1, 9.7, 10.5,
+11.1–11.6 and 11.8 replace conflicting ownership, identity, reachability and load-once claims
+for v3 only. Invalid edits suspend new admission in their scope; prior attempts may finish.
+The operator approved OS-enforced legacy exclusion; migration and rollback require drain and
+reconciliation. V2 runtime, concurrency proof gates and installed settings remain unchanged.
 
 | Date | Change | By |
 |---|---|---|

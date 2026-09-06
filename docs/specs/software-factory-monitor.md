@@ -29,6 +29,13 @@ argument for #87 sequencing the monitor early in its own ticket order rather tha
 
 **The first release is read-only.** A command seam is preserved but never opened (§7.7).
 
+**Shared-policy boundary (#227):** [operator-policy v1](operator-policy-v1.md) defines desired
+versus applied revisions, rejected revisions, policy availability and provenance. These are
+inputs to the future global-capacity read contract (#239), not additions to this monitor's
+current projection schema. A policy-enabled profile or a repository-local free slot is not
+proof of globally available capacity. #239 must expose unavailable/unsupported global reads
+explicitly; this amendment does not wire a monitor or grant it policy-application authority.
+
 ---
 
 ## 2. Domain model
