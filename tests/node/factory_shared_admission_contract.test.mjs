@@ -121,6 +121,46 @@ test("controller confirms one launch identity and accepts only proven release or
 	await assert.rejects(consume(stub(stale, reply(stale, { status: "released", grantId: grant.id, evidence: { kind: "proven-ended", observationId: uuid(9) } })), stale), TypeError);
 });
 
+test("failed local acquisition or tracker claim cancels the whole grant before another offer", async () => {
+	for (const failure of ["ticket-slot", "tracker-claim"]) {
+		const { request, grant } = scenario();
+		const calls = [];
+		const authority = { async exchange(actual) {
+			calls.push(actual.operation);
+			if (actual.operation === "acquire") return reply(actual, { status: "granted", grant });
+			assert.equal(actual.operation, "cancel", "failure must never reach confirm/launch");
+			assert.equal(actual.contenderId, grant.contenderId);
+			return reply(actual, { status: "cancelled", contenderId: grant.contenderId, grantId: grant.id, evidence: { kind: "never-launched", observationId: uuid(9) } });
+		} };
+		// Controller-side protocol recipe: local CAS is nonblocking, then claim.
+		// The stub is not evidence that a real authority implements compensation.
+		const admitted = await consume(authority, request);
+		assert.equal(admitted.status, "granted");
+		const ticketAcquired = failure !== "ticket-slot";
+		const claimWon = ticketAcquired && failure !== "tracker-claim";
+		assert.equal(claimWon, false);
+		const cancelled = await consume(authority, operation(request, "cancel", { contenderId: admitted.grant.contenderId }));
+		assert.equal(cancelled.grantId, grant.id);
+		assert.equal(cancelled.evidence.kind, "never-launched");
+		assert.deepEqual(calls, ["acquire", "cancel"]);
+	}
+});
+
+test("waiting is cursor-based and cancellation cannot hide an unresolved grant", async () => {
+	const { request, grant } = scenario();
+	const wait = operation(request, "wait", { contenderId: request.contenderId, after: 7 });
+	for (const cursor of [7, 8]) {
+		const result = await consume(stub(wait, reply(wait, { status: "changed", cursor })), wait);
+		assert.equal(result.cursor, cursor);
+	}
+	await assert.rejects(consume(stub(wait, reply(wait, { status: "changed", cursor: 6 })), wait), TypeError);
+	const cancel = operation(request, "cancel", { contenderId: request.contenderId });
+	await consume(stub(cancel, reply(cancel, { status: "cancelled", contenderId: request.contenderId, grantId: null, evidence: null })), cancel);
+	await consume(stub(cancel, reply(cancel, { status: "unavailable", reason: "ownership-inconclusive", cursor: 8 })), cancel);
+	await assert.rejects(consume(stub(cancel, reply(cancel, { status: "cancelled", contenderId: request.contenderId, grantId: grant.id, evidence: null })), cancel), TypeError);
+	await assert.rejects(consume(stub(cancel, reply(cancel, { status: "cancelled", contenderId: uuid(99), grantId: null, evidence: null })), cancel), TypeError);
+});
+
 test("controller receives one indivisible aggregate/resource grant pinned to applied policy", async () => {
 	const { request, grant } = scenario();
 	const result = await consume(stub(request, reply(request, { status: "granted", grant })), request);

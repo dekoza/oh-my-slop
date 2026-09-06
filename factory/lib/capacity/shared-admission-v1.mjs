@@ -87,12 +87,20 @@ const REPLY_BASE = ["contractVersion", "operation", "requestId", "epoch", "statu
 
 /** Validate the controller's request before it reaches an authority. */
 export function assertAdmissionRequest(request) {
-	const fields = { acquire: ["contenderId", "subject", "policy", "offers"], confirm: ["grant"], release: ["grant"], reconcile: ["grant"] };
+	const fields = {
+		acquire: ["contenderId", "subject", "policy", "offers"], confirm: ["grant"], release: ["grant"], reconcile: ["grant"],
+		wait: ["contenderId", "after"], cancel: ["contenderId"],
+	};
 	requireThat(request?.contractVersion === ADMISSION_CONTRACT_VERSION && Object.hasOwn(fields, request.operation));
 	keys(request, [...MUTATION_BASE, ...fields[request.operation]]);
 	uuid(request.requestId); keys(request.authority, ["operatorId", "controllerHostId"]);
 	id(request.authority.operatorId); id(request.authority.controllerHostId);
 	owner(request.owner); positive(request.epoch);
+	if (["wait", "cancel"].includes(request.operation)) {
+		uuid(request.contenderId);
+		if (request.operation === "wait") integer(request.after);
+		return request;
+	}
 	if (Object.hasOwn(request, "grant")) {
 		grant(request.grant);
 		if (request.operation === "reconcile") {
@@ -130,6 +138,18 @@ export function assertAdmissionReply(reply, request) {
 		return reply;
 	}
 	requireThat(reply.epoch === request.epoch);
+	if (reply.status === "changed") {
+		requireThat(request.operation === "wait"); keys(reply, [...REPLY_BASE, "cursor"]);
+		integer(reply.cursor); requireThat(reply.cursor >= request.after);
+		return reply;
+	}
+	if (reply.status === "cancelled") {
+		requireThat(request.operation === "cancel"); keys(reply, [...REPLY_BASE, "contenderId", "grantId", "evidence"]);
+		requireThat(reply.contenderId === request.contenderId);
+		if (reply.grantId === null) requireThat(reply.evidence === null);
+		else { uuid(reply.grantId); endEvidence(reply.evidence); }
+		return reply;
+	}
 	if (reply.status === "released") {
 		requireThat(request.operation === "release"); keys(reply, [...REPLY_BASE, "grantId", "evidence"]);
 		requireThat(reply.grantId === request.grant.id); endEvidence(reply.evidence);
