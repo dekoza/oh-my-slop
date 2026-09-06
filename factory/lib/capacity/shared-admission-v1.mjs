@@ -69,17 +69,38 @@ function policy(value, authority) {
 	const operator = value.resolution.policy.operator;
 	requireThat(operator.operatorId === authority.operatorId && operator.controllerHostId === authority.controllerHostId);
 }
+function endEvidence(value) {
+	keys(value, ["kind", "observationId"]); member(value.kind, ["never-launched", "proven-ended"]); uuid(value.observationId);
+}
+function retainedGrant(value, previous) {
+	grant(previous);
+	for (const key of Object.keys(previous)) {
+		if (["owner", "state", "launchId"].includes(key)) continue;
+		requireThat(same(value[key], previous[key]));
+	}
+	if (previous.launchId !== null) requireThat(value.launchId === previous.launchId);
+	if (previous.state === "released") requireThat(value.state === "released");
+}
 const REQUEST_BASE = ["contractVersion", "operation", "requestId", "authority"];
 const MUTATION_BASE = [...REQUEST_BASE, "owner", "epoch"];
 const REPLY_BASE = ["contractVersion", "operation", "requestId", "epoch", "status"];
 
 /** Validate the controller's request before it reaches an authority. */
 export function assertAdmissionRequest(request) {
-	keys(request, [...MUTATION_BASE, "contenderId", "subject", "policy", "offers"]);
-	requireThat(request.contractVersion === ADMISSION_CONTRACT_VERSION && request.operation === "acquire");
+	const fields = { acquire: ["contenderId", "subject", "policy", "offers"], confirm: ["grant"], release: ["grant"], reconcile: ["grant"] };
+	requireThat(request?.contractVersion === ADMISSION_CONTRACT_VERSION && Object.hasOwn(fields, request.operation));
+	keys(request, [...MUTATION_BASE, ...fields[request.operation]]);
 	uuid(request.requestId); keys(request.authority, ["operatorId", "controllerHostId"]);
 	id(request.authority.operatorId); id(request.authority.controllerHostId);
 	owner(request.owner); positive(request.epoch);
+	if (Object.hasOwn(request, "grant")) {
+		grant(request.grant);
+		if (request.operation === "reconcile") {
+			requireThat(request.grant.owner.repositoryId === request.owner.repositoryId && request.grant.owner.runId === request.owner.runId);
+		} else requireThat(same(request.grant.owner, request.owner));
+		if (request.operation === "confirm") member(request.grant.state, ["held", "launch-pending"]);
+		return request;
+	}
 	uuid(request.contenderId); subject(request.subject, request.owner); policy(request.policy, request.authority);
 	unique(request.offers, id);
 	for (const profile of request.offers) requireThat(request.policy.resolution.policy.profileAvailability[profile] === "enabled");
@@ -109,14 +130,38 @@ export function assertAdmissionReply(reply, request) {
 		return reply;
 	}
 	requireThat(reply.epoch === request.epoch);
+	if (reply.status === "released") {
+		requireThat(request.operation === "release"); keys(reply, [...REPLY_BASE, "grantId", "evidence"]);
+		requireThat(reply.grantId === request.grant.id); endEvidence(reply.evidence);
+		return reply;
+	}
+	if (reply.status === "launch-authorized" || reply.status === "reconciled") {
+		keys(reply, [...REPLY_BASE, "grant", ...(reply.status === "reconciled" ? ["liveness", "adoptable"] : [])]);
+		grant(reply.grant); retainedGrant(reply.grant, request.grant);
+		if (reply.status === "launch-authorized") {
+			requireThat(request.operation === "confirm" && reply.grant.state === "launch-pending");
+			requireThat(same(reply.grant.owner, request.owner));
+		} else {
+			requireThat(request.operation === "reconcile");
+			member(reply.liveness, ["proven-live", "proven-ended", "never-launched", "inconclusive"]);
+			requireThat(typeof reply.adoptable === "boolean");
+			if (["proven-ended", "never-launched"].includes(reply.liveness)) requireThat(reply.grant.state === "released" && !reply.adoptable);
+			else requireThat(reply.grant.state !== "released");
+			if (reply.liveness === "proven-live") requireThat(reply.grant.state === "running");
+			if (reply.adoptable) requireThat(reply.liveness === "proven-live" && same(reply.grant.owner, request.owner));
+			else requireThat(same(reply.grant.owner, request.grant.owner));
+		}
+		return reply;
+	}
 	if (reply.status === "busy") {
+		requireThat(request.operation === "acquire");
 		keys(reply, [...REPLY_BASE, "contenderId", "reason", "cursor"]);
 		requireThat(reply.contenderId === request.contenderId);
 		member(reply.reason, ["aggregate", "resource", "fair-turn", "readmission-in-flight"]); integer(reply.cursor);
 		return reply;
 	}
 	keys(reply, [...REPLY_BASE, "grant"]);
-	requireThat(reply.status === "granted");
+	requireThat(reply.status === "granted" && request.operation === "acquire");
 	grant(reply.grant);
 	const value = reply.grant;
 	requireThat(same(value.owner, request.owner) && same(value.subject, request.subject));

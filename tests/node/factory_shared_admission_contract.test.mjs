@@ -45,6 +45,10 @@ function scenario() {
 	return { request, grant };
 }
 
+function operation(request, name, fields = {}) {
+	const { contractVersion, authority, owner, epoch } = request;
+	return { contractVersion, operation: name, requestId: uuid(20), authority, owner, epoch, ...fields };
+}
 function reply(request, fields) {
 	return { contractVersion: 1, operation: request.operation, requestId: request.requestId, epoch: request.epoch ?? 1, ...fields };
 }
@@ -76,6 +80,45 @@ test("controller waits without a partial grant on busy, unavailable, revision an
 	await assert.rejects(consume(stub(request, reply(request, { status: "busy", contenderId: uuid(99), reason: "resource", cursor: 7 })), request), TypeError);
 	await assert.rejects(consume(stub(request, { ...reply(request, { status: "granted", grant }), contractVersion: 2 }), request), TypeError);
 	await assert.rejects(consume(stub(request, reply(request, { status: "refused", reason: "guess-and-retry" })), request), TypeError);
+});
+
+test("controller confirms one launch identity and accepts only proven release or fenced recovery", async () => {
+	const { request, grant } = scenario();
+	const confirm = operation(request, "confirm", { grant });
+	const pending = { ...grant, state: "launch-pending", launchId: uuid(6) };
+	const result = await consume(stub(confirm, reply(confirm, { status: "launch-authorized", grant: pending })), confirm);
+	assert.equal(result.grant.launchId, uuid(6));
+	const repeated = operation(request, "confirm", { grant: pending });
+	await consume(stub(repeated, reply(repeated, { status: "launch-authorized", grant: pending })), repeated);
+	await assert.rejects(consume(stub(repeated, reply(repeated, { status: "launch-authorized", grant: { ...pending, launchId: uuid(7) } })), repeated), TypeError);
+
+	const successor = { ...request.owner, controllerId: uuid(8), generation: 2, token: "f".repeat(32) };
+	const reconcile = operation(request, "reconcile", { owner: successor, grant: pending });
+	for (const [liveness, recovered, adoptable] of [
+		["proven-live", { ...pending, state: "running", owner: successor }, true],
+		["proven-live", { ...pending, state: "running" }, false],
+		["inconclusive", pending, false],
+		["proven-ended", { ...pending, state: "released" }, false],
+		["never-launched", { ...pending, state: "released" }, false],
+	]) {
+		const recovery = await consume(stub(reconcile, reply(reconcile, { status: "reconciled", grant: recovered, liveness, adoptable })), reconcile);
+		assert.equal(recovery.liveness, liveness);
+		if (["proven-live", "inconclusive"].includes(liveness)) assert.notEqual(recovery.grant.state, "released");
+	}
+	for (const [liveness, recovered, adoptable] of [
+		["proven-live", { ...pending, state: "released" }, false],
+		["inconclusive", { ...pending, state: "released" }, false],
+		["inconclusive", pending, true],
+		["proven-ended", pending, false],
+		["proven-live", { ...pending, state: "running" }, true],
+	]) await assert.rejects(consume(stub(reconcile, reply(reconcile, { status: "reconciled", grant: recovered, liveness, adoptable })), reconcile), TypeError);
+
+	const release = operation(request, "release", { grant: pending });
+	await consume(stub(release, reply(release, { status: "released", grantId: grant.id, evidence: { kind: "proven-ended", observationId: uuid(9) } })), release);
+	await assert.rejects(consume(stub(release, reply(release, { status: "released", grantId: grant.id, evidence: { kind: "valid-result", observationId: uuid(9) } })), release), TypeError);
+	await assert.rejects(consume(stub(release, reply(release, { status: "released", grantId: uuid(99), evidence: { kind: "proven-ended", observationId: uuid(9) } })), release), TypeError);
+	const stale = operation(request, "release", { owner: successor, grant: pending });
+	await assert.rejects(consume(stub(stale, reply(stale, { status: "released", grantId: grant.id, evidence: { kind: "proven-ended", observationId: uuid(9) } })), stale), TypeError);
 });
 
 test("controller receives one indivisible aggregate/resource grant pinned to applied policy", async () => {
