@@ -141,9 +141,12 @@ async function dispatch(parsed, context) {
 			// a second time. A verb that does not declare the flag never reaches
 			// this line with one — an undeclared flag refused as unknown above — so
 			// the value is read without asking which verb is running.
-			loaded = loadFactoryConfig({
+			loaded = await (verb.loadConfig ?? loadFactoryConfig)({
 				cwd: context.cwd,
 				routingSet: parsed.values.get(ROUTING_SET_FLAG) ?? null,
+				flags: parsed.flags,
+				args: parsed.args,
+				policyResolver: context.policyResolver,
 			});
 		} catch (error) {
 			if (!(error instanceof FactoryConfigError)) throw error;
@@ -196,6 +199,7 @@ async function run(parsed, verb, loaded, context) {
 		configPath: loaded?.configPath ?? null,
 		config: loaded?.config ?? null,
 		activeRouting: loaded?.activeRouting ?? null,
+		policyInspection: loaded?.policyInspection ?? null,
 		declared: loaded?.declared ?? null,
 		agentDir: context.agentDir ?? null,
 		executable: context.executable,
@@ -216,7 +220,7 @@ async function run(parsed, verb, loaded, context) {
 		pipeline: context.pipeline,
 		frontier: context.frontier,
 		execute: context.execute,
-		expect: loaded?.config.package?.expect ?? null,
+		expect: loaded?.config?.package?.expect ?? null,
 		args: parsed.args,
 		flags: new Set(parsed.flags),
 		// The values beside the flags rather than folded into them, so a handler

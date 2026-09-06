@@ -5,6 +5,7 @@ import { PARENT_FLAG } from "../controller/scope.mjs";
 import { NEW_RUN_FLAG, runStart } from "../controller/start.mjs";
 import { runStop } from "../controller/stop.mjs";
 import { BASELINE_FLAG, runDoctor } from "../doctor/verb.mjs";
+import { POLICY_FLAG, loadDoctorConfig } from "../doctor/policy.mjs";
 import { runMigrate } from "../migrate/verb.mjs";
 import { runReconcile } from "../reconcile/verb.mjs";
 import { runStatus } from "../status/verb.mjs";
@@ -72,6 +73,7 @@ export const VERB_TABLE = Object.freeze({
 	doctor: {
 		requiresConfig: true,
 		handler: runDoctor,
+		loadConfig: loadDoctorConfig,
 		summary: "diagnose the factory without mutating it, and classify a scope's members",
 		// §10.5's `--baseline` executes every declared check, verdict over the
 		// required set (`doctor/report.mjs` selects `all`), in a throwaway
@@ -80,6 +82,7 @@ export const VERB_TABLE = Object.freeze({
 		// asked for, never inferred from how stale the record looks.
 		flags: {
 			[BASELINE_FLAG]: { spec: "§8.3, §10.5" },
+			[POLICY_FLAG]: { spec: "§11.9" },
 			// The same discriminator `start` uses, for the same reason: `<ticket>`
 			// and `<parent>` are both issue numbers, and one flag tells them apart.
 			// `doctor` reads what `start` would claim, so the two must be asked the

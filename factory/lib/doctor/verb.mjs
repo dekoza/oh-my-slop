@@ -46,6 +46,7 @@ export const BASELINE_FLAG = "--baseline";
  * @returns {Promise<{ message: string, report: object } | { error: object, exitCode: number }>}
  */
 export async function runDoctor({
+	policyInspection = null,
 	repoRoot,
 	config,
 	activeRouting,
@@ -59,6 +60,7 @@ export async function runDoctor({
 	tracker = null,
 	at = Date.now(),
 }) {
+	if (policyInspection !== null) return policyInspection;
 	// A scope that will not parse is a refusal about the arguments, before any
 	// store is opened: an operator who mistyped a ticket number should read that
 	// rather than a clean bill of health for a scope they did not ask about.
