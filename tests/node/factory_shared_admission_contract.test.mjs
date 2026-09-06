@@ -161,6 +161,42 @@ test("waiting is cursor-based and cancellation cannot hide an unresolved grant",
 	await assert.rejects(consume(stub(cancel, reply(cancel, { status: "cancelled", contenderId: uuid(99), grantId: null, evidence: null })), cancel), TypeError);
 });
 
+test("consumer inspects global occupancy without a lease and attaches only at the observed epoch", async () => {
+	const { request, grant } = scenario();
+	const inspect = { contractVersion: 1, operation: "inspect", requestId: uuid(30), authority: request.authority, repositoryId: request.owner.repositoryId };
+	const snapshot = {
+		cursor: 12, recovering: true, aggregate: { limit: 0, held: 1 },
+		resources: [{ resourceId: "gpu", occupancy: { limit: 0, held: 1 }, availability: { resourceId: "gpu", revision: 3, state: "disabled", retryAfter: null, observationId: null } }],
+		grants: [grant], contenders: [{ id: request.contenderId, owner: request.owner, subject: request.subject, offers: ["builder"], state: "suspended", lastGrantSequence: 11, cursor: 12 }],
+		policies: [{ repositoryId: request.owner.repositoryId, desiredRevision: "b".repeat(64), appliedRevision: "a".repeat(64), state: "rejected", reason: "invalid-document" }],
+	};
+	const observed = await consume(stub(inspect, reply(inspect, { status: "snapshot", snapshot, epoch: 2 })), inspect);
+	assert.deepEqual(observed.snapshot.aggregate, { limit: 0, held: 1 }, "lowered limits never erase excess occupancy");
+	assert.equal(observed.snapshot.contenders[0].lastGrantSequence, 11, "restart retains fair-turn history");
+	assert.equal(observed.snapshot.recovering, true);
+	const attach = operation(request, "attach", { epoch: observed.epoch });
+	await consume(stub(attach, reply(attach, { status: "attached" })), attach);
+	await assert.rejects(consume(stub(attach, reply(attach, { status: "attached", epoch: 1 })), attach), TypeError);
+	await assert.rejects(consume(stub(inspect, reply(inspect, { status: "snapshot", snapshot: { ...snapshot, aggregate: { limit: 0, held: null } } })), inspect), TypeError);
+	await assert.rejects(consume(stub(inspect, reply(inspect, { status: "snapshot", snapshot: { ...snapshot, grants: [{ ...grant, owner: { ...grant.owner, repositoryId: uuid(99) } }] } })), inspect), TypeError);
+});
+
+test("a revision race forces applied-policy refresh rather than launch from a stale preview", async () => {
+	const { request } = scenario();
+	const raced = await consume(stub(request, reply(request, { status: "refused", reason: "revision-conflict" })), request);
+	assert.equal(raced.reason, "revision-conflict");
+	const refresh = operation(request, "refresh", { policyRequest: request.policy.request });
+	const resolution = structuredClone(request.policy.resolution);
+	resolution.desiredRevision = resolution.appliedRevision = "f".repeat(64);
+	const refreshed = await consume(stub(refresh, reply(refresh, { status: "policy", resolution })), refresh);
+	assert.equal(refreshed.resolution.appliedRevision, "f".repeat(64));
+	const rejected = { ...resolution, state: "rejected", desiredRevision: "b".repeat(64), policy: null, rejection: { code: "invalid-document", scope: "operator", at: "document", question: null } };
+	await consume(stub(refresh, reply(refresh, { status: "policy", resolution: rejected })), refresh);
+	await assert.rejects(consume(stub(refresh, reply(refresh, { status: "policy", resolution: { ...resolution, state: "preview", appliedRevision: null } })), refresh), TypeError);
+	const preview = { ...request, policy: { ...request.policy, request: { ...request.policy.request, view: "desired" }, resolution: { ...request.policy.resolution, state: "preview", appliedRevision: null } } };
+	assert.throws(() => assertAdmissionRequest(preview), TypeError);
+});
+
 test("controller receives one indivisible aggregate/resource grant pinned to applied policy", async () => {
 	const { request, grant } = scenario();
 	const result = await consume(stub(request, reply(request, { status: "granted", grant })), request);

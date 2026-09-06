@@ -69,6 +69,43 @@ function policy(value, authority) {
 	const operator = value.resolution.policy.operator;
 	requireThat(operator.operatorId === authority.operatorId && operator.controllerHostId === authority.controllerHostId);
 }
+function availability(value) {
+	keys(value, ["resourceId", "revision", "state", "retryAfter", "observationId"]);
+	id(value.resourceId); integer(value.revision);
+	member(value.state, ["available", "disabled", "exhausted", "authentication", "endpoint-outage", "inconclusive"]);
+	if (value.retryAfter !== null) integer(value.retryAfter);
+	if (value.observationId !== null) uuid(value.observationId);
+}
+function occupancy(value) { keys(value, ["limit", "held"]); integer(value.limit); integer(value.held); }
+function distinctRows(rows, key) { requireThat(new Set(rows.map((row) => row[key])).size === rows.length); }
+function snapshot(value, repositoryId) {
+	keys(value, ["cursor", "recovering", "aggregate", "resources", "grants", "contenders", "policies"]);
+	integer(value.cursor); requireThat(typeof value.recovering === "boolean"); occupancy(value.aggregate);
+	list(value.resources, (resource) => {
+		keys(resource, ["resourceId", "occupancy", "availability"]); id(resource.resourceId);
+		occupancy(resource.occupancy); availability(resource.availability);
+		requireThat(resource.resourceId === resource.availability.resourceId);
+	});
+	list(value.grants, (value) => { grant(value); if (repositoryId !== null) requireThat(value.owner.repositoryId === repositoryId); });
+	list(value.contenders, (contender) => {
+		keys(contender, ["id", "owner", "subject", "offers", "state", "lastGrantSequence", "cursor"]);
+		uuid(contender.id); owner(contender.owner); subject(contender.subject, contender.owner); unique(contender.offers, id);
+		member(contender.state, ["waiting", "suspended", "cancelled"]);
+		integer(contender.lastGrantSequence); integer(contender.cursor);
+		requireThat(contender.lastGrantSequence <= value.cursor && contender.cursor <= value.cursor);
+		if (repositoryId !== null) requireThat(contender.owner.repositoryId === repositoryId);
+	});
+	list(value.policies, (policy) => {
+		keys(policy, ["repositoryId", "desiredRevision", "appliedRevision", "state", "reason"]); uuid(policy.repositoryId);
+		if (repositoryId !== null) requireThat(policy.repositoryId === repositoryId);
+		if (policy.desiredRevision !== null) revision(policy.desiredRevision);
+		if (policy.appliedRevision !== null) revision(policy.appliedRevision);
+		member(policy.state, ["applied", "rejected", "unavailable"]);
+		if (policy.state === "applied") requireThat(policy.reason === null && policy.appliedRevision !== null && policy.appliedRevision === policy.desiredRevision);
+		else member(policy.reason, ["invalid-document", "unsupported-version", "ownership-conflict", "unknown-reference", "ambiguous-binding", "identity-mismatch", "boundary-unproven", "revision-conflict", "source-unavailable", "authority-unavailable"]);
+	});
+	for (const [name, key] of [["resources", "resourceId"], ["grants", "id"], ["contenders", "id"], ["policies", "repositoryId"]]) distinctRows(value[name], key);
+}
 function endEvidence(value) {
 	keys(value, ["kind", "observationId"]); member(value.kind, ["never-launched", "proven-ended"]); uuid(value.observationId);
 }
@@ -89,13 +126,22 @@ const REPLY_BASE = ["contractVersion", "operation", "requestId", "epoch", "statu
 export function assertAdmissionRequest(request) {
 	const fields = {
 		acquire: ["contenderId", "subject", "policy", "offers"], confirm: ["grant"], release: ["grant"], reconcile: ["grant"],
-		wait: ["contenderId", "after"], cancel: ["contenderId"],
+		wait: ["contenderId", "after"], cancel: ["contenderId"], inspect: ["repositoryId"], attach: [], refresh: ["policyRequest"],
 	};
 	requireThat(request?.contractVersion === ADMISSION_CONTRACT_VERSION && Object.hasOwn(fields, request.operation));
-	keys(request, [...MUTATION_BASE, ...fields[request.operation]]);
+	keys(request, [...(request.operation === "inspect" ? REQUEST_BASE : MUTATION_BASE), ...fields[request.operation]]);
 	uuid(request.requestId); keys(request.authority, ["operatorId", "controllerHostId"]);
 	id(request.authority.operatorId); id(request.authority.controllerHostId);
+	if (request.operation === "inspect") {
+		if (request.repositoryId !== null) uuid(request.repositoryId);
+		return request;
+	}
 	owner(request.owner); positive(request.epoch);
+	if (request.operation === "attach") return request;
+	if (request.operation === "refresh") {
+		assertPolicyRequest(request.policyRequest); requireThat(request.policyRequest.view === "applied");
+		return request;
+	}
 	if (["wait", "cancel"].includes(request.operation)) {
 		uuid(request.contenderId);
 		if (request.operation === "wait") integer(request.after);
@@ -137,7 +183,22 @@ export function assertAdmissionReply(reply, request) {
 		member(reply.reason, ["identity-mismatch", "boundary-unproven", "stale-owner", "epoch-mismatch", "revision-conflict", "payload-conflict", "invalid-transition", "unknown-grant"]);
 		return reply;
 	}
+	if (reply.status === "snapshot") {
+		requireThat(request.operation === "inspect"); keys(reply, [...REPLY_BASE, "snapshot"]);
+		snapshot(reply.snapshot, request.repositoryId);
+		return reply;
+	}
 	requireThat(reply.epoch === request.epoch);
+	if (reply.status === "attached") {
+		requireThat(request.operation === "attach"); keys(reply, REPLY_BASE);
+		return reply;
+	}
+	if (reply.status === "policy") {
+		requireThat(request.operation === "refresh"); keys(reply, [...REPLY_BASE, "resolution"]);
+		assertPolicyResolution(reply.resolution, request.policyRequest);
+		if (reply.resolution.state === "applied") policy({ request: request.policyRequest, resolution: reply.resolution }, request.authority);
+		return reply;
+	}
 	if (reply.status === "changed") {
 		requireThat(request.operation === "wait"); keys(reply, [...REPLY_BASE, "cursor"]);
 		integer(reply.cursor); requireThat(reply.cursor >= request.after);
