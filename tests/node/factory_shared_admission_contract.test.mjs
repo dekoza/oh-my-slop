@@ -197,6 +197,41 @@ test("a revision race forces applied-policy refresh rather than launch from a st
 	assert.throws(() => assertAdmissionRequest(preview), TypeError);
 });
 
+test("preflight and coordinated readmission probes consume the same two dimensions", async () => {
+	for (const purpose of ["preflight", "readmission"]) {
+		const { request, grant } = scenario();
+		request.subject = { kind: "probe", id: uuid(40), purpose };
+		if (purpose === "readmission") Object.assign(request, { operation: "readmit", availabilityRevision: 4 });
+		grant.subject = request.subject;
+		const result = await consume(stub(request, reply(request, { status: "granted", grant })), request);
+		assert.equal(result.grant.subject.purpose, purpose);
+		assert.deepEqual([result.grant.aggregateSlot, result.grant.resourceSlot], [0, 0]);
+		if (purpose === "readmission") {
+			await consume(stub(request, reply(request, { status: "busy", contenderId: request.contenderId, reason: "readmission-in-flight", cursor: 5 })), request);
+			await consume(stub(request, reply(request, { status: "refused", reason: "revision-conflict" })), request);
+			const ordinary = { ...request, operation: "acquire" };
+			delete ordinary.availabilityRevision;
+			assert.throws(() => assertAdmissionRequest(ordinary), TypeError);
+			assert.throws(() => assertAdmissionRequest({ ...request, subject: { kind: "probe", id: uuid(40), purpose: "preflight" } }), TypeError);
+		}
+	}
+});
+
+test("resource refusal observation distinguishes exhaustion, authentication and endpoint outage", async () => {
+	const { request, grant } = scenario();
+	grant.state = "running"; grant.launchId = uuid(6);
+	for (const kind of ["exhausted", "authentication", "endpoint-outage"]) {
+		const observation = { id: uuid(41), kind, source: "harness", evidenceDigest: "b".repeat(64), retryAfter: 1000 };
+		const observe = operation(request, "observe", { grant, observation });
+		const availability = { resourceId: "gpu", revision: 4, state: kind, retryAfter: 1000, observationId: uuid(41) };
+		const result = await consume(stub(observe, reply(observe, { status: "observed", availability })), observe);
+		assert.equal(result.availability.state, kind);
+		assert.equal(result.availability.resourceId, "gpu");
+		await assert.rejects(consume(stub(observe, reply(observe, { status: "observed", availability: { ...availability, resourceId: "other_gpu" } })), observe), TypeError);
+		await assert.rejects(consume(stub(observe, reply(observe, { status: "observed", availability: { ...availability, state: "available" } })), observe), TypeError);
+	}
+});
+
 test("controller receives one indivisible aggregate/resource grant pinned to applied policy", async () => {
 	const { request, grant } = scenario();
 	const result = await consume(stub(request, reply(request, { status: "granted", grant })), request);

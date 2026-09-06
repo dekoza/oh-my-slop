@@ -125,7 +125,9 @@ const REPLY_BASE = ["contractVersion", "operation", "requestId", "epoch", "statu
 /** Validate the controller's request before it reaches an authority. */
 export function assertAdmissionRequest(request) {
 	const fields = {
-		acquire: ["contenderId", "subject", "policy", "offers"], confirm: ["grant"], release: ["grant"], reconcile: ["grant"],
+		acquire: ["contenderId", "subject", "policy", "offers"],
+		readmit: ["contenderId", "subject", "policy", "offers", "availabilityRevision"],
+		confirm: ["grant"], release: ["grant"], reconcile: ["grant"], observe: ["grant", "observation"],
 		wait: ["contenderId", "after"], cancel: ["contenderId"], inspect: ["repositoryId"], attach: [], refresh: ["policyRequest"],
 	};
 	requireThat(request?.contractVersion === ADMISSION_CONTRACT_VERSION && Object.hasOwn(fields, request.operation));
@@ -153,12 +155,22 @@ export function assertAdmissionRequest(request) {
 			requireThat(request.grant.owner.repositoryId === request.owner.repositoryId && request.grant.owner.runId === request.owner.runId);
 		} else requireThat(same(request.grant.owner, request.owner));
 		if (request.operation === "confirm") member(request.grant.state, ["held", "launch-pending"]);
+		if (request.operation === "observe") {
+			const value = request.observation;
+			keys(value, ["id", "kind", "source", "evidenceDigest", "retryAfter"]);
+			uuid(value.id); member(value.kind, ["exhausted", "authentication", "endpoint-outage"]);
+			member(value.source, ["harness", "transport"]); revision(value.evidenceDigest);
+			if (value.retryAfter !== null) integer(value.retryAfter);
+		}
 		return request;
 	}
 	uuid(request.contenderId); subject(request.subject, request.owner); policy(request.policy, request.authority);
 	unique(request.offers, id);
 	for (const profile of request.offers) requireThat(request.policy.resolution.policy.profileAvailability[profile] === "enabled");
-	requireThat(request.subject.purpose !== "readmission");
+	if (request.operation === "readmit") {
+		integer(request.availabilityRevision);
+		requireThat(request.subject.kind === "probe" && request.subject.purpose === "readmission" && request.offers.length === 1);
+	} else requireThat(request.subject.purpose !== "readmission");
 	return request;
 }
 
@@ -211,6 +223,12 @@ export function assertAdmissionReply(reply, request) {
 		else { uuid(reply.grantId); endEvidence(reply.evidence); }
 		return reply;
 	}
+	if (reply.status === "observed") {
+		requireThat(request.operation === "observe"); keys(reply, [...REPLY_BASE, "availability"]);
+		availability(reply.availability);
+		requireThat(reply.availability.resourceId === request.grant.resourceId && reply.availability.state !== "available");
+		return reply;
+	}
 	if (reply.status === "released") {
 		requireThat(request.operation === "release"); keys(reply, [...REPLY_BASE, "grantId", "evidence"]);
 		requireThat(reply.grantId === request.grant.id); endEvidence(reply.evidence);
@@ -235,14 +253,14 @@ export function assertAdmissionReply(reply, request) {
 		return reply;
 	}
 	if (reply.status === "busy") {
-		requireThat(request.operation === "acquire");
+		member(request.operation, ["acquire", "readmit"]);
 		keys(reply, [...REPLY_BASE, "contenderId", "reason", "cursor"]);
 		requireThat(reply.contenderId === request.contenderId);
 		member(reply.reason, ["aggregate", "resource", "fair-turn", "readmission-in-flight"]); integer(reply.cursor);
 		return reply;
 	}
 	keys(reply, [...REPLY_BASE, "grant"]);
-	requireThat(reply.status === "granted" && request.operation === "acquire");
+	requireThat(reply.status === "granted"); member(request.operation, ["acquire", "readmit"]);
 	grant(reply.grant);
 	const value = reply.grant;
 	requireThat(same(value.owner, request.owner) && same(value.subject, request.subject));
