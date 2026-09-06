@@ -5,12 +5,13 @@ import { runCli, renderHuman } from "../../factory/lib/cli/main.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
 import { policyFixture } from "./helpers/factory-policy.mjs";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 async function inspect(fixture, args = []) {
 	const { createDesiredPolicyResolver } = await import("../../factory/lib/config/policy-resolver.mjs");
 	const policyResolver = createDesiredPolicyResolver({
-		operatorMount: fixture.mount, operatorUid: process.getuid(),
+		filesystemRoot: fixture.filesystemRoot, operatorUid: process.getuid(),
 		readLogin: async () => ({ url: "https://forge.invalid", sshHost: "forge.invalid" }),
 	});
 	return runCli(["doctor", "--policy", ...args], { cwd: fixture.cwd, policyResolver });
@@ -98,4 +99,12 @@ test("repository identity includes the selected login's forge host and SSH port"
 	}
 	execFileSync("git", ["remote", "set-url", "gitea", "git@forge.invalid:acme/widgets.git"], { cwd: fixture.root });
 	assert.equal((await inspect(fixture)).exitCode, 0);
+});
+
+test("a replaceable operator mount refuses rather than blessing repository-writable inventory", async (t) => {
+	const fixture = policyFixture(t);
+	chmodSync(dirname(fixture.mount), 0o777);
+	const result = await inspect(fixture);
+	assert.equal(result.exitCode, 1);
+	assert.equal(result.value.error.reason, "boundary-unproven");
 });

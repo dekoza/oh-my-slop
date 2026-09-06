@@ -24,8 +24,10 @@ export function policyDocuments() {
 export function policyFixture(t) {
 	const documents = policyDocuments();
 	const root = makeRepo(t, { config: documents.repository, remotes: { gitea: "https://forge.invalid/acme/widgets.git" } });
-	const mount = mkdtempSync(join(tmpdir(), "factory-policy-mount-"));
-	t.after(() => rmSync(mount, { recursive: true, force: true }));
+	const filesystemRoot = mkdtempSync(join(tmpdir(), "factory-policy-mount-"));
+	t.after(() => rmSync(filesystemRoot, { recursive: true, force: true }));
+	const mount = join(filesystemRoot, "etc", "oh-my-slop", "factory");
+	mkdirSync(mount, { recursive: true });
 	chmodSync(mount, 0o755);
 	const operatorFile = join(mount, "operator.json");
 	const repositoryFile = join(root, ".pi", "factory.json");
@@ -37,5 +39,5 @@ export function policyFixture(t) {
 	const cwd = join(root, "src", "nested");
 	mkdirSync(join(cwd, ".pi"), { recursive: true });
 	writeFileSync(join(cwd, ".pi", "factory.json"), "not the root policy");
-	return { ...documents, root, cwd, mount, operatorFile, repositoryFile, save };
+	return { ...documents, root, cwd, filesystemRoot, mount, operatorFile, repositoryFile, save };
 }

@@ -12,10 +12,11 @@ import { FactoryTrackerError } from "../tracker/errors.mjs";
  * Injection names a synthetic managed mount for filesystem tests. The binary
  * supplies no overrides; neither argv nor environment can select inventory.
  */
-export function createDesiredPolicyResolver({ operatorMount = dirname(OPERATOR_INVENTORY_FILE), operatorUid = 0, readLogin = readGiteaLoginIdentity } = {}) {
+export function createDesiredPolicyResolver({ filesystemRoot = "/", operatorUid = 0, readLogin = readGiteaLoginIdentity } = {}) {
 	return Object.freeze({ async resolve(request) {
 		assertPolicyRequest(request);
 		if (request.view !== "desired") throw new TypeError("This resolver only reads desired policy");
+		const operatorMount = join(filesystemRoot, dirname(OPERATOR_INVENTORY_FILE));
 		const operatorFile = join(operatorMount, "operator.json");
 		const repositoryFile = join(request.repositoryRoot, ".pi", "factory.json");
 		const sources = [observe(operatorFile), observe(repositoryFile)];
@@ -33,12 +34,7 @@ export function createDesiredPolicyResolver({ operatorMount = dirname(OPERATOR_I
 				if (source.observation.state !== "read") refuse("source-unavailable", "document", "Make the policy source a readable regular file.");
 			}
 			scope = "operator";
-			// No symlink may substitute a different mount or inventory. Root owns
-			// the production mount; group/other write permission is never accepted.
-			const mount = lstatSync(operatorMount);
-			if (!mount.isDirectory() || realpathSync(operatorMount) !== operatorMount || mount.uid !== operatorUid || (mount.mode & 0o022) !== 0 || sources[0].stat.uid !== operatorUid || (sources[0].stat.mode & 0o022) !== 0) {
-				refuse("boundary-unproven", "document", "Use an operator-owned canonical inventory mount without group or other write access.");
-			}
+			verifyOperatorMount(operatorMount, filesystemRoot, operatorUid, sources[0].stat);
 			document = parse(sources[0].bytes);
 			assertOperatorInventory(document);
 			operator = document;
@@ -74,6 +70,26 @@ export function createDesiredPolicyResolver({ operatorMount = dirname(OPERATOR_I
 		assertPolicyResolution(resolution, request);
 		return freeze(resolution);
 	} });
+}
+
+function verifyOperatorMount(mount, root, uid, fileStat) {
+	const protectedOwner = (stat) => stat.uid === uid && (stat.mode & 0o022) === 0;
+	let safe = protectedOwner(fileStat);
+	try {
+		for (let path = mount; ; path = dirname(path)) {
+			const stat = lstatSync(path);
+			safe &&= stat.isDirectory() && realpathSync(path) === path && protectedOwner(stat);
+			if (path === root) break;
+			if (path === dirname(path)) { safe = false; break; }
+		}
+	} catch (error) {
+		if (typeof error.code !== "string") throw error;
+		refuse("source-unavailable", "document", "Make the canonical operator mount readable before retrying inspection.");
+	}
+	// These filesystem facts are not proof of enrollment, a read-only mount,
+	// executable restrictions or enforced model access. Doctor reports those as
+	// unobserved. Privileged operators remain outside the enforcement guarantee.
+	if (!safe) refuse("boundary-unproven", "document", "Use an operator-owned canonical inventory mount and parent directories without group or other write access.");
 }
 
 async function verifyRepositoryIdentity(root, tracker, readLogin) {
