@@ -1,4 +1,6 @@
 import { isAbsolute, join, normalize } from "node:path";
+import { requireDeclarableEnvName } from "./declared-env.mjs";
+import { FactoryConfigError } from "./errors.mjs";
 
 /**
  * Consumer-owned value contract for §11.9 / #227. No IO, policy application,
@@ -68,7 +70,99 @@ export function assertOperatorInventory(inventory) {
 	integer(inventory.aggregateLimit);
 	for (const name of ["resources", "bindings", "credentials", "profiles", "modes"]) entries(inventory[name]);
 	reference(inventory.modes, inventory.activeMode);
+	const identities = new Set();
+	for (const resource of Object.values(inventory.resources)) {
+		keys(resource, ["identity", "enabled", "limit"]);
+		bool(resource.enabled);
+		integer(resource.limit);
+		object(resource.identity);
+		const fields = resource.identity.kind === "gpu" ? ["kind", "hostId", "deviceId"] : ["kind", "provider", "accountId", "quotaId"];
+		keys(resource.identity, fields);
+		requireThat(["gpu", "account"].includes(resource.identity.kind));
+		for (const field of fields) id(resource.identity[field]);
+		const identity = JSON.stringify(fields.map((field) => resource.identity[field]));
+		requireThat(!identities.has(identity));
+		identities.add(identity);
+	}
+	for (const credential of Object.values(inventory.credentials)) {
+		keys(credential, ["kind", "runtime", "name"]);
+		requireThat(credential.kind === "runtime-auth" && ["pi", "claude"].includes(credential.runtime));
+		id(credential.name);
+	}
+	const endpoints = new Map();
+	const credentials = new Map();
+	for (const binding of Object.values(inventory.bindings)) {
+		keys(binding, ["resourceId", "credentialId", "endpoint"]);
+		const resource = reference(inventory.resources, binding.resourceId);
+		if (binding.credentialId !== null) {
+			const credential = reference(inventory.credentials, binding.credentialId);
+			bindOnce(credentials, JSON.stringify([credential.kind, credential.runtime, credential.name]), binding.resourceId);
+		}
+		if (binding.endpoint !== null) {
+			keys(binding.endpoint, ["env", "url"]);
+			configGuard(() => requireDeclarableEnvName(binding.endpoint.env, "endpoint.env", "operator-policy"));
+			text(binding.endpoint.url);
+			let endpoint;
+			try { endpoint = new URL(binding.endpoint.url); } catch { requireThat(false); }
+			requireThat(["http:", "https:"].includes(endpoint.protocol));
+			requireThat(!endpoint.username && !endpoint.password && !endpoint.search && !endpoint.hash);
+			bindOnce(endpoints, endpoint.href, binding.resourceId);
+		}
+		requireThat(resource.identity.kind !== "gpu" || binding.endpoint !== null);
+		requireThat(resource.identity.kind !== "account" || binding.credentialId !== null);
+	}
+	for (const profile of Object.values(inventory.profiles)) {
+		keys(profile, ["enabled", "bindingId", "runtime"]);
+		bool(profile.enabled);
+		const binding = reference(inventory.bindings, profile.bindingId);
+		assertRuntime(profile.runtime);
+		if (binding.credentialId !== null) requireThat(inventory.credentials[binding.credentialId].runtime === profile.runtime.kind);
+	}
+	for (const mode of Object.values(inventory.modes)) {
+		keys(mode, ["aggregateLimit", "resources"]);
+		integer(mode.aggregateLimit);
+		requireThat(mode.aggregateLimit <= inventory.aggregateLimit);
+		for (const [name, limit] of entries(mode.resources)) {
+			const resource = reference(inventory.resources, name);
+			integer(limit);
+			requireThat(limit <= resource.limit);
+		}
+	}
 	return inventory;
+}
+
+// Values may alias one resource, never silently manufacture another pool.
+function bindOnce(bindings, key, resource) {
+	requireThat(!bindings.has(key) || bindings.get(key) === resource);
+	bindings.set(key, resource);
+}
+
+function configGuard(validate) {
+	try { return validate(); } catch (error) {
+		if (!(error instanceof FactoryConfigError)) throw error;
+		requireThat(false);
+	}
+}
+
+function assertRuntime(runtime) {
+	object(runtime);
+	requireThat(["pi", "claude"].includes(runtime.kind));
+	const flag = runtime.kind === "pi" ? "thinking" : "effort";
+	const clocks = ["startupTimeoutMs", "attemptTimeoutMs", "noProgressTimeoutMs"];
+	keys(runtime, ["kind", "model"], [flag, ...clocks]);
+	text(runtime.model);
+	if (runtime.kind === "pi") {
+		requireThat(/^[^/\s]+\/[^\s]+$/.test(runtime.model));
+		requireThat(!/(^|[^a-z0-9])(opus|fable)([^a-z0-9]|$)/i.test(runtime.model));
+	}
+	if (Object.hasOwn(runtime, flag)) {
+		const levels = flag === "thinking" ? ["off", "minimal", "low", "medium", "high", "xhigh", "max"] : ["low", "medium", "high", "xhigh", "max"];
+		requireThat(levels.includes(runtime[flag]));
+	}
+	for (const clock of clocks) if (Object.hasOwn(runtime, clock)) {
+		integer(runtime[clock]);
+		requireThat(runtime[clock] > 0);
+	}
 }
 
 /** Repository v3 keeps its own blocks and cannot declare operator policy. */

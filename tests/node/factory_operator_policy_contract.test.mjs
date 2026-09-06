@@ -60,3 +60,13 @@ test("consumer resolves explicit operator policy with repository routing and pro
 	assert.deepEqual(result.policy.limits, { aggregate: 1, resources: { gpu: 1 } });
 	assert.equal(result.policy.provenance.repositoryFile, "/test/repository/.pi/factory.json");
 });
+
+test("contract refuses unknown bindings and duplicate physical identities even in dormant inventory", () => {
+	const { operator } = scenario();
+	operator.profiles.builder.bindingId = "missing";
+	assert.throws(() => assertOperatorInventory(operator), TypeError);
+	operator.profiles.builder.bindingId = "local";
+	operator.resources.alias = structuredClone(operator.resources.gpu);
+	operator.resources.alias.enabled = false;
+	assert.throws(() => assertOperatorInventory(operator), TypeError);
+});
