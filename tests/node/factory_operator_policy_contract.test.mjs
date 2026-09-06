@@ -61,6 +61,52 @@ test("consumer resolves explicit operator policy with repository routing and pro
 	assert.equal(result.policy.provenance.repositoryFile, "/test/repository/.pi/factory.json");
 });
 
+test("consumer retains a disabled resource without accepting dispatchable policy for it", async () => {
+	const { request, response, operator } = scenario();
+	operator.resources.gpu.enabled = false;
+	response.policy.limits.resources.gpu = 0;
+	response.policy.profileAvailability.builder = "resource-disabled";
+	const result = await inspectPolicy(stub(request, response), request);
+	assert.equal(result.policy.profileAvailability.builder, "resource-disabled");
+	assert.equal(result.policy.operator.profiles.builder.bindingId, "local");
+	response.policy.profileAvailability.builder = "enabled";
+	await assert.rejects(inspectPolicy(stub(request, response), request), TypeError);
+});
+
+test("consumer exposes conflicting ownership, unknown binding and rejected revisions without stale policy", async () => {
+	for (const [code, scope, at] of [
+		["ownership-conflict", "repository", "concurrency.resources"],
+		["unknown-reference", "operator", "profiles.builder.bindingId"],
+		["invalid-document", "operator", "document"],
+		["revision-conflict", "repository", "revision"],
+	]) {
+		const { request, response } = scenario();
+		const priorPolicy = response.policy;
+		Object.assign(response, { state: "rejected", desiredRevision: "d".repeat(64), policy: null, rejection: { code, scope, at, question: null } });
+		const result = await inspectPolicy(stub(request, response), request);
+		assert.deepEqual(result, { waiting: code, appliedRevision: "a".repeat(64) });
+		response.policy = priorPolicy;
+		await assert.rejects(inspectPolicy(stub(request, response), request), TypeError);
+	}
+});
+
+test("consumer refuses forged limits, stale revisions, wrong provenance and selection", async () => {
+	for (const mutate of [
+		(r) => { r.policy.limits.aggregate = 2; },
+		(r) => { r.policy.limits.resources.gpu = 2; },
+		(r) => { r.policy.limits.resources.extra = 1; },
+		(r) => { delete r.policy.profileAvailability.builder; },
+		(r) => { r.policy.routingSet = "unselected"; },
+		(r) => { r.appliedRevision = "d".repeat(64); },
+		(r) => { r.policy.provenance.repositoryFile = "/different/.pi/factory.json"; },
+		(r) => { r.contractVersion = 2; },
+	]) {
+		const { request, response } = scenario();
+		mutate(response);
+		await assert.rejects(inspectPolicy(stub(request, response), request), TypeError);
+	}
+});
+
 test("repository ownership is closed recursively, including alternate routes and env channels", () => {
 	const invalid = [
 		["tracker key", (r) => { r.tracker.token = "not-a-real-secret"; }],

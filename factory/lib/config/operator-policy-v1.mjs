@@ -250,10 +250,34 @@ export function assertPolicyResolution(resolution, request) {
 	keys(policy, ["operator", "repository", "routingSet", "limits", "profileAvailability", "provenance"]);
 	assertOperatorInventory(policy.operator);
 	assertRepositoryPolicy(policy.repository, policy.operator, request.routingSet);
+	const routing = configGuard(() => validateRouting(policy.repository.routing, policy.operator.profiles, request.routingSet, "operator-policy"));
+	requireThat(policy.routingSet === routing.active.name);
+	assertEffectiveAvailability(policy);
 	keys(policy.provenance, ["operatorFile", "operatorDigest", "repositoryFile", "repositoryDigest"]);
 	requireThat(policy.provenance.operatorFile === OPERATOR_INVENTORY_FILE);
 	requireThat(policy.provenance.repositoryFile === join(request.repositoryRoot, ".pi", "factory.json"));
 	revision(policy.provenance.operatorDigest);
 	revision(policy.provenance.repositoryDigest);
 	return resolution;
+}
+
+function assertEffectiveAvailability({ operator, limits, profileAvailability }) {
+	keys(limits, ["aggregate", "resources"]);
+	const mode = operator.modes[operator.activeMode];
+	requireThat(limits.aggregate === mode.aggregateLimit);
+	keys(limits.resources, Object.keys(operator.resources));
+	for (const [name, resource] of Object.entries(operator.resources)) {
+		const limit = resource.enabled && Object.hasOwn(mode.resources, name) ? mode.resources[name] : 0;
+		requireThat(limits.resources[name] === limit);
+	}
+	keys(profileAvailability, Object.keys(operator.profiles));
+	for (const [name, profile] of Object.entries(operator.profiles)) {
+		const resourceId = operator.bindings[profile.bindingId].resourceId;
+		let availability = "enabled";
+		if (!profile.enabled) availability = "profile-disabled";
+		else if (!operator.resources[resourceId].enabled) availability = "resource-disabled";
+		else if (!Object.hasOwn(mode.resources, resourceId)) availability = "mode-disabled";
+		else if (limits.aggregate === 0 || limits.resources[resourceId] === 0) availability = "zero-capacity";
+		requireThat(profileAvailability[name] === availability);
+	}
 }
