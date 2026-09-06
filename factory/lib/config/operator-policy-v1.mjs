@@ -1,6 +1,11 @@
 import { isAbsolute, join, normalize } from "node:path";
 import { requireDeclarableEnvName } from "./declared-env.mjs";
 import { FactoryConfigError } from "./errors.mjs";
+import { validateChecks } from "./checks.mjs";
+import { validateBudgets, validateRetention } from "./defaults.mjs";
+import { validateRouting } from "./routing.mjs";
+import { validateWorker } from "./worker.mjs";
+import { parseVersionRange } from "../package/version.mjs";
 
 /**
  * Consumer-owned value contract for §11.9 / #227. No IO, policy application,
@@ -63,6 +68,7 @@ export function assertPolicyRequest(request) {
 
 /** Operator inventory v1, never a merged repository configuration. */
 export function assertOperatorInventory(inventory) {
+	assertJson(inventory);
 	keys(inventory, ["schemaVersion", "operatorId", "controllerHostId", "resources", "bindings", "credentials", "profiles", "aggregateLimit", "modes", "activeMode"]);
 	requireThat(inventory.schemaVersion === 1);
 	id(inventory.operatorId);
@@ -167,13 +173,55 @@ function assertRuntime(runtime) {
 
 /** Repository v3 keeps its own blocks and cannot declare operator policy. */
 export function assertRepositoryPolicy(repository, inventory, routingSet = null) {
+	assertJson(repository);
 	keys(repository, ["schemaVersion", "operatorId", "tracker", "git", "routing", "checks", "concurrency"], ["budgets", "retention", "package", "worker"]);
 	requireThat(repository.schemaVersion === 3 && repository.operatorId === inventory.operatorId);
 	keys(repository.concurrency, ["maxTicketExecutions"]);
 	integer(repository.concurrency.maxTicketExecutions);
 	requireThat(repository.concurrency.maxTicketExecutions > 0);
-	if (routingSet !== null) reference(repository.routing.sets, routingSet);
+	keys(repository.tracker, ["kind", "repo", "remote", "login", "assignee"]);
+	for (const value of Object.values(repository.tracker)) text(value);
+	requireThat(repository.tracker.kind === "gitea" && /^[^/\s]+\/[^/\s]+$/.test(repository.tracker.repo));
+	keys(repository.git, ["baseBranch", "remote"]);
+	for (const value of Object.values(repository.git)) text(value);
+	object(repository.routing);
+	if (routingSet !== null) id(routingSet);
+	configGuard(() => {
+		validateRouting(repository.routing, inventory.profiles, routingSet, "operator-policy");
+		validateChecks(repository.checks, "operator-policy");
+		for (const name of ["budgets", "retention", "worker"]) if (Object.hasOwn(repository, name)) object(repository[name]);
+		validateBudgets(repository.budgets, "operator-policy");
+		validateRetention(repository.retention, "operator-policy");
+		const worker = validateWorker(repository.worker, "operator-policy");
+		const endpointEnvs = new Set(Object.values(inventory.bindings).flatMap((binding) => binding.endpoint === null ? [] : [binding.endpoint.env]));
+		for (const extension of worker.piExtensions) {
+			requireThat(Object.keys(extension.env).every((name) => !endpointEnvs.has(name)));
+		}
+	});
+	if (Object.hasOwn(repository, "package")) {
+		keys(repository.package, ["expect"]);
+		keys(repository.package.expect, ["name", "version"]);
+		text(repository.package.expect.name);
+		text(repository.package.expect.version);
+		// The range parser's free-text diagnostics may quote input. At this wire
+		// boundary the only failure surface is the redacted contract exception.
+		try { parseVersionRange(repository.package.expect.version); } catch { requireThat(false); }
+	}
 	return repository;
+}
+
+// Only JSON values cross the seam; TODO is a migration hole, never policy.
+function assertJson(value) {
+	if (typeof value === "string") { text(value); requireThat(!/^TODO\b/.test(value)); }
+	else if (typeof value === "number") requireThat(Number.isSafeInteger(value));
+	else if (Array.isArray(value)) value.forEach(assertJson);
+	else if (value !== null && typeof value === "object") {
+		object(value);
+		for (const [name, child] of Object.entries(value)) {
+			requireThat(!/^TODO\b/.test(name));
+			assertJson(child);
+		}
+	} else requireThat(value === null || typeof value === "boolean");
 }
 
 /** A policy snapshot is not permission to launch; admission rechecks revision. */

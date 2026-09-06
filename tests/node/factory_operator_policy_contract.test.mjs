@@ -61,6 +61,25 @@ test("consumer resolves explicit operator policy with repository routing and pro
 	assert.equal(result.policy.provenance.repositoryFile, "/test/repository/.pi/factory.json");
 });
 
+test("repository ownership is closed recursively, including alternate routes and env channels", () => {
+	const invalid = [
+		["tracker key", (r) => { r.tracker.token = "not-a-real-secret"; }],
+		["resource ceiling", (r) => { r.concurrency.resources = { gpu: 9 }; }],
+		["profile enablement", (r) => { r.profiles = { builder: { enabled: true } }; }],
+		["unknown role profile", (r) => { r.routing.roles.implement = "missing"; }],
+		["unknown dormant set profile", (r) => { r.routing.sets = { dormant: { roles: { ...r.routing.roles, implement: "missing" }, rules: [] } }; }],
+		["binding env override", (r) => { r.worker = { piExtensions: [{ path: "/test/extension", env: { TEST_INFERENCE_URL: "http://other.invalid" } }] }; }],
+		["invalid check", (r) => { delete r.checks[0].expectedFailureExitCodes; }],
+		["unknown budget", (r) => { r.budgets.newBudget = 1; }],
+		["sentinel", (r) => { r.git.baseBranch = "TODO: choose"; }],
+	];
+	for (const [name, mutate] of invalid) {
+		const { repository, operator } = scenario();
+		mutate(repository);
+		assert.throws(() => assertRepositoryPolicy(repository, operator), TypeError, name);
+	}
+});
+
 test("contract refuses unknown bindings and duplicate physical identities even in dormant inventory", () => {
 	const { operator } = scenario();
 	operator.profiles.builder.bindingId = "missing";
