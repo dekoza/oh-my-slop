@@ -52,6 +52,21 @@ function stub(request, response) {
 	return { async resolve(actual) { assert.deepEqual(actual, request); return structuredClone(response); } };
 }
 
+test("value guards accept shared acyclic children but refuse object and array cycles safely", () => {
+	const { operator, repository } = scenario();
+	operator.profiles.alias = operator.profiles.builder;
+	assert.equal(assertOperatorInventory(operator), operator);
+	assert.equal(assertRepositoryPolicy(repository, operator), repository);
+	for (const cycle of [{}, []]) {
+		if (Array.isArray(cycle)) cycle.push(cycle);
+		else cycle.self = cycle;
+		for (const guard of [
+			() => assertOperatorInventory({ ...operator, unexpected: cycle }),
+			() => assertRepositoryPolicy({ ...repository, unexpected: cycle }, operator),
+		]) assert.throws(guard, { name: "TypeError", message: "Invalid operator-policy v1 contract value" });
+	}
+});
+
 test("consumer resolves explicit operator policy with repository routing and provenance", async () => {
 	const { request, response } = scenario();
 	const result = await inspectPolicy(stub(request, response), request);

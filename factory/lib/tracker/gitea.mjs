@@ -474,6 +474,20 @@ export function sinceParameter(millis) {
  * `execFile` rather than a shell, so a repository slug or a `since` value can
  * never become shell syntax — the argument vector is the argument vector.
  */
+/** Local login metadata only: no token read and no network request (§11.9).
+ * Keep all tea subprocesses on this existing transport boundary. Its list JSON
+ * contains nonsecret table columns, not the credential-bearing config file.
+ */
+export async function readGiteaLoginIdentity(name) {
+	const { stdout } = await run(TEA_BINARY, ["logins", "list", "--output", "json"]);
+	const rows = JSON.parse(stdout);
+	if (!Array.isArray(rows)) throw new TypeError("Invalid tea login metadata");
+	const matches = rows.filter((row) => row?.name === name);
+	if (matches.length === 0) return null;
+	if (matches.length !== 1 || typeof matches[0].url !== "string" || typeof matches[0].ssh_host !== "string") throw new TypeError("Invalid tea login metadata");
+	return { url: matches[0].url, sshHost: matches[0].ssh_host };
+}
+
 async function teaRequest({ path, login }) {
 	const argv = ["api", "--include", "--method", "GET"];
 	if (typeof login === "string" && login.length > 0) argv.push("--login", login);

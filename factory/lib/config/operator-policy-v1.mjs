@@ -13,9 +13,9 @@ import { parseVersionRange } from "../package/version.mjs";
  * and throw a redacted TypeError on a protocol violation; resolver refusals are
  * values instead. docs/specs/operator-policy-v1.md owns lifecycle and discovery.
  *
- * This artifact is deliberately not wired into the v2 binary yet: #227 fixes
- * the seam before the walking skeleton consumes it. Its version is independent
- * of repository config v3 and operator inventory v1.
+ * #230's desired-preview resolver consumes this frozen #227 artifact. Its
+ * version is independent of repository config v3 and operator inventory v1;
+ * legacy v2 operations do not consume it.
  */
 export const POLICY_CONTRACT_VERSION = 1;
 export const OPERATOR_INVENTORY_FILE = "/etc/oh-my-slop/factory/operator.json";
@@ -146,7 +146,10 @@ function bindOnce(bindings, key, resource) {
 
 function configGuard(validate) {
 	try { return validate(); } catch (error) {
-		if (!(error instanceof FactoryConfigError)) throw error;
+		// Legacy validators stringify invalid values in their diagnostics. Deep
+		// source values can overflow that formatting before FactoryConfigError is
+		// constructed; the wire guard still owes its redacted protocol refusal.
+		if (!(error instanceof FactoryConfigError) && !(error instanceof RangeError)) throw error;
 		requireThat(false);
 	}
 }
@@ -213,16 +216,31 @@ export function assertRepositoryPolicy(repository, inventory, routingSet = null)
 
 // Only JSON values cross the seam; TODO is a migration hole, never policy.
 function assertJson(value) {
-	if (typeof value === "string") { text(value); requireThat(!/^TODO\b/.test(value)); }
-	else if (typeof value === "number") requireThat(Number.isSafeInteger(value));
-	else if (Array.isArray(value)) value.forEach(assertJson);
-	else if (value !== null && typeof value === "object") {
-		object(value);
-		for (const [name, child] of Object.entries(value)) {
-			requireThat(!/^TODO\b/.test(name));
-			assertJson(child);
-		}
-	} else requireThat(value === null || typeof value === "boolean");
+	// §11.9 invalid documents must refuse, regardless of input depth. Use an
+	// explicit stack rather than consuming the JS call stack before schema checks.
+	const pending = [{ value }];
+	const ancestors = new Set();
+	while (pending.length) {
+		const { value, leaving } = pending.pop();
+		if (leaving) { ancestors.delete(value); continue; }
+		if (typeof value === "string") { text(value); requireThat(!/^TODO\b/.test(value)); }
+		else if (typeof value === "number") requireThat(Number.isSafeInteger(value));
+		else if (value !== null && typeof value === "object") {
+			// In-memory callers may supply cycles, which are not JSON. Shared
+			// acyclic children remain valid after their ancestor frame leaves.
+			requireThat(!ancestors.has(value));
+			ancestors.add(value);
+			pending.push({ value, leaving: true });
+			if (Array.isArray(value)) value.forEach((child) => pending.push({ value: child }));
+			else {
+				object(value);
+				for (const [name, child] of Object.entries(value)) {
+					requireThat(!/^TODO\b/.test(name));
+					pending.push({ value: child });
+				}
+			}
+		} else requireThat(value === null || typeof value === "boolean");
+	}
 }
 
 /** A policy snapshot is not permission to launch; admission rechecks revision. */

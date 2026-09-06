@@ -1,6 +1,7 @@
 import { registerArtifactProbes } from "../artifacts/probes.mjs";
 import { FactoryConfigError } from "../config/errors.mjs";
 import { loadFactoryConfig, ROUTING_SET_FLAG } from "../config/load.mjs";
+import { renderPolicyResolution } from "../doctor/policy-render.mjs";
 import { registerGitProbes } from "../git/probes.mjs";
 import { PROBES } from "../reconcile/probes.mjs";
 import { EXIT_NOT_IMPLEMENTED, EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "./exit-codes.mjs";
@@ -47,6 +48,8 @@ const KNOWN_FLAGS = new Set([JSON_FLAG, "--help", "-h"]);
  * @param {string | null} [context.agentDir] §4.1's state root; the pi SDK's by default
  * @param {string} [context.executable] the running binary — §11.7's anchor
  * @param {Record<string, string | undefined>} [context.env]
+ * @param {object} [context.policyResolver] §11.9 desired-policy reader; tests
+ *   inject a synthetic filesystem mount, never a production argv/env override
  * @param {object} [context.probes] the §5.3 probe registry
  * @param {(options: object) => Promise<object>} [context.herdr] §10.3's Herdr
  *   availability probe, injectable for the same reason `probes` is: a test drives
@@ -141,9 +144,12 @@ async function dispatch(parsed, context) {
 			// a second time. A verb that does not declare the flag never reaches
 			// this line with one — an undeclared flag refused as unknown above — so
 			// the value is read without asking which verb is running.
-			loaded = loadFactoryConfig({
+			loaded = await (verb.loadConfig ?? loadFactoryConfig)({
 				cwd: context.cwd,
 				routingSet: parsed.values.get(ROUTING_SET_FLAG) ?? null,
+				flags: parsed.flags,
+				args: parsed.args,
+				policyResolver: context.policyResolver,
 			});
 		} catch (error) {
 			if (!(error instanceof FactoryConfigError)) throw error;
@@ -196,6 +202,7 @@ async function run(parsed, verb, loaded, context) {
 		configPath: loaded?.configPath ?? null,
 		config: loaded?.config ?? null,
 		activeRouting: loaded?.activeRouting ?? null,
+		policyInspection: loaded?.policyInspection ?? null,
 		declared: loaded?.declared ?? null,
 		agentDir: context.agentDir ?? null,
 		executable: context.executable,
@@ -216,7 +223,7 @@ async function run(parsed, verb, loaded, context) {
 		pipeline: context.pipeline,
 		frontier: context.frontier,
 		execute: context.execute,
-		expect: loaded?.config.package?.expect ?? null,
+		expect: loaded?.config?.package?.expect ?? null,
 		args: parsed.args,
 		flags: new Set(parsed.flags),
 		// The values beside the flags rather than folded into them, so a handler
@@ -270,13 +277,15 @@ export function renderHuman(value) {
 	// exist.
 	if (value.error === undefined) {
 		lines.push(value.message);
-		if (value.report !== undefined) lines.push(...renderReport(value.report));
+		if (value.report?.policyResolution !== undefined) lines.push(...renderPolicyResolution(value.report.policyResolution));
+		else if (value.report !== undefined) lines.push(...renderReport(value.report));
 	} else {
 		const scope = value.command === null ? "factory" : `factory ${value.command}`;
 		lines.push(`${scope}: ${value.error.message}`);
 		for (const [key, detail] of Object.entries(value.error)) {
 			if (key === "message" || detail === null || detail === undefined) continue;
-			lines.push(`  ${key}: ${formatDetail(detail)}`);
+			if (key === "policyResolution") lines.push(...renderPolicyResolution(detail));
+			else lines.push(`  ${key}: ${formatDetail(detail)}`);
 		}
 	}
 

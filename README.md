@@ -28,7 +28,7 @@ field — one package, one version, never separately installable. It is the Soft
 Factory's operator surface, carrying every verb (`start`, `status`, `doctor`,
 `reconcile`, `stop`, `cleanup-plan`, `cleanup-execute`, `migrate`), because the moment
 a diagnostic matters most is when the controller — and possibly pi with it — is dead.
-Run `factory --help` for the set. It reads exactly one policy file,
+Run `factory --help` for the set. Legacy v2 operations read exactly one policy file,
 `<repo root>/.pi/factory.json`, refuses to start on anything it does not understand
 there, and prints human output by default and `--json` on request. The verbs
 themselves are landing slice by slice; until one does, it says so and names what is
@@ -39,6 +39,36 @@ missing rather than going quiet.
 opens `Part of #75` — it resolves membership over the live tracker graph and prints
 every member with the class it is in and the reason, claiming nothing and moving no
 label.
+
+For an operator-inventory v1 / repository-policy v3 draft, use the read-only
+**desired-policy preview** from the repository root or any subdirectory:
+
+```sh
+factory doctor --policy
+factory doctor --policy --json
+# Select an existing repository routing set; this never changes the operator mode:
+factory doctor --policy --routing-set=local --json
+```
+
+The inventory must be at `/etc/oh-my-slop/factory/operator.json`: a canonical,
+root-owned file and directory chain without group/other write access. Repository
+routing stays in `<repo root>/.pi/factory.json`; no environment or CLI path override
+relocates either source. The selected `tea` login's nonsecret local metadata must
+match the repository's Git forge identity. No tracker connection is made.
+See the [accepted policy contract](docs/specs/operator-policy-v1.md) for the exact
+schemas, ownership and refusal codes; these commands do not generate or migrate them.
+
+The preview reports source-byte revisions, active mode, configured ceilings, exact
+profile bindings and policy-eligible routes. Disabled and dormant inventory remains
+visible. **Applied state, occupancy, deployment enforcement and provider capability
+are not observed**: a configured ceiling is neither free capacity nor demonstrated
+subscription throughput. Preview success is not permission to start a shared run.
+Exit 0 means a valid preview; exit 1 means usage or configuration refusal, with no
+usable policy on rejection. `--json` carries `report.policyResolution` on success
+and `error.policyResolution` on configuration refusal. No credentials are resolved,
+models probed, workers launched, files mutated or allocator contacted. `--policy`
+cannot combine with `--baseline` or ticket/parent scope selectors; existing v2 doctor
+modes retain their behavior. No installed policy or supported concurrency is changed.
 
 A run answers the same question and then acts on it. `factory start 100 101` resolves
 that frontier at every scheduling decision, takes the lowest-numbered claimable ticket,
