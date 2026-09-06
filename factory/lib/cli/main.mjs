@@ -48,6 +48,8 @@ const KNOWN_FLAGS = new Set([JSON_FLAG, "--help", "-h"]);
  * @param {string | null} [context.agentDir] §4.1's state root; the pi SDK's by default
  * @param {string} [context.executable] the running binary — §11.7's anchor
  * @param {Record<string, string | undefined>} [context.env]
+ * @param {object} [context.policyResolver] §11.9 desired-policy reader; tests
+ *   inject a synthetic filesystem mount, never a production argv/env override
  * @param {object} [context.probes] the §5.3 probe registry
  * @param {(options: object) => Promise<object>} [context.herdr] §10.3's Herdr
  *   availability probe, injectable for the same reason `probes` is: a test drives

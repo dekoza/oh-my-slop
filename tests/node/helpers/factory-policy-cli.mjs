@@ -6,5 +6,6 @@ import { createDesiredPolicyResolver } from "../../../factory/lib/config/policy-
 const [filesystemRoot, ...argv] = process.argv.slice(2);
 const policyResolver = createDesiredPolicyResolver({ filesystemRoot, operatorUid: process.getuid() });
 const result = await runCli(argv, { cwd: process.cwd(), policyResolver });
-process.stdout.write(result.json ? `${renderJson(result.value)}\n` : renderHuman(result.value));
+const rendered = result.json ? `${renderJson(result.value)}\n` : renderHuman(result.value);
+(result.json || result.value.ok ? process.stdout : process.stderr).write(rendered);
 process.exitCode = result.exitCode;

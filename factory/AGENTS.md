@@ -33,9 +33,8 @@ question is which rows have become the module's job to state, not what the ceili
 - **`proof/` is deliberately unreachable from the binary.** §6.7's acceptance matrix runs by
   hand, spends real turns, and records under `docs/proofs/`; no run may depend on it.
   — `proof/matrix.mjs` · §6.7
-- **Contract-only value guards may precede their binary consumer**, without adding runtime IO
-  or dispatch: #227's walking-skeleton consumer belongs to #230.
-  — `config/operator-policy-v1.mjs` · §11.9
+- **Value guards own the shared policy wire shape**; desired-preview IO belongs to the resolver,
+  with no application or admission in either. — `config/operator-policy-v1.mjs` · §11.9
 
 ## Configuration
 
@@ -752,6 +751,8 @@ question is which rows have become the module's job to state, not what the ceili
 
 ## Diagnostics
 
+- **`doctor --policy` is a desired preview**, using exact source bytes and safe typed refusals;
+  it grants nothing and observes no runtime capacity. — `config/policy-resolver.mjs` · §11.9
 - **`doctor` is handed the store from `openRepoStoreReadOnly`**, which carries no `transaction` and
   never creates a store. — `doctor/report.mjs` · §14.24
 - **Every section is computed independently, and one that cannot answer says which ticket owes it**;

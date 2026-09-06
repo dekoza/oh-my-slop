@@ -63,7 +63,7 @@ test("subprocess CLI explains full/local-only policy and never probes or mutates
 		assert.deepEqual(policy.profileAvailability, { builder: "enabled", hosted: mode === "full" ? "enabled" : "mode-disabled", dormant: "profile-disabled", disabled: "resource-disabled" });
 		const human = f.invoke([]);
 		assert.equal(human.status, 0, human.stderr);
-		assert.match(human.stdout, /configured eligible profiles: builder(?:, hosted)?/);
+		assert.ok(human.stdout.includes(`configured eligible profiles: ${mode === "full" ? "builder, hosted" : "builder"} (`));
 		assert.match(human.stdout, /applied state: not observed/);
 		assert.match(human.stdout, /occupancy: not observed/);
 		assert.doesNotMatch(human.stderr, /FORBIDDEN_TOOL/);
@@ -85,5 +85,9 @@ test("subprocess CLI records selected routing and a rejected revision without di
 	assert.equal(value.error.reason, "invalid-document");
 	assert.equal(value.error.policyResolution.state, "rejected");
 	assert.equal(value.error.policyResolution.policy, null);
-	assert.doesNotMatch(result.stdout + result.stderr + f.invoke([]).stdout, /NEVER_DISCLOSE_THIS/);
+	const human = f.invoke([]);
+	assert.equal(human.status, 1);
+	assert.equal(human.stdout, "");
+	assert.match(human.stderr, /invalid-document/);
+	assert.doesNotMatch(result.stdout + result.stderr + human.stderr, /NEVER_DISCLOSE_THIS/);
 });

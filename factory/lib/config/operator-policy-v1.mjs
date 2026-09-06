@@ -13,9 +13,9 @@ import { parseVersionRange } from "../package/version.mjs";
  * and throw a redacted TypeError on a protocol violation; resolver refusals are
  * values instead. docs/specs/operator-policy-v1.md owns lifecycle and discovery.
  *
- * This artifact is deliberately not wired into the v2 binary yet: #227 fixes
- * the seam before the walking skeleton consumes it. Its version is independent
- * of repository config v3 and operator inventory v1.
+ * #230's desired-preview resolver consumes this frozen #227 artifact. Its
+ * version is independent of repository config v3 and operator inventory v1;
+ * legacy v2 operations do not consume it.
  */
 export const POLICY_CONTRACT_VERSION = 1;
 export const OPERATOR_INVENTORY_FILE = "/etc/oh-my-slop/factory/operator.json";

@@ -5,7 +5,7 @@ import { runCli, renderHuman } from "../../factory/lib/cli/main.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
 import { policyFixture } from "./helpers/factory-policy.mjs";
 import { createHash } from "node:crypto";
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 async function inspect(fixture, args = []) {
@@ -107,4 +107,49 @@ test("a replaceable operator mount refuses rather than blessing repository-writa
 	const result = await inspect(fixture);
 	assert.equal(result.exitCode, 1);
 	assert.equal(result.value.error.reason, "boundary-unproven");
+});
+
+test("source revisions track bytes and selection, while missing and symlinked sources expose no policy", async (t) => {
+	const f = policyFixture(t);
+	const first = (await inspect(f)).value.report.policyResolution;
+	writeFileSync(f.operatorFile, `${readFileSync(f.operatorFile, "utf8")}\n`);
+	const whitespace = (await inspect(f)).value.report.policyResolution;
+	assert.notEqual(first.desiredRevision, whitespace.desiredRevision);
+	assert.deepEqual(first.policy.operator, whitespace.policy.operator);
+	assert.ok(Object.isFrozen(whitespace.policy.operator.profiles.builder.runtime));
+	f.repository.routing.sets = { local: structuredClone(f.repository.routing) };
+	f.repository.routing.activeSet = "local";
+	f.save();
+	const implicit = (await inspect(f)).value.report.policyResolution;
+	const explicit = (await inspect(f, ["--routing-set=local"])).value.report.policyResolution;
+	assert.equal(implicit.policy.routingSet, "local");
+	assert.equal(explicit.policy.routingSet, "local");
+	assert.notEqual(implicit.desiredRevision, explicit.desiredRevision);
+	renameSync(f.operatorFile, `${f.operatorFile}.saved`);
+	const missing = (await inspect(f)).value.error.policyResolution;
+	assert.equal(missing.state, "unavailable");
+	assert.equal(missing.rejection.code, "source-unavailable");
+	assert.equal(missing.policy, null);
+	assert.equal(missing.appliedRevision, null);
+	symlinkSync(`${f.operatorFile}.saved`, f.operatorFile);
+	const symlink = (await inspect(f)).value.error.policyResolution;
+	assert.equal(symlink.state, "unavailable");
+	assert.notEqual(symlink.desiredRevision, missing.desiredRevision);
+});
+
+test("unknown references and ownership conflicts are checked in dormant entries and alternate shapes", async (t) => {
+	for (const [code, mutate] of [
+		["unknown-reference", (f) => { f.operator.modes.dormant = { aggregateLimit: 1, resources: { missing: 1 } }; }],
+		["unknown-reference", (f) => { f.repository.routing.sets = { dormant: { roles: { ...f.repository.routing.roles, implement: "missing" }, rules: [] } }; }],
+		["unknown-reference", (f) => { f.repository.routing.fallbacks = { implement: ["missing"] }; }],
+		["ownership-conflict", (f) => { f.repository.worker = { piExtensions: [{ path: "/test/extension", env: { TEST_INFERENCE_URL: "http://other.invalid" } }] }; }],
+		["invalid-document", (f) => { f.operator.profiles.builder.runtime.token = "NEVER_DISCLOSE_THIS"; }],
+	]) {
+		const f = policyFixture(t);
+		mutate(f);
+		f.save();
+		const result = await inspect(f);
+		assert.equal(result.value.error.reason, code);
+		assert.doesNotMatch(JSON.stringify(result.value), /NEVER_DISCLOSE_THIS/);
+	}
 });
