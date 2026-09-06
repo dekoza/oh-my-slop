@@ -6,13 +6,13 @@ import { makeRepo } from "./helpers/factory-repo.mjs";
 import { policyFixture } from "./helpers/factory-policy.mjs";
 import { createHash } from "node:crypto";
 import { chmodSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
-async function inspect(fixture, args = []) {
+async function inspect(fixture, args = [], login = { url: "https://forge.invalid", sshHost: "forge.invalid" }) {
 	const { createDesiredPolicyResolver } = await import("../../factory/lib/config/policy-resolver.mjs");
 	const policyResolver = createDesiredPolicyResolver({
 		filesystemRoot: fixture.filesystemRoot, operatorUid: process.getuid(),
-		readLogin: async () => ({ url: "https://forge.invalid", sshHost: "forge.invalid" }),
+		readLogin: async () => login,
 	});
 	return runCli(["doctor", "--policy", ...args], { cwd: fixture.cwd, policyResolver });
 }
@@ -91,7 +91,7 @@ test("duplicate JSON keys refuse even when escape spelling differs", async (t) =
 
 test("repository identity includes the selected login's forge host and SSH port", async (t) => {
 	const fixture = policyFixture(t);
-	for (const url of ["https://other.invalid/acme/widgets.git", "https://forge.invalid/acme/other.git", "ssh://git@forge.invalid:2222/acme/widgets.git"]) {
+	for (const url of ["https://other.invalid/acme/widgets.git", "https://forge.invalid/acme/other.git", "ssh://git@forge.invalid:2222/acme/widgets.git", "https://forge.invalid/unrelated/acme/widgets.git", "ssh://git@forge.invalid/unrelated/acme/widgets.git"]) {
 		execFileSync("git", ["remote", "set-url", "gitea", url], { cwd: fixture.root });
 		const result = await inspect(fixture);
 		assert.equal(result.exitCode, 1, url);
@@ -99,6 +99,32 @@ test("repository identity includes the selected login's forge host and SSH port"
 	}
 	execFileSync("git", ["remote", "set-url", "gitea", "git@forge.invalid:acme/widgets.git"], { cwd: fixture.root });
 	assert.equal((await inspect(fixture)).exitCode, 0);
+});
+
+test("a forge HTTP base path is exact and does not become an SSH repository prefix", async (t) => {
+	const f = policyFixture(t);
+	const login = { url: "https://forge.invalid/gitea", sshHost: "forge.invalid:2222" };
+	for (const [url, exitCode] of [
+		["https://forge.invalid/gitea/acme/widgets.git", 0],
+		["ssh://git@forge.invalid:2222/acme/widgets.git", 0],
+		["https://forge.invalid/gitea/unrelated/acme/widgets.git", 1],
+		["ssh://git@forge.invalid:2222/gitea/acme/widgets.git", 1],
+	]) {
+		execFileSync("git", ["remote", "set-url", "gitea", url], { cwd: f.root });
+		assert.equal((await inspect(f, [], login)).exitCode, exitCode, url);
+	}
+});
+
+test("repository provenance cannot name a local policy while reading through an escaping .pi symlink", async (t) => {
+	const f = policyFixture(t);
+	const outside = join(f.filesystemRoot, "foreign-policy");
+	renameSync(join(f.root, ".pi"), outside);
+	symlinkSync(outside, join(f.root, ".pi"));
+	const result = await inspect(f);
+	assert.equal(result.exitCode, 1);
+	assert.equal(result.value.error.reason, "ownership-conflict");
+	assert.equal(result.value.error.policyResolution.rejection.scope, "repository");
+	assert.equal(result.value.error.policyResolution.policy, null);
 });
 
 test("a dormant resource named constructor has zero configured capacity, not an inherited property", async (t) => {

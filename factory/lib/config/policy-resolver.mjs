@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { assertOperatorInventory, assertPolicyRequest, assertPolicyResolution, assertRepositoryPolicy, OPERATOR_INVENTORY_FILE } from "./operator-policy-v1.mjs";
 import { validateRouting } from "./routing.mjs";
 import { policyDiagnostic } from "./policy-diagnostics.mjs";
-import { remoteUrlToRepoSlug, resolveRemoteUrl } from "../git/repo.mjs";
+import { resolveRemoteUrl } from "../git/repo.mjs";
 import { readGiteaLoginIdentity } from "../tracker/gitea.mjs";
 import { FactoryTrackerError } from "../tracker/errors.mjs";
 
@@ -32,6 +32,7 @@ export function createDesiredPolicyResolver({ filesystemRoot = "/", operatorUid 
 			for (const [index, source] of sources.entries()) {
 				scope = index === 0 ? "operator" : "repository";
 				if (source.observation.state !== "read") refuse("source-unavailable", "document", "Make the policy source a readable regular file.");
+				if (!source.canonical) refuse(scope === "operator" ? "boundary-unproven" : "ownership-conflict", "document", "Keep the policy source at its canonical location without symlinked parent directories.");
 			}
 			scope = "operator";
 			verifyOperatorMount(operatorMount, filesystemRoot, operatorUid, sources[0].stat);
@@ -106,13 +107,19 @@ async function verifyRepositoryIdentity(root, tracker, readLogin) {
 		const scp = /^[^/@]+@([^/:]+):(.+)$/.exec(remote ?? "");
 		const url = scp ? new URL(`ssh://${scp[1]}/${scp[2]}`) : new URL(remote);
 		if (!["http:", "https:"].includes(forge.protocol) || forge.username || forge.password || forge.search || forge.hash) throw new TypeError("Invalid login URL");
+		let expectedPath;
 		if (url.protocol === "ssh:") {
 			const ssh = new URL(`ssh://${login.sshHost}`);
 			matches = url.hostname === ssh.hostname && (url.port || "22") === (ssh.port || "22");
+			expectedPath = `/${tracker.repo}`;
 		} else {
-			matches = url.origin === forge.origin && url.pathname.startsWith(`${forge.pathname.replace(/\/$/, "")}/`);
+			matches = url.origin === forge.origin;
+			expectedPath = `${forge.pathname.replace(/\/+$/, "")}/${tracker.repo}`;
 		}
-		matches &&= !url.password && !url.search && !url.hash && remoteUrlToRepoSlug(remote)?.toLowerCase() === tracker.repo.toLowerCase();
+		// Gitea's HTTP base path belongs to the forge; SSH paths begin at its
+		// repository namespace. A suffix-only slug match accepts another route.
+		const repositoryPath = url.pathname.replace(/\/+$/, "").replace(/\.git$/, "");
+		matches &&= repositoryPath.toLowerCase() === expectedPath.toLowerCase() && !url.password && !url.search && !url.hash;
 	} catch (error) {
 		if (!(error instanceof TypeError)) throw error;
 		// Invalid/unresolvable identity is a safe refusal, never source text.
@@ -145,11 +152,12 @@ function parse(bytes) {
 function observe(file) {
 	let fd;
 	try {
+		const canonical = realpathSync(file) === file;
 		fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
 		const stat = fstatSync(fd);
 		if (!stat.isFile()) return { observation: { state: "unreadable" } };
 		const bytes = readFileSync(fd);
-		return { observation: { state: "read", digest: digest(bytes) }, bytes, stat };
+		return { observation: { state: "read", digest: digest(bytes) }, bytes, stat, canonical: canonical && realpathSync(file) === file };
 	} catch (error) {
 		if (typeof error.code !== "string") throw error;
 		return { observation: { state: error.code === "ENOENT" ? "missing" : "unreadable" } };
