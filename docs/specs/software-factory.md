@@ -2,7 +2,8 @@
 
 > **Status:** locked. This is a **living contract**, not a dated snapshot. It is amended in
 > place as decisions land (see *Amendment log*), and it is the single citable source for
-> factory implementation tickets.
+> factory implementation tickets. **Exception: §18.3 is a Draft expansion proposal, not
+> build-ready or shipped behavior; it does not supersede the locked sections yet.**
 >
 > Locked by [Lock the build-ready Software Factory specification](http://192.168.129.37:30008/minder/oh-my-slop/issues/87),
 > the final decision ticket of the map
@@ -3393,6 +3394,207 @@ Build-ready in this document and outside the first shippable slice:
 **Not deferrable.** The **effect/probe discipline** (§4.5) and the **availability of every
 identity at mint time** (§2.1) are woven through every subsystem; retrofitting either means
 touching everything twice.
+
+---
+
+### 18.3 Operator-wide resources and fair dispatch — Draft
+
+**Status: Draft.** The operator has agreed the direction below. Schema, coordination protocol,
+recovery, and migration still need design before implementation tickets are build-ready. The
+locked contracts elsewhere in this document remain the current contract; this section records
+exactly where they must change rather than pretending the new behavior already exists.
+
+#### Problem and destination
+
+The operator owns subscription-backed Claude and ChatGPT coding access, occasional OpenRouter
+credits, and Qwen3.8-27B inference on rico's RTX 3090. This inventory belongs to the operator,
+not to any one repository. Ending subscriptions must require an availability or operating-mode
+change, not deleting profiles or redesigning the pipeline. Work continues on eligible local
+capacity, with less throughput and unchanged acceptance requirements.
+
+Multiple repositories must share the same enforced limits. Copying identical resource limits
+into their independent §4.1 stores would let each repository book rico's only slot. Global
+configuration without global admission is not this feature.
+
+**Agreed scope:** rico participates alongside subscriptions during normal operation, not only
+as standby. Initially rico serves inference only; agent processes, worktrees, and mechanical
+checks remain on the controller host. Remote worker execution is a separate future capability.
+A machine's inference address grants no authority to execute commands on that machine.
+
+**Actors and prerequisites:** one operator, concurrent repository-scoped runs, and explicitly
+configured resources with supported authentication and demonstrated worker-protocol support.
+The initial design targets runs sharing one operator authority on one controller host; independent
+controller hosts must not claim the same global guarantee until their coordination is designed.
+External interactive sessions and other GPU clients are not governed by Factory's slot limits;
+provider throttling can still occur, and exclusive GPU use requires endpoint-side enforcement
+or an operator reservation outside Factory.
+
+#### Configuration ownership
+
+Separate three questions, with one authoritative owner for each rather than precedence-based
+merging of competing values:
+
+| Concern | Proposed owner | Contract |
+|---|---|---|
+| Resource inventory | Operator | Stable resource identity, connection/authentication reference, enabled state, and hard active-worker capacity |
+| Model profiles | Operator | Runtime, exact model selector, settings, and binding to an inventory resource |
+| Operating modes | Operator | Which resources may dispatch now and their mode-specific ceilings, never above inventory limits |
+| Aggregate worker limit | Operator | Maximum active worker attempts across all participating repositories and resources |
+| Work eligibility and routing | Repository | Which declared profiles may perform each role or ticket's work; cannot enable an operator-disabled resource |
+| Ticket concurrency and project policy | Repository | In-flight ticket limit, tracker, git, checks, retry budgets, retention, and role permission floors |
+
+Inventory entries survive disabling and need not appear in an active repository route. Several
+profiles sharing one account quota or physical GPU share one resource limit. Changing a model,
+URL alias, or serving port must not manufacture independent capacity on the same GPU; conversely,
+provider identity alone must not collapse genuinely independent accounts. The schema must prevent
+accidental duplicate bindings, rather than trusting arbitrary per-profile pool names.
+
+Authentication references identify existing supported credential mechanisms. Secrets do not enter
+versioned repository config, operator config examples, manifests, or status output. Subscription
+access is not API credit: prove the installed runtime's supported subscription-backed path before
+making a profile available. A plan advertised as 20× supplies neither a concurrency guarantee nor
+a token-per-hour value that Factory may invent.
+
+Illustrative operating plan, **not accepted JSON, installed settings, or measured capacities**:
+
+| Resource | Full mode ceiling | Local-only mode |
+|---|---:|---|
+| Claude subscription | 7 | Disabled |
+| ChatGPT subscription | 3 | Disabled |
+| rico GPU | 1 | 1 |
+| OpenRouter credits | Disabled | Disabled |
+| Aggregate active workers | 11 | 1 |
+
+The 7/3 split and total 11 are the operator's example, not hardcoded defaults or a claim that
+these subscriptions sustain that load. OpenRouter remains in the inventory and requires explicit
+operator enablement for any use. Exhaustion never enables it automatically. Exact monetary
+allowances and enforcement, if offered, require a separate measurable spend contract; a slot
+limit is not a spending limit.
+
+#### Dispatch and operating flows
+
+1. A run resolves its repository policy against the operator inventory and active mode. Before
+   work starts, it reports the effective limits, eligible resources, and policy revision. Strict
+   validation and repository/tracker identity checks remain; this is not arbitrary config layering.
+2. Eligible local work competes for rico's single slot during normal operation alongside eligible
+   subscription work. An active-worker limit is a ceiling, not a target number of idle workers.
+   Empty terminal panes and mechanical checks do not consume model-worker slots.
+3. Every attempt, including review and repair, acquires both aggregate and resource admission
+   before launch. Existing §9.4 ticket admission remains separate. A wait for one dimension cannot
+   strand a hold in another; no new ticket is claimed merely to queue behind occupied capacity.
+   Model-using preflight and readmission probes must also respect the shared inference limits.
+4. Dispatch rotates among repositories with eligible waiting work, skipping those unable to use
+   currently available capacity. Within a repository, retain the existing ticket ordering and
+   pipeline constraints. There are no per-repository reservations, priorities, or preemption in
+   the initial policy. A busy repository may use otherwise idle capacity, but cannot take another
+   contested turn ahead of other continuously eligible repositories. Fairness is over grants,
+   not equal token volume, completion time, or guaranteed simultaneous occupancy.
+5. Subscription quota/rate exhaustion makes that resource unavailable to all participating runs.
+   Work falls back to an approved local route. If rico is busy, it waits without spending retry
+   budget; it does not activate OpenRouter, repeatedly launch into the refusal, or report success
+   because nothing could run. Existing readmission proof remains necessary before cloud dispatch
+   resumes. Authentication failures and endpoint outages remain distinguishable from quota refusal.
+6. Work with no approved available route waits with an explicit reason and an operator action;
+   it does not silently loosen routing or acceptance standards. Unstarted work remains unclaimed
+   on Gitea. Stop and abandon must remain responsive while waiting. A running attempt that fails
+   is settled through the outcome protocol; fallback is a new attempt, not live context migration.
+7. Selecting local-only or disabling a resource affects new admissions across existing runs as
+   well as future runs. Already admitted attempts may finish; admission is the ordering boundary,
+   so an attempt admitted before the change may still launch. Lowering a ceiling below occupancy
+   drains the excess without killing workers or issuing new grants until the new limits permit
+   them. An invalid edit grants nothing under the invalid policy; the policy-application protocol
+   must make the active revision and any rejected revision visible rather than silently guessing.
+
+Gitea remains the durable work graph and backlog. Cross-repository arbitration may remember
+admission contenders and turn order, but must not become a second source of ticket readiness,
+a generated task graph, or a service that discovers and claims work outside started runs.
+
+#### Safety, evidence, and failure boundaries
+
+- Global holds identify repository, run, attempt or probe, and owning controller. A controller
+  restart must adopt or settle them without duplicate launch or premature release. An unanswered
+  liveness probe is not permission to reuse a GPU slot. Loss of the shared authority prevents new
+  launches; it does not justify killing already running workers.
+- One resource's cooldown is shared across repositories, not copied as independent per-run
+  guesses. Readmission is coordinated so several repositories cannot probe the single GPU at once
+  or stampede an exhausted subscription.
+- Qwen's role eligibility needs evidence through the real worker protocol and representative
+  tasks. Capability failure is not slowness. Local-only preserves both review axes, mechanical
+  checks, and permission floors, even when one model performs the roles sequentially.
+- Status must explain global and per-repository occupancy, resource identity, selected model,
+  applied mode/revision, and why work is waiting: busy, disabled, exhausted, unreachable, or no
+  eligible route. Existing repo-level counts alone must not imply a globally free slot.
+
+#### Acceptance obligations
+
+1. Two separate repository controllers race for rico at capacity 1: at most one attempt or
+   model-using probe is admitted; switching profiles or endpoint aliases cannot bypass the limit.
+2. Concurrent grants respect both the aggregate worker cap and each resource cap, across builder,
+   reviewer, repair, retry, and probe paths; acquisition failure leaves no stranded partial hold.
+3. With three continuously eligible repositories and one contested resource, dispatch grants one
+   turn to each before a second turn to any; an ineligible repository does not block the others,
+   and an absent contender leaves no reserved idle capacity. Restart cannot reset the order to
+   repeatedly favor the same repository.
+4. Local inference receives eligible work while subscriptions are healthy. A subscription refusal
+   reroutes eligible work locally; a busy local slot waits budgetlessly and no OpenRouter launch
+   occurs. Another repository sees the same refusal without needing its own failed worker.
+5. Switching full to local-only with cloud attempts in flight preserves those attempts, bars new
+   cloud admissions, and continues eligible local work. Disabled entries and their profiles remain
+   intact. Lowering a cap below occupancy drains without preemption.
+6. A task without an eligible local route reports the blockage and remains stoppable; no review
+   axis or required check is removed. A slow but progressing local attempt uses its declared
+   timeout policy rather than being classified as quota exhaustion.
+7. Crash at each global-admission/local-record/launch boundary recovers without duplicate workers,
+   leaked reusable grants, or unrecorded work. Lost authority and inconclusive liveness prevent
+   unsafe admission. These obligations include claims that fail after admission.
+8. Migration refuses ambiguous resource sharing and preserves the original config. A legacy
+   controller cannot silently bypass shared limits while new controllers claim global enforcement.
+9. Before enabling more than one ticket execution, discharge §15 and §18.2's documented two-lane
+   run. Higher aggregate/per-resource load needs evidence at the intended supported envelope;
+   changing the constant or demonstrating one additional lane alone is not proof of 11 workers.
+
+#### Contracts to reconcile before implementation
+
+| Current contract | Required decision |
+|---|---|
+| §4.1 per-repository store; §4.6 and §9.4 local leases | Shared authority location/lifecycle; recoverable admission across global and repository records without pretending separate stores share a transaction |
+| §9.1 endpoint/provider-derived classes | Stable physical/account identity, alias handling, and migration to explicit shared inventory bindings |
+| §9.3 ticket ceiling; §9.6 fairness | Prove higher ticket concurrency; add aggregate worker admission and durable cross-repository turns without pane counting |
+| §9.8–§9.9 exhaustion; §10.3 run endings | Shared cooldown/readmission; distinguish temporary waiting, missing eligible routes, and terminal outcomes with exact report/exit semantics |
+| §6.2 required-class preflight | Validate disabled inventory without live probing it; unavailable optional cloud capacity must not block a valid local route, while required capability failures stay explicit |
+| §8.5 and §11.5 pinned repairs/retries | Define safe local continuation or a visible wait when the originating resource is disabled; never silently discard work or rewrite a minted route |
+| §10.1 run-scoped processes; §19 no resident work queue | Choose the arbitration mechanism and recovery ownership without inventing an always-on ticket scheduler |
+| §11.1–§11.2 one policy file; §11.6 reachability | Split disjoint ownership, retain dormant inventory, define revision application and malformed-edit behavior; no implicit override merging |
+| §11.8 migration; §16 monitor contract | Versioned migration and mixed-version exclusion; truthful global status and monitor observations |
+
+#### Delivery sequence and operational impact
+
+These are planning slices, **not tracker tickets or a second delivery graph**:
+
+1. **Configuration contract:** fix file discovery, schema, identity rules, ownership split,
+   operating-mode revision semantics, and migration/rollback examples. Resolve the table above
+   before labeling implementation work build-ready.
+2. **Shared admission:** implement and prove aggregate/resource holds, cross-repository turns,
+   crash recovery, and mixed-version exclusion using real multi-process tests. Keep production
+   ticket concurrency at its current proof gate.
+3. **Dispatch integration:** route all model users through admission; share refusal/readmission;
+   preserve local participation, waiting, stop, and safe retry/repair behavior.
+4. **Operator surface:** mode/availability changes, capacity inspection, and revision-aware
+   status/doctor/monitor reporting. Document resource removal as drain then retire, not deletion
+   of state that still owns an attempt.
+5. **Qualification and rollout:** prove actual subscription access and local role suitability,
+   complete concurrency acceptance and explicitly authorized live trials, then raise only the
+   supported ceilings. Record measured limits separately from the operator's desired limits.
+
+Rollout must not leave old per-repository controllers running beside a supposedly global
+allocator. Plan a drain-and-upgrade boundary and reject unsupported mixed versions. Rollback
+requires stopping new admissions and reconciling all live global holds before any return to
+independent accounting; restoring an old config while workers remain active is not safe rollback.
+Preserve old configs and state rather than overwriting user-owned inventory during migration.
+
+As slices lock, amend the affected sections in place and align `factory/AGENTS.md`, the
+configuration/CLI reference, migration instructions, and the monitor specification. This draft
+is not permission to change the installed `.pi/factory.json` or raise its concurrency now.
 
 ---
 
