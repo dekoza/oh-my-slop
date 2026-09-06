@@ -104,6 +104,25 @@ for (const scope of ["operator", "repository"]) {
 	}
 }
 
+for (const field of ["credentialId", "name"]) {
+	test(`subprocess CLI safely diagnoses deeply nested credential ${field}`, (t) => {
+		const f = cliFixture(t);
+		const target = field === "credentialId" ? f.operator.bindings.hosted : f.operator.credentials.hosted;
+		target[field] = "DEEP_PLACEHOLDER";
+		const nested = `${"[".repeat(10000)}"NEVER_DISCLOSE_CREDENTIAL"${"]".repeat(10000)}`;
+		writeFileSync(f.operatorFile, JSON.stringify(f.operator).replace('"DEEP_PLACEHOLDER"', nested));
+		const result = f.invoke(["--json"]);
+		assert.equal(result.status, 1);
+		assert.doesNotMatch(result.stderr, /RangeError|call stack/);
+		const value = JSON.parse(result.stdout);
+		assert.equal(value.error.reason, "invalid-document");
+		assert.equal(value.error.policyResolution.state, "rejected");
+		assert.equal(value.error.policyResolution.policy, null);
+		assert.equal(value.error.policyResolution.rejection.scope, "operator");
+		assert.doesNotMatch(result.stdout + result.stderr, /NEVER_DISCLOSE/);
+	});
+}
+
 test("subprocess CLI records selected routing and a rejected revision without disclosing invalid bytes", (t) => {
 	const f = cliFixture(t);
 	const selected = f.invoke(["--routing-set=local", "--json"]);

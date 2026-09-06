@@ -52,8 +52,11 @@ export function policyDiagnostic(document, scope, inventory, routingSet) {
 	for (const binding of Object.values(bindings).filter(record)) {
 		let endpoint = null;
 		try { if (typeof binding.endpoint?.url === "string") endpoint = new URL(binding.endpoint.url).href; } catch { /* Invalid URLs remain invalid-document. */ }
-		const credential = credentials[binding.credentialId];
-		const key = record(credential) ? JSON.stringify([credential.kind, credential.runtime, credential.name]) : null;
+		// Invalid references/fields may be deeply nested JSON. Never coerce them
+		// into property keys or recursively stringify them while refining a refusal.
+		const credential = typeof binding.credentialId === "string" ? credentials[binding.credentialId] : null;
+		const fields = record(credential) ? [credential.kind, credential.runtime, credential.name] : null;
+		const key = fields?.every((value) => typeof value === "string") ? JSON.stringify(fields) : null;
 		for (const [table, identity] of [[endpoints, endpoint], [auth, key]]) {
 			if (identity === null) continue;
 			if (table.has(identity) && table.get(identity) !== binding.resourceId) return ambiguous("bindings");
