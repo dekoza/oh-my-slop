@@ -242,6 +242,7 @@ export function assertPolicyResolution(resolution, request) {
 		if (question !== null) text(question);
 		if (code === "ambiguous-binding") requireThat(question !== null);
 		requireThat((resolution.state === "unavailable") === ["source-unavailable", "authority-unavailable"].includes(code));
+		requireThat((resolution.desiredRevision === null) === (code === "authority-unavailable"));
 		return resolution;
 	}
 	requireThat(resolution.rejection === null && resolution.appliedRevision !== null);

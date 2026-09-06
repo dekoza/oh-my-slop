@@ -126,6 +126,115 @@ test("repository ownership is closed recursively, including alternate routes and
 	}
 });
 
+test("authority loss is not a file revision and neither grants a stale policy", async () => {
+	const { request, response } = scenario();
+	Object.assign(response, { state: "unavailable", desiredRevision: null, policy: null,
+		rejection: { code: "authority-unavailable", scope: "operator", at: "authority", question: null } });
+	assert.deepEqual(await inspectPolicy(stub(request, response), request), {
+		waiting: "authority-unavailable", appliedRevision: "a".repeat(64),
+	});
+	response.rejection.code = "source-unavailable";
+	await assert.rejects(inspectPolicy(stub(request, response), request), TypeError);
+	response.desiredRevision = "e".repeat(64);
+	assert.equal((await inspectPolicy(stub(request, response), request)).waiting, "source-unavailable");
+	await assert.rejects(inspectPolicy({ async resolve() { throw new Error("transport offline"); } }, request), /transport offline/);
+});
+
+test("unknown keys, versions, unresolved references and invalid limits fail closed", () => {
+	const invalid = [
+		(o) => { o.schemaVersion = 2; },
+		(o) => { o.resources.gpu.limit = 1.5; },
+		(o) => { o.resources.gpu.enabled = "false"; },
+		(o) => { o.resources.gpu.extra = true; },
+		(o) => { o.resources.gpu.identity.port = 8000; },
+		(o) => { o.bindings.local.resourceId = "missing"; },
+		(o) => { o.bindings.local.credentialId = "missing"; },
+		(o) => { o.bindings.local.endpoint.url = "http://user:secret@inference.invalid"; },
+		(o) => { o.bindings.local.endpoint.url = "http://inference.invalid/?token=secret"; },
+		(o) => { o.bindings.local.endpoint.env = "PATH"; },
+		(o) => { o.bindings.local.endpoint = null; },
+		(o) => { o.profiles.builder.runtime.endpoint = { env: "TEST_URL", url: "http://other.invalid" }; },
+		(o) => { o.profiles.builder.runtime.permissionMode = "dontAsk"; },
+		(o) => { o.profiles.builder.runtime.effort = "high"; },
+		(o) => { o.profiles.builder.runtime.model = "TODO: choose"; },
+		(o) => { o.modes.normal.aggregateLimit = 2; },
+		(o) => { o.modes.normal.resources.gpu = 2; },
+		(o) => { o.modes.dormant = { aggregateLimit: 1, resources: { missing: 1 } }; },
+		(o) => { o.activeMode = "missing"; },
+		(o) => { o.credentials.bad = { kind: "runtime-auth", runtime: "pi", name: "test_credential", token: "not-a-real-secret" }; },
+	];
+	for (const mutate of invalid) {
+		const { operator } = scenario();
+		mutate(operator);
+		assert.throws(() => assertOperatorInventory(operator), TypeError);
+	}
+});
+
+test("same-GPU aliases and ports stay one resource; endpoint equality cannot split it", () => {
+	const { operator } = scenario();
+	operator.bindings.alias = { ...structuredClone(operator.bindings.local), endpoint: { env: "TEST_INFERENCE_URL", url: "http://alias.invalid:9000" } };
+	operator.profiles.alternate = { ...structuredClone(operator.profiles.builder), bindingId: "alias" };
+	assert.doesNotThrow(() => assertOperatorInventory(operator));
+	operator.resources.second = { ...structuredClone(operator.resources.gpu), identity: { kind: "gpu", hostId: "test_host", deviceId: "second_device" } };
+	operator.bindings.alias.resourceId = "second";
+	operator.bindings.alias.endpoint.url = "http://inference.invalid:8000/";
+	assert.throws(() => assertOperatorInventory(operator), TypeError);
+});
+
+test("independent accounts stay independent while shared credentials and quotas cannot split", () => {
+	const { operator } = scenario();
+	for (const name of ["first", "second"]) {
+		operator.resources[name] = { identity: { kind: "account", provider: "test_provider", accountId: name, quotaId: "subscription" }, enabled: false, limit: 0 };
+		operator.credentials[name] = { kind: "runtime-auth", runtime: "pi", name };
+		operator.bindings[name] = { resourceId: name, credentialId: name, endpoint: null };
+	}
+	assert.doesNotThrow(() => assertOperatorInventory(operator));
+	operator.credentials.second.name = "first";
+	assert.throws(() => assertOperatorInventory(operator), TypeError);
+	operator.credentials.second.name = "second";
+	operator.resources.second.identity.accountId = "first";
+	assert.throws(() => assertOperatorInventory(operator), TypeError);
+});
+
+test("dormant profiles survive mode changes and all availability reasons are explicit", async () => {
+	for (const [mutate, availability, resourceLimit, aggregate] of [
+		[(o) => { o.profiles.builder.enabled = false; }, "profile-disabled", 1, 1],
+		[(o) => { o.resources.gpu.enabled = false; }, "resource-disabled", 0, 1],
+		[(o) => { o.modes.normal.resources = {}; }, "mode-disabled", 0, 1],
+		[(o) => { o.modes.normal.resources.gpu = 0; }, "zero-capacity", 0, 1],
+		[(o) => { o.modes.normal.aggregateLimit = 0; }, "zero-capacity", 1, 0],
+	]) {
+		const { request, response, operator } = scenario();
+		mutate(operator);
+		response.policy.limits = { aggregate, resources: { gpu: resourceLimit } };
+		response.policy.profileAvailability.builder = availability;
+		const result = await inspectPolicy(stub(request, response), request);
+		assert.equal(result.policy.profileAvailability.builder, availability);
+	}
+});
+
+test("explicit named-set selection is recorded without overriding operator mode", async () => {
+	const { request, response, repository } = scenario();
+	repository.routing.sets = { chosen: structuredClone(repository.routing) };
+	request.routingSet = "chosen";
+	response.policy.routingSet = "chosen";
+	assert.equal((await inspectPolicy(stub(request, response), request)).policy.operator.activeMode, "normal");
+	request.routingSet = null;
+	repository.routing.activeSet = "chosen";
+	assert.equal((await inspectPolicy(stub(request, response), request)).policy.routingSet, "chosen");
+});
+
+test("request overrides and secret-bearing invalid documents do not leak through diagnostics", async () => {
+	const { request, operator } = scenario();
+	request.activeMode = "other";
+	await assert.rejects(inspectPolicy({ resolve() { assert.fail("must not call resolver"); } }, request), TypeError);
+	operator.credentials.secret = { kind: "runtime-auth", runtime: "pi", name: "test", "not-a-real-secret": true };
+	assert.throws(() => assertOperatorInventory(operator), (error) => {
+		assert.equal(error.message, "Invalid operator-policy v1 contract value");
+		return true;
+	});
+});
+
 test("contract refuses unknown bindings and duplicate physical identities even in dormant inventory", () => {
 	const { operator } = scenario();
 	operator.profiles.builder.bindingId = "missing";
