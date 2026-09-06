@@ -169,10 +169,12 @@ disable that copy in pi's global `settings.json` so it cannot register the same 
 or fail startup. Add this entry to the existing `extensions` array (preserve other entries):
 
 ```json
-"extensions": ["-~/.pi/agent/extensions/local-router/index.ts"]
+"extensions": ["-extensions/local-router/index.ts"]
 ```
 
-This leaves the standalone files intact while the package supplies the maintained extension.
+The exclusion is relative to pi's global settings directory; do not put `~` after the
+`-` prefix, because pi's exact exclusion matcher does not expand it. This leaves the
+standalone files intact while the package supplies the maintained extension.
 Configured `local/*` model patterns may still produce nonfatal "No models match" warnings
 while the router is offline; use another provider until it returns.
 

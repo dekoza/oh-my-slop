@@ -46,6 +46,15 @@ def test_readme_install_section_describes_automatic_extension_loading() -> None:
     assert "remain opt-in" not in readme_text
 
 
+def test_local_router_migration_uses_a_settings_relative_exclusion() -> None:
+    section = load_readme().split("### Local router setup and migration", maxsplit=1)[1]
+    section = section.split("\n## ", maxsplit=1)[0]
+
+    # Pi's exact exclusion matcher does not expand '~' after the '-' prefix.
+    assert '"extensions": ["-extensions/local-router/index.ts"]' in section
+    assert "PI_LOCAL_ROUTER_BASE_URL" in section
+
+
 def test_readme_lists_every_bundled_extension() -> None:
     readme_text = load_readme()
 
