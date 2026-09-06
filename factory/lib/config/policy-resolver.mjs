@@ -3,6 +3,7 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, rea
 import { dirname, join } from "node:path";
 import { assertOperatorInventory, assertPolicyRequest, assertPolicyResolution, assertRepositoryPolicy, OPERATOR_INVENTORY_FILE } from "./operator-policy-v1.mjs";
 import { validateRouting } from "./routing.mjs";
+import { policyDiagnostic } from "./policy-diagnostics.mjs";
 
 /** §11.9 desired preview: source reads only, never application or admission.
  * Injection names a synthetic managed mount for filesystem tests. The binary
@@ -21,6 +22,8 @@ export function createDesiredPolicyResolver({ operatorMount = dirname(OPERATOR_I
 			appliedRevision: null, policy: null, rejection: null,
 		};
 		let scope = "operator";
+		let document;
+		let operator;
 		try {
 			for (const [index, source] of sources.entries()) {
 				scope = index === 0 ? "operator" : "repository";
@@ -33,10 +36,13 @@ export function createDesiredPolicyResolver({ operatorMount = dirname(OPERATOR_I
 			if (!mount.isDirectory() || realpathSync(operatorMount) !== operatorMount || mount.uid !== operatorUid || (mount.mode & 0o022) !== 0 || sources[0].stat.uid !== operatorUid || (sources[0].stat.mode & 0o022) !== 0) {
 				refuse("boundary-unproven", "document", "Use an operator-owned canonical inventory mount without group or other write access.");
 			}
-			const operator = parse(sources[0].bytes);
-			assertOperatorInventory(operator);
+			document = parse(sources[0].bytes);
+			assertOperatorInventory(document);
+			operator = document;
 			scope = "repository";
-			const repository = parse(sources[1].bytes);
+			document = undefined;
+			document = parse(sources[1].bytes);
+			const repository = document;
 			assertRepositoryPolicy(repository, operator, request.routingSet);
 			const routing = validateRouting(repository.routing, operator.profiles, request.routingSet, "operator-policy");
 			const mode = operator.modes[operator.activeMode];
@@ -57,7 +63,7 @@ export function createDesiredPolicyResolver({ operatorMount = dirname(OPERATOR_I
 					repositoryFile, repositoryDigest: sources[1].observation.digest } };
 		} catch (error) {
 			if (!(error instanceof PolicyRefusal) && !(error instanceof TypeError) && !(error instanceof SyntaxError)) throw error;
-			const rejection = error instanceof PolicyRefusal ? error.rejection : { code: "invalid-document", at: "document", question: "Correct the source against operator-policy v1's closed schema." };
+			const rejection = error instanceof PolicyRefusal ? error.rejection : policyDiagnostic(document, scope, operator, request.routingSet);
 			resolution.state = rejection.code === "source-unavailable" ? "unavailable" : "rejected";
 			resolution.rejection = { ...rejection, scope };
 		}
@@ -67,7 +73,26 @@ export function createDesiredPolicyResolver({ operatorMount = dirname(OPERATOR_I
 }
 
 function digest(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
-function parse(bytes) { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+function parse(bytes) {
+	const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+	const value = JSON.parse(source);
+	// JSON.parse owns the grammar; this token walk only rejects duplicate keys
+	// it would otherwise erase. Decode escaped spellings before comparison.
+	const stack = [];
+	for (const [token] of source.matchAll(/"(?:[^"\\]|\\[\s\S])*"|[{}\[\],:]/g)) {
+		const top = stack.at(-1);
+		if (token === "{" || token === "[") stack.push({ keys: token === "{" ? new Set() : null, key: true });
+		else if (token === "}" || token === "]") stack.pop();
+		else if (token === ",") top.key = true;
+		else if (token === ":") top.key = false;
+		else if (top?.keys && top.key) {
+			const key = JSON.parse(token);
+			if (top.keys.has(key)) throw new SyntaxError("Duplicate policy key");
+			top.keys.add(key);
+		}
+	}
+	return value;
+}
 
 function observe(file) {
 	let fd;

@@ -4,7 +4,7 @@ import { runCli, renderHuman } from "../../factory/lib/cli/main.mjs";
 import { makeRepo } from "./helpers/factory-repo.mjs";
 import { policyFixture } from "./helpers/factory-policy.mjs";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 async function inspect(fixture, args = []) {
 	const { createDesiredPolicyResolver } = await import("../../factory/lib/config/policy-resolver.mjs");
@@ -47,4 +47,42 @@ test("doctor previews exact source policy from a subdirectory without observatio
 	for (const name of ["applied state", "occupancy", "deployment enforcement", "provider capability"]) {
 		assert.ok(human.includes(`${name}: not observed`), human);
 	}
+});
+
+test("invalid desired revisions return actionable typed refusals without source excerpts", async (t) => {
+	for (const [code, scope, mutate] of [
+		["unsupported-version", "operator", (f) => { f.operator.schemaVersion = 2; }],
+		["ownership-conflict", "repository", (f) => { f.repository.profiles = {}; }],
+		["ownership-conflict", "repository", (f) => { f.repository.concurrency.resources = { gpu: 9 }; }],
+		["unknown-reference", "operator", (f) => { f.operator.profiles.builder.bindingId = "missing"; }],
+		["unknown-reference", "repository", (f) => { f.repository.routing.roles.implement = "missing"; }],
+		["identity-mismatch", "repository", (f) => { f.repository.operatorId = "another_operator"; }],
+		["ambiguous-binding", "operator", (f) => { f.operator.resources.alias = structuredClone(f.operator.resources.gpu); }],
+		["invalid-document", "operator", (f) => { f.operator.credentials.secret = { token: "NEVER_DISCLOSE_THIS" }; }],
+	]) {
+		await t.test(`${code}: ${scope}`, async (t) => {
+			const fixture = policyFixture(t);
+			mutate(fixture);
+			fixture.save();
+			const result = await inspect(fixture);
+			assert.equal(result.exitCode, 1);
+			assert.equal(result.value.error.kind, "config-load");
+			assert.equal(result.value.error.reason, code);
+			const resolution = result.value.error.policyResolution;
+			assert.equal(resolution.rejection.scope, scope);
+			assert.ok(resolution.rejection.question);
+			assert.equal(resolution.policy, null);
+			assert.match(resolution.desiredRevision, /^[a-f0-9]{64}$/);
+			assert.doesNotMatch(JSON.stringify(result.value) + renderHuman(result.value), /NEVER_DISCLOSE_THIS/);
+		});
+	}
+});
+
+test("duplicate JSON keys refuse even when escape spelling differs", async (t) => {
+	const fixture = policyFixture(t);
+	const source = readFileSync(fixture.operatorFile, "utf8");
+	writeFileSync(fixture.operatorFile, source.replace('"enabled": true', '"enabled": false, "\\u0065nabled": true'));
+	const result = await inspect(fixture);
+	assert.equal(result.exitCode, 1);
+	assert.equal(result.value.error.reason, "invalid-document");
 });
