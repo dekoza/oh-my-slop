@@ -1,0 +1,42 @@
+{
+  "skill_name": "to-tickets",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Draft a local ticket breakdown for a new Python controller. The repository contains only approved design documents: no package, dependency manifest, lockfile, test harness or entry point. Four contract-only tickets cover operator commands, contained attempts, harness exchanges and forge coordination, each in a separate module with caller-side stub tests. All builders need to create package initializers and edit the same dependency manifest and pytest configuration; identity/retry conventions are not yet fixed. Four implementers are available, the demo is tomorrow, and the lead says communication plus agreeing on byte-identical scaffolding will let all four start today. Produce the proposed ticket titles, blocking edges, impact surfaces, allowed concurrent sets and reasons; do not publish or implement. End with the human review ticket.",
+      "expected_output": "One scaffolding prerequisite owns shared bootstrap work before executable contracts; unresolved/shared foundational semantics are ordered or extracted into a prerequisite rather than negotiated concurrently.",
+      "files": [],
+      "expectations": [
+        "Exactly one scaffolding ticket owns shared packaging, dependency/lock and test setup, with a minimal runnable entry point.",
+        "Every executable contract ticket is blocked directly or transitively by completed scaffolding; the contract-only label does not bypass it.",
+        "Unsettled shared identity/retry conventions receive explicit ownership and blocking edges; communication or byte-identical intentions do not justify concurrency.",
+        "The proposed concurrent sets contain only tickets with documented disjoint mutable impact surfaces; unknown impact is serialized."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Plan tickets for an existing application whose scaffolding and entry point already work. Ticket A adds audit reporting; ticket B adds export reporting. They touch different feature modules but both must edit the same shared registration file and test conftest, in different hunks. No interface shape changes. Ticket C adds a retention feature whose storage/configuration impact has not been investigated. Two independent owners also need to revise the same accepted response contract for different consumers, and each proposes a fresh version ticket. The team has already prepared five worktrees, an integration deadline is approaching, and the lead proposes concurrent implementation followed by one integrate-and-verify ticket. Produce titles, impact surfaces, graph edges and permitted concurrent sets, explaining how you handle the uncertain footprint and the revision tickets. Do not publish or implement.",
+      "expected_output": "Shared-file edits and unproven footprints are ordered or consolidated; final integration and new contract versions cannot waive collision edges. Existing scaffolding is reused, not duplicated.",
+      "files": [],
+      "expectations": [
+        "Tickets A and B cannot implement concurrently merely because their hunks or feature modules differ.",
+        "Ticket C is not admitted to a parallel set until its impact is established; the plan records this uncertainty rather than inventing disjointness.",
+        "The two response-contract revisions have explicit ownership/order or are consolidated; new version tickets are not automatically unblocked.",
+        "A final integrate-and-verify ticket and existing worktrees are not accepted as substitutes for prerequisite or collision blocking edges.",
+        "The plan recognizes already-completed scaffolding rather than creating unnecessary bootstrap work."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Draft tickets for adding two independent optional formatters to an established application. Inspection confirms JSON formatting changes only the JSON plugin module and its private tests; CSV formatting changes only the CSV plugin module and its private tests. Plugins are auto-discovered. Both consume the same already-accepted read-only formatter protocol; neither changes it, dependencies, configuration, fixtures, registries, schemas or state invariants. Packaging, entry point and test setup are already complete. Also consider the opposite case where review reveals both plugins must change the shared registry after all. Show the graph, the evidence for any allowed concurrent set, the reaction to changed impact, and the final human review ticket. Do not publish or implement.",
+      "expected_output": "Permit proven-disjoint module work without blanket serialization; shared stable reads do not create a collision. Revoke parallel eligibility when shared mutable impact is discovered.",
+      "files": [],
+      "expectations": [
+        "The JSON and CSV tickets may implement concurrently based on the inspected module/private-test boundaries and stable read-only protocol.",
+        "The plan does not add an artificial dependency or new contract/scaffolding ticket solely because both consume the unchanged protocol.",
+        "Discovery of shared registry edits pauses overlapping work and requires graph repair before parallel implementation continues.",
+        "The terminal human review ticket is blocked by both implementation tickets."
+      ]
+    }
+  ]
+}
