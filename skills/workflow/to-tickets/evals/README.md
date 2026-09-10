@@ -73,3 +73,14 @@ No remote configuration or unrelated Factory source was changed to make it pass.
 Static prose checks protect policy presence and existing ticket conventions. The
 scenario comparison supplies separate behavioral evidence; neither proves that a
 production controller enforces the emitted graph.
+
+### Canonical source verification
+
+The operator identified `/home/minder/projekty/oh-my-slop/` as the source repository.
+Only the two task commits were transferred into its dedicated worktree, based on
+Gitea main `c14d4ff`; unrelated source work was preserved. The skill body is
+byte-identical to the evaluated candidate. Source commit `f8bfd07` passed the full
+Python suite (**888 tests, including the Node-suite wrapper**) and reference
+validation. The source checkout has the expected `gitea` remote, so the installed
+checkout's environment-dependent failure did not reproduce there. No Factory
+source or remote configuration was changed to obtain that result.
