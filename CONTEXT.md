@@ -29,11 +29,12 @@ An **Issue** this skill set authored onto the **agent work tracker**. Every tick
 an issue; not every issue is a ticket. Two kinds, distinguished by label and never
 carried at once: a **Decision ticket** (`wayfinder:<type>`) and an *implementation
 ticket* (`workflow:implement` plus a state label), which holds a slice of a build to
-execute. `to-tickets` cuts three special implementation tickets: a **contract ticket**
-(fixes one cross-component interface, owned by the higher-level component, immutable
-once accepted, blocking every ticket that reads the shape), the **walking skeleton**
-(the first behaviour-producing ticket of a new product or top-level component, one
-runnable entry point the rest extend), and the **review ticket** (the last, marked
+execute. `to-tickets` cuts special implementation tickets: a **scaffolding ticket**
+(owns the shared foundation and minimal runnable entry point before dependent builds),
+a **contract ticket** (fixes one cross-component interface, owned by the higher-level
+component, immutable once accepted, blocking every ticket that reads the shape), the
+**walking skeleton** (the first product-behaviour ticket, extending that entry point
+end to end after scaffolding and required contracts), and the **review ticket** (the last, marked
 `ready-for-human`, blocked by every other ticket of the run). Use **Issue** for the
 tracker's unit and **Ticket** for work we put there — the seam that makes
 `to-tickets` and `triage` read correctly side by side.
@@ -55,11 +56,19 @@ _Avoid_: plan, epic, roadmap, backlog
 
 **Blocking edge**:
 A directed relation between two **Tickets**: the blocker must be *closed* before the
-blocked one can be taken — no branch-level or partly-done state satisfies it. Two
-grounds earn one: the blocked ticket cannot start until the blocker lands, or it
-reads a shape the blocker changes. `to-tickets` and `wayfinder` author them; the
+blocked one can be taken — no branch-level or partly-done state satisfies it.
+Prerequisite and collision grounds earn one: the blocked ticket cannot start until
+the blocker lands, it reads a shape the blocker changes, or both share mutable
+**Impact surface**. `to-tickets` and `wayfinder` author them; the
 **Frontier** is what is left once they are honoured.
 _Avoid_: dependency, dependency edge, prerequisite, blocker link
+
+**Impact surface**:
+The files, shared resources, contracts, schemas and state invariants a **Ticket**
+can change or affect, distinguished from accepted, unchanged inputs it only consumes.
+Overlapping mutable surfaces require ordering; separate module names alone do not
+prove disjointness.
+_Avoid_: file list (too narrow), module boundary (not evidence of independence)
 
 **Frontier**:
 The edge of what is takeable now. On a **Map**, the open, unblocked, unclaimed

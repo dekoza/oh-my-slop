@@ -45,13 +45,13 @@ def test_to_tickets_quiz_asks_about_components() -> None:
     assert "more than one component" in text
 
 
-def test_to_tickets_refuses_a_breakdown_whose_first_ticket_is_not_a_walking_skeleton() -> None:
+def test_to_tickets_requires_scaffolding_then_a_product_walking_skeleton() -> None:
     text = skill_text("to-tickets")
 
-    assert "first implementation ticket is a walking skeleton" in text
+    assert "first product-behaviour ticket is a walking skeleton" in text
     assert "does not produce a runnable entry point, **refuse** it" in text
-    # Contract tickets precede the skeleton; the refusal must not fire on them.
-    assert "the first ticket after any contract tickets" in text
+    # Executable contracts consume scaffolding; the product path consumes contracts.
+    assert "after scaffolding and required contract tickets" in text
 
 
 def test_implement_names_the_shared_vocabulary_as_a_builder_input() -> None:
