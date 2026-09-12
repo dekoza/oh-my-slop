@@ -128,7 +128,10 @@ Maps and tickets live on Gitea only — never on the intake tracker.
   blocked by every other ticket of the run. It is the sink a factory run drains into —
   the one ticket left open when everything implementable is done — and the factory warns
   (`no-human-sink`) when a parent scope has none. The operator answers its three questions
-  in a comment and closes it.
+  in a comment and closes it. `/humanify <ticket>` assists with evidence and the human
+  decision; it may record and close on explicit delegation unless the action is reserved
+  to the human personally. Retain unfinished obligations and verify the final state.
+  This does not change the ticket's labels or the factory's human-owned classification.
 - **Frontier query**: list the map's open children, drop any that still have an open
   blocker (`GET .../dependencies`) or an assignee; first in map order wins.
 - **Claim**: `tea issues edit <index> --add-assignees <me>` — the session's first write.

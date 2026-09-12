@@ -10,7 +10,7 @@ actual label string used in this repo's tracker.
 | `needs-triage`    | `needs-triage`       | Maintainer needs to evaluate this issue  |
 | `needs-info`      | `needs-info`         | Waiting on reporter for more information |
 | `ready-for-agent` | `ready-for-agent`    | Fully specified, ready for an AFK agent  |
-| `ready-for-human` | `ready-for-human`    | Requires human implementation            |
+| `ready-for-human` | `ready-for-human`    | Requires human action or judgement       |
 | `wontfix`         | `wontfix`            | Will not be actioned                     |
 
 ## Category roles
@@ -31,7 +31,9 @@ Labels must exist before they can be applied. On Gitea, create them with
 
 `workflow:implement` marks build-ready work that should run through `/implement`.
 Workflow and state are separate: apply `ready-for-agent` or `ready-for-human` as
-well to record who can execute the ticket.
+well to record who can execute the ticket. Use `/humanify <ticket>` to assist with
+human-owned steps, decisions or reviews; `ready-for-human` alone does not mean code
+must be written. This adds no label and changes no factory eligibility rule.
 
 ## Wayfinder labels
 

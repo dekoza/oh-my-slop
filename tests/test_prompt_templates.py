@@ -63,6 +63,18 @@ def skill_frontmatter(skill_name: str) -> str:
     return text[4:].partition("\n---\n")[0]
 
 
+def test_humanify_is_a_manual_ticket_entry_point() -> None:
+    """Human-led work is an explicit action, with the ticket passed through."""
+    template = PROMPTS_DIR / "humanify.md"
+
+    assert template.exists(), "/humanify is not installed as a prompt template"
+    assert named_skill(template) == "humanify"
+    frontmatter, body = split_template(template)
+    assert "<ticket>" in frontmatter
+    assert "$@" in body
+    assert "disable-model-invocation: true" in skill_frontmatter("humanify")
+
+
 def test_every_template_names_a_skill_that_exists() -> None:
     """The failure that actually breaks a shim: a skill renamed or removed
     while the template still names it. A named skill can be checked; an

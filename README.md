@@ -131,7 +131,7 @@ It is idempotent, removes any whole-bucket symlink it finds, and never touches l
 
 ### First run in a project
 
-Run [`/setup-project-skills`](skills/meta/setup-project-skills/SKILL.md) once per repo, before the first time you reach for `wayfinder`, `to-tickets`, `to-spec`, `triage`, `qa`, or `two-axis-review`. It interviews you about three things the workflow skills otherwise have to guess at, and writes the answers to `docs/agents/` in that project:
+Run [`/setup-project-skills`](skills/meta/setup-project-skills/SKILL.md) once per repo, before the first time you reach for `wayfinder`, `to-tickets`, `to-spec`, `triage`, `qa`, `humanify`, or `two-axis-review`. It interviews you about three things the workflow skills otherwise have to guess at, and writes the answers to `docs/agents/` in that project:
 
 - **Issue tracker** — which forge holds agent work, and which (if any) holds human-filed intake. The skills never open work tickets on the intake tracker.
 - **Triage labels** — the strings behind the canonical roles, so `triage` applies your existing labels instead of creating duplicates.
@@ -211,7 +211,7 @@ while the router is offline; use another provider until it returns.
 ## Skills
 
 <details>
-<summary><strong>Skills (66)</strong></summary>
+<summary><strong>Skills (67)</strong></summary>
 
 Grouped by what you came looking for: an API surface (**Reference**), a way of
 working (**Practice**), a job to run (**Workflow**), or the agent's own toolkit
@@ -279,6 +279,7 @@ Rituals you run — session and tracker state, from interview through implementa
 | **[Grill With Docs](skills/workflow/grill-with-docs/SKILL.md)** | Grilling session that also maintains docs as decisions land — CONTEXT.md glossary entries and ADRs via domain-modeling. |
 | **[Grilling](skills/workflow/grilling/SKILL.md)** | The interview primitive — the design tree worked in rounds, each round asking the whole frontier of ready questions, facts looked up vs decisions asked, no enacting until the user confirms. Reused by grill-me, grill-with-docs, triage, wayfinder. |
 | **[Handoff](skills/workflow/handoff/SKILL.md)** | Compact the current conversation into a handoff document for another agent to pick up. References artifacts by path/URL, redacts sensitive info, saves to temp directory. |
+| **[Humanify](skills/workflow/humanify/SKILL.md)** | Work through one human-in-the-loop ticket: manual prerequisites, decisions, live checks, approvals or terminal reviews. The agent does the legwork; human decisions and unfinished obligations stay explicit and attributable. |
 | **[Implement](skills/workflow/implement/SKILL.md)** | Build one ticket-sized slice from a spec or build-ready ticket — TDD at pre-agreed seams, regular typechecks, project test policy, and two-axis review before committing. |
 | **[Improve Codebase Architecture](skills/workflow/improve-codebase-architecture/SKILL.md)** | Dual-axis architecture scan: finds deepening opportunities (shallow modules) AND simplification opportunities (dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead flags). Visual HTML report, then a wayfinder map with one ticket per chosen candidate and an in-session work-through of the one you pick. Uses codebase-design vocabulary, integrates ponytail-audit. |
 | **[LLM Council](skills/workflow/council/SKILL.md)** | Multi-advisor decision protocol: 5 independent perspectives, anonymized peer review, chairman synthesis. For high-stakes uncertainty where being wrong is expensive. |
@@ -319,7 +320,7 @@ About the agent and its own toolkit, not about your code.
 Prompt templates are slash commands — type `/name` in the editor and it expands into a request that hands off to a bundled skill. Each template is an entry point, not a second copy of the flow: the skill stays the single source of truth, and the template exists because it forwards its arguments, which `/skill:<name>` cannot. So `/arch ~/some/repo` reviews another tree in one shot.
 
 <details>
-<summary><strong>Prompt templates (10)</strong></summary>
+<summary><strong>Prompt templates (11)</strong></summary>
 
 | Command | What it does |
 |---|---|
@@ -328,6 +329,7 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 | **`/audit [path]`** | Ranked bloat/over-engineering findings — dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead flags. |
 | **`/debt [path] [--output-debt-file]`** | Harvest `SHORTCUT:` markers left during development. Flags missing upgrade paths. |
 | **`/handoff`** | Compact the conversation into a handoff document for another agent. References artifacts, redacts secrets, saves to temp. |
+| **`/humanify <ticket>`** | Work through a ticket together where human action or judgement is required—not only acceptance work. |
 | **`/questionnaire <topic>`** | Turn an unanswerable decision into a Markdown questionnaire for the one person who can fill it in. |
 | **`/arch [path]`** | Architecture health check with visual HTML report — deepening and simplification candidates, before/after diagrams, then a wayfinder map and an in-session work-through of the candidate you pick. |
 | **`/wizard [description]`** | Generate an interactive bash wizard that walks a human through a manual setup or migration procedure. |
@@ -335,6 +337,16 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 | **`/proto <question> [logic\|ui]`** | Throwaway prototype — terminal app for state machines or radically different UI variants on one route. |
 
 </details>
+
+### Human-in-the-loop tickets
+
+Use `/humanify <ticket>` for work that needs you: a manual setup step, a field check,
+a decision, an approval, or a delivered-product review. `ready-for-human` identifies
+human involvement, not one universal workflow. The agent investigates and guides the
+next useful step, records your decisions and preserves unfinished work with an owner.
+Live changes still need scoped authorization; code repairs go to a separate implementation
+session. Existing `workflow:implement` terminal-review labels and factory behavior stay
+unchanged. This command does not automatically start the next ticket.
 
 ## Critical Partner setup and use
 
