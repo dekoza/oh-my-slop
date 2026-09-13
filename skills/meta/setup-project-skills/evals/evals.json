@@ -1,0 +1,41 @@
+{
+  "skill_name": "setup-project-skills",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Dry-run setup for a repo with AGENTS.md, existing Gitea agent-work bindings and launch decision ticket #13. Factory setup is declined. The owner confirms there are no real users, non-disposable data, external compatibility obligations or contractual/payment commitments, approves a clean-cut policy, and wants existing completed migrations left alone. #13 may close after planning, before release. Produce the proposed instruction paragraph and ticket acceptance criteria, the write/verification order, and the next action on an identical re-sync. The backlog contains migration tickets, but no cleanup was authorized. Do not contact a real tracker or modify this repository.",
+      "expected_output": "A paired, owner-approved policy and linked launch gate; release-commit verification and transfer of unchecked criteria; idempotent re-sync and no unsolicited backlog edits.",
+      "expectations": [
+        "The proposed policy permits direct clean-cut changes without historical-data migration or compatibility scaffolding, while preserving fresh installs, future runtime correctness and unrelated user work.",
+        "The launch criteria require removing the exemption and documenting actual preservation obligations before real users, non-disposable data or commitments, including qualifying beta use.",
+        "The go/no-go checklist verifies the release commit, and unchecked criteria transfer to a named release-execution gate if the planning ticket closes first.",
+        "The agent verifies the persisted launch gate before activating the exemption and reads back both artifacts.",
+        "Re-sync preserves the confirmed decision, updates the existing pair without duplicates, and never reinstalls a retired exemption automatically.",
+        "Completed migrations remain untouched and backlog cleanup is offered separately rather than performed."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Dry-run setup for a repo described as not in production. It has a private beta with paying testers, creator uploads they expect to keep, and a client integration relying on current URLs. AGENTS.md still contains a no-historical-data clean-cut exemption. The owner says to move quickly and keep that paragraph until the public launch. Explain the setup decision, what requires confirmation, and what may be written. Do not contact a tracker or modify this repository.",
+      "expected_output": "Treat existing preservation obligations, not the deployment label, as decisive; surface the stale exemption and propose explicit obligations without inventing a migration program.",
+      "expectations": [
+        "The agent does not infer clean-cut eligibility from not-in-production or beta labels and identifies the real preservation obligations.",
+        "The agent proposes retiring/replacing the stale exemption now and does not rely on its continued presence to ignore obligations.",
+        "The agent asks for confirmation of the replacement and keeps unrelated setup available without falsely declaring this policy resolved.",
+        "The agent does not erase user data, start historical investigations or migrations, or reopen completed migration tickets."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Dry-run setup for a repo with only CLAUDE.md and an existing Gitea binding. The owner says it is pre-launch but has not answered whether any data or integrations need preservation. No launch-governing ticket exists. Show the next question; then assume the owner explicitly confirms no obligations and approves the paired clean-cut policy plus creation of a launch gate. Simulate the tracker write failing. Explain the resulting file changes, status and recovery. Do not contact a real tracker or modify this repository.",
+      "expected_output": "Ask the preservation question, confirm a concrete gate and instruction-file destination, then leave the exemption inactive when its gate cannot be persisted.",
+      "expectations": [
+        "The agent explicitly asks about users, non-disposable data, integrations and contractual/payment commitments instead of treating pre-launch as an answer.",
+        "The agent proposes and obtains approval for a launch-execution gate on the agent work tracker; it does not fabricate a ticket URL or use an intake tracker.",
+        "The agent respects the existing CLAUDE.md selection without silently creating a conflicting AGENTS.md policy.",
+        "After the failed ticket write, the agent does not activate a standalone exemption or report the pair complete; it names the blocker and preserves existing files.",
+        "The agent permits unrelated setup to proceed and requires a verified persisted gate before retrying policy activation."
+      ]
+    }
+  ]
+}
