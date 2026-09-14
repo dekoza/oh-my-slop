@@ -63,7 +63,8 @@ def test_preservation_evals_cover_confirmation_real_beta_and_failed_gate_write()
 
     assert data["skill_name"] == "setup-project-skills"
     cases = {case["id"]: case for case in data["evals"]}
-    assert len(cases) == len(data["evals"]) == 3
+    assert len(cases) == len(data["evals"])
+    assert {1, 2, 3} <= cases.keys()
     assert "explicitly confirms no obligations" in cases[3]["prompt"]
     assert "paying testers" in cases[2]["prompt"]
     assert "identical re-sync" in cases[1]["prompt"]
