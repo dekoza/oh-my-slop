@@ -39,3 +39,18 @@ def test_runnable_tracker_examples_bind_repository_scope(document: Path) -> None
     assert runnable
     assert all("--repo " in command for command in runnable), runnable
     assert "Use the `gitea` skill" in text
+
+
+def test_gitea_functional_evals_have_inputs_and_observable_expectations() -> None:
+    path = GITEA / "evals/evals.json"
+    assert path.is_file(), "Trigger cases alone do not exercise tea usage"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["skill_name"] == "gitea"
+    cases = {case["id"]: case for case in data["evals"]}
+    assert len(cases) == len(data["evals"])
+    assert {1, 2, 3, 4, 5, 6, 7, 8, 9, 10} <= cases.keys()
+    for case in cases.values():
+        assert case["prompt"] and case["expected_output"] and case["expectations"]
+        assert all(isinstance(item, str) and item for item in case["expectations"])
+        for filename in case.get("files", []):
+            assert (GITEA / filename).is_file(), filename
