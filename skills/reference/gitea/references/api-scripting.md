@@ -1,117 +1,177 @@
-# `tea api` & Scripting
+# `tea api` & scripting
 
-## Exit codes — the scripting trap
+## Contents
 
-| Command class | Behaviour on failure |
-|---|---|
-| `tea issues`, `tea pulls`, `tea repos`, … | Exit `1`, message on stderr |
-| **`tea api`** | **Exit `0` regardless of HTTP status** |
+- Endpoint and output contracts
+- File and stdin bodies
+- Verify HTTP and application outcomes
+- Pagination and complete exports
+- CLI display data
+- Debugging and recovery
 
-Verified:
+Replace `OWNER/REPO`, `LOGIN`, `INDEX` and `COMMENT_ID` with the project's resolved
+binding. Examples are not default accounts. For comments, also read `issues.md`.
+Version coverage and probe limits are recorded in `verification.md`.
 
-```console
-$ tea issues close --repo minder/does-not-exist 1 ; echo $?
-Error: not found
-1
-$ tea api /repos/minder/does-not-exist/issues ; echo $?
-{"message":"..."}
-0
-```
-
-`tea api` reports whether the *request* completed, not whether it *succeeded*. Gate on the status line instead:
+## Endpoint and output contracts
 
 ```sh
-# -i writes status + headers to STDERR, body to stdout
-if tea api -i '/repos/minder/app/issues/5/dependencies' 2>&1 >/dev/null | grep -q '^HTTP/1.1 2'; then
-  echo ok
-fi
+tea api --repo OWNER/REPO --login LOGIN -i '/repos/OWNER/REPO/issues/INDEX'
 ```
 
-Or check the body for an error envelope — Gitea errors are always `{"message": ..., "url": ...}`:
+The first positional argument is the **endpoint**. Use `-X/--method` for a method,
+not a positional verb such as `get`. The default is GET, or POST when a body is
+supplied; set the method explicitly for mutations so a missing `-X DELETE` cannot
+turn removal into creation.
 
-```sh
-resp=$(tea api "$endpoint")
-python3 -c "import sys,json;d=json.loads(sys.stdin.read());sys.exit(1 if isinstance(d,dict) and 'message' in d else 0)" <<<"$resp"
-```
+- `/api/v1/` is prefixed unless the endpoint starts with `/api/` or `http(s)://`.
+  A leading slash is optional. Use the configured instance; an absolute URL is not
+  permission to send its credentials to another host.
+- Write the owner/repo into paths explicitly. Automatic `{owner}`/`{repo}`
+  substitutions depend on resolved context and can remain literal if unresolved.
+- Quote endpoints containing `?` or `&`; otherwise the shell can change the request.
+- Put flags after the subcommand: `tea api --repo OWNER/REPO <endpoint>`.
+  `--debug/--vvv` is global; most flags are command-specific.
 
-## Endpoint form
-
-```
-tea api [options] <endpoint>
-```
-
-- Prefixed with `/api/v1/` automatically unless the path already starts with `/api/` or `http(s)://`.
-- `{owner}` and `{repo}` placeholders are substituted from repo context — which inherits the resolution problems in `references/repo-context.md`. **Write paths literally** (`/repos/minder/app/issues`) rather than relying on placeholders.
-- **Quote any endpoint containing `?` or `&`** or the shell will mangle it: `tea api '/repos/{owner}/{repo}/issues?state=open'`.
-- With no repo context, `{owner}`/`{repo}` are left **literal**, producing a bare `404 page not found` — at exit `0`. Pair placeholders with `--repo`, or write the path out.
-- A leading slash is optional; `repos/o/r/...` and `/repos/o/r/...` behave identically.
-
-`--debug/--vvv` is the only true global flag. Every other flag is per-command, so **position matters**: `tea api --repo X <endpoint>`, never `tea --repo X api <endpoint>`.
-
-## Building request bodies
-
-| Flag | Purpose |
+| Flag | Meaning |
 |---|---|
 | `-f key=value` | String field |
-| `-F key=value` | Typed field — numbers, booleans, `null`; `[`/`{` parsed as JSON; `@file` / `@-` reads a file or stdin |
-| `-d '<json>'` | Raw JSON body; `@file` / `@-` supported. **Cannot combine with `-f`/`-F`** |
-| `-H 'key:value'` | Custom header |
-| `-X METHOD` | `GET`/`POST`/`PUT`/`PATCH`/`DELETE` |
-| `-i` | Include status + headers (to **stderr**) |
-| `-o FILE` | Write body to a **file** (`-` for stdout) — *not* a format flag |
+| `-F key=value` | Typed field: number, boolean, null, JSON array/object; `@file`/`@-` input |
+| `-d '<json>'` | Complete raw JSON body; `@file`/`@-` input; cannot combine with `-f`/`-F` |
+| `-X METHOD` | Explicit HTTP method |
+| `-H 'key:value'` | Header; colon syntax, not `key=value` |
+| `-i` | Status and response headers to **stderr**, body to stdout |
+| `-o FILE` | Body to a **file**, not a format; `-` means stdout |
 
-> **`-o` collision.** Everywhere else `-o` picks a format. On `tea api` it names an output file, so `tea api -o json /repos/...` creates a file called `json` in `$PWD` instead of formatting anything. `tea api` always emits raw JSON from the server; there is nothing to format.
+The API already returns API data. `tea api -o json` names a file literally `json`;
+it does not request JSON formatting. Use stdout directly or name an intentional
+output path. By contrast, list commands use `-o json` as a display format.
 
-**Method defaults to `POST` whenever a body is supplied** via `-f`/`-F`/`-d`. Set `-X` explicitly for `PUT`/`PATCH`/`DELETE` — a `DELETE` written without `-X` silently becomes a `POST` and creates instead of removes.
+Use `-f key=null` for the string `"null"`, and `-F key=null` for JSON null. Shell
+quoting in `-F key="null"` is removed before tea sees the argument; it does not
+force a string. This was checked with the real tea binary against a loopback fixture.
 
-Force a string that looks like another type by quoting: `-F key="null"` sends the literal string.
+## File and stdin bodies
 
-```sh
-tea api -X PATCH '/repos/minder/app/issues/5' -d '{"state":"closed"}'
-echo '{"body":"long text"}' | tea api -X POST '/repos/minder/app/issues/5/comments' -d @-
-```
+Prefer a plain file-backed call when a body contains Markdown, shell-looking text
+or exact whitespace. Command substitution strips trailing newlines; it cannot
+preserve an exact file body, even when quoted safely. A worktree guard may also
+refuse complex substitutions. Keep the guard and use the file interface instead.
 
-## `-o json` is not the API
-
-`--output json` on list commands serialises **the rendered table**, not the API response:
-
-```json
-[ { "index": "193", "title": "…", "state": "open", "owner": "minder", "repo": "nukem2_again" } ]
-```
-
-Two consequences:
-
-1. **Only `--fields` columns appear.** Anything not selectable via `-f` (body, timestamps, dependencies, assignee objects) is unreachable this way.
-2. **Every value is a string.** `"index": "193"`, not `193`. `jq 'select(.index > 100)'` compares strings and gives wrong answers; cast first, or use `tea api`.
-3. **Long values are truncated with `…`.** Issue bodies and timestamps are rendered for display (`"created": "2026-07-17 18:27"`, not ISO-8601). Never treat `-o json` output as faithful data.
-
-`tea` has no `--jq`/`--template` equivalent — pipe to `jq` or `python3`.
-
-Available formats: `simple`, `table` (default), `csv`, `tsv`, `yaml`, `json`. `csv` quotes fields containing commas correctly. Use `simple` for unadorned lines when piping to `grep`/`awk` — `table` draws box-drawing borders that will confuse parsers.
-
-Reach for `tea api` whenever you need typed values, full objects, or fields the table cannot express.
-
-## Pagination
-
-List commands default to `--limit 30` (`--lm`) and `--page 1` (`-p`). There is no auto-pagination — a bare list silently truncates at 30. For totals, `tea api` responses expose `X-Total-Count` and `Link` headers via `-i`:
-
-```console
-Link: <...page=2...>; rel="next", <...page=113...>; rel="last"
-X-Total-Count: 113
-```
-
-## Stripping colour
-
-`tea` emits ANSI escapes even when piped, which breaks naive parsing:
+| Input you have | Supply it as |
+|---|---|
+| Markdown/text for the comment's `body` field | `-F body=@review.md` |
+| A complete JSON object, such as `{"body":"..."}` | `-d @payload.json` |
+| Complete JSON on stdin | `-d @-` with stdin redirected or piped |
+| One literal string field | `-f body='short text'` |
 
 ```sh
-tea issues list --repo minder/app 2>&1 | sed -r 's/\x1B\[[0-9;]*[mK]//g'
+# The text file becomes one body field, retaining its contents.
+tea api --repo OWNER/REPO --login LOGIN -i -X POST \
+  '/repos/OWNER/REPO/issues/INDEX/comments' -F body=@review.md
+
+# payload.json is already the complete API request object.
+tea api --repo OWNER/REPO --login LOGIN -i -X POST \
+  '/repos/OWNER/REPO/issues/INDEX/comments' -d @payload.json
+
+# Stdin is explicit; redirection by itself supplies no request body.
+tea api --repo OWNER/REPO --login LOGIN -i -X POST \
+  '/repos/OWNER/REPO/issues/INDEX/comments' -d @- < payload.json
+
+# Edit an existing comment by global comment ID.
+tea api --repo OWNER/REPO --login LOGIN -i -X PATCH \
+  '/repos/OWNER/REPO/issues/comments/COMMENT_ID' -F body=@review.md
 ```
 
-## Debugging
+Read existing comments for the workflow's marker **before** choosing add versus
+edit; verify the persisted body afterwards. A returned comment ID identifies a
+write response, not proof that the exact intended content survived.
 
-`--debug` (`--vvv`) prints the resolved login, the matched remote URL, and every HTTP request — the definitive way to confirm which repo a command actually hit:
+`tea api -X POST <endpoint> < payload.json` sends no body. Adding Content-Type
+cannot repair that omission. Use `-d @file` or `-d @-`; tea handles the JSON request
+content type for supplied bodies. Serialize JSON with a JSON encoder when constructing
+complete payloads, rather than interpolating Markdown into a JSON string.
+
+## Verify HTTP and application outcomes
+
+**Process success is not HTTP success.** Real tea 0.15.1 returned exit 0 for a
+fixture HTTP404. Historical Gitea observations include API HTTP500 at exit 0 too.
+Transport failures can still exit nonzero. CLI entity commands normally report
+rejected operations nonzero, but an invented verb can select a different operation
+and return a successful listing.
+
+Capture the full result, retaining stdout separately from status/diagnostics:
 
 ```sh
-tea issues list --repo minder/app --debug 2>&1 | grep '^GET:'
+tea api --repo OWNER/REPO --login LOGIN -i \
+  '/repos/OWNER/REPO/issues/INDEX' > response.json 2> response.headers
 ```
+
+Use fresh, intentional output files in a run workspace. Then:
+
+1. Check the process result for a transport/CLI failure.
+2. Parse the final HTTP status from stderr; accept the endpoint's successful 2xx
+   statuses, not just a literal `HTTP/1.1 200`. HTTP/1.0 and HTTP/2 status lines are
+   possible; a pattern such as `HTTP/\S+\s+(\d+)` avoids fixing the protocol version.
+   A missing status is unverified, not implicit success.
+3. Parse the body according to that endpoint's response contract. Plain-text/HTML
+   errors and unexpected object/array shapes are failures to investigate. A generic
+   `"message"` key alone is not a universal error test: valid API objects can have it.
+   Successful no-content responses need no invented JSON body.
+4. For writes, read the affected item/comment/edge and check the intended postcondition
+   before claiming success or issuing a dependent write. After a timeout, inspect
+   state before retrying: the first write may already have landed.
+
+Preserve the full error body. Piping `-i`'s combined streams into a JSON parser, or
+trimming them with `head`/`tail`, can hide the actual cause and create secondary parse
+errors. An unexpected listing, empty stdout or parse error calls for command help
+and the reference—not guessed flags and suppressed stderr.
+
+## Pagination and complete exports
+
+List commands default to page1 and limit30; there is no general automatic pagination.
+API responses may expose `Link` and `X-Total-Count` via `-i`.
+
+**An empty-page sentinel is not sufficient.** On the observed Gitea 1.27.1 comments
+endpoint, total1/page1 returned one comment and page2 returned that same comment.
+An export that increments until `[]` would stall. This is an endpoint/version
+observation, not a claim that every Gitea endpoint behaves that way.
+
+For an export:
+
+1. Read the endpoint's pagination contract and capture its headers along with each
+   page. Track unique item IDs and a bounded request budget.
+2. Use consistent total/count evidence or documented Link semantics to establish
+   completion. If the first page has one unique comment and total1, it is complete;
+   do not demand an empty extra page. Follow a next Link only within the configured
+   instance and endpoint scope.
+3. When a total promises more records, keep fetching supported pages. A repeated
+   page, missing expected records, contradictory headers, changing totals or budget
+   exhaustion makes the export **incomplete**. Deduplication prevents duplicate rows;
+   it is not proof that no rows are missing.
+4. If neither total nor trustworthy links establish completion, verify the endpoint's
+   paging/termination rules. A short page alone is insufficient when server-side
+   limits or unsupported paging could explain it. Report unresolved completeness
+   instead of publishing a partial result as the full discussion.
+
+Keep partial data labelled incomplete when a later request fails. A contemporaneous
+export is not a transactionally consistent snapshot of an actively changing tracker.
+
+## CLI display data
+
+`--output json` on list commands serializes the selected table fields. Numeric-looking
+values such as `"index": "193"` are strings, not integers. Available fields and
+rendering differ by command; display bodies/timestamps can be formatted or shortened.
+Use typed API objects for numeric comparisons, full-fidelity bodies and fields the
+CLI cannot expose. Convert explicitly when working with display strings.
+
+`tea` has no `--jq`/`--template` equivalent. Parse stdout with `jq` or Python after
+checking status. Formats include simple, table, csv, tsv, yaml and json. ANSI output
+can also need stripping; table borders are not an API schema.
+
+## Debugging and recovery
+
+Use `--debug` on a read to inspect the selected login and exact request URL. Keep
+diagnostics out of JSON stdout parsing. CLI help establishes supported flags;
+`verification.md` records which behavior was actually tested. A live read can
+revalidate context without replaying a mutation.

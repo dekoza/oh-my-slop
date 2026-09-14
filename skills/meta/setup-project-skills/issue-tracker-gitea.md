@@ -9,7 +9,8 @@ create lands here.
 Use the `gitea` skill for command grammar, reference routing and API verification.
 Resolve the owner/repo and login from this project's binding before calling `tea`.
 Pass `--repo <owner>/<repo>` on repository commands and `--login <login>` when the
-binding selects a login. `--remote` selects a login source, not repository scope.
+binding selects a login. `--remote` participates in discovery; it does not replace
+an explicit owner/repo binding.
 Run from the assigned clone or worktree; some commands require Git context even
 with an explicit repo.
 

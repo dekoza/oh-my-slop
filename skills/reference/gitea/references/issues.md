@@ -1,6 +1,10 @@
 # Issues, Comments, Labels, Milestones, Times
 
-Every command below needs `--repo owner/name` — see `references/repo-context.md` for why omitting it silently targets the wrong repo.
+Bind `--repo owner/name` and the selected login from the project configuration;
+examples are not defaults. See `repo-context.md` for inference and login selection.
+Read `api-scripting.md` as well before file-backed writes or programmatic reads.
+For PRs, ordinary discussion uses these issue-comment operations; inline review
+threads and review decisions use `pulls.md`.
 
 ## Issues
 
@@ -13,7 +17,11 @@ tea issues close  --repo minder/app 24 25 26    # variadic
 tea issues reopen --repo minder/app 24
 ```
 
-`tea issues` with no subcommand lists; with an index it shows detail.
+`tea issues` with no subcommand lists; with an index it shows detail. A `view` or
+`comment` word after `issues` is not the requested detail/comment operation and can
+produce a listing instead. Confirm the returned issue index before treating output
+as the ticket. Use `--description` for CLI create/edit text, not the `gh` flag
+`--body`.
 
 ### A body-only read is not the ticket
 
@@ -37,7 +45,8 @@ tea api "/repos/minder/app/issues/24/comments"
 
 ### `list` and `create` have disjoint flag sets
 
-Filters exist only on `list`; they are silently unavailable on `create`.
+Check the exact subcommand's flags: list-only filters are not create fields.
+Search with `--keyword`, not an inferred `--search` flag.
 
 - **`list` filters**: `--state` (`all|open|closed`, default `open`), `--kind` (`issues|pulls|all`), `--keyword/-k`, `--labels/-L`, `--milestones/-m`, `--author/-A`, `--assignee/-a`, `--mentions/-M`, `--owner/--org`, `--from/-F`, `--until/-u`.
 - **`create` fields**: `--title/-t` (**required** — omitting it fails with `Error: title is required`, exit 1), `--description/-d`, `--labels/-L`, `--assignees/-a`, `--milestone/-m`, `--deadline/-D`, `--referenced-version/-v`.
@@ -54,20 +63,34 @@ Filters exist only on `list`; they are silently unavailable on `create`.
 
 Every list command defaults to `open`. An issue that "disappeared" is usually closed, not missing; pass `--state all`.
 
-## Comments
+## Comments — select list, add or edit explicitly
 
 ```sh
-tea comments list --repo minder/app 24          # shows comment IDs
-tea comments add  --repo minder/app 24 "body"
-tea comments edit --repo minder/app <comment-id> "new body"
-tea comments delete --repo minder/app <comment-id> [<id>...]
+tea comments list --repo OWNER/REPO --login LOGIN INDEX
+tea comments add --repo OWNER/REPO --login LOGIN INDEX "short body"
+tea comments edit --repo OWNER/REPO --login LOGIN COMMENT_ID "new body"
 ```
 
-**`add` takes an issue index; `edit`/`delete` take a global comment ID.** Get IDs from `tea comments list`. `tea comment <idx> "<body>"` remains a shorthand for `add`.
+**Read with `list`.** `tea comments INDEX` and `tea comment INDEX` select **add**;
+without a body they fail with `Error: no comment content provided`. Treat that as
+wrong operation selection, not missing tracker discussion. Both issues and PRs use
+this ordinary-comment interface. List supports `--page`/`--limit` (default30), so a
+single list is not proof that a long discussion has been read completely.
 
-`edit` accepts the body as an argument, on stdin, or (interactively only) via `$EDITOR`. Without a body in a non-TTY context: `Error: no comment content provided`, exit 1.
+**Add with an issue index; edit with a global comment ID** obtained from the list.
+For a workflow marker comment, read the complete comments collection, find the
+marker, and edit/reuse the existing comment or add one if absent. Read it back before
+claiming success or closing the ticket.
 
-`tea comments` has no `--fields`.
+**Preserve exact bodies with file input.** For Markdown files use the API reference's
+`-F body=@file` or encoded JSON `-d @file` recipes; shell command substitution strips
+trailing newlines. The same reference explains HTTP verification and pagination.
+`edit` also accepts the body as an argument, via `--description`, on stdin, or
+(interactively) via `$EDITOR`. `tea comments` has no `--fields`.
+
+Deletion takes global IDs too: `tea comments delete --repo OWNER/REPO COMMENT_ID`.
+Deleting a comment removes its text from the tracker; require explicit authorization
+and a saved copy for reconstruction before doing so.
 
 ## Labels
 

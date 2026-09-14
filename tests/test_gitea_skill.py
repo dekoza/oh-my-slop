@@ -54,3 +54,12 @@ def test_gitea_functional_evals_have_inputs_and_observable_expectations() -> Non
         assert all(isinstance(item, str) and item for item in case["expectations"])
         for filename in case.get("files", []):
             assert (GITEA / filename).is_file(), filename
+
+
+def test_entry_point_exposes_read_grammar_and_reference_gate() -> None:
+    text = (GITEA / "SKILL.md").read_text(encoding="utf-8")
+    assert "tea comments list --repo OWNER/REPO --login LOGIN INDEX" in text
+    assert "tea issues --repo OWNER/REPO --login LOGIN --comments INDEX" in text
+    assert "Before the first tracker call" in text
+    assert "after compaction" in text
+    assert "references/issues.md" in text and "references/api-scripting.md" in text

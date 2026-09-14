@@ -62,5 +62,21 @@
   {
     "query": "Write a Django management command that emails a weekly digest of open tickets.",
     "should_trigger": false
+  },
+  {
+    "query": "Project binding: agent work is Gitea fixture/app, login eval; GitHub is intake. Summarize the current review comments on PR #69, read-only.",
+    "should_trigger": true
+  },
+  {
+    "query": "Our agent-work tracker is Gitea fixture/app. Post the exact review.md contents once to issue42 using its existing robot-comment marker, and verify that it landed.",
+    "should_trigger": true
+  },
+  {
+    "query": "Resume after compaction: the project uses Gitea fixture/app, but the earlier CLI guidance is no longer in context. Re-read ticket24 and its governing discussion before proceeding.",
+    "should_trigger": true
+  },
+  {
+    "query": "Project binding: unqualified numbers use Gitea, but gh: references use GitHub intake. Read gh:69 with gh and summarize it; do not query or change the agent-work tracker.",
+    "should_trigger": false
   }
 ]

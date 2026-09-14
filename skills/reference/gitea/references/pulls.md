@@ -1,6 +1,10 @@
 # Pull Requests
 
-`tea pulls` aliases: `tea pull`, `tea pr`. All commands need `--repo owner/name`.
+`tea pulls` aliases: `tea pull`, `tea pr`. Bind `--repo owner/name` and the
+selected login from project configuration; example accounts are not defaults.
+For ordinary PR discussion comments, read `issues.md` and use `tea comments list`.
+Inline review threads and approval/rejection decisions use the review operations
+below. A PR detail read alone does not establish that all discussion was read.
 
 ## Lifecycle
 
@@ -18,7 +22,11 @@ tea pr clean --repo minder/app 42
 
 `--head` defaults to the current branch, `--base` to the repo's default branch. For a cross-repo PR, `--head` takes `<user>:<branch>`.
 
-`tea` assumes local state is already **pushed** — it opens a PR for a branch on the remote, it does not push for you. Push first.
+`tea` assumes local state is already **pushed** — it opens a PR for a branch on the
+remote, it does not push for you. Push to the project's selected Gitea remote first,
+not an assumed GitHub `origin`. CLI create/edit text uses `--description`, not
+`--body`. For exact file content use the API recipe in `api-scripting.md` and read
+back the resulting PR's base, head and body.
 
 Other flags mirror `tea issues create`: `--title/-t`, `--description/-d`, `--labels/-L`, `--assignees/-a`, `--milestone/-m`, `--deadline/-D`, plus `--allow-maintainer-edits/--edits`.
 
@@ -44,7 +52,10 @@ Without `-b/--branch`, checkout fails when the local branch does not exist yet. 
 
 ## `merge`
 
-`--style/-s` is one of `merge` (default), `rebase`, `squash`, `rebase-merge`. `--title/-t` and `--message/-m` set the merge commit. The instance's branch protection may forbid a given style.
+`--style/-s` is one of `merge` (default), `rebase`, `squash`, `rebase-merge`.
+`--title/-t` and `--message/-m` set the merge commit. The instance's branch protection
+may forbid a given style. Creating or reviewing a PR does not authorize merging;
+follow the project's authority and required checks, then verify the merged state.
 
 ## `clean`
 

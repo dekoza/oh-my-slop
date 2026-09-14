@@ -33,8 +33,9 @@ CLI for all operations.
 
 Use the `gitea` skill for command grammar, reference routing and API verification.
 Pass `--repo minder/oh-my-slop` on repository commands. This repo has both a
-`gitea` and an `origin` (GitHub) remote; `--remote` selects a login source, not
-repository scope. Use the configured login when selecting an instance explicitly.
+`gitea` and an `origin` (GitHub) remote. `--remote` participates in discovery but
+does not replace an explicit owner/repo binding. Use the configured login when
+selecting an instance explicitly.
 
 Run `tea` from inside the clone even when passing `--repo`: several subcommands
 (`tea issues edit` among them) shell out to `git rev-parse --show-toplevel` first and

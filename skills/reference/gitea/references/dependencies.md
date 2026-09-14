@@ -1,6 +1,10 @@
 # Issue Dependencies (Blocked-By / Blocks)
 
-Gitea supports native issue dependencies. **`tea` exposes no command for them** — they are reachable only through `tea api`. This is the single most common reason to drop to the API.
+Gitea supports native issue dependencies. **Use `tea api` for them**; the issue CLI
+has no dependency verb. Read `api-scripting.md` before these operations. Substitute
+the project's repository/login into examples; verify the HTTP response and edge,
+not just process exit status. Exact historical status observations below are scoped
+in `verification.md`.
 
 ## The two directions
 
@@ -46,9 +50,14 @@ tea api -X POST '/repos/minder/myrepo/issues/2/dependencies' \
   -d '{"owner":"minder","repo":"myrepo","index":1}'
 ```
 
-Both succeed with `201 Created` — note that **DELETE also returns `201`**, though swagger documents `200`. Do not assert on `200`.
+The original Gitea 1.27.0 probes returned `201 Created` for both POST and DELETE,
+although swagger documented `200` for DELETE. Those codes have not been re-probed
+with live mutations on 1.27.1. Accept the endpoint's successful 2xx responses and
+verify the edge state; do not assert one historical code. Before removing an edge,
+confirm authorization and record both issue references so it can be restored.
 
-Re-adding an existing dependency returns **HTTP 500**, not a benign conflict:
+Re-adding an existing dependency returned **HTTP 500** in the original probes,
+not a benign conflict:
 
 ```json
 {"message":"issue dependency does already exist [issue id: 383, dependency id: 373]"}
@@ -64,9 +73,14 @@ Omitting `owner`/`repo` does not produce a validation error. It produces:
 {"message":"repository does not exist [id: 0, uid: 0, owner_name: , name: ]"}
 ```
 
-with status `404`. The empty `owner_name`/`name` in that message is the tell: the body was incomplete, not the URL wrong. Because `tea api` exits `0` on 404, a script that ignores the body will believe the dependency was created.
+with status `404` in the original probes. The empty `owner_name`/`name` points to
+an incomplete body rather than a wrong URL. `tea api` can exit 0 on a rejected HTTP
+response, so capture the status independently and retain the error body.
 
-The `201` response body echoes the **blocked issue** (the one in the URL), not the dependency you just added — so `.number` in the response is the URL's index. Verify with a follow-up GET rather than trusting the echo.
+The original success response echoed the **blocked issue** (the one in the URL),
+not the added blocker. Verify with a follow-up GET: the dependency list must contain
+the intended blocker after addition and omit it after removal. After an ambiguous
+failure, read the list before retrying so a completed first request is not duplicated.
 
 ## Closing is enforced server-side
 

@@ -19,8 +19,10 @@ keeps the existing `gitea` name and separates reference retrieval from registrat
 ## Consumer migration
 
 The Gitea scaffold and this repository's tracker document now scope repository
-commands with `--repo owner/name`. `--remote` is a login-discovery option, not a
-substitute for repo scope. The dependency recipe supplies `index`, `owner` and
+commands with `--repo owner/name`. `--remote` participates in discovery rather
+than replacing an explicit owner/repo binding. Current tea 0.15.1 probes actually
+resolved this repository correctly without scope flags; the old skill's categorical
+inference-failure claim was stale. The dependency recipe supplies `index`, `owner` and
 `repo`, checks HTTP success and reads back the edge. Comment creation and issue
 closure are separately verified outcomes. PR creation pushes to the configured
 Gitea remote, not an assumed GitHub `origin`.

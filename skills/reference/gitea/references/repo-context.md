@@ -1,117 +1,91 @@
-# Repo Context, Logins & Auth
+# Repository context, logins and auth
 
-## How `tea` decides what to talk to
+## Resolve identity explicitly
 
-Two independent resolutions happen on every command, and conflating them is the root of most `tea` bugs:
+Two choices must agree with the project's tracker binding:
 
-| Resolution | Answers | Controlled by |
+| Choice | Meaning | Explicit selection |
 |---|---|---|
-| **Login** | Which Gitea instance + token | `--login`, `--remote`, or the default login |
-| **Repo scope** | Which repository | `--repo owner/name` **only** |
+| Login | Gitea instance and authenticated user | `--login LOGIN` where supported |
+| Repository | Owner/name within that instance | `--repo OWNER/REPO` on repository operations |
 
-`--remote` is a *login discovery* flag. Its help text ("Discover Gitea login from remote") describes exactly what it does and nothing more. It never scopes the repo.
-
-### The silent fallback
-
-When a command needs a repo and none resolves, `tea` does not error. It falls back to instance-wide endpoints:
-
-```
-GET /api/v1/repos/issues/search?...     ← unscoped: every repo you can see
-GET /api/v1/repos/{owner}/{repo}/issues ← scoped: what you actually wanted
-```
-
-Verified with `--debug` in a repo where `origin` is GitHub:
-
-```
-DEBUG: Get remote configurations &{origin [git@github.com:dekoza/oh-my-slop.git]} of origin
-DEBUG: Matching remote URL 'git@github.com:dekoza/oh-my-slop.git' against {Kuferek http://...} login
-GET: http://192.168.129.37:30008/api/v1/repos/issues/search?...
-```
-
-`tea` reads `origin` first. The GitHub URL cannot match the Gitea login, so scoping is abandoned — silently, with exit `0`.
-
-Passing `--remote gitea` makes the *URL match* succeed but changes nothing about scope:
-
-```
-DEBUG: Matching remote URL 'ssh://git@192.168.129.37:30009/minder/oh-my-slop.git' against {Kuferek ...} login
-GET: http://192.168.129.37:30008/api/v1/repos/issues/search?...   ← still unscoped
-```
-
-Only `--repo minder/oh-my-slop` yields the scoped endpoint.
-
-### Recognising the failure at a glance
-
-Add `owner` and `repo` to `--fields` on any list command. If rows show repos you did not ask for, scoping failed:
+Read the binding before a call. A GitHub `origin`, a Gitea remote and a default tea
+login may all refer to different destinations. `--remote` participates in discovery;
+it is not an explicit owner/repo selection. Inference may work, but an explicit
+binding makes the intended target inspectable and stable across worktrees/logins.
 
 ```sh
-tea issues list --repo minder/oh-my-slop -f index,title,owner,repo
+tea logins list
+tea api --login LOGIN -i /user
+tea issues list --login LOGIN --repo OWNER/REPO --fields index,title,owner,repo --limit 1
 ```
 
-## `--repo` accepted forms
+Substitute actual values; these names are placeholders. `tea whoami` shows the
+current login, but **has no `--login` flag** in 0.15.1. Use the `/user` read above
+when verifying a particular login. Avoid dumping config or tokens to diagnose a
+selection problem.
 
-- `owner/name` — the reliable form. Always prefer it.
-- A local filesystem path — resolves via that repo's remotes, inheriting the same `origin`-first problem.
-- `.` — does **not** force the current directory to scope correctly; it hit the unscoped endpoint in testing.
-- **A URL is rejected.** `--repo http://host/minder/app` fails with `Error: user does not exist [uid: 0, name: http:]` — it parses the scheme as the owner.
+Run from the assigned clone/worktree. Some entity commands shell out to Git even
+with explicit repo scope; leaving the worktree can also violate a session's guards.
+Account-wide commands such as `tea repos list/create` do not accept `--repo`; inspect
+their help and use their documented owner/name fields instead.
 
-`tea` also requires a git repository in `$PWD` even when `--repo` is explicit; outside one it fails at `git rev-parse --show-toplevel`. Run `tea` from inside any repo (or pass `--repo <local-path>`).
+## Diagnose the actual request, not a theory about remotes
 
-## Config file
+Add `--debug` to a **read** and inspect the requested URL and selected login. Keep
+diagnostics separate from JSON stdout. For an issue list:
 
-Path: `$XDG_CONFIG_HOME/tea/config.yml` (i.e. `~/.config/tea/config.yml`).
+- `/api/v1/repos/OWNER/REPO/issues` is scoped to that repository.
+- `/api/v1/repos/issues/search` is an instance-level search; verify that this is
+  really what the task requested before using it as a repository's backlog.
 
-```yaml
-logins:
-    - name: Kuferek
-      url: http://192.168.129.37:30008
-      default: true
-      ssh_host: 192.168.129.37:30008
-      ssh_key: ""
-      insecure: true
-      ssh_certificate_principal: ""
-      ssh_agent: false
-      ssh_key_agent_pub: ""
-      version_check: true
-      user: minder
-      created: 1783552394
-      auth_method: oauth
-preferences:
-    editor: false
-    flag_defaults:
-        remote: ""
-```
+The July 2026 tea 0.14.2 probes observed silent instance-wide fallback after remote
+matching failed, including with `--remote gitea` and `--repo .`. Those observations
+motivated explicit scope; they are not an assertion that inference always fails.
+September 2026 tea 0.15.1 read-only checks in a GitHub-origin/Gitea-remote clone
+resolved the correct repository with all three forms: bare list, `--remote gitea`,
+and explicit `--repo`. See `verification.md` for the evidence boundary.
 
-Notes:
+`--repo owner/name` is the portable preferred form. Local paths and `.` use local
+repository discovery instead of explicitly naming the target. The original probes
+rejected an HTTP URL as a repo slug; use a slug, not a URL, for this flag. Never
+repeat a mutation just to see its debug URL.
 
-- The **token is not in `config.yml`** on this setup. Credentials live in `credentials.json.enc` alongside it (`auth_method: oauth`). Do not expect to read or hand-edit a token out of the YAML.
-- `config.yml.lock` guards concurrent writes — a stale lock can block `tea login` operations.
-- `default: true` marks the login used when `--login` is absent.
-- `preferences.flag_defaults.remote` can pin a default `--remote`, which (again) affects login choice only.
+## Configuration and credentials
 
-## Login management
+Tea normally keeps configuration under `$XDG_CONFIG_HOME/tea/`, commonly
+`~/.config/tea/`. The default login and remote preferences affect implicit selection.
+In the observed OAuth installation, credentials were encrypted alongside
+`config.yml`, not stored as a plaintext token in its login entry. Storage depends
+on version/auth method; do not infer that a token is missing or expose credentials
+by printing the whole directory's contents.
+
+Use supported login commands for changes and preserve other logins/preferences.
+A stale `config.yml.lock` can obstruct writes; verify ownership/process state before
+considering recovery rather than deleting a lock blindly.
 
 ```sh
-tea logins list                      # names, URLs, default marker
-tea logins default                   # show current default
-tea logins default <name>            # set default
-tea logins add --name X --url URL --token TOK
-tea logins delete <name>
-tea whoami                           # confirm which user/instance you are acting as
+tea logins list
+tea logins default
+tea logins default LOGIN
+tea logins add --name LOGIN --url URL --token TOKEN
 ```
 
-`tea logins add` runs interactively when given no args. In non-TTY contexts pass flags, or read from the documented env vars: `GITEA_SERVER_URL`, `GITEA_SERVER_TOKEN`, `GITEA_SERVER_USER`, `GITEA_SERVER_PASSWORD`, `GITEA_SERVER_OTP`, `GITEA_SCOPES`.
-
-Useful `add` flags: `--insecure` (skip TLS verification, needed for plain-HTTP instances), `--no-version-check`, `--scopes`, `--oauth` (interactive browser flow), `--ssh-agent-key` / `--ssh-agent-principal`.
+Adding/changing a login modifies authentication configuration and requires that
+intent. Supply credentials through an approved secure input path; never put a real
+token into a report or shared example. `logins add` without flags is interactive.
+Consult its installed help for OAuth and environment inputs (`GITEA_SERVER_URL`,
+`GITEA_SERVER_TOKEN`, `GITEA_SERVER_USER`, etc.). `--insecure` disables TLS certificate
+verification; it is not a generic remedy for HTTP/auth failures.
 
 ## Git credential helper
 
-`tea` can authenticate plain `git push`/`git clone` over HTTPS using its stored token:
-
 ```sh
-tea logins add --git-credentials      # register while adding
-tea logins helper setup               # register for existing logins
+tea logins helper setup
+tea logins oauth-refresh LOGIN
 ```
 
-This writes `!tea login helper` into `~/.gitconfig`. `tea logins oauth-refresh [<login>]` manually refreshes an expired OAuth token, opening a browser if the refresh token has also expired.
-
-Irrelevant when remotes are SSH (`ssh://git@host:30009/...`), which is the usual layout here — the helper only covers HTTPS.
+Helper setup changes Git credential configuration so HTTPS Git operations can use
+tea's credentials; authorize that configuration change first. OAuth refresh may
+require a browser when refresh credentials expire. Neither mechanism authenticates
+SSH remotes: SSH keys/agent configuration are a separate boundary.
