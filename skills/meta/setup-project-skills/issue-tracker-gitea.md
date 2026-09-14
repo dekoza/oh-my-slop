@@ -84,7 +84,7 @@ Used by `/wayfinder`. The **map** is one issue; **tickets** are issues linked to
 
   ```sh
   tea api --method POST /repos/<owner>/<repo>/issues/<blocked>/dependencies \
-    --data '{"index": <blocker>}'
+    --data '{"index": <blocker>, "owner": "<owner>", "repo": "<repo>"}'
   ```
 
   The endpoint takes the plain issue **index** — no numeric database id, unlike

@@ -2,6 +2,18 @@
   "skill_name": "setup-project-skills",
   "evals": [
     {
+      "id": 4,
+      "prompt": "Dry-run a re-sync of an existing Gitea tracker document. Agent work is fixture/app using login eval; origin is GitHub intake and gitea is the agent-work remote. The document currently offers --remote gitea as a substitute for repo scope and its blocking-edge example sends only an index. Preserve the owner's bindings, custom labels, authority rules and protected headings. Show the corrected conventions and an example making issue42 blocked by issue7, including how success is verified. Do not contact either tracker or change this repository.",
+      "expected_output": "Explicit repository scope, a complete directed dependency payload, verified write semantics and a non-destructive re-sync proposal.",
+      "expectations": [
+        "Repository-specific tea examples use --repo fixture/app; --remote selects a login source, not a replacement for repository scope.",
+        "The dependency URL names issue42 and the JSON body includes index 7, owner fixture and repo app.",
+        "The agent requires HTTP success and a follow-up dependency read before claiming the blocking edge exists, rather than relying on exit code 0.",
+        "The proposal routes shared CLI mechanics to the gitea skill by name and preserves tracker headings, user bindings, labels and authority rules.",
+        "No real tracker writes or unsolicited edits to consumer repositories occur."
+      ]
+    },
+    {
       "id": 1,
       "prompt": "Dry-run setup for a repo with AGENTS.md, existing Gitea agent-work bindings and launch decision ticket #13. Factory setup is declined. The owner confirms there are no real users, non-disposable data, external compatibility obligations or contractual/payment commitments, approves a clean-cut policy, and wants existing completed migrations left alone. #13 may close after planning, before release. Produce the proposed instruction paragraph and ticket acceptance criteria, the write/verification order, and the next action on an identical re-sync. The backlog contains migration tickets, but no cleanup was authorized. Do not contact a real tracker or modify this repository.",
       "expected_output": "A paired, owner-approved policy and linked launch gate; release-commit verification and transfer of unchecked criteria; idempotent re-sync and no unsolicited backlog edits.",
