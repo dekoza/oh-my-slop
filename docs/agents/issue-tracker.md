@@ -31,27 +31,30 @@ CLI for all operations.
 
 ## Conventions
 
-`tea` infers the repo and login from the git remote when run inside a clone. This repo
-has both a `gitea` and an `origin` (GitHub) remote, so pass `--remote gitea` or
-`--repo minder/oh-my-slop` when inference picks the wrong one.
+Use the `gitea` skill for command grammar, reference routing and API verification.
+Pass `--repo minder/oh-my-slop` on repository commands. This repo has both a
+`gitea` and an `origin` (GitHub) remote; `--remote` selects a login source, not
+repository scope. Use the configured login when selecting an instance explicitly.
 
 Run `tea` from inside the clone even when passing `--repo`: several subcommands
 (`tea issues edit` among them) shell out to `git rev-parse --show-toplevel` first and
 fail outright outside a work tree.
 
-- **Create an issue**: `tea issues create --title "..." --description "..."`.
-  Note it is `--description` / `-d`, **not** `--body` — the `gh` habit fails here.
-- **Read an issue**: `tea issues <index> --comments`
-- **List issues**: `tea issues list --state open --labels "..." --fields index,title,state,labels,assignees`
-- **Comment**: `tea comments add <index> "..."` (the shorthand `tea comment <index> "..."` also works)
-- **Apply / remove labels**: `tea issues edit <index> --add-labels "..."` / `--remove-labels "..."`
-- **Assign**: `tea issues edit <index> --add-assignees <user>`
-- **Close**: `tea issues close <index>`
+- **Create an issue**: `tea issues create --repo minder/oh-my-slop --title "..." --description "..."`.
+- **Read an issue**: `tea issues --repo minder/oh-my-slop --comments <index>`
+- **List issues**: `tea issues list --repo minder/oh-my-slop --state open --labels "..." --fields index,title,state,labels,assignees`
+- **Read comments**: `tea comments list --repo minder/oh-my-slop <index>`
+- **Comment**: `tea comments add --repo minder/oh-my-slop <index> "..."`
+- **Apply / remove labels**: `tea issues edit --repo minder/oh-my-slop <index> --add-labels "..."` / `--remove-labels "..."`
+- **Assign**: `tea issues edit --repo minder/oh-my-slop <index> --add-assignees <user>`
+- **Close**: `tea issues close --repo minder/oh-my-slop <index>`
 - **Anything without a CLI verb**: `tea api` makes an authenticated request, e.g.
-  `tea api /repos/minder/oh-my-slop/issues/<index>`
+  `tea api --repo minder/oh-my-slop /repos/minder/oh-my-slop/issues/<index>`.
+  Verify HTTP status and the intended result; process exit code alone is not success.
 
-Labels must exist before they can be applied — `tea labels create --name "..." --color "..."`.
-Manage them with `tea labels list`.
+Labels must exist before they can be applied — `tea labels create --repo minder/oh-my-slop --name "..." --color "..."`.
+Manage them with `tea labels list --repo minder/oh-my-slop`. Verify each write
+before a dependent action; a posted comment and a closed issue are separate outcomes.
 
 ## Robot comments
 
@@ -80,11 +83,11 @@ be either — resolve with `tea pulls <n>` and fall back to `tea issues <n>`.
 
 ## When a skill says "publish to the issue tracker"
 
-Create a Gitea issue with `tea issues create`.
+Create a Gitea issue with `tea issues create --repo minder/oh-my-slop`.
 
 ## When a skill says "fetch the relevant ticket"
 
-Run `tea issues <index> --comments`.
+Run `tea issues --repo minder/oh-my-slop --comments <index>`.
 
 ## Wayfinding operations
 
@@ -93,7 +96,7 @@ Maps and tickets live on Gitea only — never on the intake tracker.
 
 - **Map**: an issue labelled `wayfinder:map`, holding the Destination / Notes /
   Decisions-so-far / Fog body.
-  `tea issues create --labels wayfinder:map --title "..." --description "..."`
+  `tea issues create --repo minder/oh-my-slop --labels wayfinder:map --title "..." --description "..."`
 - **Child ticket**: Gitea has **no sub-issue API**, so parentage is expressed in the
   body — the **literal first body line** `Part of #<map>` (nothing before it, nothing
   after the number), and keep a task list of children in the map body. Label each
@@ -109,15 +112,14 @@ Maps and tickets live on Gitea only — never on the intake tracker.
   the web UI. Add an edge with:
 
   ```sh
-  tea api --method POST /repos/minder/oh-my-slop/issues/<blocked>/dependencies \
+  tea api --repo minder/oh-my-slop --include --method POST /repos/minder/oh-my-slop/issues/<blocked>/dependencies \
     --data '{"index": <blocker>, "owner": "minder", "repo": "oh-my-slop"}'
   ```
 
-  The body is an `IssueMeta`: `owner` and `repo` are **required**, even though the
-  same repo is already in the URL. Omitting them returns
-  `{"message":"repository does not exist [id: 0, uid: 0, owner_name: , name: ]"}`
-  with **HTTP 200 and exit code 0**, so the edge silently never lands — always
-  verify with a `GET` on the same path afterwards.
+  The body is an `IssueMeta`: `index`, `owner` and `repo` are **required**, even
+  though the same repo is already in the URL. Missing fields can produce a
+  misleading repository-not-found error. Check HTTP success independently of the
+  process exit code, then verify the edge with a `GET` on the same path.
 
   The endpoint takes the plain issue **index** — no numeric database id, unlike
   GitHub. Semantics: the issue in the URL becomes blocked by the issue in the body.
@@ -134,9 +136,10 @@ Maps and tickets live on Gitea only — never on the intake tracker.
   This does not change the ticket's labels or the factory's human-owned classification.
 - **Frontier query**: list the map's open children, drop any that still have an open
   blocker (`GET .../dependencies`) or an assignee; first in map order wins.
-- **Claim**: `tea issues edit <index> --add-assignees <me>` — the session's first write.
-- **Resolve**: `tea comments add <index> "<answer>"`, then `tea issues close <index>`,
-  then append a one-line gist plus link to the map's Decisions-so-far.
+- **Claim**: `tea issues edit --repo minder/oh-my-slop <index> --add-assignees <me>` — the session's first write.
+- **Resolve**: `tea comments add --repo minder/oh-my-slop <index> "<answer>"`, verify
+  the comment, then `tea issues close --repo minder/oh-my-slop <index>`, verify the
+  state, then append a one-line gist plus link to the map's Decisions-so-far.
 
 ---
 

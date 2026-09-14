@@ -6,22 +6,28 @@ create lands here.
 
 ## Conventions
 
-`tea` infers the repo and login from the git remote when run inside a clone. Pass
-`--repo <owner>/<name>` or `--remote gitea` when that inference is wrong.
+Use the `gitea` skill for command grammar, reference routing and API verification.
+Resolve the owner/repo and login from this project's binding before calling `tea`.
+Pass `--repo <owner>/<repo>` on repository commands and `--login <login>` when the
+binding selects a login. `--remote` selects a login source, not repository scope.
+Run from the assigned clone or worktree; some commands require Git context even
+with an explicit repo.
 
-- **Create an issue**: `tea issues create --title "..." --description "..."`.
-  Note it is `--description` / `-d`, **not** `--body` — the `gh` habit fails here.
-- **Read an issue**: `tea issues <index> --comments`
-- **List issues**: `tea issues list --state open --labels "..." --fields index,title,state,labels,assignees`
-- **Comment**: `tea comments add <index> "..."` (the shorthand `tea comment <index> "..."` also works)
-- **Apply / remove labels**: `tea issues edit <index> --add-labels "..."` / `--remove-labels "..."`
-- **Assign**: `tea issues edit <index> --add-assignees <user>`
-- **Close**: `tea issues close <index>`
+- **Create an issue**: `tea issues create --repo <owner>/<repo> --title "..." --description "..."`.
+- **Read an issue**: `tea issues --repo <owner>/<repo> --comments <index>`
+- **List issues**: `tea issues list --repo <owner>/<repo> --state open --labels "..." --fields index,title,state,labels,assignees`
+- **Read comments**: `tea comments list --repo <owner>/<repo> <index>`
+- **Comment**: `tea comments add --repo <owner>/<repo> <index> "..."`
+- **Apply / remove labels**: `tea issues edit --repo <owner>/<repo> <index> --add-labels "..."` / `--remove-labels "..."`
+- **Assign**: `tea issues edit --repo <owner>/<repo> <index> --add-assignees <user>`
+- **Close**: `tea issues close --repo <owner>/<repo> <index>`
 - **Anything without a CLI verb**: `tea api` makes an authenticated request, e.g.
-  `tea api /repos/<owner>/<repo>/issues/<index>`
+  `tea api --repo <owner>/<repo> /repos/<owner>/<repo>/issues/<index>`.
+  Verify HTTP status and the intended result; process exit code alone is not success.
 
-Labels must exist before they can be applied — `tea labels create --name "..." --color "..."`.
-Manage them with `tea labels list`.
+Labels must exist before they can be applied — `tea labels create --repo <owner>/<repo> --name "..." --color "..."`.
+Manage them with `tea labels list --repo <owner>/<repo>`. Verify each write before
+a dependent action; posting a comment and closing an issue are separate outcomes.
 
 ## Robot comments
 
@@ -50,23 +56,22 @@ be either — resolve with `tea pulls <n>` and fall back to `tea issues <n>`.
 
 ## When a skill says "publish to the issue tracker"
 
-Create a Gitea issue with `tea issues create`.
+Create a Gitea issue with `tea issues create --repo <owner>/<repo>`.
 
 ## When a skill says "open a pull request"
 
 ```sh
-git push -u origin <branch>
-tea pr create --title "..." --description "..." --base <base-branch> --head <branch>
+git push -u <gitea-remote> <branch>
+tea pr create --repo <owner>/<repo> --title "..." --description "..." --base <base-branch> --head <branch>
 ```
 
-Note `--description` / `-d`, **not** `--body`. `tea pr create` opens the PR from the
-current repo; pass `--repo <owner>/<name>` when remote inference is wrong. Put
-`Closes #<index>` in the description so the merge closes the ticket. Do not merge —
-`tea pr merge` is the maintainer's call.
+Resolve `<gitea-remote>` from the project's Gitea binding rather than assuming
+`origin` hosts agent work. Put `Closes #<index>` in the description so the merge
+closes the ticket. Do not merge — `tea pr merge` is the maintainer's call.
 
 ## When a skill says "fetch the relevant ticket"
 
-Run `tea issues <index> --comments`.
+Run `tea issues --repo <owner>/<repo> --comments <index>`.
 
 ## Wayfinding operations
 
@@ -74,7 +79,7 @@ Used by `/wayfinder`. The **map** is one issue; **tickets** are issues linked to
 
 - **Map**: an issue labelled `wayfinder:map`, holding the Destination / Notes /
   Decisions-so-far / Fog body.
-  `tea issues create --labels wayfinder:map --title "..." --description "..."`
+  `tea issues create --repo <owner>/<repo> --labels wayfinder:map --title "..." --description "..."`
 - **Child ticket**: Gitea has **no sub-issue API**, so parentage is expressed in the
   body — put `Part of #<map>` at the top of each ticket, and keep a task list of
   children in the map body. Label each ticket `wayfinder:<type>`
@@ -83,16 +88,20 @@ Used by `/wayfinder`. The **map** is one issue; **tickets** are issues linked to
   the web UI. Add an edge with:
 
   ```sh
-  tea api --method POST /repos/<owner>/<repo>/issues/<blocked>/dependencies \
+  tea api --repo <owner>/<repo> --include --method POST /repos/<owner>/<repo>/issues/<blocked>/dependencies \
     --data '{"index": <blocker>, "owner": "<owner>", "repo": "<repo>"}'
   ```
 
   The endpoint takes the plain issue **index** — no numeric database id, unlike
   GitHub. Semantics: the issue in the URL becomes blocked by the issue in the body.
-  `GET` on the same path lists everything blocking an issue; `DELETE` removes an edge.
+  `owner`, `repo` and `index` are all required, even for a same-repo edge.
+  Check HTTP success, then verify the edge with `GET` on the same path before
+  claiming it exists. A process exit code of 0 does not prove HTTP success.
+  `GET` lists everything blocking an issue; `DELETE` removes an edge.
   A ticket is unblocked when every blocker is closed.
 - **Frontier query**: list the map's open children, drop any that still have an open
   blocker (`GET .../dependencies`) or an assignee; first in map order wins.
-- **Claim**: `tea issues edit <index> --add-assignees <me>` — the session's first write.
-- **Resolve**: `tea comments add <index> "<answer>"`, then `tea issues close <index>`,
+- **Claim**: `tea issues edit --repo <owner>/<repo> <index> --add-assignees <me>` — the session's first write.
+- **Resolve**: `tea comments add --repo <owner>/<repo> <index> "<answer>"`, verify the
+  comment, then `tea issues close --repo <owner>/<repo> <index>`, verify the state,
   then append a one-line gist plus link to the map's Decisions-so-far.
