@@ -21,8 +21,9 @@ tea issues list --login LOGIN --repo OWNER/REPO --fields index,title,owner,repo 
 ```
 
 Substitute actual values; these names are placeholders. `tea whoami` shows the
-current login, but **has no `--login` flag** in 0.15.1. Use the `/user` read above
-when verifying a particular login. Avoid dumping config or tokens to diagnose a
+current login, but **has no `--login` flag** (0.15.1 and still 0.16.0). Use the
+`/user` read above when verifying a particular login, or `tea logins status` below
+for a per-login validity check. Avoid dumping config or tokens to diagnose a
 selection problem.
 
 Run from the assigned clone/worktree. Some entity commands shell out to Git even
@@ -42,9 +43,12 @@ diagnostics separate from JSON stdout. For an issue list:
 The July 2026 tea 0.14.2 probes observed silent instance-wide fallback after remote
 matching failed, including with `--remote gitea` and `--repo .`. Those observations
 motivated explicit scope; they are not an assertion that inference always fails.
-September 2026 tea 0.15.1 read-only checks in a GitHub-origin/Gitea-remote clone
-resolved the correct repository with all three forms: bare list, `--remote gitea`,
-and explicit `--repo`. See `verification.md` for the evidence boundary.
+September 2026 tea 0.15.1 read-only checks, repeated on tea 0.16.0 (2026-09-15), in
+the same GitHub-origin/Gitea-remote clone resolved the correct repository with all
+three forms: bare list, `--remote gitea`, and explicit `--repo`. Inference working
+here is not a guarantee elsewhere: remote-to-login matching still depends on every
+remote URL hitting a configured login's host/port fields. See `verification.md` for
+the evidence boundary.
 
 `--repo owner/name` is the portable preferred form. Local paths and `.` use local
 repository discovery instead of explicitly naming the target. The original probes
@@ -69,13 +73,22 @@ tea logins list
 tea logins default
 tea logins default LOGIN
 tea logins add --name LOGIN --url URL --token TOKEN
+tea logins status [LOGIN]
 ```
+
+`tea logins status` (tea 0.16.0+) verifies each stored credential against its
+instance and reports user, auth method, token validity and expiry; `--output json`
+emits the same, with stringified booleans (`"valid": "true"`). On ≤0.15.x `status`
+is parsed as a *login-name* argument, not a verb. It authenticates by stored login,
+so it is the per-login identity check that `tea whoami --login` is not.
 
 Adding/changing a login modifies authentication configuration and requires that
 intent. Supply credentials through an approved secure input path; never put a real
 token into a report or shared example. `logins add` without flags is interactive.
 Consult its installed help for OAuth and environment inputs (`GITEA_SERVER_URL`,
-`GITEA_SERVER_TOKEN`, `GITEA_SERVER_USER`, etc.). `--insecure` disables TLS certificate
+`GITEA_SERVER_TOKEN`, `GITEA_SERVER_USER`, etc.) — those variables feed the `add`
+flags; a nameless invocation still does not replace an explicit `--login` on
+operations. `--insecure` disables TLS certificate
 verification; it is not a generic remedy for HTTP/auth failures.
 
 ## Git credential helper
@@ -86,6 +99,8 @@ tea logins oauth-refresh LOGIN
 ```
 
 Helper setup changes Git credential configuration so HTTPS Git operations can use
-tea's credentials; authorize that configuration change first. OAuth refresh may
+tea's credentials; authorize that configuration change first. `tea logins add
+--git-credentials` registers the helper for the new login in one step (equivalent
+to running `helper setup` afterwards). OAuth refresh may
 require a browser when refresh credentials expire. Neither mechanism authenticates
 SSH remotes: SSH keys/agent configuration are a separate boundary.

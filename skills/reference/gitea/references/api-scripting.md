@@ -45,7 +45,11 @@ turn removal into creation.
 
 The API already returns API data. `tea api -o json` names a file literally `json`;
 it does not request JSON formatting. Use stdout directly or name an intentional
-output path. By contrast, list commands use `-o json` as a display format.
+output path. By contrast, list commands use `-o json` as a display format — and
+`--output` is additionally inherited by subcommands from their parent, so it
+**parses on commands whose help never lists it**: honored on `issues/pulls create`
+(0.16.0+), silently ignored elsewhere (verified: `-o json` on `issues close` and
+`issues edit` printed markdown, exit 0). Flag accepted ≠ flag honored.
 
 Use `-f key=null` for the string `"null"`, and `-F key=null` for JSON null. Shell
 quoting in `-F key="null"` is removed before tea sees the argument; it does not
@@ -57,6 +61,13 @@ Prefer a plain file-backed call when a body contains Markdown, shell-looking tex
 or exact whitespace. Command substitution strips trailing newlines; it cannot
 preserve an exact file body, even when quoted safely. A worktree guard may also
 refuse complex substitutions. Keep the guard and use the file interface instead.
+
+Since tea 0.16.0, issue and PR create/edit have a native file body
+(`--description-file <path|->`, byte-exact — verified via logged request bodies);
+`tea api` stays the route for comments and every other entity. Mind the asymmetry:
+`tea api` with bare piped stdin sends **no body**, while `tea issues/pulls create`
+with no description flag **consumes non-TTY stdin as the body** (hanging until EOF
+on a silent open pipe).
 
 | Input you have | Supply it as |
 |---|---|
@@ -94,11 +105,12 @@ complete payloads, rather than interpolating Markdown into a JSON string.
 
 ## Verify HTTP and application outcomes
 
-**Process success is not HTTP success.** Real tea 0.15.1 returned exit 0 for a
-fixture HTTP404. Historical Gitea observations include API HTTP500 at exit 0 too.
-Transport failures can still exit nonzero. CLI entity commands normally report
-rejected operations nonzero, but an invented verb can select a different operation
-and return a successful listing.
+**Process success is not HTTP success.** Real tea 0.15.1 and 0.16.0 both returned
+exit 0 for a fixture HTTP404. Historical Gitea observations include API HTTP500 at
+exit 0 too. Transport failures exit nonzero — since 0.15.0 tea sets HTTP transport
+timeouts, so a stalled server produces a client-side failure instead of hanging
+forever. CLI entity commands normally report rejected operations nonzero, but an
+invented verb can select a different operation and return a successful listing.
 
 Capture the full result, retaining stdout separately from status/diagnostics:
 

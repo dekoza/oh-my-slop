@@ -7,9 +7,9 @@ description: >
   "tea pr", "tea api", blocked-by/issue dependencies, "file this on the tracker",
   or a repo whose remote points at a Gitea host. Excludes GitHub's `gh` CLI.
 scope: gitea
-target_versions: "tea 0.15.1, Gitea 1.27.1"
-last_verified: 2026-09-14
-source_basis: CLI help and isolated tea probes; read-only Gitea observations; historical server behaviors labelled in references
+target_versions: "tea 0.16.0, Gitea 1.27.1"
+last_verified: 2026-09-15
+source_basis: CLI help and isolated tea probes, including a 0.15.1-vs-0.16.0 binary help/behavior diff; read-only Gitea observations; historical server behaviors labelled in references
 ---
 
 # Gitea & the `tea` CLI
@@ -61,18 +61,27 @@ the routed reference.
 | Add a short comment | `tea comments add --repo OWNER/REPO --login LOGIN INDEX "body"` |
 | Edit a comment by global ID | `tea comments edit --repo OWNER/REPO --login LOGIN COMMENT_ID "body"` |
 | Create an issue | `tea issues create --repo OWNER/REPO --login LOGIN --title "title" --description "body"` |
+| Create issue from a file, capture result (tea 0.16.0+) | `tea issues create --repo OWNER/REPO --login LOGIN --title "title" --description-file body.md --output json` |
 | Read typed API data | `tea api --repo OWNER/REPO --login LOGIN -i '/repos/OWNER/REPO/issues/INDEX'` |
 
 **Choose the verb explicitly.** `tea comments INDEX` is an **add** shorthand, not a
 read. Issue detail takes the index directly; `tea issues view` and `tea issues
 comment` are not those operations and can return a plausible listing. API methods
 use `-X GET/POST/PATCH/DELETE`, not a positional `get`. CLI create/edit bodies use
-`--description`; API JSON/file bodies use `-d` or `-F` as described in the API reference.
+`--description` or (tea 0.16.0+) `--description-file <path|->`; API JSON/file bodies
+use `-d` or `-F` as described in the API reference. On 0.16.0+, a create with no
+description flag and a non-TTY stdin **reads stdin to EOF as the body** — in a
+script that can hang on an open pipe; supply the body or redirect `</dev/null`.
 
 **Separate output contracts.** CLI `-o json` is string-valued display data, not typed
-API objects. On `tea api`, `-o` names an output **file**; the response already is API
-data. `tea api` can exit 0 on HTTP failure: capture status with `-i`, retain the body
-and validate both. A successful process alone proves neither a read nor a write.
+API objects — the exceptions are the typed compact `create --output json` responses
+above and in the routed references (tea 0.16.0+). Note that `--output` is *inherited*
+by subcommands from their parent: it parses on commands that never document it and
+may ignore it (`issues close`, `issues edit`: verified markdown output with
+`-o json` on 0.16.0). On `tea api`, `-o` names an output **file**; the response
+already is API data. `tea api` can exit 0 on HTTP failure: capture status with `-i`,
+retain the body and validate both. A successful process alone proves neither a read
+nor a write.
 
 ## Routing — open before the matching operation
 

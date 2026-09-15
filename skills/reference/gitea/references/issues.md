@@ -20,8 +20,8 @@ tea issues reopen --repo minder/app 24
 `tea issues` with no subcommand lists; with an index it shows detail. A `view` or
 `comment` word after `issues` is not the requested detail/comment operation and can
 produce a listing instead. Confirm the returned issue index before treating output
-as the ticket. Use `--description` for CLI create/edit text, not the `gh` flag
-`--body`.
+as the ticket. Use `--description` (or `--description-file`, tea 0.16.0+) for CLI
+create/edit text, not the `gh` flag `--body`.
 
 ### A body-only read is not the ticket
 
@@ -49,13 +49,38 @@ Check the exact subcommand's flags: list-only filters are not create fields.
 Search with `--keyword`, not an inferred `--search` flag.
 
 - **`list` filters**: `--state` (`all|open|closed`, default `open`), `--kind` (`issues|pulls|all`), `--keyword/-k`, `--labels/-L`, `--milestones/-m`, `--author/-A`, `--assignee/-a`, `--mentions/-M`, `--owner/--org`, `--from/-F`, `--until/-u`.
-- **`create` fields**: `--title/-t` (**required** — omitting it fails with `Error: title is required`, exit 1), `--description/-d`, `--labels/-L`, `--assignees/-a`, `--milestone/-m`, `--deadline/-D`, `--referenced-version/-v`.
+- **`create` fields**: `--title/-t` (**required** — omitting it fails with `Error: title is required`, exit 1), `--description/-d`, `--description-file` (0.16.0+), `--labels/-L`, `--assignees/-a`, `--milestone/-m`, `--deadline/-D`, `--referenced-version/-v`.
 
-`create` has **no `--output`**, so the new issue's index cannot be captured as JSON. Parse it from the printed URL, or create via `tea api` when you need the index programmatically.
+### The description body: flag, file, or piped stdin (tea 0.16.0+)
+
+`--description-file <path>` reads the body from a file byte-exact (trailing newline
+included); `-` reads stdin. On `create`, precedence is `--description-file` >
+`--description` > **piped stdin**: with neither flag and a non-TTY stdin, create
+reads stdin to EOF as the body. That makes scripts of the shape `some-cmd | tea
+issues create -t "Title"` implicitly body-taking, and it **hangs on a pipe that is
+open but silent** (probed: blocked past a 3 s timeout). Pass the body explicitly or
+redirect `</dev/null`. `edit` reads a file/stdin only when told to. On 0.15.1 and
+earlier there is no `--description-file` (unknown flag) and piped stdin is ignored.
+
+### `create --output json` — typed result on 0.16.0+, ignored before
+
+`tea issues create --output json` prints one compact **typed** object —
+`{"index":321,"title":"…","url":"…","state":"open"}` — with `index` as a number,
+unlike the string-flattened display data other `-o json` output carries. The flag
+is inherited from the parent command, appears in no `create --help`, and on ≤0.15.1
+was parsed but silently ignored (you received markdown). Any `--output` value other
+than `json` falls through to the markdown detail view on every version. Check
+`tea --version` before scripting on this, or create via `tea api` when you need the
+index programmatically on any version.
 
 ### `edit` uses different flag names than `create`
 
-`create` takes `--labels`; `edit` takes `--add-labels` / `--remove-labels` and `--add-assignees`. `--add-labels` takes precedence over `--remove-labels` when both name the same label. **Unset a property with an empty string**: `--milestone ""`.
+`create` takes `--labels`; `edit` takes `--add-labels` / `--remove-labels` and
+`--set-assignees` / `--add-assignees` / `--remove-assignees` (`--set-assignees`
+clears existing assignees first and takes precedence; `--add-*` precedes
+`--remove-*`). `--add-labels` takes precedence over `--remove-labels` when both name
+the same label. Body text on `edit` uses `--description` or `--description-file`
+(0.16.0+). **Unset a property with an empty string**: `--milestone ""`.
 
 `edit` is variadic — `tea issues edit --repo minder/app 24 25 --add-labels triage` edits both.
 
@@ -68,6 +93,7 @@ Every list command defaults to `open`. An issue that "disappeared" is usually cl
 ```sh
 tea comments list --repo OWNER/REPO --login LOGIN INDEX
 tea comments add --repo OWNER/REPO --login LOGIN INDEX "short body"
+tea comments add --repo OWNER/REPO --login LOGIN INDEX -d "body via flag"
 tea comments edit --repo OWNER/REPO --login LOGIN COMMENT_ID "new body"
 ```
 
@@ -82,11 +108,14 @@ For a workflow marker comment, read the complete comments collection, find the
 marker, and edit/reuse the existing comment or add one if absent. Read it back before
 claiming success or closing the ticket.
 
-**Preserve exact bodies with file input.** For Markdown files use the API reference's
-`-F body=@file` or encoded JSON `-d @file` recipes; shell command substitution strips
-trailing newlines. The same reference explains HTTP verification and pagination.
+**Preserve exact bodies with file input.** Issues and PRs have a native file body
+(0.16.0+ `--description-file`); for comment bodies the CLI has no file flag — use the
+API reference's `-F body=@file` or encoded JSON `-d @file` recipes; shell command
+substitution strips trailing newlines. The same reference explains HTTP verification
+and pagination.
 `edit` also accepts the body as an argument, via `--description`, on stdin, or
-(interactively) via `$EDITOR`. `tea comments` has no `--fields`.
+(interactively) via `$EDITOR`. Since 0.15.0 `add` accepts the body via `-d/--description`
+as an alternative to the positional argument. `tea comments` has no `--fields`.
 
 Deletion takes global IDs too: `tea comments delete --repo OWNER/REPO COMMENT_ID`.
 Deleting a comment removes its text from the tracker; require explicit authorization
