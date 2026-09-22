@@ -320,7 +320,7 @@ About the agent and its own toolkit, not about your code.
 Prompt templates are slash commands — type `/name` in the editor and it expands into a request that hands off to a bundled skill. Each template is an entry point, not a second copy of the flow: the skill stays the single source of truth, and the template exists because it forwards its arguments, which `/skill:<name>` cannot. So `/arch ~/some/repo` reviews another tree in one shot.
 
 <details>
-<summary><strong>Prompt templates (11)</strong></summary>
+<summary><strong>Prompt templates (12)</strong></summary>
 
 | Command | What it does |
 |---|---|
@@ -330,6 +330,7 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 | **`/debt [path] [--output-debt-file]`** | Harvest `SHORTCUT:` markers left during development. Flags missing upgrade paths. |
 | **`/handoff`** | Compact the conversation into a handoff document for another agent. References artifacts, redacts secrets, saves to temp. |
 | **`/humanify <ticket>`** | Work through a ticket together where human action or judgement is required—not only acceptance work. |
+| **`/refine-ticket <ticket-number>`** | Planning-only construction refinement through `grilling` and `construction-craft`, using the current project's tracker; requires an explicit positive ticket number and grants no implementation readiness. |
 | **`/questionnaire <topic>`** | Turn an unanswerable decision into a Markdown questionnaire for the one person who can fill it in. |
 | **`/arch [path]`** | Architecture health check with visual HTML report — deepening and simplification candidates, before/after diagrams, then a wayfinder map and an in-session work-through of the candidate you pick. |
 | **`/wizard [description]`** | Generate an interactive bash wizard that walks a human through a manual setup or migration procedure. |
