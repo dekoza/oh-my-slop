@@ -92,6 +92,20 @@ def test_refine_ticket_requires_an_explicit_ticket_without_execution_authority()
     assert "Cleopatra" not in body
 
 
+def test_revmerge_routes_user_decisions_through_grilling() -> None:
+    """The PR review command must not bypass the user's decision format."""
+    template = PROMPTS_DIR / "revmerge.md"
+
+    assert template.exists(), "/revmerge is not installed as a prompt template"
+    assert named_skill(template) == "two-axis-review"
+    frontmatter, body = split_template(template)
+    assert "<pull_request>" in frontmatter
+    assert "$@" in body
+    assert "any decision requires my input" in body
+    assert "`grilling` skill" in body
+    assert "wait for my answer before proceeding" in body
+
+
 def test_every_template_names_a_skill_that_exists() -> None:
     """The failure that actually breaks a shim: a skill renamed or removed
     while the template still names it. A named skill can be checked; an
