@@ -1,6 +1,7 @@
 ---
 name: humanify
 description: Turn a human-blocked ticket into an agent-implementable ticket, with you deciding and the agent driving it through readiness.
+argument-hint: "<ticket>"
 license: MIT
 disable-model-invocation: true
 ---

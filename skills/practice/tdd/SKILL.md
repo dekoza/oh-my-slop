@@ -144,3 +144,14 @@ Where each tier runs (host vs Docker), output capture, timeouts, and when E2E ru
 | [Mocking](references/mocking.md) | When to mock, designing for mockability |
 | [Refactoring](references/refactoring.md) | Refactor candidates after TDD cycle |
 | [Goal-Driven Examples](references/goal-driven-examples.md) | Transforming vague requests into verifiable goals; ❌/✅ code comparisons |
+
+<!-- SKILLOPT-SLEEP:LEARNED START -->
+## Learned preferences & procedures
+
+_This block is maintained by SkillOpt-Sleep. Edits here are proposed offline, validated against your past tasks, and adopted only after you approve them. Hand-edits outside this block are never touched._
+
+- For investigation tasks, inspect the available workspace, installed packages, source checkouts, and relevant history or logs before concluding evidence is unavailable; cite the paths and concrete evidence you find, and never replace investigation with a capability disclaimer or a request for missing paths.
+- For read-only reviews, preserve the read-only constraint: trace relevant execution paths and check each explicit behavioral invariant against code evidence, distinguishing verified findings from uncertainty without inventing defects.
+- When a task requests code, skill, or reference updates, make the requested targeted changes and validate them; report the changed paths and validation evidence rather than stopping at a diagnosis or proposed plan.
+- For package test-setup research, verify the installed package and specified source checkout independently; identify shipped tests, runnable examples, and practical test-harness guidance from the sources you inspect.
+<!-- SKILLOPT-SLEEP:LEARNED END -->
