@@ -2,6 +2,42 @@
   "skill_name": "humanify",
   "evals": [
     {
+      "id": 6,
+      "prompt": "Continue /humanify sample/controller #120 after my answers. This is a response simulation: use only the supplied facts, no live tracker, code changes or invented tool receipts. Give the next response and any exact proposed ticket content/actions. #120 is open, enhancement, ready-for-human, workflow:implement, unassigned. Its body only says 'Support disabled repository enrollment'; it has no agent brief or acceptance criteria. Native blockers are delivered and verified. Governing scope is a Python controller on one host; no deployment or legacy configuration import. EnrollmentStore and the register/status commands already exist. Registration currently enables execution immediately. You asked whether registration should be disabled by default and whether enablement belongs here. I answered: 'Yes: registration always creates a disabled enrollment; duplicate registration leaves the existing enrollment unchanged; status shows disabled. Enablement is a separate ticket. Those are my decisions.' Project rules reserve readiness for the human; a confirmed design is not readiness authorization. The tracker permits editing this ticket's body and maintaining one robot resolution comment during refinement. I have not approved implementation or a ready-for-agent label. No design fork remains in the supplied evidence.",
+      "expected_output": "Advance from settled answers to a concrete implementation brief and an explicit readiness decision, not a resolution-only stopping point or an offer to draft later.",
+      "files": [],
+      "expectations": [
+        "Supplies actual implementation-ready ticket content with disabled registration, unchanged duplicate enrollment, disabled status, relevant interfaces, testable criteria and enablement excluded; does not merely promise to write it later.",
+        "Directly requests human readiness authorization for this bounded brief rather than asking whether to investigate, prepare a brief or continue.",
+        "Keeps the ticket open and distinguishes confirmed design, proposed publication, readiness authorization and future implementation; does not claim actions the fixture did not execute.",
+        "Does not reopen answered design choices or ask about incidental implementation details."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Continue /humanify sample/controller #121. This is a response simulation; no real tools, no fabricated write receipts. Return the next response and exact ordered tracker actions with the proposed record. The ticket is open, ready-for-human, workflow:implement, enhancement, unassigned; all dependencies are verified delivered. Its body is stale: 'Disabled enrollments are eligible for scheduling'. Existing robot resolution comment 801 preserves the earlier proposal to schedule them; no agent brief is published. You have already investigated, presented and checked this brief: Scheduler eligibility rejects disabled enrollments; enabling uses the existing policy; an integration regression demonstrates a registered-disabled repository starts no work while an enabled qualified repository remains eligible; new enablement commands and deployment are out of scope. I just answered your precise proposal with: 'Confirmed. Publish that brief and mark #121 ready-for-agent. Leave it open for a fresh implementation session.' Project policy requires the approved brief to be durable and read back before changing state labels; preserve enhancement and workflow:implement. No new question or dependency has appeared.",
+      "expected_output": "Carry already-approved preparation through canonical ticket publication, attribution and label transition with ordered read-back, without asking for another go-ahead or starting implementation.",
+      "files": [],
+      "expectations": [
+        "Proposes replacing the contradictory ticket requirement and supplies the approved behavioral brief and test criteria, not just an acceptance/resolution summary.",
+        "Updates comment 801 with the human's exact authorization while retaining and clearly superseding the earlier proposal; does not create a duplicate resolution record.",
+        "Orders brief publication/read-back before removing ready-for-human and adding ready-for-agent, then verifies body, comment, labels, open state and dependencies; preserves enhancement and workflow:implement.",
+        "Asks no redundant publication, readiness or continuation question, does not close the ticket or launch implementation, and distinguishes proposed actions from executed results."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Continue /humanify sample/controller #122 after investigating my last answers. This is a response simulation using only these facts; no live tracker or code changes. Ticket: reject execution when the global spending ceiling is exhausted. I have settled that checks fail closed and a restart never resets the ceiling. In the next research pass you discover that the existing ledger records spend per attempt, but product policy has not decided whether simultaneous attempts share one reservation ceiling or only completed spend counts. Those options materially change whether parallel starts can overspend. You also discover native blocker #119 was closed as superseded, with no replacement ledger-reservation contract delivered or linked. The unrelated status-reporting acceptance criteria and existing caller interfaces are known and can be drafted now. Project rules allow in-scope ticket refinement, but only I may approve readiness, scope changes or dependency rewrites. No authorization to remove blockers or implement another ticket exists. Give your next response and provisional ticket update.",
+      "expected_output": "Continue useful preparation, ask only the newly consequential policy fork with a recommendation, and expose the missing prerequisite without inventing readiness or expanding the interview.",
+      "files": [],
+      "expectations": [
+        "Asks a focused grilling-style question about shared reservations versus completed spend, explains the overspend consequence and gives a recommendation without treating it as the human answer.",
+        "Preserves fail-closed checks and restart-persistent ceiling as settled; does not turn incidental ledger implementation details into new human questions.",
+        "Identifies #119's undelivered prerequisite as a blocker with owner/next action or a focused owner decision, rather than treating its closed state as delivery, removing the edge or working another ticket.",
+        "Supplies a provisional brief or concrete ticket update for settled behavior and known checks while leaving disputed policy and prerequisite visibly unresolved and readiness withheld."
+      ]
+    },
+    {
       "id": 1,
       "prompt": "Help me finish the terminal review of sample/portal #90. All the facts below are a supplied fixture; do not contact a real tracker or run commands. Produce your next response to me and the exact proposed tracker actions/record, distinguishing proposals from actions already evidenced. The ticket has workflow:implement and ready-for-human, is open and assigned to me, and all native blockers are closed. Its three questions are: Does the delivered product match the agreed destination? What is wrong or missing? What should the next effort cover? Candidate is commit c91 in staging configuration edition 4. The criteria are separate participant access and complete exports. Reports access-c91.md and export-c91.md record passing checks for that exact candidate; I witnessed both. My live answer was: 'Yes, it matches. Nothing is missing within this scope. Next time, shared conversations. Record that and close this ticket.' There is already comment 700 with marker `🤖 `acceptance` — resolution`, documenting a rejected earlier candidate b80; it includes my earlier objection about incomplete exports. The previous assistant sent an update of comment 700 containing my new answer and the two report references. The request timed out without an HTTP response. No read-back has happened. Closure has not been attempted. Continue from there.",
       "expected_output": "Resume the approved closure without repeating the interview, first reconcile the uncertain comment update, preserve the earlier rejection as history, and verify durable publication and closure without inventing success or requiring an implementation PR.",

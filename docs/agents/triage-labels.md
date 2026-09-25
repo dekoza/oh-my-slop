@@ -31,9 +31,11 @@ Labels must exist before they can be applied. On Gitea, create them with
 
 `workflow:implement` marks build-ready work that should run through `/implement`.
 Workflow and state are separate: apply `ready-for-agent` or `ready-for-human` as
-well to record who can execute the ticket. Use `/humanify <ticket>` to assist with
-human-owned steps, decisions or reviews; `ready-for-human` alone does not mean code
-must be written. This adds no label and changes no factory eligibility rule.
+well to record who can execute the ticket. Use `/humanify <ticket>` to resolve human
+blockers, prepare the implementation brief and record explicitly human-authorized
+agent readiness. Explicitly human-only steps and terminal reviews keep their own
+outcomes; `ready-for-human` alone does not mean code must be written. This adds no
+label vocabulary and changes no factory eligibility rule.
 
 ## Wayfinder labels
 

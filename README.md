@@ -279,7 +279,7 @@ Rituals you run — session and tracker state, from interview through implementa
 | **[Grill With Docs](skills/workflow/grill-with-docs/SKILL.md)** | Grilling session that also maintains docs as decisions land — CONTEXT.md glossary entries and ADRs via domain-modeling. |
 | **[Grilling](skills/workflow/grilling/SKILL.md)** | The interview primitive — the design tree worked in rounds, each round asking the whole frontier of ready questions, facts looked up vs decisions asked, no enacting until the user confirms. Reused by grill-me, grill-with-docs, triage, wayfinder. |
 | **[Handoff](skills/workflow/handoff/SKILL.md)** | Compact the current conversation into a handoff document for another agent to pick up. References artifacts by path/URL, redacts sensitive info, saves to temp directory. |
-| **[Humanify](skills/workflow/humanify/SKILL.md)** | Work through one human-in-the-loop ticket: manual prerequisites, decisions, live checks, approvals or terminal reviews. The agent does the legwork; human decisions and unfinished obligations stay explicit and attributable. |
+| **[Humanify](skills/workflow/humanify/SKILL.md)** | Drive a human-blocked ticket to agent implementation readiness: investigate, grill consequential choices, write the brief, check prerequisites and record human-authorized readiness. Continue between decisions without prompting; retain explicitly human-only outcomes. |
 | **[Implement](skills/workflow/implement/SKILL.md)** | Build one ticket-sized slice from a spec or build-ready ticket — TDD at pre-agreed seams, regular typechecks, project test policy, and two-axis review before committing. |
 | **[Improve Codebase Architecture](skills/workflow/improve-codebase-architecture/SKILL.md)** | Dual-axis architecture scan: finds deepening opportunities (shallow modules) AND simplification opportunities (dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead flags). Visual HTML report, then a wayfinder map with one ticket per chosen candidate and an in-session work-through of the one you pick. Uses codebase-design vocabulary, integrates ponytail-audit. |
 | **[LLM Council](skills/workflow/council/SKILL.md)** | Multi-advisor decision protocol: 5 independent perspectives, anonymized peer review, chairman synthesis. For high-stakes uncertainty where being wrong is expensive. |
@@ -329,7 +329,7 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 | **`/audit [path]`** | Ranked bloat/over-engineering findings — dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead flags. |
 | **`/debt [path] [--output-debt-file]`** | Harvest `SHORTCUT:` markers left during development. Flags missing upgrade paths. |
 | **`/handoff`** | Compact the conversation into a handoff document for another agent. References artifacts, redacts secrets, saves to temp. |
-| **`/humanify <ticket>`** | Work through a ticket together where human action or judgement is required—not only acceptance work. |
+| **`/humanify <ticket>`** | Turn a human-blocked ticket into agent-implementable work; you decide, the agent drives refinement through authorized readiness. |
 | **`/refine-ticket <ticket-number>`** | Planning-only construction refinement through `grilling` and `construction-craft`, using the current project's tracker; requires an explicit positive ticket number and grants no implementation readiness. |
 | **`/revmerge <pull_request>`** | Review both axes, comment on the pull request, and merge only without blockers; route decisions requiring your input through `grilling`. |
 | **`/questionnaire <topic>`** | Turn an unanswerable decision into a Markdown questionnaire for the one person who can fill it in. |
@@ -342,13 +342,17 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 
 ### Human-in-the-loop tickets
 
-Use `/humanify <ticket>` for work that needs you: a manual setup step, a field check,
-a decision, an approval, or a delivered-product review. `ready-for-human` identifies
-human involvement, not one universal workflow. The agent investigates and guides the
-next useful step, records your decisions and preserves unfinished work with an owner.
-Live changes still need scoped authorization; code repairs go to a separate implementation
-session. Existing `workflow:implement` terminal-review labels and factory behavior stay
-unchanged. This command does not automatically start the next ticket.
+Use `/humanify <ticket>` to take a human-blocked ticket through to agent implementation
+readiness. The agent investigates, asks bounded `grilling` rounds, incorporates your answers,
+writes the implementation brief and runs the readiness preflight without waiting for
+“what next?” You decide consequential forks and explicitly authorize readiness; the agent
+publishes and verifies the corresponding ticket state. Implementation starts separately.
+
+This replaces the earlier progress-record/resume-point default: an interview or published
+checkpoint is no longer the finish line. Explicitly human-only setup, field checks and
+terminal reviews still finish on their own outcomes, not invented implementation work.
+Live changes retain scoped authorization, unresolved obligations retain owners, and terminal
+review labels and factory classification remain unchanged. No next ticket starts automatically.
 
 ## Critical Partner setup and use
 
