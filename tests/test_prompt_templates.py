@@ -94,6 +94,19 @@ def test_refine_ticket_routes_explicit_ticket_through_authorized_readiness() -> 
     assert "Cleopatra" not in body
 
 
+def test_fixrev_routes_review_and_conflict_repairs_to_one_owner() -> None:
+    """Repair the existing PR; neither review-only nor conflict-only is the job."""
+    template = PROMPTS_DIR / "fixrev.md"
+
+    assert named_skill(template) == "fix-pr"
+    frontmatter, body = split_template(template)
+    assert 'argument-hint: "<pull_request>"' in frontmatter
+    assert "$@" in body
+    assert "review findings and merge conflicts" in body
+    assert FALLBACK_CLAUSE in body
+    assert "disable-model-invocation: true" in skill_frontmatter("fix-pr")
+
+
 def test_revmerge_routes_user_decisions_through_grilling() -> None:
     """The PR review command must not bypass the user's decision format."""
     template = PROMPTS_DIR / "revmerge.md"

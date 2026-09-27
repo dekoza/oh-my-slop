@@ -211,7 +211,7 @@ while the router is offline; use another provider until it returns.
 ## Skills
 
 <details>
-<summary><strong>Skills (67)</strong></summary>
+<summary><strong>Skills (68)</strong></summary>
 
 Grouped by what you came looking for: an API surface (**Reference**), a way of
 working (**Practice**), a job to run (**Workflow**), or the agent's own toolkit
@@ -275,6 +275,7 @@ Rituals you run — session and tracker state, from interview through implementa
 | **[Cleanroom Rewrite](skills/workflow/cleanroom-rewrite/SKILL.md)** | Reimplement a codebase from scratch based on behavioral spec, without copying implementation. Legal reimplementations, spec-driven rewrites, two-agent processes. |
 | **[Court Jester](skills/workflow/court-jester/SKILL.md)** | Structured adversarial reasoning for stress-testing plans, proposals, architecture, and strategy. Devil's-advocate reviews, pre-mortems, red teams, assumption checks. |
 | **[Domain Modeling](skills/workflow/domain-modeling/SKILL.md)** | Active domain-model discipline — challenge terms against the glossary, sharpen fuzzy language, stress-test with scenarios, update CONTEXT.md inline, offer ADRs sparingly (hard-to-reverse + surprising + real trade-off). |
+| **[Fix PR](skills/workflow/fix-pr/SKILL.md)** | Repair review findings and conflicts against the PR's actual target, verify the combined result, and update the same open PR without implicit merge or history-rewrite authority. |
 | **[Grill Me](skills/workflow/grill-me/SKILL.md)** | User-invoked wrapper: run a grilling session on the current plan or design. |
 | **[Grill With Docs](skills/workflow/grill-with-docs/SKILL.md)** | Grilling session that also maintains docs as decisions land — CONTEXT.md glossary entries and ADRs via domain-modeling. |
 | **[Grilling](skills/workflow/grilling/SKILL.md)** | The interview primitive — the design tree worked in rounds, each round asking the whole frontier of ready questions, facts looked up vs decisions asked, no enacting until the user confirms. Reused by grill-me, grill-with-docs, triage, wayfinder. |
@@ -320,7 +321,7 @@ About the agent and its own toolkit, not about your code.
 Prompt templates are slash commands — type `/name` in the editor and it expands into a request that hands off to a bundled skill. Each template is an entry point, not a second copy of the flow: the skill stays the single source of truth, and the template exists because it forwards its arguments, which `/skill:<name>` cannot. So `/arch ~/some/repo` reviews another tree in one shot.
 
 <details>
-<summary><strong>Prompt templates (13)</strong></summary>
+<summary><strong>Prompt templates (14)</strong></summary>
 
 | Command | What it does |
 |---|---|
@@ -331,6 +332,7 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 | **`/handoff`** | Compact the conversation into a handoff document for another agent. References artifacts, redacts secrets, saves to temp. |
 | **`/humanify <ticket>`** | Turn a human-blocked ticket into agent-implementable work; you decide, the agent drives refinement through authorized readiness. |
 | **`/refine-ticket <ticket-number>`** | Refine one explicitly numbered ticket through `humanify` to human-authorized agent readiness, with `construction-craft` context; implementation starts separately. |
+| **`/fixrev <pull_request>`** | Fix review findings and target-branch conflicts through `fix-pr`, verify and publish to the same PR; leave merging separate. |
 | **`/revmerge <pull_request>`** | Review both axes, comment on the pull request, and merge only without blockers; route decisions requiring your input through `grilling`. |
 | **`/questionnaire <topic>`** | Turn an unanswerable decision into a Markdown questionnaire for the one person who can fill it in. |
 | **`/arch [path]`** | Architecture health check with visual HTML report — deepening and simplification candidates, before/after diagrams, then a wayfinder map and an in-session work-through of the candidate you pick. |
@@ -339,6 +341,11 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 | **`/proto <question> [logic\|ui]`** | Throwaway prototype — terminal app for state machines or radically different UI variants on one route. |
 
 </details>
+
+`/fixrev` now routes its existing review-repair job through `fix-pr` and also resolves
+conflicts with the PR's actual target branch. It retains `grilling` for human decisions,
+protects other work, and updates the same open PR; it does not authorize a PR merge or
+published-history rewrite. Run `/reload` in an active pi session to load this template.
 
 ### Human-in-the-loop tickets
 
