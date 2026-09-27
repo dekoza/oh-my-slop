@@ -5,13 +5,13 @@ actual label string used in this repo's tracker.
 
 ## State roles
 
-| Canonical role    | Label in our tracker | Meaning                                  |
-| ----------------- | -------------------- | ---------------------------------------- |
-| `needs-triage`    | `needs-triage`       | Maintainer needs to evaluate this issue  |
-| `needs-info`      | `needs-info`         | Waiting on reporter for more information |
-| `ready-for-agent` | `ready-for-agent`    | Fully specified, ready for an AFK agent  |
-| `ready-for-human` | `ready-for-human`    | Requires human action or judgement       |
-| `wontfix`         | `wontfix`            | Will not be actioned                     |
+| Canonical role | Label in our tracker | Meaning |
+| --- | --- | --- |
+| `needs-triage` | `needs-triage` | Maintainer needs to evaluate this issue |
+| `needs-info` | `needs-info` | Missing information or unfinished construction refinement |
+| `ready-for-agent` | `ready-for-agent` | Fully specified and authorized for agent work under project policy |
+| `ready-for-human` | `ready-for-human` | Requires human action or judgement |
+| `wontfix` | `wontfix` | Will not be actioned |
 
 ## Category roles
 
@@ -29,12 +29,19 @@ Labels must exist before they can be applied. On Gitea, create them with
 
 ## Workflow labels
 
-`workflow:implement` marks build-ready work that should run through `/implement`.
-Workflow and state are separate: apply `ready-for-agent` or `ready-for-human` as
-well to record who can execute the ticket. Use `/humanify <ticket>` to resolve human
-blockers, prepare the implementation brief and record explicitly human-authorized
-agent readiness. Explicitly human-only steps and terminal reviews keep their own
-outcomes; `ready-for-human` alone does not mean code must be written. This adds no
+`workflow:implement` records implementation routing, not readiness or authorization.
+Workflow and state are separate: keep one state role alongside it.
+`needs-info` + `workflow:implement` is a valid non-dispatchable implementation
+proposal: record each missing input or refinement with its owner and next action. Agent-discoverable facts belong to the agent, not
+an unnecessary question to the reporter. When only human judgement or authorization
+remains, use `ready-for-human`; change state only under the project's authority rules.
+Prerequisites, active claims and other execution gates remain independent of labels.
+
+Use `/refine-ticket <ticket-number>` or `/humanify <ticket>` to finish preparation
+and record explicit human-authorized agent readiness. Publication approval alone
+is not readiness approval; `/implement` starts separately. Explicitly human-only
+steps and terminal reviews keep their own outcomes; `ready-for-human` alone does
+not mean code must be written. This adds no
 label vocabulary and changes no factory eligibility rule.
 
 ## Wayfinder labels

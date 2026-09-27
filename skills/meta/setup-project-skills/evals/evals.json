@@ -2,6 +2,17 @@
   "skill_name": "setup-project-skills",
   "evals": [
     {
+      "id": 5,
+      "prompt": "Dry-run a label-document re-sync using the bundled triage-labels template. The project has an implementation proposal labelled needs-info and workflow:implement; its reporter already answered the product questions, but the agent has not inspected delivered prerequisite code or prepared the bounded brief. The installed document calls workflow:implement build-ready and needs-info waiting on the reporter. The owner reserves readiness authorization to the human. Explain the corrected meanings and next action, preserving the vocabulary and local authority. Do not edit any files, contact a tracker, relabel the issue or authorize implementation.",
+      "expected_output": "Clarify independent workflow/state dimensions, allocate factual refinement to the agent and preserve the human readiness gate without treating publication as readiness.",
+      "expectations": [
+        "Treats needs-info plus workflow:implement as an incomplete, non-dispatchable implementation proposal rather than an invalid pairing or readiness grant.",
+        "Assigns discoverable prerequisite and brief work to the agent with an owner/next action, rather than asking the reporter for facts available in code.",
+        "Separates publication approval from the human readiness decision, and preserves dependencies, claims and other execution gates.",
+        "Proposes a documentation re-sync without inventing labels, changing the factory's eligibility rules or mutating the consumer project."
+      ]
+    },
+    {
       "id": 4,
       "prompt": "Dry-run a re-sync of an existing Gitea tracker document. Agent work is fixture/app using login eval; origin is GitHub intake and gitea is the agent-work remote. The document currently offers --remote gitea as a substitute for repo scope and its blocking-edge example sends only an index. Preserve the owner's bindings, custom labels, authority rules and protected headings. Show the corrected conventions and an example making issue42 blocked by issue7, including how success is verified. Do not contact either tracker or change this repository.",
       "expected_output": "Explicit repository scope, a complete directed dependency payload, verified write semantics and a non-destructive re-sync proposal.",

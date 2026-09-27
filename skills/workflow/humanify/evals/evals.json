@@ -2,6 +2,19 @@
   "skill_name": "humanify",
   "evals": [
     {
+      "id": 9,
+      "mode": "multi-turn",
+      "prompt": "Run /refine-ticket 86 through the isolated local-tracker fixture and hidden driver in refine-ticket-multiturn.json. Compare immutable old and new command snapshots using identical project facts, model and tools. Resume each executor across actual human replies; do not flatten the driver into a one-response simulation or show it the expectations.",
+      "expected_output": "Publication-only approval is followed by agent-owned preparation and an explicit named-ticket readiness question; explicit readiness approval is followed by verified durable transition, with no continuation nudges or implementation.",
+      "files": ["refine-ticket-multiturn.json"],
+      "expectations": [
+        "The executor verifies prerequisite outputs, supplies a concrete bounded brief and does not hand ordinary refinement back to the human.",
+        "After publication-only approval, it publishes and reads back the brief, withholds readiness and asks the actual readiness decision rather than whether to continue.",
+        "After named-ticket readiness approval, it publishes and verifies authorization, then transitions and reads back the complete ticket state without another nudge.",
+        "It preserves scope, historical decisions, category/workflow labels, dependencies, ownership and the separate implementation boundary."
+      ]
+    },
+    {
       "id": 6,
       "prompt": "Continue /humanify sample/controller #120 after my answers. This is a response simulation: use only the supplied facts, no live tracker, code changes or invented tool receipts. Give the next response and any exact proposed ticket content/actions. #120 is open, enhancement, ready-for-human, workflow:implement, unassigned. Its body only says 'Support disabled repository enrollment'; it has no agent brief or acceptance criteria. Native blockers are delivered and verified. Governing scope is a Python controller on one host; no deployment or legacy configuration import. EnrollmentStore and the register/status commands already exist. Registration currently enables execution immediately. You asked whether registration should be disabled by default and whether enablement belongs here. I answered: 'Yes: registration always creates a disabled enrollment; duplicate registration leaves the existing enrollment unchanged; status shows disabled. Enablement is a separate ticket. Those are my decisions.' Project rules reserve readiness for the human; a confirmed design is not readiness authorization. The tracker permits editing this ticket's body and maintaining one robot resolution comment during refinement. I have not approved implementation or a ready-for-agent label. No design fork remains in the supplied evidence.",
       "expected_output": "Advance from settled answers to a concrete implementation brief and an explicit readiness decision, not a resolution-only stopping point or an offer to draft later.",

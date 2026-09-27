@@ -330,7 +330,7 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 | **`/debt [path] [--output-debt-file]`** | Harvest `SHORTCUT:` markers left during development. Flags missing upgrade paths. |
 | **`/handoff`** | Compact the conversation into a handoff document for another agent. References artifacts, redacts secrets, saves to temp. |
 | **`/humanify <ticket>`** | Turn a human-blocked ticket into agent-implementable work; you decide, the agent drives refinement through authorized readiness. |
-| **`/refine-ticket <ticket-number>`** | Planning-only construction refinement through `grilling` and `construction-craft`, using the current project's tracker; requires an explicit positive ticket number and grants no implementation readiness. |
+| **`/refine-ticket <ticket-number>`** | Refine one explicitly numbered ticket through `humanify` to human-authorized agent readiness, with `construction-craft` context; implementation starts separately. |
 | **`/revmerge <pull_request>`** | Review both axes, comment on the pull request, and merge only without blockers; route decisions requiring your input through `grilling`. |
 | **`/questionnaire <topic>`** | Turn an unanswerable decision into a Markdown questionnaire for the one person who can fill it in. |
 | **`/arch [path]`** | Architecture health check with visual HTML report — deepening and simplification candidates, before/after diagrams, then a wayfinder map and an in-session work-through of the candidate you pick. |
@@ -347,6 +347,18 @@ readiness. The agent investigates, asks bounded `grilling` rounds, incorporates 
 writes the implementation brief and runs the readiness preflight without waiting for
 “what next?” You decide consequential forks and explicitly authorize readiness; the agent
 publishes and verifies the corresponding ticket state. Implementation starts separately.
+
+`/refine-ticket <ticket-number>` now enters this same workflow instead of stopping at
+`grilling`'s approved planning brief. It retains explicit ticket selection and construction
+context. Existing publication-only approvals still grant no readiness: the agent finishes
+available preparation and asks for the specific readiness authorization. Use `/reload` in
+an active pi session to load the updated template.
+
+Workflow routing is not readiness: `needs-info` + `workflow:implement` identifies an
+implementation proposal with missing information or unfinished refinement, not permission
+to execute. Record each gap's owner and next action. `ready-for-human` identifies required
+human action or judgement; `ready-for-agent` requires a sufficient brief and the applicable
+authorization. Prerequisites and claims remain independent execution gates.
 
 This replaces the earlier progress-record/resume-point default: an interview or published
 checkpoint is no longer the finish line. Explicitly human-only setup, field checks and

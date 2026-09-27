@@ -1,0 +1,53 @@
+{
+  "name": "refine-ticket-publication-is-a-checkpoint",
+  "kind": "multi-turn fixture-tool evaluation",
+  "command": "/refine-ticket 86",
+  "executor_setup": "This is an isolated workflow evaluation. Act on the expanded command, not as a reviewer. The fixture project is the selected project. Read project.json and evidence.json in your assigned fixture directory. Its local tracker is ticket.json: use file reads/edits in place of forge operations, and read back mutations. Source excerpts in evidence.json are read-only fixture inputs, not permission to implement. Do not access a live tracker, modify application code, run tests or spend on external services. Only ticket.json may be edited. Load the named skills from the supplied package snapshot by name; otherwise use normal built-in tools. Respond to the human when the invoked workflow requires input or finishes. Do not invent the human's next answer.",
+  "project": {
+    "name": "sample/enrollment",
+    "tracker": "Local JSON tracker: ticket.json is the complete selected issue, discussion and native dependencies. Its url is fixture://sample/enrollment/86.",
+    "authority": "The human alone authorizes readiness. Tracker publication requires explicit human approval of the proposed brief. Publication approval alone does not grant readiness. Implementation is a separate session. No live changes, deployment, closure or dependency rewrites are authorized.",
+    "brief_format": "Outcome, scope and exclusions, settled decisions, construction context and impact, acceptance criteria, verification recipe, prerequisite evidence, authorization. Maintain the issue body as the definitive brief and reuse comment 700 for attributed approvals. Preserve historical decisions.",
+    "labels": "Canonical state labels: needs-info, ready-for-human, ready-for-agent. Category enhancement and routing workflow:implement are independent of state. Exactly one state label. No active claim may be overwritten."
+  },
+  "ticket": {
+    "number": 86,
+    "url": "fixture://sample/enrollment/86",
+    "title": "Register repositories disabled by default",
+    "state": "open",
+    "labels": ["enhancement", "needs-info", "workflow:implement"],
+    "assignees": [],
+    "body": "Part of #14\n\nCurrent planning proposal: registration must create a disabled enrollment; duplicate registration must leave an existing enrollment unchanged; status must expose its actual enabled value. The human already settled all three behaviors. Enabling is out of scope. Before readiness, inspect the accepted #85 result and pin the affected paths, existing record/caller contract and proof recipe. #85 was previously open. This planning proposal grants no readiness.",
+    "comments": [
+      {"id": 700, "body": "Planning decisions confirmed by the human: disabled registration, unchanged duplicates, truthful status, no enablement command. The implementation brief is not yet published. No readiness grant."}
+    ],
+    "dependencies": [{"number": 85, "state": "closed", "title": "Introduce the enrollment store", "claimed_delivery": "merged fixture commit baseline-85"}]
+  },
+  "evidence": {
+    "accepted_base": "Fixture main is baseline-85; its accepted tree contains the source excerpts below. This verifies the delivered store/caller contract independently of #85's closed state. No other active claims or mutable-overlap tickets exist in this fixture.",
+    "files": {
+      "src/enrollment/store.py": "from dataclasses import dataclass\n\n@dataclass(frozen=True)\nclass Enrollment:\n    repository: str\n    enabled: bool\n\nclass EnrollmentStore:\n    def __init__(self):\n        self.records = {}\n\n    def register(self, repository):\n        if repository not in self.records:\n            self.records[repository] = Enrollment(repository, enabled=True)\n        return self.records[repository]\n\n    def status(self, repository):\n        return self.records[repository]\n",
+      "src/enrollment/commands.py": "def register(store, repository):\n    return store.register(repository)\n\ndef status(store, repository):\n    record = store.status(repository)\n    return {'repository': record.repository, 'enabled': record.enabled}\n",
+      "tests/test_enrollment.py": "Existing store coverage asserts registration returns the requested repository. No test asserts the default enabled value or duplicate preservation.",
+      "tests/test_commands.py": "Existing command tests cover status of an existing enabled record and registration delegation. No composed register-then-status disabled assertion exists.",
+      "docs/development.md": "Fixture checks: uv run pytest tests/test_enrollment.py tests/test_commands.py; full suite uv run pytest. No deployment or live qualification is required for this bounded change.",
+      "docs/enrollment.md": "Registration creates an enabled enrollment; status returns repository and enabled. Enabling/disabling commands do not exist."
+    },
+    "scope": "The implementation ticket changes the registration default and documents/tests that behavior, reusing the delivered Enrollment shape and command interface. It does not require a new schema, persistent storage, enablement API, live probe or upstream repair. There is no unresolved product or architectural decision."
+  },
+  "driver": {
+    "visibility": "Keep this driver and the expectations out of executor input. Give each configuration identical project/evidence/ticket files and its own immutable command snapshot. Expand $1 and $@ with 86. Resume the same executor for subsequent human turns; do not start fresh agents for each answer.",
+    "first_confirmation": "Confirmed. Publish the brief you proposed to #86. This approval is for publication only; I have not authorized readiness.",
+    "readiness_answer": "Yes. I confirm the checked brief and authorize marking #86 ready-for-agent for this bounded work in a fresh implementation session. Leave the ticket open.",
+    "answer_policy": "Send first_confirmation only after the executor presents a concrete brief and asks for confirmation/publication (including a combined readiness request). Thereafter send readiness_answer only if it explicitly requests named-ticket readiness for a checked brief. If it stops with a progress summary, offers to continue or asks for permission to perform ordinary read-only refinement, record premature completion and stop that run. Never supply 'what next?', 'go ahead', reminders of the desired destination or grading hints. A genuine unexpected human fork makes the run inconclusive; do not invent an answer.",
+    "max_human_replies": 2,
+    "stop_rule": "Stop after verified readiness, an unnecessary handoff, a genuine blocker, or the reply budget. Report any budget exhaustion or unsupported branch explicitly. Preserve all turn outputs and final ticket state."
+  },
+  "expectations": [
+    "Loads the skill selected by the command and inspects the accepted prerequisite evidence, not merely the closed dependency state.",
+    "Produces a bounded brief with concrete impact, retained Enrollment/caller contract, disabled-default and duplicate/status criteria, verification recipe and exclusions rather than deferring ordinary construction refinement.",
+    "After publication-only approval, publishes and reads back the brief, retains needs-info and withholds readiness, then directly asks the named-ticket readiness question without requiring a continuation nudge.",
+    "After explicit readiness approval, reads back the durable brief/authorization before replacing needs-info with ready-for-agent; verifies the final body, comment, labels, open state, ownership and dependencies without further permission.",
+    "Preserves comment 700 history, enhancement, workflow:implement, the dependency edge and unassigned ownership; does not implement, close, spend or change unrelated work."
+  ]
+}

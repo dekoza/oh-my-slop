@@ -113,9 +113,10 @@ and don't raise it; a user who wants external PRs in the triage queue flips it l
 
 Defaults are the canonical roles, each label string equal to its name: `needs-triage`,
 `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`, plus the categories
-`bug` and `enhancement`. The fixed `workflow:implement` label routes build-ready
-work to `/implement`; it is independent of the state-role mapping. Only if the user
-says no — usually because their tracker already uses other state or category names —
+`bug` and `enhancement`. The fixed `workflow:implement` label identifies implementation
+routing, not readiness; the state-role mapping and project authority determine whether
+work is ready. Use the [label template](triage-labels.md) for their distinct meanings.
+Only if the user says no — usually because their tracker already uses other state or category names —
 collect those overrides, so the workflow skills apply existing labels instead of
 creating duplicates.
 

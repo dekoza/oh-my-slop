@@ -75,20 +75,22 @@ def test_humanify_is_a_manual_ticket_entry_point() -> None:
     assert "disable-model-invocation: true" in skill_frontmatter("humanify")
 
 
-def test_refine_ticket_requires_an_explicit_ticket_without_execution_authority() -> None:
-    """Refinement routes through grilling, never an inferred execution ticket."""
+def test_refine_ticket_routes_explicit_ticket_through_authorized_readiness() -> None:
+    """The command reaches the readiness owner without granting authority itself."""
     template = PROMPTS_DIR / "refine-ticket.md"
 
     assert template.exists(), "/refine-ticket is not installed as a prompt template"
-    assert named_skill(template) == "grilling"
+    assert named_skill(template) == "humanify"
     frontmatter, body = split_template(template)
     assert 'argument-hint: "<ticket-number>"' in frontmatter
     assert "$1" in body and "$@" in body
     assert "exactly one positive ticket number" in body
     assert "ask for `/refine-ticket <ticket-number>` before any ticket work" in body
     assert "current project's configured tracker" in body
-    assert "planning-only" in body
-    assert "not implementation or a readiness grant" in body
+    assert "human-authorized agent readiness" in body
+    assert "implementation in a separate session" in body
+    assert "construction-craft" in body
+    assert FALLBACK_CLAUSE in body
     assert "Cleopatra" not in body
 
 

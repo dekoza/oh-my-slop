@@ -17,10 +17,96 @@ not applicable.
 | 6 | Settled decisions, missing brief | Produce the implementation contract and ask the actual readiness decision, not permission to continue |
 | 7 | Human-authorized readiness | Publish/read back the definitive brief, supersede stale requirements and verify the state transition without another prompt |
 | 8 | Newly discovered fork and undelivered blocker | Ask the consequential question while preserving settled decisions, dependencies and independent preparation |
+| 9 | `/refine-ticket` across publication and readiness answers | Exercise the actual command routing with fixture-tool writes and resumed conversations, not a single-response simulation |
 
 The first three cases were written under the earlier unpublished `acceptance` name.
 Case 1 deliberately retains its established resolution marker: resuming another record
 must not create a duplicate merely because the assisting skill now has a different name.
+
+## Refinement entry-point regression — 2026-09-27
+
+The September 25 readiness revision did not reach `/refine-ticket`: its September 22
+prompt still routed directly to `grilling` and ended at approved brief publication.
+The command now routes to the existing `humanify` workflow; neither skill body needs
+a duplicate continuation rule. The explicit ticket argument, construction context and
+separate implementation boundary remain. The setup label template and repository label
+mapping now distinguish incomplete implementation proposals from authorized readiness.
+
+The initiating evidence is Cleopatra #86's September 27 sessions. The first publication
+stop had a real upstream blocker (#85). In the later post-#85 session, the user asked
+“what's next?”, was offered a read-only preflight, replied “go ahead”, then had to say
+“go ahead” again when the agent returned the next contract-drafting task instead of
+performing it. Both sessions loaded `grilling` and `construction-craft` successfully.
+This is a routing/completion-contract failure, not a skill-loading failure.
+
+[Case 9's fixture and driver](refine-ticket-multiturn.json) preserve that interaction
+shape without copying the private project conversation or contacting its tracker:
+
+- Same incomplete `needs-info` + `workflow:implement` ticket, settled decisions and
+  closed prerequisite in both configurations. Accepted source evidence is separately
+  available; closure alone cannot stand in for reading it.
+- The executor sees only the expanded command, project rules and local JSON tracker
+  fixture. The grader's expectations and human-answer driver are withheld.
+- Each configuration resumes the same agent across actual turns. The first answer
+  approves publication **only**. A second answer authorizes readiness only after the
+  agent explicitly requests it for the checked named ticket.
+- The driver supplies no “what next?” or “go ahead” nudges. A progress-only stop or
+  request to continue ordinary preparation is a failure, not a cue to help the agent.
+- Real file mutations/read-backs stand in for tracker calls. Verify the intermediate
+  state after publication-only approval and the final ticket, including history,
+  labels, ownership and dependencies. These are not real forge receipts.
+
+Case 8 remains the genuine-fork/undelivered-prerequisite counterexample; case 9 does
+not establish that branch. One paired run cannot establish reliability or general
+long-session autonomy, and static prompt/label tests establish only the wiring and
+vocabulary. The new setup-project-skills label re-sync scenario is a regression
+definition, not a measured setup-quality improvement.
+
+### Observed comparison
+
+One fresh `openai-codex/gpt-6-astra` executor per configuration, high reasoning, with
+actual resumes for human replies. Both read the same fixture inputs and unchanged
+skill bodies; the independent grader applied the five frozen assertions literally.
+
+| Configuration | Assertions | Observed endpoint |
+| --- | --- | --- |
+| Original command → `grilling` | 3/5 | Published brief, still `needs-info`; never requested readiness |
+| Updated command → `humanify` | 4/5 | Explicitly human-authorized `ready-for-agent`, open, preserved history/ownership/dependency |
+
+The candidate asked the precise readiness question **before** publication, alongside
+its publication request. After publication-only approval it retained that question as
+pending rather than repeating it. The driver answered the standing readiness question;
+no “what next?” or “go ahead” was supplied. It then recorded and read back authorization,
+changed the label and verified the final ticket. The grader found no agent-owned work
+handed back to the human.
+
+The frozen post-publication-question assertion fails in **both** runs: absent entirely
+in the baseline, asked earlier in the candidate. It is not rewritten to improve the
+score. This exposes an overly specific timing assertion, not evidence that the candidate
+needs another instruction to repeat an already-open decision. Baseline's readiness
+transition was unexercised, not an observed mishandled approval. Construction-brief,
+prerequisite-evidence and preservation assertions pass in both configurations.
+
+Limits beyond the single paired run:
+
+- The driver interpreted the earlier unanswered readiness request as standing; the
+  result does not prove behavior under a driver requiring a freshly repeated question.
+- Candidate foreground resumes were captured as user/assistant text and observed tool
+  order, not complete raw resumed tool arguments. The parent independently read its
+  final JSON; that corroborates final state, not intermediate ordering on its own.
+- The snapshot omitted `critical-partner`; the candidate recovered via the configured
+  body, which the baseline loaded directly. The grader verified identical successful
+  bodies, but the asymmetric missing-file recovery remains a fixture imperfection.
+- This compares two deliberately different command destinations, not a skill-presence
+  ablation with identical prompts. Timing/token totals across resumes are unavailable;
+  no cost or speed improvement is claimed. Human qualitative review remains pending.
+
+Review workspace: `/tmp/refine-ticket-workspace-rrxq3k1u/iteration-1/`, with static
+`review.html` (Outputs: transcripts, final tickets and grades; Benchmark: literal scores
+and comparison limits). No live tracker or application code was changed by the trial.
+Repository checks: 909 Python tests pass; four pre-existing `revmerge`/`fixrev` failures
+remain. All 1,967 Node tests pass. Targeted routing/label/reference/frontmatter checks
+pass apart from those same unrelated prompt/README failures; reference validation passes.
 
 ## Readiness revision — 2026-09-25
 
