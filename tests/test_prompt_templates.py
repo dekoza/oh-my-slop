@@ -63,6 +63,17 @@ def skill_frontmatter(skill_name: str) -> str:
     return text[4:].partition("\n---\n")[0]
 
 
+def test_implement_spec_passes_arguments_to_the_manual_coordinator() -> None:
+    template = PROMPTS_DIR / "implement-spec.md"
+    assert template.exists()
+    assert named_skill(template) == "implement-spec"
+    frontmatter, body = split_template(template)
+    assert "<spec>" in frontmatter
+    assert "$@" in body
+    assert FALLBACK_CLAUSE in body
+    assert "disable-model-invocation: true" in skill_frontmatter("implement-spec")
+
+
 def test_humanify_is_a_manual_ticket_entry_point() -> None:
     """Human-led work is an explicit action, with the ticket passed through."""
     template = PROMPTS_DIR / "humanify.md"

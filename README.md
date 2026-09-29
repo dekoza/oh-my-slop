@@ -137,7 +137,7 @@ while the router is offline; use another provider until it returns.
 ## Skills
 
 <details>
-<summary><strong>Skills (67)</strong></summary>
+<summary><strong>Skills (68)</strong></summary>
 
 Grouped by what you came looking for: an API surface (**Reference**), a way of
 working (**Practice**), a job to run (**Workflow**), or the agent's own toolkit
@@ -207,7 +207,8 @@ Rituals you run — session and tracker state, from interview through implementa
 | **[Grilling](skills/workflow/grilling/SKILL.md)** | The interview primitive — the design tree worked in rounds, each round asking the whole frontier of ready questions, facts looked up vs decisions asked, no enacting until the user confirms. Reused by grill-me, grill-with-docs, triage, wayfinder. |
 | **[Handoff](skills/workflow/handoff/SKILL.md)** | Compact the current conversation into a handoff document for another agent to pick up. References artifacts by path/URL, redacts sensitive info, saves to temp directory. |
 | **[Humanify](skills/workflow/humanify/SKILL.md)** | Drive a human-blocked ticket to agent implementation readiness: investigate, grill consequential choices, write the brief, check prerequisites and record human-authorized readiness. Continue between decisions without prompting; retain explicitly human-only outcomes. |
-| **[Implement](skills/workflow/implement/SKILL.md)** | Build one ticket-sized slice from a spec or build-ready ticket — TDD at pre-agreed seams, regular typechecks, project test policy, and two-axis review before committing. |
+| **[Implement](skills/workflow/implement/SKILL.md)** | Build one ticket-sized slice — TDD, committed-candidate two-axis review and bounded repairs; standalone PR by default, or an explicitly authorized branch-only worker handoff. |
+| **[Implement Spec](skills/workflow/implement-spec/SKILL.md)** | Manual supervised whole-spec run — isolated branch-only workers, verified run-local prerequisites, serialized integration and one combined PR or branch-only deliverable. |
 | **[Improve Codebase Architecture](skills/workflow/improve-codebase-architecture/SKILL.md)** | Dual-axis architecture scan: finds deepening opportunities (shallow modules) AND simplification opportunities (dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead flags). Visual HTML report, then a wayfinder map with one ticket per chosen candidate and an in-session work-through of the one you pick. Uses codebase-design vocabulary, integrates ponytail-audit. |
 | **[LLM Council](skills/workflow/council/SKILL.md)** | Multi-advisor decision protocol: 5 independent perspectives, anonymized peer review, chairman synthesis. For high-stakes uncertainty where being wrong is expensive. |
 | **[Ponytail Audit](skills/workflow/ponytail-audit/SKILL.md)** | Scan for over-engineering — dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead feature flags. Read-only, ranked by impact. |
@@ -246,7 +247,7 @@ About the agent and its own toolkit, not about your code.
 Prompt templates are slash commands — type `/name` in the editor and it expands into a request that hands off to a bundled skill. Each template is an entry point, not a second copy of the flow: the skill stays the single source of truth, and the template exists because it forwards its arguments, which `/skill:<name>` cannot. So `/arch ~/some/repo` reviews another tree in one shot.
 
 <details>
-<summary><strong>Prompt templates (14)</strong></summary>
+<summary><strong>Prompt templates (15)</strong></summary>
 
 | Command | What it does |
 |---|---|
@@ -256,6 +257,7 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 | **`/debt [path] [--output-debt-file]`** | Harvest `SHORTCUT:` markers left during development. Flags missing upgrade paths. |
 | **`/handoff`** | Compact the conversation into a handoff document for another agent. References artifacts, redacts secrets, saves to temp. |
 | **`/humanify <ticket>`** | Turn a human-blocked ticket into agent-implementable work; you decide, the agent drives refinement through authorized readiness. |
+| **`/implement-spec <spec> [instructions]`** | Implement one approved ticket graph in a supervised session, with a combined branch/PR and explicit publication boundaries. |
 | **`/refine-ticket <ticket-number>`** | Refine one explicitly numbered ticket through `humanify` to human-authorized agent readiness, with `construction-craft` context; implementation starts separately. |
 | **`/fixrev <pull_request>`** | Fix review findings and target-branch conflicts through `fix-pr`, verify and publish to the same PR; leave merging separate. |
 | **`/revmerge <pull_request>`** | Review both axes, comment on the pull request, and merge only without blockers; route decisions requiring your input through `grilling`. |
@@ -271,6 +273,18 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 conflicts with the PR's actual target branch. It retains `grilling` for human decisions,
 protects other work, and updates the same open PR; it does not authorize a PR merge or
 published-history rewrite. Run `/reload` in an active pi session to load this template.
+
+### Supervised whole-spec implementation
+
+Use `/implement-spec <spec> [instructions]` when an approved spec already has
+build-ready tickets and you want one session to coordinate them. Keep `implement`
+for one slice at a time. The coordinator defaults to serial workers, preserves
+worktrees and keeps tracker closure separate from verified integration. Request
+branch-only final delivery when you do not want a push or PR. It is not a durable
+or unattended orchestration service; see the
+[skill's contract](skills/workflow/implement-spec/SKILL.md). Reload pi to discover
+the new template. The Cleopatra milestone pilot has not run; scenario checks are
+not evidence of operational reliability.
 
 ### Human-in-the-loop tickets
 
