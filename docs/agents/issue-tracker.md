@@ -102,13 +102,10 @@ Maps and tickets live on Gitea only — never on the intake tracker.
   body — the **literal first body line** `Part of #<map>` (nothing before it, nothing
   after the number), and keep a task list of children in the map body. Label each
   ticket `wayfinder:<type>` (`research` / `prototype` / `grilling` / `task`).
-- **Membership is one anchored pattern on the first line, for every child of anything**
-  — decision tickets under a map, implementation tickets `to-tickets` cuts from a map
-  or a spec issue. It is the contract the software factory resolves a parent-scoped
-  run through (`docs/specs/software-factory.md` §3.1; `factory/lib/tracker/membership.mjs`),
-  so a `## Parent` heading or a mention in prose makes a ticket a member of nothing:
-  `factory start --parent <N>` over such children refuses as `scope-empty`, and
-  `factory doctor --parent <N>` raises the same alarm.
+- **Membership**: keep the same first-line parent declaration for decision tickets
+  under a map and implementation tickets cut from a map or spec issue. This is the
+  shared tracker convention for finding the approved graph, not a scheduler's
+  runtime contract or permission to execute it.
 - **Blocking**: Gitea has **native issue dependencies**, which render the frontier in
   the web UI. Add an edge with:
 
@@ -128,13 +125,12 @@ Maps and tickets live on Gitea only — never on the intake tracker.
   A ticket is unblocked when every blocker is closed.
 - **Terminal review ticket**: `to-tickets` ends every map's implementation run in one
   `ready-for-human` + `workflow:implement` ticket, `Review the delivered <map title>`,
-  blocked by every other ticket of the run. It is the sink a factory run drains into —
-  the one ticket left open when everything implementable is done — and the factory warns
-  (`no-human-sink`) when a parent scope has none. The operator answers its three questions
+  blocked by every other ticket of the run. It makes human acceptance explicit after
+  the implementation tickets close. The operator answers its three questions
   in a comment and closes it. `/humanify <ticket>` assists with evidence and the human
   decision; it may record and close on explicit delegation unless the action is reserved
   to the human personally. Retain unfinished obligations and verify the final state.
-  This does not change the ticket's labels or the factory's human-owned classification.
+  This does not change the ticket's labels or remove its human acceptance requirement.
 - **Frontier query**: list the map's open children, drop any that still have an open
   blocker (`GET .../dependencies`) or an assignee; first in map order wins.
 - **Claim**: `tea issues edit --repo minder/oh-my-slop <index> --add-assignees <me>` — the session's first write.

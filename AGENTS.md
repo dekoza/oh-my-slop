@@ -11,7 +11,6 @@ This repo packages:
 - `skills/` — curated markdown skills for pi agents
 - `prompts/` — slash-command entry points that hand off to those skills
 - `extensions/` — TypeScript pi extensions
-- `factory/` — the `factory` binary and its plain-ESM libraries, shipped from the root package's `bin`
 - `scripts/` — repository maintenance scripts
 - `tests/` — Python and Node regression tests for repo invariants
 - `README.md`, `package.json`, `pyproject.toml`, `uv.lock` — package metadata and install surfaces
@@ -26,23 +25,14 @@ Run these commands when you touch the related areas. Do not skip them.
 - Markdown reference validator: `uv run python scripts/validate_refs.py`
 - Node extension tests: `node --test tests/node/*.mjs`
 
-`tests/live/` is deliberately outside that glob: those scripts probe a running Herdr server and
-one of them starts a paid model session. Run them by hand, never from a suite — see
-`tests/live/README.md`.
-
-`tests/live/prove-skill-loading.mjs` is one of them: it spends one short model turn per cell to
-take §6.7's skill-loading acceptance matrix, and records the result under `docs/proofs/`. What the
-matrix *concludes* — the contract, the judgement, the claim assessment, the document — is
-`factory/lib/proof/`, held by `tests/node/factory_proof_*.test.mjs`; the runner itself is wiring
-and spending, and is not covered by a test.
+Factory's live/paid probes were removed. `tests/live/README.md` is a historical
+retirement notice, not a runnable suite. Do not add paid live probes to the Node glob.
 
 Targeted minimums:
 
 - Any change under `skills/` or to markdown references: `uv run pytest tests/test_validate_refs.py tests/test_skill_frontmatter.py`
 - Any change under `prompts/`: `uv run pytest tests/test_prompt_templates.py tests/test_readme.py`
 - Any change under `extensions/` or to package entrypoints: `node --test tests/node/*.mjs`
-- Any change under `factory/`: `node --test tests/node/factory_*.test.mjs`
-- Any change to `factory/AGENTS.md`: `uv run pytest tests/test_factory_agents_index.py`
 - Any change to `package.json`, `pyproject.toml`, or installable entrypoints: `uv run pytest tests/test_pi_package_installability.py`
 - Any change to `scripts/validate_refs.py`: `uv run pytest tests/test_validate_refs.py`
 
@@ -84,21 +74,13 @@ These are installable pi extensions, so entrypoints matter.
 - If you change extension behavior, update the Node tests in `tests/node/`.
 - Do not add placeholder providers, fake registration logic, or speculative configuration knobs.
 
-### `factory/`
+### Retired orchestration
 
-The Software Factory's operator binary — and the one surface whose rules do not live in this
-file. [`factory/AGENTS.md`](factory/AGENTS.md) holds them, beside the code they bind; read it
-before changing anything under `factory/`, and read it as a reviewer too, since findings about
-factory code cite it. [`docs/specs/software-factory.md`](docs/specs/software-factory.md) is the
-authority above both; cite the section a change answers to.
-
-That file is an **index**, not a narrative: one row per invariant, naming the module that owns it
-and the spec section it answers to, with the reasoning left in the spec and in the module's own
-comments. A new invariant is a new row. `tests/test_factory_agents_index.py` holds that shape and
-a line ceiling, so the section cannot go back to growing a paragraph per ticket.
-
-The mandatory commands above stay here: `factory/lib/migrate/matrix.mjs` reads this file's
-`## Mandatory commands` section at the repository root, once, at migration (§11.6).
+Factory was an unusable proof-of-concept, not an operational substitute for another
+workflow. Cleopatra takes over its duties outside this repository. See
+[the retirement decision](docs/adr/0003-retire-factory-in-favor-of-cleopatra.md).
+Do not restore its binary, extension, configuration generator or predecessor copies.
+Preserve existing consumer/runtime state; no Cleopatra interface is assumed here.
 
 ### `scripts/`
 

@@ -24,7 +24,7 @@ def test_to_tickets_marks_build_work_for_the_implement_workflow() -> None:
 
 
 def test_to_tickets_ends_every_run_in_a_human_review_ticket() -> None:
-    """#183: the last ticket is the human's — the sink a factory run drains into."""
+    """The last ticket is an explicit human review, not another agent build."""
     to_tickets_text = (find_skill_dir(SKILLS_ROOT, "to-tickets") / "SKILL.md").read_text(
         encoding="utf-8"
     )
@@ -37,7 +37,7 @@ def test_to_tickets_ends_every_run_in_a_human_review_ticket() -> None:
     assert "blocked by every other ticket" in to_tickets_text
     assert "a breakdown without it is not publishable" in to_tickets_text
     assert "Part of #<parent>" in to_tickets_text
-    assert "no-human-sink" in tracker_doc_text
+    assert "ready-for-human" in tracker_doc_text
 
 
 def test_wayfinder_hands_build_ready_work_to_implementation_tickets() -> None:
@@ -62,37 +62,6 @@ def test_project_setup_and_live_config_define_the_workflow_label() -> None:
     assert WORKFLOW_LABEL in setup_skill_text
     assert WORKFLOW_LABEL in live_label_config_text
     assert "Workflow and state are separate" in live_label_config_text
-
-
-def test_project_setup_can_emit_machine_readable_factory_policy() -> None:
-    setup_skill_text = (
-        find_skill_dir(SKILLS_ROOT, "setup-project-skills") / "SKILL.md"
-    ).read_text(encoding="utf-8")
-
-    assert ".pi/factory.json" in setup_skill_text
-    assert '"schemaVersion": 2' in setup_skill_text
-    assert '"kind": "gitea"' in setup_skill_text
-    assert '"login": "<tea-login-name>"' in setup_skill_text
-    assert '"profiles"' in setup_skill_text
-    assert '"freshRetry"' in setup_skill_text
-    assert '"model": "fable"' in setup_skill_text
-    assert "pi --list-models" in setup_skill_text
-    assert "claude --version" in setup_skill_text
-
-    # The blocks a v1 template left out and `factory migrate` leaves as holes.
-    # A setup run has these answers, so it writes them rather than emitting a
-    # file whose first verb refuses.
-    assert '"checks"' in setup_skill_text
-    assert '"expectedFailureExitCodes"' in setup_skill_text
-    assert '"concurrency"' in setup_skill_text
-    assert '"maxTicketExecutions"' in setup_skill_text
-    assert '"automation"' in setup_skill_text
-
-    # The v1 spelling, gone: these keys are refused or unknown to the loader,
-    # and `tests/node/factory_setup_template.test.mjs` loads the template for real.
-    for legacy in ('"version": 1', '"maxWorkers"', '"workers"', '"finalReview"',
-                   '"repairAttempts"', '"completion"', '"permissionMode"', '"labels"'):
-        assert legacy not in setup_skill_text, f"the setup template still carries {legacy}"
 
 
 def test_wayfinder_evals_cover_implementation_handoff_and_label_orthogonality() -> None:

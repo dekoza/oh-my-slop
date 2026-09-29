@@ -11,7 +11,8 @@
         "The generated tickets include `workflow:implement`.",
         "The generated tickets include `ready-for-agent` or `ready-for-human` according to the required executor.",
         "The generated tickets do not include a `wayfinder:<type>` label.",
-        "The response invokes `implement` for each build ticket in a fresh session."
+        "The response invokes `implement` for each build ticket in a fresh session.",
+        "The map-to-ticket handoff uses the configured tracker convention, without requiring the retired Factory or inventing a Cleopatra command."
       ]
     },
     {

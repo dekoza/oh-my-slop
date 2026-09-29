@@ -6,9 +6,8 @@ mutants/
 
 council-debates/
 
-# `factory migrate` preserves the config it replaced beside it (§11.8). It is
-# the operator's own copy to re-author routing rules from, not a second policy
-# file — the effective policy exists on disk exactly once.
+# Keep an operator's retired Factory recovery copy private and untouched.
+# No current package command reads or migrates it.
 .pi/factory.v1.json
 .claude/
 .skillopt-sleep/

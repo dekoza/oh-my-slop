@@ -23,91 +23,19 @@ After installation, pi auto-discovers:
 The extension loads automatically. Existing installations pick it up after
 `pi update --extensions` and a pi restart or `/reload`.
 
-Installing the package also puts **`factory`** on your `PATH` from this package's `bin`
-field — one package, one version, never separately installable. It is the Software
-Factory's operator surface, carrying every verb (`start`, `status`, `doctor`,
-`reconcile`, `stop`, `cleanup-plan`, `cleanup-execute`, `migrate`), because the moment
-a diagnostic matters most is when the controller — and possibly pi with it — is dead.
-Run `factory --help` for the set. Legacy v2 operations read exactly one policy file,
-`<repo root>/.pi/factory.json`, refuses to start on anything it does not understand
-there, and prints human output by default and `--json` on request. The verbs
-themselves are landing slice by slice; until one does, it says so and names what is
-missing rather than going quiet.
+### Factory retirement
 
-`factory doctor` also answers the question a run would ask: given a scope —
-`doctor 100 101` for an explicit set, `doctor --parent 75` for everything whose body
-opens `Part of #75` — it resolves membership over the live tracker graph and prints
-every member with the class it is in and the reason, claiming nothing and moving no
-label.
+Factory was an unusable proof-of-concept that was never fully utilized. **Cleopatra**
+takes over its orchestration duties as a separate project. This package no longer
+ships the `factory` binary, `/factory` extension, Factory policy generation or its
+proof-only skill. The predecessor Factory/pipeline copies are removed too.
 
-For an operator-inventory v1 / repository-policy v3 draft, use the read-only
-**desired-policy preview** from the repository root or any subdirectory:
-
-```sh
-factory doctor --policy
-factory doctor --policy --json
-# Select an existing repository routing set; this never changes the operator mode:
-factory doctor --policy --routing-set=local --json
-```
-
-The inventory must be at `/etc/oh-my-slop/factory/operator.json`: a canonical,
-root-owned file and directory chain without group/other write access. Repository
-routing stays in `<repo root>/.pi/factory.json`; no environment or CLI path override
-relocates either source. The selected `tea` login's nonsecret local metadata must
-match the repository's Git forge identity. No tracker connection is made.
-See the [accepted policy contract](docs/specs/operator-policy-v1.md) for the exact
-schemas, ownership and refusal codes; these commands do not generate or migrate them.
-
-The preview reports source-byte revisions, active mode, configured ceilings, exact
-profile bindings and policy-eligible routes. Disabled and dormant inventory remains
-visible. **Applied state, occupancy, deployment enforcement and provider capability
-are not observed**: a configured ceiling is neither free capacity nor demonstrated
-subscription throughput. Preview success is not permission to start a shared run.
-Exit 0 means a valid preview; exit 1 means usage or configuration refusal, with no
-usable policy on rejection. `--json` carries `report.policyResolution` on success
-and `error.policyResolution` on configuration refusal. No credentials are resolved,
-models probed, workers launched, files mutated or allocator contacted. `--policy`
-cannot combine with `--baseline` or ticket/parent scope selectors; existing v2 doctor
-modes retain their behavior. No installed policy or supported concurrency is changed.
-
-A run answers the same question and then acts on it. `factory start 100 101` resolves
-that frontier at every scheduling decision, takes the lowest-numbered claimable ticket,
-and claims it — an assignee plus a structured comment, then a re-read to confirm nobody
-else got there first. `factory start 75` — when #75 carries `wayfinder:map` — runs the
-map's members rather than the map, recording the parent-scoped selector as if
-`--parent 75` had been typed; a parent nothing declares `Part of #N` under is refused as
-`scope-empty` before any run exists, and `doctor` raises the same alarm. It stops when nothing is claimable and nothing can become
-claimable without a human: a merge, an answer, a closure outside the scope. It never
-waits for one. What it exits with is the classified per-member report — closed,
-needs-human, awaiting-merge-dependency, blocked-external, human-owned, failed — and each
-member says which ticket it is waiting on.
-
-The checks a run verifies against are **declared, never discovered**: the `checks`
-block in `.pi/factory.json` names each command, its timeout, whether it is required or
-advisory, and which exit codes count as a genuine failure. Advisory checks can opt their
-controller-captured output into a later agent phase with `feeds`; output is persisted by
-digest and rendered as trusted, digest-labelled evidence inside a controller-owned section
-that marks it as data, never as ticket instructions. `feeds` also decides **when** an advisory
-check is paid for: one that feeds a later phase runs on every verify, because a prompt reads it
-every time, while one that feeds nothing runs once per published ticket — at the publication
-boundary, on the exact commit being pushed, where the attestation is its only reader.
-Nothing is inferred from a
-`pyproject.toml`, a `package.json`, or a Makefile, and `AGENTS.md` prose is never parsed at
-runtime. The controller runs the full required set at the pinned base before it claims
-anything, and a red base aborts the run naming the check that was red rather than blaming the
-first worker for it. `factory doctor --baseline`
-runs **all** declared checks on demand — reporting advisory mutation and complexity results
-without turning them into gates — in a throwaway worktree inside the factory-private clone,
-never your checkout. The worktree is deleted when required checks pass and kept when they fail,
-which is when you want to `cd` into it.
-
-The `software-factory` extension was **retired** in `fe80c5d` and archived under
-`extensions/.legacy/`. Its replacement is the **`factory`** extension and the **`factory`
-binary**, specified in
-[`docs/specs/software-factory.md`](docs/specs/software-factory.md), with its companion
-[`docs/specs/software-factory-monitor.md`](docs/specs/software-factory-monitor.md), and
-is being built against it. The extension fronts the binary as `/factory` from a pi
-session; the binary carries every verb for the shell.
+Update the package and reload or restart pi. Remove an explicitly configured old
+Factory extension entry if it points at a removed path. Existing consumer policy,
+databases, inventories, credentials, worktrees and branches are left untouched;
+this is not an automatic migration to Cleopatra. Consult Cleopatra's own project
+for successor setup. Source recovery and the rationale are in
+[the retirement decision](docs/adr/0003-retire-factory-in-favor-of-cleopatra.md).
 
 The bundled agent definitions in `./agents` are only seeded if you opt into
 `subagent-bundled-agents`.
@@ -136,9 +64,8 @@ Run [`/setup-project-skills`](skills/meta/setup-project-skills/SKILL.md) once pe
 - **Issue tracker** — which forge holds agent work, and which (if any) holds human-filed intake. The skills never open work tickets on the intake tracker.
 - **Triage labels** — the strings behind the canonical roles, so `triage` applies your existing labels instead of creating duplicates.
 - **Domain docs** — where the glossary and ADRs live, and whether the repo is single- or multi-context.
-- **Software factory policy** — for Gitea projects, optional `.pi/factory.json` settings for Herdr workers, retries, integration, and the manual final-merge boundary.
 
-Skip it and the skills still run, falling back to a local-markdown tracker and the canonical label names — but each one re-derives your setup from scratch every session, and they will not always agree with each other. The setup is what makes them agree. The software factory is stricter: it refuses to start without its machine-readable policy.
+Skip it and the skills still run, falling back to a local-markdown tracker and the canonical label names — but each one re-derives your setup from scratch every session, and they will not always agree with each other. The setup is what makes them agree.
 
 Each skill follows the same structure:
 
@@ -172,11 +99,10 @@ Case in point: the agent messed up twice while creating this repo (deleting an u
 These ship in the repo and load automatically through the root `pi install` manifest.
 
 <details>
-<summary><strong>Extensions (3)</strong></summary>
+<summary><strong>Extensions (2)</strong></summary>
 
 | Extension | Loading | What it does |
 |---|---|---|
-| **[factory](extensions/factory/)** | Automatic | The `/factory` command: the `factory` binary's code run from a pi session — the same verbs, the same answer — plus the one-way monitor trigger (§10.2, §10.6). |
 | **[workflow-watchdog](extensions/workflow-watchdog/)** | Automatic | Monitors pi's workflow for failure patterns: loop detection, consecutive tool errors, and optional supervisor-model escalation. |
 | **[local-router](extensions/local-router/)** | Automatic; requires configuration | Registers a `local` provider backed by the OpenAI-compatible router named by `PI_LOCAL_ROUTER_BASE_URL`. Without a nonblank URL it does nothing: no discovery requests or warnings. Models are discovered at load time and on refresh. If discovery fails, pi continues without local models and warns once per outage (five-second discovery timeout). Use `/reload` after the router returns, or refresh the model catalog. |
 
@@ -211,7 +137,7 @@ while the router is offline; use another provider until it returns.
 ## Skills
 
 <details>
-<summary><strong>Skills (68)</strong></summary>
+<summary><strong>Skills (67)</strong></summary>
 
 Grouped by what you came looking for: an API surface (**Reference**), a way of
 working (**Practice**), a job to run (**Workflow**), or the agent's own toolkit
@@ -310,7 +236,6 @@ About the agent and its own toolkit, not about your code.
 | **[Git Guardrails (Claude Code)](skills/meta/git-guardrails-claude-code/SKILL.md)** | Set up PreToolUse hooks that block dangerous git commands (push, reset --hard, clean, branch -D) — git-discipline enforced by machinery, not prompts. |
 | **[Setup Project Skills](skills/meta/setup-project-skills/SKILL.md)** | Run once per repo to configure the workflow skills — issue tracker bindings (agent work vs human intake), triage label vocabulary, and domain doc layout — written to `docs/agents/` and pointed at from CLAUDE.md/AGENTS.md. |
 | **[Skill Creator](skills/meta/skill-creator/SKILL.md)** | Meta-skill for creating, modifying, and benchmarking other skills — evals, variance analysis, and description optimization for triggering accuracy. |
-| **[Skill Loading Proof](skills/meta/skill-loading-proof/SKILL.md)** | A body that exists to be followed: it answers a proof nonce with one receipt line whose token and transform live only on its own page. The software factory's acceptance matrix (`tests/live/prove-skill-loading.mjs`) uses it to prove a model *loaded and followed* a skill rather than merely registering its name. Nothing else invokes it. |
 | **[Websearch](skills/meta/websearch/SKILL.md)** | Search the web via locally installed SearXNG instance. Configurable endpoint via `/skill:websearch url`. |
 | **[Writing Great Skills](skills/meta/writing-great-skills/SKILL.md)** | Prose-level craft reference for skill authoring — leading words, no-ops, negation, context vs cognitive load, premature completion, progressive disclosure. Complements skill-creator's eval workflow. |
 
@@ -371,7 +296,7 @@ This replaces the earlier progress-record/resume-point default: an interview or 
 checkpoint is no longer the finish line. Explicitly human-only setup, field checks and
 terminal reviews still finish on their own outcomes, not invented implementation work.
 Live changes retain scoped authorization, unresolved obligations retain owners, and terminal
-review labels and factory classification remain unchanged. No next ticket starts automatically.
+review labels remain unchanged. No next ticket starts automatically.
 
 ## Critical Partner setup and use
 

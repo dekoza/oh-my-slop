@@ -17,13 +17,24 @@ SKILL = find_skill_dir(ROOT / "skills", "setup-project-skills")
 def test_setup_requires_an_explicit_preservation_decision_and_paired_gate() -> None:
     text = " ".join((SKILL / "SKILL.md").read_text(encoding="utf-8").split())
 
-    assert "**Section E — Preservation obligations.**" in text
+    assert "**Section D — Preservation obligations.**" in text
     assert "Does this project already have users, non-disposable data, integrations" in text
     assert "including beta usage" in text
     assert "Only explicit owner confirmation" in text
     assert "preservation-policy.md" in text
     assert "policy and launch-retirement gate together" in text
     assert "Never infer eligibility" in text
+
+
+def test_setup_leaves_existing_orchestration_state_outside_its_scope() -> None:
+    text = " ".join((SKILL / "SKILL.md").read_text(encoding="utf-8").split())
+
+    assert "Leave existing orchestration policy and runtime files untouched" in text
+    assert "including unrelated configuration, remain untouched during re-sync" in text
+    for path in SKILL.glob("*.md"):
+        content = path.read_text(encoding="utf-8")
+        assert "Section E" not in content, path.name
+        assert "factory" not in content.lower(), path.name
 
 
 def test_policy_template_makes_release_retirement_a_verified_gate() -> None:
@@ -64,9 +75,14 @@ def test_preservation_evals_cover_confirmation_real_beta_and_failed_gate_write()
     assert data["skill_name"] == "setup-project-skills"
     cases = {case["id"]: case for case in data["evals"]}
     assert len(cases) == len(data["evals"])
-    assert {1, 2, 3} <= cases.keys()
+    assert {1, 2, 3, 6} <= cases.keys()
     assert "explicitly confirms no obligations" in cases[3]["prompt"]
     assert "paying testers" in cases[2]["prompt"]
     assert "identical re-sync" in cases[1]["prompt"]
     assert "tracker write failing" in cases[3]["prompt"]
+    assert "orchestration policy" in cases[6]["prompt"]
+    assert "runtime files" in cases[6]["prompt"]
+    assert any("untouched" in item for item in cases[6]["expectations"])
+    assert any("configure orchestration" in item for item in cases[6]["expectations"])
+    assert "factory" not in json.dumps(data).lower()
     assert all(case["expectations"] and case["expected_output"] for case in cases.values())

@@ -2,6 +2,18 @@
   "skill_name": "setup-project-skills",
   "evals": [
     {
+      "id": 6,
+      "prompt": "Dry-run a re-sync for a repo with existing CLAUDE.md, Gitea agent-work bindings, custom labels and an explicitly declined clean-cut exemption. Its tracker scaffolding needs updating. It also contains owner-edited orchestration policy in orchestrator-policy.json and runtime files in .agent-runtime/. The owner authorizes only workflow-document scaffolding updates, asks to preserve unrelated existing config, and has not requested successor orchestration setup. Show the proposed scope, preservation decision and completion report. Do not edit files or contact a tracker, model endpoint or orchestration service.",
+      "expected_output": "A bounded scaffolding re-sync that preserves owner answers and unrelated policy/runtime state without configuring orchestration or reviving a declined exemption.",
+      "expectations": [
+        "The proposed writes are limited to the selected instruction file and workflow docs, with owner bindings, custom labels and local edits preserved.",
+        "Existing orchestration policy, runtime files and unrelated configuration remain untouched; the agent does not delete, migrate or rewrite them.",
+        "The agent does not configure orchestration, invent successor commands or APIs, probe model endpoints or claim an orchestration service is operational.",
+        "The declined exemption remains absent; the agent reports the recorded preservation decision without creating a launch gate or repeating an unchanged eligibility interview.",
+        "The report distinguishes proposed scaffolding updates from verified writes and preserves the existing CLAUDE.md selection without creating AGENTS.md."
+      ]
+    },
+    {
       "id": 5,
       "prompt": "Dry-run a label-document re-sync using the bundled triage-labels template. The project has an implementation proposal labelled needs-info and workflow:implement; its reporter already answered the product questions, but the agent has not inspected delivered prerequisite code or prepared the bounded brief. The installed document calls workflow:implement build-ready and needs-info waiting on the reporter. The owner reserves readiness authorization to the human. Explain the corrected meanings and next action, preserving the vocabulary and local authority. Do not edit any files, contact a tracker, relabel the issue or authorize implementation.",
       "expected_output": "Clarify independent workflow/state dimensions, allocate factual refinement to the agent and preserve the human readiness gate without treating publication as readiness.",
@@ -9,7 +21,7 @@
         "Treats needs-info plus workflow:implement as an incomplete, non-dispatchable implementation proposal rather than an invalid pairing or readiness grant.",
         "Assigns discoverable prerequisite and brief work to the agent with an owner/next action, rather than asking the reporter for facts available in code.",
         "Separates publication approval from the human readiness decision, and preserves dependencies, claims and other execution gates.",
-        "Proposes a documentation re-sync without inventing labels, changing the factory's eligibility rules or mutating the consumer project."
+        "Proposes a documentation re-sync without inventing labels, changing the project's execution gates or mutating the consumer project."
       ]
     },
     {
@@ -26,7 +38,7 @@
     },
     {
       "id": 1,
-      "prompt": "Dry-run setup for a repo with AGENTS.md, existing Gitea agent-work bindings and launch decision ticket #13. Factory setup is declined. The owner confirms there are no real users, non-disposable data, external compatibility obligations or contractual/payment commitments, approves a clean-cut policy, and wants existing completed migrations left alone. #13 may close after planning, before release. Produce the proposed instruction paragraph and ticket acceptance criteria, the write/verification order, and the next action on an identical re-sync. The backlog contains migration tickets, but no cleanup was authorized. Do not contact a real tracker or modify this repository.",
+      "prompt": "Dry-run setup for a repo with AGENTS.md, existing Gitea agent-work bindings and launch decision ticket #13. The owner confirms there are no real users, non-disposable data, external compatibility obligations or contractual/payment commitments, approves a clean-cut policy, and wants existing completed migrations left alone. #13 may close after planning, before release. Produce the proposed instruction paragraph and ticket acceptance criteria, the write/verification order, and the next action on an identical re-sync. The backlog contains migration tickets, but no cleanup was authorized. Do not contact a real tracker or modify this repository.",
       "expected_output": "A paired, owner-approved policy and linked launch gate; release-commit verification and transfer of unchecked criteria; idempotent re-sync and no unsolicited backlog edits.",
       "expectations": [
         "The proposed policy permits direct clean-cut changes without historical-data migration or compatibility scaffolding, while preserving fresh installs, future runtime correctness and unrelated user work.",

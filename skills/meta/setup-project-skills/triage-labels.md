@@ -41,7 +41,7 @@ Use `/refine-ticket <ticket-number>` or `/humanify <ticket>` to finish preparati
 and record explicit human-authorized agent readiness. Publication approval alone
 is not readiness approval; `/implement` starts separately. Explicitly human-only
 steps and terminal reviews keep their own outcomes, not an invented code handoff.
-This adds no label vocabulary and changes no factory eligibility rule.
+This adds no label vocabulary and changes no project execution gate.
 
 ## Wayfinder labels
 

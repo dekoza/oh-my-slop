@@ -1,15 +1,10 @@
 """Flatten this package's skills into a valid Claude Code plugin.
 
-`docs/specs/software-factory.md` §6.3: the factory invokes this generator against
-a pinned package revision, into an immutable run-scoped directory, then validates
-strictly and caches per revision.
-
 Why flattening is required rather than cosmetic — verified against Claude Code
 2.1.229: the plugin loader registers `skills/<name>/SKILL.md` **only at depth 1**.
 A skill left at `skills/<bucket>/<name>/SKILL.md` is silently absent from the
 component inventory — no warning, no error, just a smaller `Skills (N)` count.
-That is precisely the failure the factory's preflight exists to catch, and this
-generator exists to prevent.
+This standalone generator prevents that silent discovery failure.
 
 Usage:
     python -m scripts.build_claude_plugin --out <dir> [--source skills]
@@ -27,8 +22,8 @@ from scripts.validate_refs import iter_skill_dirs
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# The manifest name the factory's prompt templates invoke as `/oh-my-slop:<skill>`.
-# Changing it silently breaks every worker prompt, so it is a constant, not an option.
+# Stable namespace for consumers invoking `/oh-my-slop:<skill>`.
+# Keep existing plugin invocations valid.
 PLUGIN_NAME = "oh-my-slop"
 
 
@@ -46,8 +41,7 @@ def build_manifest(root_manifest: dict) -> dict:
     `author` is required rather than defaulted: `claude plugin validate --strict`
     warns when it is absent and `--strict` turns that warning into exit 1. A
     default here would move the failure from this script — where it names the
-    missing key — to the factory's preflight, where it reads as an opaque
-    validation failure.
+    missing key — to a downstream loader's opaque validation failure.
     """
     for key in ("version", "description", "author"):
         if not root_manifest.get(key):
@@ -111,8 +105,8 @@ def build_plugin(source: Path, out: Path, repo_root: Path = REPO_ROOT) -> dict[s
 
     if out.exists() and any(out.iterdir()):
         raise BuildError(
-            f"output directory is not empty: {out} — the factory builds into an"
-            f" immutable run-scoped directory, so an existing tree is never reused"
+            f"output directory is not empty: {out} — use a fresh output directory"
+            f" to preserve existing files"
         )
 
     skill_dirs = iter_skill_dirs(source)

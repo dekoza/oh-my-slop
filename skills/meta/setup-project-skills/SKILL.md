@@ -1,6 +1,6 @@
 ---
 name: setup-project-skills
-description: Configure project workflow bindings, preservation policy and launch gates, and optional software factory settings.
+description: Configure project workflow bindings, preservation policy and launch gates.
 license: MIT (adapted from mattpocock/skills)
 disable-model-invocation: true
 ---
@@ -16,11 +16,11 @@ guessing at it:
 - **Domain docs** — where the glossary and ADRs live
 - **Preservation obligations** — explicit owner decision on clean-cut development,
   paired with a mandatory launch-retirement gate when applicable
-- **Software factory policy** — optional machine-readable Gitea, Git, worker-profile,
-  routing, check, concurrency, and budget settings for the `factory` binary
 
 This writes into the **project you are working in**, not into the skills repo.
 It is prompt-driven, not a script: explore, present what you found, confirm, then write.
+Leave existing orchestration policy and runtime files untouched; they are outside
+this skill's scope.
 
 **Pair the exemption with its exit.** Only explicit owner confirmation of no
 preservation obligations permits a clean-cut policy; install the policy and
@@ -70,9 +70,6 @@ Read the repo's actual state. Don't assume:
   runs at all.
 - Monorepo signals (`pnpm-workspace.yaml`, a `workspaces` field, a populated
   `packages/*`). Absent these, the repo is single-context, which is almost every repo.
-- The default Git branch and remote names, whether `.worktrees/` is ignored, and whether
-  `herdr` is installed. For a proposed Gitea factory, resolve the authenticated Gitea
-  username rather than guessing the ticket assignee.
 
 Verify CLI availability for whatever you're about to propose (`tea`, `gh`, `glab`).
 Recording a tracker whose CLI isn't installed produces a config that fails on first use.
@@ -82,7 +79,7 @@ Recording a tracker whose CLI isn't installed produces a config that fails on fi
 Summarise what's present and what's missing, then take the sections in order — one
 section, one answer, then the next. Lead each with the recommended answer so the user
 can accept it in a word. Skip a section outright when exploration already settled it;
-Section E requires a still-applicable explicit owner answer, never an inferred one.
+Section D requires a still-applicable explicit owner answer, never an inferred one.
 
 **Section A — Issue tracker.**
 
@@ -126,38 +123,7 @@ creating duplicates.
 Offer **multi-context** — a root `CONTEXT-MAP.md` pointing at per-context
 `CONTEXT.md` files — only when exploration found monorepo signals.
 
-**Section D — Software factory.** Offer this only when the agent work tracker is Gitea.
-Ask one question:
-
-> Configure the opt-in software factory? (recommended: **yes** when `factory` is on `PATH`)
-
-A yes writes `.pi/factory.json` — the single policy file the `factory` binary reads, at the
-repository root — with the resolved repository, remote, explicit `tea` login name,
-authenticated assignee, default branch, worker profiles, routing, mechanical checks,
-concurrency sizes, and retry budgets. It also ensures `.worktrees/` is ignored. The file
-contains executable automation policy and model selectors, never credentials, and no
-per-profile `endpoint` — that key names a second machine, which the operator binds once
-they have one.
-For another tracker, state that the first factory release supports Gitea only and skip the
-file.
-
-For an accepted factory setup, **read [factory-policy.md](factory-policy.md) before
-drafting**. It specifies required schema fields, runner-prefixed checks, resource
-sizing and advisory-check cost. Write a complete `schemaVersion: 2` config, not a
-fresh setup that needs `factory migrate` or manual placeholder repair. The JSON
-example and existing-config preservation rules remain in Step 4 below.
-
-After acceptance, inventory only the runtimes the user permits. `claude --version` verifies
-Claude Code without spending a model turn. Ask before contacting a self-hosted model
-endpoint; after permission, `pi --list-models <pattern>` verifies each proposed pi selector
-without running an implementation prompt. Present named profiles and deterministic
-`labelsAny × role → profile` rules in the JSON draft. Default to one implementation profile,
-a fresh-retry profile on a different model, and two independent review profiles — model
-diversity across the two axes is the point of the pair. Repair is not routable: it is pinned
-to the originating attempt's profile. A fully local policy maps every role to one local pi
-profile and sizes that one class; the scheduler itself stays deterministic and model-free.
-
-**Section E — Preservation obligations.** Ask unless an explicit, still-applicable
+**Section D — Preservation obligations.** Ask unless an explicit, still-applicable
 owner decision is already recorded:
 
 > Does this project already have users, non-disposable data, integrations, or
@@ -176,13 +142,12 @@ rewrite migration tickets or reopen completed work without authorization.
 
 **Complete when:** the owner's answer is recorded or reported unresolved; an accepted
 exemption has an approved instruction-file destination and a concrete launch-gate
-update/create proposal. This decision is independent of Section D's factory opt-in.
+update/create proposal.
 
 ### 3. Confirm and edit
 
-Show a draft of the `## Agent skills` block, each `docs/agents/*.md` file, and the
-factory JSON when selected before writing. Show the `.gitignore` addition separately.
-Include Section E's policy or preservation answer in the selected instruction file,
+Show a draft of the `## Agent skills` block and each `docs/agents/*.md` file before
+writing. Include Section D's policy or preservation answer in the selected instruction file,
 plus the exact launch-ticket body change or proposed new gate when accepted. Let the
 user edit first; approval of local config alone does not authorize tracker writes.
 
@@ -221,95 +186,7 @@ Include the `### Triage labels` sub-block and write `docs/agents/triage-labels.m
 The workflow skills need the state mapping and `workflow:implement` routing label
 even when the standalone `triage` skill is not installed.
 
-When Section D was accepted, write this shape using the answers already resolved above. The
-angle-bracketed values are the per-repo answers; every other value is a real default you may
-change, and none of it may be left as a placeholder — the loader refuses a file that still
-carries a `TODO` anywhere in it.
-
-```json
-{
-  "schemaVersion": 2,
-  "tracker": {
-    "kind": "gitea",
-    "repo": "<owner/repository>",
-    "remote": "<gitea-remote>",
-    "login": "<tea-login-name>",
-    "assignee": "<authenticated-gitea-user>"
-  },
-  "git": {
-    "baseBranch": "<default-branch>",
-    "remote": "<gitea-remote>"
-  },
-  "profiles": {
-    "builder": {
-      "kind": "claude",
-      "model": "opus",
-      "effort": "high"
-    },
-    "fresh-retry": {
-      "kind": "pi",
-      "model": "openai-codex/gpt-5.6-sol",
-      "thinking": "high"
-    },
-    "reviewer": {
-      "kind": "claude",
-      "model": "fable",
-      "effort": "high"
-    }
-  },
-  "routing": {
-    "roles": {
-      "implement": "builder",
-      "freshRetry": "fresh-retry",
-      "review": ["reviewer", "reviewer"]
-    },
-    "rules": []
-  },
-  "checks": [
-    {
-      "name": "python-test-suite",
-      "command": "uv run pytest",
-      "timeout": 900,
-      "severity": "required",
-      "expectedFailureExitCodes": [1]
-    }
-  ],
-  "budgets": {
-    "repair": 1,
-    "freshRetry": 1,
-    "automation": 1,
-    "circuitBreaker": 2
-  },
-  "concurrency": {
-    "maxTicketExecutions": 1,
-    "resources": {
-      "claude-code": 2,
-      "openai-codex": 1
-    }
-  }
-}
-```
-
-Read the example's `concurrency.resources` against its `profiles`: `builder` and `reviewer`
-are `kind: claude`, so both draw on the one `claude-code` class; `fresh-retry` names
-`openai-codex/gpt-5.6-sol`, whose provider segment is the class `openai-codex`. Change a
-profile and that map changes with it — those two entries are not a default to copy.
-
-Before showing the draft, load it: `factory doctor` in the target repository reads the file
-and reports what it refuses. A draft that does not load is not ready to show.
-
-Preserve an existing `.pi/factory.json` as a user answer during re-sync. Validate it
-against this shape and ask before changing policy values. Never replace explicit profile
-models or routing rules merely because another model is currently available. An existing
-file declaring `version: 1` is the one case that is **not** rewritten from this template:
-tell the user to run `factory migrate`, which preserves their file as `factory.v1.json` and
-prints every key it maps, drops, or leaves as a hole — then help them fill the holes it
-names. Rewriting a v1 file from here would silently discard routing rules a machine cannot
-re-author. Add `.worktrees/` to an
-existing ignore file without disturbing its other lines; if no ignore file exists,
-show the proposed new file during confirmation.
-
-Then write the docs files, seeding from the templates in this skill folder:
+Write the docs files, seeding from the templates in this skill folder:
 
 - [issue-tracker-gitea.md](./issue-tracker-gitea.md) — Gitea via `tea`
 - [issue-tracker-github.md](./issue-tracker-github.md) — GitHub via `gh`
@@ -325,22 +202,18 @@ seeded from the other's, each keeping its own conventions. For an "other" tracke
 (Jira, Linear, …), write the file from scratch from the user's description, keeping
 the same section headings — those headings are what consumer skills dereference.
 
-When Section E's exemption was accepted, persist and verify its launch gate **before**
+When Section D's exemption was accepted, persist and verify its launch gate **before**
 activating the paragraph, then read back both artifacts as specified in
 [preservation-policy.md](preservation-policy.md). Use the instruction file selected
 above (`AGENTS.md` or existing `CLAUDE.md`); keep one policy source, not duplicate files.
 
 ### 5. Done
 
-Report Section E's decision and, when installed, the policy file and linked launch
+Report Section D's decision and, when installed, the policy file and linked launch
 gate with its before-real-obligations retirement point. A missing or unverified gate
 leaves that part of setup incomplete, not a standalone exemption. Then tell the user
 which other parts of setup are complete and which skills now read from these files.
-When the factory was configured, name `.pi/factory.json`, say that `factory doctor` verifies it
-without running anything and that `factory start <ticket-or-parent>` detaches into a Herdr
-pane by default (`--foreground` runs the controller in the invoking terminal instead), and
-state that final merge remains manual. Mention they can edit
-`docs/agents/*.md` and `.pi/factory.json` directly later; re-running this skill is only
+Mention they can edit `docs/agents/*.md` directly later; re-running this skill is only
 needed to switch trackers, to re-sync after a skills update (below), or to start over.
 Revisit preservation obligations before any real use or when their applicability changes.
 
@@ -349,7 +222,8 @@ Revisit preservation obligations before any real use or when their applicability
 When exploration finds `docs/agents/` already populated and the user isn't switching
 trackers, the run is a **re-sync**: the templates may have gained sections or changed
 mechanics since these files were written, and the installed files catch up without
-losing what the user answered or edited.
+losing what the user answered or edited. Files outside the setup artifacts described
+above, including unrelated configuration, remain untouched during re-sync.
 
 One split governs every file: **answers are the user's, scaffolding is the
 skill's.** Answers — the tracker bindings, label overrides, flags like "PRs as a

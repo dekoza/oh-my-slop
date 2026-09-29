@@ -1,12 +1,8 @@
-"""Tests for the Claude plugin generator (`docs/specs/software-factory.md` §6.3).
+"""Tests for the standalone Claude plugin generator.
 
-The unit tests pin the generator's contract. The two live tests at the bottom
-run the real `claude` binary, because the whole reason this generator exists is
-a loader behaviour no unit test can observe: Claude Code registers
-`skills/<name>/SKILL.md` at depth 1 only, and drops a bucketed skill **without
-any error**. A green unit suite over a silently-empty plugin is exactly the
-"passed installation and discovery while behaviourally dead" failure the
-factory's handshake exists to catch.
+Claude Code registers `skills/<name>/SKILL.md` at depth 1 only and can silently
+drop bucketed skills. Unit tests pin the flattened layout; the two installed-CLI
+checks verify the actual loader without starting a paid model turn.
 """
 
 from __future__ import annotations
@@ -117,8 +113,7 @@ def test_manifest_refuses_a_missing_strict_field(missing: str) -> None:
 
 
 def test_the_real_package_manifest_satisfies_the_generator() -> None:
-    """package.json must keep the fields --strict needs, or the factory's
-    preflight fails on a repo change nothing else notices."""
+    """The package must retain the fields Claude's strict validator requires."""
     root = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
 
     assert build_manifest(root)["name"] == PLUGIN_NAME

@@ -1,6 +1,6 @@
 # Clean-cut policy and launch-retirement gate
 
-Use only for Section E's owner-approved, no-preservation-obligations branch. The
+Use only for Section D's owner-approved, no-preservation-obligations branch. The
 policy and its retirement gate are one setup change, not independent options.
 
 ## Bind the pair

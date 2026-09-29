@@ -42,7 +42,7 @@ and record explicit human-authorized agent readiness. Publication approval alone
 is not readiness approval; `/implement` starts separately. Explicitly human-only
 steps and terminal reviews keep their own outcomes; `ready-for-human` alone does
 not mean code must be written. This adds no
-label vocabulary and changes no factory eligibility rule.
+label vocabulary or authorization bypass.
 
 ## Wayfinder labels
 

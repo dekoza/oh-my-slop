@@ -1,12 +1,7 @@
-"""The `requires:` skill-closure declaration and its mechanical gate.
+"""Validate declared skill dependencies and their transitive closure.
 
-`docs/specs/software-factory.md` §6.2 makes the transitive skill closure a
-machine-readable frontmatter declaration: the factory computes a worker's
-closure from the pinned package revision and proves every member is invocable
-*before* claiming a ticket, so no role knowledge is hardcoded in the factory.
-
-That only works if the declarations are true. These tests are what makes them
-true — an undeclared dependency fails here rather than at a worker's preflight.
+A skill handoff must resolve to bundled guidance. These repository checks catch
+missing dependencies before an installed consumer follows a dead pointer.
 """
 
 from __future__ import annotations
@@ -115,9 +110,8 @@ def test_requires_does_not_name_itself(skill_dir: Path) -> None:
 def test_every_handed_off_skill_is_declared(skill_dir: Path) -> None:
     """A body that sends the agent to another skill must declare it.
 
-    This is the gate that keeps the closure honest. A worker launched with only
-    its entry skill and the declared closure hits a dead pointer otherwise —
-    and it hits it mid-attempt, after a ticket is already claimed.
+    This keeps dependency metadata honest for consumers loading an entry skill
+    and its declared closure.
 
     Only two unambiguous forms count: a markdown link to another SKILL.md, and
     the "use the `x` skill" imperative. A bare backtick mention is prose.
@@ -155,14 +149,8 @@ def test_declared_closure_resolves(skill_dir: Path) -> None:
     assert skill_dir.name not in closure or True  # a cycle back to self is fine
 
 
-def test_the_factory_builder_entry_skill_closure_carries_its_disciplines() -> None:
-    """`implement` is the factory's builder role (spec §6.2, §11.5).
-
-    Its closure is what a worker actually gets, so the disciplines the spec
-    relies on must be reachable from it — not merely present in the package.
-    `construction-craft` carries the output-capture rule (§6.8), and
-    `git-discipline` carries the commit conventions §7.3 expects.
-    """
+def test_implement_dependency_closure_carries_its_disciplines() -> None:
+    """Implementation disciplines must be reachable, not merely installed."""
     known = skills_by_name()
     closure: set[str] = set()
     pending = list(declared_requires(known["implement"]))

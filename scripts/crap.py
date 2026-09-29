@@ -9,8 +9,7 @@ Radon supplies routine boundaries and complexity. coverage.py supplies executed
 and missing executable lines. Coverage is calculated within each routine's line
 range, so this is a method-level CRAP equivalent rather than a file-average
 proxy. Exit 1 means the declared threshold was exceeded; malformed or unreadable
-reports exit 2 so the factory classifies the recipe as unrunnable, not as a code
-failure.
+reports exit 2 so callers distinguish an unrunnable check from a code failure.
 """
 
 from __future__ import annotations

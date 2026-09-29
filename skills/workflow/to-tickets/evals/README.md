@@ -63,6 +63,9 @@ exceptions in the old policy. They do not establish general planning reliability
 
 ## Repository verification
 
+Historical results below predate Factory retirement. They describe the recorded
+candidate commits, not the current skill body or an available Factory runner.
+
 At candidate commit `28492e3`, the targeted ticket/skill/reference checks passed
 (**358 tests**) and the reference validator passed. The full Python suite reported
 **887 passed, 1 failed**; its Node-suite wrapper reported **1908 passed, 1 failed**.

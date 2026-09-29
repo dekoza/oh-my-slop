@@ -1,8 +1,8 @@
 """#191: contract-first ordering, walking skeleton first, one language per builder.
 
 Decision evidence: docs/surveys/swarm-forge-adoption-survey-2026-08-30.md,
-adoption item 5 and the two #135 notes. The factory enforces blocking edges
-mechanically (spec §3.2), so the skills only have to *emit* the order.
+adoption item 5 and the two #135 notes. The skill emits an explicit inspected
+ordering contract; an external executor's enforcement is not presumed here.
 """
 
 from __future__ import annotations

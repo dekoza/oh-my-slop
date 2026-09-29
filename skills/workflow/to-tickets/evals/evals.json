@@ -35,7 +35,8 @@
         "The JSON and CSV tickets may implement concurrently based on the inspected module/private-test boundaries and stable read-only protocol.",
         "The plan does not add an artificial dependency or new contract/scaffolding ticket solely because both consume the unchanged protocol.",
         "Discovery of shared registry edits pauses overlapping work and requires graph repair before parallel implementation continues.",
-        "The terminal human review ticket is blocked by both implementation tickets."
+        "The terminal human review ticket is blocked by both implementation tickets.",
+        "If the tickets are published under a parent, the response preserves the tracker's parent-membership convention without requiring Factory configuration or assuming Cleopatra's scheduling interface."
       ]
     }
   ]
