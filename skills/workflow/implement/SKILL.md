@@ -70,11 +70,11 @@ Use the `tdd` skill, at pre-agreed seams.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end. For E2E tests, follow the `testing-workflow` skill's "E2E policy for implementation runs" — per-slice targeted runs, full E2E delegated to the PR's CI check, never a full in-session E2E run without consent. Follow the project's mandatory checks (AGENTS.md / CLAUDE.md) if it declares any.
 
-Once done, use the `two-axis-review` skill to review the work against both the repo's standards and the originating spec, with the standards notes and the requirement list you gathered before building in hand.
+Commit the inspected candidate to the worktree's branch **before review**. Stage only the slice's inspected changes, including relevant new files; preserve unrelated work. Record the fixed **base SHA** and candidate SHA, and confirm their committed diff contains the slice. The reviewers inspect committed history, not uncommitted edits.
 
-**Fix every blocking finding it raises, in this session, and re-run the axis that raised it.** A blocking finding you leave standing is the round-trip this step exists to prevent: the independent reviewers will raise it again, and by then the fix costs a fresh implementation instead of an edit.
+Once committed, use the `two-axis-review` skill to review the work against both the repo's standards and the originating spec, with the standards notes and the requirement list you gathered before building in hand. Give both axes the fixed base and candidate, keep their checkout at that candidate, and record the **reviewed head SHA** with their findings. An empty diff or missing spec is not a review pass.
 
-Commit your work to the worktree's branch.
+**Fix every blocking finding** within the authorized repair budget. Make each repair an **additive commit**, re-run affected checks and the axis that raised it, and re-run the other axis too when the repair affects its evidence. Any change after review invalidates the previous candidate's approval for the affected work. Final verification and both review outcomes must cover the exact head handed off or published; revalidate after any further change.
 
 ## Open the pull request
 

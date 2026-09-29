@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -35,7 +36,7 @@ def test_the_review_rubrics_are_read_before_the_build_not_after_it() -> None:
     Both rubrics are already in this skill's closure, so the axes are reachable;
     what makes them cheap is reading them *before* the first edit. The order in
     the body is the contract: the rubric section precedes the build section, and
-    the self-review is a gate on committing rather than a trailing formality.
+    the committed candidate's review is a gate on publication, not a trailing formality.
     """
     frontmatter, body = skill_parts()
     requires = frontmatter["requires"]
@@ -72,3 +73,35 @@ def test_multi_ticket_eval_guards_the_worker_boundary() -> None:
     assert "one unblocked frontier ticket" in expectations
     assert "dedicated worktree" in expectations
     assert "does not attempt the blocked tickets" in expectations
+
+
+def test_candidate_is_committed_before_review_of_a_three_dot_diff(tmp_path: Path) -> None:
+    """An uncommitted candidate is absent from the reviewers' public Git interface."""
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, check=True, capture_output=True,
+            text=True, timeout=15,
+        ).stdout.strip()
+
+    git("init", "-b", "main")
+    git("config", "user.name", "Fixture Author")
+    git("config", "user.email", "fixture@example.invalid")
+    feature = tmp_path / "feature.txt"
+    feature.write_text("old behavior\n", encoding="utf-8")
+    git("add", "feature.txt")
+    git("commit", "-m", "test: establish review base")
+    base = git("rev-parse", "HEAD")
+    feature.write_text("new behavior\n", encoding="utf-8")
+    assert git("diff", f"{base}...HEAD") == ""
+
+    _, body = skill_parts()
+    assert body.index("Commit the inspected candidate") < body.index(
+        "use the `two-axis-review` skill to review"
+    )
+    assert "base SHA" in body and "reviewed head SHA" in body
+    assert "Any change after review invalidates" in body
+    assert "additive commit" in body
+
+    git("add", "feature.txt")
+    git("commit", "-m", "feat: record the candidate")
+    assert "+new behavior" in git("diff", f"{base}...HEAD")

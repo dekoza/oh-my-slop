@@ -84,6 +84,17 @@
         "The response does not edit CONTEXT.md from inside the slice while other slices run beside it; a missing term is reported as a glossary gap in the PR body and completion report.",
         "The response proceeds silently when the target repo has no glossary at all."
       ]
+    },
+    {
+      "id": 8,
+      "prompt": "Dry-run only; do not edit files, run commands, publish or contact a tracker. A standalone ticket's new implementation is entirely uncommitted in its dedicated worktree. Both review axes reported no blockers after reading base...HEAD, which contains only the older commits. Required tests passed on the edited files. The teammate says to push immediately because the release is waiting. Describe the exact next sequence and completion evidence.",
+      "expected_output": "A committed candidate is tested and reviewed before the standalone PR is published; evidence is bound to exact SHAs and changes invalidate stale approval.",
+      "expectations": [
+        "Rejects the previous review as insufficient for the uncommitted implementation and commits the inspected candidate before reviewing it.",
+        "Records the fixed base and candidate SHA, reviews the committed candidate on both axes, and binds publication to that exact tested/reviewed SHA.",
+        "A repair or other post-review change gets an additive commit, fresh affected checks and affected-axis re-review before publication.",
+        "Keeps the standalone one-ticket PR outcome and does not claim any actions were executed in this dry run."
+      ]
     }
   ]
 }
