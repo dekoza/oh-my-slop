@@ -105,3 +105,22 @@ def test_candidate_is_committed_before_review_of_a_three_dot_diff(tmp_path: Path
     git("add", "feature.txt")
     git("commit", "-m", "feat: record the candidate")
     assert "+new behavior" in git("diff", f"{base}...HEAD")
+
+
+def test_branch_only_delivery_is_explicit_and_preserves_standalone_publication() -> None:
+    """The caller owns integration/publication without weakening worker acceptance."""
+    _, body = skill_parts()
+    assert "## Delivery: standalone or branch-only" in body
+    assert "Default to **standalone**" in body
+    assert "explicit operator or caller authorization" in body
+    assert "named ticket" in body and "exact base SHA" in body
+    assert "verified run-local prerequisite evidence" in body
+    assert "not a claim that its tracker blockers are closed" in body
+    assert "In branch-only mode, do not push, open a PR, close tickets" in body
+    assert "## Return the branch-only handoff" in body
+    for evidence in ("worktree path", "base SHA", "reviewed head SHA", "requirement trace",
+                     "unresolved obligations", "publisher"):
+        assert evidence in body
+    assert "occupied or wrong-base worktree" in body
+    assert "pause and preserve" in body
+    assert "In standalone mode" in body

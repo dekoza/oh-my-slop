@@ -60,7 +60,8 @@ blocked one can be taken — no branch-level or partly-done state satisfies it.
 Prerequisite and collision grounds earn one: the blocked ticket cannot start until
 the blocker lands, it reads a shape the blocker changes, or both share mutable
 **Impact surface**. `to-tickets` and `wayfinder` author them; the
-**Frontier** is what is left once they are honoured.
+**Frontier** is what is left once they are honoured. This is the ordinary tracker
+meaning; a **Run frontier** does not satisfy or change a tracker's blocking edge.
 _Avoid_: dependency, dependency edge, prerequisite, blocker link
 
 **Impact surface**:
@@ -75,6 +76,24 @@ The edge of what is takeable now. On a **Map**, the open, unblocked, unclaimed
 **Decision tickets**; in a `grilling` session, every question whose prerequisites are
 already settled. One metaphor, two objects — see *Flagged ambiguities*.
 _Avoid_: ready queue, next up, TODO
+
+**Run frontier**:
+The authorized implementation **Tickets** takeable within one supervised whole-spec
+run because their in-run prerequisites are **Integrated tickets** and their other
+gates are satisfied. This local eligibility does not close tracker blockers.
+_Avoid_: globally unblocked, closed dependency, ready queue
+
+**Integrated ticket**:
+An implementation **Ticket** whose committed work is on the run's combined branch
+with required verification and review evidence for the integrated candidate. Its
+tracker issue may remain open pending publication, merge or human acceptance.
+_Avoid_: closed ticket, merged PR, worker reported done
+
+**Branch-only delivery**:
+An explicitly authorized worker outcome handing one verified, committed slice and
+its evidence to the caller responsible for integration and publication. It is not
+an independently pushed branch, per-ticket PR or tracker closure.
+_Avoid_: unpublished success, automatic merge, partial PR
 
 **Triage role**:
 A canonical state-machine label carried by an **Issue** during triage — one at a

@@ -95,6 +95,17 @@
         "A repair or other post-review change gets an additive commit, fresh affected checks and affected-axis re-review before publication.",
         "Keeps the standalone one-ticket PR outcome and does not claim any actions were executed in this dry run."
       ]
+    },
+    {
+      "id": 9,
+      "prompt": "Dry-run only; do not edit files, run commands, publish or contact a tracker. The operator explicitly requests branch-only delivery for ticket B inside a supervised run. A blocks B and remains open until the combined PR merges. The caller supplies B, an exact integration-base SHA containing the committed/tested/reviewed A, that prerequisite evidence, a fresh worktree and branch at that SHA, and names itself as publisher. B is authorized and otherwise claimable; acceptance checks and reviews eventually pass. Describe whether B can be worked and its completion handoff. Also say what changes if the supplied worktree instead contains unrelated edits on a different base.",
+      "expected_output": "An explicit, evidence-backed branch-only worker handoff without per-ticket publication, global closure or destructive base repair.",
+      "expectations": [
+        "Accepts B only against verified run-local prerequisite evidence and explicit branch-only authority, without claiming A is globally closed.",
+        "Uses the supplied exact base/worktree and does not push, open a per-ticket PR, close tickets or integrate into the caller's branch.",
+        "Reports branch/worktree, base and reviewed head SHAs, verification evidence, both review outcomes, requirement trace and unresolved obligations to the publisher.",
+        "Pauses on the occupied wrong-base worktree and preserves its edits instead of resetting, deleting or silently reusing it."
+      ]
     }
   ]
 }
