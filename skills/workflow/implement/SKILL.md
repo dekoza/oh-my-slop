@@ -27,6 +27,12 @@ For an ordinary invocation, blockers must be closed. For an explicitly authorize
 
 In branch-only mode, do not push, open a PR, close tickets or merge into the integration branch. The publisher owns integration and tracker writes; return evidence, not an independently published slice.
 
+## Bound repairs
+
+Before building, record the caller's repair limit; otherwise use a repair budget of **two rounds**, subject to stricter project limits. One round means fixing the current blocking findings, committing the repair, rerunning affected checks and obtaining affected-axis re-review. The initial review does not spend a round. Advisory findings are reported, not compulsory cleanup.
+
+When the budget is exhausted with blockers still open, or a consequential decision is unresolved, **stop and report** the preserved partial result, remaining findings and next owner decision. Additional repair needs explicit owner authorization within project limits; do not publish the partial result as successful or start another ticket.
+
 ## Scope: one ticket per session
 
 A spec with no ticket list may be the slice when it fits one reviewable change. When the input contains multiple implementation tickets, work **exactly one unblocked frontier ticket** in this session, under the selected delivery contract above. Use the ticket named by the caller; otherwise take the first unblocked ticket in the caller's order. Leave blocked and remaining tickets for fresh sessions.

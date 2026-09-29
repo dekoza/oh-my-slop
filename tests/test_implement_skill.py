@@ -124,3 +124,14 @@ def test_branch_only_delivery_is_explicit_and_preserves_standalone_publication()
     assert "occupied or wrong-base worktree" in body
     assert "pause and preserve" in body
     assert "In standalone mode" in body
+
+
+def test_worker_repairs_have_a_default_stop_and_preserve_interface_agreement() -> None:
+    _, body = skill_parts()
+    assert "repair budget of **two rounds**" in body
+    assert "One round means" in body
+    assert "exhausted" in body and "stop and report" in body
+    assert "Advisory findings" in body
+    assert "approved ticket/spec may already establish" in body
+    assert "second approval of an accepted contract" in body
+    assert "required acceptance test skipped" in body
