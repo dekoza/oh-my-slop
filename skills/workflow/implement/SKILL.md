@@ -120,7 +120,7 @@ If anything in this session started Docker containers — test infrastructure, a
 
 The completion report carries a **requirement trace**: one row per requirement the ticket states, in the ticket's order. Each row quotes the ticket's own line, with any credential redaction marked — never a paraphrase — and names the path that answers it and, where one exists, the test that proves it. A short advisory note per row is fine.
 
-Build the trace by re-reading the ticket and every source it references, not from memory of what you did: a ticket line no row answers is unfinished work, and a row naming a path the diff never touched is a claim the spec reviewer will reject. The trace is what lets that reviewer check coverage row by row instead of re-deriving it from the diff.
+Build the trace by re-reading the ticket and every source it references, not from memory of what you did: a ticket line no row answers is unfinished work. For each row, distinguish changed paths from unchanged, verified baseline/prerequisite paths. Mark requirements **already satisfied at the base**, cite the supplied base's implementation and verification evidence, and show any new regression coverage. A preservation requirement can legitimately name an unchanged accepted contract; do not edit shared prerequisites merely to make them appear in the diff. Missing evidence stays an honest gap, not inherited credit or an invented change. The trace lets the reviewer check coverage row by row instead of re-deriving it from the diff.
 
 ## Completion
 

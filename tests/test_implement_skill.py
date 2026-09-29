@@ -147,3 +147,11 @@ def test_fresh_workers_have_their_own_input_and_reporting_trust_boundary() -> No
     assert "approved verification plan" in body
     assert "redact credential-looking strings" in body
     assert "mark the redaction" in body
+
+
+def test_requirement_trace_can_cite_verified_unchanged_prerequisites() -> None:
+    _, body = skill_parts()
+    assert "already satisfied at the base" in body
+    assert "distinguish changed paths from unchanged" in body
+    assert "preservation requirement" in body
+    assert "a row naming a path the diff never touched" not in body
