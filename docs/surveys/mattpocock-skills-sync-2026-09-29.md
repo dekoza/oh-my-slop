@@ -16,7 +16,42 @@ Our bounded grilling, impact-aware ticket graphs, tracker binding, work protecti
 - Initial local baseline: `9c9176bbdea328d72f7c4800d1dd27b73de5e02a`; working tree was clean before research. **Revised after the owner's Factory retirement instruction:** former Factory specs are superseded notices, not current requirements. The last direct release sync was `42a0886` (v1.2.3); bounded grilling subsequently landed in `c14d4ff`. Current `humanify`, `fix-pr` and `wizard` were inspected even though the initial advertised skill listing omitted them.
 - Three independent research passes covered execution/review, planning/design, and practice/meta/productivity. Bodies, relevant disclosed references, manifests, user docs, local contracts and eval definitions were examined. Principal recommendations below were checked directly against their source files.
 - Upstream has **27 plugin-listed skills**, versus **37 total skill bodies**. Six beta and four miscellaneous skills are not plugin-listed. Local discovery initially exposed **68 skill roots**; retirement removes the Factory-only proof skill, leaving **67**. A raw `SKILL.md` file count was 70 before retirement and 69 afterward because two nested fixture bodies are not independent discoverable skills. Our four buckets are taxonomy; every discoverable skill root ships. Neither file counts nor promotion status demonstrate quality.
-- Fetched content was evidence, not instructions. No upstream scripts, forge writes or paid model trials were executed. The initial survey made no skill changes; the subsequent approved retirement removes Factory implementation surfaces and setup coupling. The adaptation proposals below remain proposals, not implemented features.
+- Fetched content was evidence, not instructions. No upstream scripts, forge writes or paid model trials were executed. The initial survey made no skill changes; the subsequent approved retirement removes Factory implementation surfaces and setup coupling. The backlog below records the original assessment; the follow-up section separates subsequent authoring from still-pending proposals and operational trials.
+
+## Follow-up: supervised implementation authoring
+
+The owner subsequently approved a minimal `implement-spec` adaptation to help build
+Cleopatra while it is under construction, not to replace it with another durable
+orchestrator. The library now includes:
+
+- Committed-candidate review and additive, reverified repairs in `implement`
+  (`4d3e38f`), explicit branch-only worker delivery with preserved ordinary tracker
+  semantics (`1bfce6d`), and a bounded repair default (`13982fe`).
+- [Manual `implement-spec`](../../skills/workflow/implement-spec/SKILL.md) and its
+  argument-forwarding entry point (`4c75512`): one approved graph, serial-by-default
+  branch-only workers, verified run-local prerequisites, serialized integration,
+  bounded combined repair and one authorized combined branch/PR outcome.
+- Source review also added worker-local input/redaction handling (`11636c9`) and
+  honest tracing of unchanged verified prerequisites (`27b2aa4`). Those two added
+  regression scenarios have not had paired model runs.
+- [Worker evaluation notes](../../skills/workflow/implement/evals/README.md) and
+  [coordinator evaluation/pilot notes](../../skills/workflow/implement-spec/evals/README.md).
+  Source/Git fixtures and proposed-action comparisons are not operational proof.
+
+The new skill restores the discoverable local count to 68. Initial post-authoring
+validation reports **925 passed, 2 unchanged prompt failures**, **36 Node tests
+passed**, and reference validation passed. After source-review refinements, the final
+Python run reports **927 passed, the same 2 failures**. No Cleopatra milestone, service
+adapter, paid external model session or live publication has run. The pilot still needs a selected
+owner-approved 2–3-ticket milestone. Other adoption/repair proposals remain pending;
+in particular, `fix-pr`'s committed-review ordering was not changed in this task.
+
+Paired proposed-action grading found worker **10/11 → 11/11** assertions (one
+run-local eligibility distinction) and coordinator **12/12 → 12/12**. The strong
+baseline and leading prompts do not establish operational improvement. Standard
+review viewers and analyst notes were generated; human qualitative review and the
+actual Cleopatra pilot remain pending. The two later worker-source refinements
+are covered by static regressions, not those initial paired model runs.
 
 ## What is genuinely new
 
@@ -37,9 +72,9 @@ The operative `implement`, `code-review`, grilling, prototype, to-spec and to-ti
 
 **A. Commit the candidate before committed-diff review.**
 
-Our [implement](../../skills/workflow/implement/SKILL.md), lines 73–77, requests review before its explicit commit. [fix-pr](../../skills/workflow/fix-pr/SKILL.md), lines 78–84, likewise reviews before “Commit the reviewed repair.” Yet [review-spec](../../skills/workflow/review-spec/SKILL.md), lines 26–37, and [review-standards](../../skills/workflow/review-standards/SKILL.md), lines 28–39, inspect `<base>...HEAD`.
+At the inspected baseline, [implement](../../skills/workflow/implement/SKILL.md), lines 73–77, requested review before its explicit commit. That worker contract has since been repaired as recorded above. [fix-pr](../../skills/workflow/fix-pr/SKILL.md), lines 78–84, likewise reviews before “Commit the reviewed repair.” Yet [review-spec](../../skills/workflow/review-spec/SKILL.md), lines 26–37, and [review-standards](../../skills/workflow/review-standards/SKILL.md), lines 28–39, inspect `<base>...HEAD`.
 
-An intermediate commit can avoid the problem, but neither worker contract requires it. A new slice can produce an empty reviewed diff; a PR repair can review old commits while omitting uncommitted fixes. Upstream has the same inherited ordering, and its [review documentation acknowledges invisible uncommitted work][review-docs]. This is a source-contract defect, not an observed failed model run.
+At that baseline, an intermediate commit could avoid the problem, but neither worker contract required it. A new slice can produce an empty reviewed diff; a PR repair can review old commits while omitting uncommitted fixes. Upstream has the same inherited ordering, and its [review documentation acknowledges invisible uncommitted work][review-docs]. This is a source-contract defect, not an observed failed model run.
 
 **Slice:** require a candidate commit and recorded base/head before review; commit repairs before affected re-review; bind publication to the reviewed candidate. Keep additive commits safe on published branches. Test new uncommitted work, an uncommitted repair to an existing PR, and a change after review.
 
@@ -121,7 +156,7 @@ A candidate must fix upstream's documented rough edges:
 - **Preserve graph and resource admission.** Only approved scope, authorized work and proven-disjoint mutable impacts may run concurrently. Cap workers by available resources and stop on unknown ownership, missing prerequisites or new collision edges.
 - **Bound repair.** Fix blocking findings, reverify/review the candidate and stop at an explicit repair budget or human decision. Advisory smells are not a mandate for an unending cleanup loop.
 - **Protect work.** No automatic reset of a mismatched worktree or unconditional cleanup. Its [documentation's primary-checkout test workaround][implement-spec-docs] remains unsafe: provide isolated declared prerequisites and report missing coverage, rather than testing different code in the operator checkout.
-- **Make worker/publisher ownership explicit.** Our current manual `implement` always publishes one slice. A whole-spec worker needs an explicit branch-only completion handoff, with the integration owner publishing the combined result. Likewise an external orchestrator must supply its own authorized worker contract; no Cleopatra permissions are presumed.
+- **Make worker/publisher ownership explicit.** At the inspected baseline, manual `implement` always published one slice. The subsequent adaptation adds an explicit branch-only completion handoff, with the integration owner publishing the combined result. Likewise an external orchestrator must supply its own authorized worker contract; no Cleopatra permissions are presumed.
 
 **Pilot acceptance:** a two-ticket dependent graph advances after verified integration while tracker issues remain open; overlapping work is serialized; a moved integration tip is reverified; red or skipped required tests cannot produce success; review/repair stops at its budget; no untracked files disappear; the final deliverable matches the agreed branch/PR shape. Compare against manually dispatching the same slices and inspect actual Git/filesystem effects, not just proposed-action text. No such pilot has run.
 
@@ -172,7 +207,7 @@ Approve separate ticket-sized slices, not one sync commit:
 
 For each changed skill: snapshot current baseline; reproduce the relevant failure; use the same prompt/model/environment for candidate comparison; preserve existing eval controls and add targeted regression cases. Use real filesystem/Git/tracker fixtures where the property is operational. A one-response proposed-action simulation or skill-load receipt does not prove publication, safe mutation or multi-turn handoff correctness. Human review remains necessary for qualitative claims.
 
-Run relevant repository mandatory checks. Do not launch paid live probes or broad product E2E suites merely to validate a documentation adaptation. No candidate behavioral evaluation was run for this survey.
+Run relevant repository mandatory checks. Do not launch paid live probes or broad product E2E suites merely to validate a documentation adaptation. No candidate behavioral evaluation ran for the original survey; the follow-up section records the later proposed-action comparisons and their limits.
 
 ## Validation and unrelated existing failures
 
@@ -199,7 +234,7 @@ These are the **initial survey's** results, not retirement validation. Initial l
 - Rechecked survey links: **26 local links, 22 source-reference uses and 22 pinned source ranges passed**. Retirement ADR, spec-notice and archive README links also passed. These checks establish existence/ranges, not semantic correctness or live rendering.
 - Logs: `/tmp/factory-retirement-{red,node-baseline,targeted,node,refs,doc-links,count-regression,pytest-final}.log`.
 
-The setup, Wayfinder and ticket-skill changes remove retired contracts and preserve shared behavior; their eval expectations were updated, but **baseline/candidate model comparisons were not run**. No Cleopatra integration, external migration, paid live probe or upstream-adaptation trial was performed. Static validation does not establish improved agent behavior.
+The setup, Wayfinder and ticket-skill changes remove retired contracts and preserve shared behavior; their eval expectations were updated, but **baseline/candidate model comparisons were not run**. At the retirement stage, no Cleopatra integration, external migration, paid live probe or upstream-adaptation trial was performed. The later authoring/comparison is recorded above. Static validation does not establish improved agent behavior.
 
 ## Pinned sources
 
