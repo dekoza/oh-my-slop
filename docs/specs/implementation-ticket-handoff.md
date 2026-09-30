@@ -349,7 +349,7 @@ review. Static shape tests complement rather than replace fresh-worker outcomes.
 
 ## 7. Proposed compact review/evidence contract
 
-Status: Draft — bounded design authorized; runtime home and implementation are not yet selected.
+Status: Draft — bounded design authorized; existing runtime owner verified; executable edits await baseline and branch-authority resolution.
 This section defines required information, not a new skill, scheduler, service or tracker schema.
 Existing review placement, publication authority and candidate verification gates remain unchanged.
 
@@ -427,6 +427,27 @@ no Cleopatra API, installed-tool modification, new transport or generated config
 assumed. Select the maintained tooling home and its authority before executable edits.
 Deploy/migrate only within that separately checked scope; preserve existing consumers and
 retain additive rollback paths. No new operational infrastructure is required by the contract.
+
+### Verified runtime home and remaining prerequisite
+
+Read-only investigation identified the configured `Agent` owner as
+`@tintinweb/pi-subagents` v0.19.0 at `/home/minder/projekty/pi-subagents`, upstream base
+`e955e29c51b7a6cce37e1108cd2d6c57a77e151c`. Its manifest declares the extension at
+`src/index.ts`; local pi settings select that maintained checkout. This package's
+workflow-watchdog and local-router extensions are not review-launcher owners. Existing
+structured-output support is generic workflow support, not proof of a review-specific
+receipt validator or direct-Agent schema contract.
+
+The configured checkout has pre-existing edits to CHANGELOG.md, package.json and its lockfile,
+plus untracked LOCAL-PATCH.md and a manifest regression test. LOCAL-PATCH.md identifies these
+as an intentional host-dependency patch. The checkout's contributor rules reserve commits
+for the user and require explicit branch permission. No executable edits, branch creation,
+staging, dependency installation or configuration change were performed there.
+
+Resolve the patched baseline and obtain explicit authority for an isolated feature branch
+before executable implementation. Do not reset, stash, commit or omit the user's patch
+silently, and do not edit the live configured checkout as a shortcut. This selects the
+existing owner for consideration, not a Cleopatra interface or authority to alter installation.
 
 A repeat pilot needs explicit scenario and time/token limits, unchanged safety gates and a
 stop-with-partial-result rule. This authorization defines the contract and permits factual
