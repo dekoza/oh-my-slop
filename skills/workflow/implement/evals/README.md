@@ -56,9 +56,10 @@ shared handoff criteria. Their paired proposed-action comparison starts from `5b
 and uses the immutable consumer body through `2595b9a`, separately from the older
 worker-contract comparison above. See the
 [routing comparison](../../wayfinder/evals/README.md) for artifacts, source boundaries,
-rubric exposure, strong-baseline and shared-context limitations. Human qualitative
-acceptance and real fresh-worker construction remain pending; those simulations are
-not execution or publication proof.
+rubric exposure, strong-baseline and shared-context limitations. The owner accepted
+this continuation's source and bundle at `c2304db`; the older worker-contract comparison
+above is a separate artifact. Real fresh-worker construction remains pending; these
+simulations are not execution or publication proof.
 
 ## Repository evidence
 

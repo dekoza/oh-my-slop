@@ -7,7 +7,8 @@ This continuation implements §6 item 4 of the
 phase routing, `implement`/`implement-spec` changed-input checks and the README flow
 map. It starts from the accepted producer/repairer primary head `5b1588b` and preserves
 public names, invocation modes, configuration, labels and existing execution gates.
-It is a local source candidate, not acceptance of a deployed workflow.
+The source and this comparison/review bundle were accepted at `c2304db` with
+“accepted, continue”. This is not acceptance of a deployed workflow.
 
 Wayfinder cases 1–2 now distinguish a usable spec and sufficient scoped authority
 from mere decision/publication approval. They recommend explicitly selected workflows
@@ -20,8 +21,9 @@ The pre-edit snapshots and five paired scenarios are in
 `/tmp/handoff-routing-eval.N6VFb4/`. The snapshot comes from `5b1588b`; the immutable
 candidate skill bodies match the source through `2595b9a` (later commits add docs only).
 The standard benchmark and viewer were generated in its `iteration-1/` directory.
-Human qualitative review remains pending; no improvement is inferred merely from
-generating that viewer.
+The owner accepted this bundle with the source at `c2304db`; this does not assert
+that the viewer was opened. Both source-review axes reported 0 blocking / 0 advisory
+at that head. No improvement is inferred merely from generating the viewer.
 
 Independent grading reports **16/18 baseline assertions versus 18/18 candidate**.
 Both baseline failures occur in Wayfinder 5 and count the same synthesis-before-tickets

@@ -1,6 +1,6 @@
 # Implementation ticket handoff
 
-Status: Draft — producer/repairer source accepted; routing/consumer source candidate implemented; qualitative and operational acceptance remain pending.
+Status: Draft — producer/repairer and routing/consumer source accepted; runtime-loading and operational acceptance remain pending.
 
 ## Problem
 
@@ -250,11 +250,22 @@ responsible owner. The [README](../../README.md#planning-to-implementation) maps
 Existing run-local eligibility, ordinary blockers, publication, review and worktree gates
 remain unchanged. Runtime loading, real construction and real publication are not claimed.
 
+The owner accepted the routing/consumer source at `c2304db` and its comparison/review
+bundle with “accepted, continue”. Both independent axes reported 0 blocking and
+0 advisory at that exact head. The paired proposed-action grades are 16/18 baseline
+versus 18/18 candidate: two overlapping assertions measure one synthesis-route
+difference, while four cases tie. The bundle is under
+`/tmp/handoff-routing-eval.N6VFb4/`; rubric exposure, shared-context and incomplete-reference
+limitations remain. This records explicit source/qualitative acceptance, not proof
+that the viewer was opened, the active session reloaded or real construction succeeded.
+Continue with local integration and non-mutating runtime-loading verification; no push,
+tracker mutation or operational pilot is selected or authorized by this acceptance.
+
 ### Proposed order
 
 This is the allocation, not an approved tracker graph, automatic dispatch authority or
 proof of operational completion. Items 1–3 have an accepted producer/repairer source
-implementation; item 4 has a separate source candidate awaiting owner acceptance:
+implementation; item 4 has an accepted routing/consumer source implementation:
 
 1. Snapshot current producer/repairer controls and freeze paired scenarios. Extract
    the shared brief/readiness criteria from humanify into one explicit shared reference
