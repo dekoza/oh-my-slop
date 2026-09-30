@@ -71,7 +71,7 @@ A ticket with no blockers is eligible only after foundation, impact, brief, auth
 - **Acceptance criteria are the artifact and a test.** The contract ticket is done when the interface artifact exists (a schema, a type, an OpenAPI fragment, an event shape) and a test exercises it **from the dependent's side against a stub** of the provider. The stub is what lets the dependent build before the provider does.
 - **An accepted contract is immutable.** A revision is a new version, and a new version is a **new ticket**, blocking the affected dependents' follow-up tickets. Revisions still obey scaffolding, prerequisite and impact-surface blockers; they are not automatically unblocked. Nobody edits an accepted contract ticket in place; the contract ticket's body says so, in the template below, so the rule survives into the tracker.
 
-**The last ticket is always the human's.** End every breakdown with the terminal **review ticket**, `Review the delivered <parent title>`, blocked by every other ticket and marked for the human. It is mandatory, cannot be dropped and must be present before publication. After implementation tickets close, the operator answers the template's three questions in a comment and closes the review: destination match, wrong/missing behavior and the next map.
+**The last ticket is always the human's.** End every breakdown with the terminal **review ticket**, `Review the delivered <parent title>`, blocked by every other ticket and marked for the human. It is mandatory and cannot be dropped; a breakdown without it is not publishable. After implementation tickets close, the operator answers the template's three questions in a comment and closes the review: destination match, wrong/missing behavior and the next map.
 
 ### 4. Check briefs, audit the graph and settle missing approval
 
@@ -123,8 +123,8 @@ The tickets are the same whatever the tracker — only the shape of the blocking
 **Every forge-backed ticket opens with the literal first body line `Part of #<parent>`**, then a blank line and its template. Use the source map/spec issue as parent; omit the line when the source is not a tracker issue. This preserves parent membership, not scheduler authority or external work-selection policy.
 
 Apply `workflow:implement` to approved implementation tickets for routing, not authority.
-Choose the state through the project's existing label mapping: agent readiness needs sufficient
-briefs and scoped human authorization; missing information/refinement and missing human judgement
+Choose the state through the project's existing label mapping: `ready-for-agent` requires
+sufficient briefs and scoped human authorization; missing information/refinement and missing human judgement
 or permission retain their configured non-ready roles. Human-only work, including the review,
 keeps its human outcome. A fully specified and authorized but blocked ticket is not takeable.
 For local files, write the brief in the configured preparation state, read it back, then record
