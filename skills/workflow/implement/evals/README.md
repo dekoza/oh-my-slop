@@ -49,6 +49,17 @@ boundary (`11636c9`) and corrected unchanged-prerequisite tracing (`27b2aa4`). N
 scenarios 11–12 cover those refinements but have not had paired model runs. Do not
 attribute the initial comparison's grades to those later changes.
 
+## Handoff-consumer continuation
+
+Cases 13–14 add changed-prerequisite and unchanged-authorized-input controls for the
+shared handoff criteria. Their paired proposed-action comparison starts from `5b1588b`
+and uses the immutable consumer body through `2595b9a`, separately from the older
+worker-contract comparison above. See the
+[routing comparison](../../wayfinder/evals/README.md) for artifacts, source boundaries,
+rubric exposure, strong-baseline and shared-context limitations. Human qualitative
+acceptance and real fresh-worker construction remain pending; those simulations are
+not execution or publication proof.
+
 ## Repository evidence
 
 `tests/test_implement_skill.py` checks the worker boundary, rubric ordering, explicit

@@ -44,6 +44,16 @@ unavailable, and generated zero-valued summaries mean no measurements, not zero
 cost. Read the analyst notes on leading prompts and always-passing controls before
 interpreting the aggregate score.
 
+## Handoff-consumer continuation
+
+Case 4 adds a definitive-brief/changed-input dispatch check and an unchanged-input
+counterfactual preserving run-local eligibility. Its paired proposed-action comparison
+starts from `5b1588b` and uses the immutable consumer body through `2595b9a`; the older
+12/12 comparison above does not cover this change. See the
+[routing comparison](../../wayfinder/evals/README.md) for artifacts, source boundaries,
+rubric exposure, strong-baseline and shared-context limitations. Qualitative acceptance,
+runtime loading and real dispatch/publication evidence remain pending.
+
 ## Static and Git checks
 
 `tests/test_implement_spec_skill.py` protects manual invocation, worker dependency
