@@ -38,6 +38,18 @@
         "The terminal human review ticket is blocked by both implementation tickets.",
         "If the tickets are published under a parent, the response preserves the tracker's parent-membership convention without requiring Factory configuration or assuming Cleopatra's scheduling interface."
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "Finish durable local implementation briefs from the already-approved breakdown of sample/controller #83. Use only this supplied fixture; no real writes or implementation, and proposed readbacks are not executed receipts. Return actual proposed ticket bodies, label/state decisions, ordered recording actions and any necessary questions. Approved graph: A adds a disabled-only filter to the existing status command; B then adds an enabled-only filter; terminal human review follows both. A blocks B because both change src/status.mjs and tests/status.test.mjs; no parallel set was approved. Existing packaging, entry point, checks and registration behavior are verified complete. The accepted unchanged EnrollmentStore.list interface returns {id: string, enabled: boolean} rows; tests exercise status through the current CLI seam. Project policy provides node --test tests/status.test.mjs plus the full suite as the verification plan; it is planned feature verification, not already-passing coverage. Selectors must not mutate enrollment state; registration changes, enablement commands and scheduler changes are excluded. The original signed-off breakdown and these decisions live in design-note-83. A also has an ordinary native blocker #79: the owner must deliver the approved scrubbed dataset at fixtures/enrollments.scrubbed.json. Its schema is accepted as the unchanged list shape, but the actual dataset is not delivered and #79 remains open. Ownership is known: status component for A/B, operator for #79 and terminal review. The project label mapping separates fully specified/authorized from prerequisite eligibility. My existing precise authorization covers publishing this exact serial breakdown and marking sufficient A/B briefs ready-for-agent under project policy; blocked #79 and the human-only review remain, no dispatch or closure. No decision changed and no fact or impact surface is unknown.",
+      "expected_output": "Produce complete bounded briefs, reuse the approved serial graph and scoped grants, retain the blocked eligibility and human review, and propose readback before state transition without dispatch.",
+      "files": [],
+      "expectations": [
+        "Supplies actual durable A/B briefs with scope/exclusions, confirmed decisions, construction starting points, verification plan, impact/edges and authorization/residual owners.",
+        "Reuses accepted foundation, interface, serial graph and adequate scoped approval; does not require routine humanify or repeat the settled breakdown/readiness interview.",
+        "Retains #79 and A-to-B ordering, reports prepared/authorized but blocked work as not eligible, keeps terminal review human-only and assumes no delivered dataset or executed checks.",
+        "Orders publication and readback before authorized state transition, verifies content and graph, and does not dispatch, close the parent/blocker or fabricate publication receipts."
+      ]
     }
   ]
 }

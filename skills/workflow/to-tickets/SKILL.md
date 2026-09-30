@@ -56,15 +56,11 @@ Break the work into **tracer bullet** tickets.
 
 Give each ticket its **blocking edges** — the other tickets that must complete before it can start. Add edges for prerequisites, changing-interface producers and shared mutable impact. Compare every pair: order overlapping work, extract the common change into one prerequisite, or consolidate inseparable work into one reviewable ticket. A dependency cycle requires replanning; it is not permission to build both sides concurrently.
 
-A ticket with no blockers is eligible only after the foundation and impact checks pass. Completion means accepted work available on the agreed base and the blocker closed, never an open PR or partly-done branch.
+A ticket with no blockers is eligible only after foundation, impact, brief, authority and other execution gates pass. Completion means accepted work available on the agreed base and the blocker closed, never an open PR or partly-done branch.
 
-**Wide refactors are the exception to vertical slicing.** A **wide refactor** is one mechanical change — rename a column, retype a shared symbol — whose **blast radius** fans across the whole codebase, so a single edit breaks thousands of call sites at once and no vertical slice can land green. Don't force it into a tracer bullet; sequence it as **expand–contract**. First expand: add the new form beside the old so nothing breaks. Then migrate the call sites over in batches sized by blast radius (per package, per directory), each batch its own ticket blocked by the expand, keeping CI green batch to batch because the old form still exists. Finally contract: delete the old form once no caller remains, in a ticket blocked by every migrate batch. If batches cannot stay green alone, redesign the compatibility step or consolidate the inseparable change; escalate if that exceeds a single reviewable ticket. An integrate-and-verify ticket may check the result but cannot replace ordering edges.
+**Wide refactors are the exception to vertical slicing.** When one mechanical change's **blast radius** prevents independently green vertical slices, use **expand–contract**: add the new form alongside the old; migrate callers in reviewable batches blocked by expand; remove the old form only in a contract ticket blocked by every migration. Keep CI green between batches. If compatibility cannot achieve that, redesign it or consolidate inseparable work; escalate beyond a single reviewable ticket. Final integration checks do not replace ordering edges.
 
-**A shared interface is a blocking edge, not a note.** Two tickets can each be a clean vertical slice, each green on its own, and still break on contact: one **defines** an interface — a response body, an event payload, a column, a shared signature — and another **reads** it. Neither gates the other in the *can't start* sense, so the frontier offers both at once and two sessions build against two different truths. Nothing fails until the second one merges.
-
-Draw the edge anyway: the ticket that defines the shape blocks every ticket that consumes it, even when the consumer could start today against the shape already there. Unchanged shared reads need no producer edge, but shared-file edits still need ordering under the impact rule. If the definer also needs the consumer, extract an accepted prerequisite contract or consolidate the work rather than substituting a final integration gate.
-
-**"Tell the other ticket before merging" in the producer's acceptance criteria is not a substitute.** That note is written by the ticket changing the shape, delivered once its work is already done, to a ticket that may have been built and merged in the meantime. An edge is a constraint the frontier honours; a note is a hope about timing.
+**A shared interface is a blocking edge, not a note.** A shape-defining ticket blocks every consumer even when each could build green against the old shape. Unchanged shared reads need no producer edge; shared-file edits still require impact ordering. If producer and consumer form a cycle, extract an accepted prerequisite contract or consolidate them. Notification before merging and final integration checks are not substitutes for edges.
 
 **The first product-behaviour ticket is a walking skeleton — a check, not advice.** Scaffolding supplies a minimal runnable entry point and test/check commands without inventing domain contracts. After scaffolding and required contract tickets, the walking skeleton extends that entry point through one thin end-to-end product path. Every later slice extends the same running system rather than becoming a separate little application. Scaffolding and contract tickets are explicit exceptions to vertical slicing, not substitutes for this first observable product behaviour. The quiz below refuses a breakdown that fails either check.
 
@@ -75,9 +71,13 @@ Draw the edge anyway: the ticket that defines the shape blocks every ticket that
 - **Acceptance criteria are the artifact and a test.** The contract ticket is done when the interface artifact exists (a schema, a type, an OpenAPI fragment, an event shape) and a test exercises it **from the dependent's side against a stub** of the provider. The stub is what lets the dependent build before the provider does.
 - **An accepted contract is immutable.** A revision is a new version, and a new version is a **new ticket**, blocking the affected dependents' follow-up tickets. Revisions still obey scaffolding, prerequisite and impact-surface blockers; they are not automatically unblocked. Nobody edits an accepted contract ticket in place; the contract ticket's body says so, in the template below, so the rule survives into the tracker.
 
-**The last ticket is always the human's.** Every breakdown ends in one terminal **review ticket** — `Review the delivered <parent title>` — blocked by every other ticket of the run and marked for a human, never an agent. It is the explicit human acceptance boundary after the implementation tickets close. Without it a fully delivered map simply goes quiet. It is not optional and not a ticket the user can drop from the breakdown; a breakdown without it is not publishable. Its body asks three fixed questions — does the delivered behaviour match the destination; what is wrong or missing; what should the next map chart — and the operator answers in a comment and closes it, the same shape a wayfinder resolution has.
+**The last ticket is always the human's.** End every breakdown with the terminal **review ticket**, `Review the delivered <parent title>`, blocked by every other ticket and marked for the human. It is mandatory, cannot be dropped and must be present before publication. After implementation tickets close, the operator answers the template's three questions in a comment and closes the review: destination match, wrong/missing behavior and the next map.
 
-### 4. Quiz the user
+### 4. Check briefs, audit the graph and settle missing approval
+
+Perform the shared handoff check before approval. Investigate and repair factual/drafting gaps;
+record unresolved choices, authority and prerequisite outputs with owners/next actions.
+Reuse adequate evidence; preserve blocked work while completing independent preparation.
 
 First audit the graph: one scaffold owner or verified existing foundation; complete impact declarations; every mutable overlap ordered; no cycles; documented disjointness for every concurrent set. Refuse unresolved or unordered impact before presenting an approval candidate.
 
@@ -92,7 +92,9 @@ Present the proposed breakdown as a numbered list, the review ticket last so it 
 
 Show the proposed concurrent sets and the disjointness evidence for each, or state that the plan is serial.
 
-Ask the user:
+Reuse an already-approved breakdown and adequate same-scope authority. Ask only about missing
+or materially changed decisions; explain the changed premise before reopening an agreement.
+When the breakdown still needs approval, present inspected findings and ask the relevant questions:
 
 - Does the granularity feel right? (too coarse / too fine)
 - Are the blocking edges correct — does each ticket depend on every ticket that gates it, and on no others?
@@ -101,22 +103,38 @@ Ask the user:
 - Does the work span more than one component — module, service, package? If so, which interfaces cross a boundary, which component owns each, and does each have a contract ticket that its dependents are blocked by?
 - Should any tickets be merged or split further?
 
-Complete when the graph audit passes and the user approves the breakdown. Otherwise revise it; do not publish an unresolved graph.
+Reuse sufficient grants; publication approval alone is not readiness authorization. Request missing effects in one precise proposal naming the bounded graph, agent-ready slices, limits, blockers and human-only work. This grants no automatic dispatch, merge or closure.
+
+Complete when the brief checks and graph audit pass and the applicable scoped approvals are recorded. If publication alone is authorized, retain the missing readiness decision rather than asking twice or granting it yourself. Otherwise preserve the provisional breakdown with exact gaps/owners; do not publish an unresolved graph as ready.
 
 ### 5. Publish the tickets to the configured tracker
 
-Publish the approved tickets, following the tracker doc's conventions. The tickets are the same whatever the tracker — only the shape of the blocking edges changes:
+Publish within the recorded authority, following the tracker doc's conventions. Read current
+content first and preserve unrelated edits, claims and dependencies. Publish prepared briefs
+and authority records, then read back the definitive briefs and authority records **before**
+applying authorized readiness transitions. Reconcile uncertain writes by reading before retrying;
+if reconciliation is unavailable, report publication unverified rather than duplicate records.
+
+The tickets are the same whatever the tracker — only the shape of the blocking edges changes:
 
 - **A forge-backed tracker** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the tracker's native blocking relationship where the doc describes one; otherwise set each ticket's "Blocked by" to the blocking issues. The review ticket is published **last**, with a blocking edge from **every** other ticket of the run, labelled `workflow:implement` and `ready-for-human`; use the review-ticket template below.
 - **Local files** → write one file per ticket at the path the tracker doc specifies, numbered from `01` in dependency order (blockers first; contract tickets before their dependents, so a dependent's number is always higher than its contract's). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below — one ticket per file, never a single combined file. The review ticket is the last numbered file, its "Blocked by" listing every other file, its status `ready-for-human`.
 
-**Every forge-backed ticket opens with the literal first body line `Part of #<parent>`** — the issue the tickets were cut from (the map, or the spec issue when there is no map), then a blank line, then the template below. This is the tracker doc's parent-membership convention: keep the first-line declaration consistent so a reader can recover the approved graph without guessing from prose. It does not authorize a scheduler or define how an external orchestrator selects work. When the source is not an issue on the tracker there is no parent, and the line is omitted.
+**Every forge-backed ticket opens with the literal first body line `Part of #<parent>`**, then a blank line and its template. Use the source map/spec issue as parent; omit the line when the source is not a tracker issue. This preserves parent membership, not scheduler authority or external work-selection policy.
 
-Apply `workflow:implement` to every forge-backed ticket so the next workflow is explicit. Choose the triage state separately: apply `ready-for-agent` by default, or `ready-for-human` when the ticket requires human implementation, resolving either state through the label mapping.
+Apply `workflow:implement` to approved implementation tickets for routing, not authority.
+Choose the state through the project's existing label mapping: agent readiness needs sufficient
+briefs and scoped human authorization; missing information/refinement and missing human judgement
+or permission retain their configured non-ready roles. Human-only work, including the review,
+keeps its human outcome. A fully specified and authorized but blocked ticket is not takeable.
+For local files, write the brief in the configured preparation state, read it back, then record
+the authorized final state and read it back again. Do not infer readiness from publication.
 
 Read back the published tickets and native blocking relationships (or local file references). Verify every approved edge, an acyclic graph, an ordering path for every overlap and the review ticket's complete blocker set. Repair discrepancies before declaring publication complete; a write response alone does not prove the graph exists.
 
-Work the **frontier**: tickets whose blockers are all done, with parallel eligibility limited to the proven-disjoint sets. For a purely linear chain that means top to bottom.
+Report the **frontier**: tickets whose blockers are all done and whose other execution gates pass,
+with parallel eligibility limited to the approved proven-disjoint sets. For a purely linear
+chain that means top to bottom. This planning invocation does not start implementation.
 
 Do NOT close or modify any parent issue.
 
@@ -132,7 +150,7 @@ Do NOT close or modify any parent issue.
 
 **Workflow:** implement
 
-**Status:** ready-for-agent
+**Status:** <configured role justified by brief checks and scoped authority; record blocking separately>
 
 - [ ] Acceptance criterion 1
 - [ ] Acceptance criterion 2
@@ -220,6 +238,8 @@ Every other ticket of this run blocks this one, so it becomes takeable only when
 - Every other ticket of the run.
 
 </review-ticket-template>
+
+In every implementation-ticket form, include the shared handoff facts in the project's brief format or add authoritative pointers; the templates are a starting shape, not permission to omit decisions, verification, authority or residual ownership. The terminal human review uses its own outcome, not an implementation brief.
 
 In either form, include concrete current paths when they establish impact ownership or disjointness; keep speculative implementation detail and code snippets out. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
 

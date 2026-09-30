@@ -32,3 +32,12 @@ def test_producer_and_repairer_resolve_one_bundled_handoff_reference() -> None:
     assert targets == {
         ROOT / "skills/workflow/to-tickets/references/implementation-handoff.md"
     }
+
+
+def test_ticket_publication_cannot_default_to_agent_readiness() -> None:
+    text = skill_path("to-tickets").read_text()
+    publication = text.split("### 5. Publish", 1)[1]
+    assert "read back the definitive briefs and authority records **before**" in publication
+    assert "ready-for-agent` by default" not in publication
+    assert "**Status:** ready-for-agent" not in publication
+    assert "publication approval alone is not readiness authorization" in text
