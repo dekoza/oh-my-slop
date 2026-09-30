@@ -65,7 +65,9 @@ behavioral improvement is established by this sample.
 and timing are unavailable; null metrics or viewer defaults are not measured zero
 cost. Formal grades cite proposed actions only. No real workers,
 tracker writes, publication, primary integration, services or paid external CLI sessions
-were run. Fresh-worker construction, runtime loading and operational publication remain
+were run in this comparison. Later fresh configured skill discovery is verified in the
+[handoff spec](../../../../docs/specs/implementation-ticket-handoff.md#runtime-discovery-verification).
+Active-session reload, fresh-worker construction and operational publication remain
 separate, explicitly authorized acceptance work.
 
 ## Static regression evidence

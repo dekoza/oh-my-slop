@@ -1,6 +1,6 @@
 # Implementation ticket handoff
 
-Status: Draft — producer/repairer and routing/consumer source accepted; runtime-loading and operational acceptance remain pending.
+Status: Draft — producer/repairer and routing/consumer source accepted; fresh configured skill discovery verified; active-session reload and operational acceptance remain pending.
 
 ## Problem
 
@@ -261,6 +261,30 @@ that the viewer was opened, the active session reloaded or real construction suc
 Continue with local integration and non-mutating runtime-loading verification; no push,
 tracker mutation or operational pilot is selected or authorized by this acceptance.
 
+### Runtime discovery verification
+
+After local fast-forward to `f40a739`, installed pi **0.99.1** verified discovery using
+its actual package manager, `loadSkills`, `DefaultResourceLoader` and prompt formatting.
+Package-isolated discovery finds 68 skills in each checkout; fresh user-configured
+discovery finds 72. All six handoff workflow names resolve to the primary checkout's
+`skills/workflow/<name>/SKILL.md`, even when the cwd is the retained worktree: the
+configured local package is read in place. Effective file/body hashes match the accepted
+source, normal discovery diagnostics are empty, and controlled duplicate-name checks
+confirm first-wins reporting and identical-real-file deduplication.
+
+`to-spec`, `to-tickets`, `humanify` and `implement-spec` remain hidden from automatic
+model selection; `wayfinder` and `implement` remain visible. Skill commands are enabled.
+The probe creates a fresh resource loader, not an agent session; executable resources,
+network and configuration writes are disabled. It does not prove that this already-running
+session reloaded. Explicit `/skill:name` expansion was inspected in installed source,
+not executed; CLI-only and extension-contributed resources remain outside coverage.
+No construction worker or real publication was run.
+
+Evidence: `/tmp/oh-my-slop-discovery-OQ3X0dWn/report.md`, `probe.mjs`, `output.json`
+and `verification.txt`. Both checkouts were clean at the measured head. This is
+fresh configured loading evidence only, not operational acceptance or permission to
+select a pilot graph. Real construction/publication still needs a bounded selected scenario.
+
 ### Proposed order
 
 This is the allocation, not an approved tracker graph, automatic dispatch authority or
@@ -284,8 +308,9 @@ Changes to skills need the repository's authoring/evaluation gate: pre-edit snap
 RED/GREEN regressions, paired behavior evidence, reference/install checks and qualitative
 review. Static shape tests complement rather than replace fresh-worker outcomes.
 
-- **Deploy:** accepted source landed in the primary checkout; runtime loading and
-  fresh-worker operational checks remain separate verification.
+- **Deploy:** accepted source landed in the primary checkout; fresh configured discovery
+  is verified above. Active-session reload, explicit command execution and fresh-worker
+  operational checks remain separate verification.
 - **Migrate:** retain public names, existing trackers, project templates, comments,
   role mappings and claims; no bulk relabeling or automatic rewriting of old tickets.
 - **Rollback:** scoped additive reversals of future changes; preserve briefs, decisions,

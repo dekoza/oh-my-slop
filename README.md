@@ -304,8 +304,10 @@ These arrows are orientation, not invocation or permission. Brief sufficiency,
 scoped authority and present eligibility are separate checks; readiness labels do not
 waive blockers or claims. Reuse an adequate grant rather than repeat approval, and
 renew only changed effects. Existing execution, verification and publication contracts
-still govern. Source alignment is not proof of runtime loading or real fresh-worker
-construction; those operational checks remain pending.
+still govern. Fresh configured skill discovery is verified in the
+[handoff spec](docs/specs/implementation-ticket-handoff.md#runtime-discovery-verification);
+it is not proof of an active-session reload, real fresh-worker construction or publication.
+Those operational checks remain pending.
 
 ### Supervised whole-spec implementation
 

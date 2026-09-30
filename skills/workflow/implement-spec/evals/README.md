@@ -53,8 +53,9 @@ starts from `5b1588b` and uses the immutable consumer body through `2595b9a`; th
 [routing comparison](../../wayfinder/evals/README.md) for artifacts, source boundaries,
 rubric exposure, strong-baseline and shared-context limitations. The owner accepted
 this continuation's source and bundle at `c2304db`; the older coordinator comparison
-above is a separate artifact. Runtime loading and real dispatch/publication evidence
-remain pending.
+above is a separate artifact. Fresh configured skill discovery is verified in the
+[handoff spec](../../../../docs/specs/implementation-ticket-handoff.md#runtime-discovery-verification);
+active-session reload and real dispatch/publication evidence remain pending.
 
 ## Static and Git checks
 
