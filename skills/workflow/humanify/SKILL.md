@@ -1,6 +1,6 @@
 ---
 name: humanify
-description: Turn a human-blocked ticket into an agent-implementable ticket, with you deciding and the agent driving it through readiness.
+description: Repair an inherited or human-blocked ticket for agent implementation, or finish its explicit human-only outcome.
 argument-hint: "<ticket>"
 license: MIT
 disable-model-invocation: true
@@ -8,9 +8,10 @@ disable-model-invocation: true
 
 # Humanify
 
-Drive one ticket to **agent-implementable**: a durable, bounded implementation brief,
-resolved consequential decisions, verified prerequisites and explicit human readiness
-authorization. The human supplies decisions; the agent owns investigation, refinement,
+Repair one inherited, incomplete or changed-premise ticket to **agent-implementable**: a durable,
+bounded implementation brief, resolved consequential decisions, verified prerequisites and
+explicit human readiness authorization. This is an exception route, not a required second
+stage for every ticket produced by planning. The human supplies decisions; the agent owns investigation, refinement,
 publication and follow-through. A completed interview or progress comment is a checkpoint,
 not the destination. Implementation starts in a separate session.
 
@@ -95,23 +96,11 @@ of those conditions holds or a specific external blocker prevents further progre
 
 ## 3. Build the durable implementation brief
 
-Prepare actual ticket content, not an offer to prepare it later. Use the project's authoritative
-brief format; absent one, include:
-
-- **Outcome and scope:** current versus desired behavior, boundaries and explicit exclusions.
-- **Decisions and constraints:** confirmed choices, attribution, relevant rejected alternatives
-  and approved scope amendments; unresolved proposals remain visibly provisional.
-- **Contracts and construction context:** affected responsibilities/interfaces, prerequisite
-  outputs and verified code/test evidence sufficient for a fresh agent to find its starting
-  point. Specify required behavior and agreed seams, not every internal implementation choice.
-- **Acceptance and verification:** independently testable criteria, consequential failure paths,
-  relevant test tiers/commands from project policy and any required manual evidence with owner.
-  A planned test is not a passing result.
-- **Dependencies and sequencing:** delivered prerequisites, remaining blockers, shared mutable
-  impact and any required serialization. Dependency changes need applicable human authority.
-- **Execution boundary:** one bounded implementation slice, residual ownership, readiness
-  decision and separate-session handoff. Identify genuine missing inputs instead of hiding
-  them in “the implementer will decide.”
+Prepare actual ticket content, not an offer to prepare it later. For implementation work,
+read and apply the [implementation handoff criteria](../to-tickets/references/implementation-handoff.md)
+in the project's authoritative brief format. This reads the same criterion ticket producers
+use; it does not invoke ticket planning, rewrite the graph or require exhaustive design.
+Dependency changes retain their applicable human authority.
 
 Maintain the authoritative ticket body or project-designated agent brief as decisions land,
 within publication authority. Remove or explicitly supersede contradictory current requirements;

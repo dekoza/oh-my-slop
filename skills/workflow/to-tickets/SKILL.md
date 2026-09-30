@@ -1,9 +1,6 @@
 ---
 name: to-tickets
-description: >
-  Break a plan, spec, or the current conversation into a set of tracer-bullet tickets —
-  vertical slices, each declaring its blocking edges — published to the project tracker
-  or one local file per ticket.
+description: Produce bounded implementation briefs and an audited ticket graph from an agreed plan, spec or discussion.
 license: MIT (adapted from mattpocock/skills)
 disable-model-invocation: true
 ---
@@ -38,6 +35,13 @@ For each proposed ticket, declare its **impact surface**: files/modules changed;
 Complete when the foundation owner and each ticket's impact are evidenced, or the unknowns are recorded as approval blockers.
 
 ### 3. Draft vertical slices
+
+Read the [implementation handoff criteria](references/implementation-handoff.md).
+Prepare an actual durable brief for each implementation ticket in the project's format,
+with those six facts or unambiguous authoritative pointers. Own factual investigation and
+in-scope drafting repairs before handoff; `humanify` is for exceptional repair, not a required
+finishing session for every new ticket. Preserve confirmed decisions, exclusions and deferrals,
+while leaving routine engineering choices to the implementer.
 
 Break the work into **tracer bullet** tickets.
 
