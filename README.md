@@ -274,6 +274,39 @@ conflicts with the PR's actual target branch. It retains `grilling` for human de
 protects other work, and updates the same open PR; it does not authorize a PR merge or
 published-history rewrite. Run `/reload` in an active pi session to load this template.
 
+### Planning to implementation
+
+```text
+bounded discussion / research / optional prototype
+  → synthesis when needed
+  → ticket construction, graph audit and readiness assessment
+  → scoped approval, publication and readback
+  → one-slice or supervised whole-spec implementation
+  → verification, review and authorized publication
+  → human acceptance
+```
+
+- Use [Wayfinder](skills/workflow/wayfinder/SKILL.md) for multi-session decisions;
+  synthesize scattered primary resolutions with [to-spec](skills/workflow/to-spec/SKILL.md).
+  The map indexes decisions; it is not the execution brief.
+- From a usable spec, [to-tickets](skills/workflow/to-tickets/SKILL.md) owns bounded
+  construction briefs and the audited graph. A sufficient small brief can go directly
+  to [implement](skills/workflow/implement/SKILL.md), without an artificial parent spec.
+- Select `implement` for one eligible slice, or
+  [implement-spec](skills/workflow/implement-spec/SKILL.md) for an approved supervised graph.
+  Consumers recheck changed inputs, reuse unchanged accepted decisions/evidence and
+  leave routine engineering choices to the implementer.
+- [humanify](skills/workflow/humanify/SKILL.md) is exceptional repair for inherited,
+  incomplete or changed-premise tickets—not a compulsory stage after ticket production.
+  Human-only outcomes and terminal reviews remain human-owned.
+
+These arrows are orientation, not invocation or permission. Brief sufficiency,
+scoped authority and present eligibility are separate checks; readiness labels do not
+waive blockers or claims. Reuse an adequate grant rather than repeat approval, and
+renew only changed effects. Existing execution, verification and publication contracts
+still govern. Source alignment is not proof of runtime loading or real fresh-worker
+construction; those operational checks remain pending.
+
 ### Supervised whole-spec implementation
 
 Use `/implement-spec <spec> [instructions]` when an approved spec already has

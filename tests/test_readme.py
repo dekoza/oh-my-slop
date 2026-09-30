@@ -139,6 +139,19 @@ def test_readme_never_advertises_an_archived_extension() -> None:
         )
 
 
+def test_readme_maps_planning_to_execution_without_mandatory_repair() -> None:
+    section = load_readme().split("### Planning to implementation", 1)[1]
+    section = section.split("\n### ", 1)[0]
+    for skill in ("wayfinder", "to-spec", "to-tickets", "implement", "implement-spec",
+                  "humanify"):
+        assert f"skills/workflow/{skill}/SKILL.md" in section
+    assert "primary resolutions" in section
+    assert "sufficient small brief" in section
+    assert "exceptional repair" in section
+    assert "human acceptance" in section
+    assert "not invocation" in section
+
+
 def test_readme_explains_critical_partner_setup_and_use() -> None:
     readme_text = load_readme()
 

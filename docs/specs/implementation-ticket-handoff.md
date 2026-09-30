@@ -1,6 +1,6 @@
 # Implementation ticket handoff
 
-Status: Draft — producer/repairer criteria and readiness recording implemented; routing alignment and operational acceptance remain pending.
+Status: Draft — producer/repairer source accepted; routing/consumer source candidate implemented; qualitative and operational acceptance remain pending.
 
 ## Problem
 
@@ -33,8 +33,9 @@ Approval of that direction does not assert that this contract is already deploye
 
 ### Non-goals
 
-This implementation slice changes only the shared criteria and to-spec/to-tickets/humanify
-producer/repairer behavior. Wayfinder/execution routing remains a later slice. No live tracker
+The accepted first slice changes the shared criteria and to-spec/to-tickets/humanify
+producer/repairer behavior. The continuation implements §6 item 4: Wayfinder phase routing,
+execution-consumer changed-input checks and the README flow map. No live tracker
 writes, new skill, label, scheduler, mandatory per-ticket HITL session, or live service operations.
 No change to existing impact ordering, contract-ticket/version policy, human
 acceptance, review placement or publication/worktree protection. PR presentation
@@ -213,8 +214,8 @@ behavioral simulations, source review and operational acceptance are separate ev
   without invoking ticket planning. It retains its repair, continuation and human-only
   branches, distinguishing authorized preparation from blocked execution.
 
-Wayfinder phase routing, execution-consumer changes and the full visible flow map remain
-unimplemented in this slice. No real fresh-worker construction or tracker pilot is claimed.
+Wayfinder phase routing, execution-consumer changes and the visible flow map are the
+separate continuation below. No real fresh-worker construction or tracker pilot is claimed.
 
 ### Source acceptance
 
@@ -230,14 +231,30 @@ fresh-worker construction succeeded. The accepted bundle is under
 `/tmp/implementation-handoff-eval.LjV5YX/iteration-1/`; its strong-baseline, shared-context,
 portability and unavailable per-case metric limitations remain. Acceptance covers this
 slice only, not historical comparisons, humanify case 10, routing or an operational pilot.
-No push, tracker mutation or automatic continuation is authorized; retain the branch,
-worktree and unrelated state.
+No push, tracker mutation or automatic continuation was authorized by that acceptance;
+retain the branch, worktree and unrelated state. The later “continue” instruction selects
+the next library slice, not a pilot or operational graph.
+
+### Routing/consumer continuation
+
+The continuation starts from accepted primary head `5b1588b` in a separate retained
+worktree. [Wayfinder](../../skills/workflow/wayfinder/SKILL.md) now recommends synthesis
+from primary resolutions when needed, direct execution for a sufficient small brief,
+and explicitly selected one-slice or supervised execution. It does not invoke hidden
+user-only workflows or turn routing into readiness.
+[Implement](../../skills/workflow/implement/SKILL.md) and
+[implement-spec](../../skills/workflow/implement-spec/SKILL.md) directly consume the
+unchanged shared handoff reference, recheck definitive briefs/changed prerequisites,
+reuse adequate unchanged evidence and grants, and return consequential changes to their
+responsible owner. The [README](../../README.md#planning-to-implementation) maps that flow.
+Existing run-local eligibility, ordinary blockers, publication, review and worktree gates
+remain unchanged. Runtime loading, real construction and real publication are not claimed.
 
 ### Proposed order
 
 This is the allocation, not an approved tracker graph, automatic dispatch authority or
-proof of operational completion. Items 1–3 have a producer/repairer source implementation;
-item 4 remains pending:
+proof of operational completion. Items 1–3 have an accepted producer/repairer source
+implementation; item 4 has a separate source candidate awaiting owner acceptance:
 
 1. Snapshot current producer/repairer controls and freeze paired scenarios. Extract
    the shared brief/readiness criteria from humanify into one explicit shared reference
@@ -249,8 +266,9 @@ item 4 remains pending:
 4. Align Wayfinder's phase routing and execution consumers' changed-input checks;
    document the main flow. Do not add another router skill by default.
 
-The shared reference is bundled under to-tickets' references and linked directly by all three
-consumers; reading it invokes no workflow and changes no skill invocation mode.
+The shared reference is bundled under to-tickets' references and linked directly by the
+producer, repairer and execution consumers; reading it invokes no workflow and changes no
+skill invocation mode.
 Changes to skills need the repository's authoring/evaluation gate: pre-edit snapshots,
 RED/GREEN regressions, paired behavior evidence, reference/install checks and qualitative
 review. Static shape tests complement rather than replace fresh-worker outcomes.
