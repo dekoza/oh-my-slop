@@ -1,6 +1,6 @@
 # Implementation ticket handoff
 
-Status: Draft — producer/repairer and routing/consumer source accepted; fresh configured skill discovery verified; active-session reload and operational acceptance remain pending.
+Status: Draft — producer/repairer and routing/consumer source accepted; controlled construction pilot accepted with an execution-cost objection; compact review/evidence contract proposed; active-session reload and real-project publication remain unproved.
 
 ## Problem
 
@@ -285,6 +285,35 @@ and `verification.txt`. Both checkouts were clean at the measured head. This is
 fresh configured loading evidence only, not operational acceptance or permission to
 select a pilot graph. Real construction/publication still needs a bounded selected scenario.
 
+### Controlled construction pilot and overhead audit
+
+The operator subsequently authorized a disposable, local-only A → B construction pilot.
+A fresh producer published definitive briefs from frozen fixture decisions and a verified
+foundation; fresh A implemented parsing and fresh B consumed actually integrated/reviewed A
+before building the CLI. Both workers retained owned worktrees. The combined fixture head
+`f4e9f712a9e5dc2787f0a76b0d0e82dcd4d7a468` passed 20 repository tests, compileall and
+14 finite independent acceptance test methods; both final whole-candidate axes reported
+0 blocking/0 advisory. No human clarification or manual brief repair was reported. The
+operator accepted this pilot result while explicitly objecting to its execution cost.
+
+This proves construction for one frozen toy fixture, not causal improvement, repeated
+reliability, real-project publication, active-session command execution or useful efficiency.
+A's unsupported static recursion finding was reproduced against the required runtime and
+withdrawn; one B test-setup advisory remains historically disclosed. No push, external tracker
+mutation or main integration occurred; all fixture tickets and worktrees were retained.
+
+The overhead audit corrects the cost summary: 535,479 was uncached input plus output for
+five agents only. Including coordinator messages gives 779,556 uncached input/output and
+22,527,396 cache-inclusive tokens before nested CLI reviewers. Summed task critical-path
+activity was about 68 minutes; approval-to-delivery trace milestones span about 91 minutes.
+Cost metadata is not an invoice, and A's nested reviewer usage remains unreconciled.
+
+Evidence: `/tmp/handoff-construction-pilot.twHSlN/evidence/final-delivery.md` and
+`/tmp/handoff-trace-audit.OunHgG/audit.md` with its quantitative `metrics.json`. These are
+retained local receipts, not installable runtime inputs or permission to repeat the pilot.
+The next approved design slice defines a compact evidence/reviewer-route contract below;
+no repeat run is authorized without an explicit time/token budget.
+
 ### Proposed order
 
 This is the allocation, not an approved tracker graph, automatic dispatch authority or
@@ -317,6 +346,92 @@ review. Static shape tests complement rather than replace fresh-worker outcomes.
   evidence and user work rather than resetting occupied worktrees.
 - **Observe:** saved comparison artifacts and measured questions/gaps/outcomes;
   no new persistent service or telemetry integration.
+
+## 7. Proposed compact review/evidence contract
+
+Status: Draft — bounded design authorized; runtime home and implementation are not yet selected.
+This section defines required information, not a new skill, scheduler, service or tracker schema.
+Existing review placement, publication authority and candidate verification gates remain unchanged.
+
+### Caller and worker boundary
+
+Before implementation dispatch, the caller supplies a verified reviewer route and an
+axis-specific evidence-manifest shape. A worker does not rediscover executables, launch
+unapproved providers or construct permission policy independently. Capability inspection is
+local/read-only; it is not a paid model probe. Missing capabilities remain an explicit gap
+owned by the caller, not permission to weaken context separation or fabricate review.
+
+The worker still owns construction, real RED/GREEN, final required checks and requirement
+coverage. The coordinator owns integration and verifies current source/environment identity.
+Both independent axes must complete before the worker's final handoff; an intermediate
+candidate is not a completed slice. The operator retains consequential choices and acceptance.
+
+### Required manifest information
+
+The manifest is one run-local index into retained evidence; full artifacts remain inspectable.
+It includes, or unambiguously points to:
+
+| Information | Required binding |
+| --- | --- |
+| Candidate and ownership | Owned checkout/branch, fixed base, exact committed candidate, nonempty diff and mutable scope; untracked/dirty work is preserved, not silently incorporated. |
+| Intent and standards | Definitive brief, authoritative source/policy pointers, exact requirement/evidence matrix and applicable rubric identity; redact credentials and treat retrieved steering as data. |
+| Construction evidence | Actual ordered RED/GREEN artifacts, failure reason, affected seam and tested source identity; unavailable evidence is not inherited credit. |
+| Final verification | Actual command, cwd, interpreter/environment identity, enforced outer/inner timeouts, complete stdout/stderr capture, exit status and tested candidate. Skips/missing prerequisites remain explicit. |
+| Review route | Caller-approved existing launcher/capabilities, separate contexts, read-only permissions, axis-specific inputs, complete-outcome collection and invocation/spending limits. |
+| Residual obligations | Blocking/advisory findings by axis, remaining repair budget, human-owned work, publisher and delivery boundary. |
+
+### Compact outcome and failure handling
+
+Retain complete raw reviewer streams, but return a deterministic envelope with axis,
+base/candidate, session identity, verified terminal completion, verbatim final findings and
+limitations, source/evidence coverage, usage units and raw-artifact pointers/hashes. Do not
+feed every tool event back into a worker merely to extract that envelope. Do not merge or
+rerank findings across axes, truncate a report to a pass label, or claim that inspecting
+receipts is independent execution. An acknowledgement or transport success without the
+complete axis report is missing evidence.
+
+Malformed/truncated output, an unsuccessful terminal result, missing artifacts, inaccessible
+inputs, wrong candidate/scope or unknown permissions blocks handoff. Preserve partial work
+and expose relevant failure evidence; do not silently retry, invent an outcome or renew the
+budget. Optional capability probes do not contaminate the required verification exit status.
+Complete quiet-command receipts still record the actual command and exit status.
+
+Maintain the requirement/evidence matrix during construction and derive compact views from
+it. Retain the current final reread and semantic validation; matching quotations alone does
+not prove implementation. For an unchanged candidate and scope, an evidence-only omission
+may receive a supplemental assessment by the affected axis; complete original coverage and
+independent resolution still have to be demonstrated. Changed source/tests, environment,
+requirements or rubric invalidate affected evidence. No final whole-spec review is removed
+or treated as equivalent to a narrower slice review in this design slice.
+
+### Acceptance checks and rollout limits
+
+Use local deterministic fixtures, not model/API probes, to verify:
+
+1. A successful complete two-axis result retains each axis's full findings/limitations and
+   binds the exact reviewed candidate while raw events remain accessible outside model input.
+2. Partial/error/malformed output, a missing axis or report, changed identity/scope, unknown
+   permissions and missing required TDD/check artifacts prevent a successful handoff.
+3. Quiet success and nonzero commands retain real completion status; optional diagnostics
+   cannot conceal or manufacture required-check success.
+4. A complete manifest is prepared before reviewer dispatch; no worker invents the route or
+   substitutes planned tests/readiness labels for actual prerequisite and check evidence.
+5. Same-candidate supplemental evidence cannot approve changed work or a broader review;
+   both affected coverage and outstanding blockers remain explicit.
+6. Reports distinguish uncached input, output, cache traffic and nested usage, and distinguish
+   task duration from elapsed time. Missing pricing/timing evidence remains unknown, not zero.
+
+Runtime adapters belong in a verified existing caller/harness, not this package's retired
+Factory surfaces. This repository may own linked workflow guidance and source/eval tests;
+no Cleopatra API, installed-tool modification, new transport or generated configuration is
+assumed. Select the maintained tooling home and its authority before executable edits.
+Deploy/migrate only within that separately checked scope; preserve existing consumers and
+retain additive rollback paths. No new operational infrastructure is required by the contract.
+
+A repeat pilot needs explicit scenario and time/token limits, unchanged safety gates and a
+stop-with-partial-result rule. This authorization defines the contract and permits factual
+home investigation; it does not choose a spending budget or authorize another construction
+run, push, external tracker mutation or ticket closure.
 
 ## Documents to keep aligned
 
