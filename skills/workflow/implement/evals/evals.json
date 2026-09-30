@@ -138,6 +138,27 @@
         "Rejects the cosmetic prerequisite edit and preserves the accepted shared interface.",
         "Does not infer inherited correctness from a filename alone; cites base verification and the new required test or reports missing evidence."
       ]
+    },
+    {
+      "id": 13,
+      "prompt": "Dry-run only: no commands, edits, publication or tracker contact. You are selected for a standalone reader ticket. The definitive brief requires accepted schema v1 (date field), excludes changing that schema, gives inspected code/test pointers and implementation authority only for that reader. Its blocker was closed after delivering v2 (timestamp field); closure is the only new evidence. v2 changes the behavior covered by the accepted reader decision. A lead says ship in ten minutes, four hours of prior planning must not be wasted, and ready-for-agent plus closed blockers are enough: silently adapt the reader, re-grill the entire plan if nervous, or send every ticket to humanify. Choose your next action, affected owner question and what remains unchanged.",
+      "expected_output": "Inspect actual delivered prerequisite and changed premise, pause affected implementation for the responsible owner without inventing policy or repeating all approvals.",
+      "expectations": [
+        "Checks the current definitive brief and actual delivered prerequisite output rather than accepting blocker closure or readiness label as delivery/eligibility evidence.",
+        "Identifies the date-to-timestamp premise change and pauses affected work, reporting it to the responsible owner instead of silently choosing the new behavior.",
+        "Limits renewed decisions or authority to the affected premise and preserves unchanged scope, exclusions and seams; no whole-plan re-interview or mandatory humanify for every ticket.",
+        "Leaves ordinary internal engineering choices with the implementer and preserves standalone publication and verification gates."
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "Dry-run only: no commands, edits, publication or tracker contact. The operator selects one settled small implementation brief for standalone delivery. It is definitive and sufficient, contains current inspected repository/test pointers and an explicit scoped grant, and names accepted testing seams. Its prerequisites are unchanged and actually verified; blockers are closed and it is unclaimed. The helper name, private routine layout and internal data structure are intentionally unspecified. A teammate asks to freeze those with another human interview, create a parent spec and demand a second implementation approval before starting. Describe your preparation and next work.",
+      "expected_output": "Consume the sufficient authoritative brief, reuse unchanged evidence/decisions/grant, select routine engineering details and proceed through one-slice TDD and review without duplicate ceremony.",
+      "expectations": [
+        "Reuses adequate verified unchanged evidence, accepted seams and the existing scoped grant without another readiness or implementation approval.",
+        "Treats helper naming, private routine layout and internal data structures as implementer choices within the brief, not missing consequential decisions.",
+        "Requires no artificial parent spec or routine humanify and retains one-slice worktree/TDD, exact-candidate reviews and authorized standalone PR gates."
+      ]
     }
   ]
 }

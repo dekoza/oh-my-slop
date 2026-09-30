@@ -48,7 +48,7 @@ def test_run_frontier_preserves_tracker_gates_and_bounded_integration() -> None:
     assert "automatically cleaning up" in body
     cases = json.loads((SKILL / "evals/evals.json").read_text(encoding="utf-8"))
     assert cases["skill_name"] == "implement-spec"
-    assert {case["id"] for case in cases["evals"]} == {1, 2, 3}
+    assert {case["id"] for case in cases["evals"]} == {1, 2, 3, 4}
     assert all(case["expected_output"] and case["expectations"] for case in cases["evals"])
 
 

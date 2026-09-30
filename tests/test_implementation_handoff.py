@@ -34,6 +34,23 @@ def test_producer_and_repairer_resolve_one_bundled_handoff_reference() -> None:
     }
 
 
+def test_execution_consumers_read_the_same_criterion_before_dispatch() -> None:
+    reference = ROOT / "skills/workflow/to-tickets/references/implementation-handoff.md"
+    for name, next_step in (("implement", "## Delivery:"),
+                            ("implement-spec", "## 2. Pin")):
+        path = skill_path(name)
+        text = path.read_text()
+        links = re.findall(r"\]\(([^)]+implementation-handoff\.md)\)", text)
+        assert len(links) == 1, f"{name} must consume the shared criterion directly"
+        assert (path.parent / links[0]).resolve() == reference
+        assert text.index("implementation-handoff.md") < text.index(next_step)
+        assert "definitive brief" in text
+        assert "changed premise" in text
+        assert "responsible owner" in text
+        assert "unchanged" in text
+        assert "routine" in text
+
+
 def test_ticket_publication_cannot_default_to_agent_readiness() -> None:
     text = skill_path("to-tickets").read_text()
     publication = text.split("### 5. Publish", 1)[1]
