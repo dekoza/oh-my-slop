@@ -9,10 +9,10 @@ disable-model-invocation: true
 # Humanify
 
 Repair one inherited, incomplete or changed-premise ticket to **agent-implementable**: a durable,
-bounded implementation brief, resolved consequential decisions, verified prerequisites and
-explicit human readiness authorization. This is an exception route, not a required second
-stage for every ticket produced by planning. The human supplies decisions; the agent owns investigation, refinement,
-publication and follow-through. A completed interview or progress comment is a checkpoint,
+bounded implementation brief, resolved consequential decisions, explicit prerequisite conditions
+and human readiness authorization. This is an exception route, not a required second stage for
+every ticket produced by planning. The human supplies decisions; the agent owns investigation,
+refinement, publication and follow-through. A completed interview or progress comment is a checkpoint,
 not the destination. Implementation starts in a separate session.
 
 ## Critical rules
@@ -124,13 +124,16 @@ with remaining agent-owned refinement is not completion; return to step 2.
 Run the read-only preflight yourself; it is part of this invocation, not a new permission gate.
 Re-read the current ticket and governing amendments. Check the brief against code/contracts,
 acceptance criteria, prerequisite outputs, native dependencies, active claims and project gates.
-Assess sufficiency at the agreed fidelity, not exhaustive implementation design.
+Assess brief sufficiency, scoped authority and current execution eligibility separately.
+Check at the agreed fidelity, not exhaustive implementation design.
 
 Fix drafting omissions and contradictions yourself within confirmed decisions. Investigate
 factual gaps. Put genuine policy, scope or architectural forks back through step 2. If a
-prerequisite is missing, identify the required output and owner; retain the blocker and finish
-independent preparation. Do not present a blocked ticket as ready merely because its prose is
-complete.
+prerequisite is missing, identify the required output, owner and resume condition; retain the
+blocker and finish independent preparation. A sufficient, explicitly authorized brief may
+receive its authorized agent-ready state if project policy permits, while remaining blocked
+from execution. Report that as **prepared/authorized—blocked**, never takeable. Complete prose
+alone supplies neither readiness authority nor prerequisite evidence.
 
 When the checks support readiness, show a compact final brief or change summary with the exact
 scope, exclusions, evidence and residual obligations. Ask the outstanding human decision directly:
@@ -149,8 +152,9 @@ Manual setup finishes on its defined result; terminal reviews use their review q
 “yes” suffices for a precise proposal. Closure direction alone does not prove a missing check:
 correct an earlier premature closure recommendation and settle residual ownership or scope first.
 
-**Ready when:** the checked brief and required human authorization match, or a specific blocker
-or human decision leaves the ticket explicitly provisional. Readiness approval triggers recording
+**Ready when:** the checked brief and required human authorization match the applicable state
+policy, with execution blockers explicitly recorded, or a missing decision/input/authority
+leaves the ticket provisional. Readiness approval triggers recording
 and verification now—not another question about whether to perform them.
 
 ## 5. Publish, transition and verify
@@ -178,7 +182,9 @@ brief, authorization record, labels, open/closed state, ownership and dependenci
 its verified agent-ready state, with its link and separate-session handoff reported. Do not start
 implementation or the next ticket. For an explicitly human-only outcome, completion instead means
 its evidence, verdict and residual ownership are recorded and its authorized disposition verified.
-Otherwise report **blocked**, **prepared—awaiting authorization**, or **publication unverified**, with
+When the brief and authorized state are verified but execution is gated, report
+**prepared/authorized—blocked** with the preserved edge and resume condition. Otherwise report
+**blocked**, **prepared—awaiting authorization**, or **publication unverified**, with
 the preserved artifact, exact missing decision/action, owner and resume condition. These are pauses,
 not successful completion; ordinary remaining agent work is never a reason to end the invocation.
 

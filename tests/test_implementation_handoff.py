@@ -41,3 +41,12 @@ def test_ticket_publication_cannot_default_to_agent_readiness() -> None:
     assert "ready-for-agent` by default" not in publication
     assert "**Status:** ready-for-agent" not in publication
     assert "publication approval alone is not readiness authorization" in text
+
+
+def test_repaired_brief_distinguishes_readiness_from_blocked_eligibility() -> None:
+    text = skill_path("humanify").read_text()
+    preflight = text.split("## 4. Perform the readiness preflight", 1)[1]
+    assert "Assess brief sufficiency, scoped authority and current execution eligibility separately" in preflight
+    assert "prepared/authorized—blocked" in preflight
+    reference = ROOT / "skills/workflow/to-tickets/references/implementation-handoff.md"
+    assert "relevant rejected alternatives" in reference.read_text()

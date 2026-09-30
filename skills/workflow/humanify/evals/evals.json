@@ -2,6 +2,17 @@
   "skill_name": "humanify",
   "evals": [
     {
+      "id": 10,
+      "prompt": "Continue /humanify sample/controller #124. Supplied fixture only: return proposed brief/recording actions and status, no real writes or invented receipts. The bounded status-filter brief is complete and checked against the existing CLI seam and EnrollmentStore.list shape; filters never mutate state, and registration/enablement changes are excluded. A native blocker #79 owns delivery of the approved scrubbed dataset at fixtures/enrollments.scrubbed.json. Its required shape is accepted, but the dataset is not delivered and #79 is open. The operator has explicitly authorized publishing this exact brief and marking #124 ready-for-agent; no dispatch, blocker closure or dependency rewrite. Project policy defines ready-for-agent as sufficient and authorized, with prerequisite eligibility independent. The current ticket is ready-for-human, workflow:implement, enhancement, open and unassigned. No other gap or material change exists.",
+      "expected_output": "Publish and read back the checked brief and scoped grant before the authorized state transition, retaining #79 and reporting prepared/authorized but blocked rather than runnable or needs-info.",
+      "files": [],
+      "expectations": [
+        "Reuses the checked brief and explicit grant without another decision, continuation or humanify-preparation question.",
+        "Distinguishes sufficient/authorized from current eligibility, retains #79 and its owner/resume condition, and claims no dataset delivery or dispatched implementation.",
+        "Proposes definitive publication/readback before the authorized ready-for-agent transition and final verification, preserving enhancement, workflow, ownership and open state."
+      ]
+    },
+    {
       "id": 9,
       "mode": "multi-turn",
       "prompt": "Run /refine-ticket 86 through the isolated local-tracker fixture and hidden driver in refine-ticket-multiturn.json. Compare immutable old and new command snapshots using identical project facts, model and tools. Resume each executor across actual human replies; do not flatten the driver into a one-response simulation or show it the expectations.",

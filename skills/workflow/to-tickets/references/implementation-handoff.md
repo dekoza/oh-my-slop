@@ -10,8 +10,8 @@ not mandatory headings or a second template.
 - **Outcome and limits:** one bounded, reviewable result; current versus desired
   behavior where relevant, and explicit exclusions.
 - **Confirmed decisions:** material behavior, policy and interface choices with
-  attribution and authoritative source pointers; preserve negative requirements,
-  approved amendments and deliberate deferrals. Mark unresolved proposals as such.
+  attribution and authoritative source pointers; preserve relevant rejected alternatives,
+  negative requirements, approved amendments and deliberate deferrals. Mark unresolved proposals as such.
 - **Construction starting point:** relevant responsibilities, accepted interfaces,
   expected prerequisite outputs and inspected code/test pointers. Distinguish
   verified existing inputs from future outputs. A fresh worker can find its start
