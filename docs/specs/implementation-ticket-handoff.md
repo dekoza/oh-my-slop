@@ -298,8 +298,8 @@ operator accepted this pilot result while explicitly objecting to its execution 
 
 This proves construction for one frozen toy fixture, not causal improvement, repeated
 reliability, real-project publication, active-session command execution or useful efficiency.
-A's unsupported static recursion finding was reproduced against the required runtime and
-withdrawn; one B test-setup advisory remains historically disclosed. No push, external tracker
+A's unsupported static recursion claim was tested against the required runtime, disproved
+and withdrawn; one B test-setup advisory remains historically disclosed. No push, external tracker
 mutation or main integration occurred; all fixture tickets and worktrees were retained.
 
 The overhead audit corrects the cost summary: 535,479 was uncached input plus output for
