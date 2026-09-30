@@ -3,21 +3,21 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "You are working a planning-default Wayfinder map. The final decision ticket has just resolved, all fog is clear, and the route now consists of two buildable vertical slices. State the exact next workflow, whether these slices remain Wayfinder tickets, which skill should execute them, and every routing and state label each generated ticket should receive.",
-      "expected_output": "The response hands the decided route to to-tickets, creates separate implementation tickets, labels them for the implement workflow and the appropriate executor, and keeps them outside the Wayfinder decision frontier.",
+      "prompt": "Dry-run only; do not invoke another workflow or write to a tracker. You are working a planning-default Wayfinder map. The final decision ticket has just resolved, all fog is clear, and the route now consists of two buildable vertical slices. A usable authoritative spec consolidates the primary resolutions. The operator approved ticket publication and scoped agent implementation; briefs still need construction and eligibility assessment. State the exact next workflow, whether these slices remain Wayfinder tickets, which skill should execute them, and how routing and state labels are determined.",
+      "expected_output": "The response recommends to-tickets from the usable spec, bounded implementation tickets with state justified by sufficiency/authority rather than routing, and separately selected execution outside Wayfinder's decision frontier.",
       "files": [],
       "expectations": [
-        "The response invokes `to-tickets` to create the build tickets.",
-        "The generated tickets include `workflow:implement`.",
-        "The generated tickets include `ready-for-agent` or `ready-for-human` according to the required executor.",
+        "The response recommends `to-tickets` for brief construction, graph audit and readiness assessment from the usable spec.",
+        "The proposed implementation tickets include `workflow:implement`.",
+        "The response uses configured states, including `ready-for-agent` or `ready-for-human` only when applicable brief and authority criteria hold; routing alone proves neither.",
         "The generated tickets do not include a `wayfinder:<type>` label.",
-        "The response invokes `implement` for each build ticket in a fresh session.",
+        "The response recommends fresh-session `implement` for one eligible slice or explicitly selected `implement-spec` for an approved graph, without automatic invocation.",
         "The map-to-ticket handoff uses the configured tracker convention, without requiring the retired Factory or inventing a Cleopatra command."
       ]
     },
     {
       "id": 2,
-      "prompt": "Classify three tracker tickets by workflow skill and labels: A) an AFK research question inside an active Wayfinder map; B) an AFK implementation slice generated from an approved spec; C) a human-only implementation slice. Explain workflow routing separately from executor readiness.",
+      "prompt": "Dry-run classification only. Classify three tracker tickets by workflow skill and labels: A) an AFK research question inside an active Wayfinder map; B) an AFK implementation slice with a verified sufficient brief and scoped implementation authority; C) a human-only implementation slice authorized for human action. Use the canonical default state-role mapping. Explain workflow routing separately from executor readiness and current eligibility.",
       "expected_output": "The response distinguishes Wayfinder decision routing from implementation routing and treats ready-for-agent and ready-for-human as a separate executor dimension.",
       "files": [],
       "expectations": [
@@ -25,7 +25,7 @@
         "Ticket B includes both `workflow:implement` and `ready-for-agent`.",
         "Ticket C includes both `workflow:implement` and `ready-for-human`.",
         "Tickets B and C do not include a `wayfinder:<type>` label.",
-        "The response reports that readiness labels identify the executor rather than the workflow skill."
+        "The response separates workflow routing from sufficient brief, scoped authority and current eligibility; human-only work stays outside agent execution."
       ]
     },
     {
@@ -50,6 +50,27 @@
         "The response identifies dev-b's claim as stale from the inactivity, not merely from age of assignment.",
         "The response posts a takeover note before reassigning the stale ticket.",
         "The reassignment happens before any resolution work on the ticket."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Dry-run only: no commands, edits, tracker writes or skill invocation. A planning-default Wayfinder map has resolved its last decision. Three primary resolution tickets hold confirmed scope, failure behavior and a deferred export feature; the map contains only one-line links. No usable consolidated spec exists. Two vertical build slices are visible. The operator approved decisions, not ticket publication or implementation. Choose the next phase and its inputs, then explain the later execution entry points and what authorizes them.",
+      "expected_output": "Route scattered primary decisions through synthesis before ticket construction; preserve deferrals and keep authority and invocation boundaries explicit.",
+      "expectations": [
+        "Routes the multi-session effort to to-spec synthesis using primary resolution tickets, not directly from map gists into build tickets.",
+        "Preserves confirmed failure behavior and the deferred export exclusion without reopening settled decisions.",
+        "Identifies to-tickets after a usable spec and implement for one slice or operator-selected implement-spec for an approved graph; does not automatically invoke a user-only workflow.",
+        "Does not infer publication, readiness or implementation authority from the decision approval."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Dry-run only: no commands, edits, tracker writes or skill invocation. A small settled change already has one definitive sufficient implementation brief, inspected code/test pointers, accepted seams, explicit operator implementation authority and no blockers or claims. No parent spec or map is needed. A teammate proposes to-spec, then to-tickets, then mandatory humanify for every ticket, arguing that workflow:implement proves readiness and ready-for-human work can be given to an agent too. Select the proportionate route and state how routing labels differ from the actual gates.",
+      "expected_output": "Recommend direct single-slice implement with the existing adequate brief/grant, without artificial spec or mandatory repair, preserving human-only and blocking gates.",
+      "expectations": [
+        "Recommends direct implement for the sufficient small brief without requiring a parent spec, new ticket breakdown or routine humanify.",
+        "Separates workflow:implement from brief sufficiency, scoped authority and current eligibility; uses configured state roles rather than labels as permission.",
+        "Keeps human-only outcomes and terminal human review outside agent implementation and does not automatically start another workflow."
       ]
     }
   ]

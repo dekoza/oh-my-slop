@@ -16,7 +16,29 @@ The destination varies per effort, and naming it is the first act of charting �
 
 Wayfinder is **planning** by default: each ticket resolves a decision, and the map is done when the way is clear — nothing left to decide before someone goes and does the thing. The pull to just do the work is usually the signal you've reached the edge of the map and it's time to hand off. An effort can override this in its **Notes** — carrying execution into the map itself — but absent that, produce decisions, not deliverables.
 
-**Route build-ready work out of the decision frontier.** Once the remaining work is implementation rather than decision-making, invoke `to-tickets` to create implementation tickets. Mark each with `workflow:implement` plus its `ready-for-agent` or `ready-for-human` state, then work it with `implement` in a fresh session. Implementation tickets never carry a `wayfinder:<type>` label. When the map's Notes carry execution, link those tickets to the map while keeping them out of Wayfinder's decision frontier.
+## Route the next phase
+
+**Route settled work out of the decision frontier.** A multi-session effort whose decisions
+are scattered needs `to-spec` synthesis from the primary resolution tickets and linked
+evidence before ticket construction; the map's gists are an index, not an executable brief.
+Preserve confirmed scope, failure behavior, exclusions, deferrals and testing agreements
+without restarting settled interviews. With a usable spec, recommend `to-tickets` for bounded
+implementation briefs, graph audit and readiness assessment. A small change with an adequate
+authoritative brief can go directly to `implement` without an artificial parent spec or map.
+
+Recommend `implement` in a fresh session for one eligible slice, or operator-selected
+`implement-spec` for one approved graph under its supervised contract. Naming a next phase
+or reading its reference does not authorize invoking a user-only skill, publishing tickets
+or starting implementation. Reuse a sufficient scoped grant; ask only for missing effects.
+
+Implementation tickets use `workflow:implement` plus the configured state roles, including
+`ready-for-agent` or `ready-for-human` only when their criteria and authority are satisfied.
+Routing is not readiness; brief sufficiency, scoped authority and present eligibility remain
+separate. Human-only work and terminal human review keep their own outcomes, outside agent
+implementation. Implementation tickets never carry a `wayfinder:<type>` label. When the map's
+Notes carry execution, link those tickets to the map while keeping them out of Wayfinder's
+decision frontier. `humanify` repairs inherited/incomplete or changed-premise tickets
+exceptionally; it is not a mandatory stage after ticket production.
 
 ## Refer by name
 

@@ -51,6 +51,19 @@ def test_wayfinder_hands_build_ready_work_to_implementation_tickets() -> None:
     assert "never carry a `wayfinder:<type>` label" in wayfinder_text
 
 
+def test_wayfinder_routes_primary_resolutions_through_proportionate_synthesis() -> None:
+    text = (find_skill_dir(SKILLS_ROOT, "wayfinder") / "SKILL.md").read_text()
+    routing = text.split("## Route the next phase", 1)[1].split("## Refer by name", 1)[0]
+    assert "primary resolution tickets" in routing
+    assert "`to-spec`" in routing
+    assert routing.index("`to-spec`") < routing.index("`to-tickets`")
+    assert "directly to `implement`" in routing
+    assert "user-only skill" in routing
+    assert "configured state roles" in routing
+    assert "human-only" in routing.lower() and "terminal" in routing
+    assert "invoke `to-tickets` to create" not in routing
+
+
 def test_project_setup_and_live_config_define_the_workflow_label() -> None:
     setup_skill_text = (
         find_skill_dir(SKILLS_ROOT, "setup-project-skills") / "SKILL.md"
