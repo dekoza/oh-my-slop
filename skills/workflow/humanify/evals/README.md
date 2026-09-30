@@ -23,6 +23,29 @@ The first three cases were written under the earlier unpublished `acceptance` na
 Case 1 deliberately retains its established resolution marker: resuming another record
 must not create a duplicate merely because the assisting skill now has a different name.
 
+## Shared handoff criterion revision
+
+Humanify now reads the same brief/sufficiency criterion as ticket producers; it is
+exception-only repair, not a required completion stage for all new tickets. Its
+continuation, actual human authority, uncertain-write recovery and human-only outcomes
+remain. Case 10 records sufficient/authorized but prerequisite-blocked preparation;
+**it is a regression definition, not a paired behavioral result**.
+
+The producer/repairer comparison under `/tmp/implementation-handoff-eval.LjV5YX/`
+uses baseline `2f9469b`, candidate `84fddc0` and identical frozen task-only prompts on
+`openai-codex/gpt-6.1-sol`, medium reasoning. Humanify controls cover case 7's authorized
+transition and a condensed case-1 terminal review/uncertain update; they do not rerun
+all historical scenarios or the multi-turn driver. Each configuration shares one
+executor context across four cases. Proposed recording order is not executed
+publication evidence. The unchanged mandatory critical-partner body may be loaded in
+addition to the snapshots; environment limitations are retained with the comparison.
+
+The baseline already supplies the definitive brief, reuses the grant and preserves
+terminal review/reconciliation. No humanify improvement is inferred from source
+sharing. Independent grades and human qualitative output review remain distinct;
+group metrics cannot be assigned to cases or prove efficiency. The later `82eb152`
+to-tickets wording correction is outside the immutable behavioral snapshot.
+
 ## Refinement entry-point regression — 2026-09-27
 
 The September 25 readiness revision did not reach `/refine-ticket`: its September 22

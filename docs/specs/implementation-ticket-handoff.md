@@ -1,6 +1,6 @@
 # Implementation ticket handoff
 
-Status: Draft — design proposed for review; not implemented in the skills.
+Status: Draft — producer/repairer criteria and readiness recording implemented; routing alignment and operational acceptance remain pending.
 
 ## Problem
 
@@ -33,8 +33,9 @@ Approval of that direction does not assert that this contract is already deploye
 
 ### Non-goals
 
-No skill edits or live tracker writes in this design slice. No new skill, label,
-scheduler, mandatory per-ticket HITL session, or access to external services.
+This implementation slice changes only the shared criteria and to-spec/to-tickets/humanify
+producer/repairer behavior. Wayfinder/execution routing remains a later slice. No live tracker
+writes, new skill, label, scheduler, mandatory per-ticket HITL session, or live service operations.
 No change to existing impact ordering, contract-ticket/version policy, human
 acceptance, review placement or publication/worktree protection. PR presentation
 and retrospective adoption are separate slices. No blanket promise of zero human
@@ -197,25 +198,29 @@ alone do not establish improvement; source/schema checks cannot prove semantic s
 
 ## 6. Implementation allocation and operational impact
 
-### Current-source reconciliation required
+### Producer/repairer slice
 
-- [to-spec](../../skills/workflow/to-spec/SKILL.md) currently requests seam confirmation
-  and applies agent readiness after publication; the proposal instead reuses settled
-  seams and does not let parent publication authorize implementation tickets.
-- [to-tickets](../../skills/workflow/to-tickets/SKILL.md) already owns detailed graph
-  audits, but its brief templates omit parts of the common handoff and its publication
-  step defaults to agent readiness. Preserve the graph guarantees while reconciling
-  brief sufficiency and explicit authority with project label policy.
-- [humanify](../../skills/workflow/humanify/SKILL.md) already supplies the richer brief,
-  investigation and authority checks. Share those criteria, not its whole interview
-  and completion process. Reconcile blocked preparation with the independent execution
-  gates rather than claiming that complete prose makes a ticket takeable.
+The source baseline was `2f9469b`. The following reconciliations are implemented;
+behavioral simulations, source review and operational acceptance are separate evidence.
 
-These are proposed reconciliations, not claims about current deployed behavior.
+- [to-spec](../../skills/workflow/to-spec/SKILL.md) reuses settled seams and preserves
+  acceptance conditions/deferrals; parent publication no longer defaults to readiness.
+- [to-tickets](../../skills/workflow/to-tickets/SKILL.md) owns brief construction and
+  read-only sufficiency checks alongside its existing graph audit. It reuses sufficient
+  scoped grants and verifies definitive publication before authorized state transitions.
+- [humanify](../../skills/workflow/humanify/SKILL.md) consumes the same
+  [handoff criteria](../../skills/workflow/to-tickets/references/implementation-handoff.md)
+  without invoking ticket planning. It retains its repair, continuation and human-only
+  branches, distinguishing authorized preparation from blocked execution.
+
+Wayfinder phase routing, execution-consumer changes and the full visible flow map remain
+unimplemented in this slice. No real fresh-worker construction or tracker pilot is claimed.
 
 ### Proposed order
 
-This is a proposed order, not an approved tracker graph or permission to execute it:
+This is the allocation, not an approved tracker graph, automatic dispatch authority or
+proof of operational completion. Items 1–3 have a producer/repairer source implementation;
+item 4 remains pending:
 
 1. Snapshot current producer/repairer controls and freeze paired scenarios. Extract
    the shared brief/readiness criteria from humanify into one explicit shared reference
@@ -227,8 +232,8 @@ This is a proposed order, not an approved tracker graph or permission to execute
 4. Align Wayfinder's phase routing and execution consumers' changed-input checks;
    document the main flow. Do not add another router skill by default.
 
-The shared reference's final file placement/wiring must be checked during implementation;
-no nonexistent implementation file is presented as an installed entry point here.
+The shared reference is bundled under to-tickets' references and linked directly by all three
+consumers; reading it invokes no workflow and changes no skill invocation mode.
 Changes to skills need the repository's authoring/evaluation gate: pre-edit snapshots,
 RED/GREEN regressions, paired behavior evidence, reference/install checks and qualitative
 review. Static shape tests complement rather than replace fresh-worker outcomes.
@@ -243,7 +248,7 @@ review. Static shape tests complement rather than replace fresh-worker outcomes.
 
 ## Documents to keep aligned
 
-The eventual shared reference owns detailed brief criteria; individual skills own
+The shared reference owns detailed brief criteria; individual skills own
 process and authority. This spec owns intended behavior, not a competing runtime checklist.
 Affected surfaces: to-spec/to-tickets/humanify and their evals; Wayfinder phase routing;
 implement/implement-spec consumer checks where needed; the README flow map; CONTEXT

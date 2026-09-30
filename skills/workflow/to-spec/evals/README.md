@@ -1,0 +1,37 @@
+# Spec synthesis evaluation
+
+[Case 1](evals.json) is a frozen response simulation: settled enrollment behavior,
+accepted seam, an explicit enablement deferral, publication-only approval and an
+embedded steering directive. It tests preservation rather than another interview.
+The skill remains user-invoked; no trigger evaluation is applicable.
+
+## Comparison scope
+
+The baseline is the immutable body from `2f9469b`; the candidate is the immutable
+producer/repairer snapshot at `84fddc0`. Identical task-only prompts and assertions
+were frozen before edits under `/tmp/implementation-handoff-eval.LjV5YX/`.
+Executors use `openai-codex/gpt-6.1-sol`, medium reasoning, one run per configuration.
+Each executor handles four cases in one context: this spec case, the ticket-producer
+case and two humanify controls. Cases are not independent fresh-worker runs.
+
+The original spec response preserves scope and the accepted seam and correctly
+withholds readiness despite the source body's default-ready wording. This strong
+baseline is not evidence of a measured planning failure or of new guidance's lift.
+Independent grading and human qualitative review are separate from static guards.
+
+The later `82eb152` wording correction is outside the behavioral candidate snapshot:
+it restores the explicit role name and mandatory-review wording in to-tickets, not
+this spec body. No post-snapshot behavioral result is implied.
+
+## Limits
+
+- Responses propose actions; no publication, file mutation, fresh-worker construction
+  or Cleopatra/service outcome is proved.
+- Supplied facts and explicit grants are rich; missing-context discovery, genuine
+  unresolved decisions and real multistep publication remain operational gaps.
+- Context sharing and one run do not establish reliability or variance.
+- Group-level tokens/time cannot be allocated to cases; no savings claim is made.
+- The baseline needed the unchanged mandatory critical-partner skill outside the
+  frozen task files; compare candidate loading before claiming identical environments.
+- Human output review remains pending; the source corrections also reconcile
+  documented project authority and duplicate criteria, not just these fixture scores.

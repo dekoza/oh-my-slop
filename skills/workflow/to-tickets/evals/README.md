@@ -10,6 +10,27 @@ and genuinely independent plugins whose impact can later change.
 This is a technique evaluation with discipline pressure cases. The skill remains
 user-invoked; trigger evaluation is not applicable.
 
+## Producer/repairer handoff comparison
+
+Case 4 in the [scenarios](evals.json) freezes an approved serial graph with a known but
+undelivered dataset, sufficient prior authority and a terminal human review. The
+producer must supply actual briefs, retain the blocker and verify durable content
+before changing readiness, without a mandatory humanify session or repeated quiz.
+
+Baseline `2f9469b` and candidate `84fddc0` use the same task-only prompts, assertions,
+`openai-codex/gpt-6.1-sol` and medium reasoning. Artifacts are under
+`/tmp/implementation-handoff-eval.LjV5YX/`. One executor per configuration handles four
+cases in shared context; these are proposed-action simulations, not tracker writes or
+independent fresh-worker construction. Human qualitative review remains pending.
+
+The baseline already supplies useful briefs, preserves the graph and reuses approvals;
+it proposes ready-state recording before definitive brief readback. Independent grades
+must distinguish this narrow ordering issue from broader claims of planning quality.
+Later `82eb152` restores explicit role/mandatory-review wording outside the candidate
+snapshot; source checks/review cover that correction, not an implied model rerun.
+Grouped token/time counts cannot be allocated to cases or establish cost savings.
+Uninvestigated facts, real consequential forks and live publication remain coverage gaps.
+
 ## Observed comparison — 2026-09-10
 
 The original skill was snapshotted from commit `d695e01` before editing. Baseline
