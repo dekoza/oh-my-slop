@@ -31,7 +31,8 @@ this spec body. No post-snapshot behavioral result is implied.
   unresolved decisions and real multistep publication remain operational gaps.
 - Context sharing and one run do not establish reliability or variance.
 - Group-level tokens/time cannot be allocated to cases; no savings claim is made.
-- The baseline needed the unchanged mandatory critical-partner skill outside the
-  frozen task files; compare candidate loading before claiming identical environments.
-- Human output review remains pending; the source corrections also reconcile
-  documented project authority and duplicate criteria, not just these fixture scores.
+- Both executors loaded the unchanged mandatory critical-partner skill outside the
+  frozen task files; actual provider/model/medium reasoning match, not perfect isolation.
+- The owner accepted source `a3c930d` and this review bundle; see the
+  [source acceptance record](../../../../docs/specs/implementation-ticket-handoff.md#source-acceptance).
+  This is not operational proof or acceptance of historical/unpaired scenarios.

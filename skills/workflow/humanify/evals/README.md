@@ -46,6 +46,11 @@ sharing. Independent grades and human qualitative output review remain distinct;
 group metrics cannot be assigned to cases or prove efficiency. The later `82eb152`
 to-tickets wording correction is outside the immutable behavioral snapshot.
 
+The owner accepted source `a3c930d` and this producer/repairer review bundle; see the
+[source acceptance record](../../../../docs/specs/implementation-ticket-handoff.md#source-acceptance).
+This does not accept or prove all historical comparisons, the multi-turn driver or
+unpaired case 10; their limitations and prior review states remain below.
+
 ## Refinement entry-point regression — 2026-09-27
 
 The September 25 readiness revision did not reach `/refine-ticket`: its September 22

@@ -216,6 +216,23 @@ behavioral simulations, source review and operational acceptance are separate ev
 Wayfinder phase routing, execution-consumer changes and the full visible flow map remain
 unimplemented in this slice. No real fresh-worker construction or tracker pilot is claimed.
 
+### Source acceptance
+
+The owner accepted the producer/repairer source at `a3c930d` and its review bundle with
+“accept, proceed”, authorizing the local fast-forward into the primary checkout.
+Both independent source axes reported 0 blocking and 0 advisory findings at that head.
+The frozen behavioral comparison remains `84fddc0`: 12/13 baseline assertions versus
+13/13 candidate assertions, differing only on readback-before-readiness ordering.
+The later wording restoration is source-reviewed, not a new model execution.
+
+This records explicit acceptance, not an assertion that the viewer was opened or that
+fresh-worker construction succeeded. The accepted bundle is under
+`/tmp/implementation-handoff-eval.LjV5YX/iteration-1/`; its strong-baseline, shared-context,
+portability and unavailable per-case metric limitations remain. Acceptance covers this
+slice only, not historical comparisons, humanify case 10, routing or an operational pilot.
+No push, tracker mutation or automatic continuation is authorized; retain the branch,
+worktree and unrelated state.
+
 ### Proposed order
 
 This is the allocation, not an approved tracker graph, automatic dispatch authority or
@@ -238,7 +255,8 @@ Changes to skills need the repository's authoring/evaluation gate: pre-edit snap
 RED/GREEN regressions, paired behavior evidence, reference/install checks and qualitative
 review. Static shape tests complement rather than replace fresh-worker outcomes.
 
-- **Deploy:** none now; later skill installation/reload must be checked.
+- **Deploy:** accepted source landed in the primary checkout; runtime loading and
+  fresh-worker operational checks remain separate verification.
 - **Migrate:** retain public names, existing trackers, project templates, comments,
   role mappings and claims; no bulk relabeling or automatic rewriting of old tickets.
 - **Rollback:** scoped additive reversals of future changes; preserve briefs, decisions,

@@ -21,7 +21,9 @@ Baseline `2f9469b` and candidate `84fddc0` use the same task-only prompts, asser
 `openai-codex/gpt-6.1-sol` and medium reasoning. Artifacts are under
 `/tmp/implementation-handoff-eval.LjV5YX/`. One executor per configuration handles four
 cases in shared context; these are proposed-action simulations, not tracker writes or
-independent fresh-worker construction. Human qualitative review remains pending.
+independent fresh-worker construction. The owner accepted source `a3c930d` and this
+bundle; see the [source acceptance record](../../../../docs/specs/implementation-ticket-handoff.md#source-acceptance).
+The historical comparisons below retain their own review status and limits.
 
 The baseline already supplies useful briefs, preserves the graph and reuses approvals;
 it proposes ready-state recording before definitive brief readback. Independent grades
