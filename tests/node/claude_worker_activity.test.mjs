@@ -27,3 +27,22 @@ test("worker activity retains private, timestamped tool calls and results after 
 	assert.equal(records.at(-1).kind, "finished");
 	if (process.platform !== "win32") assert.equal(statSync(snapshot.logPath).mode & 0o777, 0o600);
 });
+
+test("activity logs exclude authentication frames, redact common secrets and explicitly bound retained details", () => {
+	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Inspect", maxBytes: 2_000 });
+	log.record({ type: "control_response", response: { account: { email: "private@example.com", token: "auth-secret" } } });
+	log.record({ type: "assistant", message: { content: [{ type: "tool_use", id: "bash-1", name: "Bash", input: {
+		command: "API_KEY=command-secret curl example.invalid", env: { API_KEY: "env-secret", password: "password-secret" },
+	} }] } });
+	log.record({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "bash-1", content: "Authorization: Bearer bearer-secret\u001b[31m", is_error: true }] } });
+	for (let i = 0; i < 10; i++) log.append("note", "Large output", { text: "x".repeat(1_000) });
+	log.finish({ status: "Failed", error: "Failed after output", exitCode: 1 });
+	const text = readFileSync(log.snapshot().logPath, "utf8");
+	for (const secret of ["private@example.com", "auth-secret", "command-secret", "env-secret", "password-secret", "bearer-secret"]) assert.ok(!text.includes(secret), secret);
+	assert.ok(!text.includes("\\u001b"));
+	assert.match(text, /redacted/);
+	assert.match(text, /truncated/);
+	assert.ok(log.snapshot().omittedEvents > 0);
+	assert.equal(JSON.parse(text.trim().split("\n").at(-1)).kind, "finished", "terminal evidence is retained even after the activity cap");
+	assert.ok(text.length < 5_000);
+});
