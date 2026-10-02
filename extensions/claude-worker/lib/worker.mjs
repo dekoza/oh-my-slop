@@ -35,6 +35,9 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		let initialized = false;
 		let stderr = "";
 		const permissionAbort = new AbortController();
+		const pendingPermissions = new Map();
+		const seenPermissions = new Set();
+		let permissionQueue = Promise.resolve();
 		const kill = (terminationSignal) => {
 			try {
 				if (process.platform !== "win32" && child.pid) process.kill(-child.pid, terminationSignal);
@@ -54,6 +57,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		const lines = createInterface({ input: child.stdout });
 		lines.on("line", (line) => {
 			void (async () => {
+				if (failure || signal?.aborted) return;
 				const event = JSON.parse(line);
 				onProgress(event);
 				if (event.type === "control_response" && event.response?.request_id === "pi-initialize") {
@@ -72,20 +76,36 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 						type: "user", session_id: "", message: { role: "user", content: prompt }, parent_tool_use_id: null,
 					}) + "\n");
 				}
+				if (event.type === "control_cancel_request") {
+					seenPermissions.add(event.request_id);
+					pendingPermissions.get(event.request_id)?.abort();
+					pendingPermissions.delete(event.request_id);
+				}
 				if (event.type === "control_request") {
+					if (seenPermissions.has(event.request_id)) return;
+					seenPermissions.add(event.request_id);
 					const request = event.request;
-					const allowed = request?.subtype === "can_use_tool" && await onPermission(request, permissionAbort.signal);
-					if (!child.stdin.destroyed && !signal?.aborted) {
-						const response = request?.subtype === "can_use_tool"
-							? { subtype: "success", request_id: event.request_id, response: allowed
-								? { behavior: "allow", updatedInput: request.input }
-								: { behavior: "deny", message: "Permission denied by the Pi host." } }
-							: { subtype: "error", request_id: event.request_id, error: "Unsupported control request." };
-						child.stdin.write(JSON.stringify({ type: "control_response", response }) + "\n");
-					}
+					const controller = new AbortController();
+					pendingPermissions.set(event.request_id, controller);
+					const permissionSignal = AbortSignal.any([permissionAbort.signal, controller.signal]);
+					permissionQueue = permissionQueue.then(async () => {
+						if (permissionSignal.aborted) return;
+						const allowed = request?.subtype === "can_use_tool" && !request.requires_user_interaction &&
+							await onPermission(request, permissionSignal);
+						if (!child.stdin.destroyed && !child.stdin.writableEnded && !permissionSignal.aborted) {
+							const response = request?.subtype === "can_use_tool"
+								? { subtype: "success", request_id: event.request_id, response: allowed === true
+									? { behavior: "allow", updatedInput: request.input }
+									: { behavior: "deny", message: "Permission denied by the Pi host; specialized interactions are not supported." } }
+								: { subtype: "error", request_id: event.request_id, error: "Unsupported control request." };
+							child.stdin.write(JSON.stringify({ type: "control_response", response }) + "\n");
+						}
+					}).catch((error) => { if (!permissionSignal.aborted) fail(error); })
+						.finally(() => pendingPermissions.delete(event.request_id));
 				}
 				if (event.type === "result") {
 					result = event;
+					permissionAbort.abort();
 					child.stdin.end();
 				}
 			})().catch(fail);

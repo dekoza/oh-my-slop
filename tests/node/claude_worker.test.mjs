@@ -165,3 +165,27 @@ test("initialization verifies effective subscription authentication before sendi
 		assert.ok(!(await rejected.frames()).some((event) => event.type === "user"));
 	}
 });
+
+test("cancelled and duplicate permission requests never receive a late approval", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ const request = { type: "control_request", request_id: "cancel-me", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "touch forbidden" } } };
+ send(request); send(request);
+ setTimeout(() => send({ type: "control_cancel_request", request_id: "cancel-me" }), 10);
+ setTimeout(() => send({ type: "result", subtype: "success", is_error: false, session_id: "${SESSION_ID}", result: "Done" }), 100);
+});
+` });
+	let prompts = 0;
+	let dismissed = false;
+	await runClaude({ ...fake, prompt: "Inspect", onPermission: async (_request, signal) => {
+		prompts++;
+		signal.addEventListener("abort", () => { dismissed = true; }, { once: true });
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		return true;
+	} });
+	assert.equal(prompts, 1);
+	assert.equal(dismissed, true);
+	assert.ok(!(await fake.frames()).some((event) => event.type === "control_response"));
+});
