@@ -121,14 +121,15 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 			} catch (error) {
 				if (job.log) {
 					const outcome = { ...(error.outcome || result), status: controller.signal.aborted ? "Stopped" : "Failed", error: safeText(error.message) };
-					try { job.log.finish(outcome); } catch (logError) {
-						// Preserve a visible Pi report even if the retained file cannot be written.
-						outcome.error += `\nActivity log write failed: ${safeText(logError.message)}`;
-					}
-					persistRun({ ...job.log.snapshot(), ...outcome, endedAt: Date.now() });
+					let loggingError;
+					try { job.log.finish(outcome); } catch (logError) { loggingError = logError; }
+					// Never merge raw CLI outcome fields back over the sanitized log snapshot.
+					const retained = job.log.snapshot();
+					if (loggingError) retained.error += `\nActivity log write failed: ${safeText(loggingError.message)}`;
+					persistRun(retained);
 					pi.sendMessage({ customType: "cc-worker", content: formatRunReport(lastRun), details: { activity: lastRun }, display: true }, { triggerTurn: false });
 				}
-				throw error;
+				throw new Error(safeText(error.message));
 			} finally {
 				clearInterval(refreshTimer);
 				signal?.removeEventListener("abort", abort);

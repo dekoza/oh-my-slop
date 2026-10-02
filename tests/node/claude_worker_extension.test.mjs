@@ -184,3 +184,21 @@ test("cc failures keep diagnostic reports rather than only disappearing into not
 	assert.match(h.messages.at(-1).message.details.expandedText, /error_during_execution/);
 });
 
+test("failure metadata retained in Pi does not reintroduce redacted credentials", async () => {
+	const h = harness(async () => {
+		const error = new Error("Authorization: Bearer panic-secret");
+		error.outcome = { exitCode: 1, stderr: "Authorization: Bearer panic-secret", errors: ["API_KEY=another-secret"], permissionDenials: [] };
+		throw error;
+	});
+	await h.commands.get("cc").handler("Inspect", h.ctx);
+	await new Promise(setImmediate);
+	const retained = JSON.stringify(h.entries) + JSON.stringify(h.messages) + JSON.stringify(h.notifications);
+	assert.ok(!retained.includes("panic-secret"));
+	assert.ok(!retained.includes("another-secret"));
+	assert.match(retained, /redacted/);
+	await assert.rejects(h.tools[0].execute("call", { prompt: "Inspect" }, undefined, undefined, h.ctx), (error) => {
+		assert.ok(!error.message.includes("panic-secret"));
+		return true;
+	});
+});
+
