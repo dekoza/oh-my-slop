@@ -17,4 +17,13 @@ Always resolve; never `--abort`. Preserve the intent of both sides — do **not*
 
 4. Discover the project's **automated checks** and run them — typically typecheck, then tests, then format. Fix anything the merge broke.
 
-5. **Finish the merge/rebase.** Stage everything and commit. If rebasing, continue the rebase process until all commits are rebased.
+5. **Stage inspected resolution paths.** Inspect each resolved path's full diff before staging; account for deletions and renames explicitly. Keep unrelated staged, unstaged and untracked work unchanged. If a resolution path also contains unrelated edits, pause for a scoped hunk-resolution plan rather than stage the whole file. Set `repo` to the inspected absolute repository path and `resolution_path` to one inspected repository-relative path; repeat only for the authorized resolutions:
+
+   ```sh
+   git -C "$repo" --literal-pathspecs add -- "$resolution_path"
+   git -C "$repo" --literal-pathspecs diff --cached -- "$resolution_path"
+   ```
+
+   Compare the complete index and working-tree status with the initial inventory, not just the resolution diff. **Complete when:** only inspected resolution paths were newly staged and unrelated index entries and file contents are unchanged.
+
+6. **Finish the merge/rebase.** Commit. If rebasing, continue the rebase process until all commits are rebased.
