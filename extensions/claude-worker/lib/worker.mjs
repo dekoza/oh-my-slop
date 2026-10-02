@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
+import { randomUUID } from "node:crypto";
 
 const execFileAsync = promisify(execFile);
 const OUTPUT_LIMIT = 64_000;
@@ -25,6 +26,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 	signal?.throwIfAborted();
 	const args = [...prefixArgs, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "auto", "--permission-prompt-tool", "stdio", "--permission-prompts", "host"];
 	if (sessionId) args.push("--resume", sessionId);
+	const messageId = randomUUID();
 	return new Promise((resolve, reject) => {
 		const child = spawn(executable, args, {
 			cwd, env: childEnv, stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32",
@@ -33,6 +35,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		let failure;
 		let killTimer;
 		let initialized = false;
+		let currentSessionId = sessionId;
 		let stderr = "";
 		const permissionAbort = new AbortController();
 		const pendingPermissions = new Map();
@@ -53,12 +56,16 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		};
 		const fail = (error) => { failure ??= error; stop(); };
 		const initializeTimer = setTimeout(() => fail(new Error("Claude Code initialization timed out before the task was sent.")), 10_000);
-		child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr = (stderr + chunk).slice(-OUTPUT_LIMIT); });
+		child.stderr.setEncoding("utf8").on("data", (chunk) => {
+			stderr = (stderr + chunk).slice(-OUTPUT_LIMIT);
+			try { onProgress({ type: "worker_stderr", text: chunk }); } catch (error) { fail(error); }
+		});
 		const lines = createInterface({ input: child.stdout });
 		lines.on("line", (line) => {
 			void (async () => {
 				if (failure || signal?.aborted) return;
 				const event = JSON.parse(line);
+				if (event.session_id) currentSessionId = event.session_id;
 				onProgress(event);
 				if (event.type === "control_response" && event.response?.request_id === "pi-initialize") {
 					const response = event.response;
@@ -72,8 +79,8 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 					}
 					initialized = true;
 					clearTimeout(initializeTimer);
-					if (!signal?.aborted) child.stdin.write(JSON.stringify({
-						type: "user", session_id: "", message: { role: "user", content: prompt }, parent_tool_use_id: null,
+					if (!signal?.aborted && !result) child.stdin.write(JSON.stringify({
+						type: "user", uuid: messageId, session_id: "", message: { role: "user", content: prompt }, parent_tool_use_id: null,
 					}) + "\n");
 				}
 				if (event.type === "control_cancel_request") {
@@ -104,6 +111,9 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 						.finally(() => pendingPermissions.delete(event.request_id));
 				}
 				if (event.type === "result") {
+					// A task-notification turn is not the reply to our submitted task.
+					const ids = event.user_message_uuids || (event.user_message_uuid ? [event.user_message_uuid] : []);
+					if (event.origin?.kind === "task-notification" || (ids.length && !ids.includes(messageId))) return;
 					result = event;
 					permissionAbort.abort();
 					child.stdin.end();
@@ -114,18 +124,27 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		child.stdin.on("error", fail);
 		const abort = stop;
 		signal?.addEventListener("abort", abort, { once: true });
-		child.on("close", (code) => {
+		child.on("close", (code, exitSignal) => {
 			lines.close();
 			clearTimeout(killTimer);
 			clearTimeout(initializeTimer);
 			permissionAbort.abort();
 			signal?.removeEventListener("abort", abort);
-			if (failure) reject(failure);
-			else if (signal?.aborted) reject(new Error("Claude Code worker stopped."));
-			else if (code !== 0 || !result || result.is_error || result.subtype !== "success") {
-				reject(new Error([result?.result, ...(result?.errors || []), stderr].filter(Boolean).join("\n") || "Claude Code exited without a successful result."));
-			} else if (!result.session_id) reject(new Error("Claude Code returned no resumable session ID."));
-			else resolve({ sessionId: result.session_id, text: result.result || "", permissionDenials: result.permission_denials || [] });
+			const outcome = {
+				sessionId: result?.session_id || currentSessionId, text: result?.result || "",
+				exitCode: code, exitSignal, resultSubtype: result?.subtype, stopReason: result?.stop_reason,
+				terminalReason: result?.terminal_reason, numTurns: result?.num_turns, errors: result?.errors || [],
+				permissionDenials: result?.permission_denials || [], stderr,
+			};
+			try { onProgress({ type: "worker_exit", ...outcome }); } catch (error) { failure ??= error; }
+			let error = failure;
+			if (!error && signal?.aborted) error = new Error("Claude Code worker stopped.");
+			if (!error && (code !== 0 || !result || result.is_error || result.subtype !== "success")) {
+				error = new Error([result?.result, ...outcome.errors, stderr].filter(Boolean).join("\n") || "Claude Code exited without a successful result.");
+			}
+			if (!error && !result?.session_id) error = new Error("Claude Code returned no resumable session ID.");
+			if (error) { error.outcome = outcome; reject(error); }
+			else resolve(outcome);
 		});
 		child.stdin.write(JSON.stringify({ type: "control_request", request_id: "pi-initialize", request: { subtype: "initialize", hooks: null } }) + "\n");
 	});

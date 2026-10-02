@@ -205,3 +205,35 @@ test("terminal errors retain Claude's explanation and invalid results are not tr
 	const malformed = await fixture(t, { body: `input.on("line", (line) => { if (JSON.parse(line).type === "user") process.stdout.write("not JSON\\n"); });` });
 	await assert.rejects(runClaude({ ...malformed, prompt: "Inspect" }), /JSON/);
 });
+
+test("worker reports terminal diagnostics and does not finish on an unrelated background result", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("close", () => process.exit(0));
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ process.stderr.write("Worker warning\\n");
+ send({ type: "result", subtype: "success", origin: { kind: "task-notification" }, session_id: "${SESSION_ID}", result: "Background notification only" });
+ setTimeout(() => send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", user_message_uuid: event.uuid, result: "Requested turn ended", stop_reason: "end_turn", num_turns: 2 }), 30);
+});
+` });
+	const events = [];
+	const result = await runClaude({ ...fake, prompt: "Inspect", onProgress: (event) => events.push(event) });
+	assert.equal(result.text, "Requested turn ended");
+	assert.equal(result.exitCode, 0);
+	assert.equal(result.resultSubtype, "success");
+	assert.equal(result.stopReason, "end_turn");
+	assert.equal(result.numTurns, 2);
+	assert.match(events.find((event) => event.type === "worker_stderr").text, /Worker warning/);
+	assert.equal(events.at(-1).type, "worker_exit");
+	assert.ok((await fake.frames()).find((frame) => frame.type === "user").uuid);
+
+	const failed = await fixture(t, { body: `input.on("line", (line) => { if (JSON.parse(line).type === "user") { send({ type: "result", subtype: "error_during_execution", errors: ["Task failed"], session_id: "${SESSION_ID}", stop_reason: "error" }); } });` });
+	await assert.rejects(runClaude({ ...failed, prompt: "Inspect" }), (error) => {
+		assert.equal(error.outcome.resultSubtype, "error_during_execution");
+		assert.equal(error.outcome.exitCode, 0);
+		assert.equal(error.outcome.stopReason, "error");
+		assert.deepEqual(error.outcome.errors, ["Task failed"]);
+		return true;
+	});
+});
