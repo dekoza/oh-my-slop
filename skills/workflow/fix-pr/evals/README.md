@@ -1,6 +1,46 @@
 # Fix PR evaluation
 
-## Boundary and baseline
+## Committed-candidate repair — #250
+
+The current contract commits the inspected repair before committed-diff review, records
+fixed review base/head and target identities, and gates publication on current candidate
+checks and both axis outcomes. Later repair/integration is additive; changed local head,
+uncommitted repair, or remote head/target movement invalidates publication until the
+candidate is reconciled and affected checks/reviews are renewed within the repair budget.
+Published head/target readback must match the certified candidate; the same PR stays open.
+
+Cases 1–2 remain **proposed-action simulations**, now aligned with candidate identity and
+recertification. Cases 3–4 define disposable local Git/bare-remote execution with supplied
+simulated PR/reviewer inputs. Simulated axis receipts are not independent production
+approval. A collector summary alone is not execution evidence: retain actual model tool
+calls, committed ranges, check exit/head stamps, remote refs and unrelated-work sentinels.
+Native regression fixtures reject missing check/axis records, nonzero checks, wrong base,
+uncommitted repair, additive head changes and target movement; a second real local clone
+moves both remote refs and establishes additive preservation and normal publication.
+These test oracles validate Git/evidence state, not a new production publisher.
+
+The bounded #250 comparison uses the original complete skill snapshot and the committed
+candidate body with identical fixed supporting skills, task/fixture inputs and current
+`openai-codex/gpt-6.1-sol` high-thinking resource. Two matched cases, one trial per
+configuration, serial, with explicit 300s process and 600s outer deadlines; no retries.
+The first baseline executed committed repair and local publication. The second encountered
+an incomplete movement fixture: its bare remote lacked the injected future commit objects.
+That run is preserved as **incomplete**, not a negative skill grade; no model lift or
+remote-movement execution claim follows from it. Candidate comparison and operator quality
+review are pending at this construction checkpoint.
+
+Durable workspace:
+`/home/minder/.local/state/oh-my-slop/preflight-248-1fO63Nx1/worker-250/`.
+It retains original skill/evals, fixed support bodies, frozen prompts/assertions, initial
+Git states, raw JSON events and sessions. Run evidence lives under `iteration-1/`;
+final grades, standard viewer, candidate check stamps and gaps belong there too, outside
+the installed skill. Independent whole-slice standards/spec review and operator qualitative
+acceptance remain completion gates. Manual invocation and description are unchanged;
+trigger evaluation is inapplicable. No live forge, consumer or run/source branch is published.
+
+## Historical response comparison — not current operational evidence
+
+### Boundary and baseline
 
 `/fixrev` previously contained a raw request to fix a reviewed PR plus a `grilling`
 clause. It had no named workflow owner and failed the prompt-template contract.
@@ -12,7 +52,7 @@ The command now explicitly includes both review findings and target-branch confl
 This is a command-contract expansion, not evidence that the old prompt could never
 resolve a conflict. The existing command name and argument passthrough remain.
 
-## Cases
+### Cases
 
 The [task-only scenarios](evals.json) exercise:
 
@@ -35,7 +75,7 @@ rewrite and asks the consequential blocked-case questions. Its ordinary repair s
 omits post-push head/target/mergeability readback and explicit assessment of stale review
 approvals. The candidate makes those completion obligations explicit.
 
-## Paired response comparison — 2026-09-27
+### Paired response comparison — 2026-09-27
 
 Both executors used `openai-codex/gpt-6-astra`, high reasoning. An independent grader
 applied the original five assertions per case to the saved outputs. Each executor
@@ -62,7 +102,7 @@ and grades; Benchmark contains the literal scores and limitations. The final ski
 from its evaluated snapshot only by the added pointer to this evidence document. Human
 qualitative review and real Git/forge execution remain unverified.
 
-## Repository checks
+### Historical repository checks
 
 The new command-owner regression failed on the old raw prompt and passed after routing
 through `fix-pr`. The full Python suite has 922 passes and the single pre-existing

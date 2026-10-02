@@ -31,6 +31,11 @@ while the PR remains conflicted. Leave the PR open; merging it is a separate dec
 - **Bound authority.** Normal publication to the existing PR head follows project policy.
   A published-branch rebase and force push require explicit human permission;
   `--force-with-lease` does not supply it. No PR merge, closure or deployment is implied.
+- **Bound repairs.** Record the caller's repair limit, otherwise use two rounds subject to
+  stricter project limits. A round fixes current blocking findings, commits the repair,
+  reruns affected checks and obtains affected-axis review; initial review spends none.
+  Report advisory findings rather than expand the repair. If blockers remain when the
+  budget is exhausted, stop and report preserved state and the next owner decision.
 
 ## 1. Bind the PR and repair scope
 
@@ -85,16 +90,30 @@ candidate, not only its pre-integration version. Record check commands/results w
 candidate head and integrated target SHA. Use the `two-axis-review` skill for the repair
 against the governing requirements and standards. Give both independent axes the fixed
 base/head, keep their checkout at that head, and bind both complete reports to those SHAs.
+Any later repair or integration invalidates the previous candidate's approval for affected
+work. Fix blocking findings within the repair budget in an **additive commit**, inspect the
+new committed diff, and rerun affected checks and axes: the axis that raised the finding,
+and the other axis when its evidence changes. Keep the fixed review base unless an authorized
+scope change requires a new one; record that change and review the full repair range again.
+Both current axis outcomes and required checks must cover the exact head to be published.
 Previous approvals and green checks do not certify changed code. Report required CI that
 has not completed as pending, never passed.
 
-Re-read the remote head and target before publication. If
-either moved, reconcile without overwriting concurrent work and repeat affected checks;
-if safe reconciliation is blocked, name the blocker rather than forcing a push. Push to
+Re-read the remote head and target before publication, and compare local HEAD and repair
+paths/index with the checked/reviewed candidate. Remote movement invalidates the publication gate:
+reconcile additively within the existing grant without overwriting concurrent work, return
+to candidate identification, and repeat affected checks and review for the new head/target.
+A changed local head or uncommitted repair also requires that loop; old evidence cannot
+certify it. If safe reconciliation, current evidence or authority is missing, preserve state
+and name the blocker rather than forcing publication. Push only the certified candidate to
 the existing PR head using a normal push unless a specific rewrite was authorized.
 
-Read back the PR head SHA, target and fresh mergeability after publication. Record addressed
-findings, conflict-resolution decisions, checks and any pending review/CI in a repair comment
+Read back the same open PR's head SHA, target and fresh mergeability after publication.
+The published head must equal the checked/reviewed candidate, and the observed target must
+match the certified target. If either differs, invalidate completion and reconcile/reverify
+within the grant and remaining budget, or report the new blocker. Record the review base,
+reviewed/published head and target SHAs alongside addressed findings, conflict-resolution
+decisions, checks, both review outcomes and any pending review/CI in a repair comment
 under the project's robot-comment convention; reuse the matching record on retries. Verify
 that record too. Unknown mergeability is unverified, not a claim that conflicts are gone.
 
