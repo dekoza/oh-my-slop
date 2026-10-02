@@ -94,7 +94,8 @@ test("only one worker runs and stop/shutdown preserve the resumable session", as
 	assert.equal(h.entries.at(-1).data.sessionId, SESSION_ID);
 	await h.commands.get("cc-status").handler("", h.ctx);
 	assert.match(h.notifications.at(-1)[0], /Stopped/);
-	assert.equal(h.messages.length, 0, "cancelled work is not reported as success");
+	assert.ok(h.messages.some(({ message }) => message.content.includes("Stopped")), "stopped workers leave a durable terminal report");
+	assert.ok(!h.messages.some(({ message }) => message.content.includes("Turn ended; completion unverified")), "cancelled work is not reported as a successful turn");
 });
 
 test("restoration follows the active Pi branch and never resumes a session from another directory", async () => {
@@ -136,3 +137,50 @@ test("model delegation returns worker output and permission dialogs are bounded 
 	assert.ok(!permission[1].includes("\u001b"));
 	assert.match(permission[1], /Needs approval/);
 });
+
+test("cc-log retains tool evidence and terminal reports survive restoring the Pi session", async () => {
+	const h = harness(async (options) => {
+		options.onProgress({ type: "system", subtype: "init", session_id: SESSION_ID });
+		options.onProgress({ type: "assistant", message: { content: [{ type: "tool_use", id: "test-1", name: "Bash", input: { command: "pytest tests/auth.py" } }] } });
+		options.onProgress({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "test-1", content: "3 failed", is_error: true }] } });
+		return { sessionId: SESSION_ID, text: "I stopped after the failing tests", permissionDenials: [], exitCode: 0, resultSubtype: "success", stopReason: "end_turn" };
+	});
+	await h.commands.get("cc").handler("Fix authentication", h.ctx);
+	await new Promise(setImmediate);
+	const terminal = h.messages.at(-1).message;
+	assert.match(terminal.content, /Turn ended; completion unverified/);
+	assert.match(terminal.content, /Last activity: Bash failed/);
+	assert.match(terminal.content, /Exit code: 0/);
+	assert.match(terminal.content, /Result subtype: success/);
+	await h.commands.get("cc-log").handler("", h.ctx);
+	const view = h.messages.at(-1);
+	assert.equal(view.message.customType, "cc-worker-log");
+	assert.match(view.message.details.expandedText, /pytest tests\/auth.py/);
+	assert.match(view.message.details.expandedText, /3 failed/);
+	assert.notEqual(view.options?.triggerTurn, true);
+	const restored = harness(async () => { throw new Error("must not launch"); });
+	restored.ctx.sessionManager.getBranch = () => h.entries;
+	await restored.events.get("session_start")({}, restored.ctx);
+	await restored.commands.get("cc-status").handler("", restored.ctx);
+	assert.match(restored.notifications.at(-1)[0], /completion unverified/);
+	assert.match(restored.notifications.at(-1)[0], /Exit code: 0/);
+	await restored.commands.get("cc-log").handler("", restored.ctx);
+	assert.match(restored.messages.at(-1).message.details.expandedText, /3 failed/);
+});
+
+test("cc failures keep diagnostic reports rather than only disappearing into notifications", async () => {
+	const h = harness(async (options) => {
+		options.onProgress({ type: "system", subtype: "init", session_id: SESSION_ID });
+		const error = new Error("Claude stopped after a tool failure");
+		error.outcome = { exitCode: 13, resultSubtype: "error_during_execution", stopReason: "error", errors: ["Tool failure"], permissionDenials: [] };
+		throw error;
+	});
+	await h.commands.get("cc").handler("Fix authentication", h.ctx);
+	await new Promise(setImmediate);
+	assert.match(h.messages.at(-1).message.content, /Failed/);
+	assert.match(h.messages.at(-1).message.content, /Exit code: 13/);
+	assert.match(h.messages.at(-1).message.content, /Claude stopped after a tool failure/);
+	await h.commands.get("cc-log").handler("", h.ctx);
+	assert.match(h.messages.at(-1).message.details.expandedText, /error_during_execution/);
+});
+
