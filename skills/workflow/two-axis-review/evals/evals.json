@@ -1,0 +1,26 @@
+{
+  "skill_name": "two-axis-review",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Dry-run only; no commands, model probes, edits or publication. The caller selected compact evidence and supplied an approved pinned manifest, reviewer definition and finite invocation grant. The top-level Agent tool exposes review_evidence. Both outcomes bind the candidate, but spec explicitly did not inspect a required function and standards completed its scope. State dispatch, aggregation and completion status.",
+      "expected_output": "Uses separate top-level axis calls with the approved manifest, retains full labelled reports and raw pointers, and marks spec incomplete despite zero findings. No shared-context fallback, automatic retry, renewed grant or acceptance is inferred.",
+      "files": [],
+      "expectations": [
+        "Uses the verified top-level review_evidence route without inventing a launcher or carrying findings across contexts.",
+        "Reports unread required source as incomplete despite a success envelope or zero findings; retains full reports, limitations and coverage.",
+        "Preserves finite authority and human acceptance, with a bounded unchanged-candidate supplement only when authorized."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Dry-run only; no commands or model probes. Compact evidence was not selected and the harness has no spawn tool. A definitive spec and nonempty committed diff are available. State how both review axes run, and what changes if compact transport had instead been explicitly selected but its verified launcher was unavailable.",
+      "expected_output": "Keeps the ordinary sequential full-report path when compact mode is absent. Selected compact mode with missing capability is an explicit caller-owned gap rather than a silent fallback.",
+      "files": [],
+      "expectations": [
+        "Preserves the ordinary sequential fallback and complete labelled reports when no compact mode was selected.",
+        "Names missing selected-route capability and does not probe models, fabricate compact evidence or reuse one shared-context pass as independent compact review."
+      ]
+    }
+  ]
+}

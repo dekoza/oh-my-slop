@@ -309,6 +309,18 @@ still govern. Fresh configured skill discovery is verified in the
 it is not proof of an active-session reload, real fresh-worker construction or publication.
 Those operational checks remain pending.
 
+### Selected compact review evidence
+
+When the caller explicitly selects compact evidence and verifies an approved route,
+`implement`, `implement-spec` and `two-axis-review` use the
+[shared transport branch](skills/workflow/two-axis-review/references/compact-evidence.md).
+The maintained pi-subagents adapter accepts it on its existing spawn RPC; a harness version
+that also exposes top-level `Agent.review_evidence` must be confirmed in the installed schema.
+Nested/workflow workers leave those reviewer calls to their caller.
+Full independent findings, raw evidence, current checks and human acceptance remain required.
+Ordinary invocations are unchanged. This wiring is not a measured efficiency claim or
+permission to start an unbudgeted pilot.
+
 ### Supervised whole-spec implementation
 
 Use `/implement-spec <spec> [instructions]` when an approved spec already has

@@ -67,6 +67,14 @@ publication boundary are explicit. If subagents or isolated worktrees are unavai
 report that limitation and offer caller-dispatched fresh `implement` sessions instead
 of claiming concurrency or silently building everything in the primary checkout.
 
+When the operator has **selected compact** review evidence, verify the route before worker
+dispatch through the [compact-evidence branch](../two-axis-review/references/compact-evidence.md).
+Supply it in each brief, collect the worker's current candidate-bound manifest, and own
+approved top-level review dispatch when a worker's nested tools cannot expose that route.
+Await both complete independent outcomes before releasing integration or dependents; slice
+reviews still do not replace final whole-spec review. Missing capability pauses the affected
+compact path rather than silently selecting a different transport or renewing its budget.
+
 ## 2. Pin the integration baseline and run frontier
 
 Use `git-discipline` to create a new, owned integration branch and dedicated worktree at

@@ -160,5 +160,16 @@
         "Requires no artificial parent spec or routine humanify and retains one-slice worktree/TDD, exact-candidate reviews and authorized standalone PR gates."
       ]
     }
+    ,{
+      "id": 15,
+      "prompt": "Dry-run only; no commands, edits, model probes or publication. The caller selected compact review evidence and supplied an approved pinned route and finite grant before this branch-only worker started. Actual ordered RED/GREEN and final candidate checks are retained; the requirement matrix is current. Your nested Agent tool cannot expose review_evidence, but the caller has the top-level tool. State how review and handoff finish, including what happens if the caller route is unavailable.",
+      "expected_output": "Return the candidate-bound evidence index to the caller for two independent top-level reviews; remain awaiting review until both full outcomes and coverage are complete. Missing selected-route capability is an explicit gap, not permission to invent a launcher, fall back to shared-context review, spend anew or deliver the slice.",
+      "files": [],
+      "expectations": [
+        "Keeps actual construction/check evidence and the requirement matrix bound to the candidate, rather than supplying planned commands or success assertions.",
+        "Leaves top-level compact review dispatch to the authorized caller when nested tools cannot expose it; waits for both complete independent outcomes before handoff.",
+        "Preserves grant, repair budget, publication boundary and human acceptance; exposes an unavailable selected route without a model probe or silent fallback."
+      ]
+    }
   ]
 }

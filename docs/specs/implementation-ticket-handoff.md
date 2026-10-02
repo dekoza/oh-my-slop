@@ -1,6 +1,6 @@
 # Implementation ticket handoff
 
-Status: Draft — producer/repairer and routing/consumer source accepted; controlled construction pilot accepted with an execution-cost objection; compact review/evidence contract proposed; active-session reload and real-project publication remain unproved.
+Status: Draft — producer/repairer, routing/consumer, compact-adapter and top-level Agent-tool harness source accepted; controlled construction pilot accepted with an execution-cost objection; top-level tool harness configured from the primary checkout; linked workflow adoption under verification; pi 1.0.0 loading, active-session reload, real-project publication and efficiency remain unproved; `/tmp` receipts were lost.
 
 ## Problem
 
@@ -227,8 +227,8 @@ The frozen behavioral comparison remains `84fddc0`: 12/13 baseline assertions ve
 The later wording restoration is source-reviewed, not a new model execution.
 
 This records explicit acceptance, not an assertion that the viewer was opened or that
-fresh-worker construction succeeded. The accepted bundle is under
-`/tmp/implementation-handoff-eval.LjV5YX/iteration-1/`; its strong-baseline, shared-context,
+fresh-worker construction succeeded. The accepted bundle was under
+`/tmp/implementation-handoff-eval.LjV5YX/iteration-1/` (lost; see [Evidence retention](#evidence-retention)); its strong-baseline, shared-context,
 portability and unavailable per-case metric limitations remain. Acceptance covers this
 slice only, not historical comparisons, humanify case 10, routing or an operational pilot.
 No push, tracker mutation or automatic continuation was authorized by that acceptance;
@@ -254,8 +254,8 @@ The owner accepted the routing/consumer source at `c2304db` and its comparison/r
 bundle with “accepted, continue”. Both independent axes reported 0 blocking and
 0 advisory at that exact head. The paired proposed-action grades are 16/18 baseline
 versus 18/18 candidate: two overlapping assertions measure one synthesis-route
-difference, while four cases tie. The bundle is under
-`/tmp/handoff-routing-eval.N6VFb4/`; rubric exposure, shared-context and incomplete-reference
+difference, while four cases tie. The bundle was under
+`/tmp/handoff-routing-eval.N6VFb4/` (lost); rubric exposure, shared-context and incomplete-reference
 limitations remain. This records explicit source/qualitative acceptance, not proof
 that the viewer was opened, the active session reloaded or real construction succeeded.
 Continue with local integration and non-mutating runtime-loading verification; no push,
@@ -280,7 +280,7 @@ session reloaded. Explicit `/skill:name` expansion was inspected in installed so
 not executed; CLI-only and extension-contributed resources remain outside coverage.
 No construction worker or real publication was run.
 
-Evidence: `/tmp/oh-my-slop-discovery-OQ3X0dWn/report.md`, `probe.mjs`, `output.json`
+Evidence (lost): `/tmp/oh-my-slop-discovery-OQ3X0dWn/report.md`, `probe.mjs`, `output.json`
 and `verification.txt`. Both checkouts were clean at the measured head. This is
 fresh configured loading evidence only, not operational acceptance or permission to
 select a pilot graph. Real construction/publication still needs a bounded selected scenario.
@@ -308,9 +308,9 @@ five agents only. Including coordinator messages gives 779,556 uncached input/ou
 activity was about 68 minutes; approval-to-delivery trace milestones span about 91 minutes.
 Cost metadata is not an invoice, and A's nested reviewer usage remains unreconciled.
 
-Evidence: `/tmp/handoff-construction-pilot.twHSlN/evidence/final-delivery.md` and
-`/tmp/handoff-trace-audit.OunHgG/audit.md` with its quantitative `metrics.json`. These are
-retained local receipts, not installable runtime inputs or permission to repeat the pilot.
+Evidence (lost): `/tmp/handoff-construction-pilot.twHSlN/evidence/final-delivery.md` and
+`/tmp/handoff-trace-audit.OunHgG/audit.md` with its quantitative `metrics.json`. These were
+local receipts, not installable runtime inputs or permission to repeat the pilot.
 The next approved design slice defines a compact evidence/reviewer-route contract below;
 no repeat run is authorized without an explicit time/token budget.
 
@@ -349,7 +349,7 @@ review. Static shape tests complement rather than replace fresh-worker outcomes.
 
 ## 7. Proposed compact review/evidence contract
 
-Status: Draft — bounded design authorized; existing runtime owner verified; executable edits await baseline and branch-authority resolution.
+Status: Compact adapter source accepted at `8b9fb53` with the disclosed finished-resume advisory; top-level Agent-tool harness source accepted at `fcde673` with disclosed advisories and configured from the primary harness checkout; linked workflow adoption is a later candidate, not automatically accepted. Existing source/environment and execution gates remain.
 This section defines required information, not a new skill, scheduler, service or tracker schema.
 Existing review placement, publication authority and candidate verification gates remain unchanged.
 
@@ -428,7 +428,7 @@ assumed. Select the maintained tooling home and its authority before executable 
 Deploy/migrate only within that separately checked scope; preserve existing consumers and
 retain additive rollback paths. No new operational infrastructure is required by the contract.
 
-### Verified runtime home and remaining prerequisite
+### Verified runtime home and historical prerequisite
 
 Read-only investigation identified the configured `Agent` owner as
 `@tintinweb/pi-subagents` v0.19.0 at `/home/minder/projekty/pi-subagents`, upstream base
@@ -441,8 +441,8 @@ receipt validator or direct-Agent schema contract.
 The configured checkout has pre-existing edits to CHANGELOG.md, package.json and its lockfile,
 plus untracked LOCAL-PATCH.md and a manifest regression test. LOCAL-PATCH.md identifies these
 as an intentional host-dependency patch. The checkout's contributor rules reserve commits
-for the user and require explicit branch permission. No executable edits, branch creation,
-staging, dependency installation or configuration change were performed there.
+for the user and require explicit branch permission. At that investigation checkpoint, no executable edits, branch creation,
+staging, dependency installation or configuration change had been performed there.
 
 Resolve the patched baseline and obtain explicit authority for an isolated feature branch
 before executable implementation. Do not reset, stash, commit or omit the user's patch
@@ -453,6 +453,72 @@ A repeat pilot needs explicit scenario and time/token limits, unchanged safety g
 stop-with-partial-result rule. This authorization defines the contract and permits factual
 home investigation; it does not choose a spending budget or authorize another construction
 run, push, external tracker mutation or ticket closure.
+
+### Compact adapter acceptance and local rollout
+
+The operator accepted external harness source `8b9fb531d268ac5c3f36ac3b596dd34c3ed36df3`
+after both required source scopes completed: spec 0 blocking/0 advisory; standards
+0 blocking/1 accepted advisory. A refused finished-review resume may first mutate its
+UI/transcript pointer. The source/check/review/acceptance receipts were under
+`/tmp/pi-subagents-review-evidence.vuqvMV/` (lost); this is not acceptance of later source changes.
+
+A subsequent explicit local-rollout grant permits preserved-work activation and workflow
+wiring, not push, tracker closure, a paid pilot or automatic acceptance. The live harness
+checkout and its five intentional patch files remain untouched. An owned detached checkout
+of accepted `8b9fb53` is selected through the existing local pi package entry while later
+feature work is isolated. Fresh installed pi **0.99.2** loads/binds the adapter and exercises
+RPC success/errors and complete two-axis capture in disposable scripted sessions. Prompts,
+events and reports are scripted, with zero model/network calls; no authentication, semantic
+reviewer quality, repeated reliability or active-session reload is claimed. Source inspection
+and scripted capture do not establish arbitrary-provider cancellation latency.
+
+Accepted `8b9fb53` exposed the opt-in request only as the RPC field `options.reviewEvidence`.
+The configured accepted harness `fcde673` (below) additionally exposes it on the top-level
+`Agent` tool as `review_evidence`. Nested/workflow agents do not expose it, so their caller dispatches approved reviews and the worker remains awaiting full outcomes. Linked
+consumer guidance is in the [shared compact-evidence branch](../../skills/workflow/two-axis-review/references/compact-evidence.md).
+A selected route is verified before building/dispatch; missing capability is an explicit gap.
+Ordinary reviews remain unchanged when compact mode is not selected. Final candidate checks,
+complete independent scopes, bounded repairs, serial integration and human acceptance stay.
+
+Evidence (lost): `/tmp/compact-host-rollout.tLlrdb/` contained host spikes, raw logs and a
+configuration backup. An initial assumed host-version check failed because the installed
+version changed from previously observed 0.99.1 to actual 0.99.2; fixture API and module-identity
+errors were corrected without changing accepted adapter source. A new library worktree's
+first uv run unexpectedly created a local virtual environment with 47 packages; live Node
+and global Python dependencies were not changed. Later runs reuse the existing environment.
+Host claims above bind the tested source stages in those logs, not every later candidate.
+No repeat construction/efficiency run follows this rollout without an agreed scenario/budget.
+
+### Top-level Agent-tool acceptance
+
+The operator accepted external harness source `fcde67304e38002b44351daf6928a34af0d6afe3`
+on `feat/compact-review-evidence` (base `8b9fb53`). Review of `83f0df7` first found two
+blocking README contradictions and a foreground review cancelled while queued returning no
+envelope; `ace12b5` repaired them. The whole candidate at `ace12b5` then reported spec 0
+blocking/5 advisory and standards 0 blocking/6 advisory. `fcde673` settles queued reviews
+stopped at session shutdown as incomplete; its delta spec review reported 0 blocking/1 latent
+advisory (`dispose()` relies on `abortAll()` running first). Standards was not re-run on that
+two-line delta. Lint, typecheck and 2194 tests (7 skipped) passed on its pre-commit tree.
+
+Accepted advisories include: a queued review whose drain-time startup fails throws rather than
+returning an envelope (also in `8b9fb53`); unknown-type, model and scope failures return prose
+before review admission; the finished-resume advisory is now reachable from the tool;
+`Type.Unknown` hides the request shape from the schema; and duplicated admission guards and
+error naming. Review reports exist only in the reviewing session; no durable receipt directory
+was retained.
+
+On the operator's instruction, the primary harness checkout's `master` was fast-forwarded to
+`fcde673` and pi settings now select that checkout instead of the detached `8b9fb53` copy. Its
+previously uncommitted host-peer patch was already committed on the branch (`a5f9d6d`) and was
+verified byte-identical before integration. Lint, typecheck and the test suite passed there.
+Installed pi has since moved to **1.0.0**; loading the harness on 1.0.0 and active-session
+reload are not verified. Linked workflow adoption, publication and upstream push remain separate.
+
+### Evidence retention
+
+A host reboot on 2026-10-01 cleared `/tmp`. Every receipt directory this spec cites under
+`/tmp` is gone; the recorded results remain historical statements without inspectable artifacts.
+Future receipts belong in a durable, explicitly chosen location rather than `/tmp`.
 
 ## Documents to keep aligned
 

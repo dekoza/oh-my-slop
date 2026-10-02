@@ -21,6 +21,11 @@ This skill runs both axes and aggregates their findings. **Each axis is its own 
 standards) the smell baseline. They are independently invocable, so a caller who wants one axis
 runs that skill directly and skips this one.
 
+When the caller has **selected compact** evidence transport, use the
+[compact-evidence branch](references/compact-evidence.md) before launching either axis.
+It preserves this skill's independent scopes and full reports; it changes their evidence
+transport, not the meaning of a completed review. Otherwise use the ordinary path below.
+
 ## Running the axes
 
 **Run each axis with its own context, and do not carry one axis's findings into the other.**

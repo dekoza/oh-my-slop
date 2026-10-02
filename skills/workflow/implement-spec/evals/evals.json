@@ -45,5 +45,17 @@
         "For the unchanged counterfactual, accepts verified run-local A at H1 without requiring global closure or repeat approval, while preserving branch-only, ownership and publication limits."
       ]
     }
+    ,{
+      "id": 5,
+      "prompt": "Dry-run only; no commands, worker dispatch, model probes or publication. A supervised branch-only run explicitly selected compact evidence with a verified top-level Agent review_evidence route and a finite grant. Worker A returns an exact candidate-bound manifest and full checks; its nested tools cannot expose compact dispatch. Spec reports zero findings but says a required function was unread. Standards completes its scope. Describe integration, supplemental review and eligibility of dependent B.",
+      "expected_output": "The coordinator owns approved top-level dispatch, keeps A awaiting incomplete spec coverage and B blocked, and admits a bounded same-candidate supplement only within remaining authority. Changed source invalidates affected evidence; final whole-spec review and human acceptance remain separate.",
+      "files": [],
+      "expectations": [
+        "Requires route verification before implementation dispatch and owns top-level reviewer calls on behalf of nested workers without adding another orchestrator.",
+        "Treats unread required source as incomplete despite zero findings; does not integrate A or release B from preview or transport success.",
+        "Allows only an authorized bounded unchanged-candidate supplement preserving original coverage and blockers; changed work needs affected checks/review without silent budget renewal.",
+        "Preserves serial integration, final whole-spec review, branch-only publication limits and human acceptance."
+      ]
+    }
   ]
 }
