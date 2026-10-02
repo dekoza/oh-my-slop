@@ -19,7 +19,7 @@ uncommitted repair, additive head changes and target movement; a second real loc
 moves both remote refs and establishes additive preservation and normal publication.
 These test oracles validate Git/evidence state, not a new production publisher.
 
-The bounded #250 comparison uses the original complete skill snapshot and the committed
+The initial #250 comparison uses the original complete skill snapshot and the committed
 candidate body with identical fixed supporting skills, task/fixture inputs and current
 `openai-codex/gpt-6.1-sol` high-thinking resource. Two matched cases, one trial per
 configuration, serial, with explicit 300s process and 600s outer deadlines; no retries.
@@ -47,6 +47,38 @@ check stamps and review gaps also remain outside the installed skill.
 Independent whole-slice standards/spec review and operator qualitative
 acceptance remain completion gates. Manual invocation and description are unchanged;
 trigger evaluation is inapplicable. No live forge, consumer or run/source branch is published.
+
+### Corrected movement comparison — 2026-10-02, repair round 1
+
+The operator explicitly authorized one corrected movement-only baseline/candidate pair,
+using the remaining two initial executions. The four original runs, case1 tie, incomplete
+case2, raw records, fixtures and grades remain unchanged. No case1 rerun occurred. Native
+RED reproduced the absent future commit in a new bare remote; object-only local fetch with
+`--no-write-fetch-head` then supplied both future commits and ancestry without moving the
+two visible initial heads, target, symbolic HEAD, index or unrelated work. GREEN preflight
+preceded each model. Only new owned fixture paths differ from the original task; those paths
+change initial commit IDs, but the new pair's prepared states and frozen prompts match.
+
+Both configurations completed actual movement detection, additive reconciliation, new
+committed checks and both simulated axis commands at the published head/current target,
+with a fixed recorded review base. Normal same-local-head pushes and native readback preserve
+the original head, pre-movement repair, concurrent head, future target and unrelated bytes.
+Full supporting-body consultations match the same fixed accepted resources. The unchanged
+four assertions tie **4/4 versus 4/4**: no measured lift. An initial candidate collector
+incorrectly matched only a literal HEAD-source push, excluding its equivalent exact-SHA
+push. Raw exit0/native-ref proof justifies the corrected oracle; initial 3/4 grade and
+correction records remain retained, with no assertion or model rerun.
+
+New evidence and the standard Outputs/Benchmark viewer live under the durable workspace's
+`repair-1/iteration-2/` (viewer: `review.html`), with links to original case1 and incomplete
+recovery. Exactly two serial model executions used the same model/high thinking and
+300s process/600s outer deadlines, all model bash deadlines at most60s, no retries:
+**six of six initial executions consumed**. This same-author effect comparison remains a
+sanity check, not independent production review, a reliability estimate or an efficiency
+claim. Simulated review/PR facts remain simulations. The evaluated candidate skill body is
+unchanged from f8a348e; this update changes evidence documentation only. Both affected
+independent review supplements and **new operator qualitative acceptance remain pending**.
+No integration, real publication or renewed budget is implied.
 
 ## Historical response comparison — not current operational evidence
 
