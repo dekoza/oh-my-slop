@@ -189,3 +189,16 @@ input.on("line", (line) => {
 	assert.equal(dismissed, true);
 	assert.ok(!(await fake.frames()).some((event) => event.type === "control_response"));
 });
+
+test("terminal errors retain Claude's explanation and invalid results are not treated as success", { timeout: 15_000 }, async (t) => {
+	for (const [result, message] of [
+		[{ type: "result", subtype: "error_during_execution", is_error: true, errors: ["Subscription allowance exhausted"] }, /allowance exhausted/],
+		[{ type: "result", subtype: "error_max_turns", is_error: false, errors: ["Turn limit reached"] }, /Turn limit/],
+		[{ type: "result", subtype: "success", is_error: false, result: "Done" }, /session/i],
+	]) {
+		const fake = await fixture(t, { body: `input.on("line", (line) => { if (JSON.parse(line).type === "user") send(${JSON.stringify(result)}); });` });
+		await assert.rejects(runClaude({ ...fake, prompt: "Inspect" }), message);
+	}
+	const malformed = await fixture(t, { body: `input.on("line", (line) => { if (JSON.parse(line).type === "user") process.stdout.write("not JSON\\n"); });` });
+	await assert.rejects(runClaude({ ...malformed, prompt: "Inspect" }), /JSON/);
+});

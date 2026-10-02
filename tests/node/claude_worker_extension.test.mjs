@@ -55,3 +55,67 @@ test("slash commands start a worker without a Pi model turn and resume its saved
 	assert.equal(calls[1].sessionId, SESSION_ID);
 	assert.ok(h.widgets.some(([, lines]) => lines?.join("\n").includes("Working")));
 });
+
+test("model delegation requires consent and headless or untrusted sessions never launch", async () => {
+	let calls = 0;
+	const h = harness(async () => { calls++; });
+	h.ctx.ui.confirm = async () => false;
+	await assert.rejects(h.tools[0].execute("call", { prompt: "Edit files" }, undefined, undefined, h.ctx), /not approved/);
+	assert.equal(calls, 0);
+	h.ctx.hasUI = false;
+	await h.commands.get("cc").handler("Edit files", h.ctx);
+	await new Promise(setImmediate);
+	assert.match(h.notifications.at(-1)[0], /requires a UI/);
+	assert.equal(calls, 0);
+	h.ctx.hasUI = true;
+	h.ctx.isProjectTrusted = () => false;
+	await h.commands.get("cc").handler("Edit files", h.ctx);
+	await new Promise(setImmediate);
+	assert.match(h.notifications.at(-1)[0], /Trust this project/);
+	assert.equal(calls, 0);
+});
+
+test("only one worker runs and stop/shutdown preserve the resumable session", async () => {
+	let calls = 0;
+	const h = harness((options) => {
+		calls++;
+		options.onProgress({ type: "system", subtype: "init", session_id: SESSION_ID });
+		return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new Error("Stopped")), { once: true }));
+	});
+	await h.commands.get("cc").handler("First task", h.ctx);
+	await new Promise(setImmediate);
+	await h.commands.get("cc").handler("Collision", h.ctx);
+	await new Promise(setImmediate);
+	assert.match(h.notifications.at(-1)[0], /already running/);
+	assert.equal(calls, 1);
+	await h.commands.get("cc-stop").handler("", h.ctx);
+	await h.events.get("session_shutdown")({}, h.ctx);
+	assert.equal(h.entries.at(-1).data.sessionId, SESSION_ID);
+	await h.commands.get("cc-status").handler("", h.ctx);
+	assert.match(h.notifications.at(-1)[0], /Stopped/);
+	assert.equal(h.messages.length, 0, "cancelled work is not reported as success");
+});
+
+test("restoration follows the active Pi branch and never resumes a session from another directory", async () => {
+	const calls = [];
+	const h = harness(async (options) => {
+		calls.push(options);
+		return { sessionId: SESSION_ID, text: "Done", permissionDenials: [] };
+	});
+	h.entries.push({ type: "custom", customType: "cc-worker-session", data: { sessionId: SESSION_ID, cwd: h.ctx.cwd } });
+	await h.events.get("session_start")({}, h.ctx);
+	await h.commands.get("cc-followup").handler("Continue", h.ctx);
+	await new Promise(setImmediate);
+	assert.equal(calls[0].sessionId, SESSION_ID);
+	h.ctx.cwd = "/other/project";
+	await h.commands.get("cc-followup").handler("Continue", h.ctx);
+	await new Promise(setImmediate);
+	assert.equal(calls.length, 1);
+	assert.match(h.notifications.at(-1)[0], /No saved/);
+	h.entries.length = 0;
+	h.ctx.cwd = "/trusted/project";
+	await h.events.get("session_tree")({}, h.ctx);
+	await h.commands.get("cc-followup").handler("Continue", h.ctx);
+	await new Promise(setImmediate);
+	assert.equal(calls.length, 1);
+});

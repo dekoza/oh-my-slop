@@ -122,7 +122,9 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 			signal?.removeEventListener("abort", abort);
 			if (failure) reject(failure);
 			else if (signal?.aborted) reject(new Error("Claude Code worker stopped."));
-			else if (code !== 0 || !result || result.is_error) reject(new Error(stderr || result?.result || "Claude Code exited without a successful result."));
+			else if (code !== 0 || !result || result.is_error || result.subtype !== "success") {
+				reject(new Error([result?.result, ...(result?.errors || []), stderr].filter(Boolean).join("\n") || "Claude Code exited without a successful result."));
+			} else if (!result.session_id) reject(new Error("Claude Code returned no resumable session ID."));
 			else resolve({ sessionId: result.session_id, text: result.result || "", permissionDenials: result.permission_denials || [] });
 		});
 		child.stdin.write(JSON.stringify({ type: "control_request", request_id: "pi-initialize", request: { subtype: "initialize", hooks: null } }) + "\n");
