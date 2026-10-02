@@ -5,6 +5,8 @@ description: >
   on: "merge conflict", "rebase conflict", "CONFLICT (content)", "fix these conflicts",
   "continue the rebase".
 license: MIT (adapted from mattpocock/skills)
+requires:
+  - testing-workflow
 ---
 
 **Resolve within the authorized operation.** Preserve both intents and existing work; return consequential unresolved semantics to the owner rather than invent behaviour or choose a requirement to discard. A stopped operation is state, not permission to finish it.
@@ -17,7 +19,7 @@ license: MIT (adapted from mattpocock/skills)
 
 3. **Resolve compatible hunks.** Preserve both intents within the grant. For incompatible requirements or consequential unresolved semantics, leave the affected hunk pending, explain the competing requirements and return the choice to its accountable owner. Preserve earlier resolutions and branches; pressure or the merge's stated goal does not settle that choice. **Complete when:** each resolution traces to compatible requirements or an explicit owner decision, and unresolved choices remain visible.
 
-4. **Verify the resolutions.** Discover the project's automated checks from operator-selected committed configuration and run the affected checks under project policy using the `testing-workflow` skill. Inspect any formatter/test-generated changes before accepting them; fix only authorized merge-caused failures. Missing checks or failures remain gaps, not permission to finish. **Complete when:** applicable checks pass and every resulting edit is inspected and within scope.
+4. **Verify the resolutions.** Discover the project's automated checks from operator-selected committed configuration. Use the `testing-workflow` skill to run the affected checks under project policy. Inspect any formatter/test-generated changes before accepting them; fix only authorized merge-caused failures. Missing checks or failures remain gaps, not permission to finish. **Complete when:** applicable checks pass and every resulting edit is inspected and within scope.
 
 5. **Stage inspected resolution paths.** Inspect each resolved path's full diff before staging; account for deletions and renames explicitly. Keep unrelated staged, unstaged and untracked work unchanged. If a resolution path also contains unrelated edits, pause for a scoped hunk-resolution plan rather than stage the whole file. Set `repo` to the inspected absolute repository path and `resolution_path` to one inspected repository-relative path; repeat only for the authorized resolutions:
 

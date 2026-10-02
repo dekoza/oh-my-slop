@@ -10,6 +10,9 @@ from pathlib import Path
 
 import pytest
 
+from scripts.validate_refs import find_skill_dir
+from tests.test_skill_requires import declared_requires, referenced_skills, skills_by_name
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPO_ROOT / "skills/practice/resolving-merge-conflicts"
 
@@ -180,6 +183,24 @@ def test_authorized_rebase_can_continue_after_scoped_resolution(stopped_merge: P
     for name, contents in unrelated.items():
         assert (repo / name).read_bytes() == contents
     assert (repo / resolution).read_text() == "main setting\nfeature setting\n"
+
+
+def test_testing_workflow_handoff_resolves_through_declared_closure() -> None:
+    """Consumers can discover the check-policy handoff and load bundled guidance."""
+    known = skills_by_name()
+    assert "testing-workflow" in declared_requires(SKILL_ROOT)
+    assert "testing-workflow" in referenced_skills(SKILL_ROOT)
+    closure: set[str] = set()
+    pending = list(declared_requires(SKILL_ROOT))
+    while pending:
+        name = pending.pop()
+        if name in closure:
+            continue
+        resolved = find_skill_dir(REPO_ROOT / "skills", name)
+        assert resolved == known[name]
+        closure.add(name)
+        pending.extend(declared_requires(resolved))
+    assert "testing-workflow" in closure
 
 
 def test_functional_evals_supplement_unchanged_trigger_controls_and_catalogue() -> None:
