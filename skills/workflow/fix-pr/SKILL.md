@@ -75,13 +75,20 @@ and each finding has a concrete fix or an explicit unresolved decision/blocker.
 
 ## 3. Verify and publish the repaired head
 
-Use the `testing-workflow` skill and project check policy on the combined candidate, not
-only its pre-integration version. Use the `two-axis-review` skill for the repair against
-the governing requirements and standards; fix blocking findings and recheck affected axes.
+Commit the inspected repair before committed-diff review. Stage only inspected repair
+changes; preserve unrelated index entries and working-tree files. Record the fixed **review base SHA**
+and candidate **head SHA**, and inspect their committed three-dot diff to confirm it includes
+the repair. An empty diff or omitted repair is a verification gap, not a clean review.
+
+Use the `testing-workflow` skill and project check policy on that committed combined
+candidate, not only its pre-integration version. Record check commands/results with the
+candidate head and integrated target SHA. Use the `two-axis-review` skill for the repair
+against the governing requirements and standards. Give both independent axes the fixed
+base/head, keep their checkout at that head, and bind both complete reports to those SHAs.
 Previous approvals and green checks do not certify changed code. Report required CI that
 has not completed as pending, never passed.
 
-Commit the reviewed repair. Re-read the remote head and target before publication. If
+Re-read the remote head and target before publication. If
 either moved, reconcile without overwriting concurrent work and repeat affected checks;
 if safe reconciliation is blocked, name the blocker rather than forcing a push. Push to
 the existing PR head using a normal push unless a specific rewrite was authorized.
