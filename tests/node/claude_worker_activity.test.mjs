@@ -46,3 +46,27 @@ test("activity logs exclude authentication frames, redact common secrets and exp
 	assert.equal(JSON.parse(text.trim().split("\n").at(-1)).kind, "finished", "terminal evidence is retained even after the activity cap");
 	assert.ok(text.length < 5_000);
 });
+
+test("activity exposes current tools, approval waits and reported subagent activity without logging thinking", () => {
+	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Inspect" });
+	log.record({ type: "assistant", message: { content: [
+		{ type: "thinking", thinking: "private reasoning" },
+		{ type: "tool_use", id: "test-1", name: "Bash", input: { command: "pytest" } },
+	] } });
+	assert.match(log.snapshot().currentActivity, /Bash/);
+	log.record({ type: "worker_permission", status: "waiting", toolName: "Bash" });
+	assert.equal(log.snapshot().status, "Awaiting approval");
+	log.record({ type: "worker_permission", status: "allowed", toolName: "Bash" });
+	assert.equal(log.snapshot().status, "Running");
+	log.record({ type: "system", subtype: "task_started", task_id: "agent-1", task_type: "local_agent", description: "Review authentication" });
+	log.record({ type: "system", subtype: "task_started", task_id: "ambient-1", ambient: true, description: "Internal watcher" });
+	assert.equal(log.snapshot().backgroundTasks.length, 1);
+	log.record({ type: "system", subtype: "task_progress", task_id: "agent-1", summary: "Checking validation" });
+	assert.match(log.snapshot().lastActivity, /Checking validation/);
+	log.record({ type: "system", subtype: "task_notification", task_id: "agent-1", status: "failed", summary: "Review failed" });
+	assert.equal(log.snapshot().backgroundTasks.length, 0);
+	const text = readFileSync(log.snapshot().logPath, "utf8");
+	assert.match(text, /Review failed/);
+	assert.ok(!text.includes("private reasoning"));
+	assert.ok(!text.includes("Internal watcher"));
+});

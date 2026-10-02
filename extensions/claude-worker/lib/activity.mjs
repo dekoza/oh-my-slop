@@ -30,7 +30,13 @@ export function createActivityLog({ cwd, prompt, sessionId, maxBytes = 8 * 1024 
 	const startedAt = Date.now();
 	let state = { cwd, prompt: scrub(prompt), sessionId, logPath, startedAt, status: "Starting", omittedEvents: 0, stats: { toolCalls: 0, toolResults: 0, toolErrors: 0 } };
 	const tools = new Map();
+	const pendingTools = new Map();
+	const tasks = new Map();
 	let bytes = 0;
+	const activity = (summary) => {
+		state.lastActivity = safeText(summary);
+		state.lastActivityAt = Date.now();
+	};
 	const append = (kind, summary, details) => {
 		const text = JSON.stringify({ at: Date.now(), kind, summary: safeText(summary), details: scrub(details) }) + "\n";
 		if (kind !== "finished" && bytes + Buffer.byteLength(text) > maxBytes) {
@@ -43,28 +49,72 @@ export function createActivityLog({ cwd, prompt, sessionId, maxBytes = 8 * 1024 
 	append("started", "Worker requested", { cwd, prompt, sessionId });
 	return {
 		append,
+		setStatus(status) { state.status = status; },
 		record(event) {
-			if (event.type === "system" && event.subtype === "init") state.sessionId = event.session_id;
+			if (event.type === "system" && event.subtype === "init") {
+				state.sessionId = event.session_id;
+				append("initialized", "Claude Code initialized", { sessionId: event.session_id });
+			}
+			if (event.type === "worker_permission") {
+				state.status = event.status === "waiting" ? "Awaiting approval" : "Running";
+				activity(`${event.toolName}: permission ${event.status}`);
+				append("permission", state.lastActivity, event);
+			}
+			if (event.type === "worker_stderr") {
+				activity("Claude Code stderr");
+				append("stderr", state.lastActivity, { text: event.text });
+			}
+			if (event.type === "tool_progress") {
+				activity(`${event.tool_name || "Tool"} running (${event.elapsed_time_seconds ?? "?"}s)`);
+				append("tool_progress", state.lastActivity, { id: event.tool_use_id, name: event.tool_name, elapsedSeconds: event.elapsed_time_seconds });
+			}
+			if (event.type === "system" && event.subtype?.startsWith("task_") && !event.ambient) {
+				if (event.subtype === "task_started") tasks.set(event.task_id, { id: event.task_id, type: event.task_type, description: scrub(event.description) });
+				if (event.subtype === "task_notification") tasks.delete(event.task_id);
+				activity(event.summary || event.description || `${event.task_id}: ${event.status || event.subtype}`);
+				append(event.subtype, state.lastActivity, { taskId: event.task_id, taskType: event.task_type, status: event.status, summary: event.summary, description: event.description, outputFile: event.output_file });
+			}
+			if (event.type === "system" && event.subtype === "background_tasks_changed") {
+				tasks.clear();
+				for (const task of event.tasks || []) if (!task.ambient) tasks.set(task.task_id, { id: task.task_id, type: task.task_type, description: scrub(task.description) });
+				append("background_tasks", `${tasks.size} reported active task(s)`, [...tasks.values()]);
+			}
+			if (event.type === "system" && ["hook_started", "hook_progress", "hook_response", "permission_denied"].includes(event.subtype)) {
+				activity(`${event.subtype}: ${event.hook_name || event.tool_name || "Claude Code"}`);
+				append(event.subtype, state.lastActivity, { hookName: event.hook_name, hookEvent: event.hook_event, toolName: event.tool_name, stdout: event.stdout, stderr: event.stderr, exitCode: event.exit_code });
+			}
+			if (event.type === "rate_limit_event") append("rate_limit", "Claude Code rate-limit update", event.rate_limit_info);
+			if (event.type === "result") append("turn_result", `Claude turn result: ${event.subtype} (not a completion check)`, {
+				subtype: event.subtype, stopReason: event.stop_reason, terminalReason: event.terminal_reason,
+				origin: event.origin, errors: event.errors, result: event.result, permissionDenials: event.permission_denials,
+				queuedTurns: event.queued_turn_count,
+			});
 			for (const block of Array.isArray(event.message?.content) ? event.message.content : []) {
 				if (block.type === "tool_use") {
+					if (tools.has(block.id)) continue;
 					tools.set(block.id, block.name);
+					pendingTools.set(block.id, block.name);
 					state.stats.toolCalls++;
-					state.lastActivity = `${block.name} requested`;
+					activity(`${block.name} requested`);
 					append("tool_call", state.lastActivity, { id: block.id, name: block.name, input: block.input });
 				}
 				if (block.type === "tool_result") {
 					const name = tools.get(block.tool_use_id) || block.tool_use_id;
 					state.stats.toolResults++;
 					if (block.is_error) state.stats.toolErrors++;
-					state.lastActivity = `${name} ${block.is_error ? "failed" : "returned"}`;
+					pendingTools.delete(block.tool_use_id);
+					activity(`${name} ${block.is_error ? "failed" : "returned"}`);
 					append("tool_result", state.lastActivity, { id: block.tool_use_id, name, content: block.content, isError: block.is_error === true });
 				}
+				if (block.type === "text" && event.type === "assistant") append("assistant", "Claude response", { text: block.text, parentToolUseId: event.parent_tool_use_id });
 			}
+			state.currentActivity = [...pendingTools.values()].join(", ") || state.lastActivity || "Waiting for Claude Code";
 		},
 		finish(outcome) {
-			state = { ...state, ...scrub(outcome), endedAt: Date.now() };
+			const fields = Object.fromEntries(Object.entries(outcome).filter(([, value]) => value !== undefined));
+			state = { ...state, ...scrub(fields), endedAt: Date.now(), backgroundTasks: [...tasks.values()] };
 			append("finished", state.status, state);
 		},
-		snapshot() { return structuredClone(state); },
+		snapshot() { return structuredClone({ ...state, backgroundTasks: [...tasks.values()] }); },
 	};
 }
