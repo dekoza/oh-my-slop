@@ -119,3 +119,19 @@ test("restoration follows the active Pi branch and never resumes a session from 
 	await new Promise(setImmediate);
 	assert.equal(calls.length, 1);
 });
+
+test("model delegation returns worker output and permission dialogs are bounded and terminal-safe", async () => {
+	const h = harness(async (options) => {
+		assert.equal(await options.onPermission({ tool_name: "Bash", decision_reason: "Needs approval", input: { command: "echo \\u001b[31munsafe" } }, options.signal), true);
+		return { sessionId: SESSION_ID, text: "Done\u001b[31m\u0007", permissionDenials: [{ tool_name: "Edit" }] };
+	});
+	const result = await h.tools[0].execute("call", { prompt: "Inspect" }, undefined, undefined, h.ctx);
+	assert.match(result.content[0].text, /Done/);
+	assert.ok(!result.content[0].text.includes("\u001b"));
+	assert.ok(!result.content[0].text.includes("\u0007"));
+	assert.match(result.content[0].text, /work may be incomplete/);
+	const permission = h.confirmations.find(([title]) => title.includes("allow Bash"));
+	assert.equal(permission[2].timeout, 60_000);
+	assert.ok(!permission[1].includes("\u001b"));
+	assert.match(permission[1], /Needs approval/);
+});

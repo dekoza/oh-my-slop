@@ -72,7 +72,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 					cwd: ctx.cwd, prompt, sessionId, signal: controller.signal,
 					onPermission: (request, permissionSignal) => ctx.ui.confirm(
 						`Claude Code: allow ${safeText(request.tool_name)}?`,
-						safeText(JSON.stringify(request.input, null, 2)), { signal: permissionSignal },
+						safeText([request.decision_reason, request.blocked_path, JSON.stringify(request.input, null, 2)].filter(Boolean).join("\n\n")), { signal: permissionSignal, timeout: 60_000 },
 					),
 					onProgress: (event) => {
 						if (event.type === "system" && event.subtype === "init" && event.session_id) remember(event.session_id, ctx.cwd);
@@ -145,6 +145,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => restore(ctx));
+	// The launching command/tool reports failures; cleanup only waits for it to settle.
 	pi.on("session_tree", async (_event, ctx) => {
 		if (active) { active.controller.abort(); await active.done.catch(() => {}); }
 		restore(ctx);
