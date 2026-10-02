@@ -54,6 +54,17 @@ def test_run_frontier_preserves_tracker_gates_and_bounded_integration() -> None:
     assert all(case["expected_output"] and case["expectations"] for case in cases["evals"])
 
 
+def test_pr_handoff_is_at_combined_delivery_with_coordinator_authority() -> None:
+    _, frontmatter, body = (SKILL / "SKILL.md").read_text(encoding="utf-8").split("---", 2)
+    assert "pr" in yaml.safe_load(frontmatter)["requires"]
+    delivery = body.split("## 5. Verify and deliver the combined result", 1)[1]
+    assert "Use the `pr` skill" in delivery
+    assert "combined body or branch-only presentation handoff" in delivery
+    assert "without changing publication authority" in delivery
+    assert "coordinator alone" in body
+    assert "do not push, open a PR" in delivery
+
+
 def test_a_moved_integration_tip_requires_a_new_combined_candidate(tmp_path: Path) -> None:
     """Merging an old integration tip into a worker cannot ensure a later fast-forward."""
     def git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:

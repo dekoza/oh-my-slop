@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPO_ROOT / "skills/workflow/fix-pr"
@@ -60,6 +61,18 @@ def test_committed_review_includes_repair_and_preserves_unrelated_work(tmp_path:
     assert git(repo, "diff", "--name-only", base, head) == "query.txt"
     assert git(repo, "ls-files", "--stage", "staged.txt") == sentinel_index
     assert (repo / "untracked.txt").read_text(encoding="utf-8") == "precious research\n"
+
+
+def test_pr_handoff_preserves_repair_comment_and_exact_candidate_gate() -> None:
+    _, frontmatter, body = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8").split("---", 2)
+    assert "pr" in yaml.safe_load(frontmatter)["requires"]
+    publication = body.split("## 3. Verify and publish the repaired head", 1)[1]
+    handoff = publication.index("Use the `pr` skill")
+    assert handoff < publication.index("Record the review base,")
+    assert "existing repair comment" in publication
+    assert "without changing publication authority" in publication
+    assert "published head must equal" in publication
+    assert "Remote movement invalidates the publication gate" in publication
 
 
 def certificate_matches(

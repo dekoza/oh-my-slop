@@ -137,7 +137,7 @@ while the router is offline; use another provider until it returns.
 ## Skills
 
 <details>
-<summary><strong>Skills (68)</strong></summary>
+<summary><strong>Skills (69)</strong></summary>
 
 Grouped by what you came looking for: an API surface (**Reference**), a way of
 working (**Practice**), a job to run (**Workflow**), or the agent's own toolkit
@@ -161,6 +161,7 @@ Framework, library, and protocol lookup — reach for these when you need the AP
 | **[Hyperscript](skills/reference/hyperscript/SKILL.md)** | `_hyperscript` front-end scripting — event handlers, queue semantics, DOM commands, async transparency, `behavior`, `worker`, `socket`, JS interop boundaries, and HTMX companion patterns. |
 | **[LangChain](skills/reference/langchain/SKILL.md)** | Python LangChain ecosystem reference — package boundaries across `langchain`, `langchain-core`, provider integrations, LangGraph, LangSmith, LCEL/runnables, `init_chat_model`, `create_agent`, retrieval wiring, tracing, evals, and migration off `langchain-classic`. |
 | **[Litestar](skills/reference/litestar/SKILL.md)** | Litestar framework — route handlers, controllers, dependency injection, DTOs, middleware, lifecycle hooks, exception handling, templating, testing, websockets, and guards. |
+| **[PR Presentation](skills/reference/pr/SKILL.md)** | Shared evidence-oriented PR bodies and repair comments — existing templates/metadata first, actual candidate-linked proof and gaps, conditional visuals, consumers and recovery limits. Presentation grants no publication authority. |
 | **[PrestaShop](skills/reference/prestashop/SKILL.md)** | PrestaShop 9 modules: module structure, hooks, front/admin controllers, modern configuration pages, services, persistence, external API integrations, cron/commands, packaging, compatibility, or release debugging. Prevents inventing framework classes, guessing hook contracts, or shipping fake Symfony/PrestaShop internals. |
 | **[Python Async](skills/reference/python-async/SKILL.md)** | Python async and concurrency — AnyIO, asyncio, Trio, task groups, cancel scopes, async testing, thread offloading, async streams, event-loop ownership, and uvloop. |
 | **[Pyke](skills/reference/pyke/SKILL.md)** | Pyke (Python Knowledge Engine, scitools-pyke) — .krb/.kfb/.kqb source files, knowledge_engine.engine API, pattern matching, backward/forward chaining, plans, the special knowledge base, and question bases. |
@@ -308,6 +309,15 @@ still govern. Fresh configured skill discovery is verified in the
 [handoff spec](docs/specs/implementation-ticket-handoff.md#runtime-discovery-verification);
 it is not proof of an active-session reload, real fresh-worker construction or publication.
 Those operational checks remain pending.
+
+### PR presentation
+
+Use the model-discoverable [pr reference](skills/reference/pr/SKILL.md) to prepare
+or improve a PR body or repair comment. `implement`, `implement-spec` and `fix-pr`
+route their presentation to this single source. Existing repository templates,
+closing references, robot markers, machine metadata and configured domain docs win.
+Draft preparation does not grant posting, pushing, merging or closure: standalone,
+branch-only, combined delivery and same-PR repair authority remain with their owners.
 
 ### Selected compact review evidence
 

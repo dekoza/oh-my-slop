@@ -7,6 +7,7 @@ disable-model-invocation: true
 requires:
   - git-discipline
   - grilling
+  - pr
   - resolving-merge-conflicts
   - tdd
   - testing-workflow
@@ -111,7 +112,10 @@ the existing PR head using a normal push unless a specific rewrite was authorize
 Read back the same open PR's head SHA, target and fresh mergeability after publication.
 The published head must equal the checked/reviewed candidate, and the observed target must
 match the certified target. If either differs, invalidate completion and reconcile/reverify
-within the grant and remaining budget, or report the new blocker. Record the review base,
+within the grant and remaining budget, or report the new blocker.
+
+Use the `pr` skill to prepare the existing repair comment, without changing publication authority
+or the certified-candidate gates above. Record the review base,
 reviewed/published head and target SHAs alongside addressed findings, conflict-resolution
 decisions, checks, both review outcomes and any pending review/CI in a repair comment
 under the project's robot-comment convention; reuse the matching record on retries. Verify

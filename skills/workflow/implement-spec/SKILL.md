@@ -6,6 +6,7 @@ license: MIT (adapted from mattpocock/skills)
 requires:
   - git-discipline
   - implement
+  - pr
   - testing-workflow
   - two-axis-review
 ---
@@ -175,6 +176,9 @@ reported follow-ups, not an endless cleanup loop. Any later change invalidates s
 
 On exhausted budget or unresolved blockers, report **incomplete**, retain branches/worktrees,
 remaining findings and the next owner decision. Do not publish a successful deliverable.
+
+Use the `pr` skill to prepare the combined body or branch-only presentation handoff,
+without changing publication authority or the candidate and closure gates below.
 
 On passing gates, deliver the exact tested/reviewed head:
 

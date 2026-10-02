@@ -1,0 +1,22 @@
+[
+  {"query":"Write the pull request description for a configuration refactor. The output is unchanged, and I have matching test logs rather than a performance improvement. Help reviewers understand the evidence.","should_trigger":true},
+  {"query":"Improve this PR body without replacing our required template headings or the machine-readable candidate comment. It needs a clearer explanation of what changed.","should_trigger":true},
+  {"query":"Prepare the combined pull request summary for two integrated tickets. Only the coordinator will publish; describe the actual candidate and leave CI pending.","should_trigger":true},
+  {"query":"The repair is committed and reviewed. Draft the update comment on the existing pull request, keeping its robot marker and exact base/head/target fields.","should_trigger":true},
+  {"query":"Help me explain merge risk in a PR that starts sending customer emails. Reverting the code cannot unsend them; what recovery conditions should the description disclose?","should_trigger":true},
+  {"query":"Our pull request description shows a planned pytest command as evidence. We have no baseline output or screenshot. Rewrite that section so it is honest about the gaps.","should_trigger":true},
+  {"query":"Draft a branch-only implementation handoff's PR presentation for the publisher. The evidence exists at a fixed commit, but I have no permission to push or post anything.","should_trigger":true},
+  {"query":"The reviewer can't tell which consumers and retained data this change affects. Improve the existing pull request explanation using our configured domain vocabulary.","should_trigger":true},
+  {"query":"This change moves files without changing behavior. Help me decide whether a shallow tree or small diff would clarify the pull request description; don't add a ceremonial diagram.","should_trigger":true},
+  {"query":"The PR text says the migration is a two-way door, but restoring deleted records requires a backup we haven't verified. Help describe the recovery limits accurately.","should_trigger":true},
+  {"query":"Run a standards review on the diff since commit abc123. Produce cited blocking and advisory findings only; do not prepare or edit the PR description.","should_trigger":false},
+  {"query":"Compare this branch's implementation against ticket 17 and report missing requirements. I want a spec review, not presentation or publication.","should_trigger":false},
+  {"query":"Resolve the stopped merge conflict in parser.py after investigating both branch intents. Preserve my untracked files; the commit message can wait.","should_trigger":false},
+  {"query":"Use tea to read PR42's current head, target and mergeability. I need exact forge facts, not help writing its body or comment.","should_trigger":false},
+  {"query":"The regression test fails on the pagination boundary. Diagnose the bug and add a permanent failing test before fixing it; no PR text is requested.","should_trigger":false},
+  {"query":"Explain whether a customer-email operation can safely retry after a timeout. Design the idempotency boundary, not a pull request summary.","should_trigger":false},
+  {"query":"Capture a real screenshot of the local dashboard and inspect console errors. Don't invent an image; this is browser reproduction, not PR preparation.","should_trigger":false},
+  {"query":"Write a release announcement for customers about the new export feature. There is no pull request or review handoff involved.","should_trigger":false},
+  {"query":"Create an ADR deciding whether to keep the custom domain glossary filename. Do not rename files or write a PR description yet.","should_trigger":false},
+  {"query":"Audit the repository for pass-through wrappers and speculative abstractions. Return ranked cut candidates, not an explanation of a proposed pull request.","should_trigger":false}
+]
