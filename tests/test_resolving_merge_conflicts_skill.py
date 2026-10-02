@@ -81,3 +81,28 @@ def test_documented_staging_preserves_unrelated_index_and_worktree(stopped_merge
     assert git(repo, "rev-parse", "HEAD") == head
     assert git(repo, "rev-parse", "--verify", "MERGE_HEAD")
     assert git(repo, "ls-files", "--unmerged") == ""
+
+
+def test_operation_authority_is_a_gate_not_an_automatic_finish(stopped_merge: Path) -> None:
+    """Read-only inventory preserves a stopped operation; prose gates are supplemental."""
+    repo = stopped_merge
+    head = git(repo, "rev-parse", "HEAD")
+    index = git(repo, "ls-files", "--stage")
+    contents = (repo / "resolution [1].txt").read_bytes()
+    git(repo, "status", "--porcelain=v1")
+    git(repo, "log", "--oneline", "--all")
+    git(repo, "diff", "--", "resolution [1].txt")
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert git(repo, "ls-files", "--stage") == index
+    assert (repo / "resolution [1].txt").read_bytes() == contents
+    assert git(repo, "rev-parse", "--verify", "MERGE_HEAD")
+
+    body = skill_body()
+    assert "authorized operation and ownership" in body
+    assert "Reuse sufficient explicit caller/operator authority" in body
+    assert "unattributed" in body and "pause" in body
+    assert "consequential unresolved semantics" in body
+    assert "only when continuation is explicitly authorized" in body
+    assert "unrelated staged" in body and "include" in body
+    assert "Always resolve" not in body
+    assert "pick the one" not in body
