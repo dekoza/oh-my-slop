@@ -25,16 +25,26 @@ candidate body with identical fixed supporting skills, task/fixture inputs and c
 configuration, serial, with explicit 300s process and 600s outer deadlines; no retries.
 The first baseline executed committed repair and local publication. The second encountered
 an incomplete movement fixture: its bare remote lacked the injected future commit objects.
-That run is preserved as **incomplete**, not a negative skill grade; no model lift or
-remote-movement execution claim follows from it. Candidate comparison and operator quality
-review are pending at this construction checkpoint.
+Both configurations preserved that run as **incomplete**, withheld publication and exposed
+the missing objects; it is excluded from comparative scoring, not graded as skill failure.
+The complete matched case ties **4/4 versus 4/4**. Both committed before review under the
+same supplied caller/support safeguards, so there is **no measured model lift**. This
+same-author, deterministic effect comparison is a sanity check, not an independent benchmark
+or evidence of operational reliability/efficiency. Four model executions were used, no retries.
+Operator qualitative review remains pending.
 
 Durable workspace:
 `/home/minder/.local/state/oh-my-slop/preflight-248-1fO63Nx1/worker-250/`.
 It retains original skill/evals, fixed support bodies, frozen prompts/assertions, initial
 Git states, raw JSON events and sessions. Run evidence lives under `iteration-1/`;
-final grades, standard viewer, candidate check stamps and gaps belong there too, outside
-the installed skill. Independent whole-slice standards/spec review and operator qualitative
+formal grades and the standard `iteration-1/review.html` viewer are retained there. Outputs
+contains both qualitative reports and actual tool/state evidence, including incomplete
+recovery; Benchmark scores only the complete pair and explains its limits. An initial
+candidate-grade oracle incorrectly required the fixture root as review base instead of the
+recorded pre-repair ancestor. The correction leaves assertion text unchanged and retains the
+initial grade; both axes cover the complete repair at the same recorded base/head. Candidate
+check stamps and review gaps also remain outside the installed skill.
+Independent whole-slice standards/spec review and operator qualitative
 acceptance remain completion gates. Manual invocation and description are unchanged;
 trigger evaluation is inapplicable. No live forge, consumer or run/source branch is published.
 
