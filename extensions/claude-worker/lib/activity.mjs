@@ -51,6 +51,7 @@ export function createActivityLog({ cwd, prompt, sessionId, maxBytes = 8 * 1024 
 		append,
 		setStatus(status) { state.status = status; },
 		record(event) {
+			if (state.endedAt) return;
 			if (event.type === "system" && event.subtype === "init") {
 				state.sessionId = event.session_id;
 				append("initialized", "Claude Code initialized", { sessionId: event.session_id });

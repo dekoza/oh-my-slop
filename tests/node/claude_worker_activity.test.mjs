@@ -102,3 +102,12 @@ test("the lightweight inspector expands a retained snapshot without filesystem a
 	assert.equal(activityMessageText(message, { expanded: true }), "Full input and result: 世界");
 	assert.match(activityMessageText({ content: "Legacy log" }, { expanded: true }), /Legacy log/);
 });
+
+test("a late cancelled approval cannot change a retained terminal outcome back to running", () => {
+	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Inspect" });
+	log.finish({ status: "Stopped", exitCode: null, exitSignal: "SIGTERM" });
+	const before = readFileSync(log.snapshot().logPath, "utf8");
+	log.record({ type: "worker_permission", status: "cancelled", toolName: "Bash" });
+	assert.equal(log.snapshot().status, "Stopped");
+	assert.equal(readFileSync(log.snapshot().logPath, "utf8"), before);
+});
