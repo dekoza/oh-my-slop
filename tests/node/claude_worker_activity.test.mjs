@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import test from "node:test";
 
-import { createActivityLog } from "../../extensions/claude-worker/lib/activity.mjs";
+import { createActivityLog, readActivityLog, formatRunReport, formatActivityLog } from "../../extensions/claude-worker/lib/activity.mjs";
 
 test("worker activity retains private, timestamped tool calls and results after the turn ends", () => {
 	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Inspect the tests" });
@@ -69,4 +69,29 @@ test("activity exposes current tools, approval waits and reported subagent activ
 	assert.match(text, /Review failed/);
 	assert.ok(!text.includes("private reasoning"));
 	assert.ok(!text.includes("Internal watcher"));
+});
+
+test("retained run reports and expandable log snapshots explain outcomes without declaring the work complete", () => {
+	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Inspect" });
+	log.record({ type: "assistant", message: { content: [{ type: "tool_use", id: "bash-1", name: "Bash", input: { command: "pytest tests/auth.py" } }] } });
+	log.record({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "bash-1", content: "3 failed", is_error: true }] } });
+	log.finish({ status: "Turn ended; completion unverified", exitCode: 0, resultSubtype: "success", stopReason: "end_turn", text: "Needs further work" });
+	const snapshot = log.snapshot();
+	const report = formatRunReport(snapshot);
+	assert.match(report, /completion unverified/);
+	assert.match(report, /Exit code: 0/);
+	assert.match(report, /Result subtype: success/);
+	assert.match(report, /Stop reason: end_turn/);
+	assert.match(report, /Last activity: Bash failed/);
+	assert.ok(report.includes(snapshot.logPath));
+	const retained = readActivityLog(snapshot.logPath);
+	const compact = formatActivityLog(snapshot, retained, { expanded: false });
+	const expanded = formatActivityLog(snapshot, retained, { expanded: true });
+	assert.match(compact, /Bash requested/);
+	assert.match(expanded, /pytest tests\/auth.py/);
+	assert.match(expanded, /3 failed/);
+	const limited = readActivityLog(snapshot.logPath, 1);
+	assert.equal(limited.records.length, 1);
+	assert.ok(limited.omittedRecords > 0);
+	assert.match(formatActivityLog(snapshot, limited, { expanded: true }), /earlier records omitted/);
 });

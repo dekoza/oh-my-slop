@@ -1,4 +1,4 @@
-import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
@@ -112,9 +112,50 @@ export function createActivityLog({ cwd, prompt, sessionId, maxBytes = 8 * 1024 
 		},
 		finish(outcome) {
 			const fields = Object.fromEntries(Object.entries(outcome).filter(([, value]) => value !== undefined));
-			state = { ...state, ...scrub(fields), endedAt: Date.now(), backgroundTasks: [...tasks.values()] };
+			state = { ...state, ...scrub(fields), endedAt: Date.now(), backgroundTasks: [...tasks.values()], pendingTools: [...pendingTools.values()] };
 			append("finished", state.status, state);
 		},
-		snapshot() { return structuredClone({ ...state, backgroundTasks: [...tasks.values()] }); },
+		snapshot() { return structuredClone({ ...state, backgroundTasks: [...tasks.values()], pendingTools: [...pendingTools.values()] }); },
 	};
+}
+
+export function readActivityLog(logPath, limit = 200) {
+	const records = readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+	return { records: records.slice(-limit), omittedRecords: Math.max(0, records.length - limit) };
+}
+
+export function formatRunReport(state, text = state.text || "") {
+	const duration = Math.max(0, Math.floor(((state.endedAt || Date.now()) - state.startedAt) / 1_000));
+	const output = safeText(text);
+	return [
+		`Claude Code: ${state.status}`,
+		`Session: ${state.sessionId || "not assigned"} · Elapsed: ${duration}s`,
+		`Exit code: ${state.exitCode ?? "not reported"} · Signal: ${state.exitSignal || "none reported"}`,
+		`Result subtype: ${state.resultSubtype || "not reported"} · Stop reason: ${state.stopReason || "not reported"}`,
+		state.terminalReason ? `Terminal reason: ${JSON.stringify(state.terminalReason)}` : "",
+		`Reported tools: ${state.stats.toolCalls} calls, ${state.stats.toolResults} results, ${state.stats.toolErrors} errors`,
+		`Last activity: ${state.lastActivity || "No activity reported"}`,
+		state.error ? `Error: ${state.error}` : "",
+		state.errors?.length ? `Claude errors: ${state.errors.join("; ")}` : "",
+		state.permissionDenials?.length ? `Warning: ${state.permissionDenials.length} tool permission(s) were denied; work may be incomplete.` : "",
+		state.backgroundTasks?.length ? `Warning: ${state.backgroundTasks.length} task(s) still reported active when the worker ended.` : "",
+		state.pendingTools?.length ? `Warning: tool results were not reported for ${state.pendingTools.join(", ")}.` : "",
+		state.omittedEvents ? `Activity cap reached: ${state.omittedEvents} event details omitted.` : "",
+		`Activity log: ${state.logPath}`,
+		output ? `\n${output.slice(0, 64_000)}` : "",
+		output.length > 64_000 ? "[Output truncated. Open the Claude Code session to read the full result.]" : "",
+	].filter(Boolean).join("\n");
+}
+
+export function formatActivityLog(state, retained, { expanded = false } = {}) {
+	const records = expanded ? retained.records : retained.records.slice(-12);
+	const omitted = retained.omittedRecords + retained.records.length - records.length;
+	const lines = [formatRunReport(state, ""), "", "Recorded activity (UTC):"];
+	if (omitted) lines.push(`[${omitted} earlier records omitted from this view; the file retains them.]`);
+	for (const record of records) {
+		lines.push(`${new Date(record.at).toISOString().slice(11, 19)} ${record.kind}: ${safeText(record.summary)}`);
+		if (expanded && record.details !== undefined) lines.push(safeText(JSON.stringify(record.details, null, 2)));
+	}
+	const text = lines.join("\n");
+	return text.length <= 64_000 ? text : text.slice(0, 64_000) + `\n[Inspector view truncated; read ${state.logPath} for the complete recorded trace.]`;
 }
