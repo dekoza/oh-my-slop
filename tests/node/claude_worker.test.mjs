@@ -103,3 +103,18 @@ input.on("line", (line) => {
 	assert.equal(response.response.behavior, "deny");
 	assert.match(response.response.message, /denied/i);
 });
+
+test("stop terminates an uncooperative worker within a bounded grace period", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+process.on("SIGTERM", () => {});
+const input = createInterface({ input: process.stdin });
+input.on("line", () => {
+ send({ type: "assistant", message: { content: [{ type: "text", text: "Ready" }] } });
+ setTimeout(() => process.exit(0), 4000);
+});
+` });
+	const controller = new AbortController();
+	const start = performance.now();
+	await assert.rejects(runClaude({ ...fake, signal: controller.signal, prompt: "Wait", onProgress: () => controller.abort() }), /stopped/i);
+	assert.ok(performance.now() - start < 2500, "SIGTERM must escalate instead of waiting forever");
+});

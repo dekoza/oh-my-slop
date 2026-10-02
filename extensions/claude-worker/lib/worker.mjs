@@ -26,9 +26,28 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 	const args = [...prefixArgs, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-mode", "default"];
 	if (sessionId) args.push("--resume", sessionId);
 	return new Promise((resolve, reject) => {
-		const child = spawn(executable, args, { cwd, env: childEnv, stdio: ["pipe", "pipe", "pipe"] });
+		const child = spawn(executable, args, {
+			cwd, env: childEnv, stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32",
+		});
 		let result;
+		let failure;
+		let killTimer;
 		let stderr = "";
+		const permissionAbort = new AbortController();
+		const kill = (terminationSignal) => {
+			try {
+				if (process.platform !== "win32" && child.pid) process.kill(-child.pid, terminationSignal);
+				else child.kill(terminationSignal);
+			} catch (error) {
+				if (error.code !== "ESRCH") failure ??= error;
+			}
+		};
+		const stop = () => {
+			permissionAbort.abort();
+			kill("SIGTERM");
+			killTimer ??= setTimeout(() => kill("SIGKILL"), 1_000);
+		};
+		const fail = (error) => { failure ??= error; stop(); };
 		child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr = (stderr + chunk).slice(-OUTPUT_LIMIT); });
 		const lines = createInterface({ input: child.stdout });
 		lines.on("line", (line) => {
@@ -37,7 +56,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 				onProgress(event);
 				if (event.type === "control_request") {
 					const request = event.request;
-					const allowed = request?.subtype === "can_use_tool" && await onPermission(request, signal);
+					const allowed = request?.subtype === "can_use_tool" && await onPermission(request, permissionAbort.signal);
 					if (!child.stdin.destroyed && !signal?.aborted) {
 						const response = request?.subtype === "can_use_tool"
 							? { subtype: "success", request_id: event.request_id, response: allowed
@@ -51,18 +70,19 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 					result = event;
 					child.stdin.end();
 				}
-			})().catch((error) => {
-				child.kill();
-				reject(error);
-			});
+			})().catch(fail);
 		});
-		child.on("error", reject);
-		const abort = () => child.kill();
+		child.on("error", fail);
+		child.stdin.on("error", fail);
+		const abort = stop;
 		signal?.addEventListener("abort", abort, { once: true });
 		child.on("close", (code) => {
 			lines.close();
+			clearTimeout(killTimer);
+			permissionAbort.abort();
 			signal?.removeEventListener("abort", abort);
-			if (signal?.aborted) reject(new Error("Claude Code worker stopped."));
+			if (failure) reject(failure);
+			else if (signal?.aborted) reject(new Error("Claude Code worker stopped."));
 			else if (code !== 0 || !result || result.is_error) reject(new Error(stderr || result?.result || "Claude Code exited without a successful result."));
 			else resolve({ sessionId: result.session_id, text: result.result || "" });
 		});
