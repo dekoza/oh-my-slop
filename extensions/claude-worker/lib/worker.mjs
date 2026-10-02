@@ -23,7 +23,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		throw new Error("Claude Code subscription login required. Run claude auth login, then check /status in Claude Code.");
 	}
 	signal?.throwIfAborted();
-	const args = [...prefixArgs, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-mode", "default"];
+	const args = [...prefixArgs, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "default"];
 	if (sessionId) args.push("--resume", sessionId);
 	return new Promise((resolve, reject) => {
 		const child = spawn(executable, args, {
@@ -84,7 +84,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 			if (failure) reject(failure);
 			else if (signal?.aborted) reject(new Error("Claude Code worker stopped."));
 			else if (code !== 0 || !result || result.is_error) reject(new Error(stderr || result?.result || "Claude Code exited without a successful result."));
-			else resolve({ sessionId: result.session_id, text: result.result || "" });
+			else resolve({ sessionId: result.session_id, text: result.result || "", permissionDenials: result.permission_denials || [] });
 		});
 		child.stdin.write(JSON.stringify({ type: "user", message: { role: "user", content: prompt } }) + "\n");
 	});

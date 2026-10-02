@@ -118,3 +118,21 @@ input.on("line", () => {
 	await assert.rejects(runClaude({ ...fake, signal: controller.signal, prompt: "Wait", onProgress: () => controller.abort() }), /stopped/i);
 	assert.ok(performance.now() - start < 2500, "SIGTERM must escalate instead of waiting forever");
 });
+
+test("follow-up resumes a saved session and streams partial text while preserving permission denials", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+createInterface({ input: process.stdin }).on("line", () => {
+ send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+ send({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Hello 世界" } } });
+ send({ type: "result", subtype: "success", is_error: false, session_id: "${SESSION_ID}", result: "Hello 世界", permission_denials: [{ tool_name: "Bash" }] });
+});
+` });
+	const updates = [];
+	const result = await runClaude({ ...fake, prompt: "Continue", sessionId: SESSION_ID, onProgress: (event) => updates.push(event) });
+	assert.equal(result.text, "Hello 世界");
+	assert.equal(result.permissionDenials.length, 1);
+	assert.ok(updates.some((event) => event.type === "stream_event"));
+	const args = (await fake.calls())[1].args;
+	assert.equal(args[args.indexOf("--resume") + 1], SESSION_ID);
+	assert.ok(args.includes("--include-partial-messages"));
+});
