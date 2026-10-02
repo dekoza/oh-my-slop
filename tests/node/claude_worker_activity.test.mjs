@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import test from "node:test";
 
-import { createActivityLog, readActivityLog, formatRunReport, formatActivityLog } from "../../extensions/claude-worker/lib/activity.mjs";
+import { createActivityLog, readActivityLog, formatRunReport, formatActivityLog, activityMessageText } from "../../extensions/claude-worker/lib/activity.mjs";
 
 test("worker activity retains private, timestamped tool calls and results after the turn ends", () => {
 	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Inspect the tests" });
@@ -94,4 +94,11 @@ test("retained run reports and expandable log snapshots explain outcomes without
 	assert.equal(limited.records.length, 1);
 	assert.ok(limited.omittedRecords > 0);
 	assert.match(formatActivityLog(snapshot, limited, { expanded: true }), /earlier records omitted/);
+});
+
+test("the lightweight inspector expands a retained snapshot without filesystem access during rendering", () => {
+	const message = { content: "Compact timeline", details: { expandedText: "Full input and result: 世界", logPath: "/not/read/during/render" } };
+	assert.match(activityMessageText(message, { expanded: false }), /Compact timeline/);
+	assert.equal(activityMessageText(message, { expanded: true }), "Full input and result: 世界");
+	assert.match(activityMessageText({ content: "Legacy log" }, { expanded: true }), /Legacy log/);
 });

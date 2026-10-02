@@ -119,6 +119,11 @@ export function createActivityLog({ cwd, prompt, sessionId, maxBytes = 8 * 1024 
 	};
 }
 
+export function activityMessageText(message, { expanded }) {
+	if (expanded && message.details?.expandedText) return message.details.expandedText;
+	return safeText(message.content) + "\n[Expand this message to inspect tool inputs and results.]";
+}
+
 export function readActivityLog(logPath, limit = 200) {
 	const records = readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 	return { records: records.slice(-limit), omittedRecords: Math.max(0, records.length - limit) };
