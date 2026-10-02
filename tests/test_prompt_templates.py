@@ -94,15 +94,17 @@ def test_refine_ticket_routes_explicit_ticket_through_authorized_readiness() -> 
     assert named_skill(template) == "humanify"
     frontmatter, body = split_template(template)
     assert 'argument-hint: "<ticket-number>"' in frontmatter
-    assert "$1" in body and "$@" in body
-    assert "exactly one positive ticket number" in body
-    assert "ask for `/refine-ticket <ticket-number>` before any ticket work" in body
-    assert "current project's configured tracker" in body
-    assert "human-authorized agent readiness" in body
-    assert "implementation in a separate session" in body
-    assert "construction-craft" in body
-    assert FALLBACK_CLAUSE in body
-    assert "Cleopatra" not in body
+    assert body.strip() == (
+        "Use the `humanify` skill to refine ticket $@ through human-authorized "
+        "agent readiness. " + FALLBACK_CLAUSE
+    )
+    # Authority and ambiguous-input handling belong to the owner, not the shim.
+    owner = (find_skill_dir(SKILLS_DIR, "humanify") / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "unambiguously" in owner
+    assert "Implementation starts in a separate session." in owner
+    assert "Never infer readiness from design confirmation." in owner
 
 
 def test_fixrev_routes_review_and_conflict_repairs_to_one_owner() -> None:
@@ -118,8 +120,8 @@ def test_fixrev_routes_review_and_conflict_repairs_to_one_owner() -> None:
     assert "disable-model-invocation: true" in skill_frontmatter("fix-pr")
 
 
-def test_revmerge_routes_user_decisions_through_grilling() -> None:
-    """The PR review command must not bypass the user's decision format."""
+def test_revmerge_delegates_review_without_publication_or_merge_authority() -> None:
+    """A review handoff does not silently become a publication workflow."""
     template = PROMPTS_DIR / "revmerge.md"
 
     assert template.exists(), "/revmerge is not installed as a prompt template"
@@ -127,9 +129,11 @@ def test_revmerge_routes_user_decisions_through_grilling() -> None:
     frontmatter, body = split_template(template)
     assert "<pull_request>" in frontmatter
     assert "$@" in body
-    assert "any decision requires my input" in body
-    assert "`grilling` skill" in body
-    assert "wait for my answer before proceeding" in body
+    assert body.strip() == "Use the `two-axis-review` skill to review the pull request $@."
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    row = next(line for line in readme.splitlines() if "**`/revmerge " in line)
+    assert "review-only" in row
+    assert "separately authorized" in row
 
 
 def test_every_template_names_a_skill_that_exists() -> None:
