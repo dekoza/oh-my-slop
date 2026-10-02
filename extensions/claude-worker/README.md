@@ -31,7 +31,8 @@ pi -e ./extensions/claude-worker/index.ts
 |---|---|
 | `/cc <task>` | Start a new worker in Pi's current project. |
 | `/cc-followup <instruction>` | Resume the last saved worker session after it finishes or stops. |
-| `/cc-status` | Show running/finished/failed status and the saved session ID. |
+| `/cc-status` | Show current/last activity, elapsed time, session, log path and terminal diagnostics. |
+| `/cc-log` | Show a retained activity snapshot; expand the message for tool inputs/results. |
 | `/cc-stop` | Terminate the worker; retain its session and any existing file changes. |
 
 Example:
@@ -51,6 +52,42 @@ Commands stream a short preview and display the final result **without triggerin
 a Pi model turn**. Follow-ups are resumed turns, not live interruption messages:
 stop the current task before sending a correction. Direct commands keep their
 result in the Pi transcript; they do not automatically ask Pi to review it.
+
+## Activity and premature endings
+
+The live widget shows the current tool/activity, elapsed time, time since the last
+reported activity, tool counters and reported active tasks. `/cc-log` adds a
+snapshot to the Pi transcript; use Pi's tool-output expansion shortcut (default
+**Ctrl+O**) to inspect inputs, results, stderr, approvals, hooks and task updates.
+Run the command again to refresh a running worker's snapshot. The inspector shows
+12 recent summaries collapsed, or up to 200 records expanded, with a 64,000-character
+view limit. Omitted records/view truncation are explicit; use the displayed log
+path to inspect everything that was retained.
+
+A successful CLI turn is labeled **“Turn ended; completion unverified”**. Exit code,
+signal, result subtype, stop/terminal reason (when reported), permission denials,
+last activity and still-reported tasks are retained. Failures and stops leave a
+report in the Pi transcript, not just a transient notification. The latest run's
+metadata follows the Pi branch across reloads. If observation was interrupted
+without a retained terminal outcome, the status says it is unknown, not finished.
+There is no automatic retry, task-completion assertion or supervisor loop.
+Use `/cc-followup` deliberately after reviewing the evidence.
+
+Each run creates a private temporary directory (`pi-cc-worker-*`) containing
+`activity.jsonl`, with file mode `0600`. Logs retain prompts and reported tool
+inputs/results; they can contain source code or other sensitive project data.
+Common credential patterns are redacted; **redaction is not a guarantee that all
+secrets are removed**. Authentication/control frames and thinking are excluded.
+Individual retained strings are capped at 16,000 characters; activity details
+are capped at 8 MiB, with an explicit notice and terminal outcome still retained.
+The extension does not automatically delete logs; OS temporary-directory cleanup
+can remove them. A missing/unreadable log is reported rather than hidden.
+
+The transport sends a UUID with each submitted user turn and does not close input
+for an explicitly unrelated/task-notification result. It still ends the worker on
+the submitted turn's terminal result; reported background tasks are not supervised
+or awaited afterward. This guards against one protocol failure mode, **not proof
+that it caused your earlier premature endings**.
 
 The `claude_worker` tool lets Pi delegate too. It takes a `prompt` and optional
 `resume: true`, requires human confirmation, streams updates and returns the
