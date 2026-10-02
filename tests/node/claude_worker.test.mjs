@@ -8,7 +8,7 @@ import { runClaude } from "../../extensions/claude-worker/lib/worker.mjs";
 
 const SESSION_ID = "12345678-1234-1234-1234-123456789abc";
 
-async function fixture(t, { auth = { loggedIn: true, authMethod: "claude.ai", subscriptionType: "max" }, body = "" } = {}) {
+async function fixture(t, { auth = { loggedIn: true, authMethod: "claude.ai", apiProvider: "firstParty", subscriptionType: "max" }, initialAccount = { apiProvider: "firstParty", subscriptionType: "Claude Max" }, body = "" } = {}) {
 	const cwd = await mkdtemp(join(tmpdir(), "pi-claude-worker-"));
 	const script = join(cwd, "claude.mjs");
 	const capture = join(cwd, "calls.jsonl");
@@ -22,8 +22,15 @@ if (args[0] === "auth") {
  console.log(${JSON.stringify(JSON.stringify(auth))});
  process.exit(0);
 }
-${body || `
 const input = createInterface({ input: process.stdin });
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ appendFileSync(${JSON.stringify(join(cwd, "frames.jsonl"))}, line + "\\n");
+ if (event.type === "control_request" && event.request.subtype === "initialize") {
+  send({ type: "control_response", response: { subtype: "success", request_id: event.request_id, response: { account: ${JSON.stringify(initialAccount)} } } });
+ }
+});
+${body || `
 input.on("line", (line) => {
  const event = JSON.parse(line);
  if (event.type === "user") {
@@ -35,7 +42,7 @@ input.on("line", (line) => {
 `}
 `);
 	// The fixture directory is owned by this test and retained for failure inspection.
-	return { cwd, signal: AbortSignal.timeout(3_000), executable: process.execPath, prefixArgs: [script], calls: async () => (await readFile(capture, "utf8")).trim().split("\n").map(JSON.parse) };
+	return { cwd, signal: AbortSignal.timeout(3_000), executable: process.execPath, prefixArgs: [script], frames: async () => (await readFile(join(cwd, "frames.jsonl"), "utf8")).trim().split("\n").map(JSON.parse), calls: async () => (await readFile(capture, "utf8")).trim().split("\n").map(JSON.parse) };
 }
 
 test("delegation runs the real CLI interface with subscription auth and no inherited API credentials", { timeout: 15_000 }, async (t) => {
@@ -81,7 +88,6 @@ test("API, logged-out, unknown-plan and mixed credentials fail before any model 
 
 test("Claude permission requests are forwarded to a person, not silently approved", { timeout: 15_000 }, async (t) => {
 	const fake = await fixture(t, { body: `
-const input = createInterface({ input: process.stdin });
 input.on("line", (line) => {
  const event = JSON.parse(line);
  if (event.type === "user") send({ type: "control_request", request_id: "permission-1", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "git status" } } });
@@ -107,8 +113,8 @@ input.on("line", (line) => {
 test("stop terminates an uncooperative worker within a bounded grace period", { timeout: 15_000 }, async (t) => {
 	const fake = await fixture(t, { body: `
 process.on("SIGTERM", () => {});
-const input = createInterface({ input: process.stdin });
-input.on("line", () => {
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
  send({ type: "assistant", message: { content: [{ type: "text", text: "Ready" }] } });
  setTimeout(() => process.exit(0), 4000);
 });
@@ -121,7 +127,8 @@ input.on("line", () => {
 
 test("follow-up resumes a saved session and streams partial text while preserving permission denials", { timeout: 15_000 }, async (t) => {
 	const fake = await fixture(t, { body: `
-createInterface({ input: process.stdin }).on("line", () => {
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
  send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
  send({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Hello 世界" } } });
  send({ type: "result", subtype: "success", is_error: false, session_id: "${SESSION_ID}", result: "Hello 世界", permission_denials: [{ tool_name: "Bash" }] });
@@ -135,4 +142,26 @@ createInterface({ input: process.stdin }).on("line", () => {
 	const args = (await fake.calls())[1].args;
 	assert.equal(args[args.indexOf("--resume") + 1], SESSION_ID);
 	assert.ok(args.includes("--include-partial-messages"));
+});
+
+test("initialization verifies effective subscription authentication before sending the task prompt", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t);
+	await runClaude({ ...fake, prompt: "Inspect" });
+	const frames = await fake.frames();
+	assert.equal(frames[0].type, "control_request");
+	assert.equal(frames[0].request.subtype, "initialize");
+	assert.equal(frames[1].type, "user");
+	const args = (await fake.calls())[1].args;
+	assert.equal(args[args.indexOf("--permission-prompt-tool") + 1], "stdio");
+	assert.equal(args[args.indexOf("--permission-mode") + 1], "manual");
+	for (const initialAccount of [
+		{ apiProvider: "bedrock" },
+		{ apiProvider: "firstParty", apiKeySource: "apiKeyHelper", subscriptionType: "Claude Max" },
+		{ apiProvider: "firstParty", tokenSource: "ANTHROPIC_AUTH_TOKEN" },
+		{},
+	]) {
+		const rejected = await fixture(t, { initialAccount });
+		await assert.rejects(runClaude({ ...rejected, prompt: "Do not send" }), /subscription/i);
+		assert.ok(!(await rejected.frames()).some((event) => event.type === "user"));
+	}
 });

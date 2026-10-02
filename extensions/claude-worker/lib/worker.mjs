@@ -17,13 +17,13 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		cwd, env: childEnv, signal, timeout: 10_000, maxBuffer: OUTPUT_LIMIT,
 	});
 	const account = JSON.parse(auth.stdout);
-	if (!account.loggedIn || account.authMethod !== "claude.ai" ||
-		!['pro', 'max', 'team', 'enterprise'].includes(account.subscriptionType?.toLowerCase()) ||
+	if (!account.loggedIn || account.authMethod !== "claude.ai" || account.apiProvider !== "firstParty" ||
+		!["pro", "max", "team", "enterprise"].includes(account.subscriptionType?.toLowerCase()) ||
 		(account.apiKeySource && account.apiKeySource !== "none")) {
 		throw new Error("Claude Code subscription login required. Run claude auth login, then check /status in Claude Code.");
 	}
 	signal?.throwIfAborted();
-	const args = [...prefixArgs, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "default"];
+	const args = [...prefixArgs, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "manual", "--permission-prompt-tool", "stdio", "--permission-prompts", "host"];
 	if (sessionId) args.push("--resume", sessionId);
 	return new Promise((resolve, reject) => {
 		const child = spawn(executable, args, {
@@ -32,6 +32,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		let result;
 		let failure;
 		let killTimer;
+		let initialized = false;
 		let stderr = "";
 		const permissionAbort = new AbortController();
 		const kill = (terminationSignal) => {
@@ -48,12 +49,29 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 			killTimer ??= setTimeout(() => kill("SIGKILL"), 1_000);
 		};
 		const fail = (error) => { failure ??= error; stop(); };
+		const initializeTimer = setTimeout(() => fail(new Error("Claude Code initialization timed out before the task was sent.")), 10_000);
 		child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr = (stderr + chunk).slice(-OUTPUT_LIMIT); });
 		const lines = createInterface({ input: child.stdout });
 		lines.on("line", (line) => {
 			void (async () => {
 				const event = JSON.parse(line);
 				onProgress(event);
+				if (event.type === "control_response" && event.response?.request_id === "pi-initialize") {
+					const response = event.response;
+					const account = response.response?.account;
+					if (initialized) throw new Error("Duplicate Claude Code initialization response.");
+					if (response.subtype !== "success" || account?.apiProvider !== "firstParty" ||
+						!/^Claude (Pro|Max|Team|Enterprise)$/i.test(account.subscriptionType || "") ||
+						(account.apiKeySource && account.apiKeySource !== "none") ||
+						(account.tokenSource && account.tokenSource !== "claude.ai")) {
+						throw new Error("Claude Code did not initialize with a verified subscription; no task prompt was sent.");
+					}
+					initialized = true;
+					clearTimeout(initializeTimer);
+					if (!signal?.aborted) child.stdin.write(JSON.stringify({
+						type: "user", session_id: "", message: { role: "user", content: prompt }, parent_tool_use_id: null,
+					}) + "\n");
+				}
 				if (event.type === "control_request") {
 					const request = event.request;
 					const allowed = request?.subtype === "can_use_tool" && await onPermission(request, permissionAbort.signal);
@@ -79,6 +97,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		child.on("close", (code) => {
 			lines.close();
 			clearTimeout(killTimer);
+			clearTimeout(initializeTimer);
 			permissionAbort.abort();
 			signal?.removeEventListener("abort", abort);
 			if (failure) reject(failure);
@@ -86,6 +105,6 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 			else if (code !== 0 || !result || result.is_error) reject(new Error(stderr || result?.result || "Claude Code exited without a successful result."));
 			else resolve({ sessionId: result.session_id, text: result.result || "", permissionDenials: result.permission_denials || [] });
 		});
-		child.stdin.write(JSON.stringify({ type: "user", message: { role: "user", content: prompt } }) + "\n");
+		child.stdin.write(JSON.stringify({ type: "control_request", request_id: "pi-initialize", request: { subtype: "initialize", hooks: null } }) + "\n");
 	});
 }
