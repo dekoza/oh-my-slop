@@ -17,7 +17,9 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		cwd, env: childEnv, signal, timeout: 10_000, maxBuffer: OUTPUT_LIMIT,
 	});
 	const account = JSON.parse(auth.stdout);
-	if (!account.loggedIn || account.authMethod !== "claude.ai" || !account.subscriptionType) {
+	if (!account.loggedIn || account.authMethod !== "claude.ai" ||
+		!['pro', 'max', 'team', 'enterprise'].includes(account.subscriptionType?.toLowerCase()) ||
+		(account.apiKeySource && account.apiKeySource !== "none")) {
 		throw new Error("Claude Code subscription login required. Run claude auth login, then check /status in Claude Code.");
 	}
 	signal?.throwIfAborted();

@@ -65,3 +65,16 @@ test("delegation runs the real CLI interface with subscription auth and no inher
 	assert.ok(!calls[1].args.includes("Inspect only; $(do not execute this)"), "prompt travels through stdin, not shell or process arguments");
 	assert.ok(progress.length > 0);
 });
+
+test("API, logged-out, unknown-plan and mixed credentials fail before any model request", { timeout: 15_000 }, async (t) => {
+	for (const auth of [
+		{ loggedIn: true, authMethod: "api_key", apiKeySource: "apiKeyHelper" },
+		{ loggedIn: false },
+		{ loggedIn: true, authMethod: "claude.ai" },
+		{ loggedIn: true, authMethod: "claude.ai", subscriptionType: "max", apiKeySource: "apiKeyHelper" },
+	]) {
+		const fake = await fixture(t, { auth });
+		await assert.rejects(runClaude({ ...fake, prompt: "Inspect" }), /subscription/i);
+		assert.equal((await fake.calls()).length, 1, "never start a model request with ambiguous billing");
+	}
+});
