@@ -10,7 +10,7 @@ function subscriptionEnvironment(env) {
 		!key.startsWith("ANTHROPIC_") && !key.startsWith("CLAUDE_CODE_USE_")));
 }
 
-export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = () => {}, executable = "claude", prefixArgs = [], env = process.env }) {
+export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = () => {}, onPermission = async () => false, executable = "claude", prefixArgs = [], env = process.env }) {
 	if (!prompt?.trim()) throw new Error("A Claude Code task is required.");
 	const childEnv = subscriptionEnvironment(env);
 	const auth = await execFileAsync(executable, [...prefixArgs, "auth", "status", "--json"], {
@@ -32,17 +32,29 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr = (stderr + chunk).slice(-OUTPUT_LIMIT); });
 		const lines = createInterface({ input: child.stdout });
 		lines.on("line", (line) => {
-			try {
+			void (async () => {
 				const event = JSON.parse(line);
 				onProgress(event);
+				if (event.type === "control_request") {
+					const request = event.request;
+					const allowed = request?.subtype === "can_use_tool" && await onPermission(request, signal);
+					if (!child.stdin.destroyed && !signal?.aborted) {
+						const response = request?.subtype === "can_use_tool"
+							? { subtype: "success", request_id: event.request_id, response: allowed
+								? { behavior: "allow", updatedInput: request.input }
+								: { behavior: "deny", message: "Permission denied by the Pi host." } }
+							: { subtype: "error", request_id: event.request_id, error: "Unsupported control request." };
+						child.stdin.write(JSON.stringify({ type: "control_response", response }) + "\n");
+					}
+				}
 				if (event.type === "result") {
 					result = event;
 					child.stdin.end();
 				}
-			} catch (error) {
+			})().catch((error) => {
 				child.kill();
 				reject(error);
-			}
+			});
 		});
 		child.on("error", reject);
 		const abort = () => child.kill();

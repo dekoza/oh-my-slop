@@ -35,7 +35,7 @@ input.on("line", (line) => {
 `}
 `);
 	// The fixture directory is owned by this test and retained for failure inspection.
-	return { cwd, executable: process.execPath, prefixArgs: [script], calls: async () => (await readFile(capture, "utf8")).trim().split("\n").map(JSON.parse) };
+	return { cwd, signal: AbortSignal.timeout(3_000), executable: process.execPath, prefixArgs: [script], calls: async () => (await readFile(capture, "utf8")).trim().split("\n").map(JSON.parse) };
 }
 
 test("delegation runs the real CLI interface with subscription auth and no inherited API credentials", { timeout: 15_000 }, async (t) => {
@@ -77,4 +77,29 @@ test("API, logged-out, unknown-plan and mixed credentials fail before any model 
 		await assert.rejects(runClaude({ ...fake, prompt: "Inspect" }), /subscription/i);
 		assert.equal((await fake.calls()).length, 1, "never start a model request with ambiguous billing");
 	}
+});
+
+test("Claude permission requests are forwarded to a person, not silently approved", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+const input = createInterface({ input: process.stdin });
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type === "user") send({ type: "control_request", request_id: "permission-1", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "git status" } } });
+ if (event.type === "control_response") {
+  send({ type: "result", subtype: "success", is_error: false, session_id: "${SESSION_ID}", result: JSON.stringify(event.response) });
+ }
+});
+` });
+	const permissions = [];
+	const result = await runClaude({ ...fake, prompt: "Check status", onPermission: async (request) => {
+		permissions.push(request);
+		return false;
+	} });
+	assert.equal(permissions.length, 1);
+	assert.equal(permissions[0].tool_name, "Bash");
+	const response = JSON.parse(result.text);
+	assert.equal(response.subtype, "success");
+	assert.equal(response.request_id, "permission-1");
+	assert.equal(response.response.behavior, "deny");
+	assert.match(response.response.message, /denied/i);
 });
