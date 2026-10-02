@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { registerClaudeWorker } from "../../extensions/claude-worker/lib/extension.mjs";
+import { createActivityLog } from "../../extensions/claude-worker/lib/activity.mjs";
 
 const SESSION_ID = "12345678-1234-1234-1234-123456789abc";
 
@@ -200,5 +201,18 @@ test("failure metadata retained in Pi does not reintroduce redacted credentials"
 		assert.ok(!error.message.includes("panic-secret"));
 		return true;
 	});
+});
+
+test("restoring an unfinished observation never invents a terminal timestamp or successful completion", async () => {
+	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Inspect" });
+	log.setStatus("Running");
+	const h = harness(async () => { throw new Error("must not launch"); });
+	h.entries.push({ type: "custom", customType: "cc-worker-run", data: log.snapshot() });
+	await h.events.get("session_start")({}, h.ctx);
+	await h.commands.get("cc-status").handler("", h.ctx);
+	assert.match(h.notifications.at(-1)[0], /terminal outcome unknown/);
+	assert.match(h.notifications.at(-1)[0], /Ended: not recorded/);
+	await h.commands.get("cc-log").handler("", h.ctx);
+	assert.match(h.messages.at(-1).message.content, /terminal outcome unknown/);
 });
 

@@ -135,6 +135,7 @@ export function formatRunReport(state, text = state.text || "") {
 	return [
 		`Claude Code: ${state.status}`,
 		`Session: ${state.sessionId || "not assigned"} · Elapsed: ${duration}s`,
+		`Started: ${new Date(state.startedAt).toISOString()} · Ended: ${state.endedAt ? new Date(state.endedAt).toISOString() : "not recorded"}`,
 		`Exit code: ${state.exitCode ?? "not reported"} · Signal: ${state.exitSignal || "none reported"}`,
 		`Result subtype: ${state.resultSubtype || "not reported"} · Stop reason: ${state.stopReason || "not reported"}`,
 		state.terminalReason ? `Terminal reason: ${JSON.stringify(state.terminalReason)}` : "",

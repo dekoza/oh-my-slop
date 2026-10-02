@@ -24,7 +24,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 		const branch = ctx.sessionManager.getBranch();
 		lastSession = branch.filter((entry) => entry.type === "custom" && entry.customType === STATE_ENTRY).at(-1)?.data;
 		lastRun = branch.filter((entry) => entry.type === "custom" && entry.customType === RUN_ENTRY).at(-1)?.data;
-		if (lastRun && !lastRun.endedAt) lastRun = { ...lastRun, status: "Interrupted; no terminal outcome retained", endedAt: Date.now() };
+		if (lastRun && !lastRun.endedAt) lastRun = { ...lastRun, status: "Interrupted observation; terminal outcome unknown" };
 	}
 
 	async function start(prompt, resume, ctx, signal, onUpdate) {
