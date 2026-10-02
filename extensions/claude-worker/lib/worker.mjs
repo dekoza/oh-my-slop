@@ -23,7 +23,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		throw new Error("Claude Code subscription login required. Run claude auth login, then check /status in Claude Code.");
 	}
 	signal?.throwIfAborted();
-	const args = [...prefixArgs, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "manual", "--permission-prompt-tool", "stdio", "--permission-prompts", "host"];
+	const args = [...prefixArgs, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "auto", "--permission-prompt-tool", "stdio", "--permission-prompts", "host"];
 	if (sessionId) args.push("--resume", sessionId);
 	return new Promise((resolve, reject) => {
 		const child = spawn(executable, args, {

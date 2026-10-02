@@ -41,6 +41,12 @@ Example:
 /cc-followup Add the missing cases and the smallest fix. Do not commit or push.
 ```
 
+Workers default to Claude Code's native **auto permission mode**, including resumed
+tasks. Routine actions can run without prompting; any permission request Claude
+Code still sends to the host appears as a Pi confirmation dialog. Auto mode is not
+permission bypass, and its availability depends on Claude Code's model/account
+and policy settings.
+
 Commands stream a short preview and display the final result **without triggering
 a Pi model turn**. Follow-ups are resumed turns, not live interruption messages:
 stop the current task before sending a correction. Direct commands keep their
@@ -63,10 +69,11 @@ Nothing automatically routes other Pi tools or subagents through Claude Code.
   Settings that reintroduce API credentials or a different provider fail this
   check. Hooks/settings themselves are trusted code; their arbitrary side effects
   are not sandboxed or made free by this extension.
-- Uses manual permissions and forwards unresolved tool requests to Pi confirmation
-  dialogs. Approval applies to that call only. Existing Claude Code allow rules
-  and hooks still govern calls that do not reach the host. Unsupported specialized
-  interactions are denied. Cancelled/duplicate requests cannot gain late approval.
+- Uses native auto permissions and forwards unresolved tool requests to Pi
+  confirmation dialogs. Claude Code's auto-mode checks, allow/deny rules and hooks
+  govern actions that do not reach the host. Host approval applies to that call
+  only. Unsupported specialized interactions are denied. Cancelled/duplicate
+  requests cannot gain late approval.
 - Keeps native settings, skills, MCP servers and hooks; does not use `--bare`,
   `bypassPermissions` or `--dangerously-skip-permissions`.
 - **No automatic worktree, rollback, commit or push.** Claude Code can modify the

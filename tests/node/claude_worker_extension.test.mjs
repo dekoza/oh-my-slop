@@ -47,6 +47,7 @@ test("slash commands start a worker without a Pi model turn and resume its saved
 	await new Promise(setImmediate);
 	assert.equal(calls[0].prompt, "Inspect the project");
 	assert.equal(calls[0].cwd, h.ctx.cwd);
+	assert.ok(h.confirmations[0][1].includes("auto mode"), "first-run consent explains automatic actions");
 	assert.equal(h.messages[0].message.content.includes("Done"), true);
 	assert.notEqual(h.messages[0].options?.triggerTurn, true, "direct commands never bill Pi for an automatic follow-up");
 	assert.equal(h.entries.at(-1).data.sessionId, SESSION_ID);

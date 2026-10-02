@@ -58,7 +58,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 					const accepted = await ctx.ui.confirm("Claude Code subscription worker", [
 						"The worker runs the installed Claude Code binary using your subscription login.",
 						"Disable extra usage in your Claude account to stop at the allowance rather than incur additional charges.",
-						"Claude Code keeps its own hooks, tools and permissions. It can change files in this project.",
+						"Claude Code uses auto mode: routine actions can run without prompting. Its hooks and permission checks remain active; it can change files and run commands in this project.",
 						`Working directory: ${ctx.cwd}`,
 					].join("\n\n"), { signal: controller.signal });
 					if (!accepted) throw new Error("Claude Code delegation cancelled.");

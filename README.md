@@ -107,7 +107,7 @@ These ship in the repo and load automatically through the root `pi install` mani
 |---|---|---|
 | **[workflow-watchdog](extensions/workflow-watchdog/)** | Automatic | Monitors pi's workflow for failure patterns: loop detection, consecutive tool errors, and optional supervisor-model escalation. |
 | **[local-router](extensions/local-router/)** | Automatic; requires configuration | Registers a `local` provider backed by the OpenAI-compatible router named by `PI_LOCAL_ROUTER_BASE_URL`. Without a nonblank URL it does nothing: no discovery requests or warnings. Models are discovered at load time and on refresh. If discovery fails, pi continues without local models and warns once per outage (five-second discovery timeout). Use `/reload` after the router returns, or refresh the model catalog. |
-| **[claude-worker](extensions/claude-worker/)** | Automatic; runs only on request | Adds `/cc`, `/cc-followup`, `/cc-status`, `/cc-stop` and the `claude_worker` delegation tool. Uses the installed Claude Code CLI and its subscription login; streams output and forwards permission requests to Pi. Disable Claude account extra usage to stop at the allowance. Pi's coordinating model still uses its own provider. |
+| **[claude-worker](extensions/claude-worker/)** | Automatic; runs only on request | Adds `/cc`, `/cc-followup`, `/cc-status`, `/cc-stop` and the `claude_worker` delegation tool. Uses the installed Claude Code CLI and its subscription login with native auto permission mode; streams output and forwards remaining permission requests to Pi. Disable Claude account extra usage to stop at the allowance. Pi's coordinating model still uses its own provider. |
 
 </details>
 

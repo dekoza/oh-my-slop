@@ -69,6 +69,8 @@ test("delegation runs the real CLI interface with subscription auth and no inher
 	}
 	assert.ok(!calls[1].args.includes("--bare"));
 	assert.ok(!calls[1].args.includes("--dangerously-skip-permissions"));
+	assert.equal(calls[1].args[calls[1].args.indexOf("--permission-mode") + 1], "auto");
+	assert.ok(!calls[1].args.includes("bypassPermissions"));
 	assert.ok(!calls[1].args.includes("Inspect only; $(do not execute this)"), "prompt travels through stdin, not shell or process arguments");
 	assert.ok(progress.length > 0);
 });
@@ -141,6 +143,7 @@ input.on("line", (line) => {
 	assert.ok(updates.some((event) => event.type === "stream_event"));
 	const args = (await fake.calls())[1].args;
 	assert.equal(args[args.indexOf("--resume") + 1], SESSION_ID);
+	assert.equal(args[args.indexOf("--permission-mode") + 1], "auto");
 	assert.ok(args.includes("--include-partial-messages"));
 });
 
@@ -153,7 +156,7 @@ test("initialization verifies effective subscription authentication before sendi
 	assert.equal(frames[1].type, "user");
 	const args = (await fake.calls())[1].args;
 	assert.equal(args[args.indexOf("--permission-prompt-tool") + 1], "stdio");
-	assert.equal(args[args.indexOf("--permission-mode") + 1], "manual");
+	assert.equal(args[args.indexOf("--permission-mode") + 1], "auto");
 	for (const initialAccount of [
 		{ apiProvider: "bedrock" },
 		{ apiProvider: "firstParty", apiKeySource: "apiKeyHelper", subscriptionType: "Claude Max" },
