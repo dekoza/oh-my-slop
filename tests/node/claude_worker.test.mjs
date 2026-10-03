@@ -127,6 +127,48 @@ input.on("line", (line) => {
 	assert.notEqual(users[0].uuid, users[1].uuid);
 });
 
+test("foreground verification survives background-only snapshots and waits after backgrounding", { timeout: 15_000 }, async (t) => {
+	for (const transition of ["snapshot", "update", "both"]) {
+		const fake = await fixture(t, { body: `
+let ready = false;
+let turns = 0;
+input.on("close", () => {
+ if (!ready) process.stderr.write("EOF before required verification completed\\n");
+ process.exit(0);
+});
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ if (++turns === 1) {
+  send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+  send({ type: "system", subtype: "task_started", task_id: "verify", is_backgrounded: false, description: "Required verification" });
+  send({ type: "system", subtype: "background_tasks_changed", tasks: [{ task_id: "watcher", ambient: true }] });
+  send({ type: "system", subtype: "task_notification", task_id: "watcher", ambient: true, status: "completed" });
+  send({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+  ${transition !== "update" ? 'send({ type: "system", subtype: "background_tasks_changed", tasks: [{ task_id: "verify" }] });' : ""}
+  ${transition !== "snapshot" ? 'send({ type: "system", subtype: "task_updated", task_id: "verify", patch: { is_backgrounded: true } });' : ""}
+  setTimeout(() => {
+   ready = true;
+   send({ type: "system", subtype: "task_notification", task_id: "verify", status: "completed", summary: "Verification passed" });
+   send({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+   send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", origin: { kind: "task-notification" }, result: "Verification consumed" });
+  }, 250);
+ }
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: ready
+  ? completion()
+  : completion("waiting", { outstanding: ["Apply repair after verification"], background_task_ids: ["verify"] }) });
+});
+` });
+		const result = await runClaude({ ...fake, prompt: "Verify then repair", maxContinuations: 2 });
+		assert.equal(result.disposition, "finished", transition);
+		assert.equal(result.continuations, 1, "waiting must not spend continuation allowance");
+		assert.equal(result.taskOutcomes.length, 1, "ambient watcher is not required work");
+		assert.equal(result.taskOutcomes[0].status, "completed");
+		assert.doesNotMatch(result.stderr, /EOF before/);
+		assert.equal((await fake.frames()).filter((frame) => frame.type === "user").length, 2);
+	}
+});
+
 test("queued correlated results drain before finished and repeated results cannot dispatch twice", { timeout: 15_000 }, async (t) => {
 	const fake = await fixture(t, { body: `
 let sends = 0;
@@ -183,6 +225,29 @@ test("a fresh resumed completion resolves snapshot uncertainty but not a termina
 		const decision = supervisor.assess(report);
 		assert.equal(decision.action, explicitUnknown ? "continue" : "end");
 		assert.equal(decision.disposition, explicitUnknown ? undefined : "finished");
+	}
+});
+
+test("live background evidence resolves snapshot uncertainty without erasing terminal evidence", () => {
+	for (const live of [
+		{ subtype: "background_tasks_changed", tasks: [{ task_id: "verify" }] },
+		{ subtype: "task_updated", task_id: "verify", patch: { is_backgrounded: true } },
+	]) for (const terminal of [undefined, "stopped", "failed", "unknown"]) {
+		const supervisor = createTaskSupervision("approved");
+		supervisor.record({ type: "system", subtype: "task_started", task_id: "verify", is_backgrounded: true });
+		if (terminal) supervisor.record({ type: "system", subtype: "task_notification", task_id: "verify", status: terminal, uuid: "terminal", summary: "Retained terminal evidence" });
+		supervisor.record({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+		assert.equal(supervisor.snapshot().taskOutcomes[0].status, terminal || "unknown");
+		supervisor.record({ type: "system", ...live });
+		assert.equal(supervisor.waiting, !terminal);
+		const task = supervisor.snapshot().taskOutcomes[0];
+		assert.equal(task.status, terminal || "running");
+		assert.deepEqual(task.history.map((outcome) => outcome.status), terminal ? [terminal] : []);
+		if (!terminal) {
+			// A patch-only transition must establish background membership for later omissions.
+			supervisor.record({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+			assert.equal(supervisor.snapshot().taskOutcomes[0].status, "unknown");
+		}
 	}
 });
 

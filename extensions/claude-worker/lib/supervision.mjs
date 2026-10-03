@@ -39,20 +39,22 @@ function validReport(report, taskId) {
 export function createTaskSupervision(taskId) {
 	const tasks = new Map();
 	const seenNotifications = new Set();
-	const markRunning = (id, description, explicitResume = false) => {
+	const markRunning = (id, description, explicitResume = false, isBackgrounded) => {
 		const task = tasks.get(id);
-		// A late start/snapshot must not erase early stopped/failed/unknown evidence.
-		if (task && task.status !== "completed" && !explicitResume) return;
-		tasks.set(id, { taskId: id, status: "running", description: description || task?.description, history: task?.history || [] });
+		// Live evidence can resolve snapshot uncertainty, not a genuine terminal failure.
+		if (["stopped", "failed", "unknown"].includes(task?.terminalStatus) && !explicitResume) return;
+		tasks.set(id, { taskId: id, status: "running", isBackgrounded: isBackgrounded ?? task?.isBackgrounded,
+			description: description || task?.description, history: task?.history || [] });
 	};
 	let report;
 	let reason = "No explicit evidence-backed completion report was received.";
 	return {
 		record(event) {
 			if (event.type !== "system" || event.ambient) return;
-			if (event.subtype === "task_started" && event.task_id) markRunning(event.task_id, event.description);
-			if (event.subtype === "task_updated" && event.task_id && event.patch?.status === "running") {
-				markRunning(event.task_id, event.patch.description, true);
+			if (event.subtype === "task_started" && event.task_id) markRunning(event.task_id, event.description, false, event.is_backgrounded);
+			if (event.subtype === "task_updated" && event.task_id &&
+				(event.patch?.status === "running" || typeof event.patch?.is_backgrounded === "boolean")) {
+				markRunning(event.task_id, event.patch.description, event.patch.status === "running", event.patch.is_backgrounded);
 			}
 			if (event.subtype === "task_notification" && event.task_id) {
 				// Without a delivery ID, identical content cannot prove a new completion.
@@ -69,9 +71,10 @@ export function createTaskSupervision(taskId) {
 				const active = new Set();
 				for (const task of event.tasks || []) if (!task.ambient && task.task_id) {
 					active.add(task.task_id);
-					markRunning(task.task_id, task.description);
+					markRunning(task.task_id, task.description, false, true);
 				}
-				for (const task of tasks.values()) if (task.status === "running" && !active.has(task.taskId)) task.status = "unknown";
+				// This snapshot contains only background work; foreground omission says nothing.
+				for (const task of tasks.values()) if (task.status === "running" && task.isBackgrounded !== false && !active.has(task.taskId)) task.status = "unknown";
 			}
 		},
 		assess(value) {
