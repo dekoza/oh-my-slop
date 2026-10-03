@@ -279,6 +279,27 @@ input.on("line", (line) => {
 	}
 });
 
+test("a stopped required task stays unfinished despite native resume and fresh completion", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "system", subtype: "task_notification", task_id: "verify", status: "stopped", uuid: "stopped", summary: "Required verification stopped" });
+ send({ type: "system", subtype: "task_updated", task_id: "verify", patch: { status: "running" } });
+ send({ type: "system", subtype: "task_notification", task_id: "verify", status: "completed", uuid: "completed", summary: "Native resumed completion" });
+ send({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
+});
+` });
+	const result = await runClaude({ ...fake, prompt: "Verify required work", maxContinuations: 1 });
+	assert.equal(result.disposition, "unfinished");
+	assert.equal(result.continuations, 0);
+	assert.equal(result.taskOutcomes[0].status, "stopped");
+	assert.deepEqual(result.taskOutcomes[0].history.map((entry) => entry.status), ["stopped", "completed"]);
+	const handoff = formatRunReport({ ...result, startedAt: Date.now(), status: "Unfinished", stats: {} });
+	assert.match(handoff, /Task verify: stopped/);
+	assert.match(handoff, /Resume in the same working directory/);
+});
+
 test("foreground verification survives background-only snapshots and waits after backgrounding", { timeout: 15_000 }, async (t) => {
 	for (const transition of ["snapshot", "update", "both"]) {
 		const fake = await fixture(t, { body: `

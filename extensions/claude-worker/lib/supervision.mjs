@@ -54,8 +54,10 @@ export function createTaskSupervision(taskId) {
 	let terminalSequence = 0;
 	const markRunning = (id, description, explicitResume = false, isBackgrounded) => {
 		const task = tasks.get(id);
-		// Live evidence can resolve snapshot uncertainty, not a genuine terminal failure.
-		if (["stopped", "failed", "unknown"].includes(task?.terminalStatus) && !explicitResume) return;
+		// A stop ends this invocation's required work; recovery needs a deliberate follow-up.
+		if (task?.terminalStatus === "stopped") return;
+		// Live evidence can resolve snapshot uncertainty; failures/unknowns need a resume.
+		if (["failed", "unknown"].includes(task?.terminalStatus) && !explicitResume) return;
 		tasks.set(id, { taskId: id, status: "running", isBackgrounded: isBackgrounded ?? task?.isBackgrounded,
 			description: description || task?.description, history: task?.history || [] });
 	};
