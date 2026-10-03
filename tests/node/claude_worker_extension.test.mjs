@@ -4,6 +4,7 @@ import { readFileSync, statSync } from "node:fs";
 
 import { registerClaudeWorker } from "../../extensions/claude-worker/lib/extension.mjs";
 import { createActivityLog } from "../../extensions/claude-worker/lib/activity.mjs";
+import { createTaskSupervision } from "../../extensions/claude-worker/lib/supervision.mjs";
 
 const SESSION_ID = "12345678-1234-1234-1234-123456789abc";
 
@@ -126,6 +127,35 @@ test("both follow-up routes restore the cumulative task ledger and checkpoint it
 		}
 		assert.equal(h.entries.at(-1).data.disposition, "unfinished");
 		assert.deepEqual(h.entries.at(-1).data.requiredOutcomes, [required]);
+	}
+});
+
+test("both follow-up routes let an attributed fresh-ID rerun replace work stopped at the pause", async () => {
+	for (const route of ["command", "tool"]) {
+		const report = (disposition, extra) => ({ task_id: "approved-task", disposition, outcomes: [{ requirement: "Verify", status: "verified", evidence: ["fresh-check passed"] }], outstanding: [], unverified: [], question: "", background_task_ids: [], ...extra });
+		const calls = [];
+		const h = harness(async (options) => {
+			calls.push(options);
+			if (calls.length === 1) return { sessionId: SESSION_ID, cwd: options.cwd, taskId: "approved-task", disposition: "needs_input", reason: "Which fixture set?",
+				report: report("needs_input", { question: "Which fixture set?", background_task_ids: ["old-check"] }),
+				taskOutcomes: [{ taskId: "old-check", status: "stopped", terminalStatus: "stopped", terminalSequence: 1, history: [{ status: "stopped", summary: "Stopped during EOF cleanup" }] }] };
+			// The real supervisor consumes the state each route restores from the saved branch.
+			const supervisor = createTaskSupervision(options.resumeState.taskId, options.resumeState);
+			supervisor.record({ type: "system", subtype: "task_started", task_id: "fresh-check" });
+			supervisor.record({ type: "system", subtype: "task_notification", task_id: "fresh-check", status: "completed", uuid: "fresh" });
+			const decision = supervisor.assess(report("finished", { resolved_failures: [{ task_id: "old-check", replacement_task_id: "fresh-check", evidence: ["fresh-check passed"] }] }));
+			return { sessionId: SESSION_ID, cwd: options.cwd, ...supervisor.snapshot(), disposition: decision.disposition || "unfinished", reason: decision.reason };
+		});
+		const execute = async (prompt, resume = false) => {
+			if (route === "tool") return (await h.tools[0].execute("call", { prompt, resume }, undefined, undefined, h.ctx)).details;
+			await h.commands.get(resume ? "cc-followup" : "cc").handler(prompt, h.ctx);
+			await new Promise(setImmediate);
+			return h.messages.at(-1).message.details;
+		};
+		assert.equal((await execute("Verify with fixtures")).disposition, "needs_input", route);
+		const recovered = await execute("Use fixture set A", true);
+		assert.equal(recovered.disposition, "finished", route);
+		assert.equal(recovered.taskOutcomes.find((task) => task.taskId === "old-check").status, "stopped", route);
 	}
 });
 

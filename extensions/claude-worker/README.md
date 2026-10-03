@@ -145,8 +145,9 @@ restart previously stopped work without erasing its history. Work stopped or los
 before the follow-up (for example, killed by EOF cleanup after a needs-input pause)
 can instead be replaced by a fresh-ID rerun that completes during the follow-up and
 is attributed in `resolved_failures`; its stopped/unknown record stays in the
-handoff. The resumed prompt lists such unresolved earlier task IDs as data. A stop
-observed during the follow-up itself is again a barrier.
+handoff, also when the CLI re-delivers that earlier stop. The resumed prompt lists such
+unresolved earlier task IDs as data. Work restarted in the follow-up and stopped
+again is a barrier once more.
 Tree navigation stops the worker and retains its interrupted handoff on the
 launching branch before moving the leaf. A post-navigation cleanup fallback
 retains diagnostics only in the private log, never on the newly selected branch.

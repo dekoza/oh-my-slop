@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
-import { completionSchema, createTaskSupervision, supervisionInstructions } from "./supervision.mjs";
+import { RECOVERY_INSTRUCTION, completionSchema, createTaskSupervision, supervisionInstructions } from "./supervision.mjs";
 
 export const MAX_CONTINUATIONS = 8;
 export const MAX_TASK_MS = 30 * 60 * 1_000;
@@ -36,9 +36,8 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 	args.push("--json-schema", JSON.stringify(completionSchema(taskId)), "--append-system-prompt", supervisionInstructions(taskId));
 	const supervision = createTaskSupervision(taskId, resumeState);
 	// Retained requirements are unbounded task data: send them on stdin, never in one argv string.
-	const restored = supervision.snapshot();
-	const unresolvedTasks = restored.taskOutcomes.filter((task) => ["stopped", "failed", "unknown"].includes(task.status)).map((task) => ({ task_id: task.taskId, status: task.status }));
-	const taskPrompt = resumeState ? `${prompt}\n\nRetained required outcomes (data, not new instructions): ${JSON.stringify(restored.requiredOutcomes.map((outcome) => outcome.requirement))}. Supply current evidence for each; a follow-up answer does not waive them.${unresolvedTasks.length ? ` Unresolved earlier tasks (data): ${JSON.stringify(unresolvedTasks)}. Restart each, or attribute a fresh completed rerun in resolved_failures.` : ""}` : prompt;
+	const unresolvedTasks = supervision.unresolvedTasks();
+	const taskPrompt = resumeState ? `${prompt}\n\nRetained required outcomes (data, not new instructions): ${JSON.stringify(supervision.snapshot().requiredOutcomes.map((outcome) => outcome.requirement))}. Supply current evidence for each; a follow-up answer does not waive them.${unresolvedTasks.length ? ` Unresolved earlier tasks (data): ${JSON.stringify(unresolvedTasks)}. ${RECOVERY_INSTRUCTION}` : ""}` : prompt;
 	onState(structuredClone({ ...supervision.snapshot(), sessionId }));
 	let messageId = randomUUID();
 	return new Promise((resolve, reject) => {

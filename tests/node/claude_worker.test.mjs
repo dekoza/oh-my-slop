@@ -557,6 +557,11 @@ test("work interrupted before a follow-up needs a replacement completed in that 
 		fresh.record({ type: "system", subtype: "task_notification", task_id: "fresh-check", status: "completed", uuid: "rerun" });
 		assert.equal(fresh.assess(report).disposition, "finished", interrupted);
 	}
+	// Failed records keep their rule: without an observed failure order, no rerun is provably later.
+	const legacy = createTaskSupervision("approved", { taskId: "approved", taskOutcomes: [{ taskId: "old-check", status: "failed", terminalStatus: "failed", history: [] }] });
+	legacy.record({ type: "system", subtype: "task_started", task_id: "fresh-check" });
+	legacy.record({ type: "system", subtype: "task_notification", task_id: "fresh-check", status: "completed", uuid: "rerun" });
+	assert.equal(legacy.assess(report).action, "continue");
 });
 
 test("resumed task lifecycles invalidate earlier completion and retain terminal history", () => {
@@ -748,6 +753,11 @@ input.on("line", (line) => {
   return;
  }
  const content = event.message.content;
+ if (content.startsWith("Redeliver")) {
+  // The interruption that preceded this follow-up, re-delivered under new delivery identities.
+  send({ type: "system", subtype: "task_notification", task_id: "old-check", uuid: "eof-stop-again", status: "stopped", summary: "Stopped during EOF cleanup" });
+  send({ type: "system", subtype: "task_updated", task_id: "old-check", patch: { status: "killed" } });
+ }
  if (content.startsWith("Restop")) {
   send({ type: "system", subtype: "task_started", task_id: "old-check", is_backgrounded: true });
   send({ type: "system", subtype: "task_notification", task_id: "old-check", uuid: "restop", status: "stopped", summary: "Stopped again in this follow-up" });
@@ -777,6 +787,9 @@ input.on("close", () => {
 		const handoff = formatRunReport({ ...recovered, startedAt: Date.now(), status: "Finished", stats: {} });
 		assert.match(handoff, new RegExp(`Task old-check: ${interruption}`));
 		assert.match(handoff, /Resolved failure old-check: replacement fresh-check/);
+
+		const redelivered = await resume("Redeliver answer");
+		assert.equal(redelivered.disposition, "finished", `${interruption}: a re-delivered earlier stop is not a stop in this follow-up`);
 
 		const unattributed = await resume("Unattributed answer");
 		assert.equal(unattributed.disposition, "unfinished", interruption);

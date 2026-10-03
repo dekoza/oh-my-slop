@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 const strings = { type: "array", items: { type: "string" } };
 // Native task states that end a task; a killed task is reported to the model as stopped.
 const NATIVE_TERMINAL_STATUS = { completed: "completed", failed: "failed", killed: "stopped" };
+export const RECOVERY_INSTRUCTION = "Restart each such task, or attribute a fresh completed rerun in resolved_failures.";
+const listTasks = (tasks) => tasks.map((task) => `${task.taskId} (${task.status})`).join(", ");
 
 export function completionSchema(taskId) {
 	return {
@@ -94,8 +96,13 @@ export function createTaskSupervision(taskId, resumeState) {
 		const delivery = createHash("sha256").update(identity).digest("hex");
 		if (seenNotifications.has(delivery)) return;
 		seenNotifications.add(delivery);
-		carriedOver.delete(id);
 		const task = tasks.get(id) || { taskId: id, description };
+		// Without live evidence in this follow-up, a stop can only re-deliver the earlier interruption.
+		if (interruptedBefore(task) && outcome.status === "stopped") {
+			tasks.set(id, { ...task, status: "stopped", history: [...(task.history || []), outcome] });
+			return;
+		}
+		carriedOver.delete(id);
 		// Native CLI emits a terminal update before that transition's notification: merge, don't repeat.
 		const previous = task.history?.at(-1);
 		if (!outcome.fromUpdate && previous?.fromUpdate && previous.status === outcome.status && task.terminalStatus === outcome.status) {
@@ -170,19 +177,21 @@ export function createTaskSupervision(taskId, resumeState) {
 			if (report.disposition === "unfinished") return { action: "end", disposition: "unfinished", reason: report.outstanding.join("; ") || "Claude Code reported that work is unfinished." };
 			// A stop in this invocation is a barrier; one carried over needs an attributed rerun below.
 			const stopped = [...tasks.values()].filter((task) => task.status === "stopped" && !interruptedBefore(task));
-			if (stopped.length) return { action: "end", disposition: "unfinished", reason: `Required background work stopped: ${stopped.map((task) => `${task.taskId} (${task.status})`).join(", ")}.` };
+			if (stopped.length) return { action: "end", disposition: "unfinished", reason: `Required background work stopped: ${listTasks(stopped)}.` };
 			// Accept Claude's attribution, not a host inference from arbitrary passing work.
 			const resolved = new Set();
 			for (const resolution of report.resolved_failures || []) {
-				const failed = tasks.get(resolution.task_id);
+				const original = tasks.get(resolution.task_id);
 				const replacement = tasks.get(resolution.replacement_task_id);
-				const resolvable = failed?.status === "failed" || (interruptedBefore(failed) && !carriedOver.has(replacement?.taskId));
+				const interrupted = interruptedBefore(original);
+				// A carried-over record may lack a sequence; the replacement must then be completed in this follow-up.
+				const resolvable = original?.status === "failed" || (interrupted && !carriedOver.has(replacement?.taskId));
 				if (!resolvable || replacement?.status !== "completed" ||
-					!(replacement.terminalSequence > (failed.terminalSequence ?? 0))) {
+					!(replacement.terminalSequence > (interrupted ? original.terminalSequence ?? 0 : original.terminalSequence))) {
 					reason = "Failure resolution lacks an observed failed or previously interrupted check and fresh completed replacement; completion remains unresolved.";
 					return { action: "continue", reason };
 				}
-				resolved.add(failed.taskId);
+				resolved.add(original.taskId);
 			}
 			const unfinished = (task) => task.status !== "completed" && !resolved.has(task.taskId);
 			const pendingIds = report.background_task_ids.filter((id) => unfinished(tasks.get(id)));
@@ -199,13 +208,16 @@ export function createTaskSupervision(taskId, resumeState) {
 			}
 			const failed = [...tasks.values()].filter((task) => task.status === "failed" && !resolved.has(task.taskId));
 			const interrupted = [...tasks.values()].filter((task) => interruptedBefore(task) && !resolved.has(task.taskId));
-			const listed = (items) => items.map((task) => `${task.taskId} (${task.status})`).join(", ");
 			reason = failed.length
-				? `Failed verification remains unresolved: ${listed(failed)}. Continue the approved repair and verification.`
+				? `Failed verification remains unresolved: ${listTasks(failed)}. Continue the approved repair and verification.`
 				: interrupted.length
-					? `Work interrupted before this follow-up remains unresolved: ${listed(interrupted)}. Restart it, or attribute a fresh completed rerun in resolved_failures.`
+					? `Work interrupted before this follow-up remains unresolved: ${listTasks(interrupted)}. ${RECOVERY_INSTRUCTION}`
 					: "Required work or evidence remains unresolved; request a complete, attributable report after finishing it.";
 			return { action: "continue", reason };
+		},
+		// Earlier failed or interrupted tasks an attributed rerun can still resolve.
+		unresolvedTasks() {
+			return [...tasks.values()].filter((task) => task.status === "failed" || interruptedBefore(task)).map((task) => ({ task_id: task.taskId, status: task.status }));
 		},
 		get waiting() {
 			return [...tasks.values()].some((task) => task.status === "running") ||
