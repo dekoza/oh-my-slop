@@ -179,6 +179,7 @@ Work each offender through this sequence:
 
 - Record a representative **permanent regression observed red** for this bug's reason on unfixed code before **production repair**. Reuse an existing permanent test if its observed failure reaches the actual boundary; a throwaway loop alone is not that record.
 - Apply the bounded repair, verify the permanent regression green, and rerun the original scenario before moving to the next offender.
+- Remove only owned temporary instrumentation; preserve unrelated instrumentation and work. Verify actual removal, then rerun the permanent regression, original scenario and appropriate checks on the cleaned candidate as in Phase 5.
 - One commit per offender (or one commit per module if offenders are related).
 - **Do not fix scattered non-offenders.** Resist the urge to "knock out easy ones" — they're hardest to cluster and you'll dig rabbit holes.
 
@@ -524,7 +525,7 @@ If the hypothesis is about internal state (data flow, timing, caching), add inst
   failure point. Tells you whether an element was never rendered, was
   removed by another script, or is CSS-hidden.
 
-Keep instrumentation temporary. Remove it after the hypothesis is confirmed.
+Record which temporary instrumentation this session owns, including its files, hooks and log paths. Preserve unrelated instrumentation and work. Remove only the owned additions after measurement; verify actual removal and rerun the appropriate loop on the cleaned candidate. If cleanup happens before repair, the genuine bug should still reproduce. Phase 5 requires cleaned-candidate verification after the final repair too.
 
 ### Completion criterion
 
@@ -545,7 +546,8 @@ Then:
 
 - [ ] **Preserve the permanent regression.** Keep its assertion and normal collection path; retain the pre-repair red and post-repair green evidence.
 - [ ] **Run the full suite.** Ensure the fix doesn't break anything else.
-- [ ] **Remove temporary instrumentation.** Clean up logs, asserts, and debug code.
+- [ ] **Remove only owned temporary instrumentation.** Use the session's ownership record; preserve unrelated instrumentation, logs and work. Verify actual removal in the files/hooks/diff, not just a promise to clean up.
+- [ ] **Reverify the cleaned candidate.** Rerun the permanent regression and original scenario after cleanup, plus the appropriate project checks. Earlier green evidence does not prove the cleaned candidate.
 - [ ] **Document the root cause.** If the bug was non-obvious, add a comment at the fix site explaining the root cause and the fix. Not "fixed bug" — "X was None because Y; added guard at Z."
 
 ### Completion criterion
@@ -556,7 +558,8 @@ Phase 5 is done when:
 - A representative permanent regression was observed red for the bug's reason before repair and is now green.
 - The original scenario has been rerun and the user's symptom is resolved.
 - The full test suite passes.
-- Temporary instrumentation is removed.
+- Actual removal of owned temporary instrumentation is verified; unrelated instrumentation and work are preserved.
+- The permanent regression, original scenario and appropriate checks have been rerun on the cleaned candidate.
 - The root cause is documented.
 
 ### Before applying the fix, verify the test expectation is correct

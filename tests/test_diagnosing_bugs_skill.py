@@ -41,3 +41,21 @@ def test_minimisation_requires_boundary_correspondence_and_explicit_coverage_gap
     assert "coverage gap" in guidance
     assert "verified completion" in guidance
     assert "evidence or access" in guidance
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        ("### Step 3 — FIX WAVE", "### Step 4 — VERIFY WAVE"),
+        ("## Phase 4 —", "## Phase 5 —"),
+        ("## Phase 5 —", "### Before applying the fix"),
+    ],
+)
+def test_cleanup_is_owned_verified_and_followed_by_cleaned_candidate_checks(
+    start: str, end: str
+) -> None:
+    guidance = section(start, end)
+    assert "owned" in guidance and "unrelated" in guidance
+    assert "verify actual removal" in guidance
+    assert "cleaned candidate" in guidance
+    assert "rerun" in guidance
