@@ -49,7 +49,7 @@ Skills here are grouped into buckets — `skills/reference/`, `skills/practice/`
 `scripts/link-skills.sh` links each skill in at the depth Claude Code expects:
 
 ```bash
-scripts/link-skills.sh                 # link all 61 into ~/.claude/skills
+scripts/link-skills.sh                 # link all 70 into ~/.claude/skills
 scripts/link-skills.sh --dry-run       # print what it would do, change nothing
 scripts/link-skills.sh --prune         # also drop links to skills this repo no longer has
 scripts/link-skills.sh ~/somewhere     # or point it at another directory
@@ -137,7 +137,7 @@ while the router is offline; use another provider until it returns.
 ## Skills
 
 <details>
-<summary><strong>Skills (69)</strong></summary>
+<summary><strong>Skills (70)</strong></summary>
 
 Grouped by what you came looking for: an API surface (**Reference**), a way of
 working (**Practice**), a job to run (**Workflow**), or the agent's own toolkit
@@ -216,6 +216,7 @@ Rituals you run — session and tracker state, from interview through implementa
 | **[Ponytail Debt](skills/workflow/ponytail-debt/SKILL.md)** | Harvest `SHORTCUT:` markers left during development. Flags missing upgrade paths. Optionally writes `SHORTCUT-DEBT.md` for tracking. |
 | **[Prototype](skills/workflow/prototype/SKILL.md)** | Throwaway prototyping discipline — logic branch (terminal app for state machines) or UI branch (radically different variants on one route). Six universal rules: throwaway, one command, no persistence, skip polish, surface state, capture when done. |
 | **[QA](skills/workflow/qa/SKILL.md)** | Interactive QA session — user reports bugs conversationally, agent clarifies, explores the codebase for domain language, and files durable user-focused tracker issues (single or dependency-ordered breakdowns). |
+| **[Retro](skills/workflow/retro/SKILL.md)** | Manually review the current or explicitly named session; rank evidence-backed prevention proposals against upkeep and noise. Inspect checks and wiring; apply nothing. |
 | **[Research](skills/workflow/research/SKILL.md)** | Delegate reading legwork to a background agent — primary sources only, every claim cited, findings landed as a Markdown note in the repo. |
 | **[Review Spec](skills/workflow/review-spec/SKILL.md)** | The spec axis of a two-axis review, independently invocable — missing requirements, scope creep, and requirements implemented wrongly, each quoting the spec line it rests on. Review only, never edits. |
 | **[Review Standards](skills/workflow/review-standards/SKILL.md)** | The standards axis of a two-axis review, independently invocable — documented repo standards plus a fixed Fowler smell baseline, every finding cited, smells never blocking. Review only, never edits. |
@@ -318,6 +319,14 @@ route their presentation to this single source. Existing repository templates,
 closing references, robot markers, machine metadata and configured domain docs win.
 Draft preparation does not grant posting, pushing, merging or closure: standalone,
 branch-only, combined delivery and same-PR repair authority remain with their owners.
+
+### Selected-session retrospective
+
+Invoke `/skill:retro` to review the current session, or `/skill:retro <session>`
+for an explicitly named session. [Retro](skills/workflow/retro/SKILL.md) returns
+ranked proposals, including wiring existing checks or removing noisy rules; it
+applies none. Missing evidence stays a gap, not permission to search other sessions
+or services. It is manual-only, not an automatic implementation/review stage.
 
 ### Selected compact review evidence
 

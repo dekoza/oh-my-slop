@@ -1,0 +1,29 @@
+"""Retro's manual package contract. Source assertions are not model-effect evidence."""
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+
+from scripts.build_claude_plugin import build_plugin
+from scripts.validate_refs import find_skill_dir, iter_skill_dirs
+
+ROOT = Path(__file__).resolve().parents[1]
+SKILLS = ROOT / "skills"
+RETRO = SKILLS / "workflow/retro"
+
+
+def test_retro_is_manual_by_name_and_preserved_in_flattened_plugin(tmp_path: Path) -> None:
+    assert find_skill_dir(SKILLS, "retro") == RETRO
+    assert RETRO in iter_skill_dirs(SKILLS)
+    _, frontmatter, _ = (RETRO / "SKILL.md").read_text(encoding="utf-8").split("---", 2)
+    metadata = yaml.safe_load(frontmatter)
+    assert metadata["name"] == "retro"
+    assert metadata["disable-model-invocation"] is True
+    assert not metadata["description"].startswith("Use when")
+    assert "Triggers on:" not in metadata["description"]
+    assert len(metadata["description"].splitlines()) == 1
+    plugin = tmp_path / "plugin"
+    assert "retro" in build_plugin(SKILLS, plugin)
+    assert (plugin / "skills/retro/SKILL.md").read_bytes() == (RETRO / "SKILL.md").read_bytes()
+    assert not (ROOT / "prompts/retro.md").exists()
