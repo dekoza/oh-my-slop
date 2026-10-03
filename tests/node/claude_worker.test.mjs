@@ -284,6 +284,22 @@ input.on("line", (line) => { if (JSON.parse(line).type === "user") send({ type: 
 	assert.equal(events.at(-1).disposition, "unfinished");
 });
 
+test("a required task stopped before its first report retains the stopped outcome", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+ send({ type: "system", subtype: "task_notification", task_id: "early-stop", status: "stopped", summary: "Required verification was stopped" });
+ send({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("waiting", { background_task_ids: ["early-stop"], outstanding: ["Verification and repair"] }) });
+});
+` });
+	const result = await runClaude({ ...fake, prompt: "Verify then repair" });
+	assert.equal(result.disposition, "unfinished");
+	assert.equal(result.taskOutcomes[0].status, "stopped");
+	assert.match(result.reason, /early-stop \(stopped\)/);
+});
+
 test("API, logged-out, unknown-plan and mixed credentials fail before any model request", { timeout: 15_000 }, async (t) => {
 	for (const auth of [
 		{ loggedIn: true, authMethod: "api_key", apiKeySource: "apiKeyHelper" },

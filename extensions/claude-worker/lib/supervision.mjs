@@ -46,8 +46,9 @@ export function createTaskSupervision(taskId) {
 			if (event.subtype === "task_started" && event.task_id && !tasks.has(event.task_id)) {
 				tasks.set(event.task_id, { taskId: event.task_id, status: "running", description: event.description });
 			}
-			if (event.subtype === "task_notification" && event.task_id && tasks.has(event.task_id)) {
-				const task = tasks.get(event.task_id);
+			if (event.subtype === "task_notification" && event.task_id) {
+				// Resumed or fast tasks may notify before this invocation sees a start/report.
+				const task = tasks.get(event.task_id) || { taskId: event.task_id, status: "running", description: event.description };
 				if (task.status !== "running" && task.status !== "unknown") return;
 				tasks.set(event.task_id, { ...task, status: event.status || "unknown", summary: event.summary, outputFile: event.output_file });
 			}
