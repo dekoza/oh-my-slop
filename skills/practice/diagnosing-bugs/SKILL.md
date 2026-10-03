@@ -299,18 +299,14 @@ Count remaining failures:
 
 ---
 
-### Step 7 — FULL REGRESSION GATE
+### Step 7 — PROJECT REGRESSION GATE
 
-**Goal:** Confirm nothing broke outside the failing tier.
+**Goal:** Verify the required regression coverage on the cleaned candidate.
 
-Run the **entire** test suite (all tiers):
+Use [testing-workflow](../testing-workflow/SKILL.md) and the project's check policy to choose proportionate affected-tier checks and broader gates. Run required cross-cluster checks between waves; reserve whole-product E2E/full suites for the project/risk conditions that require them, not automatically after every cluster. Explicit repository full-suite mandates still apply. Missing or failed required coverage blocks completion.
 
-```
-pytest tests/ -n auto --dist loadgroup --timeout 600
-```
-
-- **All green:** Done. Commit.
-- **Any red:** These are new issues, not part of the original triage. Diagnose each as a separate bug using the single-bug workflow.
+- **Required checks green:** Done. Commit.
+- **Any new red:** Diagnose the new failure as a separate bug using the single-bug workflow; do not weaken its assertion.
 
 **After the fires are out:** if the triage revealed E2E-only assertions that lower tiers could carry (the usual reason triage was this slow), schedule the `restore-test-pyramid` skill — see the tier-strategy section of `testing-workflow`.
 
@@ -322,7 +318,7 @@ pytest tests/ -n auto --dist loadgroup --timeout 600
 |-------------|-------------|
 | Fix one failure, run full suite, repeat | Wastes time per iteration on known-passing tests |
 | "Knock out scattered ones for momentum" | Scattered failures are hardest to cluster — you'll dig rabbit holes when a shared fixture is the real culprit |
-| Skip full-suite checks until the very end | Silent regressions accumulate. If cluster A's fix breaks cluster B's passing tests, you won't know until hours later |
+| Skip required affected checks between clusters | Cross-cluster regressions accumulate; use the project's proportionate checks between waves and its required broader gates |
 | Assume N failures = N fixes | Clusters collapse the count. Diagnose first, count later |
 | Start triage without calibrating xdist | Parallelism-induced failures look like real bugs. You'll chase ghosts. |
 | Forget `--dist loadgroup` with xdist | Grouped tests land on different workers → nondeterministic failures → debugging the wrong problem |
@@ -545,7 +541,7 @@ Apply the repair. Verify the same permanent regression green, then rerun the ori
 Then:
 
 - [ ] **Preserve the permanent regression.** Keep its assertion and normal collection path; retain the pre-repair red and post-repair green evidence.
-- [ ] **Run the full suite.** Ensure the fix doesn't break anything else.
+- [ ] **Run proportionate project checks.** Delegate affected tiers, broader gates and execution to [testing-workflow](../testing-workflow/SKILL.md) and the project's policy. Run full suites when explicitly required; do not require whole-product E2E/full suites after every cluster. Missing or failed required coverage remains a gap.
 - [ ] **Remove only owned temporary instrumentation.** Use the session's ownership record; preserve unrelated instrumentation, logs and work. Verify actual removal in the files/hooks/diff, not just a promise to clean up.
 - [ ] **Reverify the cleaned candidate.** Rerun the permanent regression and original scenario after cleanup, plus the appropriate project checks. Earlier green evidence does not prove the cleaned candidate.
 - [ ] **Document the root cause.** If the bug was non-obvious, add a comment at the fix site explaining the root cause and the fix. Not "fixed bug" — "X was None because Y; added guard at Z."
@@ -557,7 +553,7 @@ Phase 5 is done when:
 - The feedback loop goes green on the fix.
 - A representative permanent regression was observed red for the bug's reason before repair and is now green.
 - The original scenario has been rerun and the user's symptom is resolved.
-- The full test suite passes.
+- Required proportionate project checks pass; explicit full-suite mandates remain satisfied.
 - Actual removal of owned temporary instrumentation is verified; unrelated instrumentation and work are preserved.
 - The permanent regression, original scenario and appropriate checks have been rerun on the cleaned candidate.
 - The root cause is documented.

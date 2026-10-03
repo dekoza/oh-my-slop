@@ -59,3 +59,22 @@ def test_cleanup_is_owned_verified_and_followed_by_cleaned_candidate_checks(
     assert "verify actual removal" in guidance
     assert "cleaned candidate" in guidance
     assert "rerun" in guidance
+
+
+@pytest.mark.parametrize("surface", ["triage-gate", "repair-gate", "cluster-reference"])
+def test_consumer_check_gates_delegate_proportionately_to_testing_workflow(
+    surface: str,
+) -> None:
+    if surface == "triage-gate":
+        guidance = section("### Step 7 —", "### Anti-patterns")
+    elif surface == "repair-gate":
+        guidance = section("## Phase 5 —", "### Before applying the fix")
+    else:
+        guidance = (SKILL_ROOT / "references" / "feedback-loops.md").read_text(
+            encoding="utf-8"
+        ).lower()
+    assert "testing-workflow" in guidance
+    assert "proportionate" in guidance
+    assert "project" in guidance and "required" in guidance
+    assert "full suite after each cluster" not in guidance
+    assert "run the **entire** test suite (all tiers)" not in guidance
