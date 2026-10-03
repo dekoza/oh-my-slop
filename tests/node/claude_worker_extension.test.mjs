@@ -129,7 +129,9 @@ test("only one worker runs and stop/shutdown preserve the resumable session", as
 	await h.events.get("session_shutdown")({}, h.ctx);
 	assert.equal(h.entries.at(-1).data.sessionId, SESSION_ID);
 	await h.commands.get("cc-status").handler("", h.ctx);
-	assert.match(h.notifications.at(-1)[0], /Stopped/);
+	assert.match(h.notifications.at(-1)[0], /Unfinished\/interrupted \(Stopped\)/);
+	assert.match(h.notifications.at(-1)[0], /partial changes/);
+	assert.equal(h.messages.at(-1).message.details.disposition, "unfinished");
 	assert.ok(h.messages.some(({ message }) => message.content.includes("Stopped")), "stopped workers leave a durable terminal report");
 	assert.ok(!h.messages.some(({ message }) => message.content.includes("Turn ended; completion unverified")), "cancelled work is not reported as a successful turn");
 });
@@ -220,6 +222,52 @@ test("cc failures keep diagnostic reports rather than only disappearing into not
 	assert.match(h.messages.at(-1).message.content, /Claude stopped after a tool failure/);
 	await h.commands.get("cc-log").handler("", h.ctx);
 	assert.match(h.messages.at(-1).message.details.expandedText, /error_during_execution/);
+});
+
+test("execution errors retain sanitized task context and resume an outcome-only session", async () => {
+	for (const route of ["command", "tool"]) {
+		let calls = 0;
+		const h = harness(async (options) => {
+			if (++calls > 1) {
+				assert.equal(options.sessionId, SESSION_ID);
+				assert.equal(options.cwd, "/trusted/project");
+				return { sessionId: SESSION_ID, disposition: "needs_input", report: { question: "Which verification?", outcomes: [], outstanding: [], unverified: [], background_task_ids: [] } };
+			}
+			const error = new Error("API_KEY=error-secret");
+			error.outcome = { sessionId: SESSION_ID, disposition: "unfinished", reason: "Execution failed", continuations: 3, exitCode: 1, taskOutcomes: [{ taskId: "tests-1", status: "failed", summary: "API_KEY=task-secret" }], report: { task_id: "repair", disposition: "unfinished", outcomes: [{ requirement: "Fix", status: "unverified", evidence: ["API_KEY=evidence-secret"] }], outstanding: ["Finish tests"], unverified: ["Verification"], question: "", background_task_ids: [] } };
+			throw error;
+		});
+		if (route === "tool") await assert.rejects(h.tools[0].execute("call", { prompt: "Fix" }, undefined, undefined, h.ctx), (error) => {
+			assert.equal(error.outcome.disposition, "unfinished");
+			assert.equal(error.outcome.sessionId, SESSION_ID);
+			assert.equal(error.outcome.report.task_id, "repair");
+			assert.ok(!JSON.stringify(error.outcome).includes("evidence-secret"));
+			return true;
+		});
+		else {
+			await h.commands.get("cc").handler("Fix", h.ctx);
+			await new Promise(setImmediate);
+		}
+		const terminal = h.messages.at(-1).message;
+		assert.match(terminal.content, /Unfinished\/interrupted \(Failed\)/);
+		assert.equal(terminal.details.disposition, "unfinished");
+		assert.match(terminal.content, /Finish tests/);
+		assert.match(terminal.content, /tests-1: failed/);
+		assert.match(terminal.content, /partial changes/);
+		assert.match(terminal.content, /\/cc-followup/);
+		const retained = JSON.stringify(h.entries) + JSON.stringify(h.messages) + JSON.stringify(h.notifications);
+		for (const secret of ["error-secret", "task-secret", "evidence-secret"]) assert.ok(!retained.includes(secret));
+		const restored = harness(async (options) => {
+			assert.equal(options.sessionId, SESSION_ID);
+			assert.equal(options.cwd, "/trusted/project");
+			return { sessionId: SESSION_ID, disposition: "unfinished", reason: "No verification yet" };
+		});
+		restored.ctx.sessionManager.getBranch = () => h.entries;
+		await restored.events.get("session_start")({}, restored.ctx);
+		await restored.commands.get("cc-followup").handler("Continue verification", restored.ctx);
+		await new Promise(setImmediate);
+		assert.equal(restored.messages.at(-1).message.details.sessionId, SESSION_ID);
+	}
 });
 
 test("failure metadata retained in Pi does not reintroduce redacted credentials", async () => {

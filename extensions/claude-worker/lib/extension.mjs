@@ -29,7 +29,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 		const branch = ctx.sessionManager.getBranch();
 		lastSession = branch.filter((entry) => entry.type === "custom" && entry.customType === STATE_ENTRY).at(-1)?.data;
 		lastRun = branch.filter((entry) => entry.type === "custom" && entry.customType === RUN_ENTRY).at(-1)?.data;
-		if (lastRun && !lastRun.endedAt) lastRun = { ...lastRun, status: "Interrupted observation; terminal outcome unknown" };
+		if (lastRun && !lastRun.endedAt) lastRun = { ...lastRun, disposition: "unfinished", status: "Unfinished/interrupted observation; terminal outcome unknown" };
 	}
 
 	async function start(prompt, resume, ctx, signal, onUpdate) {
@@ -125,17 +125,21 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 				persistRun(job.log.snapshot());
 				return { ...lastRun, activity: lastRun };
 			} catch (error) {
+				const failure = new Error(safeText(error.message));
 				if (job.log) {
-					const outcome = { ...(error.outcome || result), status: controller.signal.aborted ? "Stopped" : "Failed", error: safeText(error.message) };
+					const diagnostics = error.outcome || result || {};
+					const outcome = { ...diagnostics, disposition: "unfinished", status: `Unfinished/interrupted (${controller.signal.aborted ? "Stopped" : "Failed"})`, reason: diagnostics.reason || (controller.signal.aborted ? "Worker stopped before task completion." : safeText(error.message)), error: failure.message };
 					let loggingError;
 					try { job.log.finish(outcome); } catch (logError) { loggingError = logError; }
 					// Never merge raw CLI outcome fields back over the sanitized log snapshot.
 					const retained = job.log.snapshot();
 					if (loggingError) retained.error += `\nActivity log write failed: ${safeText(loggingError.message)}`;
+					if (retained.sessionId) remember(retained.sessionId, ctx.cwd);
 					persistRun(retained);
-					pi.sendMessage({ customType: "cc-worker", content: formatRunReport(lastRun), details: { activity: lastRun }, display: true }, { triggerTurn: false });
+					failure.outcome = retained;
+					pi.sendMessage({ customType: "cc-worker", content: formatRunReport(lastRun), details: runDetails(lastRun), display: true }, { triggerTurn: false });
 				}
-				throw new Error(safeText(error.message));
+				throw failure;
 			} finally {
 				clearInterval(refreshTimer);
 				signal?.removeEventListener("abort", abort);
