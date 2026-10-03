@@ -33,23 +33,26 @@ export function supervisionInstructions(taskId) {
 }
 
 function validReport(report, taskId) {
+	// Advertised field/enum vocabulary has one source; nonempty evidence checks remain stricter.
+	const { properties } = completionSchema(taskId);
+	const outcomeFields = properties.outcomes.items.properties;
+	const resolutionFields = properties.resolved_failures.items.properties;
 	if (!report || Array.isArray(report) || typeof report !== "object" || report.task_id !== taskId ||
-		!["waiting", "finished", "needs_input", "unfinished"].includes(report.disposition)) return false;
-	const fields = ["task_id", "disposition", "outcomes", "outstanding", "unverified", "question", "background_task_ids", "resolved_failures"];
-	if (Object.keys(report).some((key) => !fields.includes(key)) || typeof report.question !== "string") return false;
+		!properties.disposition.enum.includes(report.disposition)) return false;
+	if (Object.keys(report).some((key) => !Object.hasOwn(properties, key)) || typeof report.question !== "string") return false;
 	for (const key of ["outstanding", "unverified", "background_task_ids"]) {
 		if (!Array.isArray(report[key]) || report[key].some((item) => typeof item !== "string" || !item.trim())) return false;
 	}
 	if (report.resolved_failures !== undefined && (!Array.isArray(report.resolved_failures) ||
 		report.resolved_failures.some((item) => !item || Array.isArray(item) || typeof item !== "object" ||
-			Object.keys(item).some((key) => !["task_id", "replacement_task_id", "evidence"].includes(key)) ||
+			Object.keys(item).some((key) => !Object.hasOwn(resolutionFields, key)) ||
 			![item.task_id, item.replacement_task_id].every((id) => typeof id === "string" && id.trim()) ||
 			!Array.isArray(item.evidence) || !item.evidence.length ||
 			item.evidence.some((evidence) => typeof evidence !== "string" || !evidence.trim())))) return false;
 	return Array.isArray(report.outcomes) && report.outcomes.every((item) => item &&
-		Object.keys(item).every((key) => ["requirement", "status", "evidence"].includes(key)) &&
+		Object.keys(item).every((key) => Object.hasOwn(outcomeFields, key)) &&
 		typeof item.requirement === "string" && item.requirement.trim() &&
-		["verified", "unverified"].includes(item.status) && Array.isArray(item.evidence) &&
+		outcomeFields.status.enum.includes(item.status) && Array.isArray(item.evidence) &&
 		item.evidence.every((evidence) => typeof evidence === "string" && evidence.trim()));
 }
 
