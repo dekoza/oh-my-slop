@@ -756,6 +756,50 @@ input.on("line", (line) => {
 	assert.match(response.response.message, /denied/i);
 });
 
+test("cancellation retains same-session cleanup evidence without dispatch or permission approval", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+process.on("SIGTERM", () => {
+ send({ type: "system", subtype: "task_notification", session_id: "other-session", task_id: "verify", status: "failed", summary: "Unrelated failure" });
+ send({ type: "system", subtype: "task_notification", session_id: "${SESSION_ID}", task_id: "verify", status: "stopped", summary: "Stopped during cleanup", output_file: "cleanup-output.txt" });
+ send({ type: "control_request", request_id: "late-permission", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "must not run" } } });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
+ setTimeout(() => process.exit(0), 30);
+});
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+ send({ type: "system", subtype: "task_started", task_id: "verify", is_backgrounded: true });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("waiting", { background_task_ids: ["verify"] }) });
+});
+` });
+	const controller = new AbortController();
+	const progress = [];
+	let permissions = 0;
+	await assert.rejects(runClaude({ ...fake, signal: controller.signal, prompt: "Verify", maxContinuations: 2,
+		onPermission: async () => { permissions++; return true; },
+		onProgress: (event) => {
+			progress.push(event);
+			if (event.type === "worker_supervision" && event.status.startsWith("Waiting")) controller.abort();
+		},
+	}), (error) => {
+		assert.equal(error.outcome.disposition, "unfinished");
+		const task = error.outcome.taskOutcomes.find((item) => item.taskId === "verify");
+		assert.equal(task.status, "stopped");
+		assert.equal(task.summary, "Stopped during cleanup");
+		assert.equal(task.outputFile, "cleanup-output.txt");
+		assert.deepEqual(task.history.map((item) => item.status), ["stopped"]);
+		const handoff = formatRunReport({ ...error.outcome, startedAt: Date.now(), status: "Unfinished", stats: {} });
+		assert.match(handoff, /Stopped during cleanup/);
+		assert.match(handoff, /cleanup-output.txt/);
+		return true;
+	});
+	assert.ok(progress.some((event) => event.subtype === "task_notification" && event.status === "stopped"));
+	assert.ok(!progress.some((event) => event.summary === "Unrelated failure"));
+	assert.equal(permissions, 0);
+	assert.equal((await fake.frames()).filter((event) => event.type === "user").length, 1);
+	assert.ok(!(await fake.frames()).some((event) => event.response?.request_id === "late-permission"));
+});
+
 test("stop terminates an uncooperative worker within a bounded grace period", { timeout: 15_000 }, async (t) => {
 	const fake = await fixture(t, { body: `
 process.on("SIGTERM", () => {});

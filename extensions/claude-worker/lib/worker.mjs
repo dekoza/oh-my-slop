@@ -107,12 +107,14 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		const lines = createInterface({ input: child.stdout });
 		lines.on("line", (line) => {
 			void (async () => {
-				if (failure || signal?.aborted || ending) return;
+				const stopping = failure || signal?.aborted || ending;
 				const event = JSON.parse(line);
 				if (event.session_id && currentSessionId && event.session_id !== currentSessionId) return;
-				if (event.type === "system" && event.subtype === "init" && event.session_id) currentSessionId = event.session_id;
+				if (!stopping && event.type === "system" && event.subtype === "init" && event.session_id) currentSessionId = event.session_id;
+				// Cleanup can still emit task evidence. Retain it without dispatching or approving anything.
 				supervision.record(event);
 				onProgress(event);
+				if (stopping) return;
 				if (event.type === "control_response" && event.response?.request_id === "pi-initialize") {
 					const response = event.response;
 					const account = response.response?.account;
