@@ -177,6 +177,7 @@ export function formatRunReport(state, text = state.text || "") {
 		state.report ? "Claude Code self-report (not independent Pi certification):" : "",
 		...(state.report?.outcomes || []).map((outcome) => `- ${safeText(outcome.requirement)}: ${safeText(outcome.status)} · Evidence: ${(outcome.evidence || []).map(safeText).join("; ") || "none reported"}`),
 		...(state.report?.resolved_failures || []).map((resolution) => `Resolved failure ${safeText(resolution.task_id)}: replacement ${safeText(resolution.replacement_task_id)} · Claude Code evidence: ${(resolution.evidence || []).map(safeText).join("; ")}`),
+		...(state.omittedOutcomes || []).map((outcome) => `Omitted required outcome: ${safeText(outcome.requirement)} · Last reported: ${safeText(outcome.status)} · Prior evidence: ${(outcome.evidence || []).map(safeText).join("; ") || "none reported"}`),
 		state.report?.question ? `Question: ${safeText(state.report.question)}` : "",
 		state.report?.outstanding?.length ? `Outstanding: ${state.report.outstanding.map(safeText).join("; ")}` : "",
 		state.report?.unverified?.length ? `Unverified: ${state.report.unverified.map(safeText).join("; ")}` : "",

@@ -91,6 +91,9 @@ Free-form “done”, exit code 0, `end_turn`, an empty active-task list or a su
 CLI result is insufficient. Unsupported/missing reports remain unresolved within
 the safety limits. Finished requires an explicit mapping of every requested
 outcome to evidence, with no outstanding required work or missing evidence.
+Previously declared requirement wording must remain stable across reports; omitting
+an outcome does not erase its obligation, even if it was previously verified.
+Omitted outcomes and their prior evidence remain visible in the unfinished handoff.
 Stopped required tasks prevent finished in that invocation. A failed intermediate
 check does not end supervision while approved repair or other required work remains.
 Its identity and failed history stay in the handoff. A passing check under a new ID

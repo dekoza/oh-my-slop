@@ -252,6 +252,33 @@ input.on("line", (line) => {
 	}
 });
 
+test("later reports must explicitly verify every previously declared required outcome", { timeout: 15_000 }, async (t) => {
+	for (const includeRequired of [false, true]) {
+		const fake = await fixture(t, { body: `
+let turns = 0;
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ const base = completion().outcomes;
+ if (++turns === 1) send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("waiting", {
+  outcomes: [...base, { requirement: "Required integration", status: "unverified", evidence: [] }],
+  outstanding: ["Run required integration"], unverified: ["Integration evidence missing"]
+ }) });
+ else send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("finished", {
+  outcomes: ${includeRequired ? '[...base, { requirement: "Required integration", status: "verified", evidence: ["Integration passed: integration.log"] }]' : "base"}
+ }) });
+});
+` });
+		const result = await runClaude({ ...fake, prompt: "Inspect and run required integration", maxContinuations: 1 });
+		assert.equal(result.disposition, includeRequired ? "finished" : "unfinished");
+		if (!includeRequired) {
+			assert.match(result.reason, /Required integration/);
+			const handoff = formatRunReport({ ...result, startedAt: Date.now(), status: "Unfinished", stats: {} });
+			assert.match(handoff, /Omitted required outcome: Required integration/);
+			assert.equal(result.omittedOutcomes[0].status, "unverified");
+		}
+	}
+});
+
 test("foreground verification survives background-only snapshots and waits after backgrounding", { timeout: 15_000 }, async (t) => {
 	for (const transition of ["snapshot", "update", "both"]) {
 		const fake = await fixture(t, { body: `
