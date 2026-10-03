@@ -46,12 +46,19 @@ function validReport(report, taskId) {
 }
 
 // Tracks current non-ambient lifecycles separately from retained terminal evidence.
-export function createTaskSupervision(taskId) {
-	const tasks = new Map();
-	const declaredOutcomes = new Map();
+export function createTaskSupervision(taskId, resumeState) {
+	const tasks = new Map((resumeState?.taskOutcomes || []).map((task) => {
+		// A deliberate follow-up may recover stopped work, but old running state is not live evidence.
+		const restored = { ...task, status: task.status === "running" ? "unknown" : task.status };
+		if (restored.terminalStatus === "stopped") delete restored.terminalStatus;
+		return [restored.taskId, restored];
+	}));
+	const declaredOutcomes = new Map([
+		...(resumeState?.requiredOutcomes || []), ...(resumeState?.report?.outcomes || []), ...(resumeState?.omittedOutcomes || []),
+	].map((outcome) => [outcome.requirement, outcome]));
 	const omittedOutcomes = () => [...declaredOutcomes.values()].filter((outcome) => !report?.outcomes.some((item) => item.requirement === outcome.requirement));
 	const seenNotifications = new Set();
-	let terminalSequence = 0;
+	let terminalSequence = Math.max(0, ...[...tasks.values()].map((task) => task.terminalSequence || 0));
 	const markRunning = (id, description, explicitResume = false, isBackgrounded) => {
 		const task = tasks.get(id);
 		// A stop ends this invocation's required work; recovery needs a deliberate follow-up.
@@ -141,6 +148,6 @@ export function createTaskSupervision(taskId) {
 			return [...tasks.values()].some((task) => task.status === "running") ||
 				(report?.background_task_ids || []).some((id) => !tasks.has(id));
 		},
-		snapshot() { return { report, reason, taskOutcomes: [...tasks.values()], omittedOutcomes: omittedOutcomes() }; },
+		snapshot() { return { taskId, requiredOutcomes: [...declaredOutcomes.values()], report, reason, taskOutcomes: [...tasks.values()], omittedOutcomes: omittedOutcomes() }; },
 	};
 }

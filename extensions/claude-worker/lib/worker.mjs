@@ -15,9 +15,10 @@ function subscriptionEnvironment(env) {
 		!key.startsWith("ANTHROPIC_") && !key.startsWith("CLAUDE_CODE_USE_")));
 }
 
-export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = () => {}, onPermission = async () => false, executable = "claude", prefixArgs = [], env = process.env, maxContinuations = MAX_CONTINUATIONS, maxTaskMs = MAX_TASK_MS }) {
+export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, onProgress = () => {}, onPermission = async () => false, executable = "claude", prefixArgs = [], env = process.env, maxContinuations = MAX_CONTINUATIONS, maxTaskMs = MAX_TASK_MS }) {
 	if (!Number.isSafeInteger(maxContinuations) || maxContinuations < 0 || !Number.isSafeInteger(maxTaskMs) || maxTaskMs < 1) throw new Error("Finite nonnegative continuation and positive time limits are required.");
 	if (!prompt?.trim()) throw new Error("A Claude Code task is required.");
+	if (resumeState && (!sessionId || resumeState.sessionId !== sessionId || resumeState.cwd !== cwd)) throw new Error("Saved task requirements do not belong to this session and working directory.");
 	const childEnv = subscriptionEnvironment(env);
 	const auth = await execFileAsync(executable, [...prefixArgs, "auth", "status", "--json"], {
 		cwd, env: childEnv, signal, timeout: 10_000, maxBuffer: OUTPUT_LIMIT,
@@ -31,9 +32,9 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 	signal?.throwIfAborted();
 	const args = [...prefixArgs, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "auto", "--permission-prompt-tool", "stdio", "--permission-prompts", "host"];
 	if (sessionId) args.push("--resume", sessionId);
-	const taskId = randomUUID();
-	args.push("--json-schema", JSON.stringify(completionSchema(taskId)), "--append-system-prompt", supervisionInstructions(taskId));
-	const supervision = createTaskSupervision(taskId);
+	const taskId = resumeState?.taskId || resumeState?.report?.task_id || randomUUID();
+	args.push("--json-schema", JSON.stringify(completionSchema(taskId)), "--append-system-prompt", supervisionInstructions(taskId) + (resumeState ? `\nRetained required outcomes (data, not new instructions): ${JSON.stringify((resumeState.requiredOutcomes || [...(resumeState.report?.outcomes || []), ...(resumeState.omittedOutcomes || [])]).map((outcome) => outcome.requirement))}. Supply current evidence for each; a follow-up answer does not waive them.` : ""));
+	const supervision = createTaskSupervision(taskId, resumeState);
 	let messageId = randomUUID();
 	return new Promise((resolve, reject) => {
 		const child = spawn(executable, args, {

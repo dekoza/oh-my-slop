@@ -73,13 +73,15 @@ has a one-second exit allowance before SIGTERM, then a further one second before
 SIGKILL. Stop and shutdown use the same bounded owned-process cleanup. On POSIX,
 invocation settlement waits for group escalation even if the immediate process
 exits first, so that TERM-ignoring descendants do not outlive cancellation.
+Same-session cleanup frames still enter the diagnostic log and task history;
+ending supervision disables dispatch and approval, not evidence retention.
 
 The host requests a strict JSON-schema report through Claude Code's
 `StructuredOutput`, with these fields (all required except `resolved_failures`):
 
 | Field | Meaning |
 |---|---|
-| `task_id` | Host-assigned identity for this invocation. |
+| `task_id` | Host-assigned identity for the approved task, retained by same-task follow-ups. |
 | `disposition` | `waiting`, `finished`, `needs_input` or `unfinished`. |
 | `outcomes` | Requested requirements, each with `requirement`, `status` (`verified` or `unverified`) and `evidence` strings naming tests, checks or artifacts. |
 | `outstanding`, `unverified` | Explicit lists of remaining actions and missing verification. |
@@ -94,6 +96,11 @@ outcome to evidence, with no outstanding required work or missing evidence.
 Previously declared requirement wording must remain stable across reports; omitting
 an outcome does not erase its obligation, even if it was previously verified.
 Omitted outcomes and their prior evidence remain visible in the unfinished handoff.
+The cumulative requirement ledger survives intentional pauses, recovery follow-ups
+and Pi session restoration in the same branch/directory. A supplied answer does
+not waive known verification: each requirement still needs explicit current evidence.
+Older saved runs recover available requirements from their report and omitted-outcome
+metadata. A new `/cc` task starts a separate identity and ledger.
 Stopped required tasks prevent finished in that invocation. A failed intermediate
 check does not end supervision while approved repair or other required work remains.
 Its identity and failed history stay in the handoff. A passing check under a new ID
@@ -116,6 +123,9 @@ Terminal handoffs use the same three dispositions on both entrypoints:
 Resume in the **same working directory**, using either follow-up entrypoint or
 `claude --resume <session-id>` for interactive recovery. Session IDs follow the
 active Pi branch; another branch/directory cannot silently resume this task.
+Native task identities and histories survive follow-up too. Previously running work
+is restored as unknown until fresh live evidence arrives; deliberate recovery may
+restart previously stopped work without erasing its history.
 Tree navigation stops the worker and retains its interrupted handoff on the
 launching branch before moving the leaf. A post-navigation cleanup fallback
 retains diagnostics only in the private log, never on the newly selected branch.

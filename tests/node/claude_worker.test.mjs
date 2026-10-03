@@ -602,6 +602,70 @@ input.on("line", (line) => {
 	assert.equal(resumed.sessionId, paused.sessionId);
 });
 
+test("same-task resume retains required outcomes across repeated pauses until explicit evidence", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ const prompt = event.message.content;
+ const required = { requirement: "Required integration verification", status: "unverified", evidence: [] };
+ const report = prompt === "Initial task"
+  ? completion("needs_input", { outcomes: [required], outstanding: [required.requirement], unverified: [required.requirement], question: "Which output directory?" })
+  : prompt === "Ask another question"
+   ? completion("needs_input", { question: "Which format?" })
+   : prompt === "Provide verification evidence"
+    ? completion("finished", { outcomes: [completion().outcomes[0], { ...required, status: "verified", evidence: ["integration: passed"] }] })
+    : completion();
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: report });
+});
+` });
+	const paused = await runClaude({ ...fake, prompt: "Initial task" });
+	assert.equal(paused.disposition, "needs_input");
+	const omitted = await runClaude({ ...fake, sessionId: paused.sessionId, resumeState: { ...paused, cwd: fake.cwd }, prompt: "Use artifacts/" });
+	assert.equal(omitted.disposition, "unfinished", "an answer cannot silently waive required verification");
+	assert.equal(omitted.report.task_id, paused.report.task_id, "follow-up keeps the approved task identity");
+	assert.deepEqual(omitted.omittedOutcomes.map((item) => item.requirement), ["Required integration verification"]);
+	const pausedAgain = await runClaude({ ...fake, sessionId: omitted.sessionId, resumeState: { ...omitted, cwd: fake.cwd }, prompt: "Ask another question" });
+	assert.equal(pausedAgain.disposition, "needs_input");
+	const stillOmitted = await runClaude({ ...fake, sessionId: pausedAgain.sessionId, resumeState: { ...pausedAgain, cwd: fake.cwd }, prompt: "Use JSON" });
+	assert.equal(stillOmitted.disposition, "unfinished", "a second pause must not replace the cumulative ledger");
+	const verified = await runClaude({ ...fake, sessionId: stillOmitted.sessionId, resumeState: { ...stillOmitted, cwd: fake.cwd }, prompt: "Provide verification evidence" });
+	assert.equal(verified.disposition, "finished");
+	assert.deepEqual(verified.omittedOutcomes, []);
+	const fresh = await runClaude({ ...fake, prompt: "A new task" });
+	assert.equal(fresh.disposition, "finished", "a new task does not inherit old obligations");
+	assert.notEqual(fresh.report.task_id, paused.report.task_id);
+});
+
+test("resume preserves native obligations and history without assuming old running work is live", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ if (event.message.content === "Recover stopped verification") {
+  send({ type: "system", subtype: "task_started", task_id: "verify", is_backgrounded: true });
+  send({ type: "system", subtype: "task_notification", task_id: "verify", status: "completed", summary: "Recovery verification passed" });
+ }
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
+});
+` });
+	for (const status of ["running", "stopped", "failed", "unknown"]) {
+		const previous = { cwd: fake.cwd, sessionId: SESSION_ID, taskId: "approved-task", taskOutcomes: [{ taskId: "verify", status, terminalStatus: status === "running" ? undefined : status, history: status === "running" ? [] : [{ status, summary: "Prior verification" }] }] };
+		const result = await runClaude({ ...fake, sessionId: SESSION_ID, resumeState: previous, prompt: "Use artifacts/" });
+		assert.equal(result.disposition, "unfinished", status);
+		assert.equal(result.taskOutcomes[0].status, status === "running" ? "unknown" : status);
+		assert.equal(result.continuations, 0, "stale running state must not hang instead of asking for evidence");
+		if (status === "stopped") {
+			const recovered = await runClaude({ ...fake, sessionId: SESSION_ID, resumeState: previous, prompt: "Recover stopped verification" });
+			assert.equal(recovered.disposition, "finished");
+			assert.deepEqual(recovered.taskOutcomes[0].history.map((entry) => entry.status), ["stopped", "completed"]);
+		}
+	}
+	for (const changed of [{ sessionId: "another-session" }, { cwd: "/other/directory" }]) {
+		await assert.rejects(runClaude({ ...fake, sessionId: SESSION_ID, resumeState: { cwd: fake.cwd, sessionId: SESSION_ID, ...changed }, prompt: "Follow up" }), /do not belong/);
+	}
+});
+
 test("unsupported, ambiguous, missing evidence and pending work reports never finish", { timeout: 15_000 }, async (t) => {
 	for (const expression of [
 		"undefined", "null", "{ disposition: 'finished' }", "completion('done')", "completion('finished', { task_id: 'other-task' })",

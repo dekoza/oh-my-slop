@@ -102,6 +102,33 @@ test("commands and tool resume share needs-input and finished dispositions in th
 	}
 });
 
+test("both follow-up routes restore the cumulative task ledger and checkpoint it before new results", async () => {
+	for (const route of ["command", "tool"]) {
+		const required = { requirement: "Required integration verification", status: "unverified", evidence: [] };
+		const prior = { sessionId: SESSION_ID, cwd: "/trusted/project", taskId: "approved-task", requiredOutcomes: [required], disposition: "needs_input",
+			report: { task_id: "approved-task", disposition: "needs_input", outcomes: [], outstanding: [], unverified: [], question: "Which directory?", background_task_ids: [] }, endedAt: 1 };
+		const h = harness(async (options) => {
+			assert.equal(options.sessionId, SESSION_ID);
+			assert.equal(options.resumeState.taskId, "approved-task");
+			assert.deepEqual(options.resumeState.requiredOutcomes, [required]);
+			const checkpoint = h.entries.filter((entry) => entry.customType === "cc-worker-run").at(-1).data;
+			assert.deepEqual(checkpoint.requiredOutcomes, [required], "an interrupted follow-up cannot lose requirements before its first report");
+			assert.equal(checkpoint.taskId, "approved-task");
+			return { ...prior, disposition: "unfinished", omittedOutcomes: [required] };
+		});
+		h.entries.push({ type: "custom", customType: "cc-worker-session", data: { sessionId: SESSION_ID, cwd: h.ctx.cwd } }, { type: "custom", customType: "cc-worker-run", data: prior });
+		await h.events.get("session_start")({}, h.ctx);
+		if (route === "tool") await h.tools[0].execute("resume", { prompt: "Use artifacts/", resume: true }, undefined, undefined, h.ctx);
+		else {
+			await h.commands.get("cc-followup").handler("Use artifacts/", h.ctx);
+			await new Promise(setImmediate);
+			assert.ok(!h.notifications.some(([text]) => /undefined|AssertionError/.test(text)));
+		}
+		assert.equal(h.entries.at(-1).data.disposition, "unfinished");
+		assert.deepEqual(h.entries.at(-1).data.requiredOutcomes, [required]);
+	}
+});
+
 test("model delegation requires consent and headless or untrusted sessions never launch", async () => {
 	let calls = 0;
 	const h = harness(async () => { calls++; });

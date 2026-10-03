@@ -41,6 +41,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 			throw new Error("No saved Claude Code session for this project. Start one with /cc <task>.");
 		}
 		const sessionId = resume ? lastSession.sessionId : undefined;
+		const resumeState = resume && lastRun?.sessionId === sessionId && lastRun.cwd === ctx.cwd ? lastRun : undefined;
 		const controller = new AbortController();
 		const job = { controller, done: undefined, log: undefined, detached: false };
 		active = job;
@@ -81,7 +82,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 					billingConfirmed = true;
 				}
 				controller.signal.throwIfAborted();
-				job.log = createActivityLog({ cwd: ctx.cwd, prompt, sessionId });
+				job.log = createActivityLog({ cwd: ctx.cwd, prompt, sessionId, resumeState });
 				if (!resume) remember(undefined, ctx.cwd);
 				job.log.setStatus("Running");
 				persistRun(job.log.snapshot());
@@ -89,7 +90,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 				refreshTimer = setInterval(refresh, 1_000);
 				refreshTimer.unref();
 				result = await run({
-					cwd: ctx.cwd, prompt, sessionId, signal: controller.signal,
+					cwd: ctx.cwd, prompt, sessionId, resumeState, signal: controller.signal,
 					onPermission: async (request, permissionSignal) => {
 						if (job.detached || controller.signal.aborted || permissionSignal.aborted) return false;
 						job.log.record({ type: "worker_permission", status: "waiting", toolName: request.tool_name, input: request.input, reason: request.decision_reason });

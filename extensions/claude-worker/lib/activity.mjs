@@ -39,7 +39,7 @@ function scrub(value, key = "") {
 	return value;
 }
 
-export function createActivityLog({ cwd, prompt, sessionId, maxBytes = 8 * 1024 * 1024 }) {
+export function createActivityLog({ cwd, prompt, sessionId, resumeState, maxBytes = 8 * 1024 * 1024 }) {
 	const directory = mkdtempSync(join(tmpdir(), "pi-cc-worker-"));
 	const logPath = join(directory, "activity.jsonl");
 	writeFileSync(logPath, "", { flag: "wx", mode: 0o600 });
@@ -48,7 +48,11 @@ export function createActivityLog({ cwd, prompt, sessionId, maxBytes = 8 * 1024 
 	const tools = new Map();
 	const pendingTools = new Map();
 	const tasks = new Map();
-	const taskOutcomes = new Map();
+	const taskOutcomes = new Map((resumeState?.taskOutcomes || []).map((task) => [task.taskId, scrub(task)]));
+	if (resumeState) {
+		state.taskId = resumeState.taskId || resumeState.report?.task_id;
+		state.requiredOutcomes = scrub(resumeState.requiredOutcomes || [...(resumeState.report?.outcomes || []), ...(resumeState.omittedOutcomes || [])]);
+	}
 	let bytes = 0;
 	const activity = (summary) => {
 		state.lastActivity = safeText(summary);
