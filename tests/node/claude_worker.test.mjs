@@ -262,7 +262,7 @@ test("structured outstanding and unverified declarations require explicit eviden
 		const report = { task_id: "approved", disposition: "waiting", outcomes: [{ requirement: "Inspection", status: "verified", evidence: ["inspection.txt"] }], outstanding: [], unverified: [], question: "", background_task_ids: [], [field]: [required] };
 		const supervisor = createTaskSupervision("approved");
 		supervisor.assess(report);
-		for (const current of [supervisor, createTaskSupervision("approved", supervisor.snapshot())]) {
+		for (const current of [supervisor, createTaskSupervision("approved", supervisor.snapshot()), createTaskSupervision("approved", { report, requiredOutcomes: [] })]) {
 			const missing = { ...report, disposition: "finished", [field]: [] };
 			assert.equal(current.assess(missing).action, "continue", field);
 			assert.ok(current.snapshot().omittedOutcomes.some((item) => item.requirement === required));
@@ -280,6 +280,26 @@ input.on("line", (line) => {
 		assert.equal(result.disposition, "unfinished", field);
 		assert.match(result.reason, /Required integration verification/);
 		assert.match(formatRunReport({ ...result, startedAt: Date.now(), status: "Unfinished", stats: {} }), /Omitted required outcome: Required integration verification/);
+	}
+});
+
+test("sanitized requirement wording cannot collapse distinct persistent outcome identities", () => {
+	for (const requirements of [["x".repeat(16_100) + "A", "x".repeat(16_100) + "B"], ["Check API_TOKEN=alpha", "Check API_TOKEN=beta"]]) {
+		const report = { task_id: "approved", disposition: "needs_input", outcomes: requirements.map((requirement) => ({ requirement, status: "unverified", evidence: [] })), outstanding: [], unverified: [], question: "Which directory?", background_task_ids: [] };
+		const current = createTaskSupervision("approved");
+		current.assess(report);
+		const log = createActivityLog({ cwd: "/project", prompt: "Verify", sessionId: SESSION_ID });
+		log.observe(current.snapshot());
+		const saved = log.snapshot();
+		assert.equal(saved.requiredOutcomes[0].requirement, saved.requiredOutcomes[1].requirement, "display sanitization is intentionally lossy");
+		const restored = createTaskSupervision("approved", saved);
+		assert.equal(restored.snapshot().requiredOutcomes.length, 2, "distinct obligations survive identical displayed wording");
+		const finished = { ...report, disposition: "finished", question: "", outcomes: [{ requirement: requirements[0], status: "verified", evidence: ["first.log: passed"] }] };
+		assert.equal(restored.assess(finished).action, "continue", "verifying one raw identity cannot discharge the other");
+		assert.equal(restored.snapshot().omittedOutcomes.length, 1);
+		assert.equal(restored.assess({ ...finished, outcomes: requirements.map((requirement) => ({ requirement, status: "verified", evidence: ["both.log: passed"] })) }).disposition, "finished");
+		assert.ok(saved.requiredOutcomes.every((item) => /^[a-f0-9]{64}$/.test(item.requirementId)));
+		assert.doesNotMatch(JSON.stringify(saved), /API_TOKEN=(alpha|beta)/);
 	}
 });
 

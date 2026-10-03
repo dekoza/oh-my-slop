@@ -47,6 +47,10 @@ function validReport(report, taskId) {
 		item.evidence.every((evidence) => typeof evidence === "string" && evidence.trim()));
 }
 
+// Hash exact wording before display sanitization; retained labels are not identities.
+const requirementId = (requirement) => createHash("sha256").update(requirement).digest("hex");
+const identifiedOutcome = (outcome) => ({ ...outcome, requirementId: outcome.requirementId || requirementId(outcome.requirement) });
+
 // Tracks current non-ambient lifecycles separately from retained terminal evidence.
 export function createTaskSupervision(taskId, resumeState) {
 	const tasks = new Map((resumeState?.taskOutcomes || []).map((task) => {
@@ -57,11 +61,13 @@ export function createTaskSupervision(taskId, resumeState) {
 	}));
 	const declarations = (value) => [...(value?.outstanding || []), ...(value?.unverified || [])]
 		.map((requirement) => ({ requirement, status: "unverified", evidence: [] }));
-	const declaredOutcomes = new Map([
-		...declarations(resumeState?.report),
-		...(resumeState?.requiredOutcomes || []), ...(resumeState?.report?.outcomes || []), ...(resumeState?.omittedOutcomes || []),
-	].map((outcome) => [outcome.requirement, outcome]));
-	const omittedOutcomes = () => [...declaredOutcomes.values()].filter((outcome) => !report?.outcomes.some((item) => item.requirement === outcome.requirement));
+	// New checkpoints contain the complete identified ledger. Legacy reports are a fallback,
+	// not another source of identities computed from already redacted/truncated labels.
+	const savedOutcomes = resumeState?.requiredOutcomes?.length && resumeState.requiredOutcomes.every((outcome) => outcome.requirementId)
+		? resumeState.requiredOutcomes
+		: [...declarations(resumeState?.report), ...(resumeState?.requiredOutcomes || []), ...(resumeState?.report?.outcomes || []), ...(resumeState?.omittedOutcomes || [])];
+	const declaredOutcomes = new Map(savedOutcomes.map(identifiedOutcome).map((outcome) => [outcome.requirementId, outcome]));
+	const omittedOutcomes = () => [...declaredOutcomes.values()].filter((outcome) => !report?.outcomes.some((item) => requirementId(item.requirement) === outcome.requirementId));
 	const seenNotifications = new Set(resumeState?.notificationDeliveries || []);
 	let terminalSequence = Math.max(0, ...[...tasks.values()].map((task) => task.terminalSequence || 0));
 	const markRunning = (id, description, explicitResume = false, isBackgrounded) => {
@@ -114,8 +120,8 @@ export function createTaskSupervision(taskId, resumeState) {
 				return { action: "continue", reason };
 			}
 			report = value;
-			for (const outcome of declarations(report)) if (!declaredOutcomes.has(outcome.requirement)) declaredOutcomes.set(outcome.requirement, outcome);
-			for (const outcome of report.outcomes) declaredOutcomes.set(outcome.requirement, outcome);
+			for (const outcome of declarations(report).map(identifiedOutcome)) if (!declaredOutcomes.has(outcome.requirementId)) declaredOutcomes.set(outcome.requirementId, outcome);
+			for (const outcome of report.outcomes.map(identifiedOutcome)) declaredOutcomes.set(outcome.requirementId, outcome);
 			for (const id of report.background_task_ids) if (!tasks.has(id)) tasks.set(id, { taskId: id, status: "running", description: "Required by Claude Code's task report" });
 			if (report.disposition === "needs_input" && report.question.trim()) return { action: "end", disposition: "needs_input", reason: report.question };
 			if (report.disposition === "unfinished") return { action: "end", disposition: "unfinished", reason: report.outstanding.join("; ") || "Claude Code reported that work is unfinished." };

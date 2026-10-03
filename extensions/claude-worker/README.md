@@ -95,7 +95,14 @@ the safety limits. Finished requires an explicit mapping of every requested
 outcome to evidence, with no outstanding required work or missing evidence.
 Previously declared requirement wording must remain stable across reports; omitting
 an outcome does not erase its obligation, even if it was previously verified.
-Omitted outcomes and their prior evidence remain visible in the unfinished handoff.
+Every item in `outstanding` or `unverified` is a retained obligation too: resolve it
+explicitly in `outcomes` using the same exact wording and current evidence. Clearing
+the lists alone is not resolution. Omitted outcomes and their prior evidence remain
+visible in the unfinished handoff. New checkpoints retain a SHA256 identity of each
+original requirement before display redaction/truncation, so equal sanitized labels
+cannot collapse distinct obligations. If original wording cannot be recovered,
+completion stays unresolved; do not substitute truncated/redacted display text.
+Older checkpoints cannot recover identity/evidence already lost before this change.
 The cumulative requirement ledger survives intentional pauses, recovery follow-ups
 and Pi session restoration in the same branch/directory. A supplied answer does
 not waive known verification: each requirement still needs explicit current evidence.
