@@ -300,6 +300,44 @@ input.on("line", (line) => {
 	assert.match(handoff, /Resume in the same working directory/);
 });
 
+test("replayed UUID-less native results cannot drain a later queue or close input", { timeout: 15_000 }, async (t) => {
+	for (const freshDrain of [false, true]) {
+		const fake = await fixture(t, { body: `
+let turns = 0;
+let drained = false;
+const oldDrain = { type: "result", subtype: "success", session_id: "${SESSION_ID}", origin: { kind: "task-notification" }, queued_turn_count: 0, result: "Old consumed native notification" };
+input.on("close", () => {
+ if (!drained) process.stderr.write("EOF before fresh queue drain\\n");
+ process.exit(0);
+});
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ if (++turns === 1) {
+  send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+  send({ type: "result", uuid: "first", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("waiting", { outstanding: ["Finish approved work"] }) });
+  setTimeout(() => send(oldDrain), 20);
+ } else {
+  setTimeout(() => {
+   send({ type: "result", uuid: "second", subtype: "success", session_id: "${SESSION_ID}", queued_turn_count: 1, structured_output: completion() });
+   setTimeout(() => send(oldDrain), 20);
+   ${freshDrain ? 'setTimeout(() => { drained = true; send({ ...oldDrain, result: "Fresh consumed queue drain" }); }, 100);' : ""}
+  }, 60);
+ }
+});
+` });
+		if (freshDrain) {
+			const result = await runClaude({ ...fake, prompt: "Finish approved work", maxContinuations: 1 });
+			assert.equal(result.disposition, "finished");
+			assert.doesNotMatch(result.stderr, /EOF before fresh/);
+		} else await assert.rejects(runClaude({ ...fake, prompt: "Finish approved work", maxContinuations: 1, maxTaskMs: 500 }), (error) => {
+			assert.equal(error.outcome.disposition, "unfinished");
+			assert.match(error.message, /time safety limit/);
+			return true;
+		});
+		assert.equal((await fake.frames()).filter((event) => event.type === "user").length, 2);
+	}
+});
+
 test("foreground verification survives background-only snapshots and waits after backgrounding", { timeout: 15_000 }, async (t) => {
 	for (const transition of ["snapshot", "update", "both"]) {
 		const fake = await fixture(t, { body: `

@@ -154,7 +154,9 @@ can remove them. A missing/unreadable log is reported rather than hidden.
 
 The transport sends a UUID with each submitted user turn and correlates results
 within the saved session. A required native task completion drives continuation
-only after the native turn result; waiting turns do not close input. This guards
+only after the native turn result; waiting turns do not close input. An identical
+native result without a delivery ID cannot prove that a later queue has drained;
+ambiguous redelivery remains unresolved within the safety limits. This guards
 against premature ending but does not identify who cancelled historical work.
 
 The `claude_worker` tool lets Pi delegate too. It takes a `prompt` and optional

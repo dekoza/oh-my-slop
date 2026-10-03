@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { promisify } from "node:util";
+import { isDeepStrictEqual, promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { completionSchema, createTaskSupervision, supervisionInstructions } from "./supervision.mjs";
 
@@ -51,6 +51,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		let pendingDecision;
 		let continuations = 0;
 		const seenResults = new Set();
+		const untaggedNativeResults = [];
 		const permissionDenials = [];
 		let initialized = false;
 		let currentSessionId = sessionId;
@@ -161,6 +162,11 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 					if (key) seenResults.add(key);
 					const correlated = ids.includes(messageId);
 					const native = !ids.length && event.origin?.kind === "task-notification" && event.session_id && event.session_id === currentSessionId;
+					if (native && !key) {
+						// An identical untagged delivery cannot prove a new queue drain, even if first seen in flight.
+						if (untaggedNativeResults.some((previous) => isDeepStrictEqual(previous, event))) return;
+						untaggedNativeResults.push(event);
+					}
 					if ((correlated || native) && (event.is_error || event.subtype !== "success")) {
 						result = event;
 						currentSessionId ||= event.session_id;
