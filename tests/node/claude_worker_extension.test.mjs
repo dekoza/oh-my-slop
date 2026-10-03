@@ -194,6 +194,35 @@ test("restoration follows the active Pi branch and never resumes a session from 
 	assert.equal(calls.length, 1);
 });
 
+test("post-navigation cancellation cannot import the abandoned worker into the selected branch", async () => {
+	const calls = [];
+	let lateProgress;
+	const h = harness((options) => {
+		calls.push(options);
+		lateProgress = options.onProgress;
+		options.onProgress({ type: "system", subtype: "init", session_id: SESSION_ID });
+		return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => {
+			// Exercise a late frame while cancellation settles after Pi has moved its leaf.
+			lateProgress({ type: "system", subtype: "init", session_id: SESSION_ID });
+			reject(new Error("Stopped"));
+		}, { once: true }));
+	});
+	await h.commands.get("cc").handler("Repair on the old branch", h.ctx);
+	await new Promise(setImmediate);
+	const abandoned = [...h.entries];
+	const messagesBefore = h.messages.length;
+	// Pi emits session_tree AFTER selecting the new leaf; this ancestor has no worker state.
+	h.entries.length = 0;
+	await h.events.get("session_tree")({}, h.ctx);
+	assert.deepEqual(h.entries, [], "old cancellation state must not be appended to the selected branch");
+	assert.equal(h.messages.length, messagesBefore, "old terminal messages must not enter the new branch");
+	assert.ok(abandoned.some((entry) => entry.data.sessionId === SESSION_ID), "old session evidence remains on its own branch");
+	await h.commands.get("cc-followup").handler("Continue", h.ctx);
+	await new Promise(setImmediate);
+	assert.equal(calls.length, 1, "the newly selected branch cannot resume the abandoned session");
+	assert.match(h.notifications.at(-1)[0], /No saved/);
+});
+
 test("model delegation returns worker output and permission dialogs are bounded and terminal-safe", async () => {
 	const h = harness(async (options) => {
 		assert.equal(await options.onPermission({ tool_name: "Bash", decision_reason: "Needs approval", input: { command: "echo \\u001b[31munsafe" } }, options.signal), true);

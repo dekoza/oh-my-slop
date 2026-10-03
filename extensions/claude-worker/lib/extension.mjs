@@ -42,7 +42,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 		}
 		const sessionId = resume ? lastSession.sessionId : undefined;
 		const controller = new AbortController();
-		const job = { controller, done: undefined, log: undefined };
+		const job = { controller, done: undefined, log: undefined, detached: false };
 		active = job;
 		const abort = () => controller.abort();
 		signal?.addEventListener("abort", abort, { once: true });
@@ -51,7 +51,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 		let refreshTimer;
 
 		const refresh = () => {
-			if (!job.log) return;
+			if (!job.log || job.detached) return;
 			const state = job.log.snapshot();
 			const elapsed = Math.floor(((state.endedAt || Date.now()) - state.startedAt) / 1_000);
 			const idle = Math.floor((Date.now() - (state.lastActivityAt || state.startedAt)) / 1_000);
@@ -91,6 +91,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 				result = await run({
 					cwd: ctx.cwd, prompt, sessionId, signal: controller.signal,
 					onPermission: async (request, permissionSignal) => {
+						if (job.detached || controller.signal.aborted || permissionSignal.aborted) return false;
 						job.log.record({ type: "worker_permission", status: "waiting", toolName: request.tool_name, input: request.input, reason: request.decision_reason });
 						refresh();
 						try {
@@ -104,6 +105,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 						} finally { refresh(); }
 					},
 					onProgress: (event) => {
+						if (job.detached) return;
 						job.log.record(event);
 						if (event.type === "system" && event.subtype === "init" && event.session_id) {
 							remember(event.session_id, ctx.cwd);
@@ -135,10 +137,14 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 					// Never merge raw CLI outcome fields back over the sanitized log snapshot.
 					const retained = job.log.snapshot();
 					if (loggingError) retained.error += `\nActivity log write failed: ${safeText(loggingError.message)}`;
-					if (retained.sessionId) remember(retained.sessionId, ctx.cwd);
-					persistRun(retained);
 					failure.outcome = retained;
-					pi.sendMessage({ customType: "cc-worker", content: formatRunReport(lastRun), details: runDetails(lastRun), display: true }, { triggerTurn: false });
+					// session_tree is post-navigation: never persist an abandoned job on its new branch.
+					// The private log still retains the interruption when no pre-navigation hook ran.
+					if (!job.detached) {
+						if (retained.sessionId) remember(retained.sessionId, ctx.cwd);
+						persistRun(retained);
+						pi.sendMessage({ customType: "cc-worker", content: formatRunReport(retained), details: runDetails(retained), display: true }, { triggerTurn: false });
+					}
 				}
 				throw failure;
 			} finally {
@@ -206,7 +212,11 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 	pi.on("session_start", async (_event, ctx) => restore(ctx));
 	// The launching command/tool reports failures; cleanup only waits for it to settle.
 	pi.on("session_tree", async (_event, ctx) => {
-		if (active) { active.controller.abort(); await active.done.catch(() => {}); }
+		if (active) {
+			active.detached = true;
+			active.controller.abort();
+			await active.done.catch(() => {});
+		}
 		restore(ctx);
 	});
 	pi.on("session_shutdown", async () => {
