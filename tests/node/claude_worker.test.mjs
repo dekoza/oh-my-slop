@@ -190,6 +190,36 @@ input.on("line", (line) => {
 	assert.equal(result.taskOutcomes[0].status, "completed");
 });
 
+test("native notification execution failures terminate unfinished without another model turn", { timeout: 15_000 }, async (t) => {
+	for (const failure of [{ subtype: "error_during_execution", is_error: true }, { subtype: "error_max_turns", is_error: false }, { subtype: "success", is_error: true }]) {
+		const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+ send({ type: "system", subtype: "task_started", task_id: "verify" });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", permission_denials: [{ tool_name: "Read" }], structured_output: completion("waiting", { background_task_ids: ["verify"] }) });
+ setTimeout(() => {
+  send({ type: "system", subtype: "task_notification", task_id: "verify", status: "completed" });
+  send({ type: "result", uuid: "native-error", origin: { kind: "task-notification" }, session_id: "${SESSION_ID}", ...${JSON.stringify(failure)}, errors: ["Subscription allowance exhausted"], permission_denials: [{ tool_name: "Bash" }], stop_reason: "error" });
+ }, 20);
+});
+` });
+		const events = [];
+		await assert.rejects(runClaude({ ...fake, prompt: "Verify then repair", maxContinuations: 1, onProgress: (event) => events.push(event) }), (error) => {
+			assert.equal(error.outcome.disposition, "unfinished");
+			assert.equal(error.outcome.continuations, 0);
+			assert.deepEqual(error.outcome.errors, ["Subscription allowance exhausted"]);
+			assert.deepEqual(error.outcome.permissionDenials, [{ tool_name: "Read" }, { tool_name: "Bash" }]);
+			assert.equal(error.outcome.resultSubtype, failure.subtype);
+			assert.equal(error.outcome.stopReason, "error");
+			return true;
+		});
+		assert.equal((await fake.frames()).filter((frame) => frame.type === "user").length, 1);
+		assert.equal(events.at(-1).disposition, "unfinished");
+	}
+});
+
 test("explicit needs-input preserves its question and a same-session answer can finish", { timeout: 15_000 }, async (t) => {
 	const fake = await fixture(t, { body: `
 input.on("line", (line) => {

@@ -156,10 +156,17 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 					if (key && seenResults.has(key)) return;
 					if (key) seenResults.add(key);
 					const correlated = ids.includes(messageId);
+					const native = !ids.length && event.origin?.kind === "task-notification" && event.session_id && event.session_id === currentSessionId;
+					if ((correlated || native) && (event.is_error || event.subtype !== "success")) {
+						result = event;
+						currentSessionId ||= event.session_id;
+						permissionDenials.push(...(event.permission_denials || []));
+						return end({ disposition: "unfinished", reason: "Claude Code execution did not return a successful turn." });
+					}
 					if (!correlated) {
 						// Native task-notification turns consume results themselves. Wait for their
 						// terminal boundary before dispatching, rather than racing the native queue.
-						if (!inFlight && event.origin?.kind === "task-notification" && !supervision.waiting && !event.queued_turn_count) continueTask("Native background result was consumed; finish outstanding approved work.");
+						if (!inFlight && native && !supervision.waiting && !event.queued_turn_count) continueTask("Native background result was consumed; finish outstanding approved work.");
 						return;
 					}
 					if (!inFlight && !drainingQueuedTurns) return;
@@ -167,7 +174,6 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 					currentSessionId ||= event.session_id;
 					permissionDenials.push(...(event.permission_denials || []));
 					inFlight = false;
-					if (event.is_error || event.subtype !== "success") return end({ disposition: "unfinished", reason: "Claude Code execution did not return a successful turn." });
 					if (!event.session_id) return end({ disposition: "unfinished", reason: "Claude Code returned no resumable session ID." });
 					const decision = supervision.assess(event.structured_output);
 					drainingQueuedTurns = event.queued_turn_count > 0;
