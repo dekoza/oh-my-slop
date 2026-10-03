@@ -158,6 +158,19 @@ test("activity preserves the supervisor's stop barrier and authoritative active 
 	assert.equal(log.snapshot().taskOutcomes.length, 1);
 });
 
+test("raw background snapshot logging does not mistake the previous checkpoint for the event", () => {
+	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Verify" });
+	log.observe({ taskOutcomes: [] });
+	log.record({ type: "system", subtype: "background_tasks_changed", tasks: [
+		{ task_id: "check", task_type: "local_agent", description: "New check" },
+		{ task_id: "watcher", ambient: true },
+	] });
+	const record = readActivityLog(log.snapshot().logPath).records.at(-1);
+	assert.equal(record.summary, "1 reported active task(s)");
+	assert.deepEqual(record.details, [{ id: "check", type: "local_agent", description: "New check" }]);
+	assert.equal(log.snapshot().backgroundTasks.length, 0, "display projection awaits the authoritative checkpoint");
+});
+
 test("a prior finished report stays historical through an undefined startup report and a later success", () => {
 	const prior = createActivityLog({ cwd: "/trusted/project", prompt: "Repair" });
 	prior.finish({ sessionId: "session-1", taskId: "repair", status: "Finished", disposition: "finished", error: "obsolete error", errors: ["obsolete diagnostics"], report: { task_id: "repair", disposition: "finished", outcomes: [{ requirement: "Repair", status: "verified", evidence: ["prior tests: passed"] }], outstanding: [], unverified: ["prior integration gap"], question: "", background_task_ids: [] } });

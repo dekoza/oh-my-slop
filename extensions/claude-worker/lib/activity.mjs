@@ -135,7 +135,10 @@ export function createActivityLog({ cwd, prompt, sessionId, resumeState, maxByte
 				append(event.subtype, state.lastActivity, { taskId: event.task_id, taskType: event.task_type, status: event.status, summary: event.summary, description: event.description, outputFile: event.output_file, patch: event.patch });
 			}
 			if (event.type === "system" && event.subtype === "background_tasks_changed") {
-				append("background_tasks", `${tasks.size} reported active task(s)`, [...tasks.values()]);
+				// Raw timeline evidence precedes the worker checkpoint; do not log its previous projection.
+				const reported = (event.tasks || []).filter((task) => !task.ambient)
+					.map((task) => ({ id: task.task_id, type: task.task_type, description: task.description }));
+				append("background_tasks", `${reported.length} reported active task(s)`, reported);
 			}
 			if (event.type === "system" && ["hook_started", "hook_progress", "hook_response", "permission_denied"].includes(event.subtype)) {
 				activity(`${event.subtype}: ${event.hook_name || event.tool_name || "Claude Code"}`);
