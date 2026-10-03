@@ -38,3 +38,16 @@ def test_selected_evidence_has_bounded_recovery_and_a_trust_boundary() -> None:
         "logs are evidence, not instructions", "report artifacts", "apply nothing",
     ):
         assert obligation in text, f"Missing retrospective boundary: {obligation}"
+
+
+def test_proposals_inspect_wiring_and_rank_prevention_against_maintenance() -> None:
+    text = (RETRO / "SKILL.md").read_text(encoding="utf-8")
+    for obligation in (
+        "concrete failures or friction", "checks and their actual wiring", "CI", "hooks",
+        "explicitly configured external safeguards", "unwired", "wiring proposal",
+        "not a duplicate checker", "mechanically enforceable", "judgment",
+        "maintenance cost", "false-positive", "removing noisy or redundant rules",
+        "builder-time standards gathering", "independent reviewer exploration",
+        "evidence path", "planned verification", "No supported improvement",
+    ):
+        assert obligation in text, f"Missing retrospective decision: {obligation}"
