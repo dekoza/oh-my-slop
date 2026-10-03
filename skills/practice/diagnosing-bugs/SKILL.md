@@ -486,6 +486,8 @@ Do not proceed until you have reproduced **and** minimised.
 
 With a tight, minimised, red loop — now you can form hypotheses.
 
+Plan scoped, reversible diagnostic changes within existing authority before changing code. Restore those changes after measurement and retain experiment receipts separately from final production repair. Record the permanent regression on genuinely unfixed code before that final repair; do not repair first and undo it merely to fabricate retroactive red, or relabel a production fix as an experiment afterward.
+
 For each hypothesis:
 
 1. **State it plainly.** "I think X causes Y because Z."

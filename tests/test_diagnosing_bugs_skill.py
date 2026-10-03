@@ -1,7 +1,9 @@
 """Public diagnosis guidance contracts; native behavior is evaluated separately."""
+import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPO_ROOT / "skills" / "practice" / "diagnosing-bugs"
@@ -78,3 +80,37 @@ def test_consumer_check_gates_delegate_proportionately_to_testing_workflow(
     assert "project" in guidance and "required" in guidance
     assert "full suite after each cluster" not in guidance
     assert "run the **entire** test suite (all tiers)" not in guidance
+
+
+def test_diagnostic_experiments_are_scoped_restored_and_not_retrospective_red() -> None:
+    guidance = section("## Phase 3 —", "## Phase 4 —")
+    assert "scoped" in guidance and "restore" in guidance
+    assert "final production repair" in guidance
+    assert "retroactive red" in guidance
+    assert "experiment receipts" in guidance
+
+
+def test_public_invocation_description_attribution_and_legacy_guards_stay_stable() -> None:
+    markdown = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    metadata = yaml.safe_load(markdown.split("---", 2)[1])
+    assert metadata["name"] == "diagnosing-bugs"
+    assert metadata["description"] == (
+        "Use when facing a bug with no obvious cause, a performance regression, or 5+ test "
+        'failures at once. Triggers on: "diagnose", "debug this", "something broken", '
+        '"no idea why", "flaky", "slow since", "fix multiple failing tests".\n'
+    )
+    assert metadata["license"] == "MIT (adapted from mattpocock/skills)"
+    assert "disable-model-invocation" not in metadata
+    hypotheses = section("## Phase 3 —", "## Phase 4 —")
+    assert "after ~3 refuted hypotheses" in hypotheses
+    assert "stop generating new ones" in hypotheses
+    assert "each hypothesis + the experiment that killed it" in hypotheses
+    assert "present it to the user" in hypotheses
+    assert "ranked hypotheses" not in hypotheses
+    assert "improve-codebase-architecture" not in markdown
+    for path in (SKILL_ROOT / "SKILL.md", SKILL_ROOT / "references" / "feedback-loops.md"):
+        guidance = path.read_text(encoding="utf-8").lower()
+        assert "non-deterministic bugs" in guidance
+        assert "higher reproduction rate" in guidance
+        assert "bisection harness" in guidance
+        assert "git bisect run" in guidance
