@@ -128,6 +128,30 @@ test("terminal task identities and evidence survive an empty active list and ren
 	for (const expected of ["Claude Code self-report", "tests/auth.py: 3 passed", "Finish review", "Integration coverage", "review-1", "stopped", "tests-1", "failed", "read-1", "completed", "Required task stopped", "Continuations: 2", "/cc-followup", "resume: true", "claude --resume session-1", "/trusted/project", "partial changes"]) assert.ok(text.includes(expected), expected);
 });
 
+test("a prior finished report stays historical through an undefined startup report and a later success", () => {
+	const prior = createActivityLog({ cwd: "/trusted/project", prompt: "Repair" });
+	prior.finish({ sessionId: "session-1", taskId: "repair", status: "Finished", disposition: "finished", error: "obsolete error", errors: ["obsolete diagnostics"], report: { task_id: "repair", disposition: "finished", outcomes: [{ requirement: "Repair", status: "verified", evidence: ["prior tests: passed"] }], outstanding: [], unverified: ["prior integration gap"], question: "", background_task_ids: [] } });
+	const resume = createActivityLog({ cwd: "/trusted/project", prompt: "Verify more", sessionId: "session-1", resumeState: prior.snapshot() });
+	assert.equal(resume.snapshot().status, "Starting");
+	assert.equal(resume.snapshot().disposition, undefined);
+	assert.equal(resume.snapshot().report, undefined);
+	resume.observe({ taskId: "repair", report: undefined });
+	resume.finish({ status: "Finished", disposition: "finished", report: { task_id: "repair", disposition: "finished", outcomes: [{ requirement: "Repair", status: "verified", evidence: ["current tests: passed"] }], outstanding: [], unverified: [], question: "", background_task_ids: [] } });
+	const state = resume.snapshot();
+	assert.equal(state.report.outcomes[0].evidence[0], "current tests: passed");
+	assert.equal(state.priorHandoffs[0].report.outcomes[0].evidence[0], "prior tests: passed");
+	assert.equal(state.error, undefined);
+	assert.equal(state.errors, undefined);
+	const text = formatRunReport(state);
+	assert.ok(!text.includes("obsolete"));
+	assert.ok(text.indexOf("Prior handoff (not current completion evidence)") < text.indexOf("prior tests: passed"));
+	const fresh = createActivityLog({ cwd: "/trusted/project", prompt: "New task" });
+	fresh.finish({ status: "Failed", disposition: "unfinished" });
+	assert.equal(fresh.snapshot().priorHandoffs, undefined);
+	assert.equal(fresh.snapshot().report, undefined);
+	assert.ok(!formatRunReport(fresh.snapshot()).includes(prior.snapshot().logPath));
+});
+
 test("the lightweight inspector expands a retained snapshot without filesystem access during rendering", () => {
 	const message = { content: "Compact timeline", details: { expandedText: "Full input and result: 世界", logPath: "/not/read/during/render" } };
 	assert.match(activityMessageText(message, { expanded: false }), /Compact timeline/);

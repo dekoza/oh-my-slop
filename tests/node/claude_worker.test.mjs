@@ -283,6 +283,18 @@ input.on("line", (line) => {
 	}
 });
 
+test("an early failed legacy resume preserves list-only obligations for later supervision", () => {
+	const report = { task_id: "approved", disposition: "needs_input", outcomes: [{ requirement: "Inspection", status: "verified", evidence: ["inspection.txt"] }], outstanding: ["Required repair"], unverified: ["Required integration"], question: "Which directory?", background_task_ids: [] };
+	const prior = { cwd: "/project", sessionId: SESSION_ID, report, requiredOutcomes: report.outcomes };
+	const failed = createActivityLog({ cwd: "/project", prompt: "Use artifacts/", sessionId: SESSION_ID, resumeState: prior });
+	failed.finish({ disposition: "unfinished", status: "Failed", error: "Subscription preflight failed" });
+	const restored = createTaskSupervision("approved", failed.snapshot());
+	const omitted = { ...report, disposition: "finished", outstanding: [], unverified: [], question: "" };
+	assert.equal(restored.assess(omitted).action, "continue");
+	assert.deepEqual(restored.snapshot().omittedOutcomes.map((outcome) => outcome.requirement).sort(), ["Required integration", "Required repair"]);
+	assert.equal(restored.assess({ ...omitted, outcomes: [...omitted.outcomes, ...["Required repair", "Required integration"].map((requirement) => ({ requirement, status: "verified", evidence: ["repair-and-integration.log: passed"] }))] }).disposition, "finished");
+});
+
 test("sanitized requirement wording cannot collapse distinct persistent outcome identities", () => {
 	for (const requirements of [["x".repeat(16_100) + "A", "x".repeat(16_100) + "B"], ["Check API_TOKEN=alpha", "Check API_TOKEN=beta"]]) {
 		const report = { task_id: "approved", disposition: "needs_input", outcomes: requirements.map((requirement) => ({ requirement, status: "unverified", evidence: [] })), outstanding: [], unverified: [], question: "Which directory?", background_task_ids: [] };

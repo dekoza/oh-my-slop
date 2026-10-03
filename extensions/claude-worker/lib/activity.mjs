@@ -2,6 +2,7 @@ import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import { createTaskSupervision } from "./supervision.mjs";
 
 const MAX_TEXT = 16_000;
 const MAX_REPORT_BYTES = 50 * 1024;
@@ -52,7 +53,12 @@ export function createActivityLog({ cwd, prompt, sessionId, resumeState, maxByte
 	if (resumeState) {
 		state.taskId = resumeState.taskId || resumeState.report?.task_id;
 		state.notificationDeliveries = scrub(resumeState.notificationDeliveries || []);
-		state.requiredOutcomes = scrub(resumeState.requiredOutcomes || [...(resumeState.report?.outcomes || []), ...(resumeState.omittedOutcomes || [])]);
+		state.requiredOutcomes = scrub(createTaskSupervision(state.taskId, resumeState).snapshot().requiredOutcomes);
+		// Keep historical evidence separate: authentication can fail before any new assessment.
+		// Select handoff fields, never the previous run's disposition or error diagnostics.
+		const handoffFields = ["logPath", "sessionId", "taskId", "startedAt", "endedAt", "report", "requiredOutcomes", "omittedOutcomes", "taskOutcomes", "backgroundTasks", "pendingTools", "text", "reason", "continuations"];
+		const handoff = Object.fromEntries(handoffFields.filter((key) => resumeState[key] !== undefined).map((key) => [key, resumeState[key]]));
+		state.priorHandoffs = scrub([...(resumeState.priorHandoffs || []), handoff]);
 	}
 	let bytes = 0;
 	const activity = (summary) => {
@@ -184,8 +190,14 @@ export function formatRunReport(state, text = state.text || "") {
 		`Last activity: ${state.lastActivity || "No activity reported"}`,
 		state.reason ? `Reason: ${safeText(state.reason)}` : "",
 		state.continuations !== undefined ? `Continuations: ${state.continuations}` : "",
+		state.taskOutcomes?.length ? "Cumulative task ledger (may include prior evidence; not current completion certification):" : "",
 		...(state.taskOutcomes || []).map((task) => `Task ${safeText(task.taskId || task.task_id || task.id || "unknown")}: ${safeText(task.status || "unknown")} · ${safeText(task.summary || task.description || "No details reported")}${task.outputFile || task.output_file ? ` · ${safeText(task.outputFile || task.output_file)}` : ""}`),
 		...(state.taskOutcomes || []).flatMap((task) => (task.history?.length > 1 ? task.history : []).map((entry) => `Task history ${safeText(task.taskId || task.task_id || task.id || "unknown")}: ${safeText(entry.status || "unknown")} · ${safeText(entry.summary || "No details reported")}${entry.outputFile ? ` · ${safeText(entry.outputFile)}` : ""}`)),
+		...(state.priorHandoffs || []).flatMap((handoff) => [
+			"Prior handoff (not current completion evidence):",
+			handoff.logPath ? `Prior activity log: ${safeText(handoff.logPath)}` : "",
+			safeText(JSON.stringify(handoff, null, 2)),
+		]),
 		state.report ? "Claude Code self-report (not independent Pi certification):" : "",
 		...(state.report?.outcomes || []).map((outcome) => `- ${safeText(outcome.requirement)}: ${safeText(outcome.status)} · Evidence: ${(outcome.evidence || []).map(safeText).join("; ") || "none reported"}`),
 		...(state.report?.resolved_failures || []).map((resolution) => `Resolved failure ${safeText(resolution.task_id)}: replacement ${safeText(resolution.replacement_task_id)} · Claude Code evidence: ${(resolution.evidence || []).map(safeText).join("; ")}`),

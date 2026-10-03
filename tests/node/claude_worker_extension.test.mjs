@@ -104,7 +104,7 @@ test("commands and tool resume share needs-input and finished dispositions in th
 
 test("both follow-up routes restore the cumulative task ledger and checkpoint it before new results", async () => {
 	for (const route of ["command", "tool"]) {
-		const required = { requirement: "Required integration verification", status: "unverified", evidence: [] };
+		const required = { requirementId: "saved-integration-identity", requirement: "Required integration verification", status: "unverified", evidence: [] };
 		const prior = { sessionId: SESSION_ID, cwd: "/trusted/project", taskId: "approved-task", requiredOutcomes: [required], disposition: "needs_input",
 			report: { task_id: "approved-task", disposition: "needs_input", outcomes: [], outstanding: [], unverified: [], question: "Which directory?", background_task_ids: [] }, endedAt: 1 };
 		const h = harness(async (options) => {
@@ -126,6 +126,79 @@ test("both follow-up routes restore the cumulative task ledger and checkpoint it
 		}
 		assert.equal(h.entries.at(-1).data.disposition, "unfinished");
 		assert.deepEqual(h.entries.at(-1).data.requiredOutcomes, [required]);
+	}
+});
+
+test("early failed follow-ups retain prior handoffs through restoration and later recovery on both routes", async () => {
+	for (const route of ["command", "tool"]) {
+		const priorLog = createActivityLog({ cwd: "/trusted/project", prompt: "Repair" });
+		const required = { requirementId: "saved-raw-requirement-identity", requirement: "Repair authentication", status: "verified", evidence: ["unit tests: passed", "API_KEY=evidence-secret"] };
+		const report = { task_id: "repair", disposition: "needs_input", outcomes: [{ requirement: "Repair authentication", status: "verified", evidence: ["unit tests: passed", "API_KEY=evidence-secret"] }], outstanding: ["Finish review"], unverified: ["Integration coverage"], question: "Which target?", background_task_ids: ["review-1"], resolved_failures: [{ task_id: "old-review", replacement_task_id: "review-1", evidence: ["replacement started"] }] };
+		priorLog.finish({ sessionId: SESSION_ID, taskId: "repair", status: "Needs input", disposition: "needs_input", report, requiredOutcomes: [required], omittedOutcomes: [{ requirement: "Deploy", status: "unverified", evidence: ["deployment not attempted"] }], taskOutcomes: [{ taskId: "review-1", status: "failed", summary: "review evidence", outputFile: "/tmp/review.txt" }], text: "Prior artifact: /tmp/repair.txt", errors: ["obsolete error"] });
+		let entries = [{ type: "custom", customType: "cc-worker-session", data: { sessionId: SESSION_ID, cwd: "/trusted/project" } }, { type: "custom", customType: "cc-worker-run", data: priorLog.snapshot() }];
+		const logPaths = [priorLog.snapshot().logPath];
+		for (let attempt = 0; attempt < 3; attempt++) {
+			const h = harness(async (options) => {
+				if (!options.sessionId) throw new Error("fresh authentication failed");
+				const startup = h.entries.filter((entry) => entry.customType === "cc-worker-run").at(-1).data;
+				assert.equal(startup.priorHandoffs[0].report.question, "Which target?");
+				assert.equal(startup.report, undefined, "a prior self-report is not a current report");
+				assert.equal(startup.requiredOutcomes[0].requirementId, "saved-raw-requirement-identity");
+				if (attempt === 2) options.onState({ taskId: "repair", report: undefined });
+				if (attempt < 2) throw new Error(`subscription authentication failed ${attempt}`);
+				return { sessionId: SESSION_ID, taskId: "repair", disposition: "finished", report: { task_id: "repair", disposition: "finished", outcomes: [{ requirement: "Repair authentication", status: "verified", evidence: ["current integration tests: passed"] }], outstanding: [], unverified: [], question: "", background_task_ids: [] } };
+			});
+			h.entries.push(...structuredClone(entries));
+			await h.events.get("session_start")({}, h.ctx);
+			if (route === "tool") {
+				const run = h.tools[0].execute("resume", { prompt: "Continue", resume: true }, undefined, undefined, h.ctx);
+				if (attempt < 2) await assert.rejects(run, (error) => {
+					assert.match(error.message, /subscription authentication failed/);
+					assert.equal(error.outcome.priorHandoffs[0].report.question, "Which target?");
+					return true;
+				});
+				else await run;
+			} else {
+				await h.commands.get("cc-followup").handler("Continue", h.ctx);
+				await new Promise(setImmediate);
+			}
+			const state = h.entries.filter((entry) => entry.customType === "cc-worker-run").at(-1).data;
+			assert.equal(state.disposition, attempt < 2 ? "unfinished" : "finished", route);
+			assert.deepEqual(state.priorHandoffs.map((handoff) => handoff.logPath), logPaths);
+			assert.equal(state.requiredOutcomes[0].requirementId, "saved-raw-requirement-identity");
+			assert.equal(state.priorHandoffs[0].requiredOutcomes[0].requirementId, "saved-raw-requirement-identity");
+			assert.equal(state.priorHandoffs[0].report.outcomes[0].evidence[1], "API_KEY=[redacted]");
+			const retained = JSON.stringify(state);
+			for (const evidence of ["Finish review", "Integration coverage", "Which target?", "replacement started", "deployment not attempted", "/tmp/review.txt", "/tmp/repair.txt"]) assert.ok(retained.includes(evidence), evidence);
+			assert.ok(!retained.includes("evidence-secret"));
+			assert.ok(!retained.includes("obsolete error"));
+			if (attempt === 2) {
+				assert.equal(state.error, undefined);
+				assert.equal(state.errors, undefined);
+				assert.equal(state.report.outcomes[0].evidence[0], "current integration tests: passed");
+			}
+			await h.commands.get("cc-status").handler("", h.ctx);
+			const text = h.notifications.at(-1)[0];
+			assert.match(text, /Prior handoff \(not current completion evidence\)/);
+			for (const evidence of ["Finish review", "Integration coverage", "Which target?", "unit tests: passed", ...logPaths]) assert.ok(text.includes(evidence), evidence);
+			await h.commands.get("cc-log").handler("", h.ctx);
+			assert.match(h.messages.at(-1).message.details.expandedText, /Finish review/);
+			logPaths.push(state.logPath);
+			entries = h.entries;
+			if (attempt === 2) {
+				if (route === "tool") await assert.rejects(h.tools[0].execute("fresh", { prompt: "New task" }, undefined, undefined, h.ctx), /fresh authentication failed/);
+				else {
+					await h.commands.get("cc").handler("New task", h.ctx);
+					await new Promise(setImmediate);
+				}
+				const fresh = h.entries.filter((entry) => entry.customType === "cc-worker-run").at(-1).data;
+				assert.equal(fresh.priorHandoffs, undefined);
+				assert.equal(fresh.taskId, undefined);
+				assert.equal(fresh.report, undefined);
+				assert.deepEqual(fresh.taskOutcomes, []);
+				assert.ok(!h.messages.at(-1).message.content.includes("Finish review"));
+			}
+		}
 	}
 });
 

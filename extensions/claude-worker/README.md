@@ -140,7 +140,11 @@ Tree navigation stops the worker and retains its interrupted handoff on the
 launching branch before moving the leaf. A post-navigation cleanup fallback
 retains diagnostics only in the private log, never on the newly selected branch.
 If no session ID was assigned, inspect the log and partial work before starting
-a new `/cc` task. No automatic retry follows a terminal failure.
+a new `/cc` task. No automatic retry follows a terminal failure. Same-task resumes
+retain sanitized prior handoffs and prior log references separately from the current
+report, including when authentication fails before any new report. Prior evidence
+remains labelled historical, never current completion certification; a fresh `/cc`
+task does not inherit these handoffs.
 
 ## Activity inspection
 
