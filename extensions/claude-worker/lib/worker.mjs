@@ -132,6 +132,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 			signal?.removeEventListener("abort", abort);
 			const outcome = {
 				sessionId: result?.session_id || currentSessionId, text: result?.result || "",
+				disposition: "unfinished", reason: "No explicit evidence-backed completion report was received.",
 				exitCode: code, exitSignal, resultSubtype: result?.subtype, stopReason: result?.stop_reason,
 				terminalReason: result?.terminal_reason, numTurns: result?.num_turns, errors: result?.errors || [],
 				permissionDenials: result?.permission_denials || [], stderr,

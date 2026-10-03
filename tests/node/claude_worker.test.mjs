@@ -75,6 +75,14 @@ test("delegation runs the real CLI interface with subscription auth and no inher
 	assert.ok(progress.length > 0);
 });
 
+test("a successful turn without an explicit completion report stays unfinished", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t);
+	const result = await runClaude({ ...fake, prompt: "Inspect", maxContinuations: 0 });
+	assert.equal(result.disposition, "unfinished");
+	assert.match(result.reason, /completion report/i);
+	assert.equal((await fake.frames()).filter((frame) => frame.type === "user").length, 1);
+});
+
 test("API, logged-out, unknown-plan and mixed credentials fail before any model request", { timeout: 15_000 }, async (t) => {
 	for (const auth of [
 		{ loggedIn: true, authMethod: "api_key", apiKeySource: "apiKeyHelper" },
