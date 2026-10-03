@@ -50,6 +50,18 @@ export function createActivityLog({ cwd, prompt, sessionId, resumeState, maxByte
 	const pendingTools = new Map();
 	const tasks = new Map();
 	const taskOutcomes = new Map((resumeState?.taskOutcomes || []).map((task) => [task.taskId, scrub(task)]));
+	// Standalone log consumers use the same lifecycle interpreter, never a second set of rules.
+	// The worker's checkpoints replace this fallback as soon as its authoritative ledger arrives.
+	let fallbackSupervision = createTaskSupervision(resumeState?.taskId, resumeState);
+	const projectTasks = (outcomes) => {
+		taskOutcomes.clear();
+		tasks.clear();
+		for (const raw of outcomes) {
+			const task = scrub(raw);
+			taskOutcomes.set(task.taskId, task);
+			if (task.status === "running" && task.isBackgrounded !== false) tasks.set(task.taskId, { id: task.taskId, type: task.taskType, description: task.description });
+		}
+	};
 	if (resumeState) {
 		state.taskId = resumeState.taskId || resumeState.report?.task_id;
 		state.notificationDeliveries = scrub(resumeState.notificationDeliveries || []);
@@ -81,12 +93,19 @@ export function createActivityLog({ cwd, prompt, sessionId, resumeState, maxByte
 		setStatus(status) { state.status = status; },
 		observe(taskState) {
 			if (state.endedAt) return;
-			for (const task of taskState.taskOutcomes || []) taskOutcomes.set(task.taskId, scrub(task));
+			if (taskState.taskOutcomes) {
+				fallbackSupervision = undefined;
+				projectTasks(taskState.taskOutcomes);
+			}
 			const fields = Object.fromEntries(Object.entries(taskState).filter(([, value]) => value !== undefined));
 			state = { ...state, ...scrub(fields) };
 		},
 		record(event) {
 			if (state.endedAt) return;
+			if (fallbackSupervision) {
+				fallbackSupervision.record(event);
+				projectTasks(fallbackSupervision.snapshot().taskOutcomes);
+			}
 			if (event.type === "system" && event.subtype === "init") {
 				state.sessionId = event.session_id;
 				append("initialized", "Claude Code initialized", { sessionId: event.session_id });
@@ -112,17 +131,10 @@ export function createActivityLog({ cwd, prompt, sessionId, resumeState, maxByte
 				append("tool_progress", state.lastActivity, { id: event.tool_use_id, name: event.tool_name, elapsedSeconds: event.elapsed_time_seconds });
 			}
 			if (event.type === "system" && event.subtype?.startsWith("task_") && !event.ambient) {
-				if (event.subtype === "task_started") tasks.set(event.task_id, { id: event.task_id, type: event.task_type, description: scrub(event.description) });
-				if (event.subtype === "task_notification") {
-					taskOutcomes.set(event.task_id, scrub({ taskId: event.task_id, taskType: event.task_type || tasks.get(event.task_id)?.type, description: event.description || tasks.get(event.task_id)?.description, status: event.status || "unknown", summary: event.summary, outputFile: event.output_file }));
-					tasks.delete(event.task_id);
-				}
 				activity(event.summary || event.description || `${event.task_id}: ${event.status || event.subtype}`);
 				append(event.subtype, state.lastActivity, { taskId: event.task_id, taskType: event.task_type, status: event.status, summary: event.summary, description: event.description, outputFile: event.output_file, patch: event.patch });
 			}
 			if (event.type === "system" && event.subtype === "background_tasks_changed") {
-				tasks.clear();
-				for (const task of event.tasks || []) if (!task.ambient) tasks.set(task.task_id, { id: task.task_id, type: task.task_type, description: scrub(task.description) });
 				append("background_tasks", `${tasks.size} reported active task(s)`, [...tasks.values()]);
 			}
 			if (event.type === "system" && ["hook_started", "hook_progress", "hook_response", "permission_denied"].includes(event.subtype)) {
@@ -158,7 +170,7 @@ export function createActivityLog({ cwd, prompt, sessionId, resumeState, maxByte
 		},
 		finish(outcome) {
 			const fields = Object.fromEntries(Object.entries(outcome).filter(([, value]) => value !== undefined));
-			for (const task of outcome.taskOutcomes || []) taskOutcomes.set(task.taskId || task.task_id || task.id, scrub(task));
+			if (outcome.taskOutcomes) projectTasks(outcome.taskOutcomes);
 			state = { ...state, ...scrub(fields), endedAt: Date.now(), backgroundTasks: [...tasks.values()], pendingTools: [...pendingTools.values()] };
 			state.taskOutcomes = [...taskOutcomes.values()];
 			append("finished", state.status, state);

@@ -85,7 +85,7 @@ export function createTaskSupervision(taskId, resumeState) {
 	// Native result_index restarts with each CLI process, so it identifies deliveries only within this run.
 	const resultIndexes = new Set();
 	let terminalSequence = Math.max(0, ...[...tasks.values()].map((task) => task.terminalSequence || 0));
-	const markRunning = (id, description, explicitResume = false, isBackgrounded) => {
+	const markRunning = (id, description, explicitResume = false, isBackgrounded, taskType) => {
 		const task = tasks.get(id);
 		// Live evidence in this invocation, even when not accepted below, makes a later stop current.
 		carriedOver.delete(id);
@@ -94,14 +94,14 @@ export function createTaskSupervision(taskId, resumeState) {
 		// Live evidence can resolve snapshot uncertainty; failures/unknowns need a resume.
 		if (["failed", "unknown"].includes(task?.terminalStatus) && !explicitResume) return;
 		tasks.set(id, { taskId: id, status: "running", isBackgrounded: isBackgrounded ?? task?.isBackgrounded,
-			description: description || task?.description, history: task?.history || [] });
+			taskType: taskType || task?.taskType, description: description || task?.description, history: task?.history || [] });
 	};
-	const recordTerminal = (id, identity, description, outcome) => {
+	const recordTerminal = (id, identity, description, outcome, taskType) => {
 		// Fixed-size fingerprints survive sanitized/capped persistence without retaining raw secrets.
 		const delivery = createHash("sha256").update(identity).digest("hex");
 		if (seenNotifications.has(delivery)) return;
 		seenNotifications.add(delivery);
-		const task = tasks.get(id) || { taskId: id, description };
+		const task = tasks.get(id) || { taskId: id, description, taskType };
 		// Without live evidence in this follow-up, a repeated outcome or a stop of interrupted work
 		// can only re-deliver earlier evidence: retain it without making it current.
 		if (carriedOver.has(id) && (outcome.status === task.status || (interruptedBefore(task) && outcome.status === "stopped"))) {
@@ -132,7 +132,7 @@ export function createTaskSupervision(taskId, resumeState) {
 			// a failed check instead keeps its attributed fresh-ID replacement route.
 			if (event.subtype === "task_started" && event.task_id) {
 				const restart = carriedOver.has(event.task_id) && tasks.get(event.task_id).terminalStatus === "unknown";
-				markRunning(event.task_id, event.description, restart, event.is_backgrounded);
+				markRunning(event.task_id, event.description, restart, event.is_backgrounded, event.task_type);
 			}
 			// A terminal patch may also change background membership; it is never a running transition.
 			// Route it only through terminal deduplication, before any lifecycle mutation.
@@ -150,13 +150,13 @@ export function createTaskSupervision(taskId, resumeState) {
 			if (event.subtype === "task_notification" && event.task_id) {
 				// Without a delivery ID, identical content cannot prove a new completion.
 				const identity = event.uuid ? `uuid:${event.uuid}` : JSON.stringify([event.task_id, event.status, event.summary, event.output_file, event.description]);
-				recordTerminal(event.task_id, identity, event.description, { status: event.status || "unknown", summary: event.summary, outputFile: event.output_file });
+				recordTerminal(event.task_id, identity, event.description, { status: event.status || "unknown", summary: event.summary, outputFile: event.output_file }, event.task_type);
 			}
 			if (event.subtype === "background_tasks_changed") {
 				const active = new Set();
 				for (const task of event.tasks || []) if (!task.ambient && task.task_id) {
 					active.add(task.task_id);
-					markRunning(task.task_id, task.description, false, true);
+					markRunning(task.task_id, task.description, false, true, task.task_type);
 				}
 				// This snapshot contains only background work; foreground omission says nothing.
 				for (const task of tasks.values()) if (task.status === "running" && task.isBackgrounded !== false && !active.has(task.taskId)) task.status = "unknown";
