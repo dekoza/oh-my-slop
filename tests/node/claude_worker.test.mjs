@@ -187,6 +187,71 @@ input.on("line", (line) => {
 	assert.match(handoff, /Fixed assertion; fresh rerun passed: green-check.txt/);
 });
 
+test("failed verification with no other active task continues through a fresh-ID repair", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+let turns = 0;
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ if (++turns === 1) {
+  send({ type: "system", subtype: "task_notification", task_id: "red", status: "failed" });
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("waiting", { outstanding: ["Repair and rerun"] }) });
+ } else {
+  send({ type: "system", subtype: "task_notification", task_id: "green", status: "completed" });
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("finished", {
+   resolved_failures: [{ task_id: "red", replacement_task_id: "green", evidence: ["Repair applied; green rerun passed"] }]
+  }) });
+ }
+});
+` });
+	const result = await runClaude({ ...fake, prompt: "Repair and verify", maxContinuations: 1 });
+	assert.equal(result.disposition, "finished");
+	assert.equal(result.continuations, 1);
+	assert.equal(result.taskOutcomes.find((task) => task.taskId === "red").status, "failed");
+});
+
+test("failure replacement cannot bypass missing attribution, stale evidence or unresolved tasks", { timeout: 15_000 }, async (t) => {
+	const failure = { type: "system", subtype: "task_notification", task_id: "red", status: "failed", uuid: "red-1" };
+	const green = { type: "system", subtype: "task_notification", task_id: "green", status: "completed", uuid: "green-1" };
+	const resolution = { task_id: "red", replacement_task_id: "green", evidence: ["Repair applied; green rerun passed"] };
+	const cases = [
+		{ name: "no explicit attribution", events: [failure, green], extra: {} },
+		{ name: "empty evidence", events: [failure, green], resolution: { ...resolution, evidence: [] } },
+		{ name: "blank evidence", events: [failure, green], resolution: { ...resolution, evidence: [" "] } },
+		{ name: "malformed entry", events: [failure, green], resolution: ["red", "green"] },
+		{ name: "unsupported field", events: [failure, green], resolution: { ...resolution, approved: true } },
+		{ name: "missing replacement", events: [failure] },
+		{ name: "older passing check", events: [green, failure] },
+		{ name: "replacement running again", events: [failure, green, { type: "system", subtype: "task_updated", task_id: "green", patch: { status: "running" } }] },
+		{ name: "replacement failed", events: [failure, { ...green, status: "failed" }] },
+		{ name: "stopped work", events: [{ ...failure, status: "stopped" }, green] },
+		{ name: "unknown work", events: [{ ...failure, status: "unknown" }, green] },
+		{ name: "another failure remains", events: [failure, { ...failure, task_id: "other-red", uuid: "red-2" }, green] },
+		{ name: "ambient replacement", events: [failure, { ...green, ambient: true }] },
+		{ name: "cross-session replacement", events: [failure, { ...green, session_id: "another-session" }] },
+		{ name: "new failure after rerun", events: [failure, green, { ...failure, uuid: "red-2" }, green] },
+	];
+	for (const scenario of cases) {
+		const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+ for (const event of ${JSON.stringify(scenario.events)}) send(event);
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("finished", ${JSON.stringify(scenario.extra || { resolved_failures: [scenario.resolution || resolution] })}) });
+});
+` });
+		let result;
+		if (scenario.name === "replacement running again") {
+			await assert.rejects(runClaude({ ...fake, prompt: "Repair and verify", maxTaskMs: 500 }), (error) => {
+				assert.match(error.message, /time safety limit/);
+				result = error.outcome;
+				return true;
+			});
+		} else result = await runClaude({ ...fake, prompt: "Repair and verify" });
+		assert.equal(result.disposition, "unfinished", scenario.name);
+		assert.equal(result.taskOutcomes.find((task) => task.taskId === "red").status, scenario.events.find((event) => event.task_id === "red").status, scenario.name);
+	}
+});
+
 test("foreground verification survives background-only snapshots and waits after backgrounding", { timeout: 15_000 }, async (t) => {
 	for (const transition of ["snapshot", "update", "both"]) {
 		const fake = await fixture(t, { body: `
