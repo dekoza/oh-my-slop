@@ -930,7 +930,8 @@ test("continuation and elapsed-time limits end unfinished with retained context"
  send({ type: "system", subtype: "task_started", task_id: "never-finishes" });
  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("waiting", { background_task_ids: ["never-finishes"] }) });
 } });` });
-	await assert.rejects(runClaude({ ...waiting, prompt: "Wait", maxTaskMs: 100 }), (error) => {
+	// The budget must outlast fixture process startup so the init frame can arrive first.
+	await assert.rejects(runClaude({ ...waiting, prompt: "Wait", maxTaskMs: 1_000 }), (error) => {
 		assert.equal(error.outcome.disposition, "unfinished");
 		assert.equal(error.outcome.sessionId, SESSION_ID);
 		assert.equal(error.outcome.taskOutcomes[0].taskId, "never-finishes");
