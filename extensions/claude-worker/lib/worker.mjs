@@ -257,7 +257,7 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 			let error = failure;
 			if (!error && signal?.aborted) error = new Error("Claude Code worker stopped.");
 			if (!error && cleanupErrors.length) error = new Error([reason, ...cleanupErrors].filter(Boolean).join("\n"));
-			if (!error && (code !== 0 || !result || result.is_error || result.subtype !== "success")) {
+			if (!error && (code !== 0 || !result || failedTurn(result))) {
 				error = new Error([result?.result, ...outcome.errors, stderr].filter(Boolean).join("\n") || "Claude Code exited without a successful result.");
 			}
 			if (!error && !result?.session_id) error = new Error("Claude Code returned no resumable session ID.");
