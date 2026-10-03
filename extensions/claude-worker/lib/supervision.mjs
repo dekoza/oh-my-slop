@@ -90,6 +90,14 @@ export function createTaskSupervision(taskId, resumeState) {
 		if (seenNotifications.has(delivery)) return;
 		seenNotifications.add(delivery);
 		const task = tasks.get(id) || { taskId: id, description };
+		// Native CLI emits a terminal update before that transition's notification: merge, don't repeat.
+		const previous = task.history?.at(-1);
+		if (!outcome.fromUpdate && previous?.fromUpdate && previous.status === outcome.status && task.terminalStatus === outcome.status) {
+			const merged = { status: outcome.status, summary: outcome.summary ?? previous.summary, outputFile: outcome.outputFile, error: previous.error };
+			const { fromUpdate, ...current } = task;
+			tasks.set(id, { ...current, ...merged, history: [...task.history.slice(0, -1), merged] });
+			return;
+		}
 		// Later terminal evidence is retained but cannot replace this invocation's stop barrier.
 		// Other explicit terminal uncertainty needs a resume; snapshot uncertainty can resolve late.
 		const conflicting = task.terminalStatus === "stopped" ||
@@ -110,7 +118,7 @@ export function createTaskSupervision(taskId, resumeState) {
 			if (event.subtype === "task_updated" && event.task_id && Object.hasOwn(NATIVE_TERMINAL_STATUS, event.patch?.status)) {
 				const status = NATIVE_TERMINAL_STATUS[event.patch.status];
 				const identity = event.uuid ? `uuid:${event.uuid}` : JSON.stringify(["task_updated", event.task_id, event.patch.status, event.patch.error, event.patch.end_time]);
-				recordTerminal(event.task_id, identity, event.patch.description, { status, summary: event.patch.error });
+				recordTerminal(event.task_id, identity, event.patch.description, { status, summary: event.patch.error, error: event.patch.error, fromUpdate: true });
 			}
 			if (event.subtype === "task_notification" && event.task_id) {
 				// Without a delivery ID, identical content cannot prove a new completion.

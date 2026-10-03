@@ -902,6 +902,22 @@ input.on("line", (line) => {
 	assert.equal(supervision.waiting, false);
 });
 
+test("a native terminal update followed by its notification is one transition with the notification details", () => {
+	for (const [nativeStatus, status] of [["killed", "stopped"], ["completed", "completed"], ["failed", "failed"]]) {
+		const supervision = createTaskSupervision("approved");
+		supervision.record({ type: "system", subtype: "task_started", task_id: "verify", description: "Integration run" });
+		supervision.record({ type: "system", subtype: "task_updated", task_id: "verify", patch: { status: nativeStatus, error: "Native patch reason" } });
+		supervision.record({ type: "system", subtype: "task_notification", task_id: "verify", status, summary: "Integration ended at 75%", output_file: "/tmp/int.out" });
+		const [task] = supervision.snapshot().taskOutcomes;
+		assert.equal(task.status, status, nativeStatus);
+		assert.equal(task.summary, "Integration ended at 75%");
+		assert.equal(task.outputFile, "/tmp/int.out");
+		assert.equal(task.history.length, 1, `${nativeStatus} is one terminal transition`);
+		assert.equal(task.history[0].error, "Native patch reason");
+		assert.match(formatRunReport({ startedAt: 0, stats: { toolCalls: 0, toolResults: 0, toolErrors: 0 }, taskOutcomes: [task] }), new RegExp(`Task verify: ${status} · Integration ended at 75% · /tmp/int.out`));
+	}
+});
+
 test("continuation and elapsed-time limits end unfinished with retained context", { timeout: 15_000 }, async (t) => {
 	const looping = await fixture(t);
 	const result = await runClaude({ ...looping, prompt: "Inspect", maxContinuations: 2 });
