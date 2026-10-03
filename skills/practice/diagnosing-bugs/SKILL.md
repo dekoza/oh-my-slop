@@ -5,6 +5,8 @@ description: >
   failures at once. Triggers on: "diagnose", "debug this", "something broken",
   "no idea why", "flaky", "slow since", "fix multiple failing tests".
 license: MIT (adapted from mattpocock/skills)
+requires:
+  - testing-workflow
 ---
 
 # Diagnosing Bugs
