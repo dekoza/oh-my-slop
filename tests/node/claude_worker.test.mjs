@@ -637,6 +637,33 @@ input.on("line", (line) => {
 	assert.notEqual(fresh.report.task_id, paused.report.task_id);
 });
 
+test("supervision checkpoints authoritative requirements while waiting before terminal settlement", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+ send({ type: "system", subtype: "task_started", task_id: "verify", is_backgrounded: true });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("waiting", {
+  outcomes: [{ requirement: "Required integration verification", status: "unverified", evidence: [] }], background_task_ids: ["verify"]
+ }) });
+});
+` });
+	const controller = new AbortController();
+	const checkpoints = [];
+	await assert.rejects(runClaude({ ...fake, signal: controller.signal, prompt: "Verify", onState: (state) => checkpoints.push(structuredClone(state)),
+		onProgress: (event) => {
+			if (event.type !== "worker_supervision" || !event.status.startsWith("Waiting")) return;
+			controller.abort();
+		},
+	}));
+	assert.ok(checkpoints[0].taskId, "task identity is checkpointed before the first model frame");
+	const learned = checkpoints.find((state) => state.requiredOutcomes.some((outcome) => outcome.requirement === "Required integration verification"));
+	assert.ok(learned, "raw reports must be assessed before checkpointing the cumulative ledger");
+	assert.equal(learned.sessionId, SESSION_ID);
+	assert.equal(learned.report.task_id, learned.taskId);
+	assert.equal(learned.taskOutcomes[0].status, "running");
+});
+
 test("saved-session replay cannot turn restored unfinished verification into fresh completion", { timeout: 15_000 }, async (t) => {
 	for (const tagged of [true, false]) {
 		const fake = await fixture(t, { body: `

@@ -129,6 +129,39 @@ test("both follow-up routes restore the cumulative task ledger and checkpoint it
 	}
 });
 
+test("interrupted restoration retains newly assessed requirements before terminal settlement", async () => {
+	let options;
+	let settle;
+	const h = harness((request) => {
+		options = request;
+		request.onProgress({ type: "system", subtype: "init", session_id: SESSION_ID });
+		return new Promise((resolve) => { settle = resolve; });
+	});
+	await h.commands.get("cc").handler("Verify integration", h.ctx);
+	await new Promise(setImmediate);
+	const required = { requirement: "Required integration verification", status: "unverified", evidence: [] };
+	try {
+		options.onState?.({ sessionId: SESSION_ID, taskId: "approved-task", requiredOutcomes: [required], notificationDeliveries: ["uuid:prior-check"], taskOutcomes: [{ taskId: "verify", status: "running", history: [] }],
+			report: { task_id: "approved-task", disposition: "waiting", outcomes: [required], outstanding: [required.requirement], unverified: [required.requirement], question: "", background_task_ids: ["verify"] } });
+		const checkpoint = h.entries.filter((entry) => entry.customType === "cc-worker-run").at(-1).data;
+		assert.equal(checkpoint.taskId, "approved-task");
+		assert.deepEqual(checkpoint.requiredOutcomes, [required]);
+		assert.deepEqual(checkpoint.notificationDeliveries, ["uuid:prior-check"]);
+		assert.equal(checkpoint.endedAt, undefined, "this is an observation checkpoint, not completion");
+		const restored = harness(async (request) => {
+			assert.equal(request.resumeState.taskId, "approved-task");
+			assert.deepEqual(request.resumeState.requiredOutcomes, [required]);
+			return { sessionId: SESSION_ID, disposition: "unfinished" };
+		});
+		restored.entries.push(...structuredClone(h.entries));
+		await restored.events.get("session_start")({}, restored.ctx);
+		await restored.tools[0].execute("recovery", { prompt: "Continue", resume: true }, undefined, undefined, restored.ctx);
+	} finally {
+		settle({ sessionId: SESSION_ID, disposition: "unfinished" });
+		await new Promise(setImmediate);
+	}
+});
+
 test("model delegation requires consent and headless or untrusted sessions never launch", async () => {
 	let calls = 0;
 	const h = harness(async () => { calls++; });

@@ -72,6 +72,12 @@ export function createActivityLog({ cwd, prompt, sessionId, resumeState, maxByte
 	return {
 		append,
 		setStatus(status) { state.status = status; },
+		observe(taskState) {
+			if (state.endedAt) return;
+			for (const task of taskState.taskOutcomes || []) taskOutcomes.set(task.taskId, scrub(task));
+			const fields = Object.fromEntries(Object.entries(taskState).filter(([, value]) => value !== undefined));
+			state = { ...state, ...scrub(fields) };
+		},
 		record(event) {
 			if (state.endedAt) return;
 			if (event.type === "system" && event.subtype === "init") {

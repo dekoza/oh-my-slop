@@ -91,6 +91,10 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 				refreshTimer.unref();
 				result = await run({
 					cwd: ctx.cwd, prompt, sessionId, resumeState, signal: controller.signal,
+					onState: (state) => {
+						job.log.observe(state);
+						if (!job.detached) persistRun(job.log.snapshot());
+					},
 					onPermission: async (request, permissionSignal) => {
 						if (job.detached || controller.signal.aborted || permissionSignal.aborted) return false;
 						job.log.record({ type: "worker_permission", status: "waiting", toolName: request.tool_name, input: request.input, reason: request.decision_reason });

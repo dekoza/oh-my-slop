@@ -100,7 +100,10 @@ The cumulative requirement ledger survives intentional pauses, recovery follow-u
 and Pi session restoration in the same branch/directory. A supplied answer does
 not waive known verification: each requirement still needs explicit current evidence.
 Older saved runs recover available requirements from their report and omitted-outcome
-metadata. A new `/cc` task starts a separate identity and ledger.
+metadata. Authoritative task identity, cumulative outcomes and notification-delivery
+state are checkpointed during supervision, not only at terminal settlement; an
+interrupted observation can therefore retain requirements learned while waiting.
+A new `/cc` task starts a separate identity and ledger.
 Stopped required tasks prevent finished in that invocation. A failed intermediate
 check does not end supervision while approved repair or other required work remains.
 Its identity and failed history stay in the handoff. A passing check under a new ID
@@ -166,7 +169,11 @@ The transport sends a UUID with each submitted user turn and correlates results
 within the saved session. A required native task completion drives continuation
 only after the native turn result; waiting turns do not close input. An identical
 native result without a delivery ID cannot prove that a later queue has drained;
-ambiguous redelivery remains unresolved within the safety limits. This guards
+ambiguous redelivery remains unresolved within the safety limits. Native task-notification
+deduplication also survives same-task follow-up and restoration: an old completion
+delivery is not fresh evidence for previously restarted work. Completion is checked
+again after EOF cleanup; contradictory stopped/pending work downgrades the handoff
+to unfinished without starting another turn. This guards
 against premature ending but does not identify who cancelled historical work.
 
 The `claude_worker` tool lets Pi delegate too. It takes a `prompt` and optional

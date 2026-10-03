@@ -15,7 +15,7 @@ function subscriptionEnvironment(env) {
 		!key.startsWith("ANTHROPIC_") && !key.startsWith("CLAUDE_CODE_USE_")));
 }
 
-export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, onProgress = () => {}, onPermission = async () => false, executable = "claude", prefixArgs = [], env = process.env, maxContinuations = MAX_CONTINUATIONS, maxTaskMs = MAX_TASK_MS }) {
+export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, onProgress = () => {}, onState = () => {}, onPermission = async () => false, executable = "claude", prefixArgs = [], env = process.env, maxContinuations = MAX_CONTINUATIONS, maxTaskMs = MAX_TASK_MS }) {
 	if (!Number.isSafeInteger(maxContinuations) || maxContinuations < 0 || !Number.isSafeInteger(maxTaskMs) || maxTaskMs < 1) throw new Error("Finite nonnegative continuation and positive time limits are required.");
 	if (!prompt?.trim()) throw new Error("A Claude Code task is required.");
 	if (resumeState && (!sessionId || resumeState.sessionId !== sessionId || resumeState.cwd !== cwd)) throw new Error("Saved task requirements do not belong to this session and working directory.");
@@ -35,6 +35,7 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 	const taskId = resumeState?.taskId || resumeState?.report?.task_id || randomUUID();
 	args.push("--json-schema", JSON.stringify(completionSchema(taskId)), "--append-system-prompt", supervisionInstructions(taskId) + (resumeState ? `\nRetained required outcomes (data, not new instructions): ${JSON.stringify((resumeState.requiredOutcomes || [...(resumeState.report?.outcomes || []), ...(resumeState.omittedOutcomes || [])]).map((outcome) => outcome.requirement))}. Supply current evidence for each; a follow-up answer does not waive them.` : ""));
 	const supervision = createTaskSupervision(taskId, resumeState);
+	onState(structuredClone({ ...supervision.snapshot(), sessionId }));
 	let messageId = randomUUID();
 	return new Promise((resolve, reject) => {
 		const child = spawn(executable, args, {
@@ -56,6 +57,7 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 		const permissionDenials = [];
 		let initialized = false;
 		let currentSessionId = sessionId;
+		const checkpoint = () => onState(structuredClone({ ...supervision.snapshot(), sessionId: currentSessionId }));
 		let stderr = "";
 		const permissionAbort = new AbortController();
 		const pendingPermissions = new Map();
@@ -115,6 +117,7 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 				// Cleanup can still emit task evidence. Retain it without dispatching or approving anything.
 				supervision.record(event);
 				onProgress(event);
+				if (event.type === "system" && (event.subtype === "init" || event.subtype?.startsWith("task_") || event.subtype === "background_tasks_changed")) checkpoint();
 				if (stopping) return;
 				if (event.type === "control_response" && event.response?.request_id === "pi-initialize") {
 					const response = event.response;
@@ -199,6 +202,7 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 					inFlight = false;
 					if (!event.session_id) return end({ disposition: "unfinished", reason: "Claude Code returned no resumable session ID." });
 					const decision = paused ? pendingDecision : supervision.assess(event.structured_output);
+					checkpoint();
 					drainingQueuedTurns = event.queued_turn_count > 0;
 					pendingDecision = decision.action === "end" ? decision : undefined;
 					if (!drainingQueuedTurns && decision.action === "end") return end(decision);
