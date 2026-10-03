@@ -55,9 +55,10 @@ export function createTaskSupervision(taskId) {
 				markRunning(event.task_id, event.patch.description, true);
 			}
 			if (event.subtype === "task_notification" && event.task_id) {
-				// Deduplicate deliveries, not identities: a resumed task can notify again.
-				if (event.uuid && seenNotifications.has(event.uuid)) return;
-				if (event.uuid) seenNotifications.add(event.uuid);
+				// Without a delivery ID, identical content cannot prove a new completion.
+				const delivery = event.uuid ? `uuid:${event.uuid}` : JSON.stringify([event.task_id, event.status, event.summary, event.output_file, event.description]);
+				if (seenNotifications.has(delivery)) return;
+				seenNotifications.add(delivery);
 				const task = tasks.get(event.task_id) || { taskId: event.task_id, description: event.description };
 				const outcome = { status: event.status || "unknown", summary: event.summary, outputFile: event.output_file };
 				// A contradictory success is not evidence of recovery without a running transition.

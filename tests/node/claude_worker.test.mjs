@@ -152,9 +152,9 @@ test("resumed task lifecycles invalidate earlier completion and retain terminal 
 		{ subtype: "task_started", task_id: "verify" },
 		{ subtype: "task_updated", task_id: "verify", patch: { status: "running" } },
 		{ subtype: "background_tasks_changed", tasks: [{ task_id: "verify" }] },
-	]) {
+	]) for (const withUuid of [true, false]) {
 		const supervisor = createTaskSupervision("approved");
-		const completed = { type: "system", subtype: "task_notification", task_id: "verify", status: "completed", uuid: "completion-1", summary: "First verification passed" };
+		const completed = { type: "system", subtype: "task_notification", task_id: "verify", status: "completed", ...(withUuid ? { uuid: "completion-1" } : {}), summary: "First verification passed" };
 		supervisor.record(completed);
 		assert.equal(supervisor.assess(report).disposition, "finished");
 		supervisor.record({ type: "system", ...resume });
