@@ -55,6 +55,7 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 		const seenResults = new Set();
 		const untaggedNativeResults = [];
 		const permissionDenials = [];
+		const cleanupFailures = [];
 		let initialized = false;
 		let currentSessionId = sessionId;
 		const checkpoint = () => onState(structuredClone({ ...supervision.snapshot(), sessionId: currentSessionId }));
@@ -118,7 +119,20 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 				supervision.record(event);
 				onProgress(event);
 				if (event.type === "system" && (event.subtype === "init" || event.subtype?.startsWith("task_") || event.subtype === "background_tasks_changed")) checkpoint();
-				if (stopping) return;
+				if (stopping) {
+					// Cleanup execution failures invalidate completion but may never restart dispatch.
+					if (event.type === "result" && (event.is_error || event.subtype !== "success")) {
+						const ids = event.user_message_uuids || (event.user_message_uuid ? [event.user_message_uuid] : []);
+						const native = !ids.length && event.origin?.kind === "task-notification" && event.session_id && event.session_id === currentSessionId;
+						const key = event.uuid || (event.result_index !== undefined ? `index:${event.result_index}` : undefined);
+						if ((ids.includes(messageId) || native) && !(key && seenResults.has(key))) {
+							if (key) seenResults.add(key);
+							cleanupFailures.push(event);
+							permissionDenials.push(...(event.permission_denials || []));
+						}
+					}
+					return;
+				}
 				if (event.type === "control_response" && event.response?.request_id === "pi-initialize") {
 					const response = event.response;
 					const account = response.response?.account;
@@ -229,15 +243,21 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 				const final = supervision.assess(supervision.snapshot().report);
 				if (final.disposition !== "finished") { disposition = "unfinished"; reason = final.reason; }
 			}
+			if (cleanupFailures.length && disposition === "finished") {
+				disposition = "unfinished";
+				reason = "Claude Code execution failed during cleanup after its completion report; completion is not established.";
+			}
+			const cleanupErrors = cleanupFailures.flatMap((event) => event.errors?.length ? event.errors : [event.result || `Claude Code cleanup result: ${event.subtype}`]);
 			const outcome = {
 				sessionId: result?.session_id || currentSessionId, text: result?.result || "",
 				...supervision.snapshot(), disposition, reason: reason || failure?.message || (signal?.aborted ? "Worker explicitly stopped; partial work may remain." : "Process exited before an explicit completion report; outcome unresolved."), continuations,
 				exitCode: code, exitSignal, resultSubtype: result?.subtype, stopReason: result?.stop_reason,
-				terminalReason: result?.terminal_reason, numTurns: result?.num_turns, errors: result?.errors || [],
+				terminalReason: result?.terminal_reason, numTurns: result?.num_turns, errors: [...(result?.errors || []), ...cleanupErrors],
 				permissionDenials, stderr,
 			};
 			let error = failure;
 			if (!error && signal?.aborted) error = new Error("Claude Code worker stopped.");
+			if (!error && cleanupErrors.length) error = new Error([reason, ...cleanupErrors].filter(Boolean).join("\n"));
 			if (!error && (code !== 0 || !result || result.is_error || result.subtype !== "success")) {
 				error = new Error([result?.result, ...outcome.errors, stderr].filter(Boolean).join("\n") || "Claude Code exited without a successful result.");
 			}

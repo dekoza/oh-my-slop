@@ -1016,6 +1016,33 @@ input.on("close", () => {
 	assert.equal((await fake.frames()).filter((frame) => frame.type === "user").length, 1);
 });
 
+test("a same-session execution failure during EOF cleanup invalidates finished without restarting dispatch", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+ send({ type: "result", uuid: "first", subtype: "success", session_id: "${SESSION_ID}", result: "Initial completion", structured_output: completion() });
+});
+input.on("close", () => {
+ send({ type: "result", uuid: "late-error", subtype: "error_during_execution", is_error: true, origin: { kind: "task-notification" }, session_id: "${SESSION_ID}", errors: ["EOF cleanup execution failed"], permission_denials: [{ tool_name: "Bash" }], stop_reason: "error" });
+ setTimeout(() => process.exit(0), 25);
+});
+` });
+	const events = [];
+	await assert.rejects(runClaude({ ...fake, prompt: "Inspect", maxContinuations: 2, onProgress: (event) => events.push(event) }), (error) => {
+		assert.equal(error.outcome.disposition, "unfinished");
+		assert.match(error.outcome.reason, /cleanup/i);
+		assert.deepEqual(error.outcome.errors, ["EOF cleanup execution failed"]);
+		assert.deepEqual(error.outcome.permissionDenials, [{ tool_name: "Bash" }]);
+		assert.equal(error.outcome.text, "Initial completion");
+		assert.equal(error.outcome.continuations, 0);
+		return true;
+	});
+	assert.equal(events.at(-1).type, "worker_exit");
+	assert.equal(events.at(-1).disposition, "unfinished");
+	assert.equal((await fake.frames()).filter((frame) => frame.type === "user").length, 1);
+});
+
 test("normal terminal completion exits without waiting for cancellation escalation", { timeout: 15_000 }, async (t) => {
 	const fake = await fixture(t, { body: `
 input.on("close", () => process.exit(0));
