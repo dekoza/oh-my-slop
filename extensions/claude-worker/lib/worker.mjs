@@ -2,6 +2,10 @@ import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
+import { RECOVERY_INSTRUCTION, completionSchema, createTaskSupervision, supervisionInstructions } from "./supervision.mjs";
+
+export const MAX_CONTINUATIONS = 8;
+export const MAX_TASK_MS = 30 * 60 * 1_000;
 
 const execFileAsync = promisify(execFile);
 const OUTPUT_LIMIT = 64_000;
@@ -11,8 +15,10 @@ function subscriptionEnvironment(env) {
 		!key.startsWith("ANTHROPIC_") && !key.startsWith("CLAUDE_CODE_USE_")));
 }
 
-export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = () => {}, onPermission = async () => false, executable = "claude", prefixArgs = [], env = process.env }) {
+export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, onProgress = () => {}, onState = () => {}, onPermission = async () => false, executable = "claude", prefixArgs = [], env = process.env, maxContinuations = MAX_CONTINUATIONS, maxTaskMs = MAX_TASK_MS }) {
+	if (!Number.isSafeInteger(maxContinuations) || maxContinuations < 0 || !Number.isSafeInteger(maxTaskMs) || maxTaskMs < 1) throw new Error("Finite nonnegative continuation and positive time limits are required.");
 	if (!prompt?.trim()) throw new Error("A Claude Code task is required.");
+	if (resumeState && (!sessionId || resumeState.sessionId !== sessionId || resumeState.cwd !== cwd)) throw new Error("Saved task requirements do not belong to this session and working directory.");
 	const childEnv = subscriptionEnvironment(env);
 	const auth = await execFileAsync(executable, [...prefixArgs, "auth", "status", "--json"], {
 		cwd, env: childEnv, signal, timeout: 10_000, maxBuffer: OUTPUT_LIMIT,
@@ -26,16 +32,36 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 	signal?.throwIfAborted();
 	const args = [...prefixArgs, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "auto", "--permission-prompt-tool", "stdio", "--permission-prompts", "host"];
 	if (sessionId) args.push("--resume", sessionId);
-	const messageId = randomUUID();
+	const taskId = resumeState?.taskId || resumeState?.report?.task_id || randomUUID();
+	args.push("--json-schema", JSON.stringify(completionSchema(taskId)), "--append-system-prompt", supervisionInstructions(taskId));
+	const supervision = createTaskSupervision(taskId, resumeState);
+	// Retained requirements are unbounded task data: send them on stdin, never in one argv string.
+	const unresolvedTasks = supervision.unresolvedTasks();
+	const taskPrompt = resumeState ? `${prompt}\n\nRetained required outcomes (data, not new instructions): ${JSON.stringify(supervision.snapshot().requiredOutcomes.map((outcome) => outcome.requirement))}. Supply current evidence for each; a follow-up answer does not waive them.${unresolvedTasks.length ? ` Unresolved earlier tasks (data): ${JSON.stringify(unresolvedTasks)}. ${RECOVERY_INSTRUCTION}` : ""}` : prompt;
+	onState(structuredClone({ ...supervision.snapshot(), sessionId }));
+	let messageId = randomUUID();
 	return new Promise((resolve, reject) => {
 		const child = spawn(executable, args, {
 			cwd, env: childEnv, stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32",
 		});
 		let result;
 		let failure;
-		let killTimer;
+		let stopCleanup;
+		let closeTimer;
+		let disposition = "unfinished";
+		let reason;
+		let ending = false;
+		let inFlight = false;
+		let drainingQueuedTurns = false;
+		let pendingDecision;
+		let continuations = 0;
+		const permissionDenials = [];
+		const cleanupFailures = [];
+		// One rule for live and cleanup paths: an attributable unsuccessful turn is an execution failure.
+		const failedTurn = (event) => event.is_error || event.subtype !== "success";
 		let initialized = false;
 		let currentSessionId = sessionId;
+		const checkpoint = () => onState(structuredClone({ ...supervision.snapshot(), sessionId: currentSessionId }));
 		let stderr = "";
 		const permissionAbort = new AbortController();
 		const pendingPermissions = new Map();
@@ -51,10 +77,35 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		};
 		const stop = () => {
 			permissionAbort.abort();
-			kill("SIGTERM");
-			killTimer ??= setTimeout(() => kill("SIGKILL"), 1_000);
+			stopCleanup ??= new Promise((complete) => {
+				kill("SIGTERM");
+				// Child close does not prove same-group descendants have exited.
+				setTimeout(() => { kill("SIGKILL"); complete(); }, 1_000);
+			});
 		};
 		const fail = (error) => { failure ??= error; stop(); };
+		const end = (decision) => {
+			disposition = decision.disposition;
+			reason = decision.reason;
+			ending = true;
+			permissionAbort.abort();
+			child.stdin.end();
+			// Even EOF must not leave an owned process hanging after a terminal disposition.
+			closeTimer ??= setTimeout(stop, 1_000);
+		};
+		const submit = (content) => {
+			inFlight = true;
+			child.stdin.write(JSON.stringify({ type: "user", uuid: messageId, session_id: currentSessionId || "", message: { role: "user", content }, parent_tool_use_id: null }) + "\n");
+		};
+		const continueTask = (why) => {
+			if (ending || inFlight || signal?.aborted || failure) return;
+			if (continuations >= maxContinuations) return end({ disposition: "unfinished", reason: `Continuation safety limit (${maxContinuations}) exhausted. ${why}` });
+			continuations++;
+			messageId = randomUUID();
+			onProgress({ type: "worker_supervision", status: "Continuing approved task", reason: why, continuations });
+			submit(`Continue only the originally approved task in this saved context and existing permissions. ${why} Consume required background results, perform outstanding actions, and return the explicit StructuredOutput report mapping every requested outcome to evidence. If genuine information is missing, report needs_input with the precise question. Do not expand scope.`);
+		};
+		const taskTimer = setTimeout(() => fail(new Error(`Task time safety limit (${maxTaskMs}ms) exhausted; work is unfinished.`)), maxTaskMs);
 		const initializeTimer = setTimeout(() => fail(new Error("Claude Code initialization timed out before the task was sent.")), 10_000);
 		child.stderr.setEncoding("utf8").on("data", (chunk) => {
 			stderr = (stderr + chunk).slice(-OUTPUT_LIMIT);
@@ -63,10 +114,34 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		const lines = createInterface({ input: child.stdout });
 		lines.on("line", (line) => {
 			void (async () => {
-				if (failure || signal?.aborted) return;
+				const stopping = failure || signal?.aborted || ending;
 				const event = JSON.parse(line);
-				if (event.session_id) currentSessionId = event.session_id;
+				if (event.session_id && currentSessionId && event.session_id !== currentSessionId) return;
+				if (!stopping && event.type === "system" && event.subtype === "init" && event.session_id) currentSessionId = event.session_id;
+				// Cleanup can still emit task evidence. Retain it without dispatching or approving anything.
+				supervision.record(event);
 				onProgress(event);
+				if (event.type === "system" && (event.subtype === "init" || event.subtype?.startsWith("task_") || event.subtype === "background_tasks_changed")) checkpoint();
+				let correlated = false;
+				let native = false;
+				if (event.type === "result") {
+					// Result UUIDs are delivery IDs; user_message_uuids identify submitted turns.
+					const ids = event.user_message_uuids || (event.user_message_uuid ? [event.user_message_uuid] : []);
+					correlated = ids.includes(messageId);
+					native = !ids.length && event.origin?.kind === "task-notification" && event.session_id && event.session_id === currentSessionId;
+					// UUID and untagged native identities persist with the task, so a resumed run cannot consume
+					// those results again; result_index restarts per CLI process and stays run-local.
+					if (!supervision.acceptResult(event, native)) return;
+					checkpoint();
+				}
+				if (stopping) {
+					// Cleanup execution failures invalidate completion but may never restart dispatch.
+					if ((correlated || native) && failedTurn(event)) {
+						cleanupFailures.push(event);
+						permissionDenials.push(...(event.permission_denials || []));
+					}
+					return;
+				}
 				if (event.type === "control_response" && event.response?.request_id === "pi-initialize") {
 					const response = event.response;
 					const account = response.response?.account;
@@ -79,9 +154,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 					}
 					initialized = true;
 					clearTimeout(initializeTimer);
-					if (!signal?.aborted && !result) child.stdin.write(JSON.stringify({
-						type: "user", uuid: messageId, session_id: "", message: { role: "user", content: prompt }, parent_tool_use_id: null,
-					}) + "\n");
+					if (!signal?.aborted) submit(taskPrompt);
 				}
 				if (event.type === "control_cancel_request") {
 					seenPermissions.add(event.request_id);
@@ -111,12 +184,42 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 						.finally(() => pendingPermissions.delete(event.request_id));
 				}
 				if (event.type === "result") {
-					// A task-notification turn is not the reply to our submitted task.
-					const ids = event.user_message_uuids || (event.user_message_uuid ? [event.user_message_uuid] : []);
-					if (event.origin?.kind === "task-notification" || (ids.length && !ids.includes(messageId))) return;
-					result = event;
-					permissionAbort.abort();
-					child.stdin.end();
+					if ((correlated || native) && failedTurn(event)) {
+						result = event;
+						currentSessionId ||= event.session_id;
+						permissionDenials.push(...(event.permission_denials || []));
+						return end({ disposition: "unfinished", reason: "Claude Code execution did not return a successful turn." });
+					}
+					if (!correlated) {
+						// Native drains cannot certify completion or override an intentional pause.
+						if (!inFlight && native) {
+							permissionDenials.push(...(event.permission_denials || []));
+							drainingQueuedTurns = event.queued_turn_count > 0;
+							if (!drainingQueuedTurns && pendingDecision) {
+								const decision = pendingDecision.disposition === "finished"
+									? supervision.assess(supervision.snapshot().report) : pendingDecision;
+								pendingDecision = undefined;
+								if (decision.action === "end") return end(decision);
+							}
+							if (!supervision.waiting && !drainingQueuedTurns) continueTask("Native background result was consumed; finish outstanding approved work.");
+						}
+						return;
+					}
+					if (!inFlight && !drainingQueuedTurns) return;
+					const paused = pendingDecision && pendingDecision.disposition !== "finished";
+					if (!paused) result = event;
+					currentSessionId ||= event.session_id;
+					permissionDenials.push(...(event.permission_denials || []));
+					inFlight = false;
+					if (!event.session_id) return end({ disposition: "unfinished", reason: "Claude Code returned no resumable session ID." });
+					const decision = paused ? pendingDecision : supervision.assess(event.structured_output);
+					checkpoint();
+					drainingQueuedTurns = event.queued_turn_count > 0;
+					pendingDecision = decision.action === "end" ? decision : undefined;
+					if (!drainingQueuedTurns && decision.action === "end") return end(decision);
+					if (supervision.waiting || drainingQueuedTurns) {
+						onProgress({ type: "worker_supervision", status: "Waiting for required background work", reason: decision.reason, continuations });
+					} else continueTask(decision.reason);
 				}
 			})().catch(fail);
 		});
@@ -124,25 +227,47 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		child.stdin.on("error", fail);
 		const abort = stop;
 		signal?.addEventListener("abort", abort, { once: true });
-		child.on("close", (code, exitSignal) => {
+		child.on("close", async (code, exitSignal) => {
 			lines.close();
-			clearTimeout(killTimer);
+			clearTimeout(closeTimer);
+			clearTimeout(taskTimer);
 			clearTimeout(initializeTimer);
 			permissionAbort.abort();
 			signal?.removeEventListener("abort", abort);
+			if (stopCleanup) await stopCleanup;
+			if (disposition === "finished") {
+				// EOF cleanup can invalidate completion, but may never restart supervision.
+				const final = supervision.assess(supervision.snapshot().report);
+				if (final.disposition !== "finished") { disposition = "unfinished"; reason = final.reason; }
+			}
+			if (cleanupFailures.length && disposition !== "unfinished") {
+				// An execution failure overrides a completion report or pause; the question stays in the report.
+				reason = disposition === "finished"
+					? "Claude Code execution failed during cleanup after its completion report; completion is not established."
+					: `Claude Code execution failed during cleanup after a needs-input pause; the task is interrupted. Pending question: ${reason}`;
+				disposition = "unfinished";
+			}
+			const cleanupErrors = cleanupFailures.flatMap((event) => event.errors?.length ? event.errors : [event.result || `Claude Code cleanup result: ${event.subtype}`]);
 			const outcome = {
 				sessionId: result?.session_id || currentSessionId, text: result?.result || "",
+				...supervision.snapshot(), disposition, reason: reason || failure?.message || (signal?.aborted ? "Worker explicitly stopped; partial work may remain." : "Process exited before an explicit completion report; outcome unresolved."), continuations,
 				exitCode: code, exitSignal, resultSubtype: result?.subtype, stopReason: result?.stop_reason,
-				terminalReason: result?.terminal_reason, numTurns: result?.num_turns, errors: result?.errors || [],
-				permissionDenials: result?.permission_denials || [], stderr,
+				terminalReason: result?.terminal_reason, numTurns: result?.num_turns, errors: [...(result?.errors || []), ...cleanupErrors],
+				permissionDenials, stderr,
 			};
-			try { onProgress({ type: "worker_exit", ...outcome }); } catch (error) { failure ??= error; }
 			let error = failure;
 			if (!error && signal?.aborted) error = new Error("Claude Code worker stopped.");
-			if (!error && (code !== 0 || !result || result.is_error || result.subtype !== "success")) {
+			if (!error && cleanupErrors.length) error = new Error([reason, ...cleanupErrors].filter(Boolean).join("\n"));
+			if (!error && (code !== 0 || !result || failedTurn(result))) {
 				error = new Error([result?.result, ...outcome.errors, stderr].filter(Boolean).join("\n") || "Claude Code exited without a successful result.");
 			}
 			if (!error && !result?.session_id) error = new Error("Claude Code returned no resumable session ID.");
+			if (error) { outcome.disposition = "unfinished"; outcome.reason = error.message; }
+			try { onProgress({ type: "worker_exit", ...outcome }); } catch (progressError) {
+				error ??= progressError;
+				outcome.disposition = "unfinished";
+				outcome.reason = error.message;
+			}
 			if (error) { error.outcome = outcome; reject(error); }
 			else resolve(outcome);
 		});

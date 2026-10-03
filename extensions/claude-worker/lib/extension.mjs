@@ -3,6 +3,11 @@ import { createActivityLog, formatActivityLog, formatRunReport, readActivityLog,
 
 const STATE_ENTRY = "cc-worker-session";
 const RUN_ENTRY = "cc-worker-run";
+const DISPOSITION_STATUS = { finished: "Finished (Claude Code self-report)", needs_input: "Needs input", unfinished: "Unfinished/interrupted" };
+
+function runDetails(activity) {
+	return { sessionId: activity.sessionId, disposition: activity.disposition, reason: activity.reason, report: activity.report, continuations: activity.continuations, taskOutcomes: activity.taskOutcomes, permissionDenials: activity.permissionDenials, activity };
+}
 
 export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 	let active;
@@ -24,7 +29,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 		const branch = ctx.sessionManager.getBranch();
 		lastSession = branch.filter((entry) => entry.type === "custom" && entry.customType === STATE_ENTRY).at(-1)?.data;
 		lastRun = branch.filter((entry) => entry.type === "custom" && entry.customType === RUN_ENTRY).at(-1)?.data;
-		if (lastRun && !lastRun.endedAt) lastRun = { ...lastRun, status: "Interrupted observation; terminal outcome unknown" };
+		if (lastRun && !lastRun.endedAt) lastRun = { ...lastRun, disposition: "unfinished", status: "Unfinished/interrupted observation; terminal outcome unknown" };
 	}
 
 	async function start(prompt, resume, ctx, signal, onUpdate) {
@@ -36,8 +41,9 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 			throw new Error("No saved Claude Code session for this project. Start one with /cc <task>.");
 		}
 		const sessionId = resume ? lastSession.sessionId : undefined;
+		const resumeState = resume && lastRun?.sessionId === sessionId && lastRun.cwd === ctx.cwd ? lastRun : undefined;
 		const controller = new AbortController();
-		const job = { controller, done: undefined, log: undefined };
+		const job = { controller, done: undefined, log: undefined, detached: false };
 		active = job;
 		const abort = () => controller.abort();
 		signal?.addEventListener("abort", abort, { once: true });
@@ -46,7 +52,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 		let refreshTimer;
 
 		const refresh = () => {
-			if (!job.log) return;
+			if (!job.log || job.detached) return;
 			const state = job.log.snapshot();
 			const elapsed = Math.floor(((state.endedAt || Date.now()) - state.startedAt) / 1_000);
 			const idle = Math.floor((Date.now() - (state.lastActivityAt || state.startedAt)) / 1_000);
@@ -56,6 +62,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 				`Claude Code: ${status} · elapsed ${elapsed}s · last activity ${idle}s ago`,
 				`Activity: ${state.currentActivity || "Waiting for Claude Code"}`,
 				`Tools: ${state.stats.toolCalls} calls / ${state.stats.toolResults} results · reported active tasks: ${state.backgroundTasks.length}`,
+				...(state.reason ? [`Supervision: ${state.reason} · continuations: ${state.continuations ?? 0}`] : []),
 				...preview.split("\n").slice(-3),
 			]);
 		};
@@ -75,7 +82,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 					billingConfirmed = true;
 				}
 				controller.signal.throwIfAborted();
-				job.log = createActivityLog({ cwd: ctx.cwd, prompt, sessionId });
+				job.log = createActivityLog({ cwd: ctx.cwd, prompt, sessionId, resumeState });
 				if (!resume) remember(undefined, ctx.cwd);
 				job.log.setStatus("Running");
 				persistRun(job.log.snapshot());
@@ -83,21 +90,27 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 				refreshTimer = setInterval(refresh, 1_000);
 				refreshTimer.unref();
 				result = await run({
-					cwd: ctx.cwd, prompt, sessionId, signal: controller.signal,
+					cwd: ctx.cwd, prompt, sessionId, resumeState, signal: controller.signal,
+					onState: (state) => {
+						job.log.observe(state);
+						if (!job.detached) persistRun(job.log.snapshot());
+					},
 					onPermission: async (request, permissionSignal) => {
+						if (job.detached || controller.signal.aborted || permissionSignal.aborted) return false;
 						job.log.record({ type: "worker_permission", status: "waiting", toolName: request.tool_name, input: request.input, reason: request.decision_reason });
 						refresh();
 						try {
 							const allowed = await ctx.ui.confirm(`Claude Code: allow ${safeText(request.tool_name)}?`,
 								safeText([request.decision_reason, request.blocked_path, JSON.stringify(request.input, null, 2)].filter(Boolean).join("\n\n")), { signal: permissionSignal, timeout: 60_000 });
 							job.log.record({ type: "worker_permission", status: permissionSignal.aborted ? "cancelled" : allowed ? "allowed" : "denied", toolName: request.tool_name });
-							return allowed;
+							return allowed && !permissionSignal.aborted && !controller.signal.aborted;
 						} catch (error) {
 							job.log.record({ type: "worker_permission", status: "error", toolName: request.tool_name, error: error.message });
 							throw error;
 						} finally { refresh(); }
 					},
 					onProgress: (event) => {
+						if (job.detached) return;
 						job.log.record(event);
 						if (event.type === "system" && event.subtype === "init" && event.session_id) {
 							remember(event.session_id, ctx.cwd);
@@ -115,21 +128,30 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 				});
 				controller.signal.throwIfAborted();
 				remember(result.sessionId, ctx.cwd);
-				job.log.finish({ ...result, status: "Turn ended; completion unverified" });
+				const disposition = Object.hasOwn(DISPOSITION_STATUS, result.disposition) ? result.disposition : "unfinished";
+				job.log.finish({ ...result, disposition, status: DISPOSITION_STATUS[disposition], reason: result.reason || (disposition === "unfinished" ? "No terminal task disposition reported; completion unverified." : undefined) });
 				persistRun(job.log.snapshot());
-				return { ...result, activity: lastRun };
+				return { ...lastRun, text: safeText(result.text || ""), activity: lastRun };
 			} catch (error) {
+				const failure = new Error(safeText(error.message));
 				if (job.log) {
-					const outcome = { ...(error.outcome || result), status: controller.signal.aborted ? "Stopped" : "Failed", error: safeText(error.message) };
+					const diagnostics = error.outcome || result || {};
+					const outcome = { ...diagnostics, disposition: "unfinished", status: `Unfinished/interrupted (${controller.signal.aborted ? "Stopped" : "Failed"})`, reason: diagnostics.reason || (controller.signal.aborted ? "Worker stopped before task completion." : safeText(error.message)), error: failure.message };
 					let loggingError;
 					try { job.log.finish(outcome); } catch (logError) { loggingError = logError; }
 					// Never merge raw CLI outcome fields back over the sanitized log snapshot.
 					const retained = job.log.snapshot();
 					if (loggingError) retained.error += `\nActivity log write failed: ${safeText(loggingError.message)}`;
-					persistRun(retained);
-					pi.sendMessage({ customType: "cc-worker", content: formatRunReport(lastRun), details: { activity: lastRun }, display: true }, { triggerTurn: false });
+					failure.outcome = retained;
+					// session_tree is post-navigation: never persist an abandoned job on its new branch.
+					// The private log still retains the interruption when no pre-navigation hook ran.
+					if (!job.detached) {
+						if (retained.sessionId) remember(retained.sessionId, ctx.cwd);
+						persistRun(retained);
+						pi.sendMessage({ customType: "cc-worker", content: formatRunReport(retained), details: runDetails(retained), display: true }, { triggerTurn: false });
+					}
 				}
-				throw new Error(safeText(error.message));
+				throw failure;
 			} finally {
 				clearInterval(refreshTimer);
 				signal?.removeEventListener("abort", abort);
@@ -144,10 +166,10 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 
 	for (const [name, resume] of [["cc", false], ["cc-followup", true]]) {
 		pi.registerCommand(name, {
-			description: resume ? "Resume the last Claude Code worker with a follow-up instruction" : "Delegate a task to subscription-authenticated Claude Code",
+			description: resume ? "Resume the saved Claude Code task with missing input or a recovery instruction" : "Supervise a bounded task through subscription-authenticated Claude Code",
 			async handler(args, ctx) {
 				void start(args, resume, ctx).then((result) => {
-					pi.sendMessage({ customType: "cc-worker", content: formatRunReport(result.activity, result.text), details: { activity: result.activity }, display: true }, { triggerTurn: false });
+					pi.sendMessage({ customType: "cc-worker", content: formatRunReport(result.activity, result.text), details: runDetails(result.activity), display: true }, { triggerTurn: false });
 				}).catch((error) => ctx.ui.notify(safeText(error.message), "error"));
 			},
 		});
@@ -183,19 +205,27 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 
 	pi.registerTool({
 		name: "claude_worker", label: "Claude Code worker",
-		description: "Delegate one bounded task to Claude Code using the user's subscription and native auto permissions. Requires human consent. Returns turn output and diagnostics, not proof of task completion; activity is retained in a private local log. Do not concurrently modify the same files. Set resume=true to continue the saved session. Pi's coordinating model still uses its own provider. No worktree or automatic commit/push is created.",
+		description: "Supervise one bounded task through Claude Code using the user's subscription and existing native auto permissions. Requires human consent. Returns finished, needs_input or unfinished, with Claude Code's evidence-backed self-report (not independent Pi certification), diagnostics and a private activity log. Defaults: at most 8 host continuations and a 30-minute transport budget after subscription authentication (10-second preflight timeout). Set resume=true to supply missing input or recover the saved task in the same directory. Do not concurrently modify the same files. Pi's coordinating model still uses its own provider. No worktree, rollback or automatic commit/push is created.",
 		parameters,
 		async execute(_id, params, signal, onUpdate, ctx) {
 			if (!ctx.hasUI || !await ctx.ui.confirm("Delegate task to Claude Code?", safeText(params.prompt), { signal })) throw new Error("Claude Code delegation was not approved.");
 			const result = await start(params.prompt, params.resume === true, ctx, signal, onUpdate);
-			return { content: [{ type: "text", text: formatRunReport(result.activity, result.text) }], details: { sessionId: result.sessionId, permissionDenials: result.permissionDenials, activity: result.activity } };
+			return { content: [{ type: "text", text: formatRunReport(result.activity, result.text) }], details: runDetails(result.activity) };
 		},
 	});
 
 	pi.on("session_start", async (_event, ctx) => restore(ctx));
+	// Finish the interruption record while appendEntry still belongs to the launching branch.
+	pi.on("session_before_tree", async () => {
+		if (active) { active.controller.abort(); await active.done.catch(() => {}); }
+	});
 	// The launching command/tool reports failures; cleanup only waits for it to settle.
 	pi.on("session_tree", async (_event, ctx) => {
-		if (active) { active.controller.abort(); await active.done.catch(() => {}); }
+		if (active) {
+			active.detached = true;
+			active.controller.abort();
+			await active.done.catch(() => {});
+		}
 		restore(ctx);
 	});
 	pi.on("session_shutdown", async () => {

@@ -2,8 +2,25 @@ import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import { INTERRUPTED_STATUSES, createTaskSupervision } from "./supervision.mjs";
 
 const MAX_TEXT = 16_000;
+const MAX_REPORT_BYTES = 50 * 1024;
+const MAX_REPORT_LINES = 2_000;
+
+function boundReport(text) {
+	const full = safeText(text);
+	if (Buffer.byteLength(full) <= MAX_REPORT_BYTES && full.split("\n").length <= MAX_REPORT_LINES) return full;
+	const directory = mkdtempSync(join(tmpdir(), "pi-cc-report-"));
+	const path = join(directory, "report.txt");
+	writeFileSync(path, full, { flag: "wx", mode: 0o600 });
+	const notice = `\n[Output truncated to 50 KiB / 2000 lines. Full report: ${path}]`;
+	const prefix = Buffer.from(full.split("\n").slice(0, MAX_REPORT_LINES - 1).join("\n"));
+	let end = Math.min(prefix.length, MAX_REPORT_BYTES - Buffer.byteLength(notice));
+	// Back up to the start of a split UTF-8 code point instead of emitting replacement text.
+	while (end < prefix.length && (prefix[end] & 0xc0) === 0x80) end--;
+	return prefix.subarray(0, end).toString("utf8") + notice;
+}
 
 export function safeText(value) {
 	return stripVTControlCharacters(String(value)).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "")
@@ -23,7 +40,7 @@ function scrub(value, key = "") {
 	return value;
 }
 
-export function createActivityLog({ cwd, prompt, sessionId, maxBytes = 8 * 1024 * 1024 }) {
+export function createActivityLog({ cwd, prompt, sessionId, resumeState, maxBytes = 8 * 1024 * 1024 }) {
 	const directory = mkdtempSync(join(tmpdir(), "pi-cc-worker-"));
 	const logPath = join(directory, "activity.jsonl");
 	writeFileSync(logPath, "", { flag: "wx", mode: 0o600 });
@@ -32,6 +49,30 @@ export function createActivityLog({ cwd, prompt, sessionId, maxBytes = 8 * 1024 
 	const tools = new Map();
 	const pendingTools = new Map();
 	const tasks = new Map();
+	const taskOutcomes = new Map((resumeState?.taskOutcomes || []).map((task) => [task.taskId, scrub(task)]));
+	// Standalone log consumers use the same lifecycle interpreter, never a second set of rules.
+	// The worker's checkpoints replace this fallback as soon as its authoritative ledger arrives.
+	let fallbackSupervision = createTaskSupervision(resumeState?.taskId, resumeState);
+	const projectTasks = (outcomes) => {
+		taskOutcomes.clear();
+		tasks.clear();
+		for (const raw of outcomes) {
+			const task = scrub(raw);
+			taskOutcomes.set(task.taskId, task);
+			if (task.status === "running" && task.isBackgrounded !== false) tasks.set(task.taskId, { id: task.taskId, type: task.taskType, description: task.description });
+		}
+	};
+	if (resumeState) {
+		state.taskId = resumeState.taskId || resumeState.report?.task_id;
+		state.notificationDeliveries = scrub(resumeState.notificationDeliveries || []);
+		state.resultDeliveries = scrub(resumeState.resultDeliveries || []);
+		state.requiredOutcomes = scrub(createTaskSupervision(state.taskId, resumeState).snapshot().requiredOutcomes);
+		// Keep historical evidence separate: authentication can fail before any new assessment.
+		// Select handoff fields, never the previous run's disposition or error diagnostics.
+		const handoffFields = ["logPath", "sessionId", "taskId", "startedAt", "endedAt", "report", "requiredOutcomes", "omittedOutcomes", "taskOutcomes", "backgroundTasks", "pendingTools", "text", "reason", "continuations"];
+		const handoff = Object.fromEntries(handoffFields.filter((key) => resumeState[key] !== undefined).map((key) => [key, resumeState[key]]));
+		state.priorHandoffs = scrub([...(resumeState.priorHandoffs || []), handoff]);
+	}
 	let bytes = 0;
 	const activity = (summary) => {
 		state.lastActivity = safeText(summary);
@@ -50,11 +91,31 @@ export function createActivityLog({ cwd, prompt, sessionId, maxBytes = 8 * 1024 
 	return {
 		append,
 		setStatus(status) { state.status = status; },
+		observe(taskState) {
+			if (state.endedAt) return;
+			if (taskState.taskOutcomes) {
+				fallbackSupervision = undefined;
+				projectTasks(taskState.taskOutcomes);
+			}
+			const fields = Object.fromEntries(Object.entries(taskState).filter(([, value]) => value !== undefined));
+			state = { ...state, ...scrub(fields) };
+		},
 		record(event) {
 			if (state.endedAt) return;
+			if (fallbackSupervision) {
+				fallbackSupervision.record(event);
+				projectTasks(fallbackSupervision.snapshot().taskOutcomes);
+			}
 			if (event.type === "system" && event.subtype === "init") {
 				state.sessionId = event.session_id;
 				append("initialized", "Claude Code initialized", { sessionId: event.session_id });
+			}
+			if (event.type === "worker_supervision") {
+				state.status = safeText(event.status);
+				state.reason = safeText(event.reason || "");
+				state.continuations = event.continuations;
+				activity(state.reason || state.status);
+				append("worker_supervision", state.lastActivity, event);
 			}
 			if (event.type === "worker_permission") {
 				state.status = event.status === "waiting" ? "Awaiting approval" : "Running";
@@ -70,15 +131,14 @@ export function createActivityLog({ cwd, prompt, sessionId, maxBytes = 8 * 1024 
 				append("tool_progress", state.lastActivity, { id: event.tool_use_id, name: event.tool_name, elapsedSeconds: event.elapsed_time_seconds });
 			}
 			if (event.type === "system" && event.subtype?.startsWith("task_") && !event.ambient) {
-				if (event.subtype === "task_started") tasks.set(event.task_id, { id: event.task_id, type: event.task_type, description: scrub(event.description) });
-				if (event.subtype === "task_notification") tasks.delete(event.task_id);
 				activity(event.summary || event.description || `${event.task_id}: ${event.status || event.subtype}`);
-				append(event.subtype, state.lastActivity, { taskId: event.task_id, taskType: event.task_type, status: event.status, summary: event.summary, description: event.description, outputFile: event.output_file });
+				append(event.subtype, state.lastActivity, { taskId: event.task_id, taskType: event.task_type, status: event.status, summary: event.summary, description: event.description, outputFile: event.output_file, patch: event.patch });
 			}
 			if (event.type === "system" && event.subtype === "background_tasks_changed") {
-				tasks.clear();
-				for (const task of event.tasks || []) if (!task.ambient) tasks.set(task.task_id, { id: task.task_id, type: task.task_type, description: scrub(task.description) });
-				append("background_tasks", `${tasks.size} reported active task(s)`, [...tasks.values()]);
+				// Raw timeline evidence precedes the worker checkpoint; do not log its previous projection.
+				const reported = (event.tasks || []).filter((task) => !task.ambient)
+					.map((task) => ({ id: task.task_id, type: task.task_type, description: task.description }));
+				append("background_tasks", `${reported.length} reported active task(s)`, reported);
 			}
 			if (event.type === "system" && ["hook_started", "hook_progress", "hook_response", "permission_denied"].includes(event.subtype)) {
 				activity(`${event.subtype}: ${event.hook_name || event.tool_name || "Claude Code"}`);
@@ -113,10 +173,12 @@ export function createActivityLog({ cwd, prompt, sessionId, maxBytes = 8 * 1024 
 		},
 		finish(outcome) {
 			const fields = Object.fromEntries(Object.entries(outcome).filter(([, value]) => value !== undefined));
+			if (outcome.taskOutcomes) projectTasks(outcome.taskOutcomes);
 			state = { ...state, ...scrub(fields), endedAt: Date.now(), backgroundTasks: [...tasks.values()], pendingTools: [...pendingTools.values()] };
+			state.taskOutcomes = [...taskOutcomes.values()];
 			append("finished", state.status, state);
 		},
-		snapshot() { return structuredClone({ ...state, backgroundTasks: [...tasks.values()], pendingTools: [...pendingTools.values()] }); },
+		snapshot() { return structuredClone({ ...state, backgroundTasks: [...tasks.values()], taskOutcomes: [...taskOutcomes.values()], pendingTools: [...pendingTools.values()] }); },
 	};
 }
 
@@ -130,10 +192,17 @@ export function readActivityLog(logPath, limit = 200) {
 	return { records: records.slice(-limit), omittedRecords: Math.max(0, records.length - limit) };
 }
 
+// Keep stopped and unknown work distinct from failed verification in the handoff.
+function resolvedLabel(state, taskId) {
+	const status = (state.taskOutcomes || []).find((task) => (task.taskId || task.task_id || task.id) === taskId)?.status;
+	if (status === "failed") return `failure ${safeText(taskId)}`;
+	return INTERRUPTED_STATUSES.includes(status) ? `interrupted task ${safeText(taskId)} (${status})` : `task ${safeText(taskId)}`;
+}
+
 export function formatRunReport(state, text = state.text || "") {
 	const duration = Math.max(0, Math.floor(((state.endedAt || Date.now()) - state.startedAt) / 1_000));
 	const output = safeText(text);
-	return [
+	return boundReport([
 		`Claude Code: ${state.status}`,
 		`Session: ${state.sessionId || "not assigned"} · Elapsed: ${duration}s`,
 		`Started: ${new Date(state.startedAt).toISOString()} · Ended: ${state.endedAt ? new Date(state.endedAt).toISOString() : "not recorded"}`,
@@ -142,6 +211,28 @@ export function formatRunReport(state, text = state.text || "") {
 		state.terminalReason ? `Terminal reason: ${JSON.stringify(state.terminalReason)}` : "",
 		`Reported tools: ${state.stats.toolCalls} calls, ${state.stats.toolResults} results, ${state.stats.toolErrors} errors`,
 		`Last activity: ${state.lastActivity || "No activity reported"}`,
+		state.reason ? `Reason: ${safeText(state.reason)}` : "",
+		state.continuations !== undefined ? `Continuations: ${state.continuations}` : "",
+		state.taskOutcomes?.length ? "Cumulative task ledger (may include prior evidence; not current completion certification):" : "",
+		...(state.taskOutcomes || []).map((task) => `Task ${safeText(task.taskId || task.task_id || task.id || "unknown")}: ${safeText(task.status || "unknown")} · ${safeText(task.summary || task.description || "No details reported")}${task.outputFile || task.output_file ? ` · ${safeText(task.outputFile || task.output_file)}` : ""}${task.error && task.error !== task.summary ? ` · Error: ${safeText(task.error)}` : ""}`),
+		...(state.taskOutcomes || []).flatMap((task) => (task.history?.length > 1 ? task.history : []).map((entry) => `Task history ${safeText(task.taskId || task.task_id || task.id || "unknown")}: ${safeText(entry.status || "unknown")} · ${safeText(entry.summary || "No details reported")}${entry.outputFile ? ` · ${safeText(entry.outputFile)}` : ""}`)),
+		...(state.priorHandoffs || []).flatMap((handoff) => [
+			"Prior handoff (not current completion evidence):",
+			handoff.logPath ? `Prior activity log: ${safeText(handoff.logPath)}` : "",
+			safeText(JSON.stringify(handoff, null, 2)),
+		]),
+		state.report ? "Claude Code self-report (not independent Pi certification):" : "",
+		...(state.report?.outcomes || []).map((outcome) => `- ${safeText(outcome.requirement)}: ${safeText(outcome.status)} · Evidence: ${(outcome.evidence || []).map(safeText).join("; ") || "none reported"}`),
+		...(state.report?.resolved_failures || []).map((resolution) => `Resolved ${resolvedLabel(state, resolution.task_id)}: replacement ${safeText(resolution.replacement_task_id)} · Claude Code evidence: ${(resolution.evidence || []).map(safeText).join("; ")}`),
+		...(state.omittedOutcomes || []).map((outcome) => `Omitted required outcome: ${safeText(outcome.requirement)} · Last reported: ${safeText(outcome.status)} · Prior evidence: ${(outcome.evidence || []).map(safeText).join("; ") || "none reported"}`),
+		state.report?.question ? `Question: ${safeText(state.report.question)}` : "",
+		state.report?.outstanding?.length ? `Outstanding: ${state.report.outstanding.map(safeText).join("; ")}` : "",
+		state.report?.unverified?.length ? `Unverified: ${state.report.unverified.map(safeText).join("; ")}` : "",
+		state.report?.background_task_ids?.length ? `Required background tasks: ${state.report.background_task_ids.map(safeText).join(", ")}` : "",
+		state.disposition === "unfinished" ? "Warning: interruption may leave partial changes; inspect existing work before resuming. Nothing is rolled back." : "",
+		["needs_input", "unfinished"].includes(state.disposition) ? (state.sessionId
+			? `Resume in the same working directory (${safeText(state.cwd)}): /cc-followup <information or recovery instruction>, claude_worker with resume: true, or claude --resume ${safeText(state.sessionId)}.`
+			: `No resumable session was recorded. Inspect partial work and the activity log in ${safeText(state.cwd)} before starting /cc <recovery task>.`) : "",
 		state.error ? `Error: ${state.error}` : "",
 		state.errors?.length ? `Claude errors: ${state.errors.join("; ")}` : "",
 		state.permissionDenials?.length ? `Warning: ${state.permissionDenials.length} tool permission(s) were denied; work may be incomplete.` : "",
@@ -149,9 +240,8 @@ export function formatRunReport(state, text = state.text || "") {
 		state.pendingTools?.length ? `Warning: tool results were not reported for ${state.pendingTools.join(", ")}.` : "",
 		state.omittedEvents ? `Activity cap reached: ${state.omittedEvents} event details omitted.` : "",
 		`Activity log: ${state.logPath}`,
-		output ? `\n${output.slice(0, 64_000)}` : "",
-		output.length > 64_000 ? "[Output truncated. Open the Claude Code session to read the full result.]" : "",
-	].filter(Boolean).join("\n");
+		output ? `\n${output}` : "",
+	].filter(Boolean).join("\n"));
 }
 
 export function formatActivityLog(state, retained, { expanded = false } = {}) {

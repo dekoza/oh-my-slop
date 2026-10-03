@@ -61,10 +61,12 @@ test("activity exposes current tools, approval waits and reported subagent activ
 	log.record({ type: "system", subtype: "task_started", task_id: "agent-1", task_type: "local_agent", description: "Review authentication" });
 	log.record({ type: "system", subtype: "task_started", task_id: "ambient-1", ambient: true, description: "Internal watcher" });
 	assert.equal(log.snapshot().backgroundTasks.length, 1);
+	assert.equal(log.snapshot().backgroundTasks[0].type, "local_agent");
 	log.record({ type: "system", subtype: "task_progress", task_id: "agent-1", summary: "Checking validation" });
 	assert.match(log.snapshot().lastActivity, /Checking validation/);
 	log.record({ type: "system", subtype: "task_notification", task_id: "agent-1", status: "failed", summary: "Review failed" });
 	assert.equal(log.snapshot().backgroundTasks.length, 0);
+	assert.equal(log.snapshot().taskOutcomes[0].taskType, "local_agent");
 	const text = readFileSync(log.snapshot().logPath, "utf8");
 	assert.match(text, /Review failed/);
 	assert.ok(!text.includes("private reasoning"));
@@ -94,6 +96,103 @@ test("retained run reports and expandable log snapshots explain outcomes without
 	assert.equal(limited.records.length, 1);
 	assert.ok(limited.omittedRecords > 0);
 	assert.match(formatActivityLog(snapshot, limited, { expanded: true }), /earlier records omitted/);
+});
+
+test("supervision waiting is visible with reason and continuation count, but cannot revive a finished log", () => {
+	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Repair" });
+	log.record({ type: "worker_supervision", status: "Waiting for required background work", reason: "Awaiting review-1", continuations: 2 });
+	assert.equal(log.snapshot().status, "Waiting for required background work");
+	assert.equal(log.snapshot().reason, "Awaiting review-1");
+	assert.equal(log.snapshot().continuations, 2);
+	assert.match(formatRunReport(log.snapshot()), /Continuations: 2/);
+	assert.match(readFileSync(log.snapshot().logPath, "utf8"), /worker_supervision/);
+	log.finish({ status: "Needs input", disposition: "needs_input", report: { question: "Which target?" } });
+	log.record({ type: "worker_supervision", status: "Running", continuations: 3 });
+	assert.equal(log.snapshot().status, "Needs input");
+	assert.match(formatRunReport(log.snapshot()), /Question: Which target\?/);
+});
+
+test("terminal task identities and evidence survive an empty active list and render recovery", () => {
+	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Repair authentication" });
+	log.record({ type: "system", subtype: "task_started", task_id: "review-1", task_type: "local_agent", description: "Review repair" });
+	log.record({ type: "system", subtype: "task_notification", task_id: "review-1", status: "stopped", summary: "Review stopped", output_file: "/tmp/review.txt" });
+	log.record({ type: "system", subtype: "task_notification", task_id: "tests-1", status: "failed", summary: "Verification failed" });
+	log.record({ type: "system", subtype: "task_notification", task_id: "read-1", status: "completed", summary: "Read complete" });
+	log.record({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+	assert.equal(log.snapshot().backgroundTasks.length, 0);
+	assert.deepEqual(log.snapshot().taskOutcomes.map(({ taskId, status }) => [taskId, status]), [["review-1", "stopped"], ["tests-1", "failed"], ["read-1", "completed"]]);
+	const report = { task_id: "repair", disposition: "unfinished", outcomes: [{ requirement: "Fix authentication", status: "verified", evidence: ["tests/auth.py: 3 passed"] }], outstanding: ["Finish review"], unverified: ["Integration coverage"], question: "", background_task_ids: [] };
+	log.finish({ status: "Unfinished/interrupted", disposition: "unfinished", sessionId: "session-1", reason: "Required task stopped", continuations: 2, report });
+	const state = log.snapshot();
+	assert.deepEqual(state.report, report);
+	assert.equal(state.taskOutcomes.length, 3);
+	const text = formatRunReport(state);
+	for (const expected of ["Claude Code self-report", "tests/auth.py: 3 passed", "Finish review", "Integration coverage", "review-1", "stopped", "tests-1", "failed", "read-1", "completed", "Required task stopped", "Continuations: 2", "/cc-followup", "resume: true", "claude --resume session-1", "/trusted/project", "partial changes"]) assert.ok(text.includes(expected), expected);
+});
+
+test("activity uses canonical terminal state without requiring a later notification or snapshot", () => {
+	for (const status of ["completed", "failed", "killed"]) {
+		const log = createActivityLog({ cwd: "/trusted/project", prompt: "Verify" });
+		log.record({ type: "system", subtype: "task_started", task_id: "check", is_backgrounded: true });
+		log.record({ type: "system", subtype: "task_updated", task_id: "check", patch: { status, is_backgrounded: false } });
+		log.finish({ status: "Unfinished/interrupted" });
+		assert.equal(log.snapshot().backgroundTasks.length, 0, status);
+		assert.equal(log.snapshot().taskOutcomes[0].status, status === "killed" ? "stopped" : status);
+		assert.doesNotMatch(formatRunReport(log.snapshot()), /still reported active/);
+	}
+});
+
+test("activity preserves the supervisor's stop barrier and authoritative active projection", () => {
+	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Verify" });
+	log.record({ type: "system", subtype: "task_started", task_id: "check", is_backgrounded: true });
+	log.record({ type: "system", subtype: "task_notification", task_id: "check", status: "stopped" });
+	log.record({ type: "system", subtype: "task_notification", task_id: "check", status: "completed" });
+	assert.equal(log.snapshot().taskOutcomes[0].status, "stopped");
+	assert.deepEqual(log.snapshot().taskOutcomes[0].history.map((entry) => entry.status), ["stopped", "completed"]);
+	log.observe({ taskOutcomes: [{ taskId: "reported-check", status: "running", isBackgrounded: true, description: "Required by task report" }] });
+	assert.deepEqual(log.snapshot().backgroundTasks.map((task) => task.id), ["reported-check"]);
+	log.record({ type: "system", subtype: "task_notification", task_id: "reported-check", status: "completed" });
+	assert.equal(log.snapshot().taskOutcomes[0].status, "running", "raw events only log activity once authoritative checkpoints are available");
+	log.observe({ taskOutcomes: [{ taskId: "reported-check", status: "completed" }] });
+	assert.equal(log.snapshot().backgroundTasks.length, 0);
+	assert.equal(log.snapshot().taskOutcomes.length, 1);
+});
+
+test("raw background snapshot logging does not mistake the previous checkpoint for the event", () => {
+	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Verify" });
+	log.observe({ taskOutcomes: [] });
+	log.record({ type: "system", subtype: "background_tasks_changed", tasks: [
+		{ task_id: "check", task_type: "local_agent", description: "New check" },
+		{ task_id: "watcher", ambient: true },
+	] });
+	const record = readActivityLog(log.snapshot().logPath).records.at(-1);
+	assert.equal(record.summary, "1 reported active task(s)");
+	assert.deepEqual(record.details, [{ id: "check", type: "local_agent", description: "New check" }]);
+	assert.equal(log.snapshot().backgroundTasks.length, 0, "display projection awaits the authoritative checkpoint");
+});
+
+test("a prior finished report stays historical through an undefined startup report and a later success", () => {
+	const prior = createActivityLog({ cwd: "/trusted/project", prompt: "Repair" });
+	prior.finish({ sessionId: "session-1", taskId: "repair", status: "Finished", disposition: "finished", error: "obsolete error", errors: ["obsolete diagnostics"], report: { task_id: "repair", disposition: "finished", outcomes: [{ requirement: "Repair", status: "verified", evidence: ["prior tests: passed"] }], outstanding: [], unverified: ["prior integration gap"], question: "", background_task_ids: [] } });
+	const resume = createActivityLog({ cwd: "/trusted/project", prompt: "Verify more", sessionId: "session-1", resumeState: prior.snapshot() });
+	assert.equal(resume.snapshot().status, "Starting");
+	assert.equal(resume.snapshot().disposition, undefined);
+	assert.equal(resume.snapshot().report, undefined);
+	resume.observe({ taskId: "repair", report: undefined });
+	resume.finish({ status: "Finished", disposition: "finished", report: { task_id: "repair", disposition: "finished", outcomes: [{ requirement: "Repair", status: "verified", evidence: ["current tests: passed"] }], outstanding: [], unverified: [], question: "", background_task_ids: [] } });
+	const state = resume.snapshot();
+	assert.equal(state.report.outcomes[0].evidence[0], "current tests: passed");
+	assert.equal(state.priorHandoffs[0].report.outcomes[0].evidence[0], "prior tests: passed");
+	assert.equal(state.error, undefined);
+	assert.equal(state.errors, undefined);
+	const text = formatRunReport(state);
+	assert.ok(!text.includes("obsolete"));
+	assert.ok(text.indexOf("Prior handoff (not current completion evidence)") < text.indexOf("prior tests: passed"));
+	const fresh = createActivityLog({ cwd: "/trusted/project", prompt: "New task" });
+	fresh.finish({ status: "Failed", disposition: "unfinished" });
+	assert.equal(fresh.snapshot().priorHandoffs, undefined);
+	assert.equal(fresh.snapshot().report, undefined);
+	assert.ok(!formatRunReport(fresh.snapshot()).includes(prior.snapshot().logPath));
 });
 
 test("the lightweight inspector expands a retained snapshot without filesystem access during rendering", () => {

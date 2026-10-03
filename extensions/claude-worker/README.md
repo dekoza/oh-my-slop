@@ -4,10 +4,13 @@ Delegate a bounded task from Pi to the **unmodified, installed Claude Code CLI**
 The extension does not extract credentials, register a model provider, or proxy
 Anthropic requests. Claude Code owns its tools, context, hooks and permissions.
 
-Verified against Claude Code **2.1.287** and the installed Pi extension loader.
+Local source inspection of installed Claude Code **2.1.287** confirms that open
+stdin keeps its stream session alive and that JSON-schema reports are returned as
+`structured_output`. The installed Pi extension loader was checked separately.
 Older versions without the expected authentication/control metadata fail closed.
-Fixture tests cover the protocol; a real inference/permission roundtrip has not
-been run. The extension launches nothing when it loads.
+Deterministic fixtures cover the protocol; no live inference/permission probe was
+conducted. This does not establish the cause of any historical cancellation.
+The extension launches nothing when it loads.
 
 ## Setup
 
@@ -29,8 +32,8 @@ pi -e ./extensions/claude-worker/index.ts
 
 | Command | Behavior |
 |---|---|
-| `/cc <task>` | Start a new worker in Pi's current project. |
-| `/cc-followup <instruction>` | Resume the last saved worker session after it finishes or stops. |
+| `/cc <task>` | Supervise a new bounded task in Pi's current project. |
+| `/cc-followup <information or instruction>` | Supply missing input or recover the last saved task in the same directory. |
 | `/cc-status` | Show current/last activity, elapsed time, session, log path and terminal diagnostics. |
 | `/cc-log` | Show a retained activity snapshot; expand the message for tool inputs/results. |
 | `/cc-stop` | Terminate the worker; retain its session and any existing file changes. |
@@ -53,7 +56,111 @@ a Pi model turn**. Follow-ups are resumed turns, not live interruption messages:
 stop the current task before sending a correction. Direct commands keep their
 result in the Pi transcript; they do not automatically ask Pi to review it.
 
-## Activity and premature endings
+## Supervision, outcomes and recovery
+
+Both `/cc` and `claude_worker` supervise the approved **task**, not merely one CLI
+turn. Waiting for required background work is nonterminal: input stays open,
+native task notifications are consumed, and the host continues outstanding work
+after the native turn result. Unrelated results and duplicate notifications must
+not finish the task or dispatch duplicate continuations. Continuation never adds
+permissions or expands the original task.
+
+Default safety limits are **8 host continuations** and a **30-minute transport
+budget after subscription authentication** per invocation. Authentication has a
+separate 10-second preflight timeout; initialization must finish within 10 seconds
+inside the transport budget. Exhaustion returns unfinished/interrupted, not success. Terminal EOF
+has a one-second exit allowance before SIGTERM, then a further one second before
+SIGKILL. Stop and shutdown use the same bounded owned-process cleanup. On POSIX,
+invocation settlement waits for group escalation even if the immediate process
+exits first, so that TERM-ignoring descendants do not outlive cancellation.
+Same-session cleanup frames still enter the diagnostic log and task history;
+ending supervision disables dispatch and approval, not evidence retention. A
+same-session execution failure reported during cleanup downgrades a finished
+report or a needs-input pause to unfinished, keeps its errors and permission
+denials, and leaves any pending question in the report.
+
+The host requests a strict JSON-schema report through Claude Code's
+`StructuredOutput`, with these fields (all required except `resolved_failures`):
+
+| Field | Meaning |
+|---|---|
+| `task_id` | Host-assigned identity for the approved task, retained by same-task follow-ups. |
+| `disposition` | `waiting`, `finished`, `needs_input` or `unfinished`. |
+| `outcomes` | Requested requirements, each with `requirement`, `status` (`verified` or `unverified`) and `evidence` strings naming tests, checks or artifacts. |
+| `outstanding`, `unverified` | Explicit lists of remaining actions and missing verification. |
+| `question` | Precise missing information for a needs-input pause; empty otherwise. |
+| `background_task_ids` | Required background work identities, retained across waiting turns. |
+| `resolved_failures` | Optional explicit resolution of failed intermediate checks, or of work stopped/lost before a deliberate follow-up: entries with that `task_id`, fresh completed `replacement_task_id`, and nonempty `evidence` explaining the repair and passing rerun. |
+
+Free-form “done”, exit code 0, `end_turn`, an empty active-task list or a successful
+CLI result is insufficient. Unsupported/missing reports remain unresolved within
+the safety limits. Finished requires an explicit mapping of every requested
+outcome to evidence, with no outstanding required work or missing evidence.
+Previously declared requirement wording must remain stable across reports; omitting
+an outcome does not erase its obligation, even if it was previously verified.
+Every item in `outstanding` or `unverified` is a retained obligation too: resolve it
+explicitly in `outcomes` using the same exact wording and current evidence. Clearing
+the lists alone is not resolution. Omitted outcomes and their prior evidence remain
+visible in the unfinished handoff. New checkpoints retain a SHA256 identity of each
+original requirement before display redaction/truncation, so equal sanitized labels
+cannot collapse distinct obligations. If original wording cannot be recovered,
+completion stays unresolved; do not substitute truncated/redacted display text.
+Older checkpoints cannot recover identity/evidence already lost before this change.
+The cumulative requirement ledger survives intentional pauses, recovery follow-ups
+and Pi session restoration in the same branch/directory. A supplied answer does
+not waive known verification: each requirement still needs explicit current evidence.
+The resumed task message carries the retained requirement wording on stdin, so a
+large ledger is not limited by the operating system's process-argument size.
+Older saved runs recover available requirements from their report and omitted-outcome
+metadata. Authoritative task identity, cumulative outcomes and notification-delivery
+state are checkpointed during supervision, not only at terminal settlement; an
+interrupted observation can therefore retain requirements learned while waiting.
+A new `/cc` task starts a separate identity and ledger.
+Stopped required tasks prevent finished in that invocation. A failed intermediate
+check does not end supervision while approved repair or other required work remains.
+Its identity and failed history stay in the handoff. A passing check under a new ID
+does not silently resolve it: Claude must explicitly attribute replacement evidence
+through `resolved_failures`, and the replacement must be observed completed after
+the failed check. Unresolved failures and unknown outcomes still prevent finished;
+work stopped in the current invocation and transport/execution errors cannot be
+resolved by this field.
+This is **Claude Code's evidence-backed self-report, not independent Pi certification**.
+
+Terminal handoffs use the same three dispositions on both entrypoints:
+
+- **Finished**: attributable Claude Code completion report and evidence.
+- **Needs input**: intentional pause with its precise question and saved context.
+  Answer with `/cc-followup <information>` or `claude_worker` with `resume: true`.
+- **Unfinished/interrupted**: limits, inability to continue, cancellation or errors.
+  Stopped and failed runs retain distinct labels; unknown task outcomes are not
+  described as failed verification. Inspect partial changes, outstanding work and
+  retained evidence before resuming; nothing is rolled back.
+
+Resume in the **same working directory**, using either follow-up entrypoint or
+`claude --resume <session-id>` for interactive recovery. Session IDs follow the
+active Pi branch; another branch/directory cannot silently resume this task.
+Native task identities and histories survive follow-up too. Previously running work
+is restored as unknown until fresh live evidence arrives; deliberate recovery may
+restart previously stopped or unknown work without erasing its history; a native
+`task_started` of that work in the follow-up counts as its resume. Work stopped or lost
+before the follow-up (for example, killed by EOF cleanup after a needs-input pause)
+can instead be replaced by a fresh-ID rerun that completes during the follow-up and
+is attributed in `resolved_failures`; its stopped/unknown record stays in the
+handoff, also when the CLI re-delivers that earlier stop. A re-delivered earlier
+completion is history, not such a rerun. The resumed prompt lists the
+unresolved earlier task IDs as data. Work restarted in the follow-up and stopped
+again is a barrier once more.
+Tree navigation stops the worker and retains its interrupted handoff on the
+launching branch before moving the leaf. A post-navigation cleanup fallback
+retains diagnostics only in the private log, never on the newly selected branch.
+If no session ID was assigned, inspect the log and partial work before starting
+a new `/cc` task. No automatic retry follows a terminal failure. Same-task resumes
+retain sanitized prior handoffs and prior log references separately from the current
+report, including when authentication fails before any new report. Prior evidence
+remains labelled historical, never current completion certification; a fresh `/cc`
+task does not inherit these handoffs.
+
+## Activity inspection
 
 The live widget shows the current tool/activity, elapsed time, time since the last
 reported activity, tool counters and reported active tasks. `/cc-log` adds a
@@ -64,14 +171,14 @@ Run the command again to refresh a running worker's snapshot. The inspector show
 view limit. Omitted records/view truncation are explicit; use the displayed log
 path to inspect everything that was retained.
 
-A successful CLI turn is labeled **“Turn ended; completion unverified”**. Exit code,
-signal, result subtype, stop/terminal reason (when reported), permission denials,
-last activity and still-reported tasks are retained. Failures and stops leave a
-report in the Pi transcript, not just a transient notification. The latest run's
-metadata follows the Pi branch across reloads. If observation was interrupted
-without a retained terminal outcome, the status says it is unknown, not finished.
-There is no automatic retry, task-completion assertion or supervisor loop.
-Use `/cc-followup` deliberately after reviewing the evidence.
+Live status includes the supervision reason and continuation count. Terminal
+reports retain exit code, signal, result subtype, stop/terminal reason, permission
+denials, last activity, outcomes/evidence, precise question, outstanding and
+unverified work. Stopped/failed/completed task identities remain visible even
+after the active-task list clears. Failures and stops leave a report in the Pi
+transcript, not just a transient notification. The latest run's metadata follows
+the Pi branch across reloads. If observation was interrupted without a retained
+terminal outcome, the status says it is unknown and unfinished, not finished.
 
 Each run creates a private temporary directory (`pi-cc-worker-*`) containing
 `activity.jsonl`, with file mode `0600`. Logs retain prompts and reported tool
@@ -83,11 +190,19 @@ are capped at 8 MiB, with an explicit notice and terminal outcome still retained
 The extension does not automatically delete logs; OS temporary-directory cleanup
 can remove them. A missing/unreadable log is reported rather than hidden.
 
-The transport sends a UUID with each submitted user turn and does not close input
-for an explicitly unrelated/task-notification result. It still ends the worker on
-the submitted turn's terminal result; reported background tasks are not supervised
-or awaited afterward. This guards against one protocol failure mode, **not proof
-that it caused your earlier premature endings**.
+The transport sends a UUID with each submitted user turn and correlates results
+within the saved session. A required native task completion drives continuation
+only after the native turn result; waiting turns do not close input. An identical
+native result without a delivery ID cannot prove that a later queue has drained;
+ambiguous redelivery remains unresolved within the safety limits. Native task-notification
+and turn-result deduplication also survive same-task follow-up and restoration: an
+old completion delivery is not fresh evidence for previously restarted work, and a
+native result consumed before a pause cannot drain a resumed queue. A terminal native
+task update (`completed`, `failed`, or `killed`, reported as stopped) is terminal
+evidence with its error, even when interruption prevents the separate notification. Completion is checked
+again after EOF cleanup; contradictory stopped/pending work downgrades the handoff
+to unfinished without starting another turn. This guards
+against premature ending but does not identify who cancelled historical work.
 
 The `claude_worker` tool lets Pi delegate too. It takes a `prompt` and optional
 `resume: true`, requires human confirmation, streams updates and returns the
@@ -116,15 +231,19 @@ Nothing automatically routes other Pi tools or subagents through Claude Code.
 - **No automatic worktree, rollback, commit or push.** Claude Code can modify the
   current project and run approved commands. Do not let Pi or another worker edit
   the same files concurrently; put isolated work in a separate worktree yourself.
-- Stop/reload/session shutdown aborts owned processes, escalating after one second.
+- Stop/reload/session shutdown aborts owned processes with SIGTERM, escalating to
+  SIGKILL after one second.
   POSIX cancellation targets the worker's process group; Windows cancellation is
   limited to the immediate process.
 - Saved session IDs follow the active Pi branch and are scoped to the working
   directory. A stopped worker may leave partial changes; inspect them before
   resuming or running another agent.
-- Final output is capped at 64,000 characters with an explicit truncation notice.
-  Open the saved session with `claude --resume <session-id>` for the complete
-  history or an unsupported interaction.
+- Assembled run reports, including task outcomes and evidence, are capped at
+  50 KiB or 2,000 lines (whichever is reached first), including the truncation
+  notice. The notice points to a private `pi-cc-report-*` file containing the
+  complete sanitized report; retained metadata still has the individual-string
+  limits described above. Open the saved session with `claude --resume <session-id>`
+  for the complete native history or an unsupported interaction.
 
 There is no fallback to API billing and no automatic retry after a failed worker.
 If authentication is rejected, correct it in Claude Code and try again.
