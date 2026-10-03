@@ -136,6 +136,32 @@ test("only one worker runs and stop/shutdown preserve the resumable session", as
 	assert.ok(!h.messages.some(({ message }) => message.content.includes("Turn ended; completion unverified")), "cancelled work is not reported as a successful turn");
 });
 
+test("shutdown during an approval wait leaves an unfinished handoff and cannot grant late approval", async () => {
+	let answer;
+	let allowed;
+	const h = harness(async (options) => {
+		options.onProgress({ type: "system", subtype: "init", session_id: SESSION_ID });
+		options.onProgress({ type: "worker_supervision", status: "Waiting", reason: "Awaiting required review", continuations: 2 });
+		allowed = await options.onPermission({ tool_name: "Bash", input: { command: "test" } }, options.signal);
+		return { sessionId: SESSION_ID, disposition: "finished", text: "Too late" };
+	});
+	h.ctx.ui.confirm = async (title) => title.includes("allow Bash") ? new Promise((resolve) => { answer = resolve; }) : true;
+	await h.commands.get("cc").handler("Repair", h.ctx);
+	await new Promise(setImmediate);
+	assert.ok(h.widgets.some(([, lines]) => lines?.join("\n").includes("Awaiting required review")));
+	assert.ok(h.widgets.some(([, lines]) => lines?.join("\n").includes("continuations: 2")));
+	const shutdown = h.events.get("session_shutdown")({}, h.ctx);
+	answer(true);
+	await shutdown;
+	assert.equal(allowed, false);
+	const terminal = h.messages.at(-1).message;
+	assert.equal(terminal.details.disposition, "unfinished");
+	assert.match(terminal.content, /Unfinished\/interrupted \(Stopped\)/);
+	assert.match(terminal.content, /partial changes/);
+	assert.match(terminal.content, /claude --resume/);
+	assert.ok(!terminal.content.includes("Claude Code: Finished"));
+});
+
 test("restoration follows the active Pi branch and never resumes a session from another directory", async () => {
 	const calls = [];
 	const h = harness(async (options) => {

@@ -61,6 +61,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 				`Claude Code: ${status} · elapsed ${elapsed}s · last activity ${idle}s ago`,
 				`Activity: ${state.currentActivity || "Waiting for Claude Code"}`,
 				`Tools: ${state.stats.toolCalls} calls / ${state.stats.toolResults} results · reported active tasks: ${state.backgroundTasks.length}`,
+				...(state.reason ? [`Supervision: ${state.reason} · continuations: ${state.continuations ?? 0}`] : []),
 				...preview.split("\n").slice(-3),
 			]);
 		};
@@ -96,7 +97,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 							const allowed = await ctx.ui.confirm(`Claude Code: allow ${safeText(request.tool_name)}?`,
 								safeText([request.decision_reason, request.blocked_path, JSON.stringify(request.input, null, 2)].filter(Boolean).join("\n\n")), { signal: permissionSignal, timeout: 60_000 });
 							job.log.record({ type: "worker_permission", status: permissionSignal.aborted ? "cancelled" : allowed ? "allowed" : "denied", toolName: request.tool_name });
-							return allowed;
+							return allowed && !permissionSignal.aborted && !controller.signal.aborted;
 						} catch (error) {
 							job.log.record({ type: "worker_permission", status: "error", toolName: request.tool_name, error: error.message });
 							throw error;

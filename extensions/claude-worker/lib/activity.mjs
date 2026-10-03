@@ -57,6 +57,13 @@ export function createActivityLog({ cwd, prompt, sessionId, maxBytes = 8 * 1024 
 				state.sessionId = event.session_id;
 				append("initialized", "Claude Code initialized", { sessionId: event.session_id });
 			}
+			if (event.type === "worker_supervision") {
+				state.status = safeText(event.status);
+				state.reason = safeText(event.reason || "");
+				state.continuations = event.continuations;
+				activity(state.reason || state.status);
+				append("worker_supervision", state.lastActivity, event);
+			}
 			if (event.type === "worker_permission") {
 				state.status = event.status === "waiting" ? "Awaiting approval" : "Running";
 				activity(`${event.toolName}: permission ${event.status}`);

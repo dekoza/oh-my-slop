@@ -96,6 +96,20 @@ test("retained run reports and expandable log snapshots explain outcomes without
 	assert.match(formatActivityLog(snapshot, limited, { expanded: true }), /earlier records omitted/);
 });
 
+test("supervision waiting is visible with reason and continuation count, but cannot revive a finished log", () => {
+	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Repair" });
+	log.record({ type: "worker_supervision", status: "Waiting for required background work", reason: "Awaiting review-1", continuations: 2 });
+	assert.equal(log.snapshot().status, "Waiting for required background work");
+	assert.equal(log.snapshot().reason, "Awaiting review-1");
+	assert.equal(log.snapshot().continuations, 2);
+	assert.match(formatRunReport(log.snapshot()), /Continuations: 2/);
+	assert.match(readFileSync(log.snapshot().logPath, "utf8"), /worker_supervision/);
+	log.finish({ status: "Needs input", disposition: "needs_input", report: { question: "Which target?" } });
+	log.record({ type: "worker_supervision", status: "Running", continuations: 3 });
+	assert.equal(log.snapshot().status, "Needs input");
+	assert.match(formatRunReport(log.snapshot()), /Question: Which target\?/);
+});
+
 test("terminal task identities and evidence survive an empty active list and render recovery", () => {
 	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Repair authentication" });
 	log.record({ type: "system", subtype: "task_started", task_id: "review-1", task_type: "local_agent", description: "Review repair" });
