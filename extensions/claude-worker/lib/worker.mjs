@@ -236,9 +236,12 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 				const final = supervision.assess(supervision.snapshot().report);
 				if (final.disposition !== "finished") { disposition = "unfinished"; reason = final.reason; }
 			}
-			if (cleanupFailures.length && disposition === "finished") {
+			if (cleanupFailures.length && disposition !== "unfinished") {
+				// An execution failure overrides a completion report or pause; the question stays in the report.
+				reason = disposition === "finished"
+					? "Claude Code execution failed during cleanup after its completion report; completion is not established."
+					: `Claude Code execution failed during cleanup after a needs-input pause; the task is interrupted. Pending question: ${reason}`;
 				disposition = "unfinished";
-				reason = "Claude Code execution failed during cleanup after its completion report; completion is not established.";
 			}
 			const cleanupErrors = cleanupFailures.flatMap((event) => event.errors?.length ? event.errors : [event.result || `Claude Code cleanup result: ${event.subtype}`]);
 			const outcome = {

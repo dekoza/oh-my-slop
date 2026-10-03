@@ -1145,6 +1145,27 @@ input.on("close", () => {
 	assert.equal((await fake.frames()).filter((frame) => frame.type === "user").length, 1);
 });
 
+test("a cleanup execution failure after a needs-input pause leads the unfinished reason and keeps the question", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+ send({ type: "result", uuid: "paused", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("needs_input", { question: "Which target?" }) });
+});
+input.on("close", () => {
+ send({ type: "result", uuid: "late-error", subtype: "error_during_execution", is_error: true, origin: { kind: "task-notification" }, session_id: "${SESSION_ID}", errors: ["EOF cleanup execution failed"] });
+ setTimeout(() => process.exit(0), 25);
+});
+` });
+	await assert.rejects(runClaude({ ...fake, prompt: "Inspect" }), (error) => {
+		assert.equal(error.outcome.disposition, "unfinished");
+		assert.match(error.outcome.reason, /^Claude Code execution failed during cleanup/);
+		assert.match(error.outcome.reason, /Which target\?/);
+		assert.equal(error.outcome.report.question, "Which target?");
+		return true;
+	});
+});
+
 test("normal terminal completion exits without waiting for cancellation escalation", { timeout: 15_000 }, async (t) => {
 	const fake = await fixture(t, { body: `
 input.on("close", () => process.exit(0));

@@ -76,7 +76,8 @@ exits first, so that TERM-ignoring descendants do not outlive cancellation.
 Same-session cleanup frames still enter the diagnostic log and task history;
 ending supervision disables dispatch and approval, not evidence retention. A
 same-session execution failure reported during cleanup downgrades a finished
-report to unfinished and keeps its errors and permission denials.
+report or a needs-input pause to unfinished, keeps its errors and permission
+denials, and leaves any pending question in the report.
 
 The host requests a strict JSON-schema report through Claude Code's
 `StructuredOutput`, with these fields (all required except `resolved_failures`):
