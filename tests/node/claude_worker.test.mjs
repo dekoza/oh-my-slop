@@ -106,7 +106,9 @@ input.on("line", (line) => {
   setTimeout(() => {
    send({ type: "system", subtype: "task_notification", task_id: "verify", status: "completed", summary: "Verification passed" });
    send({ type: "system", subtype: "background_tasks_changed", tasks: [] });
-   send({ type: "result", subtype: "success", origin: { kind: "task-notification" }, session_id: "${SESSION_ID}", result: "Verification notification" });
+   const notification = { type: "result", uuid: "native-result", subtype: "success", origin: { kind: "task-notification" }, session_id: "${SESSION_ID}", result: "Verification notification" };
+   send(notification); send(notification);
+   send({ type: "system", subtype: "task_notification", task_id: "verify", status: "completed", summary: "Repeated notification" });
   }, 40);
  } else {
   send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", result: "Repair applied; verification passed", structured_output: completion() });
@@ -162,6 +164,124 @@ input.on("line", (line) => {
 	const result = await runClaude({ ...fake, prompt: "Inspect", maxContinuations: 1 });
 	assert.equal(result.disposition, "finished");
 	assert.equal(result.taskOutcomes[0].status, "completed");
+});
+
+test("explicit needs-input preserves its question and a same-session answer can finish", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ const resumed = args.includes("--resume");
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: resumed ? completion() : completion("needs_input", { question: "Which output directory?", outstanding: ["Write artifact after answer"] }) });
+});
+` });
+	const paused = await runClaude({ ...fake, prompt: "Inspect and save" });
+	assert.equal(paused.disposition, "needs_input");
+	assert.equal(paused.report.question, "Which output directory?");
+	const resumed = await runClaude({ ...fake, prompt: "Use artifacts/", sessionId: paused.sessionId });
+	assert.equal(resumed.disposition, "finished");
+	assert.equal(resumed.sessionId, paused.sessionId);
+});
+
+test("unsupported, ambiguous, missing evidence and pending work reports never finish", { timeout: 15_000 }, async (t) => {
+	for (const expression of [
+		"undefined", "null", "{ disposition: 'finished' }", "completion('done')", "completion('finished', { task_id: 'other-task' })",
+		"completion('finished', { outcomes: [] })", "completion('finished', { outcomes: [{ requirement: 'Inspect', status: 'verified', evidence: [] }] })",
+		"completion('finished', { outcomes: [{ requirement: 'Inspect', status: 'unverified', evidence: ['Pending'] }] })",
+		"completion('finished', { outstanding: ['Repair still required'] })", "completion('finished', { unverified: ['Tests not run'] })",
+		"completion('finished', { question: 'Unanswered' })", "completion('needs_input', { question: '' })",
+		"completion('finished', { extra: 'unsupported' })",
+	]) {
+		const fake = await fixture(t, { body: `input.on("line", (line) => { if (JSON.parse(line).type === "user") send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", result: "Done", structured_output: ${expression} }); });` });
+		const result = await runClaude({ ...fake, prompt: "Inspect" });
+		assert.equal(result.disposition, "unfinished", expression);
+	}
+});
+
+test("stopped, failed and unknown required tasks survive an empty active snapshot and block finished", { timeout: 15_000 }, async (t) => {
+	for (const status of ["stopped", "failed", "unknown"]) {
+		const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "system", subtype: "task_started", task_id: "verify", description: "Integration check" });
+ ${status === "unknown" ? "" : `send({ type: "system", subtype: "task_notification", task_id: "verify", status: "${status}", summary: "Check did not finish" });`}
+ send({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
+});
+` });
+		const result = await runClaude({ ...fake, prompt: "Verify" });
+		assert.equal(result.disposition, "unfinished");
+		assert.equal(result.taskOutcomes[0].taskId, "verify");
+		assert.equal(result.taskOutcomes[0].status, status);
+	}
+});
+
+test("continuation and elapsed-time limits end unfinished with retained context", { timeout: 15_000 }, async (t) => {
+	const looping = await fixture(t);
+	const result = await runClaude({ ...looping, prompt: "Inspect", maxContinuations: 2 });
+	assert.equal(result.disposition, "unfinished");
+	assert.equal(result.continuations, 2);
+	assert.match(result.reason, /safety limit/);
+	assert.equal((await looping.frames()).filter((frame) => frame.type === "user").length, 3);
+	const waiting = await fixture(t, { body: `input.on("line", (line) => { if (JSON.parse(line).type === "user") {
+ send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+ send({ type: "system", subtype: "task_started", task_id: "never-finishes" });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("waiting", { background_task_ids: ["never-finishes"] }) });
+} });` });
+	await assert.rejects(runClaude({ ...waiting, prompt: "Wait", maxTaskMs: 100 }), (error) => {
+		assert.equal(error.outcome.disposition, "unfinished");
+		assert.equal(error.outcome.sessionId, SESSION_ID);
+		assert.equal(error.outcome.taskOutcomes[0].taskId, "never-finishes");
+		assert.match(error.outcome.reason, /time safety limit/);
+		return true;
+	});
+});
+
+test("unrelated sessions, UUIDs and notification reports cannot certify the approved task", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+ send({ type: "result", subtype: "success", session_id: "other-session", structured_output: completion() });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", user_message_uuid: "unrelated", structured_output: completion() });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", origin: { kind: "task-notification" }, structured_output: completion() });
+ setTimeout(() => send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", result: "Approved task paused", structured_output: completion("needs_input", { question: "Which scope?" }) }), 20);
+});
+` });
+	const result = await runClaude({ ...fake, prompt: "Inspect" });
+	assert.equal(result.disposition, "needs_input");
+	assert.equal(result.text, "Approved task paused");
+	assert.equal(result.continuations, 0);
+});
+
+test("a native notification turn can consume an explicitly correlated host continuation", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+let turns = 0;
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ turns++;
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", user_message_uuids: [event.uuid], ...(turns > 1 ? { origin: { kind: "task-notification" }, structured_output: completion() } : {}) });
+});
+` });
+	const result = await runClaude({ ...fake, prompt: "Inspect", maxContinuations: 1 });
+	assert.equal(result.disposition, "finished");
+	assert.equal(result.continuations, 1);
+});
+
+test("an execution failure after a completion report cannot emit a finished terminal event", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("close", () => process.exit(7));
+input.on("line", (line) => { if (JSON.parse(line).type === "user") send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() }); });
+` });
+	const events = [];
+	await assert.rejects(runClaude({ ...fake, prompt: "Inspect", onProgress: (event) => events.push(event) }), (error) => {
+		assert.equal(error.outcome.disposition, "unfinished");
+		return true;
+	});
+	assert.equal(events.at(-1).type, "worker_exit");
+	assert.equal(events.at(-1).disposition, "unfinished");
 });
 
 test("API, logged-out, unknown-plan and mixed credentials fail before any model request", { timeout: 15_000 }, async (t) => {

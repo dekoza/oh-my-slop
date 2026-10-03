@@ -197,14 +197,19 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 				terminalReason: result?.terminal_reason, numTurns: result?.num_turns, errors: result?.errors || [],
 				permissionDenials, stderr,
 			};
-			try { onProgress({ type: "worker_exit", ...outcome }); } catch (error) { failure ??= error; }
 			let error = failure;
 			if (!error && signal?.aborted) error = new Error("Claude Code worker stopped.");
 			if (!error && (code !== 0 || !result || result.is_error || result.subtype !== "success")) {
 				error = new Error([result?.result, ...outcome.errors, stderr].filter(Boolean).join("\n") || "Claude Code exited without a successful result.");
 			}
 			if (!error && !result?.session_id) error = new Error("Claude Code returned no resumable session ID.");
-			if (error) { outcome.disposition = "unfinished"; outcome.reason = error.message; error.outcome = outcome; reject(error); }
+			if (error) { outcome.disposition = "unfinished"; outcome.reason = error.message; }
+			try { onProgress({ type: "worker_exit", ...outcome }); } catch (progressError) {
+				error ??= progressError;
+				outcome.disposition = "unfinished";
+				outcome.reason = error.message;
+			}
+			if (error) { error.outcome = outcome; reject(error); }
 			else resolve(outcome);
 		});
 		child.stdin.write(JSON.stringify({ type: "control_request", request_id: "pi-initialize", request: { subtype: "initialize", hooks: null } }) + "\n");
