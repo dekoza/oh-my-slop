@@ -96,6 +96,24 @@ test("retained run reports and expandable log snapshots explain outcomes without
 	assert.match(formatActivityLog(snapshot, limited, { expanded: true }), /earlier records omitted/);
 });
 
+test("terminal task identities and evidence survive an empty active list and render recovery", () => {
+	const log = createActivityLog({ cwd: "/trusted/project", prompt: "Repair authentication" });
+	log.record({ type: "system", subtype: "task_started", task_id: "review-1", task_type: "local_agent", description: "Review repair" });
+	log.record({ type: "system", subtype: "task_notification", task_id: "review-1", status: "stopped", summary: "Review stopped", output_file: "/tmp/review.txt" });
+	log.record({ type: "system", subtype: "task_notification", task_id: "tests-1", status: "failed", summary: "Verification failed" });
+	log.record({ type: "system", subtype: "task_notification", task_id: "read-1", status: "completed", summary: "Read complete" });
+	log.record({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+	assert.equal(log.snapshot().backgroundTasks.length, 0);
+	assert.deepEqual(log.snapshot().taskOutcomes.map(({ taskId, status }) => [taskId, status]), [["review-1", "stopped"], ["tests-1", "failed"], ["read-1", "completed"]]);
+	const report = { task_id: "repair", disposition: "unfinished", outcomes: [{ requirement: "Fix authentication", status: "verified", evidence: ["tests/auth.py: 3 passed"] }], outstanding: ["Finish review"], unverified: ["Integration coverage"], question: "", background_task_ids: [] };
+	log.finish({ status: "Unfinished/interrupted", disposition: "unfinished", sessionId: "session-1", reason: "Required task stopped", continuations: 2, report });
+	const state = log.snapshot();
+	assert.deepEqual(state.report, report);
+	assert.equal(state.taskOutcomes.length, 3);
+	const text = formatRunReport(state);
+	for (const expected of ["Claude Code self-report", "tests/auth.py: 3 passed", "Finish review", "Integration coverage", "review-1", "stopped", "tests-1", "failed", "read-1", "completed", "Required task stopped", "Continuations: 2", "/cc-followup", "resume: true", "claude --resume session-1", "/trusted/project", "partial changes"]) assert.ok(text.includes(expected), expected);
+});
+
 test("the lightweight inspector expands a retained snapshot without filesystem access during rendering", () => {
 	const message = { content: "Compact timeline", details: { expandedText: "Full input and result: 世界", logPath: "/not/read/during/render" } };
 	assert.match(activityMessageText(message, { expanded: false }), /Compact timeline/);
