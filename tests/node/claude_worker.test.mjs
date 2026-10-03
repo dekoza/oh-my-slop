@@ -562,6 +562,27 @@ test("work interrupted before a follow-up needs a replacement completed in that 
 	legacy.record({ type: "system", subtype: "task_started", task_id: "fresh-check" });
 	legacy.record({ type: "system", subtype: "task_notification", task_id: "fresh-check", status: "completed", uuid: "rerun" });
 	assert.equal(legacy.assess(report).action, "continue");
+
+	// A re-delivered earlier completion is history, not a rerun completed in this follow-up.
+	const redelivered = createTaskSupervision("approved", { taskId: "approved", taskOutcomes: [
+		{ taskId: "fresh-check", status: "completed", terminalStatus: "completed", terminalSequence: 1, history: [{ status: "completed" }] },
+		{ taskId: "old-check", status: "stopped", terminalStatus: "stopped", terminalSequence: 2, history: [{ status: "stopped" }] },
+	] });
+	redelivered.record({ type: "system", subtype: "task_notification", task_id: "fresh-check", status: "completed", uuid: "completion-again" });
+	assert.equal(redelivered.assess(report).action, "continue");
+	assert.deepEqual(redelivered.snapshot().taskOutcomes[0].history.map((entry) => entry.status), ["completed", "completed"]);
+
+	// Live evidence in this follow-up makes a later stop current, even when a restart is not accepted.
+	const restarted = createTaskSupervision("approved", { taskId: "approved", taskOutcomes: [
+		{ taskId: "old-check", status: "unknown", terminalStatus: "unknown", terminalSequence: 1, history: [{ status: "unknown" }] },
+	] });
+	restarted.record({ type: "system", subtype: "task_started", task_id: "old-check" });
+	restarted.record({ type: "system", subtype: "task_notification", task_id: "old-check", status: "stopped", uuid: "live-stop" });
+	restarted.record({ type: "system", subtype: "task_started", task_id: "fresh-check" });
+	restarted.record({ type: "system", subtype: "task_notification", task_id: "fresh-check", status: "completed", uuid: "rerun" });
+	const decision = restarted.assess(report);
+	assert.equal(decision.disposition, "unfinished");
+	assert.match(decision.reason, /old-check \(stopped\)/);
 });
 
 test("resumed task lifecycles invalidate earlier completion and retain terminal history", () => {
@@ -786,7 +807,8 @@ input.on("close", () => {
 		assert.match(resumedPrompt, /old-check/, "the follow-up names the interrupted task so Claude can attribute a replacement");
 		const handoff = formatRunReport({ ...recovered, startedAt: Date.now(), status: "Finished", stats: {} });
 		assert.match(handoff, new RegExp(`Task old-check: ${interruption}`));
-		assert.match(handoff, /Resolved failure old-check: replacement fresh-check/);
+		assert.match(handoff, new RegExp(`Resolved ${interruption} task old-check: replacement fresh-check`));
+		assert.doesNotMatch(handoff, /Resolved failure/, "stopped or unknown work is not described as failed verification");
 
 		const redelivered = await resume("Redeliver answer");
 		assert.equal(redelivered.disposition, "finished", `${interruption}: a re-delivered earlier stop is not a stop in this follow-up`);

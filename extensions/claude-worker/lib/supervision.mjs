@@ -67,6 +67,8 @@ export function createTaskSupervision(taskId, resumeState) {
 	// preceded the deliberate follow-up, so an attributed fresh rerun can resolve them.
 	const carriedOver = new Set(tasks.keys());
 	const interruptedBefore = (task) => carriedOver.has(task?.taskId) && ["stopped", "unknown"].includes(task.status);
+	// Failed checks and earlier interruptions are what an attributed fresh-ID rerun can resolve.
+	const rerunResolvable = (task) => task?.status === "failed" || interruptedBefore(task);
 	const declarations = (value) => [...(value?.outstanding || []), ...(value?.unverified || [])]
 		.map((requirement) => ({ requirement, status: "unverified", evidence: [] }));
 	// New checkpoints contain the complete identified ledger. Legacy reports are a fallback,
@@ -83,11 +85,12 @@ export function createTaskSupervision(taskId, resumeState) {
 	let terminalSequence = Math.max(0, ...[...tasks.values()].map((task) => task.terminalSequence || 0));
 	const markRunning = (id, description, explicitResume = false, isBackgrounded) => {
 		const task = tasks.get(id);
+		// Live evidence in this invocation, even when not accepted below, makes a later stop current.
+		carriedOver.delete(id);
 		// A stop ends this invocation's required work; recovery needs a deliberate follow-up.
 		if (task?.terminalStatus === "stopped") return;
 		// Live evidence can resolve snapshot uncertainty; failures/unknowns need a resume.
 		if (["failed", "unknown"].includes(task?.terminalStatus) && !explicitResume) return;
-		carriedOver.delete(id);
 		tasks.set(id, { taskId: id, status: "running", isBackgrounded: isBackgrounded ?? task?.isBackgrounded,
 			description: description || task?.description, history: task?.history || [] });
 	};
@@ -97,9 +100,10 @@ export function createTaskSupervision(taskId, resumeState) {
 		if (seenNotifications.has(delivery)) return;
 		seenNotifications.add(delivery);
 		const task = tasks.get(id) || { taskId: id, description };
-		// Without live evidence in this follow-up, a stop can only re-deliver the earlier interruption.
-		if (interruptedBefore(task) && outcome.status === "stopped") {
-			tasks.set(id, { ...task, status: "stopped", history: [...(task.history || []), outcome] });
+		// Without live evidence in this follow-up, a repeated outcome or a stop of interrupted work
+		// can only re-deliver earlier evidence: retain it without making it current.
+		if (carriedOver.has(id) && (outcome.status === task.status || (interruptedBefore(task) && outcome.status === "stopped"))) {
+			tasks.set(id, { ...task, status: outcome.status, history: [...(task.history || []), outcome] });
 			return;
 		}
 		carriedOver.delete(id);
@@ -183,11 +187,11 @@ export function createTaskSupervision(taskId, resumeState) {
 			for (const resolution of report.resolved_failures || []) {
 				const original = tasks.get(resolution.task_id);
 				const replacement = tasks.get(resolution.replacement_task_id);
-				const interrupted = interruptedBefore(original);
+				const wasInterrupted = interruptedBefore(original);
 				// A carried-over record may lack a sequence; the replacement must then be completed in this follow-up.
-				const resolvable = original?.status === "failed" || (interrupted && !carriedOver.has(replacement?.taskId));
+				const resolvable = rerunResolvable(original) && !(wasInterrupted && carriedOver.has(replacement?.taskId));
 				if (!resolvable || replacement?.status !== "completed" ||
-					!(replacement.terminalSequence > (interrupted ? original.terminalSequence ?? 0 : original.terminalSequence))) {
+					!(replacement.terminalSequence > (wasInterrupted ? original.terminalSequence ?? 0 : original.terminalSequence))) {
 					reason = "Failure resolution lacks an observed failed or previously interrupted check and fresh completed replacement; completion remains unresolved.";
 					return { action: "continue", reason };
 				}
@@ -206,8 +210,9 @@ export function createTaskSupervision(taskId, resumeState) {
 				!report.outstanding.length && !report.unverified.length && !report.question.trim() && !pendingIds.length && !unfinishedTasks) {
 				return { action: "end", disposition: "finished", reason: "Claude Code reported every requested outcome with evidence; not independently certified by Pi." };
 			}
-			const failed = [...tasks.values()].filter((task) => task.status === "failed" && !resolved.has(task.taskId));
-			const interrupted = [...tasks.values()].filter((task) => interruptedBefore(task) && !resolved.has(task.taskId));
+			const unresolved = [...tasks.values()].filter((task) => rerunResolvable(task) && !resolved.has(task.taskId));
+			const failed = unresolved.filter((task) => task.status === "failed");
+			const interrupted = unresolved.filter((task) => task.status !== "failed");
 			reason = failed.length
 				? `Failed verification remains unresolved: ${listTasks(failed)}. Continue the approved repair and verification.`
 				: interrupted.length
@@ -217,7 +222,7 @@ export function createTaskSupervision(taskId, resumeState) {
 		},
 		// Earlier failed or interrupted tasks an attributed rerun can still resolve.
 		unresolvedTasks() {
-			return [...tasks.values()].filter((task) => task.status === "failed" || interruptedBefore(task)).map((task) => ({ task_id: task.taskId, status: task.status }));
+			return [...tasks.values()].filter(rerunResolvable).map((task) => ({ task_id: task.taskId, status: task.status }));
 		},
 		get waiting() {
 			return [...tasks.values()].some((task) => task.status === "running") ||
