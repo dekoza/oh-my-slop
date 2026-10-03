@@ -127,6 +127,40 @@ input.on("line", (line) => {
 	assert.notEqual(users[0].uuid, users[1].uuid);
 });
 
+test("failed intermediate verification preserves other required work and permits an approved repair", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+let ready = false;
+let turns = 0;
+input.on("close", () => {
+ if (!ready) process.stderr.write("EOF before required review completed\\n");
+ process.exit(0);
+});
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ if (++turns === 1) {
+  send({ type: "system", subtype: "task_notification", task_id: "red-check", status: "failed", summary: "Pre-repair assertion failed" });
+  send({ type: "system", subtype: "task_started", task_id: "review", is_backgrounded: true });
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("waiting", { outstanding: ["Repair assertion and rerun after review"], background_task_ids: ["review"] }) });
+  setTimeout(() => {
+   ready = true;
+   send({ type: "system", subtype: "task_notification", task_id: "review", status: "completed" });
+   send({ type: "result", subtype: "success", origin: { kind: "task-notification" }, session_id: "${SESSION_ID}" });
+  }, 150);
+ } else {
+  send({ type: "system", subtype: "task_updated", task_id: "red-check", patch: { status: "running" } });
+  send({ type: "system", subtype: "task_notification", task_id: "red-check", status: "completed", summary: "Repair applied; rerun passed" });
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
+ }
+});
+` });
+	const result = await runClaude({ ...fake, prompt: "Review, repair and verify", maxContinuations: 1 });
+	assert.equal(result.disposition, "finished");
+	assert.equal(result.continuations, 1);
+	assert.doesNotMatch(result.stderr, /EOF before/);
+	assert.deepEqual(result.taskOutcomes.find((task) => task.taskId === "red-check").history.map((entry) => entry.status), ["failed", "completed"]);
+	assert.equal((await fake.frames()).filter((event) => event.type === "user").length, 2);
+});
+
 test("foreground verification survives background-only snapshots and waits after backgrounding", { timeout: 15_000 }, async (t) => {
 	for (const transition of ["snapshot", "update", "both"]) {
 		const fake = await fixture(t, { body: `
@@ -205,7 +239,7 @@ test("resumed task lifecycles invalidate earlier completion and retain terminal 
 		assert.equal(supervisor.waiting, true);
 		assert.equal(supervisor.assess(report).action, "continue");
 		supervisor.record({ type: "system", subtype: "task_notification", task_id: "verify", status: "failed", uuid: "completion-2", summary: "Resumed verification failed" });
-		assert.equal(supervisor.assess(report).disposition, "unfinished");
+		assert.equal(supervisor.assess(report).action, "continue", "failed verification blocks finished but permits repair");
 		const task = supervisor.snapshot().taskOutcomes[0];
 		assert.equal(task.status, "failed");
 		assert.deepEqual(task.history.map((outcome) => outcome.status), ["completed", "failed"]);

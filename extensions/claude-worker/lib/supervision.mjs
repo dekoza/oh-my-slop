@@ -86,8 +86,8 @@ export function createTaskSupervision(taskId) {
 			for (const id of report.background_task_ids) if (!tasks.has(id)) tasks.set(id, { taskId: id, status: "running", description: "Required by Claude Code's task report" });
 			if (report.disposition === "needs_input" && report.question.trim()) return { action: "end", disposition: "needs_input", reason: report.question };
 			if (report.disposition === "unfinished") return { action: "end", disposition: "unfinished", reason: report.outstanding.join("; ") || "Claude Code reported that work is unfinished." };
-			const failed = [...tasks.values()].filter((task) => ["stopped", "failed"].includes(task.status));
-			if (failed.length) return { action: "end", disposition: "unfinished", reason: `Required background work stopped or failed: ${failed.map((task) => `${task.taskId} (${task.status})`).join(", ")}.` };
+			const stopped = [...tasks.values()].filter((task) => task.status === "stopped");
+			if (stopped.length) return { action: "end", disposition: "unfinished", reason: `Required background work stopped: ${stopped.map((task) => `${task.taskId} (${task.status})`).join(", ")}.` };
 			const pendingIds = report.background_task_ids.filter((id) => tasks.get(id)?.status !== "completed");
 			const unfinishedTasks = [...tasks.values()].some((task) => task.status !== "completed");
 			if (report.disposition === "finished" && report.outcomes.length &&
@@ -95,7 +95,10 @@ export function createTaskSupervision(taskId) {
 				!report.outstanding.length && !report.unverified.length && !report.question.trim() && !pendingIds.length && !unfinishedTasks) {
 				return { action: "end", disposition: "finished", reason: "Claude Code reported every requested outcome with evidence; not independently certified by Pi." };
 			}
-			reason = "Required work or evidence remains unresolved; request a complete, attributable report after finishing it.";
+			const failed = [...tasks.values()].filter((task) => task.status === "failed");
+			reason = failed.length
+				? `Failed verification remains unresolved: ${failed.map((task) => `${task.taskId} (${task.status})`).join(", ")}. Continue the approved repair and verification.`
+				: "Required work or evidence remains unresolved; request a complete, attributable report after finishing it.";
 			return { action: "continue", reason };
 		},
 		get waiting() {
