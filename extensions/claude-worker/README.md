@@ -70,7 +70,9 @@ budget after subscription authentication** per invocation. Authentication has a
 separate 10-second preflight timeout; initialization must finish within 10 seconds
 inside the transport budget. Exhaustion returns unfinished/interrupted, not success. Terminal EOF
 has a one-second exit allowance before SIGTERM, then a further one second before
-SIGKILL. Stop and shutdown use the same bounded owned-process cleanup.
+SIGKILL. Stop and shutdown use the same bounded owned-process cleanup. On POSIX,
+invocation settlement waits for group escalation even if the immediate process
+exits first, so that TERM-ignoring descendants do not outlive cancellation.
 
 The host requests a strict JSON-schema report through Claude Code's
 `StructuredOutput`, with these required fields:
@@ -104,6 +106,9 @@ Terminal handoffs use the same three dispositions on both entrypoints:
 Resume in the **same working directory**, using either follow-up entrypoint or
 `claude --resume <session-id>` for interactive recovery. Session IDs follow the
 active Pi branch; another branch/directory cannot silently resume this task.
+Tree navigation stops the worker and retains its interrupted handoff on the
+launching branch before moving the leaf. A post-navigation cleanup fallback
+retains diagnostics only in the private log, never on the newly selected branch.
 If no session ID was assigned, inspect the log and partial work before starting
 a new `/cc` task. No automatic retry follows a terminal failure.
 

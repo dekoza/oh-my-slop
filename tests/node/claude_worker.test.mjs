@@ -3,6 +3,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { runClaude } from "../../extensions/claude-worker/lib/worker.mjs";
 import { createTaskSupervision } from "../../extensions/claude-worker/lib/supervision.mjs";
@@ -466,6 +467,101 @@ input.on("line", (line) => {
 	const start = performance.now();
 	await assert.rejects(runClaude({ ...fake, signal: controller.signal, prompt: "Wait", onProgress: () => controller.abort() }), /stopped/i);
 	assert.ok(performance.now() - start < 2500, "SIGTERM must escalate instead of waiting forever");
+});
+
+test("normal terminal completion exits without waiting for cancellation escalation", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("close", () => process.exit(0));
+input.on("line", (line) => {
+ if (JSON.parse(line).type === "user") send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
+});
+` });
+	let terminalAt;
+	const events = [];
+	const result = await runClaude({ ...fake, prompt: "Inspect", onProgress: (event) => {
+		events.push(event);
+		if (event.type === "result") terminalAt = performance.now();
+	} });
+	assert.equal(result.disposition, "finished");
+	assert.equal(events.at(-1).type, "worker_exit");
+	assert.equal(events.at(-1).disposition, "finished");
+	assert.ok(performance.now() - terminalAt < 900, "normal close must not incur the one-second cancellation grace period");
+});
+
+test("stop cleans a TERM-ignoring descendant after its parent closes without late permission approval", { timeout: 15_000, skip: process.platform !== "linux" }, async (t) => {
+	const fake = await fixture(t, { body: `
+const { spawn } = await import("node:child_process");
+process.on("SIGTERM", () => process.exit(0));
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ const descendant = spawn(process.execPath, ["-e", \`
+  const { writeFileSync } = require("node:fs");
+  process.on("SIGTERM", () => {});
+  writeFileSync("descendant.pid", String(process.pid));
+  setInterval(() => {}, 100);
+  process.stdout.write("ready");
+ \`], { stdio: ["ignore", "pipe", "ignore"] });
+ descendant.stdout.once("data", () => {
+  send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+  process.stderr.write("Descendant ready\\n");
+  send({ type: "control_request", request_id: "late-approval", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "touch forbidden" } } });
+ });
+});
+` });
+	const controller = new AbortController();
+	let permissionSignal;
+	let approval;
+	let stoppedAt;
+	let descendantPid;
+	const running = async (pid) => {
+		try {
+			const stat = await readFile(`/proc/${pid}/stat`, "utf8");
+			// An orphan may remain a zombie until the host reaps it; it cannot run.
+			return !stat.slice(stat.lastIndexOf(")") + 2).startsWith("Z ");
+		} catch (error) {
+			if (error.code === "ENOENT") return false;
+			throw error;
+		}
+	};
+	try {
+		await assert.rejects(runClaude({ ...fake, signal: controller.signal, prompt: "Wait for permission", onPermission: (_request, signal) => {
+			permissionSignal = signal;
+			stoppedAt = performance.now();
+			controller.abort();
+			approval = delay(50).then(() => true);
+			return approval;
+		} }), (error) => {
+			assert.match(error.message, /stopped/i);
+			assert.equal(error.outcome.exitCode, 0, "the immediate parent exits on TERM");
+			assert.equal(error.outcome.exitSignal, null);
+			assert.equal(error.outcome.sessionId, SESSION_ID);
+			assert.equal(error.outcome.disposition, "unfinished");
+			assert.match(error.outcome.stderr, /Descendant ready/);
+			return true;
+		});
+		const settledAfter = performance.now() - stoppedAt;
+		await approval;
+		assert.equal(permissionSignal.aborted, true);
+		assert.ok(!(await fake.frames()).some((event) => event.type === "control_response"));
+		descendantPid = Number(await readFile(join(fake.cwd, "descendant.pid"), "utf8"));
+		await delay(Math.max(0, 1_250 - (performance.now() - stoppedAt)));
+		assert.equal(await running(descendantPid), false, "owned descendant must be killed beyond the escalation deadline even when parent stdio closes first");
+		assert.ok(settledAfter >= 950, "invocation must await owned escalation before settling");
+		assert.ok(settledAfter < 2_500, "cleanup remains bounded");
+	} finally {
+		controller.abort();
+		if (!descendantPid) {
+			try { descendantPid = Number(await readFile(join(fake.cwd, "descendant.pid"), "utf8")); }
+			catch (error) { if (error.code !== "ENOENT") throw error; }
+		}
+		if (descendantPid && await running(descendantPid)) {
+			try { process.kill(descendantPid, "SIGKILL"); }
+			catch (error) { if (error.code !== "ESRCH") throw error; }
+			const deadline = performance.now() + 1_000;
+			while (await running(descendantPid) && performance.now() < deadline) await delay(10);
+			assert.equal(await running(descendantPid), false, "fixture cleanup must not leave its own descendant running on red");
+		}
+	}
 });
 
 test("follow-up resumes a saved session and streams partial text while preserving permission denials", { timeout: 15_000 }, async (t) => {

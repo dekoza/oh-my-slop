@@ -41,7 +41,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		});
 		let result;
 		let failure;
-		let killTimer;
+		let stopCleanup;
 		let closeTimer;
 		let disposition = "unfinished";
 		let reason;
@@ -69,8 +69,11 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		};
 		const stop = () => {
 			permissionAbort.abort();
-			kill("SIGTERM");
-			killTimer ??= setTimeout(() => kill("SIGKILL"), 1_000);
+			stopCleanup ??= new Promise((complete) => {
+				kill("SIGTERM");
+				// Child close does not prove same-group descendants have exited.
+				setTimeout(() => { kill("SIGKILL"); complete(); }, 1_000);
+			});
 		};
 		const fail = (error) => { failure ??= error; stop(); };
 		const end = (decision) => {
@@ -200,14 +203,14 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		child.stdin.on("error", fail);
 		const abort = stop;
 		signal?.addEventListener("abort", abort, { once: true });
-		child.on("close", (code, exitSignal) => {
+		child.on("close", async (code, exitSignal) => {
 			lines.close();
-			clearTimeout(killTimer);
 			clearTimeout(closeTimer);
 			clearTimeout(taskTimer);
 			clearTimeout(initializeTimer);
 			permissionAbort.abort();
 			signal?.removeEventListener("abort", abort);
+			if (stopCleanup) await stopCleanup;
 			const outcome = {
 				sessionId: result?.session_id || currentSessionId, text: result?.result || "",
 				...supervision.snapshot(), disposition, reason: reason || failure?.message || (signal?.aborted ? "Worker explicitly stopped; partial work may remain." : "Process exited before an explicit completion report; outcome unresolved."), continuations,
