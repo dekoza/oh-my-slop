@@ -65,8 +65,10 @@ after the native turn result. Unrelated results and duplicate notifications must
 not finish the task or dispatch duplicate continuations. Continuation never adds
 permissions or expands the original task.
 
-Default safety limits are **8 host continuations** and **30 minutes total** per
-invocation. Exhaustion returns unfinished/interrupted, not success. Terminal EOF
+Default safety limits are **8 host continuations** and a **30-minute transport
+budget after subscription authentication** per invocation. Authentication has a
+separate 10-second preflight timeout; initialization must finish within 10 seconds
+inside the transport budget. Exhaustion returns unfinished/interrupted, not success. Terminal EOF
 has a one-second exit allowance before SIGTERM, then a further one second before
 SIGKILL. Stop and shutdown use the same bounded owned-process cleanup.
 

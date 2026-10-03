@@ -194,7 +194,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 
 	pi.registerTool({
 		name: "claude_worker", label: "Claude Code worker",
-		description: "Supervise one bounded task through Claude Code using the user's subscription and existing native auto permissions. Requires human consent. Returns finished, needs_input or unfinished, with Claude Code's evidence-backed self-report (not independent Pi certification), diagnostics and a private activity log. Defaults: at most 8 host continuations and 30 minutes total. Set resume=true to supply missing input or recover the saved task in the same directory. Do not concurrently modify the same files. Pi's coordinating model still uses its own provider. No worktree, rollback or automatic commit/push is created.",
+		description: "Supervise one bounded task through Claude Code using the user's subscription and existing native auto permissions. Requires human consent. Returns finished, needs_input or unfinished, with Claude Code's evidence-backed self-report (not independent Pi certification), diagnostics and a private activity log. Defaults: at most 8 host continuations and a 30-minute transport budget after subscription authentication (10-second preflight timeout). Set resume=true to supply missing input or recover the saved task in the same directory. Do not concurrently modify the same files. Pi's coordinating model still uses its own provider. No worktree, rollback or automatic commit/push is created.",
 		parameters,
 		async execute(_id, params, signal, onUpdate, ctx) {
 			if (!ctx.hasUI || !await ctx.ui.confirm("Delegate task to Claude Code?", safeText(params.prompt), { signal })) throw new Error("Claude Code delegation was not approved.");
