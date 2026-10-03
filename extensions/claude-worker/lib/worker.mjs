@@ -220,6 +220,11 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 			permissionAbort.abort();
 			signal?.removeEventListener("abort", abort);
 			if (stopCleanup) await stopCleanup;
+			if (disposition === "finished") {
+				// EOF cleanup can invalidate completion, but may never restart supervision.
+				const final = supervision.assess(supervision.snapshot().report);
+				if (final.disposition !== "finished") { disposition = "unfinished"; reason = final.reason; }
+			}
 			const outcome = {
 				sessionId: result?.session_id || currentSessionId, text: result?.result || "",
 				...supervision.snapshot(), disposition, reason: reason || failure?.message || (signal?.aborted ? "Worker explicitly stopped; partial work may remain." : "Process exited before an explicit completion report; outcome unresolved."), continuations,

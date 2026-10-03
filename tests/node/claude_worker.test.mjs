@@ -879,6 +879,26 @@ input.on("line", (line) => {
 	assert.ok(performance.now() - start < 2500, "SIGTERM must escalate instead of waiting forever");
 });
 
+test("late stopped cleanup evidence invalidates finished without restarting dispatch", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "system", subtype: "task_notification", task_id: "verify", uuid: "pass", status: "completed" });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
+});
+input.on("close", () => {
+ send({ type: "system", subtype: "task_notification", session_id: "${SESSION_ID}", task_id: "verify", uuid: "stop", status: "stopped", summary: "Stopped during EOF cleanup" });
+ setTimeout(() => process.exit(0), 25);
+});
+` });
+	const result = await runClaude({ ...fake, prompt: "Verify", maxContinuations: 2 });
+	assert.equal(result.taskOutcomes[0].status, "stopped");
+	assert.equal(result.disposition, "unfinished");
+	assert.match(result.reason, /stopped/i);
+	assert.equal(result.continuations, 0);
+	assert.equal((await fake.frames()).filter((frame) => frame.type === "user").length, 1);
+});
+
 test("normal terminal completion exits without waiting for cancellation escalation", { timeout: 15_000 }, async (t) => {
 	const fake = await fixture(t, { body: `
 input.on("close", () => process.exit(0));
