@@ -48,6 +48,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		let ending = false;
 		let inFlight = false;
 		let drainingQueuedTurns = false;
+		let pendingDecision;
 		let continuations = 0;
 		const seenResults = new Set();
 		const permissionDenials = [];
@@ -164,19 +165,30 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 						return end({ disposition: "unfinished", reason: "Claude Code execution did not return a successful turn." });
 					}
 					if (!correlated) {
-						// Native task-notification turns consume results themselves. Wait for their
-						// terminal boundary before dispatching, rather than racing the native queue.
-						if (!inFlight && native && !supervision.waiting && !event.queued_turn_count) continueTask("Native background result was consumed; finish outstanding approved work.");
+						// Native drains cannot certify completion or override an intentional pause.
+						if (!inFlight && native) {
+							permissionDenials.push(...(event.permission_denials || []));
+							drainingQueuedTurns = event.queued_turn_count > 0;
+							if (!drainingQueuedTurns && pendingDecision) {
+								const decision = pendingDecision.disposition === "finished"
+									? supervision.assess(supervision.snapshot().report) : pendingDecision;
+								pendingDecision = undefined;
+								if (decision.action === "end") return end(decision);
+							}
+							if (!supervision.waiting && !drainingQueuedTurns) continueTask("Native background result was consumed; finish outstanding approved work.");
+						}
 						return;
 					}
 					if (!inFlight && !drainingQueuedTurns) return;
-					result = event;
+					const paused = pendingDecision && pendingDecision.disposition !== "finished";
+					if (!paused) result = event;
 					currentSessionId ||= event.session_id;
 					permissionDenials.push(...(event.permission_denials || []));
 					inFlight = false;
 					if (!event.session_id) return end({ disposition: "unfinished", reason: "Claude Code returned no resumable session ID." });
-					const decision = supervision.assess(event.structured_output);
+					const decision = paused ? pendingDecision : supervision.assess(event.structured_output);
 					drainingQueuedTurns = event.queued_turn_count > 0;
+					pendingDecision = decision.action === "end" ? decision : undefined;
 					if (!drainingQueuedTurns && decision.action === "end") return end(decision);
 					if (supervision.waiting || drainingQueuedTurns) {
 						onProgress({ type: "worker_supervision", status: "Waiting for required background work", reason: decision.reason, continuations });

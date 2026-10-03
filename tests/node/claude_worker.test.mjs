@@ -220,6 +220,33 @@ input.on("line", (line) => {
 	}
 });
 
+test("queued results cannot override a needs-input pause or an unfinished decision", { timeout: 15_000 }, async (t) => {
+	for (const disposition of ["needs_input", "unfinished"]) for (const correlatedDrain of [false, true]) {
+		const fake = await fixture(t, { body: `
+let turns = 0;
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ if (++turns > 1) return send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
+ send({ type: "result", uuid: "pause", subtype: "success", session_id: "${SESSION_ID}", queued_turn_count: 2, result: "Awaiting human decision", structured_output: completion("${disposition}", { question: "Which target?", outstanding: ["Write after human decision"] }) });
+ setTimeout(() => {
+  send({ type: "result", uuid: "unrelated", subtype: "success", session_id: "${SESSION_ID}", user_message_uuid: "other-turn", queued_turn_count: 0, structured_output: completion() });
+  send({ type: "result", uuid: "still-queued", subtype: "success", origin: { kind: "task-notification" }, session_id: "${SESSION_ID}", queued_turn_count: 1 });
+  const drained = { type: "result", uuid: "drained", subtype: "success", ${correlatedDrain ? "" : 'origin: { kind: "task-notification" },'} session_id: "${SESSION_ID}", queued_turn_count: 0, structured_output: completion() };
+  setTimeout(() => { send(drained); send(drained); }, 20);
+ }, 20);
+});
+` });
+		const result = await runClaude({ ...fake, prompt: "Inspect and ask before writing", maxContinuations: 1 });
+		assert.equal(result.disposition, disposition);
+		assert.equal(result.report.question, "Which target?");
+		assert.deepEqual(result.report.outstanding, ["Write after human decision"]);
+		assert.equal(result.text, "Awaiting human decision");
+		assert.equal(result.continuations, 0);
+		assert.equal((await fake.frames()).filter((frame) => frame.type === "user").length, 1);
+	}
+});
+
 test("explicit needs-input preserves its question and a same-session answer can finish", { timeout: 15_000 }, async (t) => {
 	const fake = await fixture(t, { body: `
 input.on("line", (line) => {
