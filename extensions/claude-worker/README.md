@@ -108,6 +108,8 @@ Older checkpoints cannot recover identity/evidence already lost before this chan
 The cumulative requirement ledger survives intentional pauses, recovery follow-ups
 and Pi session restoration in the same branch/directory. A supplied answer does
 not waive known verification: each requirement still needs explicit current evidence.
+The resumed task message carries the retained requirement wording on stdin, so a
+large ledger is not limited by the operating system's process-argument size.
 Older saved runs recover available requirements from their report and omitted-outcome
 metadata. Authoritative task identity, cumulative outcomes and notification-delivery
 state are checkpointed during supervision, not only at terminal settlement; an

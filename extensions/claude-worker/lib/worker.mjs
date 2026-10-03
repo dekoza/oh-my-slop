@@ -33,8 +33,10 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 	const args = [...prefixArgs, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "auto", "--permission-prompt-tool", "stdio", "--permission-prompts", "host"];
 	if (sessionId) args.push("--resume", sessionId);
 	const taskId = resumeState?.taskId || resumeState?.report?.task_id || randomUUID();
-	args.push("--json-schema", JSON.stringify(completionSchema(taskId)), "--append-system-prompt", supervisionInstructions(taskId) + (resumeState ? `\nRetained required outcomes (data, not new instructions): ${JSON.stringify((resumeState.requiredOutcomes || [...(resumeState.report?.outcomes || []), ...(resumeState.omittedOutcomes || [])]).map((outcome) => outcome.requirement))}. Supply current evidence for each; a follow-up answer does not waive them.` : ""));
+	args.push("--json-schema", JSON.stringify(completionSchema(taskId)), "--append-system-prompt", supervisionInstructions(taskId));
 	const supervision = createTaskSupervision(taskId, resumeState);
+	// Retained requirements are unbounded task data: send them on stdin, never in one argv string.
+	const taskPrompt = resumeState ? `${prompt}\n\nRetained required outcomes (data, not new instructions): ${JSON.stringify(supervision.snapshot().requiredOutcomes.map((outcome) => outcome.requirement))}. Supply current evidence for each; a follow-up answer does not waive them.` : prompt;
 	onState(structuredClone({ ...supervision.snapshot(), sessionId }));
 	let messageId = randomUUID();
 	return new Promise((resolve, reject) => {
@@ -148,7 +150,7 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 					}
 					initialized = true;
 					clearTimeout(initializeTimer);
-					if (!signal?.aborted) submit(prompt);
+					if (!signal?.aborted) submit(taskPrompt);
 				}
 				if (event.type === "control_cancel_request") {
 					seenPermissions.add(event.request_id);

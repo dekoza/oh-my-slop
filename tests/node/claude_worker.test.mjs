@@ -295,6 +295,18 @@ test("an early failed legacy resume preserves list-only obligations for later su
 	assert.equal(restored.assess({ ...omitted, outcomes: [...omitted.outcomes, ...["Required repair", "Required integration"].map((requirement) => ({ requirement, status: "verified", evidence: ["repair-and-integration.log: passed"] }))] }).disposition, "finished");
 });
 
+test("large retained requirements reach a resumed session through stdin, not process arguments", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t);
+	const requiredOutcomes = Array.from({ length: 12 }, (_, index) => ({ requirement: `Inspect private project file ${index}: ${"x".repeat(15_900)}`, status: "unverified", evidence: [] }));
+	const result = await runClaude({ ...fake, prompt: "Continue", sessionId: SESSION_ID, resumeState: { cwd: fake.cwd, sessionId: SESSION_ID, taskId: "large-task", requiredOutcomes } });
+	assert.equal(result.disposition, "unfinished");
+	const [, transport] = await fake.calls();
+	for (const outcome of requiredOutcomes) assert.ok(!transport.args.some((arg) => arg.includes(outcome.requirement)));
+	const prompt = (await fake.frames()).find((frame) => frame.type === "user").message.content;
+	assert.match(prompt, /^Continue/);
+	for (const outcome of requiredOutcomes) assert.ok(prompt.includes(JSON.stringify(outcome.requirement)));
+});
+
 test("an early failed resume preserves consumed result deliveries for later supervision", () => {
 	const consumed = { type: "result", uuid: "old-native-delivery", subtype: "success", origin: { kind: "task-notification" } };
 	const original = createTaskSupervision("approved");
@@ -711,7 +723,8 @@ test("same-task resume retains required outcomes across repeated pauses until ex
 input.on("line", (line) => {
  const event = JSON.parse(line);
  if (event.type !== "user") return;
- const prompt = event.message.content;
+ // The host appends retained requirement data after the task text.
+ const prompt = event.message.content.split("\\n\\n")[0];
  const required = { requirement: "Required integration verification", status: "unverified", evidence: [] };
  const report = prompt === "Initial task"
   ? completion("needs_input", { outcomes: [required], outstanding: [required.requirement], unverified: [required.requirement], question: "Which output directory?" })
@@ -779,7 +792,7 @@ input.on("line", (line) => {
   send({ type: "system", subtype: "task_updated", task_id: "verify", patch: { status: "running", is_backgrounded: true } });
   send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("needs_input", { question: "Which target?", background_task_ids: ["verify"] }) });
  } else {
-  if (event.message.content === "Fresh verification") send({ type: "system", subtype: "task_notification", task_id: "verify", uuid: "new-pass", status: "completed", summary: "Fresh verification passed" });
+  if (event.message.content.startsWith("Fresh verification")) send({ type: "system", subtype: "task_notification", task_id: "verify", uuid: "new-pass", status: "completed", summary: "Fresh verification passed" });
   send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
  }
 });
@@ -803,7 +816,7 @@ test("resume preserves native obligations and history without assuming old runni
 input.on("line", (line) => {
  const event = JSON.parse(line);
  if (event.type !== "user") return;
- if (event.message.content === "Recover stopped verification") {
+ if (event.message.content.startsWith("Recover stopped verification")) {
   send({ type: "system", subtype: "task_started", task_id: "verify", is_backgrounded: true });
   send({ type: "system", subtype: "task_notification", task_id: "verify", status: "completed", summary: "Recovery verification passed" });
  }
