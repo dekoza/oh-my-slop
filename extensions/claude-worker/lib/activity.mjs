@@ -53,6 +53,7 @@ export function createActivityLog({ cwd, prompt, sessionId, resumeState, maxByte
 	if (resumeState) {
 		state.taskId = resumeState.taskId || resumeState.report?.task_id;
 		state.notificationDeliveries = scrub(resumeState.notificationDeliveries || []);
+		state.resultDeliveries = scrub(resumeState.resultDeliveries || []);
 		state.requiredOutcomes = scrub(createTaskSupervision(state.taskId, resumeState).snapshot().requiredOutcomes);
 		// Keep historical evidence separate: authentication can fail before any new assessment.
 		// Select handoff fields, never the previous run's disposition or error diagnostics.

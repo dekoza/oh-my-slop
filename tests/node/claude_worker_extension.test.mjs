@@ -214,16 +214,18 @@ test("interrupted restoration retains newly assessed requirements before termina
 	await new Promise(setImmediate);
 	const required = { requirement: "Required integration verification", status: "unverified", evidence: [] };
 	try {
-		options.onState?.({ sessionId: SESSION_ID, taskId: "approved-task", requiredOutcomes: [required], notificationDeliveries: ["uuid:prior-check"], taskOutcomes: [{ taskId: "verify", status: "running", history: [] }],
+		options.onState?.({ sessionId: SESSION_ID, taskId: "approved-task", requiredOutcomes: [required], notificationDeliveries: ["uuid:prior-check"], resultDeliveries: ["prior-result-fingerprint"], taskOutcomes: [{ taskId: "verify", status: "running", history: [] }],
 			report: { task_id: "approved-task", disposition: "waiting", outcomes: [required], outstanding: [required.requirement], unverified: [required.requirement], question: "", background_task_ids: ["verify"] } });
 		const checkpoint = h.entries.filter((entry) => entry.customType === "cc-worker-run").at(-1).data;
 		assert.equal(checkpoint.taskId, "approved-task");
 		assert.deepEqual(checkpoint.requiredOutcomes, [required]);
 		assert.deepEqual(checkpoint.notificationDeliveries, ["uuid:prior-check"]);
+		assert.deepEqual(checkpoint.resultDeliveries, ["prior-result-fingerprint"]);
 		assert.equal(checkpoint.endedAt, undefined, "this is an observation checkpoint, not completion");
 		const restored = harness(async (request) => {
 			assert.equal(request.resumeState.taskId, "approved-task");
 			assert.deepEqual(request.resumeState.requiredOutcomes, [required]);
+			assert.deepEqual(request.resumeState.resultDeliveries, ["prior-result-fingerprint"]);
 			return { sessionId: SESSION_ID, disposition: "unfinished" };
 		});
 		restored.entries.push(...structuredClone(h.entries));

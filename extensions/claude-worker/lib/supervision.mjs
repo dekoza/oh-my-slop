@@ -69,6 +69,9 @@ export function createTaskSupervision(taskId, resumeState) {
 	const declaredOutcomes = new Map(savedOutcomes.map(identifiedOutcome).map((outcome) => [outcome.requirementId, outcome]));
 	const omittedOutcomes = () => [...declaredOutcomes.values()].filter((outcome) => !report?.outcomes.some((item) => requirementId(item.requirement) === outcome.requirementId));
 	const seenNotifications = new Set(resumeState?.notificationDeliveries || []);
+	const resultDeliveries = new Set(resumeState?.resultDeliveries || []);
+	// Native result_index restarts with each CLI process, so it identifies deliveries only within this run.
+	const resultIndexes = new Set();
 	let terminalSequence = Math.max(0, ...[...tasks.values()].map((task) => task.terminalSequence || 0));
 	const markRunning = (id, description, explicitResume = false, isBackgrounded) => {
 		const task = tasks.get(id);
@@ -113,6 +116,21 @@ export function createTaskSupervision(taskId, resumeState) {
 				// This snapshot contains only background work; foreground omission says nothing.
 				for (const task of tasks.values()) if (task.status === "running" && task.isBackgrounded !== false && !active.has(task.taskId)) task.status = "unknown";
 			}
+		},
+		// Returns false for a result delivery already consumed by this task, including before a resume.
+		acceptResult(event, untaggedNative) {
+			if (!event.uuid && event.result_index !== undefined) {
+				if (resultIndexes.has(event.result_index)) return false;
+				resultIndexes.add(event.result_index);
+				return true;
+			}
+			// An identical untagged native delivery cannot prove a new queue drain.
+			const identity = event.uuid ? `uuid:${event.uuid}` : untaggedNative ? `native:${JSON.stringify(event)}` : undefined;
+			if (!identity) return true;
+			const delivery = createHash("sha256").update(identity).digest("hex");
+			if (resultDeliveries.has(delivery)) return false;
+			resultDeliveries.add(delivery);
+			return true;
 		},
 		assess(value) {
 			if (!validReport(value, taskId)) {
@@ -162,6 +180,6 @@ export function createTaskSupervision(taskId, resumeState) {
 			return [...tasks.values()].some((task) => task.status === "running") ||
 				(report?.background_task_ids || []).some((id) => !tasks.has(id));
 		},
-		snapshot() { return { taskId, requiredOutcomes: [...declaredOutcomes.values()], notificationDeliveries: [...seenNotifications], report, reason, taskOutcomes: [...tasks.values()], omittedOutcomes: omittedOutcomes() }; },
+		snapshot() { return { taskId, requiredOutcomes: [...declaredOutcomes.values()], notificationDeliveries: [...seenNotifications], resultDeliveries: [...resultDeliveries], report, reason, taskOutcomes: [...tasks.values()], omittedOutcomes: omittedOutcomes() }; },
 	};
 }

@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { isDeepStrictEqual, promisify } from "node:util";
+import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { completionSchema, createTaskSupervision, supervisionInstructions } from "./supervision.mjs";
 
@@ -52,8 +52,6 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 		let drainingQueuedTurns = false;
 		let pendingDecision;
 		let continuations = 0;
-		const seenResults = new Set();
-		const untaggedNativeResults = [];
 		const permissionDenials = [];
 		const cleanupFailures = [];
 		let initialized = false;
@@ -119,17 +117,22 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 				supervision.record(event);
 				onProgress(event);
 				if (event.type === "system" && (event.subtype === "init" || event.subtype?.startsWith("task_") || event.subtype === "background_tasks_changed")) checkpoint();
+				let correlated = false;
+				let native = false;
+				if (event.type === "result") {
+					// Result UUIDs are delivery IDs; user_message_uuids identify submitted turns.
+					const ids = event.user_message_uuids || (event.user_message_uuid ? [event.user_message_uuid] : []);
+					correlated = ids.includes(messageId);
+					native = !ids.length && event.origin?.kind === "task-notification" && event.session_id && event.session_id === currentSessionId;
+					// Delivery identities persist with the task, so a resumed run cannot consume an old result again.
+					if (!supervision.acceptResult(event, native)) return;
+					checkpoint();
+				}
 				if (stopping) {
 					// Cleanup execution failures invalidate completion but may never restart dispatch.
-					if (event.type === "result" && (event.is_error || event.subtype !== "success")) {
-						const ids = event.user_message_uuids || (event.user_message_uuid ? [event.user_message_uuid] : []);
-						const native = !ids.length && event.origin?.kind === "task-notification" && event.session_id && event.session_id === currentSessionId;
-						const key = event.uuid || (event.result_index !== undefined ? `index:${event.result_index}` : undefined);
-						if ((ids.includes(messageId) || native) && !(key && seenResults.has(key))) {
-							if (key) seenResults.add(key);
-							cleanupFailures.push(event);
-							permissionDenials.push(...(event.permission_denials || []));
-						}
+					if ((correlated || native) && (event.is_error || event.subtype !== "success")) {
+						cleanupFailures.push(event);
+						permissionDenials.push(...(event.permission_denials || []));
 					}
 					return;
 				}
@@ -175,18 +178,6 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 						.finally(() => pendingPermissions.delete(event.request_id));
 				}
 				if (event.type === "result") {
-					// Result UUIDs are delivery IDs; user_message_uuids identify submitted turns.
-					const ids = event.user_message_uuids || (event.user_message_uuid ? [event.user_message_uuid] : []);
-					const key = event.uuid || (event.result_index !== undefined ? `index:${event.result_index}` : undefined);
-					if (key && seenResults.has(key)) return;
-					if (key) seenResults.add(key);
-					const correlated = ids.includes(messageId);
-					const native = !ids.length && event.origin?.kind === "task-notification" && event.session_id && event.session_id === currentSessionId;
-					if (native && !key) {
-						// An identical untagged delivery cannot prove a new queue drain, even if first seen in flight.
-						if (untaggedNativeResults.some((previous) => isDeepStrictEqual(previous, event))) return;
-						untaggedNativeResults.push(event);
-					}
 					if ((correlated || native) && (event.is_error || event.subtype !== "success")) {
 						result = event;
 						currentSessionId ||= event.session_id;

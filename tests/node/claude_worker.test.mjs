@@ -295,6 +295,22 @@ test("an early failed legacy resume preserves list-only obligations for later su
 	assert.equal(restored.assess({ ...omitted, outcomes: [...omitted.outcomes, ...["Required repair", "Required integration"].map((requirement) => ({ requirement, status: "verified", evidence: ["repair-and-integration.log: passed"] }))] }).disposition, "finished");
 });
 
+test("an early failed resume preserves consumed result deliveries for later supervision", () => {
+	const consumed = { type: "result", uuid: "old-native-delivery", subtype: "success", origin: { kind: "task-notification" } };
+	const original = createTaskSupervision("approved");
+	assert.equal(original.acceptResult(consumed, true), true);
+	const prior = { cwd: "/project", sessionId: SESSION_ID, taskId: "approved", ...original.snapshot() };
+	const failed = createActivityLog({ cwd: "/project", prompt: "Use artifacts/", sessionId: SESSION_ID, resumeState: prior });
+	failed.finish({ disposition: "unfinished", status: "Failed", error: "Subscription preflight failed" });
+	const restored = createTaskSupervision("approved", failed.snapshot());
+	assert.equal(restored.acceptResult(consumed, true), false);
+	assert.equal(restored.acceptResult({ ...consumed, uuid: "fresh-native-delivery" }, true), true);
+	// result_index restarts with every CLI process and therefore never crosses a resume.
+	assert.equal(restored.acceptResult({ type: "result", result_index: 0 }, false), true);
+	assert.equal(restored.acceptResult({ type: "result", result_index: 0 }, false), false);
+	assert.equal(createTaskSupervision("approved", restored.snapshot()).acceptResult({ type: "result", result_index: 0 }, false), true);
+});
+
 test("sanitized requirement wording cannot collapse distinct persistent outcome identities", () => {
 	for (const requirements of [["x".repeat(16_100) + "A", "x".repeat(16_100) + "B"], ["Check API_TOKEN=alpha", "Check API_TOKEN=beta"]]) {
 		const report = { task_id: "approved", disposition: "needs_input", outcomes: requirements.map((requirement) => ({ requirement, status: "unverified", evidence: [] })), outstanding: [], unverified: [], question: "Which directory?", background_task_ids: [] };
@@ -421,6 +437,34 @@ input.on("line", (line) => {
 			return true;
 		});
 		assert.equal((await fake.frames()).filter((event) => event.type === "user").length, 2);
+	}
+});
+
+test("a native result consumed before a pause cannot drain the resumed task's queue", { timeout: 15_000 }, async (t) => {
+	for (const tagged of [true, false]) {
+		const fake = await fixture(t, { body: `
+const oldDrain = { type: "result", ${tagged ? 'uuid: "old-native-delivery", ' : ""}subtype: "success", session_id: "${SESSION_ID}", origin: { kind: "task-notification" }, queued_turn_count: 0, result: "Old consumed native notification" };
+input.on("close", () => process.exit(0));
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+ if (!args.includes("--resume")) {
+  send({ type: "result", uuid: "paused", subtype: "success", session_id: "${SESSION_ID}", queued_turn_count: 1, structured_output: completion("needs_input", { question: "Which target?" }) });
+  setTimeout(() => send(oldDrain), 20);
+ } else {
+  send({ type: "result", uuid: "resumed-finish", subtype: "success", session_id: "${SESSION_ID}", queued_turn_count: 1, structured_output: completion() });
+  setTimeout(() => send(oldDrain), 20);
+  setTimeout(() => send({ type: "system", subtype: "task_notification", session_id: "${SESSION_ID}", uuid: "fresh-stopped", task_id: "queued-check", status: "stopped", summary: "Queued required verification stopped" }), 120);
+  setTimeout(() => send({ ...oldDrain, uuid: "fresh-drain", result: "Fresh queue drain" }), 160);
+ }
+});
+` });
+		const paused = await runClaude({ ...fake, prompt: "Verify" });
+		assert.equal(paused.disposition, "needs_input");
+		const resumed = await runClaude({ ...fake, prompt: "Target A", sessionId: SESSION_ID, resumeState: { ...paused, cwd: fake.cwd } });
+		assert.equal(resumed.disposition, "unfinished", tagged ? "tagged replay" : "untagged replay");
+		assert.equal(resumed.taskOutcomes.find((task) => task.taskId === "queued-check")?.status, "stopped");
 	}
 });
 
