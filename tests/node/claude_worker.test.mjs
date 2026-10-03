@@ -114,7 +114,7 @@ input.on("line", (line) => {
    send({ type: "system", subtype: "task_notification", task_id: "verify", status: "completed", summary: "Repeated notification" });
   }, 40);
  } else {
-  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", result: "Repair applied; verification passed", structured_output: completion() });
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", result: "Repair applied; verification passed", structured_output: completion("finished", { outcomes: [...completion().outcomes, { requirement: "Apply repair after verification", status: "verified", evidence: ["Repair applied; verification passed"] }] }) });
  }
 });
 ` });
@@ -150,7 +150,7 @@ input.on("line", (line) => {
  } else {
   send({ type: "system", subtype: "task_updated", task_id: "red-check", patch: { status: "running" } });
   send({ type: "system", subtype: "task_notification", task_id: "red-check", status: "completed", summary: "Repair applied; rerun passed" });
-  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("finished", { outcomes: [...completion().outcomes, { requirement: "Repair assertion and rerun after review", status: "verified", evidence: ["Review consumed; repair applied; rerun passed"] }] }) });
  }
 });
 ` });
@@ -201,6 +201,7 @@ input.on("line", (line) => {
  } else {
   send({ type: "system", subtype: "task_notification", task_id: "green", status: "completed" });
   send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("finished", {
+   outcomes: [...completion().outcomes, { requirement: "Repair and rerun", status: "verified", evidence: ["Repair applied; green rerun passed"] }],
    resolved_failures: [{ task_id: "red", replacement_task_id: "green", evidence: ["Repair applied; green rerun passed"] }]
   }) });
  }
@@ -255,6 +256,33 @@ input.on("line", (line) => {
 	}
 });
 
+test("structured outstanding and unverified declarations require explicit evidence live and after restoration", { timeout: 15_000 }, async (t) => {
+	for (const field of ["outstanding", "unverified"]) {
+		const required = "Required integration verification";
+		const report = { task_id: "approved", disposition: "waiting", outcomes: [{ requirement: "Inspection", status: "verified", evidence: ["inspection.txt"] }], outstanding: [], unverified: [], question: "", background_task_ids: [], [field]: [required] };
+		const supervisor = createTaskSupervision("approved");
+		supervisor.assess(report);
+		for (const current of [supervisor, createTaskSupervision("approved", supervisor.snapshot())]) {
+			const missing = { ...report, disposition: "finished", [field]: [] };
+			assert.equal(current.assess(missing).action, "continue", field);
+			assert.ok(current.snapshot().omittedOutcomes.some((item) => item.requirement === required));
+			assert.equal(current.assess({ ...missing, outcomes: [...missing.outcomes, { requirement: required, status: "unverified", evidence: [] }] }).action, "continue");
+			assert.equal(current.assess({ ...missing, outcomes: [...missing.outcomes, { requirement: required, status: "verified", evidence: ["integration.log: passed"] }] }).disposition, "finished");
+		}
+		const fake = await fixture(t, { body: `
+let turns = 0;
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion(++turns === 1 ? "waiting" : "finished", turns === 1 ? { ${field}: ["${required}"] } : {}) });
+});
+` });
+		const result = await runClaude({ ...fake, prompt: "Inspect and run required integration verification", maxContinuations: 1 });
+		assert.equal(result.disposition, "unfinished", field);
+		assert.match(result.reason, /Required integration verification/);
+		assert.match(formatRunReport({ ...result, startedAt: Date.now(), status: "Unfinished", stats: {} }), /Omitted required outcome: Required integration verification/);
+	}
+});
+
 test("later reports must explicitly verify every previously declared required outcome", { timeout: 15_000 }, async (t) => {
 	for (const includeRequired of [false, true]) {
 		const fake = await fixture(t, { body: `
@@ -264,7 +292,7 @@ input.on("line", (line) => {
  const base = completion().outcomes;
  if (++turns === 1) send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("waiting", {
   outcomes: [...base, { requirement: "Required integration", status: "unverified", evidence: [] }],
-  outstanding: ["Run required integration"], unverified: ["Integration evidence missing"]
+  outstanding: ["Required integration"], unverified: ["Required integration"]
  }) });
  else send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("finished", {
   outcomes: ${includeRequired ? '[...base, { requirement: "Required integration", status: "verified", evidence: ["Integration passed: integration.log"] }]' : "base"}
@@ -344,7 +372,7 @@ input.on("line", (line) => {
   setTimeout(() => send(oldDrain), 20);
  } else {
   setTimeout(() => {
-   send({ type: "result", uuid: "second", subtype: "success", session_id: "${SESSION_ID}", queued_turn_count: 1, structured_output: completion() });
+   send({ type: "result", uuid: "second", subtype: "success", session_id: "${SESSION_ID}", queued_turn_count: 1, structured_output: completion("finished", { outcomes: [...completion().outcomes, { requirement: "Finish approved work", status: "verified", evidence: ["approved-work.txt"] }] }) });
    setTimeout(() => send(oldDrain), 20);
    ${freshDrain ? 'setTimeout(() => { drained = true; send({ ...oldDrain, result: "Fresh consumed queue drain" }); }, 100);' : ""}
   }, 60);
@@ -392,7 +420,7 @@ input.on("line", (line) => {
   }, 250);
  }
  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: ready
-  ? completion()
+  ? completion("finished", { outcomes: [...completion().outcomes, { requirement: "Apply repair after verification", status: "verified", evidence: ["repair.txt; verification passed"] }] })
   : completion("waiting", { outstanding: ["Apply repair after verification"], background_task_ids: ["verify"] }) });
 });
 ` });
@@ -591,13 +619,13 @@ input.on("line", (line) => {
  const event = JSON.parse(line);
  if (event.type !== "user") return;
  const resumed = args.includes("--resume");
- send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: resumed ? completion() : completion("needs_input", { question: "Which output directory?", outstanding: ["Write artifact after answer"] }) });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: resumed ? completion("finished", { outcomes: [...completion().outcomes, { requirement: "Write artifact after answer", status: "verified", evidence: ["artifacts/inspection.txt"] }] }) : completion("needs_input", { question: "Which output directory?", outstanding: ["Write artifact after answer"] }) });
 });
 ` });
 	const paused = await runClaude({ ...fake, prompt: "Inspect and save" });
 	assert.equal(paused.disposition, "needs_input");
 	assert.equal(paused.report.question, "Which output directory?");
-	const resumed = await runClaude({ ...fake, prompt: "Use artifacts/", sessionId: paused.sessionId });
+	const resumed = await runClaude({ ...fake, prompt: "Use artifacts/", sessionId: paused.sessionId, resumeState: { ...paused, cwd: fake.cwd } });
 	assert.equal(resumed.disposition, "finished");
 	assert.equal(resumed.sessionId, paused.sessionId);
 });

@@ -23,7 +23,7 @@ export function completionSchema(taskId) {
 }
 
 export function supervisionInstructions(taskId) {
-	return `The host supervises the approved task across turns. Stay within its original scope and existing permissions; do not expand authority. Keep working until finished or genuinely needing input. Report through StructuredOutput using task_id ${taskId}. Map EVERY requested outcome to evidence (tests/checks/artifacts), including unchanged verified outcomes. Keep the exact requirement wording stable across reports; do not omit previously declared required outcomes. Identify all unverified requirements and outstanding actions. Use finished only when every requested outcome is verified and no required work remains; this is your evidence-backed report, not independent Pi certification. Use waiting when required background work is running, list its task IDs, and consume its native notifications before continuing outstanding actions. Use needs_input only for an intentional pause, with the precise question; saved-session follow-ups supply the answer to the same task. A failed intermediate check is not failure of the approved task: consume its result, repair within scope, and rerun verification. For a fresh-ID rerun, explicitly attribute resolution in resolved_failures entries containing the failed task_id, completed replacement_task_id, and nonempty evidence explaining the repair and passing rerun. Do not claim unresolved, stopped or unknown work as resolved. Use unfinished when unable to continue, preserving recovery information. Never use ordinary done prose or a successful turn as completion evidence. Do not stop required background work merely to end a turn.`;
+	return `The host supervises the approved task across turns. Stay within its original scope and existing permissions; do not expand authority. Keep working until finished or genuinely needing input. Report through StructuredOutput using task_id ${taskId}. Map EVERY requested outcome to evidence (tests/checks/artifacts), including unchanged verified outcomes. Keep the exact requirement wording stable across reports; do not omit previously declared required outcomes. Every item declared in outstanding or unverified is also a retained obligation: reconcile it explicitly as an outcome with the same exact wording and current evidence before claiming finished. Identify all unverified requirements and outstanding actions. Use finished only when every requested outcome is verified and no required work remains; this is your evidence-backed report, not independent Pi certification. Use waiting when required background work is running, list its task IDs, and consume its native notifications before continuing outstanding actions. Use needs_input only for an intentional pause, with the precise question; saved-session follow-ups supply the answer to the same task. A failed intermediate check is not failure of the approved task: consume its result, repair within scope, and rerun verification. For a fresh-ID rerun, explicitly attribute resolution in resolved_failures entries containing the failed task_id, completed replacement_task_id, and nonempty evidence explaining the repair and passing rerun. Do not claim unresolved, stopped or unknown work as resolved. Use unfinished when unable to continue, preserving recovery information. Never use ordinary done prose or a successful turn as completion evidence. Do not stop required background work merely to end a turn.`;
 }
 
 function validReport(report, taskId) {
@@ -55,7 +55,10 @@ export function createTaskSupervision(taskId, resumeState) {
 		if (restored.terminalStatus === "stopped") delete restored.terminalStatus;
 		return [restored.taskId, restored];
 	}));
+	const declarations = (value) => [...(value?.outstanding || []), ...(value?.unverified || [])]
+		.map((requirement) => ({ requirement, status: "unverified", evidence: [] }));
 	const declaredOutcomes = new Map([
+		...declarations(resumeState?.report),
 		...(resumeState?.requiredOutcomes || []), ...(resumeState?.report?.outcomes || []), ...(resumeState?.omittedOutcomes || []),
 	].map((outcome) => [outcome.requirement, outcome]));
 	const omittedOutcomes = () => [...declaredOutcomes.values()].filter((outcome) => !report?.outcomes.some((item) => item.requirement === outcome.requirement));
@@ -111,6 +114,7 @@ export function createTaskSupervision(taskId, resumeState) {
 				return { action: "continue", reason };
 			}
 			report = value;
+			for (const outcome of declarations(report)) if (!declaredOutcomes.has(outcome.requirement)) declaredOutcomes.set(outcome.requirement, outcome);
 			for (const outcome of report.outcomes) declaredOutcomes.set(outcome.requirement, outcome);
 			for (const id of report.background_task_ids) if (!tasks.has(id)) tasks.set(id, { taskId: id, status: "running", description: "Required by Claude Code's task report" });
 			if (report.disposition === "needs_input" && report.question.trim()) return { action: "end", disposition: "needs_input", reason: report.question };
