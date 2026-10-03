@@ -139,3 +139,18 @@ def test_functional_evals_cover_ordering_cleanup_clusters_and_missing_seams() ->
         assert obligation in pressure
     assert "non-deterministic" in cases[2]["expected_output"].lower()
     assert "bisection" in cases[3]["expected_output"].lower()
+
+
+def test_readme_exposes_the_representative_diagnosis_contract() -> None:
+    markdown = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    row = next(
+        line.lower()
+        for line in markdown.splitlines()
+        if "[Diagnosing Bugs](skills/practice/diagnosing-bugs/SKILL.md)" in line
+    )
+    assert "permanent red before repair" in row
+    assert "original scenario" in row
+    assert "owned cleanup" in row
+    assert "cleaned-candidate recheck" in row
+    assert "proportionate" in row
+    assert "10 feedback-loop construction strategies" in row
