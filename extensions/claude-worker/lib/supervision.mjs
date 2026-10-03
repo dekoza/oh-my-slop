@@ -60,7 +60,9 @@ export function createTaskSupervision(taskId) {
 				if (event.uuid) seenNotifications.add(event.uuid);
 				const task = tasks.get(event.task_id) || { taskId: event.task_id, description: event.description };
 				const outcome = { status: event.status || "unknown", summary: event.summary, outputFile: event.output_file };
-				tasks.set(event.task_id, { ...task, ...outcome, history: [...(task.history || []), outcome] });
+				// A contradictory success is not evidence of recovery without a running transition.
+				const conflicting = outcome.status === "completed" && ["stopped", "failed", "unknown"].includes(task.status) && task.history?.length;
+				tasks.set(event.task_id, { ...task, ...(conflicting ? {} : outcome), history: [...(task.history || []), outcome] });
 			}
 			if (event.subtype === "background_tasks_changed") {
 				const active = new Set();

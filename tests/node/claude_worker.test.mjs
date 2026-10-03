@@ -169,6 +169,25 @@ test("resumed task lifecycles invalidate earlier completion and retain terminal 
 	}
 });
 
+test("contradictory completion cannot erase stopped or failed work without an explicit resume", { timeout: 15_000 }, async (t) => {
+	for (const status of ["stopped", "failed"]) {
+		const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "system", subtype: "task_notification", task_id: "verify", status: "${status}", uuid: "first", summary: "Verification did not finish" });
+ send({ type: "system", subtype: "task_notification", task_id: "verify", status: "completed", uuid: "contradictory", summary: "Completion without resume" });
+ send({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
+});
+` });
+		const result = await runClaude({ ...fake, prompt: "Verify" });
+		assert.equal(result.disposition, "unfinished");
+		assert.equal(result.taskOutcomes[0].status, status);
+		assert.match(result.reason, new RegExp('verify \\(' + status + '\\)'));
+		assert.deepEqual(result.taskOutcomes[0].history.map((outcome) => outcome.status), [status, "completed"]);
+	}
+});
+
 test("a report-declared background task is supervised even without a task-start notification", { timeout: 15_000 }, async (t) => {
 	const fake = await fixture(t, { body: `
 let turns = 0;
