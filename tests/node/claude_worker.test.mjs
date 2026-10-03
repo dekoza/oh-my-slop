@@ -123,6 +123,26 @@ input.on("line", (line) => {
 	assert.notEqual(users[0].uuid, users[1].uuid);
 });
 
+test("queued correlated results drain before finished and repeated results cannot dispatch twice", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+let sends = 0;
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ sends++;
+ send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+ const first = { type: "result", uuid: "queued-first", subtype: "success", session_id: "${SESSION_ID}", queued_turn_count: 1, structured_output: completion() };
+ send(first); send(first);
+ setTimeout(() => send({ type: "result", uuid: "drained", subtype: "success", session_id: "${SESSION_ID}", queued_turn_count: 0, result: "Queue drained", structured_output: completion() }), 30);
+});
+` });
+	const events = [];
+	const result = await runClaude({ ...fake, prompt: "Inspect", onProgress: (event) => events.push(event), maxContinuations: 1 });
+	assert.equal(result.disposition, "finished");
+	assert.equal(result.text, "Queue drained");
+	assert.equal((await fake.frames()).filter((frame) => frame.type === "user").length, 1);
+});
+
 test("API, logged-out, unknown-plan and mixed credentials fail before any model request", { timeout: 15_000 }, async (t) => {
 	for (const auth of [
 		{ loggedIn: true, authMethod: "api_key", apiKeySource: "apiKeyHelper" },
