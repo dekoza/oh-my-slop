@@ -174,6 +174,7 @@ export function formatRunReport(state, text = state.text || "") {
 		state.reason ? `Reason: ${safeText(state.reason)}` : "",
 		state.continuations !== undefined ? `Continuations: ${state.continuations}` : "",
 		...(state.taskOutcomes || []).map((task) => `Task ${safeText(task.taskId || task.task_id || task.id || "unknown")}: ${safeText(task.status || "unknown")} · ${safeText(task.summary || task.description || "No details reported")}${task.outputFile || task.output_file ? ` · ${safeText(task.outputFile || task.output_file)}` : ""}`),
+		...(state.taskOutcomes || []).flatMap((task) => (task.history?.length > 1 ? task.history : []).map((entry) => `Task history ${safeText(task.taskId || task.task_id || task.id || "unknown")}: ${safeText(entry.status || "unknown")} · ${safeText(entry.summary || "No details reported")}${entry.outputFile ? ` · ${safeText(entry.outputFile)}` : ""}`)),
 		state.report ? "Claude Code self-report (not independent Pi certification):" : "",
 		...(state.report?.outcomes || []).map((outcome) => `- ${safeText(outcome.requirement)}: ${safeText(outcome.status)} · Evidence: ${(outcome.evidence || []).map(safeText).join("; ") || "none reported"}`),
 		...(state.report?.resolved_failures || []).map((resolution) => `Resolved failure ${safeText(resolution.task_id)}: replacement ${safeText(resolution.replacement_task_id)} · Claude Code evidence: ${(resolution.evidence || []).map(safeText).join("; ")}`),

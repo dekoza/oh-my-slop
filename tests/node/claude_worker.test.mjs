@@ -159,6 +159,9 @@ input.on("line", (line) => {
 	assert.equal(result.continuations, 1);
 	assert.doesNotMatch(result.stderr, /EOF before/);
 	assert.deepEqual(result.taskOutcomes.find((task) => task.taskId === "red-check").history.map((entry) => entry.status), ["failed", "completed"]);
+	const handoff = formatRunReport({ ...result, startedAt: Date.now(), status: "Finished", stats: {} });
+	assert.match(handoff, /Task history red-check: failed · Pre-repair assertion failed/);
+	assert.match(handoff, /Task history red-check: completed · Repair applied; rerun passed/);
 	assert.equal((await fake.frames()).filter((event) => event.type === "user").length, 2);
 });
 
