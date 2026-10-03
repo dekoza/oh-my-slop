@@ -477,7 +477,11 @@ Once it's red, shrink the repro to the **smallest scenario that still goes red**
 
 Why bother: a minimal repro shrinks the hypothesis space in Phase 3 (fewer moving parts left to suspect) and becomes the clean regression test in Phase 5.
 
-Done when **every remaining element is load-bearing** — removing any one of them makes the loop go green.
+**Preserve boundary correspondence.** Record the original trigger, runtime conditions and user-visible assertion. Keep the minimised repro at the **same boundary** or demonstrate that its narrower seam still carries the same causal path and symptom. Recheck that correspondence after each cut: a green helper, a mocked substitute that bypasses the failing boundary, or a wrong failure is not representative coverage. For example, successful server logic alone cannot prove a reconnect/DOM failure is covered.
+
+**Name a coverage gap when the representative permanent regression cannot be established.** State the missing boundary, required evidence or access, and the next bounded owner action. Keep any narrower test's limited result, but do not claim verified completion or replace an unavailable original scenario with a pretend browser/server demonstration.
+
+Done when **every remaining element is load-bearing** — removing any one of them makes the loop go green — and the repro still represents the original failure.
 
 Do not proceed until you have reproduced **and** minimised.
 

@@ -31,3 +31,13 @@ def test_every_repair_entry_requires_observed_permanent_red_before_repair(
     assert "bug's reason" in guidance
     assert "green" in guidance
     assert "original scenario" in guidance
+
+
+def test_minimisation_requires_boundary_correspondence_and_explicit_coverage_gaps() -> None:
+    guidance = section("## Phase 2 —", "## Phase 3 —")
+    assert "same boundary" in guidance
+    assert "helper" in guidance and "mock" in guidance
+    assert "wrong failure" in guidance
+    assert "coverage gap" in guidance
+    assert "verified completion" in guidance
+    assert "evidence or access" in guidance
