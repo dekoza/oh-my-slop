@@ -78,8 +78,10 @@ export function createTaskSupervision(taskId) {
 				seenNotifications.add(delivery);
 				const task = tasks.get(event.task_id) || { taskId: event.task_id, description: event.description };
 				const outcome = { status: event.status || "unknown", summary: event.summary, outputFile: event.output_file };
-				// Explicit terminal uncertainty needs a resume; snapshot uncertainty can resolve late.
-				const conflicting = outcome.status === "completed" && ["stopped", "failed", "unknown"].includes(task.terminalStatus);
+				// Later terminal evidence is retained but cannot replace this invocation's stop barrier.
+				// Other explicit terminal uncertainty needs a resume; snapshot uncertainty can resolve late.
+				const conflicting = task.terminalStatus === "stopped" ||
+					(outcome.status === "completed" && ["failed", "unknown"].includes(task.terminalStatus));
 				tasks.set(event.task_id, { ...task, ...(conflicting ? {} : { ...outcome, terminalStatus: outcome.status, terminalSequence: ++terminalSequence }), history: [...(task.history || []), outcome] });
 			}
 			if (event.subtype === "background_tasks_changed") {

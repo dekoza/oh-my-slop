@@ -303,6 +303,29 @@ input.on("line", (line) => {
 	assert.match(handoff, /Resume in the same working directory/);
 });
 
+test("later failure or unknown notifications cannot erase a stopped-task barrier", { timeout: 15_000 }, async (t) => {
+	for (const mode of ["failed-resume", "unknown-resume", "failed-replacement"]) {
+		const status = mode.startsWith("failed") ? "failed" : "unknown";
+		const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "system", subtype: "task_notification", task_id: "verify", status: "stopped", uuid: "stopped", summary: "Required task stopped" });
+ send({ type: "system", subtype: "task_notification", task_id: "verify", status: "${status}", uuid: "later", summary: "Later terminal evidence" });
+ ${mode === "failed-replacement" ? 'send({ type: "system", subtype: "task_notification", task_id: "replacement", status: "completed", uuid: "replacement" });' : `
+ send({ type: "system", subtype: "task_updated", task_id: "verify", patch: { status: "running" } });
+ send({ type: "system", subtype: "task_notification", task_id: "verify", status: "completed", uuid: "completed" });`}
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("finished", ${mode === "failed-replacement" ? '{ resolved_failures: [{ task_id: "verify", replacement_task_id: "replacement", evidence: ["Rerun passed"] }] }' : "{}"}) });
+});
+` });
+		const result = await runClaude({ ...fake, prompt: "Verify required work", maxContinuations: 1 });
+		assert.equal(result.disposition, "unfinished", mode);
+		assert.equal(result.continuations, 0, mode);
+		assert.equal(result.taskOutcomes[0].status, "stopped", mode);
+		assert.match(result.reason, /verify \(stopped\)/);
+		assert.deepEqual(result.taskOutcomes[0].history.map((entry) => entry.status), mode === "failed-replacement" ? ["stopped", status] : ["stopped", status, "completed"]);
+	}
+});
+
 test("replayed UUID-less native results cannot drain a later queue or close input", { timeout: 15_000 }, async (t) => {
 	for (const freshDrain of [false, true]) {
 		const fake = await fixture(t, { body: `
