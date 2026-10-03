@@ -169,6 +169,22 @@ test("resumed task lifecycles invalidate earlier completion and retain terminal 
 	}
 });
 
+test("a fresh resumed completion resolves snapshot uncertainty but not a terminal unknown notification", () => {
+	const report = { task_id: "approved", disposition: "finished", outcomes: [{ requirement: "Verify", status: "verified", evidence: ["fresh verification passed"] }], outstanding: [], unverified: [], question: "", background_task_ids: [] };
+	for (const explicitUnknown of [false, true]) {
+		const supervisor = createTaskSupervision("approved");
+		supervisor.record({ type: "system", subtype: "task_notification", task_id: "verify", status: "completed", uuid: "first" });
+		supervisor.record({ type: "system", subtype: "task_updated", task_id: "verify", patch: { status: "running" } });
+		if (explicitUnknown) supervisor.record({ type: "system", subtype: "task_notification", task_id: "verify", status: "unknown", uuid: "unknown" });
+		supervisor.record({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+		assert.equal(supervisor.snapshot().taskOutcomes[0].status, "unknown");
+		supervisor.record({ type: "system", subtype: "task_notification", task_id: "verify", status: "completed", uuid: "second" });
+		const decision = supervisor.assess(report);
+		assert.equal(decision.action, explicitUnknown ? "continue" : "end");
+		assert.equal(decision.disposition, explicitUnknown ? undefined : "finished");
+	}
+});
+
 test("contradictory completion cannot erase stopped or failed work without an explicit resume", { timeout: 15_000 }, async (t) => {
 	for (const status of ["stopped", "failed"]) {
 		const fake = await fixture(t, { body: `

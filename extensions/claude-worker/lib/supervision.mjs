@@ -61,9 +61,9 @@ export function createTaskSupervision(taskId) {
 				seenNotifications.add(delivery);
 				const task = tasks.get(event.task_id) || { taskId: event.task_id, description: event.description };
 				const outcome = { status: event.status || "unknown", summary: event.summary, outputFile: event.output_file };
-				// A contradictory success is not evidence of recovery without a running transition.
-				const conflicting = outcome.status === "completed" && ["stopped", "failed", "unknown"].includes(task.status) && task.history?.length;
-				tasks.set(event.task_id, { ...task, ...(conflicting ? {} : outcome), history: [...(task.history || []), outcome] });
+				// Explicit terminal uncertainty needs a resume; snapshot uncertainty can resolve late.
+				const conflicting = outcome.status === "completed" && ["stopped", "failed", "unknown"].includes(task.terminalStatus);
+				tasks.set(event.task_id, { ...task, ...(conflicting ? {} : { ...outcome, terminalStatus: outcome.status }), history: [...(task.history || []), outcome] });
 			}
 			if (event.subtype === "background_tasks_changed") {
 				const active = new Set();
