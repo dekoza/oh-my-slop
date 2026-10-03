@@ -204,10 +204,21 @@ test("model delegation returns worker output and permission dialogs are bounded 
 	assert.ok(!result.content[0].text.includes("\u001b"));
 	assert.ok(!result.content[0].text.includes("\u0007"));
 	assert.match(result.content[0].text, /work may be incomplete/);
+	assert.equal(result.details.disposition, "unfinished", "a tool fixture without a reported disposition fails closed too");
 	const permission = h.confirmations.find(([title]) => title.includes("allow Bash"));
 	assert.equal(permission[2].timeout, 60_000);
 	assert.ok(!permission[1].includes("\u001b"));
 	assert.match(permission[1], /Needs approval/);
+});
+
+test("tool output keeps its display budget while retained task metadata stays sanitized", async () => {
+	const h = harness(async () => ({ sessionId: SESSION_ID, disposition: "unfinished", reason: "API_KEY=reason-secret", text: "x".repeat(20_000) + "Final artifact reference", permissionDenials: [{ tool_name: "Edit", reason: "API_KEY=permission-secret" }], taskOutcomes: [{ taskId: "task-1", status: "unknown", summary: "API_KEY=task-secret" }], report: { task_id: "repair", disposition: "unfinished", outcomes: [], outstanding: ["API_KEY=outstanding-secret"], unverified: [], question: "", background_task_ids: [] } }));
+	const result = await h.tools[0].execute("call", { prompt: "Inspect" }, undefined, undefined, h.ctx);
+	assert.match(result.content[0].text, /Final artifact reference/);
+	assert.equal(result.details.disposition, "unfinished");
+	assert.match(result.content[0].text, /task-1: unknown/);
+	for (const secret of ["reason-secret", "permission-secret", "task-secret", "outstanding-secret"]) assert.ok(!JSON.stringify(result).includes(secret));
+	assert.match(result.details.activity.text, /\[truncated\]/);
 });
 
 test("cc-log retains tool evidence and terminal reports survive restoring the Pi session", async () => {

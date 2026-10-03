@@ -124,7 +124,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 				const disposition = Object.hasOwn(DISPOSITION_STATUS, result.disposition) ? result.disposition : "unfinished";
 				job.log.finish({ ...result, disposition, status: DISPOSITION_STATUS[disposition], reason: result.reason || (disposition === "unfinished" ? "No terminal task disposition reported; completion unverified." : undefined) });
 				persistRun(job.log.snapshot());
-				return { ...lastRun, activity: lastRun };
+				return { ...lastRun, text: safeText(result.text || ""), activity: lastRun };
 			} catch (error) {
 				const failure = new Error(safeText(error.message));
 				if (job.log) {
