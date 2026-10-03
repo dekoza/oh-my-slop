@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 const strings = { type: "array", items: { type: "string" } };
 
 export function completionSchema(taskId) {
@@ -80,7 +82,9 @@ export function createTaskSupervision(taskId, resumeState) {
 			}
 			if (event.subtype === "task_notification" && event.task_id) {
 				// Without a delivery ID, identical content cannot prove a new completion.
-				const delivery = event.uuid ? `uuid:${event.uuid}` : JSON.stringify([event.task_id, event.status, event.summary, event.output_file, event.description]);
+				const identity = event.uuid ? `uuid:${event.uuid}` : JSON.stringify([event.task_id, event.status, event.summary, event.output_file, event.description]);
+				// Fixed-size fingerprints survive sanitized/capped persistence without retaining raw secrets.
+				const delivery = createHash("sha256").update(identity).digest("hex");
 				if (seenNotifications.has(delivery)) return;
 				seenNotifications.add(delivery);
 				const task = tasks.get(event.task_id) || { taskId: event.task_id, description: event.description };
