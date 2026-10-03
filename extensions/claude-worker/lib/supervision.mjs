@@ -66,6 +66,7 @@ export function createTaskSupervision(taskId) {
 				return { action: "continue", reason };
 			}
 			report = value;
+			for (const id of report.background_task_ids) if (!tasks.has(id)) tasks.set(id, { taskId: id, status: "running", description: "Required by Claude Code's task report" });
 			if (report.disposition === "needs_input" && report.question.trim()) return { action: "end", disposition: "needs_input", reason: report.question };
 			if (report.disposition === "unfinished") return { action: "end", disposition: "unfinished", reason: report.outstanding.join("; ") || "Claude Code reported that work is unfinished." };
 			const failed = [...tasks.values()].filter((task) => ["stopped", "failed"].includes(task.status));

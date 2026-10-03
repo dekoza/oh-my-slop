@@ -143,6 +143,27 @@ input.on("line", (line) => {
 	assert.equal((await fake.frames()).filter((frame) => frame.type === "user").length, 1);
 });
 
+test("a report-declared background task is supervised even without a task-start notification", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+let turns = 0;
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ turns++;
+ if (turns === 1) {
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("waiting", { background_task_ids: ["declared"] }) });
+  setTimeout(() => {
+   send({ type: "system", subtype: "task_notification", task_id: "declared", status: "completed" });
+   send({ type: "result", subtype: "success", origin: { kind: "task-notification" }, session_id: "${SESSION_ID}" });
+  }, 20);
+ } else send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
+});
+` });
+	const result = await runClaude({ ...fake, prompt: "Inspect", maxContinuations: 1 });
+	assert.equal(result.disposition, "finished");
+	assert.equal(result.taskOutcomes[0].status, "completed");
+});
+
 test("API, logged-out, unknown-plan and mixed credentials fail before any model request", { timeout: 15_000 }, async (t) => {
 	for (const auth of [
 		{ loggedIn: true, authMethod: "api_key", apiKeySource: "apiKeyHelper" },
