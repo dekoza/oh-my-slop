@@ -56,6 +56,8 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 		let continuations = 0;
 		const permissionDenials = [];
 		const cleanupFailures = [];
+		// One rule for live and cleanup paths: an attributable unsuccessful turn is an execution failure.
+		const failedTurn = (event) => event.is_error || event.subtype !== "success";
 		let initialized = false;
 		let currentSessionId = sessionId;
 		const checkpoint = () => onState(structuredClone({ ...supervision.snapshot(), sessionId: currentSessionId }));
@@ -126,13 +128,14 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 					const ids = event.user_message_uuids || (event.user_message_uuid ? [event.user_message_uuid] : []);
 					correlated = ids.includes(messageId);
 					native = !ids.length && event.origin?.kind === "task-notification" && event.session_id && event.session_id === currentSessionId;
-					// Delivery identities persist with the task, so a resumed run cannot consume an old result again.
+					// UUID and untagged native identities persist with the task, so a resumed run cannot consume
+					// those results again; result_index restarts per CLI process and stays run-local.
 					if (!supervision.acceptResult(event, native)) return;
 					checkpoint();
 				}
 				if (stopping) {
 					// Cleanup execution failures invalidate completion but may never restart dispatch.
-					if ((correlated || native) && (event.is_error || event.subtype !== "success")) {
+					if ((correlated || native) && failedTurn(event)) {
 						cleanupFailures.push(event);
 						permissionDenials.push(...(event.permission_denials || []));
 					}
@@ -180,7 +183,7 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 						.finally(() => pendingPermissions.delete(event.request_id));
 				}
 				if (event.type === "result") {
-					if ((correlated || native) && (event.is_error || event.subtype !== "success")) {
+					if ((correlated || native) && failedTurn(event)) {
 						result = event;
 						currentSessionId ||= event.session_id;
 						permissionDenials.push(...(event.permission_denials || []));

@@ -135,15 +135,16 @@ export function createTaskSupervision(taskId, resumeState) {
 				for (const task of tasks.values()) if (task.status === "running" && task.isBackgrounded !== false && !active.has(task.taskId)) task.status = "unknown";
 			}
 		},
-		// Returns false for a result delivery already consumed by this task, including before a resume.
-		acceptResult(event, untaggedNative) {
+		// Returns false for a result delivery already consumed by this task; UUID and untagged
+		// native identities also cover deliveries consumed before a resume.
+		acceptResult(event, native) {
 			if (!event.uuid && event.result_index !== undefined) {
 				if (resultIndexes.has(event.result_index)) return false;
 				resultIndexes.add(event.result_index);
 				return true;
 			}
 			// An identical untagged native delivery cannot prove a new queue drain.
-			const identity = event.uuid ? `uuid:${event.uuid}` : untaggedNative ? `native:${JSON.stringify(event)}` : undefined;
+			const identity = event.uuid ? `uuid:${event.uuid}` : native ? `native:${JSON.stringify(event)}` : undefined;
 			if (!identity) return true;
 			const delivery = createHash("sha256").update(identity).digest("hex");
 			if (resultDeliveries.has(delivery)) return false;
