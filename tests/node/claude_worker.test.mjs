@@ -860,6 +860,35 @@ input.on("line", (line) => {
 	}
 });
 
+test("terminal native task updates retain their outcome and diagnostics without a notification", { timeout: 15_000 }, async (t) => {
+	for (const [nativeStatus, status] of [["killed", "stopped"], ["failed", "failed"]]) {
+		const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+ send({ type: "system", subtype: "task_started", task_id: "verify", is_backgrounded: true, description: "Required integration verification" });
+ send({ type: "system", subtype: "task_updated", task_id: "verify", patch: { status: "${nativeStatus}", error: "NATIVE-PATCH-REASON" } });
+ send({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("waiting", { background_task_ids: ["verify"] }) });
+});
+` });
+		const log = createActivityLog({ cwd: fake.cwd, prompt: "Verify integration" });
+		const result = await runClaude({ ...fake, prompt: "Verify integration", onProgress: (event) => log.record(event), onState: (state) => log.observe(state) });
+		log.finish({ ...result, status: "Unfinished/interrupted" });
+		assert.equal(result.disposition, "unfinished", nativeStatus);
+		assert.equal(result.taskOutcomes[0].status, status, nativeStatus);
+		assert.equal(result.taskOutcomes[0].summary, "NATIVE-PATCH-REASON");
+		assert.match(formatRunReport(log.snapshot()), new RegExp(`Task verify: ${status} · NATIVE-PATCH-REASON`));
+		const records = (await readFile(log.snapshot().logPath, "utf8")).trim().split("\n").map(JSON.parse);
+		assert.equal(records.find((record) => record.kind === "task_updated").details.patch.error, "NATIVE-PATCH-REASON");
+	}
+	const supervision = createTaskSupervision("approved");
+	supervision.record({ type: "system", subtype: "task_started", task_id: "verify" });
+	supervision.record({ type: "system", subtype: "task_updated", task_id: "verify", patch: { status: "completed" } });
+	assert.equal(supervision.snapshot().taskOutcomes[0].status, "completed");
+	assert.equal(supervision.waiting, false);
+});
+
 test("continuation and elapsed-time limits end unfinished with retained context", { timeout: 15_000 }, async (t) => {
 	const looping = await fixture(t);
 	const result = await runClaude({ ...looping, prompt: "Inspect", maxContinuations: 2 });

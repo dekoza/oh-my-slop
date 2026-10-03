@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 
 const strings = { type: "array", items: { type: "string" } };
+// Native task states that end a task; a killed task is reported to the model as stopped.
+const NATIVE_TERMINAL_STATUS = { completed: "completed", failed: "failed", killed: "stopped" };
 
 export function completionSchema(taskId) {
 	return {
@@ -82,6 +84,18 @@ export function createTaskSupervision(taskId, resumeState) {
 		tasks.set(id, { taskId: id, status: "running", isBackgrounded: isBackgrounded ?? task?.isBackgrounded,
 			description: description || task?.description, history: task?.history || [] });
 	};
+	const recordTerminal = (id, identity, description, outcome) => {
+		// Fixed-size fingerprints survive sanitized/capped persistence without retaining raw secrets.
+		const delivery = createHash("sha256").update(identity).digest("hex");
+		if (seenNotifications.has(delivery)) return;
+		seenNotifications.add(delivery);
+		const task = tasks.get(id) || { taskId: id, description };
+		// Later terminal evidence is retained but cannot replace this invocation's stop barrier.
+		// Other explicit terminal uncertainty needs a resume; snapshot uncertainty can resolve late.
+		const conflicting = task.terminalStatus === "stopped" ||
+			(outcome.status === "completed" && ["failed", "unknown"].includes(task.terminalStatus));
+		tasks.set(id, { ...task, ...(conflicting ? {} : { ...outcome, terminalStatus: outcome.status, terminalSequence: ++terminalSequence }), history: [...(task.history || []), outcome] });
+	};
 	let report;
 	let reason = "No explicit evidence-backed completion report was received.";
 	return {
@@ -92,20 +106,16 @@ export function createTaskSupervision(taskId, resumeState) {
 				(event.patch?.status === "running" || typeof event.patch?.is_backgrounded === "boolean")) {
 				markRunning(event.task_id, event.patch.description, event.patch.status === "running", event.patch.is_backgrounded);
 			}
+			// Interruption can prevent the separate notification, so a terminal patch is terminal evidence.
+			if (event.subtype === "task_updated" && event.task_id && Object.hasOwn(NATIVE_TERMINAL_STATUS, event.patch?.status)) {
+				const status = NATIVE_TERMINAL_STATUS[event.patch.status];
+				const identity = event.uuid ? `uuid:${event.uuid}` : JSON.stringify(["task_updated", event.task_id, event.patch.status, event.patch.error, event.patch.end_time]);
+				recordTerminal(event.task_id, identity, event.patch.description, { status, summary: event.patch.error });
+			}
 			if (event.subtype === "task_notification" && event.task_id) {
 				// Without a delivery ID, identical content cannot prove a new completion.
 				const identity = event.uuid ? `uuid:${event.uuid}` : JSON.stringify([event.task_id, event.status, event.summary, event.output_file, event.description]);
-				// Fixed-size fingerprints survive sanitized/capped persistence without retaining raw secrets.
-				const delivery = createHash("sha256").update(identity).digest("hex");
-				if (seenNotifications.has(delivery)) return;
-				seenNotifications.add(delivery);
-				const task = tasks.get(event.task_id) || { taskId: event.task_id, description: event.description };
-				const outcome = { status: event.status || "unknown", summary: event.summary, outputFile: event.output_file };
-				// Later terminal evidence is retained but cannot replace this invocation's stop barrier.
-				// Other explicit terminal uncertainty needs a resume; snapshot uncertainty can resolve late.
-				const conflicting = task.terminalStatus === "stopped" ||
-					(outcome.status === "completed" && ["failed", "unknown"].includes(task.terminalStatus));
-				tasks.set(event.task_id, { ...task, ...(conflicting ? {} : { ...outcome, terminalStatus: outcome.status, terminalSequence: ++terminalSequence }), history: [...(task.history || []), outcome] });
+				recordTerminal(event.task_id, identity, event.description, { status: event.status || "unknown", summary: event.summary, outputFile: event.output_file });
 			}
 			if (event.subtype === "background_tasks_changed") {
 				const active = new Set();

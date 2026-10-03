@@ -118,7 +118,7 @@ export function createActivityLog({ cwd, prompt, sessionId, resumeState, maxByte
 					tasks.delete(event.task_id);
 				}
 				activity(event.summary || event.description || `${event.task_id}: ${event.status || event.subtype}`);
-				append(event.subtype, state.lastActivity, { taskId: event.task_id, taskType: event.task_type, status: event.status, summary: event.summary, description: event.description, outputFile: event.output_file });
+				append(event.subtype, state.lastActivity, { taskId: event.task_id, taskType: event.task_type, status: event.status, summary: event.summary, description: event.description, outputFile: event.output_file, patch: event.patch });
 			}
 			if (event.type === "system" && event.subtype === "background_tasks_changed") {
 				tasks.clear();
