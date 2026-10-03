@@ -637,6 +637,34 @@ input.on("line", (line) => {
 	assert.notEqual(fresh.report.task_id, paused.report.task_id);
 });
 
+test("saved-session replay cannot turn restored unfinished verification into fresh completion", { timeout: 15_000 }, async (t) => {
+	for (const tagged of [true, false]) {
+		const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ send({ type: "system", subtype: "task_notification", task_id: "verify", ${tagged ? 'uuid: "old-pass",' : ''} status: "completed", summary: "Old verification passed" });
+ if (!args.includes("--resume")) {
+  send({ type: "system", subtype: "task_updated", task_id: "verify", patch: { status: "running", is_backgrounded: true } });
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("needs_input", { question: "Which target?", background_task_ids: ["verify"] }) });
+ } else {
+  if (event.message.content === "Fresh verification") send({ type: "system", subtype: "task_notification", task_id: "verify", uuid: "new-pass", status: "completed", summary: "Fresh verification passed" });
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
+ }
+});
+` });
+		const paused = await runClaude({ ...fake, prompt: "Verify then ask" });
+		assert.equal(paused.taskOutcomes[0].status, "running");
+		const replayed = await runClaude({ ...fake, prompt: "Target A", sessionId: SESSION_ID, resumeState: { ...paused, cwd: fake.cwd } });
+		assert.equal(replayed.disposition, "unfinished");
+		assert.equal(replayed.taskOutcomes[0].status, "unknown");
+		assert.equal(replayed.taskOutcomes[0].history.length, 1, "deduplication survives deliberate follow-up");
+		const fresh = await runClaude({ ...fake, prompt: "Fresh verification", sessionId: SESSION_ID, resumeState: { ...replayed, cwd: fake.cwd } });
+		assert.equal(fresh.disposition, "finished");
+		assert.equal(fresh.taskOutcomes[0].history.length, 2);
+	}
+});
+
 test("resume preserves native obligations and history without assuming old running work is live", { timeout: 15_000 }, async (t) => {
 	const fake = await fixture(t, { body: `
 input.on("line", (line) => {

@@ -51,6 +51,7 @@ export function createActivityLog({ cwd, prompt, sessionId, resumeState, maxByte
 	const taskOutcomes = new Map((resumeState?.taskOutcomes || []).map((task) => [task.taskId, scrub(task)]));
 	if (resumeState) {
 		state.taskId = resumeState.taskId || resumeState.report?.task_id;
+		state.notificationDeliveries = scrub(resumeState.notificationDeliveries || []);
 		state.requiredOutcomes = scrub(resumeState.requiredOutcomes || [...(resumeState.report?.outcomes || []), ...(resumeState.omittedOutcomes || [])]);
 	}
 	let bytes = 0;

@@ -57,7 +57,7 @@ export function createTaskSupervision(taskId, resumeState) {
 		...(resumeState?.requiredOutcomes || []), ...(resumeState?.report?.outcomes || []), ...(resumeState?.omittedOutcomes || []),
 	].map((outcome) => [outcome.requirement, outcome]));
 	const omittedOutcomes = () => [...declaredOutcomes.values()].filter((outcome) => !report?.outcomes.some((item) => item.requirement === outcome.requirement));
-	const seenNotifications = new Set();
+	const seenNotifications = new Set(resumeState?.notificationDeliveries || []);
 	let terminalSequence = Math.max(0, ...[...tasks.values()].map((task) => task.terminalSequence || 0));
 	const markRunning = (id, description, explicitResume = false, isBackgrounded) => {
 		const task = tasks.get(id);
@@ -148,6 +148,6 @@ export function createTaskSupervision(taskId, resumeState) {
 			return [...tasks.values()].some((task) => task.status === "running") ||
 				(report?.background_task_ids || []).some((id) => !tasks.has(id));
 		},
-		snapshot() { return { taskId, requiredOutcomes: [...declaredOutcomes.values()], report, reason, taskOutcomes: [...tasks.values()], omittedOutcomes: omittedOutcomes() }; },
+		snapshot() { return { taskId, requiredOutcomes: [...declaredOutcomes.values()], notificationDeliveries: [...seenNotifications], report, reason, taskOutcomes: [...tasks.values()], omittedOutcomes: omittedOutcomes() }; },
 	};
 }
