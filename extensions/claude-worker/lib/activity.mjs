@@ -192,7 +192,7 @@ export function formatRunReport(state, text = state.text || "") {
 		state.reason ? `Reason: ${safeText(state.reason)}` : "",
 		state.continuations !== undefined ? `Continuations: ${state.continuations}` : "",
 		state.taskOutcomes?.length ? "Cumulative task ledger (may include prior evidence; not current completion certification):" : "",
-		...(state.taskOutcomes || []).map((task) => `Task ${safeText(task.taskId || task.task_id || task.id || "unknown")}: ${safeText(task.status || "unknown")} · ${safeText(task.summary || task.description || "No details reported")}${task.outputFile || task.output_file ? ` · ${safeText(task.outputFile || task.output_file)}` : ""}`),
+		...(state.taskOutcomes || []).map((task) => `Task ${safeText(task.taskId || task.task_id || task.id || "unknown")}: ${safeText(task.status || "unknown")} · ${safeText(task.summary || task.description || "No details reported")}${task.outputFile || task.output_file ? ` · ${safeText(task.outputFile || task.output_file)}` : ""}${task.error && task.error !== task.summary ? ` · Error: ${safeText(task.error)}` : ""}`),
 		...(state.taskOutcomes || []).flatMap((task) => (task.history?.length > 1 ? task.history : []).map((entry) => `Task history ${safeText(task.taskId || task.task_id || task.id || "unknown")}: ${safeText(entry.status || "unknown")} · ${safeText(entry.summary || "No details reported")}${entry.outputFile ? ` · ${safeText(entry.outputFile)}` : ""}`)),
 		...(state.priorHandoffs || []).flatMap((handoff) => [
 			"Prior handoff (not current completion evidence):",

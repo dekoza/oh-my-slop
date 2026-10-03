@@ -914,7 +914,7 @@ test("a native terminal update followed by its notification is one transition wi
 		assert.equal(task.outputFile, "/tmp/int.out");
 		assert.equal(task.history.length, 1, `${nativeStatus} is one terminal transition`);
 		assert.equal(task.history[0].error, "Native patch reason");
-		assert.match(formatRunReport({ startedAt: 0, stats: { toolCalls: 0, toolResults: 0, toolErrors: 0 }, taskOutcomes: [task] }), new RegExp(`Task verify: ${status} · Integration ended at 75% · /tmp/int.out`));
+		assert.match(formatRunReport({ startedAt: 0, stats: { toolCalls: 0, toolResults: 0, toolErrors: 0 }, taskOutcomes: [task] }), new RegExp(`Task verify: ${status} · Integration ended at 75% · /tmp/int.out · Error: Native patch reason`));
 	}
 });
 
