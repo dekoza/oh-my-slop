@@ -176,9 +176,12 @@ Nothing automatically routes other Pi tools or subagents through Claude Code.
 - Saved session IDs follow the active Pi branch and are scoped to the working
   directory. A stopped worker may leave partial changes; inspect them before
   resuming or running another agent.
-- Final output is capped at 64,000 characters with an explicit truncation notice.
-  Open the saved session with `claude --resume <session-id>` for the complete
-  history or an unsupported interaction.
+- Assembled run reports, including task outcomes and evidence, are capped at
+  50 KiB or 2,000 lines (whichever is reached first), including the truncation
+  notice. The notice points to a private `pi-cc-report-*` file containing the
+  complete sanitized report; retained metadata still has the individual-string
+  limits described above. Open the saved session with `claude --resume <session-id>`
+  for the complete native history or an unsupported interaction.
 
 There is no fallback to API billing and no automatic retry after a failed worker.
 If authentication is rejected, correct it in Claude Code and try again.

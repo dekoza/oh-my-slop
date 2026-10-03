@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync, statSync } from "node:fs";
 
 import { registerClaudeWorker } from "../../extensions/claude-worker/lib/extension.mjs";
 import { createActivityLog } from "../../extensions/claude-worker/lib/activity.mjs";
@@ -276,6 +277,27 @@ test("tool output keeps its display budget while retained task metadata stays sa
 	assert.match(result.content[0].text, /task-1: unknown/);
 	for (const secret of ["reason-secret", "permission-secret", "task-secret", "outstanding-secret"]) assert.ok(!JSON.stringify(result).includes(secret));
 	assert.match(result.details.activity.text, /\[truncated\]/);
+});
+
+test("assembled tool reports are byte and line bounded with a private complete evidence artifact", async () => {
+	for (const evidence of ["😀".repeat(3_750), "evidence line\n".repeat(350)]) {
+		const h = harness(async () => ({ sessionId: SESSION_ID, disposition: "finished", text: "Final reply", report: {
+			task_id: "repair", disposition: "finished", outcomes: Array.from({ length: 8 }, (_, i) => ({ requirement: `Outcome ${i}`, status: "verified", evidence: [evidence + `LAST-EVIDENCE-${i}`, "API_KEY=artifact-secret"] })), outstanding: [], unverified: [], question: "", background_task_ids: [],
+		} }));
+		const result = await h.tools[0].execute("call", { prompt: "Repair" }, undefined, undefined, h.ctx);
+		const text = result.content[0].text;
+		assert.ok(Buffer.byteLength(text) <= 50 * 1024, `model-facing bytes: ${Buffer.byteLength(text)}`);
+		assert.ok(text.split("\n").length <= 2_000, "the assembled report must respect Pi's line budget too");
+		assert.match(text, /Output truncated/);
+		assert.ok(!text.includes("\ufffd"), "UTF-8 truncation must not split a code point");
+		const path = text.match(/Full report: ([^\n]+)\]/)?.[1];
+		assert.ok(path, "the model needs a concrete complete-output pointer");
+		const retained = readFileSync(path, "utf8");
+		for (const expected of ["Outcome 0", "Outcome 7", "LAST-EVIDENCE-7", "Final reply"]) assert.ok(retained.includes(expected), expected);
+		assert.ok(!retained.includes("artifact-secret"));
+		assert.match(retained, /redacted/);
+		if (process.platform !== "win32") assert.equal(statSync(path).mode & 0o777, 0o600);
+	}
 });
 
 test("cc-log retains tool evidence and terminal reports survive restoring the Pi session", async () => {

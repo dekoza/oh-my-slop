@@ -4,6 +4,22 @@ import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 
 const MAX_TEXT = 16_000;
+const MAX_REPORT_BYTES = 50 * 1024;
+const MAX_REPORT_LINES = 2_000;
+
+function boundReport(text) {
+	const full = safeText(text);
+	if (Buffer.byteLength(full) <= MAX_REPORT_BYTES && full.split("\n").length <= MAX_REPORT_LINES) return full;
+	const directory = mkdtempSync(join(tmpdir(), "pi-cc-report-"));
+	const path = join(directory, "report.txt");
+	writeFileSync(path, full, { flag: "wx", mode: 0o600 });
+	const notice = `\n[Output truncated to 50 KiB / 2000 lines. Full report: ${path}]`;
+	const prefix = Buffer.from(full.split("\n").slice(0, MAX_REPORT_LINES - 1).join("\n"));
+	let end = Math.min(prefix.length, MAX_REPORT_BYTES - Buffer.byteLength(notice));
+	// Back up to the start of a split UTF-8 code point instead of emitting replacement text.
+	while (end < prefix.length && (prefix[end] & 0xc0) === 0x80) end--;
+	return prefix.subarray(0, end).toString("utf8") + notice;
+}
 
 export function safeText(value) {
 	return stripVTControlCharacters(String(value)).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "")
@@ -146,7 +162,7 @@ export function readActivityLog(logPath, limit = 200) {
 export function formatRunReport(state, text = state.text || "") {
 	const duration = Math.max(0, Math.floor(((state.endedAt || Date.now()) - state.startedAt) / 1_000));
 	const output = safeText(text);
-	return [
+	return boundReport([
 		`Claude Code: ${state.status}`,
 		`Session: ${state.sessionId || "not assigned"} · Elapsed: ${duration}s`,
 		`Started: ${new Date(state.startedAt).toISOString()} · Ended: ${state.endedAt ? new Date(state.endedAt).toISOString() : "not recorded"}`,
@@ -175,9 +191,8 @@ export function formatRunReport(state, text = state.text || "") {
 		state.pendingTools?.length ? `Warning: tool results were not reported for ${state.pendingTools.join(", ")}.` : "",
 		state.omittedEvents ? `Activity cap reached: ${state.omittedEvents} event details omitted.` : "",
 		`Activity log: ${state.logPath}`,
-		output ? `\n${output.slice(0, 64_000)}` : "",
-		output.length > 64_000 ? "[Output truncated. Open the Claude Code session to read the full result.]" : "",
-	].filter(Boolean).join("\n");
+		output ? `\n${output}` : "",
+	].filter(Boolean).join("\n"));
 }
 
 export function formatActivityLog(state, retained, { expanded = false } = {}) {
