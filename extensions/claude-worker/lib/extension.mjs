@@ -210,6 +210,10 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => restore(ctx));
+	// Finish the interruption record while appendEntry still belongs to the launching branch.
+	pi.on("session_before_tree", async () => {
+		if (active) { active.controller.abort(); await active.done.catch(() => {}); }
+	});
 	// The launching command/tool reports failures; cleanup only waits for it to settle.
 	pi.on("session_tree", async (_event, ctx) => {
 		if (active) {

@@ -194,6 +194,34 @@ test("restoration follows the active Pi branch and never resumes a session from 
 	assert.equal(calls.length, 1);
 });
 
+test("pre-navigation cancellation retains the interrupted handoff only on the launching branch", async () => {
+	const calls = [];
+	const h = harness((options) => {
+		calls.push(options);
+		if (calls.length > 1) return { sessionId: SESSION_ID, disposition: "needs_input", report: { question: "Which target?" } };
+		options.onProgress({ type: "system", subtype: "init", session_id: SESSION_ID });
+		return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new Error("Stopped")), { once: true }));
+	});
+	await h.commands.get("cc").handler("Repair", h.ctx);
+	await new Promise(setImmediate);
+	assert.equal(typeof h.events.get("session_before_tree"), "function", "cleanup must run before Pi changes branches");
+	await h.events.get("session_before_tree")({}, h.ctx);
+	assert.equal(h.entries.at(-1).data.disposition, "unfinished");
+	assert.ok(h.entries.at(-1).data.endedAt);
+	assert.match(h.messages.at(-1).message.content, /Unfinished\/interrupted/);
+	const launchingBranch = [...h.entries];
+	h.entries.length = 0;
+	await h.events.get("session_tree")({}, h.ctx);
+	await h.commands.get("cc-followup").handler("No old task here", h.ctx);
+	await new Promise(setImmediate);
+	assert.equal(calls.length, 1);
+	h.entries.push(...launchingBranch);
+	await h.events.get("session_tree")({}, h.ctx);
+	await h.commands.get("cc-followup").handler("Recover original task", h.ctx);
+	await new Promise(setImmediate);
+	assert.equal(calls[1].sessionId, SESSION_ID);
+});
+
 test("post-navigation cancellation cannot import the abandoned worker into the selected branch", async () => {
 	const calls = [];
 	let lateProgress;
