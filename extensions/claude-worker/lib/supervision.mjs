@@ -85,12 +85,14 @@ export function createTaskSupervision(taskId, resumeState) {
 	let terminalSequence = Math.max(0, ...[...tasks.values()].map((task) => task.terminalSequence || 0));
 	const markRunning = (id, description, explicitResume = false, isBackgrounded) => {
 		const task = tasks.get(id);
+		// The deliberate follow-up is itself the resume for work carried over into it.
+		const resumed = explicitResume || carriedOver.has(id);
 		// Live evidence in this invocation, even when not accepted below, makes a later stop current.
 		carriedOver.delete(id);
 		// A stop ends this invocation's required work; recovery needs a deliberate follow-up.
 		if (task?.terminalStatus === "stopped") return;
 		// Live evidence can resolve snapshot uncertainty; failures/unknowns need a resume.
-		if (["failed", "unknown"].includes(task?.terminalStatus) && !explicitResume) return;
+		if (["failed", "unknown"].includes(task?.terminalStatus) && !resumed) return;
 		tasks.set(id, { taskId: id, status: "running", isBackgrounded: isBackgrounded ?? task?.isBackgrounded,
 			description: description || task?.description, history: task?.history || [] });
 	};

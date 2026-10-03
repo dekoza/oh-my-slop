@@ -180,7 +180,8 @@ export function readActivityLog(logPath, limit = 200) {
 // Keep stopped and unknown work distinct from failed verification in the handoff.
 function resolvedLabel(state, taskId) {
 	const status = (state.taskOutcomes || []).find((task) => (task.taskId || task.task_id || task.id) === taskId)?.status;
-	return !status || status === "failed" ? "failure" : `${safeText(status)} task`;
+	if (status === "failed") return `failure ${safeText(taskId)}`;
+	return ["stopped", "unknown"].includes(status) ? `interrupted task ${safeText(taskId)} (${status})` : `task ${safeText(taskId)}`;
 }
 
 export function formatRunReport(state, text = state.text || "") {
@@ -207,7 +208,7 @@ export function formatRunReport(state, text = state.text || "") {
 		]),
 		state.report ? "Claude Code self-report (not independent Pi certification):" : "",
 		...(state.report?.outcomes || []).map((outcome) => `- ${safeText(outcome.requirement)}: ${safeText(outcome.status)} · Evidence: ${(outcome.evidence || []).map(safeText).join("; ") || "none reported"}`),
-		...(state.report?.resolved_failures || []).map((resolution) => `Resolved ${resolvedLabel(state, resolution.task_id)} ${safeText(resolution.task_id)}: replacement ${safeText(resolution.replacement_task_id)} · Claude Code evidence: ${(resolution.evidence || []).map(safeText).join("; ")}`),
+		...(state.report?.resolved_failures || []).map((resolution) => `Resolved ${resolvedLabel(state, resolution.task_id)}: replacement ${safeText(resolution.replacement_task_id)} · Claude Code evidence: ${(resolution.evidence || []).map(safeText).join("; ")}`),
 		...(state.omittedOutcomes || []).map((outcome) => `Omitted required outcome: ${safeText(outcome.requirement)} · Last reported: ${safeText(outcome.status)} · Prior evidence: ${(outcome.evidence || []).map(safeText).join("; ") || "none reported"}`),
 		state.report?.question ? `Question: ${safeText(state.report.question)}` : "",
 		state.report?.outstanding?.length ? `Outstanding: ${state.report.outstanding.map(safeText).join("; ")}` : "",

@@ -583,6 +583,19 @@ test("work interrupted before a follow-up needs a replacement completed in that 
 	const decision = restarted.assess(report);
 	assert.equal(decision.disposition, "unfinished");
 	assert.match(decision.reason, /old-check \(stopped\)/);
+
+	// The deliberate follow-up is the resume that lets carried-over uncertain work restart.
+	for (const status of ["unknown", "failed"]) {
+		const recovered = createTaskSupervision("approved", { taskId: "approved", taskOutcomes: [
+			{ taskId: "old-check", status, terminalStatus: status, terminalSequence: 1, history: [{ status }] },
+		] });
+		recovered.record({ type: "system", subtype: "task_started", task_id: "old-check" });
+		assert.equal(recovered.waiting, true, status);
+		recovered.record({ type: "system", subtype: "task_notification", task_id: "old-check", status: "completed", uuid: "same-id-rerun" });
+		const unattributed = { ...report, resolved_failures: undefined };
+		assert.equal(recovered.assess(unattributed).disposition, "finished", status);
+		assert.deepEqual(recovered.snapshot().taskOutcomes[0].history.map((entry) => entry.status), [status, "completed"]);
+	}
 });
 
 test("resumed task lifecycles invalidate earlier completion and retain terminal history", () => {
@@ -807,7 +820,7 @@ input.on("close", () => {
 		assert.match(resumedPrompt, /old-check/, "the follow-up names the interrupted task so Claude can attribute a replacement");
 		const handoff = formatRunReport({ ...recovered, startedAt: Date.now(), status: "Finished", stats: {} });
 		assert.match(handoff, new RegExp(`Task old-check: ${interruption}`));
-		assert.match(handoff, new RegExp(`Resolved ${interruption} task old-check: replacement fresh-check`));
+		assert.match(handoff, new RegExp(`Resolved interrupted task old-check \\(${interruption}\\): replacement fresh-check`));
 		assert.doesNotMatch(handoff, /Resolved failure/, "stopped or unknown work is not described as failed verification");
 
 		const redelivered = await resume("Redeliver answer");
