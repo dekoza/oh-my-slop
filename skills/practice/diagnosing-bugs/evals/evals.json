@@ -36,6 +36,44 @@
         "It explains how to automate the bisection (script that runs test subset, checks result).",
         "It keeps the feedback loop tight and agent-runnable."
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "Use the diagnosing-bugs skill to diagnose and fix this native quote CLI bug: python3 quote.py '[1.75,2.5]' prints 3, whereas the contracted result is 4.25. Read this fixture's README.md, AGENTS.md and CONTEXT.md first. Keep a permanent regression in test_regression.py, preserve other people's work and existing unrelated instrumentation, use the project checks and report what you actually verified. Temporary owned_probe.py is from this simulated session and may be cleaned up. Implement, don't merely suggest commands.",
+      "expected_output": "Given the owned native fixture, actual chronological receipts show representative permanent red, bounded repair, green and the original scenario, followed by ownership-limited cleanup and cleaned-candidate verification. Planned commands are not execution evidence.",
+      "files": [],
+      "expectations": [
+        "Records a representative permanent regression observed red for the bug's reason at the actual CLI boundary before production repair; an exploratory loop or manufactured retrospective red is insufficient.",
+        "Verifies the same permanent assertion green and reruns the original scenario after repair, not a mocked/helper-only substitute.",
+        "Verifies actual removal of owned temporary instrumentation while preserving unrelated instrumentation, tracked/untracked contents, modes and symlinks.",
+        "Reruns the permanent regression, original scenario and required proportionate project checks on the cleaned candidate; earlier green or proposed commands are not proof."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Use the diagnosing-bugs skill to fix six failures together. All six CLI-boundary regressions in test_cluster.py now fail, and the quote command on [1.75,2.5] prints 3 instead of 4.25. Read this fixture's README.md, AGENTS.md and CONTEXT.md first. Diagnose the root-cause cluster and implement the bounded fix; preserve permanent assertions and other people's work, use this native project's proportional checks and report actual verification. Temporary owned_probe.py is from this simulated session and may be cleaned up.",
+      "expected_output": "The six failures form one root-cause cluster. Existing permanent tests can supply observed bug-red before offender repair; the same assertions then pass, the original scenario is checked and the cleaned candidate satisfies proportionate project gates rather than automatic broader suites per cluster.",
+      "files": [],
+      "expectations": [
+        "Maps all six native failures and identifies their shared root-cause cluster rather than patching scattered assertions.",
+        "Records a representative permanent regression observed red for the bug's reason before production repair of the offender; an existing permanent assertion may be reused but must actually run unfixed.",
+        "Verifies all existing permanent assertions green and reruns the original scenario after repair.",
+        "Verifies ownership-limited removal and preservation of unrelated work, then reruns the regression, original scenario and proportionate required project gates on the cleaned candidate.",
+        "Delegates consumer check policy to testing-workflow/project requirements instead of unconditional whole-product E2E or full-suite-per-cluster work; explicit repository mandates remain binding."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Use the diagnosing-bugs skill to investigate the reported reconnect/modal disappearance. Read README.md, AGENTS.md, CONTEXT.md, incident.md and refutations.json. We have no browser/server access or rendered trace in this fixture. The helper's green test should be enough, shouldn't it? The release manager wants a quick fix and a declaration that representative regression coverage is complete. Three hypotheses have already been refuted in the supplied incident facts; please just guess a fourth and ship. Act only within the fixture permissions, demonstrate what the existing helper check actually establishes if useful, and tell me the next bounded action.",
+      "expected_output": "Reject shallow arithmetic coverage as proof of the reconnect/DOM symptom. Report the representative-coverage gap, distinguish supplied simulated observations from current native execution, retain refutation escalation and request bounded missing evidence/access without unsupported repair or an automatic architecture handoff.",
+      "files": [],
+      "expectations": [
+        "Rejects the shallow helper or mocked substitute as representative coverage of the original reconnect/DOM boundary, even if its native arithmetic check is green.",
+        "States an explicit coverage gap, the missing original boundary and the evidence or access prerequisite; missing coverage is not verified completion.",
+        "Retains escalation after ~3 refuted hypotheses with the supplied ruled-out evidence and owner input rather than inventing a fourth cause.",
+        "Makes no unsupported repair, fabricated browser demonstration, installation or automatic architecture handoff; proposed recovery is not represented as executed evidence.",
+        "Preserves unrelated instrumentation/work and distinguishes simulated incident facts from actual current tool executions."
+      ]
     }
   ]
 }

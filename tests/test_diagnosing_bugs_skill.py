@@ -114,3 +114,28 @@ def test_public_invocation_description_attribution_and_legacy_guards_stay_stable
         assert "higher reproduction rate" in guidance
         assert "bisection harness" in guidance
         assert "git bisect run" in guidance
+
+
+def test_functional_evals_cover_ordering_cleanup_clusters_and_missing_seams() -> None:
+    document = json.loads((SKILL_ROOT / "evals" / "evals.json").read_text(encoding="utf-8"))
+    assert document["skill_name"] == "diagnosing-bugs"
+    cases = {case["id"]: case for case in document["evals"]}
+    assert {1, 2, 3, 4, 5, 6} <= cases.keys()
+    for case_id in (4, 5):
+        expectations = " ".join(cases[case_id]["expectations"]).lower()
+        for obligation in (
+            "permanent regression observed red",
+            "before production repair",
+            "bug's reason",
+            "original scenario",
+            "cleaned candidate",
+            "unrelated",
+            "proportionate",
+        ):
+            assert obligation in expectations
+    assert "root-cause cluster" in cases[5]["expected_output"].lower()
+    pressure = " ".join(cases[6]["expectations"]).lower()
+    for obligation in ("shallow", "coverage gap", "~3 refuted", "access", "unsupported repair"):
+        assert obligation in pressure
+    assert "non-deterministic" in cases[2]["expected_output"].lower()
+    assert "bisection" in cases[3]["expected_output"].lower()
