@@ -17,7 +17,7 @@ When exploring the codebase, read the project's domain glossary — `CONTEXT.md`
 
 This skill has you show commands, outputs and captured artifacts. **Redact every secret first** — write `<REDACTED>` in its place. Build loops against env vars, so the credential stays in the environment rather than in what you show. Captured artifacts carry auth headers: quote only the lines that carry the signal.
 
-**The whole skill in one breath:** build a **tight feedback loop** — one command that is *fast (seconds), deterministic, and red-capable* (goes red on this exact bug) — then minimize the repro, test hypotheses against the loop one variable at a time, fix, and convert the repro into a permanent regression test. If 5+ failures exist at once, run Multi-Failure Triage first; otherwise start at Phase 1.
+**The whole skill in one breath:** build a **tight feedback loop** — one command that is *fast (seconds), deterministic, and red-capable* (goes red on this exact bug) — then minimize the repro and test hypotheses one variable at a time. Record a representative **permanent regression observed red** for this bug's reason before **production repair**; verify it green and rerun the original scenario afterward. If 5+ failures exist at once, run Multi-Failure Triage first; otherwise start at Phase 1.
 
 ## Multi-Failure Triage (when 5+ failures exist)
 
@@ -173,11 +173,12 @@ Wave N offenders: [offender_1 (module A, 12 failures), offender_2 (module B, 8 f
 
 ### Step 3 — FIX WAVE
 
-**Goal:** Fix all offender candidates in one batch.
+**Goal:** Repair the ranked offender candidates as vertical slices within the wave.
 
-Fix each offender. For each fix:
+Work each offender through this sequence:
 
-- Write a regression test (TDD catch-up). This is mandatory — the fix is incomplete without it.
+- Record a representative **permanent regression observed red** for this bug's reason on unfixed code before **production repair**. Reuse an existing permanent test if its observed failure reaches the actual boundary; a throwaway loop alone is not that record.
+- Apply the bounded repair, verify the permanent regression green, and rerun the original scenario before moving to the next offender.
 - One commit per offender (or one commit per module if offenders are related).
 - **Do not fix scattered non-offenders.** Resist the urge to "knock out easy ones" — they're hardest to cluster and you'll dig rabbit holes.
 
@@ -525,9 +526,11 @@ Keep instrumentation temporary. Remove it after the hypothesis is confirmed.
 
 Phase 4 is done when instrumentation has **confirmed the hypothesis** with concrete data. Not "the logs look suspicious" — "the log shows variable X is None at line Y, which matches the hypothesis."
 
-## Phase 5 — Fix + regression test
+## Phase 5 — Permanent regression + repair
 
-Apply the fix. Run the feedback loop — it should go green.
+Record a representative **permanent regression observed red** for this bug's reason on unfixed code before **production repair**. Convert the minimised repro into the project's normal test collection, or reuse an existing permanent regression. Run it and retain the actual failing assertion/output; an exploratory loop or a failure from broken imports/setup is not sufficient.
+
+Apply the repair. Verify the same permanent regression green, then rerun the original scenario to check the user's symptom at its original boundary.
 
 **Recovery paths when it doesn't go to plan:**
 
@@ -536,7 +539,7 @@ Apply the fix. Run the feedback loop — it should go green.
 
 Then:
 
-- [ ] **Regression test.** Convert the minimised repro into a permanent test. This is the most important output of the debugging process.
+- [ ] **Preserve the permanent regression.** Keep its assertion and normal collection path; retain the pre-repair red and post-repair green evidence.
 - [ ] **Run the full suite.** Ensure the fix doesn't break anything else.
 - [ ] **Remove temporary instrumentation.** Clean up logs, asserts, and debug code.
 - [ ] **Document the root cause.** If the bug was non-obvious, add a comment at the fix site explaining the root cause and the fix. Not "fixed bug" — "X was None because Y; added guard at Z."
@@ -546,7 +549,8 @@ Then:
 Phase 5 is done when:
 
 - The feedback loop goes green on the fix.
-- A regression test exists and passes.
+- A representative permanent regression was observed red for the bug's reason before repair and is now green.
+- The original scenario has been rerun and the user's symptom is resolved.
 - The full test suite passes.
 - Temporary instrumentation is removed.
 - The root cause is documented.
