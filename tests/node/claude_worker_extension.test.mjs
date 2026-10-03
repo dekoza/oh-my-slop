@@ -35,6 +35,14 @@ function harness(run) {
 	return { commands, events, tools, entries, messages, notifications, confirmations, widgets, ctx };
 }
 
+test("delegation descriptions disclose supervision, attribution, pauses and finite bounds", () => {
+	const h = harness(async () => {});
+	assert.match(h.commands.get("cc").description, /supervis/i);
+	assert.match(h.commands.get("cc-followup").description, /input|paused/i);
+	for (const text of ["finished", "needs_input", "unfinished", "self-report", "8", "30", "resume=true"]) assert.ok(h.tools[0].description.includes(text), text);
+	assert.ok(!h.tools[0].description.includes("Returns turn output"));
+});
+
 test("slash commands start a worker without a Pi model turn and resume its saved session", async () => {
 	const calls = [];
 	const h = harness(async (options) => {

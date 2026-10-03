@@ -155,7 +155,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 
 	for (const [name, resume] of [["cc", false], ["cc-followup", true]]) {
 		pi.registerCommand(name, {
-			description: resume ? "Resume the last Claude Code worker with a follow-up instruction" : "Delegate a task to subscription-authenticated Claude Code",
+			description: resume ? "Resume the saved Claude Code task with missing input or a recovery instruction" : "Supervise a bounded task through subscription-authenticated Claude Code",
 			async handler(args, ctx) {
 				void start(args, resume, ctx).then((result) => {
 					pi.sendMessage({ customType: "cc-worker", content: formatRunReport(result.activity, result.text), details: runDetails(result.activity), display: true }, { triggerTurn: false });
@@ -194,7 +194,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 
 	pi.registerTool({
 		name: "claude_worker", label: "Claude Code worker",
-		description: "Delegate one bounded task to Claude Code using the user's subscription and native auto permissions. Requires human consent. Returns turn output and diagnostics, not proof of task completion; activity is retained in a private local log. Do not concurrently modify the same files. Set resume=true to continue the saved session. Pi's coordinating model still uses its own provider. No worktree or automatic commit/push is created.",
+		description: "Supervise one bounded task through Claude Code using the user's subscription and existing native auto permissions. Requires human consent. Returns finished, needs_input or unfinished, with Claude Code's evidence-backed self-report (not independent Pi certification), diagnostics and a private activity log. Defaults: at most 8 host continuations and 30 minutes total. Set resume=true to supply missing input or recover the saved task in the same directory. Do not concurrently modify the same files. Pi's coordinating model still uses its own provider. No worktree, rollback or automatic commit/push is created.",
 		parameters,
 		async execute(_id, params, signal, onUpdate, ctx) {
 			if (!ctx.hasUI || !await ctx.ui.confirm("Delegate task to Claude Code?", safeText(params.prompt), { signal })) throw new Error("Claude Code delegation was not approved.");
