@@ -7,6 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { runClaude } from "../../extensions/claude-worker/lib/worker.mjs";
 import { createTaskSupervision } from "../../extensions/claude-worker/lib/supervision.mjs";
+import { formatRunReport } from "../../extensions/claude-worker/lib/activity.mjs";
 
 const SESSION_ID = "12345678-1234-1234-1234-123456789abc";
 
@@ -159,6 +160,31 @@ input.on("line", (line) => {
 	assert.doesNotMatch(result.stderr, /EOF before/);
 	assert.deepEqual(result.taskOutcomes.find((task) => task.taskId === "red-check").history.map((entry) => entry.status), ["failed", "completed"]);
 	assert.equal((await fake.frames()).filter((event) => event.type === "user").length, 2);
+});
+
+test("explicit fresh-ID replacement evidence resolves a failed check without erasing its history", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ if (JSON.parse(line).type !== "user") return;
+ send({ type: "system", subtype: "task_notification", task_id: "red-check", status: "failed", summary: "Pre-repair assertion failed" });
+ send({ type: "system", subtype: "task_started", task_id: "green-check" });
+ send({ type: "system", subtype: "task_notification", task_id: "green-check", status: "completed", summary: "Fresh rerun passed" });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("finished", {
+  resolved_failures: [{ task_id: "red-check", replacement_task_id: "green-check", evidence: ["Fixed assertion; fresh rerun passed: green-check.txt"] }]
+ }) });
+});
+` });
+	const result = await runClaude({ ...fake, prompt: "Repair and rerun verification" });
+	assert.equal(result.disposition, "finished");
+	assert.equal(result.continuations, 0);
+	const red = result.taskOutcomes.find((task) => task.taskId === "red-check");
+	assert.equal(red.status, "failed");
+	assert.equal(red.history[0].summary, "Pre-repair assertion failed");
+	assert.equal(result.taskOutcomes.find((task) => task.taskId === "green-check").status, "completed");
+	const handoff = formatRunReport({ ...result, startedAt: Date.now(), status: "Finished", stats: {} });
+	assert.match(handoff, /Task red-check: failed/);
+	assert.match(handoff, /Resolved failure red-check: replacement green-check/);
+	assert.match(handoff, /Fixed assertion; fresh rerun passed: green-check.txt/);
 });
 
 test("foreground verification survives background-only snapshots and waits after backgrounding", { timeout: 15_000 }, async (t) => {

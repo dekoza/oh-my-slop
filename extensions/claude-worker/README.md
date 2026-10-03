@@ -75,7 +75,7 @@ invocation settlement waits for group escalation even if the immediate process
 exits first, so that TERM-ignoring descendants do not outlive cancellation.
 
 The host requests a strict JSON-schema report through Claude Code's
-`StructuredOutput`, with these required fields:
+`StructuredOutput`, with these fields (all required except `resolved_failures`):
 
 | Field | Meaning |
 |---|---|
@@ -85,13 +85,20 @@ The host requests a strict JSON-schema report through Claude Code's
 | `outstanding`, `unverified` | Explicit lists of remaining actions and missing verification. |
 | `question` | Precise missing information for a needs-input pause; empty otherwise. |
 | `background_task_ids` | Required background work identities, retained across waiting turns. |
+| `resolved_failures` | Optional explicit resolution of failed intermediate checks: entries with failed `task_id`, fresh completed `replacement_task_id`, and nonempty `evidence` explaining the repair and passing rerun. |
 
 Free-form “done”, exit code 0, `end_turn`, an empty active-task list or a successful
 CLI result is insufficient. Unsupported/missing reports remain unresolved within
 the safety limits. Finished requires an explicit mapping of every requested
 outcome to evidence, with no outstanding required work or missing evidence.
-Stopped/failed required tasks prevent finished in that invocation. This is
-**Claude Code's evidence-backed self-report, not independent Pi certification**.
+Stopped required tasks prevent finished in that invocation. A failed intermediate
+check does not end supervision while approved repair or other required work remains.
+Its identity and failed history stay in the handoff. A passing check under a new ID
+does not silently resolve it: Claude must explicitly attribute replacement evidence
+through `resolved_failures`, and the replacement must be observed completed after
+the failed check. Unresolved failures and unknown outcomes still prevent finished;
+stopped work and transport/execution errors cannot be resolved by this field.
+This is **Claude Code's evidence-backed self-report, not independent Pi certification**.
 
 Terminal handoffs use the same three dispositions on both entrypoints:
 
