@@ -134,7 +134,10 @@ export function createTaskSupervision(taskId, resumeState) {
 				const restart = carriedOver.has(event.task_id) && tasks.get(event.task_id).terminalStatus === "unknown";
 				markRunning(event.task_id, event.description, restart, event.is_backgrounded);
 			}
+			// A terminal patch may also change background membership; it is never a running transition.
+			// Route it only through terminal deduplication, before any lifecycle mutation.
 			if (event.subtype === "task_updated" && event.task_id &&
+				!Object.hasOwn(NATIVE_TERMINAL_STATUS, event.patch?.status) &&
 				(event.patch?.status === "running" || typeof event.patch?.is_backgrounded === "boolean")) {
 				markRunning(event.task_id, event.patch.description, event.patch.status === "running", event.patch.is_backgrounded);
 			}

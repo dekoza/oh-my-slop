@@ -807,7 +807,7 @@ input.on("line", (line) => {
  if (content.startsWith("Redeliver")) {
   // The interruption that preceded this follow-up, re-delivered under new delivery identities.
   send({ type: "system", subtype: "task_notification", task_id: "old-check", uuid: "eof-stop-again", status: "stopped", summary: "Stopped during EOF cleanup" });
-  send({ type: "system", subtype: "task_updated", task_id: "old-check", patch: { status: "killed" } });
+  send({ type: "system", subtype: "task_updated", task_id: "old-check", patch: { status: "killed", is_backgrounded: false } });
  }
  if (content.startsWith("Restop")) {
   send({ type: "system", subtype: "task_started", task_id: "old-check", is_backgrounded: true });
@@ -854,6 +854,59 @@ input.on("close", () => {
 		assert.equal(restopped.disposition, "unfinished", interruption);
 		assert.match(restopped.reason, /old-check \(stopped\)/);
 	}
+});
+
+test("duplicate compound terminal updates retain completion without phantom running work", { timeout: 15_000 }, async (t) => {
+	for (const tagged of [false, true]) {
+		const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ send({ type: "system", subtype: "task_started", task_id: "verify", is_backgrounded: true });
+ const terminal = { type: "system", subtype: "task_updated", task_id: "verify", ${tagged ? 'uuid: "completion-delivery",' : ''} patch: { status: "completed", is_backgrounded: false, end_time: 123 } };
+ send(terminal); send(terminal);
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion() });
+});
+` });
+		const result = await runClaude({ ...fake, prompt: "Inspect", maxTaskMs: 1_000 });
+		assert.equal(result.disposition, "finished", tagged ? "UUID-tagged duplicate" : "content-identical duplicate");
+		assert.equal(result.continuations, 0);
+		assert.equal(result.taskOutcomes[0].status, "completed");
+		assert.equal(result.taskOutcomes[0].history.length, 1);
+	}
+});
+
+test("compound terminal update replay preserves paused interruption and fresh-ID recovery", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+const stopped = { type: "system", subtype: "task_updated", task_id: "old-check", uuid: "pause-stop", patch: { status: "killed", is_backgrounded: false, end_time: 123 } };
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ if (!args.includes("--resume")) {
+  send({ type: "system", subtype: "task_started", task_id: "old-check", is_backgrounded: true });
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("needs_input", { question: "Which fixture set?", background_task_ids: ["old-check"] }) });
+ } else {
+  send(stopped); send(stopped);
+  send({ type: "system", subtype: "task_started", task_id: "fresh-check", is_backgrounded: true });
+  send({ type: "system", subtype: "task_notification", task_id: "fresh-check", status: "completed", summary: "Fresh verification passed" });
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("finished", {
+   resolved_failures: [{ task_id: "old-check", replacement_task_id: "fresh-check", evidence: ["Fresh rerun passed: fresh-check.txt"] }] }) });
+ }
+});
+input.on("close", () => {
+ if (!args.includes("--resume")) send(stopped);
+ setTimeout(() => process.exit(0), 25);
+});
+` });
+	const paused = await runClaude({ ...fake, prompt: "Inspect" });
+	assert.equal(paused.disposition, "needs_input");
+	assert.equal(paused.taskOutcomes[0].status, "stopped");
+	const resumed = await runClaude({ ...fake, prompt: "Use fixture set A", sessionId: paused.sessionId, resumeState: { ...paused, cwd: fake.cwd }, maxTaskMs: 1_000 });
+	assert.equal(resumed.disposition, "finished");
+	assert.equal(resumed.continuations, 0);
+	const old = resumed.taskOutcomes.find((task) => task.taskId === "old-check");
+	assert.equal(old.status, "stopped");
+	assert.deepEqual(old.history.map((entry) => entry.status), ["stopped"]);
 });
 
 test("same-task resume retains required outcomes across repeated pauses until explicit evidence", { timeout: 15_000 }, async (t) => {
