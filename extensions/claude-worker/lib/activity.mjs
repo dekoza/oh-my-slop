@@ -2,7 +2,7 @@ import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { createTaskSupervision } from "./supervision.mjs";
+import { INTERRUPTED_STATUSES, createTaskSupervision } from "./supervision.mjs";
 
 const MAX_TEXT = 16_000;
 const MAX_REPORT_BYTES = 50 * 1024;
@@ -181,7 +181,7 @@ export function readActivityLog(logPath, limit = 200) {
 function resolvedLabel(state, taskId) {
 	const status = (state.taskOutcomes || []).find((task) => (task.taskId || task.task_id || task.id) === taskId)?.status;
 	if (status === "failed") return `failure ${safeText(taskId)}`;
-	return ["stopped", "unknown"].includes(status) ? `interrupted task ${safeText(taskId)} (${status})` : `task ${safeText(taskId)}`;
+	return INTERRUPTED_STATUSES.includes(status) ? `interrupted task ${safeText(taskId)} (${status})` : `task ${safeText(taskId)}`;
 }
 
 export function formatRunReport(state, text = state.text || "") {

@@ -584,18 +584,35 @@ test("work interrupted before a follow-up needs a replacement completed in that 
 	assert.equal(decision.disposition, "unfinished");
 	assert.match(decision.reason, /old-check \(stopped\)/);
 
-	// The deliberate follow-up is the resume that lets carried-over uncertain work restart.
-	for (const status of ["unknown", "failed"]) {
-		const recovered = createTaskSupervision("approved", { taskId: "approved", taskOutcomes: [
-			{ taskId: "old-check", status, terminalStatus: status, terminalSequence: 1, history: [{ status }] },
-		] });
-		recovered.record({ type: "system", subtype: "task_started", task_id: "old-check" });
-		assert.equal(recovered.waiting, true, status);
-		recovered.record({ type: "system", subtype: "task_notification", task_id: "old-check", status: "completed", uuid: "same-id-rerun" });
-		const unattributed = { ...report, resolved_failures: undefined };
-		assert.equal(recovered.assess(unattributed).disposition, "finished", status);
-		assert.deepEqual(recovered.snapshot().taskOutcomes[0].history.map((entry) => entry.status), [status, "completed"]);
+});
+
+test("a follow-up's native start restarts carried-over unknown work; failed checks keep attributed replacement", () => {
+	const report = { task_id: "approved", disposition: "finished", outcomes: [{ requirement: "Verify", status: "verified", evidence: ["rerun passed"] }], outstanding: [], unverified: [], question: "", background_task_ids: [] };
+	const restored = (status) => createTaskSupervision("approved", { taskId: "approved", taskOutcomes: [
+		{ taskId: "old-check", status, terminalStatus: status, terminalSequence: 1, history: [{ status }] },
+	] });
+	const unknown = restored("unknown");
+	unknown.record({ type: "system", subtype: "task_started", task_id: "old-check" });
+	assert.equal(unknown.waiting, true);
+	unknown.record({ type: "system", subtype: "task_notification", task_id: "old-check", status: "completed", uuid: "same-id-rerun" });
+	assert.equal(unknown.assess(report).disposition, "finished");
+	assert.deepEqual(unknown.snapshot().taskOutcomes[0].history.map((entry) => entry.status), ["unknown", "completed"]);
+
+	// Listings and backgrounding patches are not starts; they cannot restart terminal uncertainty.
+	for (const live of [{ subtype: "background_tasks_changed", tasks: [{ task_id: "old-check" }] }, { subtype: "task_updated", task_id: "old-check", patch: { is_backgrounded: true } }]) {
+		const listed = restored("unknown");
+		listed.record({ type: "system", ...live });
+		assert.equal(listed.waiting, false, live.subtype);
 	}
+
+	// A replayed start cannot strand a failed check: its attributed fresh-ID replacement still resolves it.
+	const failed = restored("failed");
+	failed.record({ type: "system", subtype: "task_started", task_id: "old-check" });
+	assert.equal(failed.waiting, false);
+	failed.record({ type: "system", subtype: "task_started", task_id: "fresh-check" });
+	failed.record({ type: "system", subtype: "task_notification", task_id: "fresh-check", status: "completed", uuid: "rerun" });
+	assert.equal(failed.assess({ ...report, resolved_failures: [{ task_id: "old-check", replacement_task_id: "fresh-check", evidence: ["rerun passed"] }] }).disposition, "finished");
+	assert.equal(failed.snapshot().taskOutcomes[0].status, "failed");
 });
 
 test("resumed task lifecycles invalidate earlier completion and retain terminal history", () => {
@@ -822,6 +839,8 @@ input.on("close", () => {
 		assert.match(handoff, new RegExp(`Task old-check: ${interruption}`));
 		assert.match(handoff, new RegExp(`Resolved interrupted task old-check \\(${interruption}\\): replacement fresh-check`));
 		assert.doesNotMatch(handoff, /Resolved failure/, "stopped or unknown work is not described as failed verification");
+		const unrecorded = formatRunReport({ ...recovered, report: { ...recovered.report, resolved_failures: [{ task_id: "ghost", replacement_task_id: "fresh-check", evidence: ["claimed"] }] }, startedAt: Date.now(), status: "Unfinished", stats: {} });
+		assert.match(unrecorded, /Resolved task ghost: replacement fresh-check/, "an unrecorded claim is neither a failure nor an interruption");
 
 		const redelivered = await resume("Redeliver answer");
 		assert.equal(redelivered.disposition, "finished", `${interruption}: a re-delivered earlier stop is not a stop in this follow-up`);

@@ -141,8 +141,8 @@ Resume in the **same working directory**, using either follow-up entrypoint or
 active Pi branch; another branch/directory cannot silently resume this task.
 Native task identities and histories survive follow-up too. Previously running work
 is restored as unknown until fresh live evidence arrives; deliberate recovery may
-restart previously stopped, failed or unknown work without erasing its history; a
-native start of that work in the follow-up counts as its resume. Work stopped or lost
+restart previously stopped or unknown work without erasing its history; a native
+`task_started` of that work in the follow-up counts as its resume. Work stopped or lost
 before the follow-up (for example, killed by EOF cleanup after a needs-input pause)
 can instead be replaced by a fresh-ID rerun that completes during the follow-up and
 is attributed in `resolved_failures`; its stopped/unknown record stays in the

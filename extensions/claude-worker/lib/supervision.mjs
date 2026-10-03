@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 const strings = { type: "array", items: { type: "string" } };
 // Native task states that end a task; a killed task is reported to the model as stopped.
 const NATIVE_TERMINAL_STATUS = { completed: "completed", failed: "failed", killed: "stopped" };
+// Statuses of work that ended without a verdict; distinct from a failed verification.
+export const INTERRUPTED_STATUSES = ["stopped", "unknown"];
 export const RECOVERY_INSTRUCTION = "Restart each such task, or attribute a fresh completed rerun in resolved_failures.";
 const listTasks = (tasks) => tasks.map((task) => `${task.taskId} (${task.status})`).join(", ");
 
@@ -66,7 +68,7 @@ export function createTaskSupervision(taskId, resumeState) {
 	// Restored records without lifecycle evidence in this invocation. Their interruptions
 	// preceded the deliberate follow-up, so an attributed fresh rerun can resolve them.
 	const carriedOver = new Set(tasks.keys());
-	const interruptedBefore = (task) => carriedOver.has(task?.taskId) && ["stopped", "unknown"].includes(task.status);
+	const interruptedBefore = (task) => carriedOver.has(task?.taskId) && INTERRUPTED_STATUSES.includes(task.status);
 	// Failed checks and earlier interruptions are what an attributed fresh-ID rerun can resolve.
 	const rerunResolvable = (task) => task?.status === "failed" || interruptedBefore(task);
 	const declarations = (value) => [...(value?.outstanding || []), ...(value?.unverified || [])]
@@ -85,14 +87,12 @@ export function createTaskSupervision(taskId, resumeState) {
 	let terminalSequence = Math.max(0, ...[...tasks.values()].map((task) => task.terminalSequence || 0));
 	const markRunning = (id, description, explicitResume = false, isBackgrounded) => {
 		const task = tasks.get(id);
-		// The deliberate follow-up is itself the resume for work carried over into it.
-		const resumed = explicitResume || carriedOver.has(id);
 		// Live evidence in this invocation, even when not accepted below, makes a later stop current.
 		carriedOver.delete(id);
 		// A stop ends this invocation's required work; recovery needs a deliberate follow-up.
 		if (task?.terminalStatus === "stopped") return;
 		// Live evidence can resolve snapshot uncertainty; failures/unknowns need a resume.
-		if (["failed", "unknown"].includes(task?.terminalStatus) && !resumed) return;
+		if (["failed", "unknown"].includes(task?.terminalStatus) && !explicitResume) return;
 		tasks.set(id, { taskId: id, status: "running", isBackgrounded: isBackgrounded ?? task?.isBackgrounded,
 			description: description || task?.description, history: task?.history || [] });
 	};
@@ -128,7 +128,12 @@ export function createTaskSupervision(taskId, resumeState) {
 	return {
 		record(event) {
 			if (event.type !== "system" || event.ambient) return;
-			if (event.subtype === "task_started" && event.task_id) markRunning(event.task_id, event.description, false, event.is_backgrounded);
+			// The deliberate follow-up resumes carried-over unknown work when Claude starts it again;
+			// a failed check instead keeps its attributed fresh-ID replacement route.
+			if (event.subtype === "task_started" && event.task_id) {
+				const restart = carriedOver.has(event.task_id) && tasks.get(event.task_id).terminalStatus === "unknown";
+				markRunning(event.task_id, event.description, restart, event.is_backgrounded);
+			}
 			if (event.subtype === "task_updated" && event.task_id &&
 				(event.patch?.status === "running" || typeof event.patch?.is_backgrounded === "boolean")) {
 				markRunning(event.task_id, event.patch.description, event.patch.status === "running", event.patch.is_backgrounded);
