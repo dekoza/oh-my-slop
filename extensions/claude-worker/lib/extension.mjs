@@ -3,6 +3,11 @@ import { createActivityLog, formatActivityLog, formatRunReport, readActivityLog,
 
 const STATE_ENTRY = "cc-worker-session";
 const RUN_ENTRY = "cc-worker-run";
+const DISPOSITION_STATUS = { finished: "Finished (Claude Code self-report)", needs_input: "Needs input", unfinished: "Unfinished/interrupted" };
+
+function runDetails(activity) {
+	return { sessionId: activity.sessionId, disposition: activity.disposition, reason: activity.reason, report: activity.report, continuations: activity.continuations, taskOutcomes: activity.taskOutcomes, permissionDenials: activity.permissionDenials, activity };
+}
 
 export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 	let active;
@@ -115,9 +120,10 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 				});
 				controller.signal.throwIfAborted();
 				remember(result.sessionId, ctx.cwd);
-				job.log.finish({ ...result, status: "Turn ended; completion unverified" });
+				const disposition = Object.hasOwn(DISPOSITION_STATUS, result.disposition) ? result.disposition : "unfinished";
+				job.log.finish({ ...result, disposition, status: DISPOSITION_STATUS[disposition], reason: result.reason || (disposition === "unfinished" ? "No terminal task disposition reported; completion unverified." : undefined) });
 				persistRun(job.log.snapshot());
-				return { ...result, activity: lastRun };
+				return { ...lastRun, activity: lastRun };
 			} catch (error) {
 				if (job.log) {
 					const outcome = { ...(error.outcome || result), status: controller.signal.aborted ? "Stopped" : "Failed", error: safeText(error.message) };
@@ -147,7 +153,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 			description: resume ? "Resume the last Claude Code worker with a follow-up instruction" : "Delegate a task to subscription-authenticated Claude Code",
 			async handler(args, ctx) {
 				void start(args, resume, ctx).then((result) => {
-					pi.sendMessage({ customType: "cc-worker", content: formatRunReport(result.activity, result.text), details: { activity: result.activity }, display: true }, { triggerTurn: false });
+					pi.sendMessage({ customType: "cc-worker", content: formatRunReport(result.activity, result.text), details: runDetails(result.activity), display: true }, { triggerTurn: false });
 				}).catch((error) => ctx.ui.notify(safeText(error.message), "error"));
 			},
 		});
@@ -188,7 +194,7 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 		async execute(_id, params, signal, onUpdate, ctx) {
 			if (!ctx.hasUI || !await ctx.ui.confirm("Delegate task to Claude Code?", safeText(params.prompt), { signal })) throw new Error("Claude Code delegation was not approved.");
 			const result = await start(params.prompt, params.resume === true, ctx, signal, onUpdate);
-			return { content: [{ type: "text", text: formatRunReport(result.activity, result.text) }], details: { sessionId: result.sessionId, permissionDenials: result.permissionDenials, activity: result.activity } };
+			return { content: [{ type: "text", text: formatRunReport(result.activity, result.text) }], details: runDetails(result.activity) };
 		},
 	});
 

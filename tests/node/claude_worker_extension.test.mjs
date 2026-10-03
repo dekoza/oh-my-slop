@@ -58,6 +58,41 @@ test("slash commands start a worker without a Pi model turn and resume its saved
 	assert.ok(h.widgets.some(([, lines]) => lines?.join("\n").includes("Working")));
 });
 
+test("commands and tool resume share needs-input and finished dispositions in the saved scope", async () => {
+	for (const route of ["command", "tool"]) {
+		const calls = [];
+		const h = harness(async (options) => {
+			calls.push(options);
+			const disposition = calls.length === 1 ? "needs_input" : "finished";
+			return { sessionId: SESSION_ID, text: "Worker response", disposition, reason: disposition === "needs_input" ? "Missing target" : "Evidence supplied", continuations: 1,
+				report: { task_id: "repair", disposition, outcomes: disposition === "finished" ? [{ requirement: "Repair target", status: "verified", evidence: ["target test: passed"] }] : [], outstanding: disposition === "needs_input" ? ["Repair target"] : [], unverified: [], question: disposition === "needs_input" ? "Which target should I repair?" : "", background_task_ids: [] } };
+		});
+		const execute = async (prompt, resume = false) => {
+			if (route === "tool") return h.tools[0].execute("call", { prompt, resume }, undefined, undefined, h.ctx);
+			await h.commands.get(resume ? "cc-followup" : "cc").handler(prompt, h.ctx);
+			await new Promise(setImmediate);
+			const { message } = h.messages.at(-1);
+			return { content: [{ type: "text", text: message.content }], details: message.details };
+		};
+		const paused = await execute("Repair the target");
+		assert.equal(paused.details.disposition, "needs_input", route);
+		assert.match(paused.content[0].text, /Needs input/);
+		assert.match(paused.content[0].text, /Which target should I repair\?/);
+		assert.match(paused.content[0].text, /\/cc-followup/);
+		assert.match(paused.content[0].text, /resume: true/);
+		const finished = await execute("Repair target A", true);
+		assert.equal(calls[1].sessionId, SESSION_ID);
+		assert.equal(calls[1].cwd, "/trusted/project");
+		assert.equal(finished.details.disposition, "finished", route);
+		assert.match(finished.content[0].text, /Finished/);
+		assert.match(finished.content[0].text, /Claude Code self-report/);
+		assert.match(finished.content[0].text, /target test: passed/);
+		assert.equal(finished.details.report.task_id, "repair");
+		assert.equal(finished.details.continuations, 1);
+		assert.ok(h.messages.every(({ options }) => options?.triggerTurn !== true));
+	}
+});
+
 test("model delegation requires consent and headless or untrusted sessions never launch", async () => {
 	let calls = 0;
 	const h = harness(async () => { calls++; });
@@ -149,7 +184,9 @@ test("cc-log retains tool evidence and terminal reports survive restoring the Pi
 	await h.commands.get("cc").handler("Fix authentication", h.ctx);
 	await new Promise(setImmediate);
 	const terminal = h.messages.at(-1).message;
-	assert.match(terminal.content, /Turn ended; completion unverified/);
+	assert.match(terminal.content, /Unfinished\/interrupted/);
+	assert.equal(terminal.details.disposition, "unfinished");
+	assert.match(terminal.content, /No terminal task disposition reported/);
 	assert.match(terminal.content, /Last activity: Bash failed/);
 	assert.match(terminal.content, /Exit code: 0/);
 	assert.match(terminal.content, /Result subtype: success/);
@@ -163,7 +200,7 @@ test("cc-log retains tool evidence and terminal reports survive restoring the Pi
 	restored.ctx.sessionManager.getBranch = () => h.entries;
 	await restored.events.get("session_start")({}, restored.ctx);
 	await restored.commands.get("cc-status").handler("", restored.ctx);
-	assert.match(restored.notifications.at(-1)[0], /completion unverified/);
+	assert.match(restored.notifications.at(-1)[0], /Unfinished\/interrupted/);
 	assert.match(restored.notifications.at(-1)[0], /Exit code: 0/);
 	await restored.commands.get("cc-log").handler("", restored.ctx);
 	assert.match(restored.messages.at(-1).message.details.expandedText, /3 failed/);
