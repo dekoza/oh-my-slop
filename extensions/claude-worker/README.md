@@ -74,7 +74,9 @@ SIGKILL. Stop and shutdown use the same bounded owned-process cleanup. On POSIX,
 invocation settlement waits for group escalation even if the immediate process
 exits first, so that TERM-ignoring descendants do not outlive cancellation.
 Same-session cleanup frames still enter the diagnostic log and task history;
-ending supervision disables dispatch and approval, not evidence retention.
+ending supervision disables dispatch and approval, not evidence retention. A
+same-session execution failure reported during cleanup downgrades a finished
+report to unfinished and keeps its errors and permission denials.
 
 The host requests a strict JSON-schema report through Claude Code's
 `StructuredOutput`, with these fields (all required except `resolved_failures`):
@@ -181,8 +183,11 @@ within the saved session. A required native task completion drives continuation
 only after the native turn result; waiting turns do not close input. An identical
 native result without a delivery ID cannot prove that a later queue has drained;
 ambiguous redelivery remains unresolved within the safety limits. Native task-notification
-deduplication also survives same-task follow-up and restoration: an old completion
-delivery is not fresh evidence for previously restarted work. Completion is checked
+and turn-result deduplication also survive same-task follow-up and restoration: an
+old completion delivery is not fresh evidence for previously restarted work, and a
+native result consumed before a pause cannot drain a resumed queue. A terminal native
+task update (`completed`, `failed`, or `killed`, reported as stopped) is terminal
+evidence with its error, even when interruption prevents the separate notification. Completion is checked
 again after EOF cleanup; contradictory stopped/pending work downgrades the handoff
 to unfinished without starting another turn. This guards
 against premature ending but does not identify who cancelled historical work.
