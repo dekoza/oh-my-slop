@@ -95,3 +95,6 @@ evidence and its bounded next step without searching broader archives or service
 
 **Done when:** each ranked proposal is evidence-backed and costed, observations and
 plans remain distinct, and the environment is unchanged except authorized report output.
+
+Attribution: [CREDITS.md](CREDITS.md). Behavior/recovery definitions and measurement
+limits: [evals/README.md](evals/README.md).

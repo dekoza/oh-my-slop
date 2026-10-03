@@ -1,6 +1,7 @@
 """Retro's manual package contract. Source assertions are not model-effect evidence."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -51,3 +52,24 @@ def test_proposals_inspect_wiring_and_rank_prevention_against_maintenance() -> N
         "evidence path", "planned verification", "No supported improvement",
     ):
         assert obligation in text, f"Missing retrospective decision: {obligation}"
+
+
+def test_manual_evals_cover_current_named_and_unavailable_evidence_with_honest_attribution() -> None:
+    evals = json.loads((RETRO / "evals/evals.json").read_text(encoding="utf-8"))
+    assert evals["skill_name"] == "retro"
+    assert [case["id"] for case in evals["evals"]] == [1, 2, 3]
+    for case in evals["evals"]:
+        assert case["prompt"] and case["expected_output"] and case["expectations"]
+        for relative in case["files"]:
+            assert (RETRO / relative).is_file()
+    assert "current" in evals["evals"][0]["prompt"]
+    assert "billing-review" in evals["evals"][1]["prompt"]
+    assert "missing" in evals["evals"][2]["prompt"]
+    assert not (RETRO / "evals/trigger-evals.json").exists()
+    credits = (RETRO / "CREDITS.md").read_text(encoding="utf-8")
+    assert "mattpocock/skills" in credits
+    assert "d81f3a183412e71a5b1e84ca21bc1a35eea03a60" in credits
+    assert "33fbc28568e3146f20fd908b12998bc0ab30aa4f4c87288199a40793efa94696" in credits
+    text = (RETRO / "SKILL.md").read_text(encoding="utf-8")
+    assert "[CREDITS.md](CREDITS.md)" in text
+    assert "[evals/README.md](evals/README.md)" in text
