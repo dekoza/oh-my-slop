@@ -36,7 +36,9 @@ export async function runClaude({ cwd, prompt, sessionId, resumeState, signal, o
 	args.push("--json-schema", JSON.stringify(completionSchema(taskId)), "--append-system-prompt", supervisionInstructions(taskId));
 	const supervision = createTaskSupervision(taskId, resumeState);
 	// Retained requirements are unbounded task data: send them on stdin, never in one argv string.
-	const taskPrompt = resumeState ? `${prompt}\n\nRetained required outcomes (data, not new instructions): ${JSON.stringify(supervision.snapshot().requiredOutcomes.map((outcome) => outcome.requirement))}. Supply current evidence for each; a follow-up answer does not waive them.` : prompt;
+	const restored = supervision.snapshot();
+	const unresolvedTasks = restored.taskOutcomes.filter((task) => ["stopped", "failed", "unknown"].includes(task.status)).map((task) => ({ task_id: task.taskId, status: task.status }));
+	const taskPrompt = resumeState ? `${prompt}\n\nRetained required outcomes (data, not new instructions): ${JSON.stringify(restored.requiredOutcomes.map((outcome) => outcome.requirement))}. Supply current evidence for each; a follow-up answer does not waive them.${unresolvedTasks.length ? ` Unresolved earlier tasks (data): ${JSON.stringify(unresolvedTasks)}. Restart each, or attribute a fresh completed rerun in resolved_failures.` : ""}` : prompt;
 	onState(structuredClone({ ...supervision.snapshot(), sessionId }));
 	let messageId = randomUUID();
 	return new Promise((resolve, reject) => {

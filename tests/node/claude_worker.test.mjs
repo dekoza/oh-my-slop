@@ -542,6 +542,23 @@ input.on("line", (line) => {
 	assert.equal((await fake.frames()).filter((frame) => frame.type === "user").length, 1);
 });
 
+test("work interrupted before a follow-up needs a replacement completed in that follow-up", () => {
+	const report = { task_id: "approved", disposition: "finished", outcomes: [{ requirement: "Verify", status: "verified", evidence: ["rerun passed"] }], outstanding: [], unverified: [], question: "", background_task_ids: [],
+		resolved_failures: [{ task_id: "old-check", replacement_task_id: "fresh-check", evidence: ["rerun passed"] }] };
+	for (const interrupted of ["stopped", "unknown"]) {
+		const taskOutcomes = [
+			{ taskId: "old-check", status: interrupted, ...(interrupted === "stopped" ? { terminalStatus: "stopped", terminalSequence: 1 } : {}), history: [] },
+			{ taskId: "fresh-check", status: "completed", terminalStatus: "completed", terminalSequence: 2, history: [{ status: "completed" }] },
+		];
+		const stale = createTaskSupervision("approved", { taskId: "approved", taskOutcomes });
+		assert.equal(stale.assess(report).action, "continue", `${interrupted}: an earlier completion is not a rerun after the follow-up`);
+		const fresh = createTaskSupervision("approved", { taskId: "approved", taskOutcomes });
+		fresh.record({ type: "system", subtype: "task_started", task_id: "fresh-check" });
+		fresh.record({ type: "system", subtype: "task_notification", task_id: "fresh-check", status: "completed", uuid: "rerun" });
+		assert.equal(fresh.assess(report).disposition, "finished", interrupted);
+	}
+});
+
 test("resumed task lifecycles invalidate earlier completion and retain terminal history", () => {
 	const report = { task_id: "approved", disposition: "finished", outcomes: [{ requirement: "Verify", status: "verified", evidence: ["verification passed"] }], outstanding: [], unverified: [], question: "", background_task_ids: [] };
 	for (const resume of [
@@ -716,6 +733,60 @@ input.on("line", (line) => {
 	const resumed = await runClaude({ ...fake, prompt: "Use artifacts/", sessionId: paused.sessionId, resumeState: { ...paused, cwd: fake.cwd } });
 	assert.equal(resumed.disposition, "finished");
 	assert.equal(resumed.sessionId, paused.sessionId);
+});
+
+test("a deliberate resume can finish through an attributed fresh-ID replacement of work interrupted at the pause", { timeout: 15_000 }, async (t) => {
+	// "stopped": EOF cleanup kills the required check; "unknown": it vanishes without a notification.
+	for (const interruption of ["stopped", "unknown"]) {
+		const fake = await fixture(t, { body: `
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ if (!args.includes("--resume")) {
+  send({ type: "system", subtype: "task_started", task_id: "old-check", is_backgrounded: true });
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("needs_input", { question: "Which fixture set?", background_task_ids: ["old-check"] }) });
+  return;
+ }
+ const content = event.message.content;
+ if (content.startsWith("Restop")) {
+  send({ type: "system", subtype: "task_started", task_id: "old-check", is_backgrounded: true });
+  send({ type: "system", subtype: "task_notification", task_id: "old-check", uuid: "restop", status: "stopped", summary: "Stopped again in this follow-up" });
+ }
+ send({ type: "system", subtype: "task_started", task_id: "fresh-check", is_backgrounded: true });
+ send({ type: "system", subtype: "task_notification", task_id: "fresh-check", uuid: "fresh-" + content.slice(0, 8), status: "completed", summary: "Fresh verification passed" });
+ send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", structured_output: completion("finished", content.startsWith("Unattributed") ? {} : {
+  resolved_failures: [{ task_id: "old-check", replacement_task_id: "fresh-check", evidence: ["Fresh rerun passed: fresh-check.txt"] }] }) });
+});
+input.on("close", () => {
+ if (!args.includes("--resume") && ${interruption === "stopped"}) send({ type: "system", subtype: "task_notification", session_id: "${SESSION_ID}", task_id: "old-check", uuid: "eof-stop", status: "stopped", summary: "Stopped during EOF cleanup" });
+ setTimeout(() => process.exit(0), 25);
+});
+` });
+		const paused = await runClaude({ ...fake, prompt: "Verify with fixtures" });
+		assert.equal(paused.disposition, "needs_input", interruption);
+		const resume = (prompt) => runClaude({ ...fake, prompt, sessionId: paused.sessionId, resumeState: { ...paused, cwd: fake.cwd } });
+
+		const recovered = await resume("Use fixture set A");
+		assert.equal(recovered.disposition, "finished", interruption);
+		assert.equal(recovered.continuations, 0, interruption);
+		const old = recovered.taskOutcomes.find((task) => task.taskId === "old-check");
+		assert.equal(old.status, interruption, "historical interruption evidence is retained, not rewritten");
+		assert.deepEqual(old.history.map((entry) => entry.status), interruption === "stopped" ? ["stopped"] : []);
+		const resumedPrompt = (await fake.frames()).filter((frame) => frame.type === "user").at(-1).message.content;
+		assert.match(resumedPrompt, /old-check/, "the follow-up names the interrupted task so Claude can attribute a replacement");
+		const handoff = formatRunReport({ ...recovered, startedAt: Date.now(), status: "Finished", stats: {} });
+		assert.match(handoff, new RegExp(`Task old-check: ${interruption}`));
+		assert.match(handoff, /Resolved failure old-check: replacement fresh-check/);
+
+		const unattributed = await resume("Unattributed answer");
+		assert.equal(unattributed.disposition, "unfinished", interruption);
+		assert.match(unattributed.reason, /old-check/);
+
+		// A stop observed during this follow-up is the current invocation's barrier again.
+		const restopped = await resume("Restop answer");
+		assert.equal(restopped.disposition, "unfinished", interruption);
+		assert.match(restopped.reason, /old-check \(stopped\)/);
+	}
 });
 
 test("same-task resume retains required outcomes across repeated pauses until explicit evidence", { timeout: 15_000 }, async (t) => {

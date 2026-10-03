@@ -25,7 +25,7 @@ export function completionSchema(taskId) {
 }
 
 export function supervisionInstructions(taskId) {
-	return `The host supervises the approved task across turns. Stay within its original scope and existing permissions; do not expand authority. Keep working until finished or genuinely needing input. Report through StructuredOutput using task_id ${taskId}. Map EVERY requested outcome to evidence (tests/checks/artifacts), including unchanged verified outcomes. Keep the exact requirement wording stable across reports; do not omit previously declared required outcomes. Every item declared in outstanding or unverified is also a retained obligation: reconcile it explicitly as an outcome with the same exact wording and current evidence before claiming finished. Identify all unverified requirements and outstanding actions. Use finished only when every requested outcome is verified and no required work remains; this is your evidence-backed report, not independent Pi certification. Use waiting when required background work is running, list its task IDs, and consume its native notifications before continuing outstanding actions. Use needs_input only for an intentional pause, with the precise question; saved-session follow-ups supply the answer to the same task. A failed intermediate check is not failure of the approved task: consume its result, repair within scope, and rerun verification. For a fresh-ID rerun, explicitly attribute resolution in resolved_failures entries containing the failed task_id, completed replacement_task_id, and nonempty evidence explaining the repair and passing rerun. Do not claim unresolved, stopped or unknown work as resolved. Use unfinished when unable to continue, preserving recovery information. Never use ordinary done prose or a successful turn as completion evidence. Do not stop required background work merely to end a turn.`;
+	return `The host supervises the approved task across turns. Stay within its original scope and existing permissions; do not expand authority. Keep working until finished or genuinely needing input. Report through StructuredOutput using task_id ${taskId}. Map EVERY requested outcome to evidence (tests/checks/artifacts), including unchanged verified outcomes. Keep the exact requirement wording stable across reports; do not omit previously declared required outcomes. Every item declared in outstanding or unverified is also a retained obligation: reconcile it explicitly as an outcome with the same exact wording and current evidence before claiming finished. Identify all unverified requirements and outstanding actions. Use finished only when every requested outcome is verified and no required work remains; this is your evidence-backed report, not independent Pi certification. Use waiting when required background work is running, list its task IDs, and consume its native notifications before continuing outstanding actions. Use needs_input only for an intentional pause, with the precise question; saved-session follow-ups supply the answer to the same task. A failed intermediate check is not failure of the approved task: consume its result, repair within scope, and rerun verification. For a fresh-ID rerun, explicitly attribute resolution in resolved_failures entries containing the failed task_id, completed replacement_task_id, and nonempty evidence explaining the repair and passing rerun. After a deliberate follow-up, work stopped or lost before it may be resolved the same way by a fresh rerun completed in this follow-up. Do not claim other unresolved, stopped or unknown work as resolved. Use unfinished when unable to continue, preserving recovery information. Never use ordinary done prose or a successful turn as completion evidence. Do not stop required background work merely to end a turn.`;
 }
 
 function validReport(report, taskId) {
@@ -61,6 +61,10 @@ export function createTaskSupervision(taskId, resumeState) {
 		if (restored.terminalStatus === "stopped") delete restored.terminalStatus;
 		return [restored.taskId, restored];
 	}));
+	// Restored records without lifecycle evidence in this invocation. Their interruptions
+	// preceded the deliberate follow-up, so an attributed fresh rerun can resolve them.
+	const carriedOver = new Set(tasks.keys());
+	const interruptedBefore = (task) => carriedOver.has(task?.taskId) && ["stopped", "unknown"].includes(task.status);
 	const declarations = (value) => [...(value?.outstanding || []), ...(value?.unverified || [])]
 		.map((requirement) => ({ requirement, status: "unverified", evidence: [] }));
 	// New checkpoints contain the complete identified ledger. Legacy reports are a fallback,
@@ -81,6 +85,7 @@ export function createTaskSupervision(taskId, resumeState) {
 		if (task?.terminalStatus === "stopped") return;
 		// Live evidence can resolve snapshot uncertainty; failures/unknowns need a resume.
 		if (["failed", "unknown"].includes(task?.terminalStatus) && !explicitResume) return;
+		carriedOver.delete(id);
 		tasks.set(id, { taskId: id, status: "running", isBackgrounded: isBackgrounded ?? task?.isBackgrounded,
 			description: description || task?.description, history: task?.history || [] });
 	};
@@ -89,6 +94,7 @@ export function createTaskSupervision(taskId, resumeState) {
 		const delivery = createHash("sha256").update(identity).digest("hex");
 		if (seenNotifications.has(delivery)) return;
 		seenNotifications.add(delivery);
+		carriedOver.delete(id);
 		const task = tasks.get(id) || { taskId: id, description };
 		// Native CLI emits a terminal update before that transition's notification: merge, don't repeat.
 		const previous = task.history?.at(-1);
@@ -162,16 +168,18 @@ export function createTaskSupervision(taskId, resumeState) {
 			for (const id of report.background_task_ids) if (!tasks.has(id)) tasks.set(id, { taskId: id, status: "running", description: "Required by Claude Code's task report" });
 			if (report.disposition === "needs_input" && report.question.trim()) return { action: "end", disposition: "needs_input", reason: report.question };
 			if (report.disposition === "unfinished") return { action: "end", disposition: "unfinished", reason: report.outstanding.join("; ") || "Claude Code reported that work is unfinished." };
-			const stopped = [...tasks.values()].filter((task) => task.status === "stopped");
+			// A stop in this invocation is a barrier; one carried over needs an attributed rerun below.
+			const stopped = [...tasks.values()].filter((task) => task.status === "stopped" && !interruptedBefore(task));
 			if (stopped.length) return { action: "end", disposition: "unfinished", reason: `Required background work stopped: ${stopped.map((task) => `${task.taskId} (${task.status})`).join(", ")}.` };
 			// Accept Claude's attribution, not a host inference from arbitrary passing work.
 			const resolved = new Set();
 			for (const resolution of report.resolved_failures || []) {
 				const failed = tasks.get(resolution.task_id);
 				const replacement = tasks.get(resolution.replacement_task_id);
-				if (failed?.status !== "failed" || replacement?.status !== "completed" ||
-					!(replacement.terminalSequence > failed.terminalSequence)) {
-					reason = "Failure resolution lacks an observed failed check and fresh completed replacement; completion remains unresolved.";
+				const resolvable = failed?.status === "failed" || (interruptedBefore(failed) && !carriedOver.has(replacement?.taskId));
+				if (!resolvable || replacement?.status !== "completed" ||
+					!(replacement.terminalSequence > (failed.terminalSequence ?? 0))) {
+					reason = "Failure resolution lacks an observed failed or previously interrupted check and fresh completed replacement; completion remains unresolved.";
 					return { action: "continue", reason };
 				}
 				resolved.add(failed.taskId);
@@ -190,9 +198,13 @@ export function createTaskSupervision(taskId, resumeState) {
 				return { action: "end", disposition: "finished", reason: "Claude Code reported every requested outcome with evidence; not independently certified by Pi." };
 			}
 			const failed = [...tasks.values()].filter((task) => task.status === "failed" && !resolved.has(task.taskId));
+			const interrupted = [...tasks.values()].filter((task) => interruptedBefore(task) && !resolved.has(task.taskId));
+			const listed = (items) => items.map((task) => `${task.taskId} (${task.status})`).join(", ");
 			reason = failed.length
-				? `Failed verification remains unresolved: ${failed.map((task) => `${task.taskId} (${task.status})`).join(", ")}. Continue the approved repair and verification.`
-				: "Required work or evidence remains unresolved; request a complete, attributable report after finishing it.";
+				? `Failed verification remains unresolved: ${listed(failed)}. Continue the approved repair and verification.`
+				: interrupted.length
+					? `Work interrupted before this follow-up remains unresolved: ${listed(interrupted)}. Restart it, or attribute a fresh completed rerun in resolved_failures.`
+					: "Required work or evidence remains unresolved; request a complete, attributable report after finishing it.";
 			return { action: "continue", reason };
 		},
 		get waiting() {

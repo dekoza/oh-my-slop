@@ -90,7 +90,7 @@ The host requests a strict JSON-schema report through Claude Code's
 | `outstanding`, `unverified` | Explicit lists of remaining actions and missing verification. |
 | `question` | Precise missing information for a needs-input pause; empty otherwise. |
 | `background_task_ids` | Required background work identities, retained across waiting turns. |
-| `resolved_failures` | Optional explicit resolution of failed intermediate checks: entries with failed `task_id`, fresh completed `replacement_task_id`, and nonempty `evidence` explaining the repair and passing rerun. |
+| `resolved_failures` | Optional explicit resolution of failed intermediate checks, or of work stopped/lost before a deliberate follow-up: entries with that `task_id`, fresh completed `replacement_task_id`, and nonempty `evidence` explaining the repair and passing rerun. |
 
 Free-form “done”, exit code 0, `end_turn`, an empty active-task list or a successful
 CLI result is insufficient. Unsupported/missing reports remain unresolved within
@@ -122,7 +122,8 @@ Its identity and failed history stay in the handoff. A passing check under a new
 does not silently resolve it: Claude must explicitly attribute replacement evidence
 through `resolved_failures`, and the replacement must be observed completed after
 the failed check. Unresolved failures and unknown outcomes still prevent finished;
-stopped work and transport/execution errors cannot be resolved by this field.
+work stopped in the current invocation and transport/execution errors cannot be
+resolved by this field.
 This is **Claude Code's evidence-backed self-report, not independent Pi certification**.
 
 Terminal handoffs use the same three dispositions on both entrypoints:
@@ -140,7 +141,12 @@ Resume in the **same working directory**, using either follow-up entrypoint or
 active Pi branch; another branch/directory cannot silently resume this task.
 Native task identities and histories survive follow-up too. Previously running work
 is restored as unknown until fresh live evidence arrives; deliberate recovery may
-restart previously stopped work without erasing its history.
+restart previously stopped work without erasing its history. Work stopped or lost
+before the follow-up (for example, killed by EOF cleanup after a needs-input pause)
+can instead be replaced by a fresh-ID rerun that completes during the follow-up and
+is attributed in `resolved_failures`; its stopped/unknown record stays in the
+handoff. The resumed prompt lists such unresolved earlier task IDs as data. A stop
+observed during the follow-up itself is again a barrier.
 Tree navigation stops the worker and retains its interrupted handoff on the
 launching branch before moving the leaf. A post-navigation cleanup fallback
 retains diagnostics only in the private log, never on the newly selected branch.
