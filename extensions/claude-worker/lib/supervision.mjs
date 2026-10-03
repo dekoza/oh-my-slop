@@ -35,28 +35,38 @@ function validReport(report, taskId) {
 		item.evidence.every((evidence) => typeof evidence === "string" && evidence.trim()));
 }
 
-// Tracks only this invocation's non-ambient background work. Terminal records survive snapshots.
+// Tracks current non-ambient lifecycles separately from retained terminal evidence.
 export function createTaskSupervision(taskId) {
 	const tasks = new Map();
+	const seenNotifications = new Set();
+	const markRunning = (id, description, explicitResume = false) => {
+		const task = tasks.get(id);
+		// A late start/snapshot must not erase early stopped/failed/unknown evidence.
+		if (task && task.status !== "completed" && !explicitResume) return;
+		tasks.set(id, { taskId: id, status: "running", description: description || task?.description, history: task?.history || [] });
+	};
 	let report;
 	let reason = "No explicit evidence-backed completion report was received.";
 	return {
 		record(event) {
 			if (event.type !== "system" || event.ambient) return;
-			if (event.subtype === "task_started" && event.task_id && !tasks.has(event.task_id)) {
-				tasks.set(event.task_id, { taskId: event.task_id, status: "running", description: event.description });
+			if (event.subtype === "task_started" && event.task_id) markRunning(event.task_id, event.description);
+			if (event.subtype === "task_updated" && event.task_id && event.patch?.status === "running") {
+				markRunning(event.task_id, event.patch.description, true);
 			}
 			if (event.subtype === "task_notification" && event.task_id) {
-				// Resumed or fast tasks may notify before this invocation sees a start/report.
-				const task = tasks.get(event.task_id) || { taskId: event.task_id, status: "running", description: event.description };
-				if (task.status !== "running" && task.status !== "unknown") return;
-				tasks.set(event.task_id, { ...task, status: event.status || "unknown", summary: event.summary, outputFile: event.output_file });
+				// Deduplicate deliveries, not identities: a resumed task can notify again.
+				if (event.uuid && seenNotifications.has(event.uuid)) return;
+				if (event.uuid) seenNotifications.add(event.uuid);
+				const task = tasks.get(event.task_id) || { taskId: event.task_id, description: event.description };
+				const outcome = { status: event.status || "unknown", summary: event.summary, outputFile: event.output_file };
+				tasks.set(event.task_id, { ...task, ...outcome, history: [...(task.history || []), outcome] });
 			}
 			if (event.subtype === "background_tasks_changed") {
 				const active = new Set();
 				for (const task of event.tasks || []) if (!task.ambient && task.task_id) {
 					active.add(task.task_id);
-					if (!tasks.has(task.task_id)) tasks.set(task.task_id, { taskId: task.task_id, status: "running", description: task.description });
+					markRunning(task.task_id, task.description);
 				}
 				for (const task of tasks.values()) if (task.status === "running" && !active.has(task.taskId)) task.status = "unknown";
 			}

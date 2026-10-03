@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { runClaude } from "../../extensions/claude-worker/lib/worker.mjs";
+import { createTaskSupervision } from "../../extensions/claude-worker/lib/supervision.mjs";
 
 const SESSION_ID = "12345678-1234-1234-1234-123456789abc";
 
@@ -143,6 +144,29 @@ input.on("line", (line) => {
 	assert.equal(result.disposition, "finished");
 	assert.equal(result.text, "Queue drained");
 	assert.equal((await fake.frames()).filter((frame) => frame.type === "user").length, 1);
+});
+
+test("resumed task lifecycles invalidate earlier completion and retain terminal history", () => {
+	const report = { task_id: "approved", disposition: "finished", outcomes: [{ requirement: "Verify", status: "verified", evidence: ["verification passed"] }], outstanding: [], unverified: [], question: "", background_task_ids: [] };
+	for (const resume of [
+		{ subtype: "task_started", task_id: "verify" },
+		{ subtype: "task_updated", task_id: "verify", patch: { status: "running" } },
+		{ subtype: "background_tasks_changed", tasks: [{ task_id: "verify" }] },
+	]) {
+		const supervisor = createTaskSupervision("approved");
+		const completed = { type: "system", subtype: "task_notification", task_id: "verify", status: "completed", uuid: "completion-1", summary: "First verification passed" };
+		supervisor.record(completed);
+		assert.equal(supervisor.assess(report).disposition, "finished");
+		supervisor.record({ type: "system", ...resume });
+		supervisor.record(completed); // A redelivered earlier completion cannot finish a resumed task.
+		assert.equal(supervisor.waiting, true);
+		assert.equal(supervisor.assess(report).action, "continue");
+		supervisor.record({ type: "system", subtype: "task_notification", task_id: "verify", status: "failed", uuid: "completion-2", summary: "Resumed verification failed" });
+		assert.equal(supervisor.assess(report).disposition, "unfinished");
+		const task = supervisor.snapshot().taskOutcomes[0];
+		assert.equal(task.status, "failed");
+		assert.deepEqual(task.history.map((outcome) => outcome.status), ["completed", "failed"]);
+	}
 });
 
 test("a report-declared background task is supervised even without a task-start notification", { timeout: 15_000 }, async (t) => {
