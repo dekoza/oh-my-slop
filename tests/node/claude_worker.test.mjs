@@ -17,7 +17,15 @@ import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(capture)}, JSON.stringify({ args, env: process.env, cwd: process.cwd() }) + "\\n");
-const send = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+let userId;
+const taskId = JSON.parse(args.includes("--json-schema") ? args[args.indexOf("--json-schema") + 1] : "{}").properties?.task_id?.const;
+const completion = (disposition = "finished", extra = {}) => ({ task_id: taskId, disposition,
+ outcomes: [{ requirement: "Requested inspection", status: "verified", evidence: ["artifact: inspection.txt"] }],
+ outstanding: [], unverified: [], question: "", background_task_ids: [], ...extra });
+const send = (event) => {
+ if (event.type === "result" && !event.origin && !("user_message_uuid" in event) && !("user_message_uuids" in event)) event.user_message_uuid = userId;
+ process.stdout.write(JSON.stringify(event) + "\\n");
+};
 if (args[0] === "auth") {
  console.log(${JSON.stringify(JSON.stringify(auth))});
  process.exit(0);
@@ -25,6 +33,7 @@ if (args[0] === "auth") {
 const input = createInterface({ input: process.stdin });
 input.on("line", (line) => {
  const event = JSON.parse(line);
+ if (event.type === "user") userId = event.uuid;
  appendFileSync(${JSON.stringify(join(cwd, "frames.jsonl"))}, line + "\\n");
  if (event.type === "control_request" && event.request.subtype === "initialize") {
   send({ type: "control_response", response: { subtype: "success", request_id: event.request_id, response: { account: ${JSON.stringify(initialAccount)} } } });
@@ -42,7 +51,7 @@ input.on("line", (line) => {
 `}
 `);
 	// The fixture directory is owned by this test and retained for failure inspection.
-	return { cwd, signal: AbortSignal.timeout(3_000), executable: process.execPath, prefixArgs: [script], frames: async () => (await readFile(join(cwd, "frames.jsonl"), "utf8")).trim().split("\n").map(JSON.parse), calls: async () => (await readFile(capture, "utf8")).trim().split("\n").map(JSON.parse) };
+	return { cwd, maxContinuations: 0, signal: AbortSignal.timeout(3_000), executable: process.execPath, prefixArgs: [script], frames: async () => (await readFile(join(cwd, "frames.jsonl"), "utf8")).trim().split("\n").map(JSON.parse), calls: async () => (await readFile(capture, "utf8")).trim().split("\n").map(JSON.parse) };
 }
 
 test("delegation runs the real CLI interface with subscription auth and no inherited API credentials", { timeout: 15_000 }, async (t) => {
@@ -81,6 +90,37 @@ test("a successful turn without an explicit completion report stays unfinished",
 	assert.equal(result.disposition, "unfinished");
 	assert.match(result.reason, /completion report/i);
 	assert.equal((await fake.frames()).filter((frame) => frame.type === "user").length, 1);
+});
+
+test("waiting preserves stdin and native background work until an attributable completion report", { timeout: 15_000 }, async (t) => {
+	const fake = await fixture(t, { body: `
+let turns = 0;
+input.on("line", (line) => {
+ const event = JSON.parse(line);
+ if (event.type !== "user") return;
+ turns++;
+ if (turns === 1) {
+  send({ type: "system", subtype: "init", session_id: "${SESSION_ID}" });
+  send({ type: "system", subtype: "task_started", task_id: "verify", description: "Required verification" });
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", result: "Waiting", structured_output: completion("waiting", { outstanding: ["Apply repair after verification"], background_task_ids: ["verify"] }) });
+  setTimeout(() => {
+   send({ type: "system", subtype: "task_notification", task_id: "verify", status: "completed", summary: "Verification passed" });
+   send({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+   send({ type: "result", subtype: "success", origin: { kind: "task-notification" }, session_id: "${SESSION_ID}", result: "Verification notification" });
+  }, 40);
+ } else {
+  send({ type: "result", subtype: "success", session_id: "${SESSION_ID}", result: "Repair applied; verification passed", structured_output: completion() });
+ }
+});
+` });
+	const result = await runClaude({ ...fake, prompt: "Repair after verifying", maxContinuations: 2 });
+	assert.equal(result.disposition, "finished");
+	assert.equal(result.continuations, 1);
+	assert.equal(result.taskOutcomes[0].taskId, "verify");
+	assert.equal(result.taskOutcomes[0].status, "completed");
+	const users = (await fake.frames()).filter((event) => event.type === "user");
+	assert.equal(users.length, 2);
+	assert.notEqual(users[0].uuid, users[1].uuid);
 });
 
 test("API, logged-out, unknown-plan and mixed credentials fail before any model request", { timeout: 15_000 }, async (t) => {

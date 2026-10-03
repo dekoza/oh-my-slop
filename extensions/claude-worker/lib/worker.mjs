@@ -2,6 +2,10 @@ import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
+import { completionSchema, createTaskSupervision, supervisionInstructions } from "./supervision.mjs";
+
+export const MAX_CONTINUATIONS = 8;
+export const MAX_TASK_MS = 30 * 60 * 1_000;
 
 const execFileAsync = promisify(execFile);
 const OUTPUT_LIMIT = 64_000;
@@ -11,7 +15,8 @@ function subscriptionEnvironment(env) {
 		!key.startsWith("ANTHROPIC_") && !key.startsWith("CLAUDE_CODE_USE_")));
 }
 
-export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = () => {}, onPermission = async () => false, executable = "claude", prefixArgs = [], env = process.env }) {
+export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = () => {}, onPermission = async () => false, executable = "claude", prefixArgs = [], env = process.env, maxContinuations = MAX_CONTINUATIONS, maxTaskMs = MAX_TASK_MS }) {
+	if (!Number.isSafeInteger(maxContinuations) || maxContinuations < 0 || !Number.isSafeInteger(maxTaskMs) || maxTaskMs < 1) throw new Error("Finite nonnegative continuation and positive time limits are required.");
 	if (!prompt?.trim()) throw new Error("A Claude Code task is required.");
 	const childEnv = subscriptionEnvironment(env);
 	const auth = await execFileAsync(executable, [...prefixArgs, "auth", "status", "--json"], {
@@ -26,7 +31,10 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 	signal?.throwIfAborted();
 	const args = [...prefixArgs, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "auto", "--permission-prompt-tool", "stdio", "--permission-prompts", "host"];
 	if (sessionId) args.push("--resume", sessionId);
-	const messageId = randomUUID();
+	const taskId = randomUUID();
+	args.push("--json-schema", JSON.stringify(completionSchema(taskId)), "--append-system-prompt", supervisionInstructions(taskId));
+	const supervision = createTaskSupervision(taskId);
+	let messageId = randomUUID();
 	return new Promise((resolve, reject) => {
 		const child = spawn(executable, args, {
 			cwd, env: childEnv, stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32",
@@ -34,6 +42,14 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		let result;
 		let failure;
 		let killTimer;
+		let closeTimer;
+		let disposition = "unfinished";
+		let reason;
+		let ending = false;
+		let inFlight = false;
+		let continuations = 0;
+		const seenResults = new Set();
+		const permissionDenials = [];
 		let initialized = false;
 		let currentSessionId = sessionId;
 		let stderr = "";
@@ -55,6 +71,28 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 			killTimer ??= setTimeout(() => kill("SIGKILL"), 1_000);
 		};
 		const fail = (error) => { failure ??= error; stop(); };
+		const end = (decision) => {
+			disposition = decision.disposition;
+			reason = decision.reason;
+			ending = true;
+			permissionAbort.abort();
+			child.stdin.end();
+			// Even EOF must not leave an owned process hanging after a terminal disposition.
+			closeTimer ??= setTimeout(stop, 1_000);
+		};
+		const submit = (content) => {
+			inFlight = true;
+			child.stdin.write(JSON.stringify({ type: "user", uuid: messageId, session_id: currentSessionId || "", message: { role: "user", content }, parent_tool_use_id: null }) + "\n");
+		};
+		const continueTask = (why) => {
+			if (ending || inFlight || signal?.aborted || failure) return;
+			if (continuations >= maxContinuations) return end({ disposition: "unfinished", reason: `Continuation safety limit (${maxContinuations}) exhausted. ${why}` });
+			continuations++;
+			messageId = randomUUID();
+			onProgress({ type: "worker_supervision", status: "Continuing approved task", reason: why, continuations });
+			submit(`Continue only the originally approved task in this saved context and existing permissions. ${why} Consume required background results, perform outstanding actions, and return the explicit StructuredOutput report mapping every requested outcome to evidence. If genuine information is missing, report needs_input with the precise question. Do not expand scope.`);
+		};
+		const taskTimer = setTimeout(() => fail(new Error(`Task time safety limit (${maxTaskMs}ms) exhausted; work is unfinished.`)), maxTaskMs);
 		const initializeTimer = setTimeout(() => fail(new Error("Claude Code initialization timed out before the task was sent.")), 10_000);
 		child.stderr.setEncoding("utf8").on("data", (chunk) => {
 			stderr = (stderr + chunk).slice(-OUTPUT_LIMIT);
@@ -63,9 +101,11 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		const lines = createInterface({ input: child.stdout });
 		lines.on("line", (line) => {
 			void (async () => {
-				if (failure || signal?.aborted) return;
+				if (failure || signal?.aborted || ending) return;
 				const event = JSON.parse(line);
-				if (event.session_id) currentSessionId = event.session_id;
+				if (event.session_id && currentSessionId && event.session_id !== currentSessionId) return;
+				if (event.type === "system" && event.subtype === "init" && event.session_id) currentSessionId = event.session_id;
+				supervision.record(event);
 				onProgress(event);
 				if (event.type === "control_response" && event.response?.request_id === "pi-initialize") {
 					const response = event.response;
@@ -79,9 +119,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 					}
 					initialized = true;
 					clearTimeout(initializeTimer);
-					if (!signal?.aborted && !result) child.stdin.write(JSON.stringify({
-						type: "user", uuid: messageId, session_id: "", message: { role: "user", content: prompt }, parent_tool_use_id: null,
-					}) + "\n");
+					if (!signal?.aborted) submit(prompt);
 				}
 				if (event.type === "control_cancel_request") {
 					seenPermissions.add(event.request_id);
@@ -111,12 +149,30 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 						.finally(() => pendingPermissions.delete(event.request_id));
 				}
 				if (event.type === "result") {
-					// A task-notification turn is not the reply to our submitted task.
+					// Result UUIDs are delivery IDs; user_message_uuids identify submitted turns.
 					const ids = event.user_message_uuids || (event.user_message_uuid ? [event.user_message_uuid] : []);
-					if (event.origin?.kind === "task-notification" || (ids.length && !ids.includes(messageId))) return;
+					const key = event.uuid || (event.result_index !== undefined ? `index:${event.result_index}` : undefined);
+					if (key && seenResults.has(key)) return;
+					if (key) seenResults.add(key);
+					const correlated = ids.includes(messageId);
+					if (!correlated) {
+						// Native task-notification turns consume results themselves. Wait for their
+						// terminal boundary before dispatching, rather than racing the native queue.
+						if (!inFlight && event.origin?.kind === "task-notification" && !supervision.waiting && !event.queued_turn_count) continueTask("Native background result was consumed; finish outstanding approved work.");
+						return;
+					}
+					if (!inFlight) return;
 					result = event;
-					permissionAbort.abort();
-					child.stdin.end();
+					currentSessionId ||= event.session_id;
+					permissionDenials.push(...(event.permission_denials || []));
+					inFlight = false;
+					if (event.is_error || event.subtype !== "success") return end({ disposition: "unfinished", reason: "Claude Code execution did not return a successful turn." });
+					if (!event.session_id) return end({ disposition: "unfinished", reason: "Claude Code returned no resumable session ID." });
+					const decision = supervision.assess(event.structured_output);
+					if (decision.action === "end") return end(decision);
+					if (supervision.waiting || event.queued_turn_count > 0) {
+						onProgress({ type: "worker_supervision", status: "Waiting for required background work", reason: decision.reason, continuations });
+					} else continueTask(decision.reason);
 				}
 			})().catch(fail);
 		});
@@ -127,15 +183,17 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 		child.on("close", (code, exitSignal) => {
 			lines.close();
 			clearTimeout(killTimer);
+			clearTimeout(closeTimer);
+			clearTimeout(taskTimer);
 			clearTimeout(initializeTimer);
 			permissionAbort.abort();
 			signal?.removeEventListener("abort", abort);
 			const outcome = {
 				sessionId: result?.session_id || currentSessionId, text: result?.result || "",
-				disposition: "unfinished", reason: "No explicit evidence-backed completion report was received.",
+				...supervision.snapshot(), disposition, reason: reason || failure?.message || (signal?.aborted ? "Worker explicitly stopped; partial work may remain." : "Process exited before an explicit completion report; outcome unresolved."), continuations,
 				exitCode: code, exitSignal, resultSubtype: result?.subtype, stopReason: result?.stop_reason,
 				terminalReason: result?.terminal_reason, numTurns: result?.num_turns, errors: result?.errors || [],
-				permissionDenials: result?.permission_denials || [], stderr,
+				permissionDenials, stderr,
 			};
 			try { onProgress({ type: "worker_exit", ...outcome }); } catch (error) { failure ??= error; }
 			let error = failure;
@@ -144,7 +202,7 @@ export async function runClaude({ cwd, prompt, sessionId, signal, onProgress = (
 				error = new Error([result?.result, ...outcome.errors, stderr].filter(Boolean).join("\n") || "Claude Code exited without a successful result.");
 			}
 			if (!error && !result?.session_id) error = new Error("Claude Code returned no resumable session ID.");
-			if (error) { error.outcome = outcome; reject(error); }
+			if (error) { outcome.disposition = "unfinished"; outcome.reason = error.message; error.outcome = outcome; reject(error); }
 			else resolve(outcome);
 		});
 		child.stdin.write(JSON.stringify({ type: "control_request", request_id: "pi-initialize", request: { subtype: "initialize", hooks: null } }) + "\n");
