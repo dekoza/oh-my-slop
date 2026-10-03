@@ -41,6 +41,31 @@ observation; no other failure inherits that exception. Preserve original classif
 if a collector error is later diagnosed. Process deadline300 seconds, outer600, Bash
 inspection calls at most15. Bytecodeoff and optional Git locks0 apply to collectors too.
 
+## Separately authorized supplemental method A
+
+The initial local collector rejected one candidate's exact task-byte binding because
+pi's documented manual-argument trim removed the frozen trailing newline, and one
+baseline recovery read because its relative argument was compared to an absolute path.
+These original failures, receipts, grades and empty comparable benchmark remain intact;
+the original protocol did not pass. The operator selected A and confirmed its bounded
+continuation, not output quality, original-protocol success or additional resources.
+
+Supplement A verifies baseline task bytes exactly and candidate context against the
+complete native manual expansion: unchanged body, name, location, baseDir and frozen task
+with only the SDK's documented argument trim. It also permits only case3's predeclared
+missing read when native cwd resolution and correlated read start/end/toolCallId establish
+the exact selected path and its exact ENOENT. Wrong paths/cwd, other errors, failed required
+reads, backend failures, pending records and outside-scope access remain incomplete.
+
+Label analysis of the original four streams **POST-HOC / AFTER OUTCOMES**. Freeze the
+corrected method, tests, source/context and ownership before the two remaining candidates
+(named-trust, then missing-recovery), labeled **PROSPECTIVE under A**. Preserve the original
+prompts, assertions, fixture state, resources and six-launch total cap, counting failures;
+there is no baseline rerun or retry. New collector artifacts stay separate from historical
+outputs; optional model reports retain their originally frozen, fresh ownership paths.
+Mixed-phase descriptive comparisons are not a homogeneous original-protocol pass, an
+independent benchmark or causal lift. New operator quality judgment remains a separate gate.
+
 ## Review and limits
 
 Retain complete raw streams, diagnostics, tool effects, source snapshots, grades and
