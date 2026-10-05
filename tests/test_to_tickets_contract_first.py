@@ -1,4 +1,5 @@
-"""#191: contract-first ordering, walking skeleton first, one language per builder.
+"""#191: contract-first ordering, walking skeleton first, one language per builder;
+#256: reuse of sufficient accepted unchanged interfaces with recorded evidence.
 
 Decision evidence: docs/surveys/swarm-forge-adoption-survey-2026-08-30.md,
 adoption item 5 and the two #135 notes. The skill emits an explicit inspected
@@ -80,7 +81,11 @@ def test_unchanged_accepted_interface_is_reused_with_recorded_evidence() -> None
 
     assert "**Reuse a sufficient accepted interface that stays unchanged.**" in text
     assert "consumers record its authoritative source, its owner and the acceptance evidence" in text
+    # Positive definition first, so a closed issue that links an accepting test counts.
+    assert "the accepted artifact plus the test or review that accepted it" in text
     assert "A filename or a closed issue alone is not acceptance evidence" in text
+    display = text.split("For each ticket, show:", 1)[1].split("Show the proposed concurrent sets", 1)[0]
+    assert "stable inputs (source, owner, evidence)" in display
 
 
 def test_contract_tickets_cover_new_or_changed_interfaces_only() -> None:
@@ -105,9 +110,12 @@ def test_missing_reuse_evidence_or_a_changed_shape_is_not_reuse() -> None:
     reuse = text.split("**Reuse a sufficient accepted interface that stays unchanged.**", 1)[1].split("**The last ticket", 1)[0]
 
     assert "Missing source, owner or evidence makes the interface unknown impact, not reusable" in reuse
+    assert "investigate it or plan its contract ticket" in reuse
     assert "keep its dependents unapproved until it resolves" in reuse
     assert "Changing or versioning the shape, or editing its files, is never reuse" in reuse
-    assert text.count("accepted unchanged inputs with source, owner and acceptance evidence") == 2
+    for template in ("<local-ticket-template>", "<issue-template>"):
+        block = text.split(template, 1)[1].split("</" + template[1:], 1)[0]
+        assert "accepted unchanged inputs with source, owner and acceptance evidence" in block, template
 
 
 def test_catalogue_states_interface_reuse() -> None:
@@ -117,7 +125,7 @@ def test_catalogue_states_interface_reuse() -> None:
     row = next(line for line in readme.splitlines() if "skills/workflow/to-tickets/SKILL.md" in line and line.startswith("|"))
 
     assert "contract-first ordering for new or changed interfaces" in row
-    assert "reuse of evidenced, unchanged ones" in row
+    assert "reuse of evidenced unchanged ones" in row
 
 
 def _evals() -> dict[int, dict]:
@@ -137,6 +145,11 @@ def test_planning_evals_pair_every_interface_reuse_outcome() -> None:
 
     # Case 3 is the sufficient-reuse positive control, so it supplies the evidence.
     assert "accepted in ADR-0007" in cases[3]["prompt"]
+    # Case 4 reuses EnrollmentStore.list, so it supplies that evidence too.
+    assert "accepted in ADR-0003" in cases[4]["prompt"]
+    assert any("EnrollmentStore.list" in e and "acceptance evidence" in e for e in cases[4]["expectations"])
+    # Case 5's concurrency must rest on inspection, not on directory names.
+    assert "Inspection confirms" in cases[5]["prompt"]
     assert any("authoritative source, owner and acceptance evidence" in e for e in cases[3]["expectations"])
     assert any("registry" in e for e in cases[3]["expectations"])  # mutable overlap
 

@@ -5,7 +5,8 @@
 The [scenarios](evals.json) reproduce the Cleopatra coordination lesson: shared
 foundations need enforced order, not promises to synchronize. They cover a new
 controller under deadline pressure, overlapping work in an existing application,
-and genuinely independent plugins whose impact can later change.
+genuinely independent plugins whose impact can later change, a producer/repairer
+handoff (case 4), and interface reuse against new shapes and versions (cases 5–6).
 
 This is a technique evaluation with discipline pressure cases. The skill remains
 user-invoked; trigger evaluation is not applicable.
@@ -17,14 +18,14 @@ ticket; anything less, or any change to the shape, keeps the contract-first gate
 
 | Outcome | Case |
 | --- | --- |
-| Sufficient reuse, recorded source/owner/evidence | 3, 5 |
+| Sufficient reuse, recorded source/owner/evidence | 3, 4, 5 |
 | Missing evidence or ownership (filename, closed issue) | 5 |
 | New shape | 6 |
 | New version of an accepted contract | 6, 2 |
 | Mutable overlap on a shared surface | 3, 2 |
 
-Case 3 now supplies the protocol's owner and acceptance evidence, so it stays the
-sufficient-reuse positive control under the evidence rule; the historical results
+Cases 3 and 4 now supply their interface's owner and acceptance evidence, so they
+stay sufficient-reuse controls under the evidence rule; the historical results
 below predate that amendment. The matched baseline/candidate comparison for these
 cases is pending and is reported separately when run.
 
