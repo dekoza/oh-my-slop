@@ -63,3 +63,14 @@ def test_scoped_grant_is_reused_but_never_stretched_or_given_to_human_only_work(
     assert "does not stretch to changed scope" in labels
     assert "missing decision and its owner" in labels
     assert "stays `ready-for-human` whatever the grant" in labels
+
+
+def test_breakdown_records_blockers_without_granting_execution_or_concurrency() -> None:
+    """Separating symptoms into issues and publishing them is not a grant to
+    start work or to run slices concurrently (#254)."""
+    breakdown = " ".join(_qa_section("#### For a breakdown (multiple issues)").split())
+
+    assert "can start immediately" not in breakdown
+    assert "Maximize parallelism" not in breakdown
+    assert "None known" in breakdown
+    assert "grants neither execution nor safe concurrency" in breakdown

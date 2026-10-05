@@ -128,7 +128,7 @@ Use this template for each sub-issue:
 
 - #<issue-number> (if this issue can't be fixed until another is resolved)
 
-Or "None — can start immediately" if no blockers.
+Or "None known" if no blocker is known.
 
 ## Additional context
 
@@ -138,9 +138,9 @@ Or "None — can start immediately" if no blockers.
 When creating a breakdown:
 
 - **Prefer many thin issues over few thick ones** — each should be independently fixable and verifiable
-- **Mark blocking relationships honestly** — if issue B genuinely can't be tested until issue A is fixed, say so. If they're independent, mark both as "None — can start immediately"
+- **Mark blocking relationships honestly** — if issue B genuinely can't be tested until issue A is fixed, say so. If no blocker is known, write "None known"
 - **Create issues in dependency order** so you can reference real issue numbers in "Blocked by"
-- **Maximize parallelism** — the goal is that multiple people (or agents) can grab different issues simultaneously
+- **Splitting is not scheduling** — separating symptoms and publishing them grants neither execution nor safe concurrency; whether slices may start, or run side by side, is decided later under the project's authority and impact rules
 
 #### Rules for all issue bodies
 
