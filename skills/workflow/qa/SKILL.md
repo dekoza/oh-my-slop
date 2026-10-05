@@ -73,9 +73,9 @@ Apply exactly three labels to every issue at creation time, resolving the catego
    - **Clarity** — concrete reproduction steps and an unambiguous expected behavior make the issue well specified, nothing more.
    - **Authority** — a human grant, under the project's authority rules, that covers implementing this issue's scope. A request to run QA, file, capture or publish issues is permission to publish, not implementation authority.
 
-   Apply `ready-for-agent` only when both hold. Otherwise apply `ready-for-human` — acting on the issue needs human judgment (a design decision, manual verification, an enhancement the user described only loosely), or only the grant is missing — and record in the issue the missing decision or action, its owner and the next action.
+   Apply `ready-for-agent` only when both hold. Otherwise apply `ready-for-human` — acting on the issue needs human judgment (a design decision, manual verification, an enhancement the user described only loosely), or only the grant is missing — and record in the issue's additional context the missing decision or action, its owner and the next action.
 
-   When the user has already granted implementation for this scope in the session ("file these and let an agent fix them"), reuse it without asking again, and quote the grant in the issue's additional context so a later agent can check it. A grant does not stretch to changed scope: an issue that reaches beyond what was granted — another area, a different behavior, an open design choice — is `ready-for-human`. Issues the grant still covers keep it. A requirement only a human may carry out stays `ready-for-human` whatever the grant.
+   When the user has already granted implementation for this scope in the session ("file these and let an agent fix them"), reuse it without asking again, and quote the grant in the issue's additional context so a later agent can check it. A grant does not stretch to changed scope: an issue that reaches beyond what was granted — another area, a different behavior, an open design choice — is `ready-for-human`. Issues still inside the granted scope stay `ready-for-agent`. A requirement only a human may carry out stays `ready-for-human` whatever the grant.
 
 #### For a single issue
 
@@ -140,7 +140,7 @@ When creating a breakdown:
 - **Prefer many thin issues over few thick ones** — each should be independently fixable and verifiable
 - **Mark blocking relationships honestly** — if issue B genuinely can't be tested until issue A is fixed, say so. If no blocker is known, write "None known"
 - **Create issues in dependency order** so you can reference real issue numbers in "Blocked by"
-- **Splitting is not scheduling** — separating symptoms and publishing them grants neither execution nor safe concurrency; whether slices may start, or run side by side, is decided later under the project's authority rules
+- **Leave scheduling to the project's authority rules and execution gates** — splitting symptoms and publishing them decide neither when a slice may start nor whether slices may run side by side
 
 #### Rules for all issue bodies
 
@@ -153,7 +153,7 @@ When creating a breakdown:
 
 #### After filing
 
-Read each filed issue back and confirm its body — and, on a forge tracker, its labels — landed as intended; a failed or unconfirmed write is reported as such, not as filed. Filing — with any label creation and deduplication comments it needs — is the session's only tracker effect: no assignment, claim, branch, fix or dispatch follows from it, even for a `ready-for-agent` issue. Then print all issue URLs (with blocking relationships and each state's reason summarized) and ask: "Next issue, or are we done?"
+Read each filed issue back and confirm its body — and, on a forge-backed tracker, its labels — landed as intended; a failed or unconfirmed write is reported as such, not as filed. Filing — with any label creation and deduplication comments it needs — is the session's only tracker effect: no assignment, claim, branch, fix or dispatch follows from it, even for a `ready-for-agent` issue. That label records clarity and authority, not eligibility: blockers, claims and prerequisites still decide when the work may start. Then print all issue URLs (with blocking relationships and each state's reason summarized) and ask: "Next issue, or are we done?"
 
 ### 5. Continue the session
 
