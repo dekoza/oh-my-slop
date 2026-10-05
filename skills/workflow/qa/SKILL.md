@@ -47,7 +47,7 @@ Before filing, decide whether this is a **single issue** or needs to be **broken
 Break down when:
 
 - The fix spans multiple independent areas (e.g. "the form validation is wrong AND the success message is missing AND the redirect is broken")
-- There are clearly separable concerns, each fixable and verifiable on its own
+- There are clearly separable concerns
 - The user describes something that has multiple distinct failure modes or symptoms
 
 Keep as a single issue when:
@@ -63,19 +63,24 @@ No hit — create issues per the tracker doc's "publish to the issue tracker" co
 
 Issues must be **durable** — they should still make sense after major refactors. Write from the user's perspective.
 
+#### State: clarity and authority
+
+Choose one state role per issue — `ready-for-agent` or `ready-for-human` — by judging two things separately:
+
+- **Clarity** — concrete reproduction steps and an unambiguous expected behavior make the issue well specified, nothing more.
+- **Authority** — a human grant, under the project's authority rules, that covers implementing this issue's scope. A request to run QA, file, capture or publish issues is permission to publish, not implementation authority.
+
+Choose `ready-for-agent` only when both hold. Otherwise choose `ready-for-human` — acting on the issue needs human judgment (a design decision, manual verification, an enhancement the user described only loosely), or only the grant is missing — and record in the issue's additional context the missing decision or action, its owner and the next action.
+
+When the user has already granted implementation for this scope in the session ("file these and let an agent fix them"), reuse it without asking again, and quote the grant in the issue's additional context so a later agent can check it. A grant does not stretch to changed scope: an issue that reaches beyond what was granted — another area, a different behavior, an open design choice — is `ready-for-human`. The grant still holds for issues inside its scope. A requirement only a human may carry out stays `ready-for-human` whatever the grant.
+
 #### Labels (forge-backed trackers only)
 
-Apply exactly three labels to every issue at creation time, resolving the category and state roles through the project's triage label mapping — never hardcode their strings. Create any label missing from the tracker before applying it. On the local-markdown tracker, skip labelling entirely; the authority rules below still decide what the issue records — a quoted grant, or a missing decision with its owner and next action.
+Apply exactly three labels to every issue at creation time, resolving the category and state roles through the project's triage label mapping — never hardcode their strings. Create any label missing from the tracker before applying it. On the local-markdown tracker, skip labelling entirely.
 
 1. **One category — `bug` or `enhancement`, chosen per issue** from the substance of the report. A QA session catches both kinds; don't blanket-apply `bug`.
 2. **`workflow:implement`** — so the next workflow is explicit: these issues are picked up through `/implement`, not triage discovery.
-3. **One state — `ready-for-agent` or `ready-for-human`, chosen per issue.** Judge two things separately:
-   - **Clarity** — concrete reproduction steps and an unambiguous expected behavior make the issue well specified, nothing more.
-   - **Authority** — a human grant, under the project's authority rules, that covers implementing this issue's scope. A request to run QA, file, capture or publish issues is permission to publish, not implementation authority.
-
-   Apply `ready-for-agent` only when both hold. Otherwise apply `ready-for-human` — acting on the issue needs human judgment (a design decision, manual verification, an enhancement the user described only loosely), or only the grant is missing — and record in the issue's additional context the missing decision or action, its owner and the next action.
-
-   When the user has already granted implementation for this scope in the session ("file these and let an agent fix them"), reuse it without asking again, and quote the grant in the issue's additional context so a later agent can check it. A grant does not stretch to changed scope: an issue that reaches beyond what was granted — another area, a different behavior, an open design choice — is `ready-for-human`. The grant still holds for issues inside its scope. A requirement only a human may carry out stays `ready-for-human` whatever the grant.
+3. **The state role chosen above** — `ready-for-agent` or `ready-for-human`.
 
 #### For a single issue
 
