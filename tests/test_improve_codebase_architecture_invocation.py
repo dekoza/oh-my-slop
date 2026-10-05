@@ -38,3 +38,17 @@ def test_reading_the_body_is_not_a_request_to_run_the_review() -> None:
     assert "if you are reading this, the user has already issued the entire request" not in skill_text
     assert "Reading this body is not a request" in entry
     assert "no exploration, report or tracker change" in entry
+
+
+def test_explicit_request_keeps_its_scope_and_starts_without_ceremony() -> None:
+    """/arch and an explicit invocation pass their scope through, and the review
+    begins with no generic approval question; the first pause stays at the
+    Phase 3 selection prompt (#255)."""
+    entry = _entry_section()
+
+    assert "Take the scope the request supplies" in entry
+    assert "the `/arch` path" in entry
+    assert "without one, review the current working directory" in entry
+    assert 'do not ask "what would you like me to do?"' in entry
+    assert "no recognizable codebase at that scope" in entry
+    assert "**Phase 3**" in entry

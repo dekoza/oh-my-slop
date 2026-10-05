@@ -18,13 +18,13 @@ requires:
 
 ## Start only on an explicit request
 
-This skill is manual-only (`disable-model-invocation: true`); it is never auto-triggered. Run the review only when the operator explicitly asked for it in this session — `/skill:improve-codebase-architecture`, the `/arch` command, or a plain request to run this architecture review. That request is the whole task.
+This skill is manual-only (`disable-model-invocation: true`); it is never auto-triggered. Run the review only when the operator explicitly asked for it in this session — `/skill:improve-codebase-architecture`, the `/arch` command, or a plain request to run this architecture review. That request is the whole task. Take the scope the request supplies — the `/arch` path, a module, a subsystem or a pain point — and review that; without one, review the current working directory.
 
 Reading this body is not a request. If you opened it to research, review, edit or compare the skill, answer that question and stop: no exploration, report or tracker change.
 
-Do not ask "what would you like me to do?" or wait for further instructions before acting. That extra round-trip is exactly the friction this section exists to kill. Begin **Phase 1: Explore** immediately and proceed through **Phase 2: Present candidates as an HTML report**. The first legitimate pause is the one **Phase 3** names: the selection prompt, where you propose a set of candidates to ticketize and the user confirms or amends it.
+On an explicit request, do not ask "what would you like me to do?", ask for approval to start, or wait for further instructions. That extra round-trip is exactly the friction this section exists to kill. Begin **Phase 1: Explore** immediately and proceed through **Phase 2: Present candidates as an HTML report**. The first legitimate pause is the one **Phase 3** names: the selection prompt, where you propose a set of candidates to ticketize and the user confirms or amends it.
 
-The single legitimate reason to pause before starting: there is no recognizable codebase in the current working directory. Only then ask the user for the path to review.
+The single legitimate reason to pause before starting: there is no recognizable codebase at that scope. Only then ask the user for the path to review.
 
 If the exploration finishes and nothing real surfaces — the architecture is already deep, nothing is bloated — say so plainly and stop. A short "no strong candidates: here's why the current shape holds up" is the honest result; don't manufacture weak candidates to fill the report.
 
