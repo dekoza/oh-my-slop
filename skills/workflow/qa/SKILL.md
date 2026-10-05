@@ -75,6 +75,8 @@ Apply exactly three labels to every issue at creation time, resolving the catego
 
    Apply `ready-for-agent` only when both hold. Otherwise apply `ready-for-human`: acting on the issue needs human judgment — a design decision, manual verification, an enhancement the user described only loosely — or only the grant is missing.
 
+   When the user has already granted implementation for this scope in the session ("file these and let an agent fix them"), reuse it without asking again, and quote the grant in the issue's additional context so a later agent can check it. A grant does not stretch to changed scope: an issue that reaches beyond what was granted — another area, a different behavior, an open design choice — is `ready-for-human`, with the missing decision and its owner recorded in the issue. Issues the grant still covers keep it. A requirement only a human may carry out stays `ready-for-human` whatever the grant.
+
 #### For a single issue
 
 Use this template:

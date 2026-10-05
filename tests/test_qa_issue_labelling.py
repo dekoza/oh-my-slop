@@ -49,3 +49,17 @@ def test_clear_reproduction_alone_does_not_make_an_issue_agent_ready() -> None:
     assert "**Authority**" in normalized
     assert "permission to publish, not implementation authority" in normalized
     assert "Apply `ready-for-agent` only when both hold" in normalized
+
+
+def test_scoped_grant_is_reused_but_never_stretched_or_given_to_human_only_work() -> None:
+    """A sufficient same-scope grant is reused without another approval round;
+    changed scope pauses for the missing decision, and human-only requirements
+    stay human-owned whatever the grant (#254)."""
+    labels = " ".join(
+        _qa_section("#### Labels (forge-backed trackers only)").split()
+    )
+
+    assert "reuse it without asking again" in labels
+    assert "does not stretch to changed scope" in labels
+    assert "missing decision and its owner" in labels
+    assert "stays `ready-for-human` whatever the grant" in labels
