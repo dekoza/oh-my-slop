@@ -80,3 +80,17 @@ def test_unchanged_accepted_interface_is_reused_with_recorded_evidence() -> None
     assert "**Reuse a sufficient accepted interface that stays unchanged.**" in text
     assert "its authoritative source, its owner and the acceptance evidence" in text
     assert "A filename or a closed issue alone is not acceptance evidence" in text
+
+
+def test_contract_tickets_cover_new_or_changed_interfaces_only() -> None:
+    """The contract-first rule and its quiz no longer demand a contract ticket for
+    every crossing interface; they demand one for each new or changed interface
+    and recorded evidence for each reused one (#256)."""
+    text = _normalized(skill_text("to-tickets"))
+
+    assert "One contract ticket per cross-component interface, first." not in text
+    assert "**One contract ticket per new or changed cross-component interface, first.**" in text
+    assert "When tickets fall on both sides of one, a new or changed interface between them" in text
+    quiz = text.split("Does the work span more than one component", 1)[1].split("- Should any", 1)[0]
+    assert "each new or changed one" in quiz
+    assert "authoritative source, owner and acceptance evidence" in quiz
