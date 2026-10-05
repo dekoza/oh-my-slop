@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from scripts.validate_refs import find_skill_dir
@@ -83,3 +84,48 @@ def test_filed_issues_are_read_back_and_filing_starts_no_work() -> None:
 
     assert "read each filed issue back" in rules
     assert "no assignment, claim, branch, fix or dispatch" in rules
+
+
+def test_preserved_capture_contract_survives_the_authority_split() -> None:
+    """The authority split keeps light clarification, mandatory reproduction,
+    deduplication and agent-work routing intact (#254)."""
+    qa_text = (find_skill_dir(SKILLS_ROOT, "qa") / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    normalized = " ".join(qa_text.split())
+
+    assert "at most 2-3 short clarifying questions" in normalized
+    assert "Reproduction steps are mandatory" in normalized
+    assert "First, dedup" in normalized
+    assert "File to the **agent work tracker**" in normalized
+    assert "Do NOT ask the user to review first" in normalized
+
+
+def test_evals_simulate_each_authority_outcome_with_readback() -> None:
+    """Behavior evals drive a simulated forge tracker through the outcomes the
+    authority split must separate, checking readback and absent effects (#254)."""
+    document = json.loads(
+        (find_skill_dir(SKILLS_ROOT, "qa") / "evals" / "evals.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert document["skill_name"] == "qa"
+    cases = {case["id"]: case for case in document["evals"]}
+    assert set(cases) == {1, 2, 3}
+
+    for case in cases.values():
+        expectations = " ".join(case["expectations"]).lower()
+        assert "read back" in expectations
+        assert "no assignment" in expectations
+
+    unauthorized = " ".join(cases[1]["expectations"]).lower()
+    assert "ready-for-human" in unauthorized
+    assert "publication" in unauthorized
+
+    reused = " ".join(cases[2]["expectations"]).lower()
+    assert "without asking again" in reused
+    assert "human-only" in reused
+
+    changed = " ".join(cases[3]["expectations"]).lower()
+    assert "changed scope" in changed
+    assert "missing decision" in changed

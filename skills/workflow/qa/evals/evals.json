@@ -1,0 +1,44 @@
+{
+  "skill_name": "qa",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Let's do QA on this todo CLI. Read this fixture's AGENTS.md, CONTEXT.md and docs/agents/ first; the tracker it names is a simulated forge reached through the `tea` on PATH. Bug: I run `python3 todo.py add 'buy milk' --due 2026-10-07` and then `python3 todo.py list --due-before 2026-10-08`, and the list is empty. I expected the milk task to be listed. It happens every time. Just file it; I haven't decided yet who works on it or when.",
+      "expected_output": "One durable bug issue filed on the configured agent work tracker with concrete reproduction and expectation. The request permits publication only, so the issue is not marked agent-ready: it carries the configured human state with the missing implementation decision and its owner recorded, and nothing is assigned, claimed, fixed or dispatched.",
+      "files": [],
+      "expectations": [
+        "Files exactly one issue on the simulated agent work tracker after a deduplication search, with concrete reproduction steps and the expected behavior, in user-facing domain language without file paths or line numbers.",
+        "Applies `bug`, `workflow:implement` and `ready-for-human`, not `ready-for-agent`: a clear report plus permission to file is publication, not implementation authority.",
+        "Records in the issue that the implementation decision is missing and who owns it, rather than leaving the human state unexplained.",
+        "Reads the filed issue back through the tracker and reports its URL and labels from that read back, not from the create command alone.",
+        "Makes no assignment, claim, branch, code change, fix or dispatch; the fixture's source files and Git state are unchanged."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "QA session on this todo CLI. Read this fixture's AGENTS.md, CONTEXT.md and docs/agents/ first; the tracker it names is a simulated forge reached through the `tea` on PATH. For the crash below you have my go-ahead: file it and an agent may fix it, no need to check back with me. Crash: `python3 todo.py done 3` when no task 3 exists prints a Python traceback and exits 1; I expected the message `No task 3` and exit code 1, with no traceback. It happens every time. Second thing, separate: the coloured priority markers look wrong in my Windows terminal. I'll have to look at that on my own machine myself before anyone can act on it, so just record it.",
+      "expected_output": "Two issues. The crash reuses the stated same-scope grant without another approval round and is agent-ready with the grant quoted. The terminal-colour report needs the user's own manual verification, so it stays human-owned whatever the grant. Both are read back; nothing is assigned or started.",
+      "files": [],
+      "expectations": [
+        "Files the crash as `bug`, `workflow:implement` and `ready-for-agent`, reusing the user's explicit grant without asking again and quoting that grant in the issue so a later agent can check it.",
+        "Files the terminal-colour report separately as `ready-for-human`: its human-only verification stays with the user even though a grant was given for the crash.",
+        "Asks no approval or confirmation question before filing; deduplication runs before each issue is created.",
+        "Reads both filed issues back through the tracker and reports their URLs and labels from that read back.",
+        "Makes no assignment, claim, branch, code change, fix or dispatch, including for the agent-ready crash; the fixture's source files and Git state are unchanged."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Continuing our QA session on this todo CLI. Read this fixture's AGENTS.md, CONTEXT.md and docs/agents/ first; the tracker it names is a simulated forge reached through the `tea` on PATH. Earlier in this session I told you: \"Sorting bugs in `todo.py list` are fine for an agent to fix; mark them ready.\" New report: `python3 todo.py list --sort due` puts tasks that have no due date first; I expected them last, after every dated task. It happens every time. Also, while you're in there: the list should probably group tasks by project instead of one flat list. Not sure how that should look yet.",
+      "expected_output": "The sorting bug falls inside the earlier grant and is agent-ready without a new approval round. The grouping idea is changed scope with an open design choice: it is filed separately as an enhancement in the human state with the missing decision and owner recorded. Both are read back; nothing is assigned or started.",
+      "files": [],
+      "expectations": [
+        "Files the undated-tasks sorting bug as `bug`, `workflow:implement` and `ready-for-agent`, reusing the earlier sorting grant without asking again and quoting it in the issue.",
+        "Treats project grouping as changed scope the sorting grant does not cover, and files it separately as `enhancement`, `workflow:implement` and `ready-for-human`.",
+        "Records the missing decision on the grouping design and its owner in that issue, rather than inventing a design or a grant.",
+        "Reads both filed issues back through the tracker and reports their URLs and labels from that read back.",
+        "Makes no assignment, claim, branch, code change, fix or dispatch; the fixture's source files and Git state are unchanged."
+      ]
+    }
+  ]
+}
