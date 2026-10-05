@@ -18,13 +18,13 @@ requires:
 
 ## Start only on an explicit request
 
-This skill is manual-only (`disable-model-invocation: true`); it is never auto-triggered. Run the review only when the operator explicitly asked for it in this session — `/skill:improve-codebase-architecture`, the `/arch` command, or a plain request to run this architecture review. That request is the whole task. Take the scope the request supplies — the `/arch` path, a module, a subsystem or a pain point — and review that; without one, review the current working directory.
+This skill is manual-only (`disable-model-invocation: true`); it is never auto-triggered. Run the review only when the user explicitly asked for it in this session — `/skill:improve-codebase-architecture`, which delivers this body as a `<skill>` block in their message, the `/arch` command, or a plain request to run this architecture review. That request is the whole task, together with any scope it names (see **Scope before you scan**).
 
 Reading this body is not a request. If you opened it to research, review, edit or compare the skill, answer that question and stop: no exploration, report or tracker change.
 
 On an explicit request, do not ask "what would you like me to do?", ask for approval to start, or wait for further instructions. That extra round-trip is exactly the friction this section exists to kill. Begin **Phase 1: Explore** immediately and proceed through **Phase 2: Present candidates as an HTML report**. The first legitimate pause is the one **Phase 3** names: the selection prompt, where you propose a set of candidates to ticketize and the user confirms or amends it.
 
-The single legitimate reason to pause before starting: there is no recognizable codebase at that scope. Only then ask the user for the path to review.
+The single legitimate reason to pause before starting: nothing recognizable at the requested scope — no codebase at the path, or no code matching the named module or concern. Only then ask the user where to look.
 
 If the exploration finishes and nothing real surfaces — the architecture is already deep, nothing is bloated — say so plainly and stop. A short "no strong candidates: here's why the current shape holds up" is the honest result; don't manufacture weak candidates to fill the report.
 
@@ -43,7 +43,7 @@ This command is _informed_ by the project's domain model and built on a shared d
 
 **Scope before you scan — YAGNI.** Deepening a module pays off by making future changes to it easier, so put extra weight on the parts of the codebase that have recently changed. Decide *where* to look before you look:
 
-- If the user named a direction — a module, a subsystem, a pain point — take it, and skip the inference below.
+- If the request supplied a scope — the `/arch` path, a module, a subsystem, a pain point — stay inside it for every pass of the review, the ponytail-audit pass included. A path still gets the hot-spot walk below, run inside it; a named module or concern skips the walk. A bare `/arch` passes `.`, the whole tree.
 - Otherwise, walk back a good stretch of the commit history (`git log --oneline`) to find the codebase's hot spots — the files and areas that keep coming up — and let those paths pull your attention first. If the changes are scattered with no clear hot spot, widen the net.
 
 Understand the project's architecture from existing docs, AGENTS.md, the issue tracker index, and code inspection.
@@ -60,7 +60,7 @@ Apply the **deletion test** to anything you suspect is shallow: would deleting i
 
 #### Ponytail Audit Pass
 
-Run a **ponytail-audit** pass over the codebase to find bloat that the deletion test misses — code-level over-engineering that isn't about module boundaries. The audit is model-driven: invoke the `ponytail-audit` skill (it auto-triggers) and let it read the tree and produce its ranked findings.
+Run a **ponytail-audit** pass over the codebase in scope to find bloat that the deletion test misses — code-level over-engineering that isn't about module boundaries. The audit is model-driven: invoke the `ponytail-audit` skill (it auto-triggers) and let it read the tree and produce its ranked findings.
 
 Incorporate the audit findings into your candidate list, tagged as `simplify` (vs. the `deepen` candidates from the deletion test). A module can appear on both axes — too shallow in interface, too bloated in implementation. The audit hunts:
 

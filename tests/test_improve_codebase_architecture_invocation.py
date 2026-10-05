@@ -12,6 +12,9 @@ from scripts.validate_refs import find_skill_dir
 
 SKILLS_ROOT = Path(__file__).resolve().parents[1] / "skills"
 ENTRY_HEADING = "## Start only on an explicit request"
+# Entry-boundary evals: explicit commands and a body inspection. The
+# mid-flow guards in the history and ticketization tests exempt exactly these.
+ENTRY_EVAL_IDS = frozenset({11, 12, 13})
 
 
 def _skill_dir() -> Path:
@@ -22,6 +25,11 @@ def _skill_dir() -> Path:
 
 def _normalized(text: str) -> str:
     return " ".join(text.split())
+
+
+def _section(heading: str, end: str) -> str:
+    body = (_skill_dir() / "SKILL.md").read_text(encoding="utf-8")
+    return _normalized(body.split(heading, 1)[1].split(end, 1)[0])
 
 
 def _entry_section() -> str:
@@ -47,12 +55,34 @@ def test_explicit_request_keeps_its_scope_and_starts_without_ceremony() -> None:
     Phase 3 selection prompt (#255)."""
     entry = _entry_section()
 
-    assert "Take the scope the request supplies" in entry
-    assert "the `/arch` path" in entry
-    assert "without one, review the current working directory" in entry
+    assert "together with any scope it names" in entry
     assert 'do not ask "what would you like me to do?"' in entry
-    assert "no recognizable codebase at that scope" in entry
+    assert "nothing recognizable at the requested scope" in entry
     assert "**Phase 3**" in entry
+
+
+def test_a_bare_skill_invocation_is_recognised_as_the_request() -> None:
+    """pi replaces `/skill:<name>` with a `<skill>` block holding this body, so
+    the model never sees the command text; that block in the user's message is
+    the invocation, not a body inspection (#255)."""
+    entry = _entry_section()
+
+    assert "`/skill:improve-codebase-architecture`" in entry
+    assert "as a `<skill>` block in their message" in entry
+
+
+def test_one_scope_rule_governs_every_pass() -> None:
+    """The supplied scope is stated once, in Explore, and bounds every pass of
+    the review, the ponytail-audit pass included (#255)."""
+    explore = _section("### 1. Explore\n", "\n#### ")
+    audit = _section("#### Ponytail Audit Pass\n", "\n#### ")
+
+    assert "If the request supplied a scope" in explore
+    assert "the `/arch` path" in explore
+    assert "stay inside it for every pass of the review, the ponytail-audit pass included" in explore
+    assert "A bare `/arch` passes `.`" in explore
+    assert "over the codebase in scope" in audit
+    assert "Take the scope the request supplies" not in _entry_section()
 
 
 def test_catalogue_states_the_entry_boundary() -> None:
@@ -83,7 +113,7 @@ def test_entry_evals_pair_explicit_requests_with_body_inspection() -> None:
     earlier phase evals stay (#255)."""
     cases = _evals()
     assert set(range(1, 11)) <= cases.keys(), "existing phase evals must be retained"
-    assert {11, 12, 13} <= cases.keys()
+    assert ENTRY_EVAL_IDS <= cases.keys()
 
     arch, invoked, inspected = cases[11], cases[12], cases[13]
     assert arch["prompt"].startswith("/arch ")
@@ -102,7 +132,12 @@ def test_entry_evals_pair_explicit_requests_with_body_inspection() -> None:
     assert "does not start the review" in inspected_expectations
     assert "no html report" in inspected_expectations
 
+    assert "no call to the simulated agent work tracker" in inspected_expectations
+
+    for case in (arch, invoked):
+        assert "write log" in _expectations(case)
     for case in (arch, invoked, inspected):
-        expectations = _expectations(case)
-        assert "write log" in expectations
-        assert "git state are unchanged" in expectations
+        assert "git state are unchanged" in _expectations(case)
+        # Bare prompts cannot name the fixture, so expected_output declares it.
+        assert "Fixture:" in case["expected_output"]
+        assert "`src/catalog`" in case["expected_output"]

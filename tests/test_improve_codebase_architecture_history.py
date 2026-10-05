@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from tests.test_improve_codebase_architecture_invocation import ENTRY_EVAL_IDS
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPO_ROOT / "skills" / "workflow" / "improve-codebase-architecture"
@@ -196,11 +198,10 @@ def test_evals_are_mid_flow_scenarios_not_natural_language_triggers() -> None:
     evals = document["evals"]
     assert len(evals) >= 4
 
-    # Ids 11-13 are entry-boundary cases (#255): explicit commands and a body
-    # inspection, guarded in test_improve_codebase_architecture_invocation.py.
+    # Entry-boundary cases (#255) are guarded in the invocation test.
     for eval_case in evals:
         assert eval_case["expectations"]
-        if eval_case["id"] in {11, 12, 13}:
+        if eval_case["id"] in ENTRY_EVAL_IDS:
             continue
         assert eval_case["prompt"].startswith("You are")
 

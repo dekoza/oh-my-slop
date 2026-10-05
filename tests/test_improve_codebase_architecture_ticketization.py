@@ -11,6 +11,8 @@ import json
 import re
 from pathlib import Path
 
+from tests.test_improve_codebase_architecture_invocation import ENTRY_EVAL_IDS
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPO_ROOT / "skills" / "workflow" / "improve-codebase-architecture"
@@ -418,11 +420,10 @@ def test_each_card_renders_its_candidate_id_badge() -> None:
 
 
 def test_evals_stay_mid_flow_scenarios() -> None:
-    # Ids 11-13 are entry-boundary cases (#255), guarded in
-    # test_improve_codebase_architecture_invocation.py.
+    # Entry-boundary cases (#255) are guarded in the invocation test.
     for eval_case in _evals():
         assert eval_case["expectations"]
-        if eval_case["id"] in {11, 12, 13}:
+        if eval_case["id"] in ENTRY_EVAL_IDS:
             continue
         assert eval_case["prompt"].startswith("You are")
 
