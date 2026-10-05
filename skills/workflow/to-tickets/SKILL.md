@@ -71,7 +71,7 @@ A ticket with no blockers is eligible only after foundation, impact, brief, auth
 - **Acceptance criteria are the artifact and a test.** The contract ticket is done when the interface artifact exists (a schema, a type, an OpenAPI fragment, an event shape) and a test exercises it **from the dependent's side against a stub** of the provider. The stub is what lets the dependent build before the provider does.
 - **An accepted contract is immutable.** A revision is a new version, and a new version is a **new ticket**, blocking the affected dependents' follow-up tickets. Revisions still obey scaffolding, prerequisite and impact-surface blockers; they are not automatically unblocked. Nobody edits an accepted contract ticket in place; the contract ticket's body says so, in the template below, so the rule survives into the tracker.
 
-**Reuse a sufficient accepted interface that stays unchanged.** When an interface already has an accepted shape that this plan neither changes nor versions, emit no new contract ticket and no producer edge. Record in each consuming ticket's impact surface its authoritative source, its owner and the acceptance evidence — the accepted contract, schema or ADR together with the test or review that accepted it. A filename or a closed issue alone is not acceptance evidence.
+**Reuse a sufficient accepted interface that stays unchanged.** When an interface already has an accepted shape that this plan neither changes nor versions, emit no new contract ticket and no producer edge. Record in each consuming ticket's impact surface its authoritative source, its owner and the acceptance evidence — the accepted contract, schema or ADR together with the test or review that accepted it. A filename or a closed issue alone is not acceptance evidence. Missing source, owner or evidence makes the interface unknown impact, not reusable: investigate it or plan its contract ticket, and keep its dependents unapproved until it resolves. Changing or versioning the shape, or editing its files, is never reuse — that is a new or changed contract under the rules above, or mutable overlap that needs ordering.
 
 **The last ticket is always the human's.** End every breakdown with the terminal **review ticket**, `Review the delivered <parent title>`, blocked by every other ticket and marked for the human. It is mandatory and cannot be dropped; a breakdown without it is not publishable. After implementation tickets close, the operator answers the template's three questions in a comment and closes the review: destination match, wrong/missing behavior and the next map.
 
@@ -146,7 +146,7 @@ Do NOT close or modify any parent issue.
 
 **What to build:** the end-to-end behaviour this ticket makes work, from the user's perspective — not a layer-by-layer implementation list.
 
-**Owner and impact surface:** accountable component/owner; changed files/modules and shared resources; changed contracts/schemas/state invariants; accepted unchanged inputs; inspection evidence. Record the ordering reason or proven-disjoint concurrent partners.
+**Owner and impact surface:** accountable component/owner; changed files/modules and shared resources; changed contracts/schemas/state invariants; accepted unchanged inputs with their authoritative source, owner and acceptance evidence; inspection evidence. Record the ordering reason or proven-disjoint concurrent partners.
 
 **Blocked by:** the numbers/titles of the tickets that gate this one, or "None — foundation and impact checks passed".
 
@@ -173,7 +173,7 @@ The end-to-end behaviour this ticket makes work, from the user's perspective —
 
 ## Owner and impact surface
 
-Accountable component/owner; changed files/modules and shared resources; changed contracts/schemas/state invariants; accepted unchanged inputs; inspection evidence. Record the ordering reason or proven-disjoint concurrent partners.
+Accountable component/owner; changed files/modules and shared resources; changed contracts/schemas/state invariants; accepted unchanged inputs with their authoritative source, owner and acceptance evidence; inspection evidence. Record the ordering reason or proven-disjoint concurrent partners.
 
 ## Acceptance criteria
 

@@ -94,3 +94,16 @@ def test_contract_tickets_cover_new_or_changed_interfaces_only() -> None:
     quiz = text.split("Does the work span more than one component", 1)[1].split("- Should any", 1)[0]
     assert "each new or changed one" in quiz
     assert "authoritative source, owner and acceptance evidence" in quiz
+
+
+def test_missing_reuse_evidence_or_a_changed_shape_is_not_reuse() -> None:
+    """Without source, owner or acceptance evidence an interface is unknown impact
+    that blocks approval; changing, versioning or editing the shape is a contract
+    or an overlap, never reuse. Both ticket templates ask for the evidence (#256)."""
+    text = _normalized(skill_text("to-tickets"))
+    reuse = text.split("**Reuse a sufficient accepted interface that stays unchanged.**", 1)[1].split("**The last ticket", 1)[0]
+
+    assert "Missing source, owner or evidence makes the interface unknown impact, not reusable" in reuse
+    assert "keep its dependents unapproved until it resolves" in reuse
+    assert "Changing or versioning the shape, or editing its files, is never reuse" in reuse
+    assert text.count("accepted unchanged inputs with their authoritative source, owner and acceptance evidence") == 2
