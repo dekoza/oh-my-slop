@@ -47,7 +47,7 @@ Before filing, decide whether this is a **single issue** or needs to be **broken
 Break down when:
 
 - The fix spans multiple independent areas (e.g. "the form validation is wrong AND the success message is missing AND the redirect is broken")
-- There are clearly separable concerns that different people could work on in parallel
+- There are clearly separable concerns, each fixable and verifiable on its own
 - The user describes something that has multiple distinct failure modes or symptoms
 
 Keep as a single issue when:
@@ -71,11 +71,11 @@ Apply exactly three labels to every issue at creation time, resolving the catego
 2. **`workflow:implement`** — so the next workflow is explicit: these issues are picked up through `/implement`, not triage discovery.
 3. **One state — `ready-for-agent` or `ready-for-human`, chosen per issue.** Judge two things separately:
    - **Clarity** — concrete reproduction steps and an unambiguous expected behavior make the issue well specified, nothing more.
-   - **Authority** — a human grant, under the project's readiness policy, that covers implementing this issue's scope. A request to run QA, file, capture or publish issues is permission to publish, not implementation authority.
+   - **Authority** — a human grant, under the project's authority rules, that covers implementing this issue's scope. A request to run QA, file, capture or publish issues is permission to publish, not implementation authority.
 
-   Apply `ready-for-agent` only when both hold. Otherwise apply `ready-for-human`: acting on the issue needs human judgment — a design decision, manual verification, an enhancement the user described only loosely — or only the grant is missing.
+   Apply `ready-for-agent` only when both hold. Otherwise apply `ready-for-human` — acting on the issue needs human judgment (a design decision, manual verification, an enhancement the user described only loosely), or only the grant is missing — and record in the issue the missing decision or action, its owner and the next action.
 
-   When the user has already granted implementation for this scope in the session ("file these and let an agent fix them"), reuse it without asking again, and quote the grant in the issue's additional context so a later agent can check it. A grant does not stretch to changed scope: an issue that reaches beyond what was granted — another area, a different behavior, an open design choice — is `ready-for-human`, with the missing decision and its owner recorded in the issue. Issues the grant still covers keep it. A requirement only a human may carry out stays `ready-for-human` whatever the grant.
+   When the user has already granted implementation for this scope in the session ("file these and let an agent fix them"), reuse it without asking again, and quote the grant in the issue's additional context so a later agent can check it. A grant does not stretch to changed scope: an issue that reaches beyond what was granted — another area, a different behavior, an open design choice — is `ready-for-human`. Issues the grant still covers keep it. A requirement only a human may carry out stays `ready-for-human` whatever the grant.
 
 #### For a single issue
 
@@ -140,7 +140,7 @@ When creating a breakdown:
 - **Prefer many thin issues over few thick ones** — each should be independently fixable and verifiable
 - **Mark blocking relationships honestly** — if issue B genuinely can't be tested until issue A is fixed, say so. If no blocker is known, write "None known"
 - **Create issues in dependency order** so you can reference real issue numbers in "Blocked by"
-- **Splitting is not scheduling** — separating symptoms and publishing them grants neither execution nor safe concurrency; whether slices may start, or run side by side, is decided later under the project's authority and impact rules
+- **Splitting is not scheduling** — separating symptoms and publishing them grants neither execution nor safe concurrency; whether slices may start, or run side by side, is decided later under the project's authority rules
 
 #### Rules for all issue bodies
 
@@ -151,7 +151,9 @@ When creating a breakdown:
 - **Reproduction steps are mandatory** — if you can't determine them, ask the user
 - **Keep it concise** — a developer should be able to read the issue in 30 seconds
 
-After filing, read each filed issue back and confirm its body and labels landed as intended; a failed or unconfirmed write is reported as such, not as filed. Filing — with the labels and deduplication comments it needs — is the session's only tracker effect: no assignment, claim, branch, fix or dispatch follows from it, even for a `ready-for-agent` issue. Then print all issue URLs (with blocking relationships and each state's reason summarized) and ask: "Next issue, or are we done?"
+#### After filing
+
+Read each filed issue back and confirm its body — and, on a forge tracker, its labels — landed as intended; a failed or unconfirmed write is reported as such, not as filed. Filing — with any label creation and deduplication comments it needs — is the session's only tracker effect: no assignment, claim, branch, fix or dispatch follows from it, even for a `ready-for-agent` issue. Then print all issue URLs (with blocking relationships and each state's reason summarized) and ask: "Next issue, or are we done?"
 
 ### 5. Continue the session
 
