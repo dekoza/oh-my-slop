@@ -65,3 +65,18 @@ def test_implement_names_the_shared_vocabulary_as_a_builder_input() -> None:
     assert "`CONTEXT.md`" in text
     # Not a write target: N parallel slices must not race on one glossary file.
     assert "leave the glossary edit to the map's owner" in text
+
+
+def _normalized(text: str) -> str:
+    return " ".join(text.split())
+
+
+def test_unchanged_accepted_interface_is_reused_with_recorded_evidence() -> None:
+    """A sufficient accepted interface that stays unchanged needs no new contract
+    ticket, but the plan records where the accepted shape lives, who owns it and
+    what accepted it; a filename or a closed issue alone proves nothing (#256)."""
+    text = _normalized(skill_text("to-tickets"))
+
+    assert "**Reuse a sufficient accepted interface that stays unchanged.**" in text
+    assert "its authoritative source, its owner and the acceptance evidence" in text
+    assert "A filename or a closed issue alone is not acceptance evidence" in text
