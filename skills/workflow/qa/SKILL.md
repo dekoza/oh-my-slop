@@ -72,7 +72,7 @@ Choose one state role per issue — `ready-for-agent` or `ready-for-human` — b
 
 Choose `ready-for-agent` only when both hold. Otherwise choose `ready-for-human` — acting on the issue needs human judgment (a design decision, manual verification, an enhancement the user described only loosely), or only the grant is missing — and record in the issue's additional context the missing decision or action, its owner and the next action.
 
-When the user has already granted implementation for this scope in the session ("file these and let an agent fix them"), reuse it without asking again, and quote the grant in the issue's additional context so a later agent can check it. A grant does not stretch to changed scope: an issue that reaches beyond what was granted — another area, a different behavior, an open design choice — is `ready-for-human`. The grant still holds for issues inside its scope. A requirement only a human may carry out stays `ready-for-human` whatever the grant.
+When the user has already granted implementation for this scope in the session ("file these and let an agent fix them"), reuse it without asking again, and quote the grant in the issue's additional context so a later agent can check it. A grant does not stretch to changed scope: an issue that reaches beyond what was granted — another area, a different behavior, an open design choice — is `ready-for-human`, while issues inside the grant keep it. A requirement only a human may carry out stays `ready-for-human` whatever the grant.
 
 #### Labels (forge-backed trackers only)
 
@@ -145,7 +145,7 @@ When creating a breakdown:
 - **Prefer many thin issues over few thick ones** — each should be independently fixable and verifiable
 - **Mark blocking relationships honestly** — if issue B genuinely can't be tested until issue A is fixed, say so. If no blocker is known, write "None known"
 - **Create issues in dependency order** so you can reference real issue numbers in "Blocked by"
-- **Record blockers, not a schedule** — whether slices may run side by side is settled later under the project's authority rules and execution gates
+- **Record blockers, not a schedule** — scheduling follows the gates named under After filing
 
 #### Rules for all issue bodies
 
@@ -158,7 +158,7 @@ When creating a breakdown:
 
 #### After filing
 
-Read each filed issue back and confirm its body — and, on a forge-backed tracker, its labels — landed as intended; a failed or unconfirmed write is reported as such, not as filed. Filing — with any label creation and deduplication comments it needs — is the session's only tracker effect: no assignment, claim, branch, fix or dispatch follows from it, even for a `ready-for-agent` issue. That label records clarity and authority, not eligibility: blockers, claims and prerequisites still decide when the work may start. Then print all issue URLs (with blocking relationships and each state's reason summarized) and ask: "Next issue, or are we done?"
+Read each filed issue back and confirm its body — and, on a forge-backed tracker, its labels — landed as intended; a failed or unconfirmed write is reported as such, not as filed. Filing — with any label creation and deduplication comments it needs — is the session's only tracker effect: no assignment, claim, branch, fix or dispatch follows from it, even for a `ready-for-agent` issue. That label records clarity and authority, not eligibility: blockers, claims and prerequisites still decide when the work may start and whether slices may run side by side. Then print all issue URLs (with blocking relationships and each state's reason summarized) and ask: "Next issue, or are we done?"
 
 ### 5. Continue the session
 

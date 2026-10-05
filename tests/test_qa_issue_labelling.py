@@ -46,6 +46,10 @@ def _qa_evals() -> dict[int, dict]:
     return cases
 
 
+def _expectations(case: dict) -> str:
+    return " ".join(case["expectations"]).lower()
+
+
 def test_qa_labels_the_issues_it_files_for_implementation_routing() -> None:
     """Forge-backed qa issues carry a category, the workflow marker, and a
     state, resolved through the project's triage label mapping — so the
@@ -85,7 +89,6 @@ def test_state_judgement_applies_on_every_tracker_and_labels_only_on_forges() ->
     qa_text = _qa_text()
     labels = _qa_section(LABELS_HEADING)
 
-    assert "forge" not in STATE_HEADING
     assert qa_text.index(STATE_HEADING) < qa_text.index(LABELS_HEADING)
     assert "skip labelling entirely" in labels
     assert "The state role chosen above" in labels
@@ -113,7 +116,7 @@ def test_scoped_grant_is_reused_but_never_stretched_or_given_to_human_only_work(
 
     assert "reuse it without asking again" in state
     assert "does not stretch to changed scope" in state
-    assert "The grant still holds for issues inside its scope" in state
+    assert "while issues inside the grant keep it" in state
     assert "stays `ready-for-human` whatever the grant" in state
 
 
@@ -128,10 +131,6 @@ def test_breakdown_records_blockers_without_granting_execution_or_concurrency() 
     assert "Maximize parallelism" not in breakdown
     assert "None known" in breakdown
     assert "Record blockers, not a schedule" in breakdown
-    assert (
-        "whether slices may run side by side is settled later under the project's "
-        "authority rules and execution gates" in breakdown
-    )
 
 
 def test_filed_issues_are_read_back_and_filing_starts_no_work() -> None:
@@ -144,6 +143,10 @@ def test_filed_issues_are_read_back_and_filing_starts_no_work() -> None:
     assert "reported as such, not as filed" in after_filing
     assert "no assignment, claim, branch, fix or dispatch" in after_filing
     assert "records clarity and authority, not eligibility" in after_filing
+    assert (
+        "still decide when the work may start and whether slices may run side by side"
+        in after_filing
+    )
 
 
 def test_preserved_capture_contract_survives_the_authority_split() -> None:
@@ -165,34 +168,40 @@ def test_evals_simulate_each_authority_outcome_with_readback() -> None:
     assert {1, 2, 3} <= cases.keys()
 
     for case in (cases[1], cases[2], cases[3]):
-        expectations = " ".join(case["expectations"]).lower()
+        expectations = _expectations(case)
         assert "read back" in expectations
         assert "no assignment" in expectations
         assert "next action" in expectations
         assert "before creating" in expectations
         assert "exactly" in expectations
         assert "write log" in expectations
+        assert "no comment other than a deduplication comment" in expectations
+        assert "blocking edge" in expectations
+        assert "dependency" not in expectations
 
     # The clear-but-unauthorized case stays silent on authority, so only the
     # skill, not a disclaimer in the prompt, can keep it out of agent readiness.
     unauthorized = cases[1]
     for authority_hint in ("decided", "go-ahead", "may fix", "agent may"):
         assert authority_hint not in unauthorized["prompt"].lower()
-    unauthorized_expectations = " ".join(unauthorized["expectations"]).lower()
+    unauthorized_expectations = _expectations(unauthorized)
     assert "ready-for-human" in unauthorized_expectations
     assert "publication" in unauthorized_expectations
 
     # Split issues must not present themselves as schedulable side by side.
     for case in (cases[2], cases[3]):
-        assert "in parallel or start immediately" in " ".join(case["expectations"]).lower()
+        assert "in parallel or start immediately" in _expectations(case)
 
-    reused = " ".join(cases[2]["expectations"]).lower()
+    # The human-only gate precedes any change, so agent readiness cannot be
+    # read as "fix now, user verifies afterwards".
+    assert "Nothing about the markers should change until" in cases[2]["prompt"]
+    reused = _expectations(cases[2])
     assert "without asking again" in reused
     assert "even though the grant covers it" in reused
 
     # The changed-scope report is itself clear, so only the grant's scope,
     # not vagueness, can keep it out of agent readiness.
-    changed = " ".join(cases[3]["expectations"]).lower()
+    changed = _expectations(cases[3])
     assert "changed scope" in changed
     assert "even though the report is clear" in changed
     assert "missing implementation decision" in changed
