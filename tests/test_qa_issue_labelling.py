@@ -74,3 +74,12 @@ def test_breakdown_records_blockers_without_granting_execution_or_concurrency() 
     assert "Maximize parallelism" not in breakdown
     assert "None known" in breakdown
     assert "grants neither execution nor safe concurrency" in breakdown
+
+
+def test_filed_issues_are_read_back_and_filing_starts_no_work() -> None:
+    """Each filed issue's labels and body are verified by readback, and filing
+    claims, assigns or starts nothing (#254)."""
+    rules = " ".join(_qa_section("#### Rules for all issue bodies").split())
+
+    assert "read each filed issue back" in rules
+    assert "no assignment, claim, branch, fix or dispatch" in rules
