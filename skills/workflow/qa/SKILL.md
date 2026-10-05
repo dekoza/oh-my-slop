@@ -151,7 +151,7 @@ When creating a breakdown:
 - **Reproduction steps are mandatory** — if you can't determine them, ask the user
 - **Keep it concise** — a developer should be able to read the issue in 30 seconds
 
-After filing, read each filed issue back and confirm its body and labels landed as intended; a failed or unconfirmed write is reported as such, not as filed. Filing issues, or extending one with a comment, is the session's only tracker effect: no assignment, claim, branch, fix or dispatch follows from it, even for a `ready-for-agent` issue. Then print all issue URLs (with blocking relationships and each state's reason summarized) and ask: "Next issue, or are we done?"
+After filing, read each filed issue back and confirm its body and labels landed as intended; a failed or unconfirmed write is reported as such, not as filed. Filing — with the labels and deduplication comments it needs — is the session's only tracker effect: no assignment, claim, branch, fix or dispatch follows from it, even for a `ready-for-agent` issue. Then print all issue URLs (with blocking relationships and each state's reason summarized) and ask: "Next issue, or are we done?"
 
 ### 5. Continue the session
 
