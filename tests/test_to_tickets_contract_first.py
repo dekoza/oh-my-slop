@@ -145,13 +145,15 @@ def test_planning_evals_pair_every_interface_reuse_outcome() -> None:
 
     # Case 3 is the sufficient-reuse positive control, so it supplies the evidence.
     assert "accepted in ADR-0007" in cases[3]["prompt"]
-    # Case 4 reuses EnrollmentStore.list, so it supplies that evidence too.
-    assert "accepted in ADR-0003" in cases[4]["prompt"]
+    assert any("authoritative source, owner and acceptance evidence" in e for e in cases[3]["expectations"])
+    assert any("registry" in e for e in cases[3]["expectations"])  # mutable overlap
+    # Case 4 reuses EnrollmentStore.list, so it supplies that evidence too. Its ADR
+    # number must not name a real ADR of this repository, which a run could open.
+    assert "accepted in ADR-0013" in cases[4]["prompt"]
+    assert not list((REPO_ROOT / "docs" / "adr").glob("0013-*"))
     assert any("EnrollmentStore.list" in e and "acceptance evidence" in e for e in cases[4]["expectations"])
     # Case 5's concurrency must rest on inspection, not on directory names.
     assert "Inspection confirms" in cases[5]["prompt"]
-    assert any("authoritative source, owner and acceptance evidence" in e for e in cases[3]["expectations"])
-    assert any("registry" in e for e in cases[3]["expectations"])  # mutable overlap
 
     reuse_and_gap = " ".join(cases[5]["expectations"])
     assert "no contract ticket and no producer edge" in reuse_and_gap
