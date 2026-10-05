@@ -55,6 +55,16 @@ def test_explicit_request_keeps_its_scope_and_starts_without_ceremony() -> None:
     assert "**Phase 3**" in entry
 
 
+def test_catalogue_states_the_entry_boundary() -> None:
+    """The README row tells operators how the review starts and that reading
+    the skill does not start it (#255)."""
+    readme = (SKILLS_ROOT.parent / "README.md").read_text(encoding="utf-8")
+    row = next(line for line in readme.splitlines() if "skills/workflow/improve-codebase-architecture/SKILL.md" in line)
+
+    assert "runs only on an explicit request" in row
+    assert "reading the skill starts nothing" in row
+
+
 def _evals() -> dict[int, dict]:
     document = json.loads((_skill_dir() / "evals" / "evals.json").read_text(encoding="utf-8"))
     assert document["skill_name"] == "improve-codebase-architecture"
