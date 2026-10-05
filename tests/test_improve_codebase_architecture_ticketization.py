@@ -418,9 +418,13 @@ def test_each_card_renders_its_candidate_id_badge() -> None:
 
 
 def test_evals_stay_mid_flow_scenarios() -> None:
+    # Ids 11-13 are entry-boundary cases (#255), guarded in
+    # test_improve_codebase_architecture_invocation.py.
     for eval_case in _evals():
-        assert eval_case["prompt"].startswith("You are")
         assert eval_case["expectations"]
+        if eval_case["id"] in {11, 12, 13}:
+            continue
+        assert eval_case["prompt"].startswith("You are")
 
 
 def test_an_eval_guards_the_ticketed_exclusion_from_the_seed() -> None:

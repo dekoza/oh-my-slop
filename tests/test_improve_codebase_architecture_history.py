@@ -196,9 +196,13 @@ def test_evals_are_mid_flow_scenarios_not_natural_language_triggers() -> None:
     evals = document["evals"]
     assert len(evals) >= 4
 
+    # Ids 11-13 are entry-boundary cases (#255): explicit commands and a body
+    # inspection, guarded in test_improve_codebase_architecture_invocation.py.
     for eval_case in evals:
-        assert eval_case["prompt"].startswith("You are")
         assert eval_case["expectations"]
+        if eval_case["id"] in {11, 12, 13}:
+            continue
+        assert eval_case["prompt"].startswith("You are")
 
 
 def test_evals_guard_the_moot_test_and_the_relation_distinction() -> None:
