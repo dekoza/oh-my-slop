@@ -26,3 +26,26 @@ def test_qa_labels_the_issues_it_files_for_implementation_routing() -> None:
     assert f"`{WORKFLOW_LABEL}`" in qa_text
     assert WORKFLOW_LABEL in label_template_text
     assert "label mapping" in qa_text
+
+
+def _qa_section(heading: str) -> str:
+    qa_text = (find_skill_dir(SKILLS_ROOT, "qa") / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    return qa_text.split(f"{heading}\n", 1)[1].split("\n#### ", 1)[0]
+
+
+def test_clear_reproduction_alone_does_not_make_an_issue_agent_ready() -> None:
+    """Concrete steps and an unambiguous expectation establish clarity; agent
+    readiness also needs a human grant covering the issue's scope (#254)."""
+    labels = _qa_section("#### Labels (forge-backed trackers only)")
+    normalized = " ".join(labels.split())
+
+    assert (
+        "Apply `ready-for-agent` when the reproduction steps are concrete"
+        not in normalized
+    )
+    assert "**Clarity**" in normalized
+    assert "**Authority**" in normalized
+    assert "permission to publish, not implementation authority" in normalized
+    assert "Apply `ready-for-agent` only when both hold" in normalized

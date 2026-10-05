@@ -69,7 +69,11 @@ Apply exactly three labels to every issue at creation time, resolving the catego
 
 1. **One category — `bug` or `enhancement`, chosen per issue** from the substance of the report. A QA session catches both kinds; don't blanket-apply `bug`.
 2. **`workflow:implement`** — so the next workflow is explicit: these issues are picked up through `/implement`, not triage discovery.
-3. **One state — `ready-for-agent` or `ready-for-human`, chosen per issue.** Apply `ready-for-agent` when the reproduction steps are concrete and the expected behavior is unambiguous; `ready-for-human` when acting on the issue needs human judgment — a design decision, manual verification, or an enhancement the user described only loosely.
+3. **One state — `ready-for-agent` or `ready-for-human`, chosen per issue.** Judge two things separately:
+   - **Clarity** — concrete reproduction steps and an unambiguous expected behavior make the issue well specified, nothing more.
+   - **Authority** — a human grant, under the project's readiness policy, that covers implementing this issue's scope. A request to run QA, file, capture or publish issues is permission to publish, not implementation authority.
+
+   Apply `ready-for-agent` only when both hold. Otherwise apply `ready-for-human`: acting on the issue needs human judgment — a design decision, manual verification, an enhancement the user described only loosely — or only the grant is missing.
 
 #### For a single issue
 
