@@ -28,12 +28,13 @@
     },
     {
       "id": 3,
-      "prompt": "Draft tickets for adding two independent optional formatters to an established application. Inspection confirms JSON formatting changes only the JSON plugin module and its private tests; CSV formatting changes only the CSV plugin module and its private tests. Plugins are auto-discovered. Both consume the same already-accepted read-only formatter protocol; neither changes it, dependencies, configuration, fixtures, registries, schemas or state invariants. Packaging, entry point and test setup are already complete. Also consider the opposite case where review reveals both plugins must change the shared registry after all. Show the graph, the evidence for any allowed concurrent set, the reaction to changed impact, and the final human review ticket. Do not publish or implement.",
+      "prompt": "Draft tickets for adding two independent optional formatters to an established application. Inspection confirms JSON formatting changes only the JSON plugin module and its private tests; CSV formatting changes only the CSV plugin module and its private tests. Plugins are auto-discovered. Both consume the same read-only formatter protocol, owned by the core package and accepted in ADR-0007 with its conformance test tests/test_formatter_protocol.py; neither changes it, dependencies, configuration, fixtures, registries, schemas or state invariants. Packaging, entry point and test setup are already complete. Also consider the opposite case where review reveals both plugins must change the shared registry after all. Show the graph, the evidence for any allowed concurrent set, the reaction to changed impact, and the final human review ticket. Do not publish or implement.",
       "expected_output": "Permit proven-disjoint module work without blanket serialization; shared stable reads do not create a collision. Revoke parallel eligibility when shared mutable impact is discovered.",
       "files": [],
       "expectations": [
         "The JSON and CSV tickets may implement concurrently based on the inspected module/private-test boundaries and stable read-only protocol.",
         "The plan does not add an artificial dependency or new contract/scaffolding ticket solely because both consume the unchanged protocol.",
+        "Each plugin ticket records the formatter protocol's authoritative source, owner and acceptance evidence (core package, ADR-0007, the conformance test) as an accepted unchanged input.",
         "Discovery of shared registry edits pauses overlapping work and requires graph repair before parallel implementation continues.",
         "The terminal human review ticket is blocked by both implementation tickets.",
         "If the tickets are published under a parent, the response preserves the tracker's parent-membership convention without requiring Factory configuration or assuming Cleopatra's scheduling interface."
@@ -49,6 +50,34 @@
         "Reuses accepted foundation, interface, serial graph and adequate scoped approval; does not require routine humanify or repeat the settled breakdown/readiness interview.",
         "Retains #79 and A-to-B ordering, reports prepared/authorized but blocked work as not eligible, keeps terminal review human-only and assumes no delivered dataset or executed checks.",
         "Orders publication and readback before authorized state transition, verifies content and graph, and does not dispatch, close the parent/blocker or fabricate publication receipts."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Draft local tickets for an established checkout service whose scaffolding, entry point and tests already work. PricingQuote v2, between checkout (the caller) and pricing (the provider), is defined in docs/contracts/pricing-quote-v2.json, owned by checkout, and was accepted in #41, whose closing comment links the passing consumer-side stub test tests/contract/test_pricing_quote_v2.py. Ticket A shows quote expiry in the basket and edits only basket/ and its tests; ticket B logs quote ids on order submission and edits only orders/ and its tests; both read PricingQuote v2 and neither changes it. Ticket C sends a shipping notification through the notifications interface; the only references to that interface are the file docs/notify.md and closed issue #12, with no recorded owner, schema or test. Nobody plans to change either interface. Return the proposed tickets, their owner and impact surfaces, blocking edges, concurrent sets and approval questions. Do not publish or implement.",
+      "expected_output": "PricingQuote v2 is reused: no contract ticket, no producer edge, and A and B record its source, owner and acceptance evidence. The notifications interface has only a filename and a closed issue, so it is unknown impact: investigated or given a planned contract ticket, with C kept unapproved and out of any concurrent set until it resolves.",
+      "files": [],
+      "expectations": [
+        "Emits no contract ticket and no producer edge for PricingQuote v2.",
+        "Tickets A and B record PricingQuote v2's authoritative source (docs/contracts/pricing-quote-v2.json), owner (checkout) and acceptance evidence (#41 with the consumer-side stub test).",
+        "Allows A and B to form a concurrent set on their inspected, disjoint mutable surfaces; the shared read of PricingQuote v2 is not treated as overlap.",
+        "Does not treat docs/notify.md or closed issue #12 as acceptance evidence: the notifications interface is recorded as unknown impact, with investigation or a contract ticket planned.",
+        "Keeps ticket C unapproved and out of every concurrent set until the notifications interface is resolved.",
+        "Ends with the terminal human review ticket, blocked by every other ticket."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Plan tickets for an established checkout service whose scaffolding, entry point and tests already work. PricingQuote v2, between checkout (the caller) and pricing (the provider), is defined in docs/contracts/pricing-quote-v2.json, owned by checkout, and was accepted in #41, whose closing comment links the passing consumer-side stub test tests/contract/test_pricing_quote_v2.py. Ticket A needs a new `currency` field in the quote response: pricing provides it and checkout's basket shows it. Ticket B introduces a new OrderPlaced event that checkout publishes and the reporting service consumes; no such event exists yet. Ticket C, a reporting dashboard, reads OrderPlaced. The product owner asks to add the field to v2 in place to save time. Return the proposed tickets, their owner and impact surfaces, blocking edges and approval questions. Do not publish or implement.",
+      "expected_output": "The currency field is a new PricingQuote version in its own contract ticket, not an in-place edit of v2; OrderPlaced is a new shape with its own contract ticket. Each contract is owned by a named higher-level component, accepted by its artifact plus a dependent-side stub test, and blocks every ticket that reads or implements it through a native blocking edge.",
+      "files": [],
+      "expectations": [
+        "Plans the currency field as a new PricingQuote version (v3) in its own contract ticket owned by checkout, not by editing v2 or its accepted ticket in place.",
+        "Gives the new OrderPlaced event its own contract ticket, owned by a named higher-level component with the reason for that ownership.",
+        "Each contract ticket's acceptance is the interface artifact plus a test from the dependent's side against a stub of the provider.",
+        "Every ticket that reads or implements either new shape, including the dashboard ticket C, is blocked by that shape's contract ticket through a native blocking edge.",
+        "The new-version contract ticket still obeys scaffolding, prerequisite and impact blockers and is not automatically unblocked.",
+        "Ends with the terminal human review ticket, blocked by every other ticket."
       ]
     }
   ]

@@ -7,6 +7,7 @@ ordering contract; an external executor's enforcement is not presumed here.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from scripts.validate_refs import find_skill_dir
@@ -78,7 +79,7 @@ def test_unchanged_accepted_interface_is_reused_with_recorded_evidence() -> None
     text = _normalized(skill_text("to-tickets"))
 
     assert "**Reuse a sufficient accepted interface that stays unchanged.**" in text
-    assert "its authoritative source, its owner and the acceptance evidence" in text
+    assert "consumers record its authoritative source, its owner and the acceptance evidence" in text
     assert "A filename or a closed issue alone is not acceptance evidence" in text
 
 
@@ -93,7 +94,7 @@ def test_contract_tickets_cover_new_or_changed_interfaces_only() -> None:
     assert "When tickets fall on both sides of one, a new or changed interface between them" in text
     quiz = text.split("Does the work span more than one component", 1)[1].split("- Should any", 1)[0]
     assert "each new or changed one" in quiz
-    assert "authoritative source, owner and acceptance evidence" in quiz
+    assert "each reused one its recorded evidence" in quiz
 
 
 def test_missing_reuse_evidence_or_a_changed_shape_is_not_reuse() -> None:
@@ -106,4 +107,36 @@ def test_missing_reuse_evidence_or_a_changed_shape_is_not_reuse() -> None:
     assert "Missing source, owner or evidence makes the interface unknown impact, not reusable" in reuse
     assert "keep its dependents unapproved until it resolves" in reuse
     assert "Changing or versioning the shape, or editing its files, is never reuse" in reuse
-    assert text.count("accepted unchanged inputs with their authoritative source, owner and acceptance evidence") == 2
+    assert text.count("accepted unchanged inputs with source, owner and acceptance evidence") == 2
+
+
+def _evals() -> dict[int, dict]:
+    skill_dir = find_skill_dir(SKILLS_ROOT, "to-tickets")
+    assert skill_dir is not None
+    document = json.loads((skill_dir / "evals" / "evals.json").read_text(encoding="utf-8"))
+    cases = {case["id"]: case for case in document["evals"]}
+    assert len(cases) == len(document["evals"])
+    return cases
+
+
+def test_planning_evals_pair_every_interface_reuse_outcome() -> None:
+    """Paired planning cases cover sufficient reuse, missing evidence or ownership,
+    a new shape, a new version and mutable overlap (#256)."""
+    cases = _evals()
+    assert {1, 2, 3, 4, 5, 6} <= cases.keys()
+
+    # Case 3 is the sufficient-reuse positive control, so it supplies the evidence.
+    assert "accepted in ADR-0007" in cases[3]["prompt"]
+    assert any("authoritative source, owner and acceptance evidence" in e for e in cases[3]["expectations"])
+    assert any("registry" in e for e in cases[3]["expectations"])  # mutable overlap
+
+    reuse_and_gap = " ".join(cases[5]["expectations"])
+    assert "no contract ticket and no producer edge" in reuse_and_gap
+    assert "Does not treat docs/notify.md or closed issue #12 as acceptance evidence" in reuse_and_gap
+    assert "unknown impact" in reuse_and_gap
+
+    new_shapes = " ".join(cases[6]["expectations"])
+    assert "new PricingQuote version" in new_shapes
+    assert "not by editing v2" in new_shapes
+    assert "OrderPlaced" in new_shapes
+    assert "against a stub" in new_shapes

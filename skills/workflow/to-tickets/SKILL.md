@@ -60,18 +60,18 @@ A ticket with no blockers is eligible only after foundation, impact, brief, auth
 
 **Wide refactors are the exception to vertical slicing.** When one mechanical change's **blast radius** prevents independently green vertical slices, use **expand–contract**: add the new form alongside the old; migrate callers in reviewable batches blocked by expand; remove the old form only in a contract ticket blocked by every migration. Keep CI green between batches. If compatibility cannot achieve that, redesign it or consolidate inseparable work; escalate beyond a single reviewable ticket. Final integration checks do not replace ordering edges.
 
-**A shared interface is a blocking edge, not a note.** A shape-defining ticket blocks every consumer even when each could build green against the old shape. Unchanged shared reads need no producer edge; shared-file edits still require impact ordering. If producer and consumer form a cycle, extract an accepted prerequisite contract or consolidate them. Notification before merging and final integration checks are not substitutes for edges.
+**A shared interface is a blocking edge, not a note.** A shape-defining ticket blocks every consumer even when each could build green against the old shape. Shared-file edits still require impact ordering. If producer and consumer form a cycle, extract an accepted prerequisite contract or consolidate them.
 
 **The first product-behaviour ticket is a walking skeleton — a check, not advice.** Scaffolding supplies a minimal runnable entry point and test/check commands without inventing domain contracts. After scaffolding and required contract tickets, the walking skeleton extends that entry point through one thin end-to-end product path. Every later slice extends the same running system rather than becoming a separate little application. Scaffolding and contract tickets are explicit exceptions to vertical slicing, not substitutes for this first observable product behaviour. The quiz below refuses a breakdown that fails either check.
 
 **Contract first when the work spans more than one component.** A component is a module, service, or package with its own boundary; the quiz asks. When tickets fall on both sides of one, a new or changed interface between them — the request and response shapes, the event payload, the exported signature — gets its own **contract ticket**, emitted before any ticket that depends on it:
 
 - **Ownership.** The interface is **owned by the higher-level component** — the one that composes or calls the other. Its contract ticket lives in that component's scope, not the provider's, so the shape is the caller's need rather than whatever the provider found convenient to expose.
-- **One contract ticket per new or changed cross-component interface, first.** Every implementation ticket on either side that reads or implements the shape is **blocked by** it, as a native blocking edge, never a note. A dependent is not started until its contract is accepted — the same edge the shared-interface rule above draws, drawn before either side has a ticket to argue with.
+- **One contract ticket per new or changed cross-component interface, first.** Every implementation ticket on either side that reads or implements the shape is **blocked by** it, as a native blocking edge, never a note. A dependent is not started until its contract is accepted.
 - **Acceptance criteria are the artifact and a test.** The contract ticket is done when the interface artifact exists (a schema, a type, an OpenAPI fragment, an event shape) and a test exercises it **from the dependent's side against a stub** of the provider. The stub is what lets the dependent build before the provider does.
-- **An accepted contract is immutable.** A revision is a new version, and a new version is a **new ticket**, blocking the affected dependents' follow-up tickets. Revisions still obey scaffolding, prerequisite and impact-surface blockers; they are not automatically unblocked. Nobody edits an accepted contract ticket in place; the contract ticket's body says so, in the template below, so the rule survives into the tracker.
+- **An accepted contract is immutable.** A revision is a new version, and a new version is a **new ticket**, blocking the affected dependents' follow-up tickets. Revisions still obey scaffolding, prerequisite and impact-surface blockers; they are not automatically unblocked. Nobody edits an accepted contract ticket in place; the template below says so.
 
-**Reuse a sufficient accepted interface that stays unchanged.** When an interface already has an accepted shape that this plan neither changes nor versions, emit no new contract ticket and no producer edge. Record in each consuming ticket's impact surface its authoritative source, its owner and the acceptance evidence — the accepted contract, schema or ADR together with the test or review that accepted it. A filename or a closed issue alone is not acceptance evidence. Missing source, owner or evidence makes the interface unknown impact, not reusable: investigate it or plan its contract ticket, and keep its dependents unapproved until it resolves. Changing or versioning the shape, or editing its files, is never reuse — that is a new or changed contract under the rules above, or mutable overlap that needs ordering.
+**Reuse a sufficient accepted interface that stays unchanged.** Emit no contract ticket or producer edge; consumers record its authoritative source, its owner and the acceptance evidence. A filename or a closed issue alone is not acceptance evidence. Missing source, owner or evidence makes the interface unknown impact, not reusable: keep its dependents unapproved until it resolves. Changing or versioning the shape, or editing its files, is never reuse.
 
 **The last ticket is always the human's.** End every breakdown with the terminal **review ticket**, `Review the delivered <parent title>`, blocked by every other ticket and marked for the human. It is mandatory and cannot be dropped; a breakdown without it is not publishable. After implementation tickets close, the operator answers the template's three questions in a comment and closes the review: destination match, wrong/missing behavior and the next map.
 
@@ -102,7 +102,7 @@ When the breakdown still needs approval, present inspected findings and ask the 
 - Are the blocking edges correct — does each ticket depend on every ticket that gates it, and on no others?
 - Does any ticket change a shape another ticket reads, or overlap another ticket's mutable impact? Both require ordering, even if both could start today.
 - Is each proposed concurrent set supported by inspection, rather than merely different directories or promises to coordinate?
-- Does the work span more than one component — module, service, package? If so, which interfaces cross a boundary, which component owns each, and does each new or changed one have a contract ticket that its dependents are blocked by — and each reused one a recorded authoritative source, owner and acceptance evidence?
+- Does the work span more than one component — module, service, package? If so, which interfaces cross a boundary, which component owns each, and does each new or changed one have a contract ticket that its dependents are blocked by — and each reused one its recorded evidence?
 - Should any tickets be merged or split further?
 
 Reuse sufficient grants; publication approval alone is not readiness authorization. Request missing effects in one precise proposal naming the bounded graph, agent-ready slices, limits, blockers and human-only work. This grants no automatic dispatch, merge or closure.
@@ -146,7 +146,7 @@ Do NOT close or modify any parent issue.
 
 **What to build:** the end-to-end behaviour this ticket makes work, from the user's perspective — not a layer-by-layer implementation list.
 
-**Owner and impact surface:** accountable component/owner; changed files/modules and shared resources; changed contracts/schemas/state invariants; accepted unchanged inputs with their authoritative source, owner and acceptance evidence; inspection evidence. Record the ordering reason or proven-disjoint concurrent partners.
+**Owner and impact surface:** accountable component/owner; changed files/modules and shared resources; changed contracts/schemas/state invariants; accepted unchanged inputs with source, owner and acceptance evidence; inspection evidence. Record the ordering reason or proven-disjoint concurrent partners.
 
 **Blocked by:** the numbers/titles of the tickets that gate this one, or "None — foundation and impact checks passed".
 
@@ -173,7 +173,7 @@ The end-to-end behaviour this ticket makes work, from the user's perspective —
 
 ## Owner and impact surface
 
-Accountable component/owner; changed files/modules and shared resources; changed contracts/schemas/state invariants; accepted unchanged inputs with their authoritative source, owner and acceptance evidence; inspection evidence. Record the ordering reason or proven-disjoint concurrent partners.
+Accountable component/owner; changed files/modules and shared resources; changed contracts/schemas/state invariants; accepted unchanged inputs with source, owner and acceptance evidence; inspection evidence. Record the ordering reason or proven-disjoint concurrent partners.
 
 ## Acceptance criteria
 
