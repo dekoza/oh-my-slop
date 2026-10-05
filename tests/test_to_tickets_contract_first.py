@@ -110,6 +110,16 @@ def test_missing_reuse_evidence_or_a_changed_shape_is_not_reuse() -> None:
     assert text.count("accepted unchanged inputs with source, owner and acceptance evidence") == 2
 
 
+def test_catalogue_states_interface_reuse() -> None:
+    """The README row tells planners that accepted unchanged interfaces are reused
+    and that contract tickets are for new or changed ones (#256)."""
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    row = next(line for line in readme.splitlines() if "skills/workflow/to-tickets/SKILL.md" in line and line.startswith("|"))
+
+    assert "contract-first ordering for new or changed interfaces" in row
+    assert "reuse of evidenced, unchanged ones" in row
+
+
 def _evals() -> dict[int, dict]:
     skill_dir = find_skill_dir(SKILLS_ROOT, "to-tickets")
     assert skill_dir is not None
