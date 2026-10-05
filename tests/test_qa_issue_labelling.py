@@ -14,7 +14,7 @@ from scripts.validate_refs import find_skill_dir
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = REPO_ROOT / "skills"
 WORKFLOW_LABEL = "workflow:implement"
-LABELS = "#### Labels (forge-backed trackers only)"
+LABELS_HEADING = "#### Labels (forge-backed trackers only)"
 
 
 def _qa_dir() -> Path:
@@ -66,7 +66,7 @@ def test_qa_labels_the_issues_it_files_for_implementation_routing() -> None:
 def test_clear_reproduction_alone_does_not_make_an_issue_agent_ready() -> None:
     """Concrete steps and an unambiguous expectation establish clarity; agent
     readiness also needs a human grant covering the issue's scope (#254)."""
-    labels = _qa_section(LABELS)
+    labels = _qa_section(LABELS_HEADING)
 
     assert (
         "Apply `ready-for-agent` when the reproduction steps are concrete"
@@ -75,13 +75,15 @@ def test_clear_reproduction_alone_does_not_make_an_issue_agent_ready() -> None:
     assert "permission to publish, not implementation authority" in labels
     assert "Apply `ready-for-agent` only when both hold" in labels
     assert "the project's authority rules" in labels
+    # Local-markdown trackers skip labels, not the authority judgement.
+    assert "the authority rules below still decide what the issue records" in labels
 
 
 def test_every_human_state_role_records_the_missing_decision_owner_and_next_action() -> None:
     """A missing grant, a design choice and changed scope alike leave a durable
     record, in a named place, of what is missing, who owns it and what happens
     next (#254)."""
-    labels = _qa_section(LABELS)
+    labels = _qa_section(LABELS_HEADING)
     otherwise = labels.split("Otherwise apply `ready-for-human`", 1)[1].split(". ", 1)[0]
 
     assert "or only the grant is missing" in otherwise
@@ -95,11 +97,11 @@ def test_scoped_grant_is_reused_but_never_stretched_or_given_to_human_only_work(
     """A sufficient same-scope grant is reused without another approval round;
     changed scope pauses for the missing decision, and human-only requirements
     stay human-owned whatever the grant (#254)."""
-    labels = _qa_section(LABELS)
+    labels = _qa_section(LABELS_HEADING)
 
     assert "reuse it without asking again" in labels
     assert "does not stretch to changed scope" in labels
-    assert "Issues still inside the granted scope stay `ready-for-agent`" in labels
+    assert "The grant still holds for issues inside its scope" in labels
     assert "stays `ready-for-human` whatever the grant" in labels
 
 
@@ -113,8 +115,11 @@ def test_breakdown_records_blockers_without_granting_execution_or_concurrency() 
     assert "can start immediately" not in breakdown
     assert "Maximize parallelism" not in breakdown
     assert "None known" in breakdown
-    assert "**Leave scheduling to the project's authority rules and execution gates**" in breakdown
-    assert "decide neither when a slice may start nor whether slices may run side by side" in breakdown
+    assert "**Record blockers, not a schedule**" in breakdown
+    assert (
+        "whether slices may run side by side is settled later under the project's "
+        "authority rules and execution gates" in breakdown
+    )
 
 
 def test_filed_issues_are_read_back_and_filing_starts_no_work() -> None:
@@ -154,6 +159,7 @@ def test_evals_simulate_each_authority_outcome_with_readback() -> None:
         assert "next action" in expectations
         assert "before creating" in expectations
         assert "exactly" in expectations
+        assert "write log" in expectations
 
     # The clear-but-unauthorized case stays silent on authority, so only the
     # skill, not a disclaimer in the prompt, can keep it out of agent readiness.

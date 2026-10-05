@@ -65,7 +65,7 @@ Issues must be **durable** — they should still make sense after major refactor
 
 #### Labels (forge-backed trackers only)
 
-Apply exactly three labels to every issue at creation time, resolving the category and state roles through the project's triage label mapping — never hardcode their strings. Create any label missing from the tracker before applying it. On the local-markdown tracker, skip labelling entirely.
+Apply exactly three labels to every issue at creation time, resolving the category and state roles through the project's triage label mapping — never hardcode their strings. Create any label missing from the tracker before applying it. On the local-markdown tracker, skip labelling entirely; the authority rules below still decide what the issue records — a quoted grant, or a missing decision with its owner and next action.
 
 1. **One category — `bug` or `enhancement`, chosen per issue** from the substance of the report. A QA session catches both kinds; don't blanket-apply `bug`.
 2. **`workflow:implement`** — so the next workflow is explicit: these issues are picked up through `/implement`, not triage discovery.
@@ -75,7 +75,7 @@ Apply exactly three labels to every issue at creation time, resolving the catego
 
    Apply `ready-for-agent` only when both hold. Otherwise apply `ready-for-human` — acting on the issue needs human judgment (a design decision, manual verification, an enhancement the user described only loosely), or only the grant is missing — and record in the issue's additional context the missing decision or action, its owner and the next action.
 
-   When the user has already granted implementation for this scope in the session ("file these and let an agent fix them"), reuse it without asking again, and quote the grant in the issue's additional context so a later agent can check it. A grant does not stretch to changed scope: an issue that reaches beyond what was granted — another area, a different behavior, an open design choice — is `ready-for-human`. Issues still inside the granted scope stay `ready-for-agent`. A requirement only a human may carry out stays `ready-for-human` whatever the grant.
+   When the user has already granted implementation for this scope in the session ("file these and let an agent fix them"), reuse it without asking again, and quote the grant in the issue's additional context so a later agent can check it. A grant does not stretch to changed scope: an issue that reaches beyond what was granted — another area, a different behavior, an open design choice — is `ready-for-human`. The grant still holds for issues inside its scope. A requirement only a human may carry out stays `ready-for-human` whatever the grant.
 
 #### For a single issue
 
@@ -140,7 +140,7 @@ When creating a breakdown:
 - **Prefer many thin issues over few thick ones** — each should be independently fixable and verifiable
 - **Mark blocking relationships honestly** — if issue B genuinely can't be tested until issue A is fixed, say so. If no blocker is known, write "None known"
 - **Create issues in dependency order** so you can reference real issue numbers in "Blocked by"
-- **Leave scheduling to the project's authority rules and execution gates** — splitting symptoms and publishing them decide neither when a slice may start nor whether slices may run side by side
+- **Record blockers, not a schedule** — whether slices may run side by side is settled later under the project's authority rules and execution gates
 
 #### Rules for all issue bodies
 

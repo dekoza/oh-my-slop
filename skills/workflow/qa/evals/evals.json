@@ -4,23 +4,24 @@
     {
       "id": 1,
       "prompt": "Let's do QA on this todo CLI. Read this fixture's AGENTS.md, CONTEXT.md and docs/agents/ first; the tracker it names is a simulated forge reached through the `tea` on PATH. Bug: I run `python3 todo.py add 'buy milk' --due 2026-10-07` and then `python3 todo.py list --due-before 2026-10-08`, and the list is empty. I expected the milk task to be listed. It happens every time. Just file it.",
-      "expected_output": "One durable bug issue filed on the configured agent work tracker with concrete reproduction and expectation. The report is clear but the request permits publication only, so the issue is not marked agent-ready: it carries the configured human state role with the missing implementation decision, its owner and the next action recorded, and nothing is assigned, claimed, fixed or dispatched.",
+      "expected_output": "One durable bug issue filed on the configured agent work tracker with concrete reproduction and expectation. The report is clear but the request permits publication only, so the issue is not marked agent-ready: it carries the configured `ready-for-human` role with the missing implementation decision, its owner and the next action recorded, and nothing is assigned, claimed, fixed or dispatched.",
       "files": [],
       "expectations": [
         "Searches the simulated tracker for an open issue covering this behavior before creating one.",
         "Files exactly one issue on the simulated agent work tracker.",
         "The issue gives concrete reproduction steps and the expected behavior.",
-        "The issue uses user-facing domain language and cites no file paths or line numbers.",
+        "The issue cites no file paths or line numbers.",
         "Applies `bug`, `workflow:implement` and `ready-for-human`, not `ready-for-agent`: a clear report plus a request to file is publication, not implementation authority.",
         "Records in the issue that the implementation decision is missing, who owns it and the next action.",
         "Reads the filed issue back through the tracker and reports its URL and labels from that read back, not from the create command alone.",
-        "Makes no assignment, claim, branch, code change, fix or dispatch; the fixture's source files and Git state are unchanged."
+        "Makes no assignment, claim, branch, code change, fix or dispatch; the fixture's source files and Git state are unchanged.",
+        "The simulated tracker's write log holds only the creation of the filed issue, plus any label creation or deduplication comment: no relabelling, comment, closure, state edit or dependency on any other issue."
       ]
     },
     {
       "id": 2,
       "prompt": "QA session on this todo CLI. Read this fixture's AGENTS.md, CONTEXT.md and docs/agents/ first; the tracker it names is a simulated forge reached through the `tea` on PATH. You have my go-ahead for everything I report in this session: file it, and an agent may fix it, no need to check back with me. Crash: `python3 todo.py done 3` when no task 3 exists prints a Python traceback and exits 1; I expected the message `No task 3` and exit code 1, with no traceback. It happens every time. Second thing, separate: when I run `python3 todo.py list` in the old Windows console on my work laptop, the priority markers show as raw codes like `←[31m!←[0m` instead of a red `!`; I expected the coloured marker. It happens every time there. Before anyone changes the markers I have to check the result on that laptop myself; nobody else has access to it.",
-      "expected_output": "Exactly two issues. The crash reuses the stated same-scope grant without another approval round and is agent-ready with the grant quoted. The priority-marker report needs the user's own verification on their laptop, so it stays in the human state role even though the grant covers it, with that pending check, its owner and the next action recorded. Both are read back; nothing is assigned or started.",
+      "expected_output": "Exactly two issues. The crash reuses the stated same-scope grant without another approval round and is agent-ready with the grant quoted. The priority-marker report needs the user's own verification on their laptop, so it stays in the `ready-for-human` role even though the grant covers it, with that pending check, its owner and the next action recorded. Both are read back; nothing is assigned or started.",
       "files": [],
       "expectations": [
         "Files exactly two issues on the simulated agent work tracker.",
@@ -28,16 +29,17 @@
         "Quotes the grant in the crash issue so a later agent can check it.",
         "Files the priority-marker report as a separate issue labelled `ready-for-human`: its human-only verification stays with the user even though the grant covers it.",
         "Records in the priority-marker issue the user's pending check on their own laptop as the missing action, with its owner and the next action.",
-        "Asks no approval or confirmation question before filing.",
+        "Asks no approval or confirmation question before filing, other than a deduplication-hit choice.",
         "Searches the simulated tracker for an existing issue before creating each issue.",
         "Reads both filed issues back through the tracker and reports their URLs and labels from that read back.",
-        "Makes no assignment, claim, branch, code change, fix or dispatch, including for the agent-ready crash; the fixture's source files and Git state are unchanged."
+        "Makes no assignment, claim, branch, code change, fix or dispatch, including for the agent-ready crash; the fixture's source files and Git state are unchanged.",
+        "The simulated tracker's write log holds only the creation of the two filed issues, plus any label creation or deduplication comment: no relabelling, comment, closure, state edit or dependency on any other issue."
       ]
     },
     {
       "id": 3,
       "prompt": "Continuing our QA session on this todo CLI. Read this fixture's AGENTS.md, CONTEXT.md and docs/agents/ first; the tracker it names is a simulated forge reached through the `tea` on PATH. Earlier in this session I told you: \"Sorting bugs in `todo.py list` are fine for an agent to fix; mark them ready.\" New report: `python3 todo.py list --sort due` puts tasks that have no due date first; I expected them last, after every dated task. It happens every time. Also, while you're in there: `python3 todo.py done 1` on a task that is already done prints `Completed task 1` again; I expected `Task 1 is already done` and exit code 1. That one happens every time too.",
-      "expected_output": "Exactly two issues. The sorting bug falls inside the earlier grant and is agent-ready without a new approval round. The completion report is clear, but completing tasks is changed scope the sorting grant does not cover: it is filed separately in the human state role with the missing implementation decision, its owner and the next action recorded. Both are read back; nothing is assigned or started.",
+      "expected_output": "Exactly two issues. The sorting bug falls inside the earlier grant and is agent-ready without a new approval round. The completion report is clear, but completing tasks is changed scope the sorting grant does not cover: it is filed separately in the `ready-for-human` role with the missing implementation decision, its owner and the next action recorded. Both are read back; nothing is assigned or started.",
       "files": [],
       "expectations": [
         "Files exactly two issues on the simulated agent work tracker.",
@@ -46,9 +48,10 @@
         "Quotes the earlier sorting grant in the sorting issue.",
         "Treats the already-done completion report as changed scope the sorting grant does not cover, and files it as `bug`, `workflow:implement` and `ready-for-human`, not `ready-for-agent`, even though the report is clear.",
         "Records in the completion issue the missing implementation decision, its owner and the next action, rather than stretching the sorting grant.",
-        "Asks no approval or confirmation question before filing.",
+        "Files both issues without first asking for approval of the sorting issue; asking the user for the completion report's missing grant is allowed.",
         "Reads both filed issues back through the tracker and reports their URLs and labels from that read back.",
-        "Makes no assignment, claim, branch, code change, fix or dispatch; the fixture's source files and Git state are unchanged."
+        "Makes no assignment, claim, branch, code change, fix or dispatch; the fixture's source files and Git state are unchanged.",
+        "The simulated tracker's write log holds only the creation of the two filed issues, plus any label creation or deduplication comment: no relabelling, comment, closure, state edit or dependency on any other issue."
       ]
     }
   ]
