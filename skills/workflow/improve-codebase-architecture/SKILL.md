@@ -16,9 +16,11 @@ requires:
 
 # Improve Codebase Architecture
 
-## When this skill loads, start the review now
+## Start only on an explicit request
 
-This skill is manual-only (`disable-model-invocation: true`); it is never auto-triggered. So if you are reading this, the user has **already issued the entire request** by invoking `/skill:improve-codebase-architecture`. The invocation itself is the task — they want an architecture review of the codebase in the current working directory.
+This skill is manual-only (`disable-model-invocation: true`); it is never auto-triggered. Run the review only when the operator explicitly asked for it in this session — `/skill:improve-codebase-architecture`, the `/arch` command, or a plain request to run this architecture review. That request is the whole task.
+
+Reading this body is not a request. If you opened it to research, review, edit or compare the skill, answer that question and stop: no exploration, report or tracker change.
 
 Do not ask "what would you like me to do?" or wait for further instructions before acting. That extra round-trip is exactly the friction this section exists to kill. Begin **Phase 1: Explore** immediately and proceed through **Phase 2: Present candidates as an HTML report**. The first legitimate pause is the one **Phase 3** names: the selection prompt, where you propose a set of candidates to ticketize and the user confirms or amends it.
 
