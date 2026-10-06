@@ -113,3 +113,27 @@ def test_capture_preserves_source_and_notes_then_cleanup_removes_only_owned_file
     assert snapshot(repo) == before
     assert git(repo, "status", "--porcelain=v1", "--untracked-files=all").splitlines() == [
         " M app/other.py", "?? app/user_draft.txt"]
+
+
+@pytest.mark.parametrize("failure", ["branch-exists", "changed-after-capture"])
+def test_failed_capture_or_changed_file_prevents_any_cleanup(prototyped: Path, failure: str) -> None:
+    """Cleanup re-verifies the capture itself, so it cannot follow a failed one."""
+    repo = prototyped
+    if failure == "branch-exists":
+        # A retained branch of the same name is not overwritten and is not a capture.
+        git(repo, "branch", CAPTURE_BRANCH, "prototype/older-question")
+        retained = git(repo, "rev-parse", CAPTURE_BRANCH)
+        capture = run_recipe(repo, "worktree add")
+        assert capture.returncode != 0
+        assert git(repo, "rev-parse", CAPTURE_BRANCH) == retained
+    else:
+        capture = run_recipe(repo, "worktree add")
+        assert capture.returncode == 0, capture.stdout + capture.stderr
+        (repo / OWNED[0]).write_text("VARIANTS = 'abcd'  # edited after capture\n", encoding="utf-8")
+    before = snapshot(repo)
+    owned_bytes = {path: (repo / path).read_bytes() for path in OWNED}
+
+    cleanup = run_recipe(repo, "restore --source=HEAD")
+    assert cleanup.returncode != 0
+    assert {path: (repo / path).read_bytes() for path in OWNED} == owned_bytes
+    assert snapshot(repo) == before
