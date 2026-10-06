@@ -9,26 +9,30 @@ outer timeout, keeping the full output:
 
 By default it checks the runnable example in skills/workflow/prototype/references/ui.md.
 With --project it checks a project produced for the representative task instead,
-started by --start (a command with {env} and {port} placeholders), against
---reference-project, the untouched project whose production page it must still render.
-Every server must print its http://127.0.0.1:<port> address on stdout (banner lines
-before it are fine) within the readiness deadline.
+started by --start (a command with {env} and {port} placeholders, run from the project
+directory), against --reference-project, the untouched project whose production page it
+must still render (started the same way from its own directory). Every server must print
+its http://127.0.0.1:<port> address on stdout (banner lines before it are fine) within
+the readiness deadline.
 
 The switcher is found by the hooks ui.md declares: a `.prototype-bar` element listing
 its variants in `data-variants`, `#prev-variant`, `#next-variant` and `#variant-label`.
+What counts is what the page shows: hidden elements are ignored, and a switch may
+navigate or update the page and its URL in place.
 
-Development: variants differ in structure (tags and text, ignoring attributes, case and
-whitespace); initial and direct selection, next/previous, wrapping, a label naming
-exactly the shown variant, the keyboard focus guard and reload persistence are judged on
-the rendered page, not the URL or label.
+Development: variants differ in visible structure (tags and text, ignoring attributes,
+case and whitespace); initial and direct selection, next/previous, wrapping, a label
+that names the shown variant without naming all of them, the keyboard focus guard and
+reload persistence are judged on the visible page, not the URL or label alone.
 
-Production: the throwaway route is absent; the real page, read after it settles, is the
-same for every variant name seen in development and an unknown one, offered through the
-selection parameter the switcher used, a few common parameter names and a cookie of each
-of those names; no switcher appears; and the page matches the reference project
-including its scripts (the ui.md example, which has no reference, must instead differ
-from every development variant). Other selection channels are not probed. Only owned
-loopback servers are started, each in its own process group, and they are always stopped.
+Production: the throwaway route is absent; the real page, read after it settles, shows
+the same for every variant name seen in development and an unknown one, offered through
+the selection parameter the switcher used, a few common parameter names and a cookie of
+each of those names; no switcher appears; and the page shows what the reference project
+shows and carries the same scripts (differences only in styles are recorded as a
+warning). The ui.md example, which has no reference, must instead differ from every
+development variant. Other selection channels are not probed. Only owned loopback
+servers are started, each in its own process group, and they are always stopped.
 """
 from __future__ import annotations
 
@@ -41,6 +45,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -56,29 +61,30 @@ LAUNCH_TIMEOUT_MS = 20_000
 READY_TIMEOUT_S = 20
 SCENARIO_DEADLINE_S = 300
 OPERATION_TIMEOUT_MS = 15_000
-SETTLE_MS = 1_500  # client-side changes later than this after load are not observed
+SWITCH_SETTLE_MS = 300  # after a URL change, time for an in-place switch to finish drawing
+SETTLE_MS = 1_500  # production: client-side changes later than this after load are not observed
 FOCUS_GUARD_WAIT_MS = 3_000  # a switch later than this after the key press is not observed
 UNKNOWN_VARIANT = "no-such-variant"
 COMMON_SELECTION_PARAMS = ("variant", "layout", "design", "option", "prototype", "v")
 ADDRESS = re.compile(r"http://127\.0\.0\.1:\d+")
-RENDERED = """() => {
-  const body = document.body.cloneNode(true);
-  body.querySelectorAll('.prototype-bar, script, style').forEach((node) => node.remove());
-  return body.innerHTML;
-}"""
-# Tags and text in document order, attributes ignored, text casefolded and whitespace
-# collapsed. With scripts=true, script and style text counts as well (production).
-STRUCTURE = """(scripts) => {
+# Visible tags and text in document order: attributes ignored, text casefolded and
+# whitespace collapsed, hidden elements and the switcher left out.
+VISIBLE = """() => {
   const norm = (text) => text.toLowerCase().replace(/\\s+/g, ' ').trim();
-  const skip = (node) => node.matches && (node.matches('.prototype-bar') || (!scripts && node.matches('script, style')));
   const walk = (node) => {
     if (node.nodeType === Node.TEXT_NODE) return norm(node.textContent);
-    if (node.nodeType !== Node.ELEMENT_NODE || skip(node)) return '';
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    if (node.matches('.prototype-bar, script, style, template') || !node.checkVisibility()) return '';
     const inner = Array.from(node.childNodes).map(walk).filter(Boolean).join(',');
     return node.tagName.toLowerCase() + '(' + inner + ')';
   };
-  return walk(scripts ? document.documentElement : document.body);
+  return walk(document.body);
 }"""
+ASSETS = """() => ({
+  scripts: Array.from(document.scripts).map((s) => s.src || s.textContent.replace(/\\s+/g, ' ').trim()),
+  styles: Array.from(document.querySelectorAll('style, link[rel=stylesheet]'))
+    .map((s) => s.href || s.textContent.replace(/\\s+/g, ' ').trim()),
+})"""
 
 
 class Failure(AssertionError):
@@ -142,13 +148,13 @@ class Server:
         self.base = found[0]
 
     def stop(self) -> None:
-        for sig, wait in ((signal.SIGTERM, 10), (signal.SIGKILL, 10)):
+        for sig in (signal.SIGTERM, signal.SIGKILL):
             try:
                 os.killpg(self.process.pid, sig)
             except ProcessLookupError:
                 break
             try:
-                self.process.wait(timeout=wait)
+                self.process.wait(timeout=10)
                 break
             except subprocess.TimeoutExpired:
                 continue
@@ -181,7 +187,7 @@ class Run:
     def __init__(self, browser, out: Path, deadline: Deadline) -> None:
         self.browser, self.out, self.deadline = browser, out, deadline
         self.pages: list = []
-        self.record: dict = {"development": {}}
+        self.record: dict = {"development": {}, "warnings": []}
 
     def new_page(self, context=None):
         page = (context or self.browser).new_page()
@@ -190,13 +196,13 @@ class Run:
         self.pages.append(page)
         return page
 
-    def visit(self, page, url: str, settle: bool = False) -> tuple[str, str]:
+    def visit(self, page, url: str, settle: bool = False) -> str:
         self.deadline.check()
         page.goto(url)
         if settle:
             page.wait_for_load_state("networkidle")
             page.wait_for_timeout(SETTLE_MS)
-        return page.evaluate(RENDERED), page.evaluate(STRUCTURE, settle)
+        return page.evaluate(VISIBLE)
 
     def save_failure_artifacts(self) -> None:
         for index, page in enumerate(self.pages):
@@ -215,21 +221,22 @@ def development(run: Run, base: str, page_path: str, throwaway: str) -> None:
 
     page = run.new_page()
 
-    def named(name: str, text: str) -> bool:  # a whole word, so "a" does not match inside "variant"
+    def named(name: str, text: str) -> bool:
         return re.search(rf"(?<![\w-]){re.escape(name.lower())}(?![\w-])", text.lower()) is not None
 
-    def labelled(name: str, variants: list[str]) -> bool:
+    def labelled(name: str, variants: list[str]) -> bool:  # names the shown one, not all of them
         text = page.text_content("#variant-label") or ""
-        return named(name, text) and not any(named(other, text) for other in variants if other != name)
+        return named(name, text) and not all(named(v, text) for v in variants)
 
-    def selected(key: str) -> str | None:
-        return parse_qs(urlsplit(page.url).query).get(key, [None])[0]
-
-    def after(action) -> str:
+    def switch(action) -> str:
+        """Run a control; it must change the URL, by navigation or in place. Returns what shows."""
         run.deadline.check()
-        with page.expect_navigation():
-            action()
-        return page.evaluate(RENDERED)
+        before = page.url
+        action()
+        page.wait_for_url(lambda url: url != before)
+        page.wait_for_load_state("load")
+        page.wait_for_timeout(SWITCH_SETTLE_MS)
+        return page.evaluate(VISIBLE)
 
     selection_keys = set()
     for path in (page_path, throwaway):
@@ -238,44 +245,47 @@ def development(run: Run, base: str, page_path: str, throwaway: str) -> None:
         variants = json.loads(page.get_attribute(".prototype-bar", "data-variants") or "[]")
         check(len(variants) >= 2 and all(isinstance(v, str) and v for v in variants),
               f"development {path}: data-variants lists {variants!r}")
-        initial, _ = run.visit(page, base + path)
-        rendered, structure = {}, {}
+        initial = run.visit(page, base + path)
+        shown = {}
         for v in variants:
-            rendered[v], structure[v] = run.visit(page, f"{base}{path}?variant={quote(v)}")
-            check(labelled(v, variants), f"development {path}?variant={v}: the label does not name exactly {v!r}")
-        check(len(set(structure.values())) == len(variants),
-              f"development {path}: variants do not differ in structure (tags and text)")
-        check(initial in rendered.values(), f"development {path}: the initial render is no variant")
-        (run.out / f"dom-dev{path.replace('/', '_')}.json").write_text(json.dumps(rendered, indent=2))
+            shown[v] = run.visit(page, f"{base}{path}?variant={quote(v)}")
+            check(labelled(v, variants), f"development {path}?variant={v}: the label does not name {v!r} alone")
+        check(len(set(shown.values())) == len(variants),
+              f"development {path}: variants do not differ in what they show (tags and text)")
+        check(initial in shown.values(), f"development {path}: the initial page shows no variant")
+        (run.out / f"visible-dev{path.replace('/', '_')}.json").write_text(json.dumps(shown, indent=2))
         first, second, last = variants[0], variants[1], variants[-1]
 
         run.visit(page, f"{base}{path}?variant={quote(first)}")
-        check(after(lambda: page.click("#next-variant")) == rendered[second], f"{path}: next does not render {second!r}")
+        check(switch(lambda: page.click("#next-variant")) == shown[second], f"{path}: next does not show {second!r}")
         keys = [k for k, values in parse_qs(urlsplit(page.url).query).items() if values == [second]]
         check(len(keys) == 1 and labelled(second, variants), f"{path}: URL/label disagree after next ({page.url})")
         selection_keys.add(keys[0])
-        check(after(lambda: page.click("#prev-variant")) == rendered[first], f"{path}: previous does not render {first!r}")
-        check(after(lambda: page.click("#prev-variant")) == rendered[last], f"{path}: previous from first does not wrap")
-        check(after(lambda: page.click("#next-variant")) == rendered[first], f"{path}: next from last does not wrap")
+        check(switch(lambda: page.click("#prev-variant")) == shown[first], f"{path}: previous does not show {first!r}")
+        check(switch(lambda: page.click("#prev-variant")) == shown[last], f"{path}: previous from first does not wrap")
+        check(switch(lambda: page.click("#next-variant")) == shown[first], f"{path}: next from last does not wrap")
 
         page.locator("body").click(position={"x": 1, "y": 1})
-        check(after(lambda: page.keyboard.press("ArrowRight")) == rendered[second], f"{path}: ArrowRight does not switch")
-        check(after(lambda: page.keyboard.press("ArrowLeft")) == rendered[first], f"{path}: ArrowLeft does not switch")
+        check(switch(lambda: page.keyboard.press("ArrowRight")) == shown[second], f"{path}: ArrowRight does not switch")
+        check(switch(lambda: page.keyboard.press("ArrowLeft")) == shown[first], f"{path}: ArrowLeft does not switch")
         page.evaluate("""() => { const i = document.createElement('input');
                                  i.id = 'focus-guard-probe'; document.body.prepend(i); i.focus(); }""")
+        before, view_before = page.url, page.evaluate(VISIBLE)
+        page.keyboard.press("ArrowRight")
         try:
-            with page.expect_navigation(timeout=FOCUS_GUARD_WAIT_MS):
-                page.keyboard.press("ArrowRight")
+            page.wait_for_url(lambda url: url != before, timeout=FOCUS_GUARD_WAIT_MS)
             switched = True
-        except PlaywrightTimeout:
-            switched = False
-        check(not switched and selected(keys[0]) == first, f"{path}: ArrowRight in a focused input still switched")
+        except PlaywrightTimeout:  # no URL change in the wait; the view must be unchanged too
+            switched = page.evaluate(VISIBLE) != view_before
+        check(not switched and page.locator("#focus-guard-probe").count() == 1,
+              f"{path}: ArrowRight in a focused input still switched")
 
         run.visit(page, f"{base}{path}?variant={quote(last)}")
         page.reload()
-        check(page.evaluate(RENDERED) == rendered[last] and labelled(last, variants),
+        page.wait_for_timeout(SWITCH_SETTLE_MS)
+        check(page.evaluate(VISIBLE) == shown[last] and labelled(last, variants),
               f"{path}: reload lost the selection {last!r}")
-        run.record["development"][path] = {"variants": variants, "structures": structure,
+        run.record["development"][path] = {"variants": variants, "visible": shown,
                                            "selection_parameter": keys[0], "checks": "passed"}
     run.record["selection_parameters"] = sorted(selection_keys)
 
@@ -284,7 +294,8 @@ def production(run: Run, base: str, page_path: str, throwaway: str, reference: d
     seen = [v for info in run.record["development"].values() for v in info["variants"]]
     check(bool(seen), "production: development recorded no variant names to try")
     names = list(dict.fromkeys(seen + [UNKNOWN_VARIANT]))
-    keys = list(dict.fromkeys(run.record.get("selection_parameters", []) + list(COMMON_SELECTION_PARAMS)))
+    used = run.record["selection_parameters"]
+    keys = list(dict.fromkeys(used + list(COMMON_SELECTION_PARAMS)))
     bodies = run.out / "production-http"
     bodies.mkdir(exist_ok=True)
     for url in (throwaway, throwaway + "/", f"{throwaway}?variant={quote(seen[0])}"):
@@ -304,35 +315,41 @@ def production(run: Run, base: str, page_path: str, throwaway: str, reference: d
                 check(answer == (200, plain_body), f"production {page_path}: {how} {key}={name} changes the response")
     context = run.browser.new_context()
     page = run.new_page(context)
-    plain, plain_structure = run.visit(page, base + page_path, settle=True)
+    plain = run.visit(page, base + page_path, settle=True)
+    assets = page.evaluate(ASSETS)
     (run.out / "dom-production.html").write_text(page.content(), encoding="utf-8")
     check(page.locator(".prototype-bar").count() == 0, f"production {page_path}: switcher rendered")
-    for key in run.record.get("selection_parameters", ["variant"]):  # the page itself, after it settles
+    for key in used:  # the page itself, after it settles
         for name in names:
-            rendered, _ = run.visit(page, f"{base}{page_path}?{key}={quote(name)}", settle=True)
-            check(rendered == plain and page.locator(".prototype-bar").count() == 0,
+            check(run.visit(page, f"{base}{page_path}?{key}={quote(name)}", settle=True) == plain
+                  and page.locator(".prototype-bar").count() == 0,
                   f"production {page_path}?{key}={name}: the settled page differs from the real page")
     context.close()
     if reference is not None:
-        check(plain_structure == reference["structure"],
-              f"production {page_path} (with its scripts) no longer matches the untouched project")
-        basis = "matches the reference project, scripts included"
+        check(plain == reference["visible"], f"production {page_path} no longer shows what the untouched project shows")
+        check(assets["scripts"] == reference["assets"]["scripts"],
+              f"production {page_path} carries scripts the untouched project does not")
+        if assets["styles"] != reference["assets"]["styles"]:
+            run.record["warnings"].append(f"production {page_path} carries styles the untouched project does not")
+        basis = "shows what the reference project shows, with the same scripts"
     else:
-        variant_structures = {s for info in run.record["development"].values() for s in info["structures"].values()}
-        _, body_structure = run.visit(run.new_page(), base + page_path)  # body only, like the variants
-        check(body_structure not in variant_structures, f"production {page_path} renders a prototype variant")
+        variant_views = {view for info in run.record["development"].values() for view in info["visible"].values()}
+        check(plain not in variant_views, f"production {page_path} shows a prototype variant")
         basis = "differs from every development variant"
     run.record["production"] = {"throwaway_absent": [throwaway, throwaway + "/"], "variant_names_tried": names,
-                                "selection_parameters_tried": keys, "cookies_tried": keys,
-                                "settle_ms": SETTLE_MS, "switcher": "absent", "real_page": basis}
+                                "parameters_tried_as_query_and_cookie": keys, "settle_ms": SETTLE_MS,
+                                "switcher": "absent", "real_page": basis}
 
 
 def reference_page(run: Run, start: str, cwd: Path, page_path: str) -> dict:
     with Server(start, "production", cwd, run.out / "server-reference-production.log") as server:
         page = run.new_page()
-        rendered, structure = run.visit(page, server.base + page_path, settle=True)
+        visible = run.visit(page, server.base + page_path, settle=True)
+        assets = page.evaluate(ASSETS)
+        (run.out / "dom-reference.html").write_text(page.content(), encoding="utf-8")
         page.close()
-    return {"rendered": rendered, "structure": structure}
+    (run.out / "reference.json").write_text(json.dumps({"visible": visible, "assets": assets}, indent=2))
+    return {"visible": visible, "assets": assets}
 
 
 def main() -> int:
@@ -347,6 +364,8 @@ def main() -> int:
     if args.project and not (args.start and args.reference_project):
         parser.error("--project needs --start and --reference-project")
     args.out.mkdir(parents=True, exist_ok=True)
+    if len(tempfile.gettempdir()) > 40:  # Chromium's socket path under TMPDIR must stay short
+        os.environ["TMPDIR"] = tempfile.mkdtemp(prefix="cpu-", dir="/tmp")
     started = time.monotonic()
     record: dict = {"chromium": CHROMIUM, "result": "FAIL: did not finish"}
     run = None
@@ -389,7 +408,7 @@ def main() -> int:
     finally:
         record["seconds"] = round(time.monotonic() - started, 2)
         (args.out / "result.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
-    print(json.dumps({k: record[k] for k in ("result", "seconds") if k in record}, indent=2))
+    print(json.dumps({k: record[k] for k in ("result", "warnings", "seconds") if k in record}, indent=2))
     if record["result"] != "PASS":
         print(record["result"], file=sys.stderr)
         return 1

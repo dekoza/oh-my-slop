@@ -510,10 +510,14 @@ def test_browser_check_stays_outside_the_repository_test_run() -> None:
         node.module for node in top_level if isinstance(node, ast.ImportFrom) and node.module}
     assert not any(name.startswith("playwright") for name in names)
     assert not script.name.startswith("test_")
-    source = script.read_text(encoding="utf-8")
-    assert "/usr/bin/chromium" in source
-    # Checked pages may come from model-written code: the renderer sandbox stays on.
-    assert "chromium_sandbox=True" in source
+    assert "/usr/bin/chromium" in script.read_text(encoding="utf-8")
+    # Checked pages may come from model-written code: every launch keeps the renderer sandbox on.
+    launches = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute) and node.func.attr == "launch"]
+    assert launches
+    for call in launches:
+        sandbox = [k.value for k in call.keywords if k.arg == "chromium_sandbox"]
+        assert len(sandbox) == 1 and isinstance(sandbox[0], ast.Constant) and sandbox[0].value is True
 
 
 def test_skill_and_catalogue_require_server_side_exclusion_and_rendered_switching() -> None:
