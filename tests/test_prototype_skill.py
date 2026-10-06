@@ -199,6 +199,14 @@ def section(text: str, heading: str) -> str:
     return text.split(heading, 1)[1].split("\n## ", 1)[0]
 
 
+def reference_done_step(name: str) -> str:
+    """The text of a reference's numbered '### N. When done' step, whitespace-normalized."""
+    text = (SKILL_ROOT / "references" / name).read_text(encoding="utf-8")
+    match = re.search(r"^### \d+\. When done\n(.*?)(?=^##|\Z)", text, re.DOTALL | re.MULTILINE)
+    assert match, f"{name} has no numbered When done step"
+    return " ".join(match.group(1).split())
+
+
 def test_planning_only_completion_records_then_captures_and_edits_no_production_code() -> None:
     """Finishing a prototype ends with findings; folding them in is separate work (#248 AC9)."""
     done = " ".join(section(skill_body(), "## When done").split())
@@ -213,8 +221,7 @@ def test_planning_only_completion_records_then_captures_and_edits_no_production_
         "**Leave a pointer.**", "**Clean only what was captured.**")]
     assert order == sorted(order)
     for name in ("logic.md", "ui.md"):
-        reference = " ".join((SKILL_ROOT / "references" / name).read_text(encoding="utf-8").split())
-        done_step = reference.split("When done", 1)[1].split("##", 1)[0]
+        done_step = reference_done_step(name)
         assert "the prototype skill's When done" in done_step, name
         assert "Delete the TUI shell" not in done_step and "Fold the validated decision" not in done_step, name
 
@@ -228,8 +235,18 @@ def test_partly_owned_files_are_captured_but_never_cleaned_wholesale() -> None:
     assert "every file the prototype created or edited" in capture
     assert "leave it out" not in capture
     assert "wholly owned" in cleanup
-    assert "someone else's uncommitted work" in cleanup
+    # Ownership is checked against the file's current changes, not its state at the
+    # start: a user edit made while prototyping must also keep the file out.
+    assert "every uncommitted change in it is the prototype's" in cleanup
+    assert "just before cleanup" in cleanup
+    assert "when it started" not in cleanup
     assert "remove only the prototype's lines by hand, or report them" in cleanup
+    assert "`git status --short` before the prototype's first edit" in skill_body()
+    for name in ("logic.md", "ui.md"):
+        done_step = reference_done_step(name)
+        assert "wholly owns" in done_step, name
+    assert "including your edits to the host page" not in reference_done_step("ui.md")
+    assert "remove only the prototype's lines by hand" in reference_done_step("ui.md")
 
 
 def test_pointer_follows_the_configured_tracker_not_a_hardcoded_forge() -> None:
@@ -242,6 +259,8 @@ def test_pointer_follows_the_configured_tracker_not_a_hardcoded_forge() -> None:
     assert "configured tracker" in pointer and "/setup-project-skills" in pointer
     assert "capture commit" in pointer
     assert "Pushing the branch publishes it" in pointer
+    # Partly owned files are captured whole, so a push carries others' edits too.
+    assert "including anyone else's uncommitted edits captured in partly owned files" in pointer
 
 
 def test_branch_choice_and_notes_structure_are_preserved() -> None:

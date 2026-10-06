@@ -120,7 +120,7 @@ def settings_prototype(request):
 
 ### 4. When done
 
-Follow the prototype skill's When done: record which variant won and why in `NOTES.md`, capture every variant, the switcher and the notes on a throwaway branch, leave a pointer, and only then clean up the owned files — including your edits to the host page. Building the winning variant into the real page is a separately authorized implementation, held to the same bar as production code.
+Follow the prototype skill's When done: record which variant won and why in `NOTES.md`, capture every variant, the switcher and the notes on a throwaway branch, leave a pointer, and only then clean up the files it wholly owns. The host page qualifies only if every uncommitted change in it is the prototype's; if it also holds other work, remove only the prototype's lines by hand, or report them. Building the winning variant into the real page is a separately authorized implementation, held to the same bar as production code.
 
 ## Anti-patterns
 

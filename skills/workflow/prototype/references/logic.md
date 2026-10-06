@@ -67,4 +67,4 @@ No build step. No configuration. One command, one screen.
 
 ### 6. When done
 
-Follow the prototype skill's When done: record the answer in `NOTES.md`, capture the logic module, the TUI shell and the notes on a throwaway branch, leave a pointer, and only then clean up the owned files. Lifting the logic module into the real codebase is a separately authorized implementation.
+Follow the prototype skill's When done: record the answer in `NOTES.md`, capture the logic module, the TUI shell and the notes on a throwaway branch, leave a pointer, and only then clean up the files it wholly owns. Lifting the logic module into the real codebase is a separately authorized implementation.
