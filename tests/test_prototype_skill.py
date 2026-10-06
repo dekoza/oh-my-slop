@@ -15,6 +15,7 @@ import contextlib
 import json
 import os
 import re
+import select
 import subprocess
 import sys
 import urllib.error
@@ -412,7 +413,8 @@ def serve(argv: list[str], cwd: Path) -> Iterator[str]:
     """Start an owned loopback server that announces its address first; always stop it."""
     server = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     try:
-        line = server.stdout.readline()
+        ready, _, _ = select.select([server.stdout], [], [], 15)  # a silent server fails, not hangs
+        line = server.stdout.readline() if ready else ""
         match = re.search(r"http://127\.0\.0\.1:\d+", line)
         assert match, f"no loopback address announced: {line!r}"
         yield match.group(0)
@@ -508,7 +510,10 @@ def test_browser_check_stays_outside_the_repository_test_run() -> None:
         node.module for node in top_level if isinstance(node, ast.ImportFrom) and node.module}
     assert not any(name.startswith("playwright") for name in names)
     assert not script.name.startswith("test_")
-    assert "/usr/bin/chromium" in script.read_text(encoding="utf-8")
+    source = script.read_text(encoding="utf-8")
+    assert "/usr/bin/chromium" in source
+    # Checked pages may come from model-written code: the renderer sandbox stays on.
+    assert "chromium_sandbox=True" in source
 
 
 def test_skill_and_catalogue_require_server_side_exclusion_and_rendered_switching() -> None:
