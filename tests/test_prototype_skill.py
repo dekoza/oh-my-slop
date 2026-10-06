@@ -801,6 +801,34 @@ def test_logic_check_reads_human_labels_and_knows_every_reachable_action(tmp_pat
         "cancel", "pay", "payment_failed", "period_ends", "reactivate", "subscribe"]
 
 
+def test_logic_check_finds_controls_by_the_action_they_carry() -> None:
+    """A support-lead page may label a button "Cancel subscription" while its value is still
+    "cancel"; disabled buttons and links are not offered (#259 fourth delta review)."""
+    check = browser_check_module()
+    selector = check.carried_action_selector('cancel')
+    assert 'button[value="cancel"]' in selector and '[data-action="cancel"]' in selector
+    assert selector.count(":not([disabled])") == 2 and selector.count(':not([aria-disabled="true"])') == 2
+    assert check.carried_action_selector('a"b') .count('a\\"b') == 2  # quotes cannot break out of the selector
+
+
+def test_browser_check_servers_print_unbuffered_and_skip_disabled_controls() -> None:
+    """Regression guards for fixes the browser evidence relies on: an unflushed print of the
+    address must arrive, and disabled buttons or links are never counted as offered."""
+    import ast
+
+    source = (REPO_ROOT / "tests/browser/check_prototype_ui.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    server = next(node for node in ast.walk(tree) if isinstance(node, ast.ClassDef) and node.name == "Server")
+    assert "PYTHONUNBUFFERED" in ast.get_source_segment(source, server)
+    control = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "control")
+    roles = [call for call in ast.walk(control) if isinstance(call, ast.Call)
+             and isinstance(call.func, ast.Attribute) and call.func.attr == "get_by_role"]
+    assert {ast.literal_eval(call.args[0]) for call in roles} == {"button", "link"}
+    for call in roles:
+        assert any(k.arg == "disabled" and isinstance(k.value, ast.Constant) and k.value.value is False
+                   for k in call.keywords), ast.get_source_segment(source, call)
+
+
 def test_logic_check_never_changes_the_checked_project(tmp_path: Path) -> None:
     """--mutated-project must be a separate copy: pointing it at the project, inside it or
     around it would rewrite the user's own module (#259 review)."""
