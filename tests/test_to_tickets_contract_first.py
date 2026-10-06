@@ -80,7 +80,9 @@ def test_unchanged_accepted_interface_is_reused_with_recorded_evidence() -> None
     text = _normalized(skill_text("to-tickets"))
 
     assert "**Reuse a sufficient accepted interface that stays unchanged.**" in text
-    assert "consumers record its authoritative source, its owner and the acceptance evidence" in text
+    # Each consuming ticket, not a plan-level preamble, carries the evidence (a
+    # budget trim once weakened this to "consumers record"; see #256 runs).
+    assert "each consuming ticket's impact surface records its authoritative source, its owner and the acceptance evidence" in text
     # Positive definition first, so a closed issue that links an accepting test counts.
     assert "the accepted artifact plus the test or review that accepted it" in text
     assert "A filename or a closed issue alone is not acceptance evidence" in text
