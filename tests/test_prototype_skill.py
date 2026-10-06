@@ -152,6 +152,37 @@ def test_capture_preserves_source_and_notes_then_cleanup_removes_only_owned_file
         " M app/other.py", "?? app/user_draft.txt"]
 
 
+@pytest.mark.parametrize("filename", ["prototype*.py", "prototype?.py", "prototype[1].py"])
+def test_capture_and_cleanup_treat_owned_filenames_literally(
+    prototyped: Path, filename: str,
+) -> None:
+    """Quoted wildcard filenames must not capture or restore a matching companion."""
+    repo = prototyped
+    owned = f"app/{filename}"
+    companion = "app/prototype1.py"
+    (repo / owned).write_bytes(b"BASE OWNED\n")
+    (repo / companion).write_bytes(b"BASE COMPANION\n")
+    git(repo, "--literal-pathspecs", "add", "--", owned, companion)
+    git(repo, "commit", "-m", "test: tracked literal filename and matching companion")
+    (repo / owned).write_bytes(b"PROTOTYPE EDIT\n")
+    (repo / companion).write_bytes(b"UNRELATED USER EDIT\n")
+    before = snapshot(repo)
+    companion_before = (repo / companion).read_bytes()
+
+    capture = run_recipe(repo, "capture.sh", (owned,))
+    assert capture.returncode == 0, capture.stdout + capture.stderr
+    assert snapshot(repo) == before
+    assert git_bytes(repo, "show", f"{CAPTURE_BRANCH}:{owned}") == b"PROTOTYPE EDIT\n"
+    assert git(repo, "diff", "--name-only", "HEAD", CAPTURE_BRANCH).splitlines() == [owned]
+    assert (repo / companion).read_bytes() == companion_before
+
+    cleanup = run_recipe(repo, "cleanup.sh", (owned,))
+    assert cleanup.returncode == 0, cleanup.stdout + cleanup.stderr
+    assert (repo / owned).read_bytes() == b"BASE OWNED\n"
+    assert (repo / companion).read_bytes() == companion_before
+    assert snapshot(repo) == before
+
+
 @pytest.mark.parametrize("failure", ["branch-exists", "changed-after-capture", "staged"])
 def test_failed_capture_or_changed_file_prevents_any_cleanup(prototyped: Path, failure: str) -> None:
     """Cleanup re-verifies the capture itself, so it cannot follow a failed one."""
