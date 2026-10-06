@@ -199,6 +199,16 @@ def test_branch_choice_and_notes_structure_are_preserved() -> None:
     assert "separately authorized implementation" in notes
 
 
+def test_catalogue_states_preservation_and_the_planning_boundary() -> None:
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    row = next(line for line in readme.splitlines()
+               if "skills/workflow/prototype/SKILL.md" in line and line.startswith("|"))
+
+    assert "capture when done" not in row
+    assert "preserve before a scoped cleanup" in row
+    assert "production adoption is separately authorized" in row
+
+
 def test_evals_reward_preservation_not_automatic_production_folding() -> None:
     """Case 4 no longer rewards folding into production; fixture cases pair the
     full wrap-up with a partly owned file whose user edit must survive (#257)."""
