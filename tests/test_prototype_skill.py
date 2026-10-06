@@ -508,6 +508,37 @@ def test_browser_check_stays_outside_the_repository_test_run() -> None:
     assert "/usr/bin/chromium" in script.read_text(encoding="utf-8")
 
 
+def test_skill_and_catalogue_require_server_side_exclusion_and_rendered_switching() -> None:
+    body = " ".join(skill_body().split())
+    assert "excluded from production on the server, not merely hidden" in body
+    ui = " ".join((SKILL_ROOT / "references/ui.md").read_text(encoding="utf-8").split())
+    anti_patterns = ui.split("## Anti-patterns", 1)[1]
+    assert "**Hiding the switcher and calling the prototype excluded.**" in anti_patterns
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    row = next(line for line in readme.splitlines()
+               if "skills/workflow/prototype/SKILL.md" in line and line.startswith("|"))
+    assert "a switcher that renders the chosen variant and survives reload" in row
+    assert "production excludes prototypes on the server" in row
+
+
+def test_ui_evals_check_rendered_switching_and_production_exclusion() -> None:
+    """Case 2 no longer stops at the URL pattern; case 7 runs the representative task
+    on the fixture project, judged by the real-browser check (#258)."""
+    document = json.loads((SKILL_ROOT / "evals/evals.json").read_text(encoding="utf-8"))
+    cases = {case["id"]: case for case in document["evals"]}
+    answer = " ".join(cases[2]["expectations"])
+    assert "changes the rendered variant" in answer and "reload" in answer
+    assert "excludes the prototype from production on the server" in answer
+    task = cases[7]
+    assert "supplied copy of the Acme settings project" in task["prompt"]
+    assert "/prototype/settings" in task["prompt"] and "--env" in task["prompt"]
+    expectations = " ".join(task["expectations"])
+    assert "tests/browser/check_prototype_ui.py" in expectations
+    assert "404" in expectations and "?variant=" in expectations
+    assert "settings_logic.py" in expectations
+    assert "no new dependency" in expectations
+
+
 def test_ui_reference_no_longer_relies_on_undeclared_template_settings() -> None:
     """The old sample gated only the bar on an undeclared settings.DEBUG and its
     switcher changed just the label and URL (#258)."""

@@ -169,4 +169,5 @@ Follow the prototype skill's When done: record which variant won and why in `NOT
 - **Variants that differ only in colour or copy.** Three slightly-tweaked card grids isn't a UI prototype, it's wallpaper. If two drafts come out too similar, redo one with explicit "do not use a card grid" guidance.
 - **Sharing too much code between variants.** A shared `<Header>` is fine; a shared `<Layout>` defeats the point. Each variant should be structurally different — different layout, information hierarchy, and primary affordance.
 - **Wiring variants to real mutations.** Point them at a stub. A prototype is for learning, not for shipping end-to-end flows.
+- **Hiding the switcher and calling the prototype excluded.** A hidden bar still leaves the throwaway route and `?variant=` working in production. Turn prototypes off on the server, from explicit configuration, and check it there.
 - **Promoting the prototype directly to production.** Rewrite it properly when folding it in. Lift the validated decision into real code with real tests, error handling, and abstractions — the throwaway exemptions end the moment it's absorbed.

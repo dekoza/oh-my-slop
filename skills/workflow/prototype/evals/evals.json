@@ -16,13 +16,15 @@
     {
       "id": 2,
       "prompt": "What should the dashboard look like? I want to see a few options.",
-      "expected_output": "The response selects the UI prototype branch and proposes 3 radically different layout variants on a single route.",
+      "expected_output": "The response selects the UI prototype branch and proposes 3 radically different layout variants on a single route, with a switcher that changes the rendered variant and keeps it on reload, and with the prototype excluded from production on the server rather than merely hidden.",
       "files": [],
       "expectations": [
         "It selects the UI branch (visual design question).",
         "It proposes 3 variants (not 1, not 10).",
         "It uses the ?variant= URL param pattern.",
-        "It prefers sub-shape A (existing page) over sub-shape B (new page)."
+        "It prefers sub-shape A (existing page) over sub-shape B (new page).",
+        "Its switcher changes the rendered variant, not just the label or URL, and the selection survives a reload.",
+        "It excludes the prototype from production on the server, from explicit configuration, rather than only hiding the switcher."
       ]
     },
     {
@@ -39,7 +41,7 @@
     },
     {
       "id": 4,
-      "prompt": "The prototype answered its question \u2014 the variant A layout is the winner. What do I do next?",
+      "prompt": "The prototype answered its question — the variant A layout is the winner. What do I do next?",
       "expected_output": "The response describes preserve-before-cleanup for a planning prototype: record the answer in NOTES.md, capture the prototype and notes on a throwaway branch that is never merged into main and verify recovery, leave a pointer through the configured tracker, then clean only the owned files. Building variant A into the real page is a separately authorized implementation, not part of finishing the prototype.",
       "files": [],
       "expectations": [
@@ -74,6 +76,19 @@
         "templates/settings_variants.html and NOTES.md are removed only after the capture is verified; files the prototype did not create or edit, other than the pointer on issue #12, and the pre-existing branches (apart from a commit that only records that pointer) and worktrees are unchanged.",
         "Variant B is not built into the production page; the next step names a separately authorized implementation.",
         "The pointer to the branch and capture commit is recorded on issue #12 as docs/agents/issue-tracker.md prescribes, with no tea, gh or push call."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Use the supplied prototype skill in the supplied copy of the Acme settings project. Prototype three structurally different layouts for the existing /settings page from its stub data, so I can flip between them in the browser, and put the same variants on a separately named throwaway route at /prototype/settings. Keep the project's start command (python3 app.py --env development or --env production) and its --env configuration. Leave the prototype in place for me to try; do not clean it up. Act within the stated scope rather than just describing a plan. Report commands, effects and remaining obligations.",
+      "expected_output": "Execute against the copied tests/fixtures/prototype project, then judge the produced wiring as it stands with tests/browser/check_prototype_ui.py under both startup configurations. In development the switcher on /settings and /prototype/settings changes the rendered variant, wraps, ignores arrow keys in a focused input and survives reload. In production the throwaway route is absent, the real page ignores ?variant= and no switcher renders. Stub data and project-native logic are reused; no installation, external access or publication.",
+      "files": [],
+      "expectations": [
+        "In development, tests/browser/check_prototype_ui.py finds a switcher on /settings and /prototype/settings whose next/previous controls and arrow keys change the rendered variant (wrapping at both ends), leave a focused input alone, and keep the selection on reload.",
+        "In production, /prototype/settings returns 404, /settings renders the same with or without ?variant=, and no switcher appears, checked by the same script.",
+        "The three variants are structurally different layouts over the stub data from settings_logic.py; settings_logic.py is unchanged and the production /settings page renders as before.",
+        "The prototype is clearly marked as throwaway and wired through the project's own runtime: no new dependency, package manager, framework or JavaScript build.",
+        "Variants perform no real mutations, and nothing is committed, pushed or published."
       ]
     }
   ]
