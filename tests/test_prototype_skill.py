@@ -807,7 +807,8 @@ def test_logic_check_finds_controls_by_the_action_they_carry() -> None:
     check = browser_check_module()
     selector = check.carried_action_selector('cancel')
     assert 'button[value="cancel"]' in selector and '[data-action="cancel"]' in selector
-    assert selector.count(":not([disabled])") == 2 and selector.count(':not([aria-disabled="true"])') == 2
+    assert selector.count(":not(:disabled)") == 2 and selector.count(':not([aria-disabled="true"])') == 2
+    assert selector.count(":visible") == 2  # a hidden button is not offered, whatever its value
     assert check.carried_action_selector('a"b') .count('a\\"b') == 2  # quotes cannot break out of the selector
 
 

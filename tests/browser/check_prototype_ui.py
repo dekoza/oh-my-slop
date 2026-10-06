@@ -467,8 +467,9 @@ def carried_action_selector(name: str) -> str:
     """Enabled controls that carry the action whatever their label says ("Cancel
     subscription" with value="cancel"): a button's value or any data-action."""
     quoted = name.replace("\\", "\\\\").replace('"', '\\"')
-    enabled = ':not([disabled]):not([aria-disabled="true"])'
-    return f'button[value="{quoted}"]{enabled}, [data-action="{quoted}"]{enabled}'
+    # Plain selectors also match hidden elements (role queries do not), so require :visible.
+    usable = ':not(:disabled):not([aria-disabled="true"]):visible'
+    return f'button[value="{quoted}"]{usable}, [data-action="{quoted}"]{usable}'
 
 
 def shows(value: str, text: str) -> bool:
@@ -503,11 +504,19 @@ def logic(run: Run, folder: Path, start: str, module: str, actions: list[str], k
         run.visit(page, server.base + "/")
         page.wait_for_timeout(SWITCH_SETTLE_MS)  # pages that build their controls after a fetch
 
-        def control(name: str):  # an enabled button or link that reads as, or carries, the action
+        def control(name: str):  # an enabled, visible button or link that reads as, or carries, the action
             pattern = name_pattern(name)
-            return (page.get_by_role("button", name=pattern, disabled=False)
-                    .or_(page.get_by_role("link", name=pattern, disabled=False))
-                    .or_(page.locator(carried_action_selector(name))))
+            exact = (page.get_by_role("button", name=pattern, disabled=False)
+                     .or_(page.get_by_role("link", name=pattern, disabled=False))
+                     .or_(page.locator(carried_action_selector(name))))
+            if exact.count():
+                return exact
+            # "Cancel subscription" for cancel: the action's words as a whole phrase in the
+            # name, accepted only when exactly one control reads that way.
+            phrase = re.compile(rf"(?<![\w-]){words_regex(name)}(?![\w-])", re.IGNORECASE)
+            loose = (page.get_by_role("button", name=phrase, disabled=False)
+                     .or_(page.get_by_role("link", name=phrase, disabled=False)))
+            return loose if loose.count() == 1 else exact
 
         known = set(actions) | set(native_universe(folder, module))  # every action the module can offer
 
