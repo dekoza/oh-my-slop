@@ -306,6 +306,17 @@ def test_planning_only_completion_records_then_captures_and_edits_no_production_
         assert "Delete the TUI shell" not in done_step and "Fold the validated decision" not in done_step, name
 
 
+def test_ui_fold_in_preserves_the_decision_without_requiring_a_blanket_rewrite() -> None:
+    """A validated pure interface can be lifted under production gates, not auto-promoted."""
+    ui = (SKILL_ROOT / "references/ui.md").read_text(encoding="utf-8")
+    rule = next(line for line in ui.splitlines() if "**Promoting the prototype" in line)
+    assert "separately authorized implementation" in rule
+    assert "validated decision" in rule
+    assert "pure interface" in rule
+    assert "real tests, error handling" in rule
+    assert "Rewrite it properly" not in rule
+
+
 def test_partly_owned_files_are_captured_but_never_cleaned_wholesale() -> None:
     """Capture is evidence and changes no checkout; cleanup takes wholly owned files only."""
     done = " ".join(section(skill_body(), "## When done").split())

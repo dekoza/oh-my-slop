@@ -49,6 +49,7 @@
         "It captures the prototype source and NOTES.md on a throwaway branch that is never merged into main and verifies recovery before any cleanup.",
         "It leaves a pointer to the branch and capture commit following the configured tracker's conventions, not a hardcoded forge CLI.",
         "It does not fold variant A into production as part of finishing; building it is a separately authorized implementation under normal quality gates.",
+        "It distinguishes the validated decision or reusable pure interface from the throwaway shell; it does not impose a blanket from-scratch rewrite on later authorized implementation.",
         "Cleanup removes only the prototype's owned files, after the capture is verified."
       ]
     },
