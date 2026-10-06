@@ -51,7 +51,7 @@ Skills here are grouped into buckets — `skills/reference/`, `skills/practice/`
 `scripts/link-skills.sh` links each skill in at the depth Claude Code expects:
 
 ```bash
-scripts/link-skills.sh                 # link all 70 into ~/.claude/skills
+scripts/link-skills.sh                 # link all 71 into ~/.claude/skills
 scripts/link-skills.sh --dry-run       # print what it would do, change nothing
 scripts/link-skills.sh --prune         # also drop links to skills this repo no longer has
 scripts/link-skills.sh ~/somewhere     # or point it at another directory
