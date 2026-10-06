@@ -120,8 +120,8 @@ def test_fixrev_routes_review_and_conflict_repairs_to_one_owner() -> None:
     assert "disable-model-invocation: true" in skill_frontmatter("fix-pr")
 
 
-def test_revmerge_delegates_review_without_publication_or_merge_authority() -> None:
-    """A review handoff does not silently become a publication workflow."""
+def test_revmerge_routes_publication_and_merge_to_its_explicit_owner_flow() -> None:
+    """Only /revmerge requests comment/merge; ordinary review stays read-only."""
     template = PROMPTS_DIR / "revmerge.md"
 
     assert template.exists(), "/revmerge is not installed as a prompt template"
@@ -129,11 +129,27 @@ def test_revmerge_delegates_review_without_publication_or_merge_authority() -> N
     frontmatter, body = split_template(template)
     assert "<pull_request>" in frontmatter
     assert "$@" in body
-    assert body.strip() == "Use the `two-axis-review` skill to review the pull request $@."
+    assert body.strip() == (
+        "Use the `two-axis-review` skill to review, comment on and merge the pull "
+        "request $@ via its `/revmerge` flow."
+    )
+    owner_dir = find_skill_dir(SKILLS_DIR, "two-axis-review")
+    owner = (owner_dir / "SKILL.md").read_text(encoding="utf-8")
+    assert "references/revmerge.md" in owner
+    flow = (owner_dir / "references/revmerge.md").read_text(encoding="utf-8")
+    assert "Wait for both axes to complete" in flow
+    assert "new discussion comment" in flow
+    assert "no blocking findings" in flow
+    assert "`grilling` skill" in flow
+    assert "wait for the owner's answer" in flow
+    assert "changed head or target" in flow
+    assert "read back" in flow
+    assert "ordinary review grants neither publication nor merge" in owner
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     row = next(line for line in readme.splitlines() if "**`/revmerge " in line)
-    assert "review-only" in row
-    assert "separately authorized" in row
+    assert "new comment" in row
+    assert "merge only without blockers" in row
+    assert "`grilling`" in row
 
 
 def test_every_template_names_a_skill_that_exists() -> None:

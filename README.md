@@ -266,7 +266,7 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 | **`/implement-spec <spec> [instructions]`** | Implement one approved ticket graph in a supervised session, with a combined branch/PR and explicit publication boundaries. |
 | **`/refine-ticket <ticket-number>`** | Forward the supplied ticket arguments to `humanify` for human-authorized agent readiness; ambiguity, authority and separate implementation remain with the skill. |
 | **`/fixrev <pull_request>`** | Fix review findings and target-branch conflicts through `fix-pr`, verify and publish to the same PR; leave merging separate. |
-| **`/revmerge <pull_request>`** | Now review-only through `two-axis-review`; replaces the former implicit comment/merge flow. Posting and merging must be separately authorized after review. |
+| **`/revmerge <pull_request>`** | Review both axes, post the review as a new comment on the PR, and merge only without blockers; route owner decisions through `grilling`. |
 | **`/questionnaire <topic>`** | Turn an unanswerable decision into a Markdown questionnaire for the one person who can fill it in. |
 | **`/arch [path]`** | Architecture health check with visual HTML report — deepening and simplification candidates, before/after diagrams, then a wayfinder map and an in-session work-through of the candidate you pick. |
 | **`/wizard [description]`** | Generate an interactive bash wizard that walks a human through a manual setup or migration procedure. |
