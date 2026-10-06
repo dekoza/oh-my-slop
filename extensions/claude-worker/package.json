@@ -1,0 +1,14 @@
+{
+  "name": "pi-extension-claude-worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-tui": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

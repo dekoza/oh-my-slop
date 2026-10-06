@@ -1,28 +1,18 @@
-import { stripVTControlCharacters } from "node:util";
 import { runClaude } from "./worker.mjs";
+import { createActivityLog, formatActivityLog, formatRunReport, readActivityLog, safeText } from "./activity.mjs";
 
 const STATE_ENTRY = "cc-worker-session";
-const DISPLAY_LIMIT = 64_000;
+const RUN_ENTRY = "cc-worker-run";
+const DISPOSITION_STATUS = { finished: "Finished (Claude Code self-report)", needs_input: "Needs input", unfinished: "Unfinished/interrupted" };
 
-function safeText(text) {
-	return stripVTControlCharacters(String(text)).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
-}
-
-function report(result) {
-	const text = safeText(result.text);
-	const truncated = text.length > DISPLAY_LIMIT;
-	return [
-		`Claude Code session: ${result.sessionId}`,
-		text.slice(0, DISPLAY_LIMIT),
-		truncated ? "[Output truncated. Open the Claude Code session to read the full result.]" : "",
-		result.permissionDenials.length ? `Warning: ${result.permissionDenials.length} tool permission(s) were denied; work may be incomplete.` : "",
-	].filter(Boolean).join("\n\n");
+function runDetails(activity) {
+	return { sessionId: activity.sessionId, disposition: activity.disposition, reason: activity.reason, report: activity.report, continuations: activity.continuations, taskOutcomes: activity.taskOutcomes, permissionDenials: activity.permissionDenials, activity };
 }
 
 export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 	let active;
 	let lastSession;
-	let lastStatus = "No worker started.";
+	let lastRun;
 	let billingConfirmed = false;
 
 	function remember(sessionId, cwd) {
@@ -30,10 +20,16 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 		pi.appendEntry(STATE_ENTRY, lastSession);
 	}
 
+	function persistRun(snapshot) {
+		lastRun = snapshot;
+		pi.appendEntry(RUN_ENTRY, snapshot);
+	}
+
 	function restore(ctx) {
-		lastSession = ctx.sessionManager.getBranch()
-			.filter((entry) => entry.type === "custom" && entry.customType === STATE_ENTRY)
-			.at(-1)?.data;
+		const branch = ctx.sessionManager.getBranch();
+		lastSession = branch.filter((entry) => entry.type === "custom" && entry.customType === STATE_ENTRY).at(-1)?.data;
+		lastRun = branch.filter((entry) => entry.type === "custom" && entry.customType === RUN_ENTRY).at(-1)?.data;
+		if (lastRun && !lastRun.endedAt) lastRun = { ...lastRun, disposition: "unfinished", status: "Unfinished/interrupted observation; terminal outcome unknown" };
 	}
 
 	async function start(prompt, resume, ctx, signal, onUpdate) {
@@ -45,54 +41,119 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 			throw new Error("No saved Claude Code session for this project. Start one with /cc <task>.");
 		}
 		const sessionId = resume ? lastSession.sessionId : undefined;
+		const resumeState = resume && lastRun?.sessionId === sessionId && lastRun.cwd === ctx.cwd ? lastRun : undefined;
 		const controller = new AbortController();
-		const job = { controller, done: undefined };
+		const job = { controller, done: undefined, log: undefined, detached: false };
 		active = job;
 		const abort = () => controller.abort();
 		signal?.addEventListener("abort", abort, { once: true });
 		if (signal?.aborted) controller.abort();
 		let preview = "";
+		let refreshTimer;
+
+		const refresh = () => {
+			if (!job.log || job.detached) return;
+			const state = job.log.snapshot();
+			const elapsed = Math.floor(((state.endedAt || Date.now()) - state.startedAt) / 1_000);
+			const idle = Math.floor((Date.now() - (state.lastActivityAt || state.startedAt)) / 1_000);
+			const status = controller.signal.aborted && !state.endedAt ? "Stopping" : state.status;
+			ctx.ui.setStatus("cc-worker", `CC: ${status} · ${elapsed}s`);
+			ctx.ui.setWidget("cc-worker", [
+				`Claude Code: ${status} · elapsed ${elapsed}s · last activity ${idle}s ago`,
+				`Activity: ${state.currentActivity || "Waiting for Claude Code"}`,
+				`Tools: ${state.stats.toolCalls} calls / ${state.stats.toolResults} results · reported active tasks: ${state.backgroundTasks.length}`,
+				...(state.reason ? [`Supervision: ${state.reason} · continuations: ${state.continuations ?? 0}`] : []),
+				...preview.split("\n").slice(-3),
+			]);
+		};
+
 		const work = async () => {
+			let result;
 			try {
 				if (!billingConfirmed) {
 					const accepted = await ctx.ui.confirm("Claude Code subscription worker", [
 						"The worker runs the installed Claude Code binary using your subscription login.",
 						"Disable extra usage in your Claude account to stop at the allowance rather than incur additional charges.",
-						"Claude Code keeps its own hooks, tools and permissions. It can change files in this project.",
+						"Claude Code uses auto mode: routine actions can run without prompting. Its hooks and permission checks remain active; it can change files and run commands in this project.",
+						"Activity is retained in a private local log. Common secrets are redacted, but logs may contain project source and tool output.",
 						`Working directory: ${ctx.cwd}`,
 					].join("\n\n"), { signal: controller.signal });
 					if (!accepted) throw new Error("Claude Code delegation cancelled.");
 					billingConfirmed = true;
 				}
 				controller.signal.throwIfAborted();
+				job.log = createActivityLog({ cwd: ctx.cwd, prompt, sessionId, resumeState });
 				if (!resume) remember(undefined, ctx.cwd);
-				lastStatus = "Running";
-				ctx.ui.setStatus("cc-worker", "CC: running");
-				const result = await run({
-					cwd: ctx.cwd, prompt, sessionId, signal: controller.signal,
-					onPermission: (request, permissionSignal) => ctx.ui.confirm(
-						`Claude Code: allow ${safeText(request.tool_name)}?`,
-						safeText(JSON.stringify(request.input, null, 2)), { signal: permissionSignal },
-					),
+				job.log.setStatus("Running");
+				persistRun(job.log.snapshot());
+				refresh();
+				refreshTimer = setInterval(refresh, 1_000);
+				refreshTimer.unref();
+				result = await run({
+					cwd: ctx.cwd, prompt, sessionId, resumeState, signal: controller.signal,
+					onState: (state) => {
+						job.log.observe(state);
+						if (!job.detached) persistRun(job.log.snapshot());
+					},
+					onPermission: async (request, permissionSignal) => {
+						if (job.detached || controller.signal.aborted || permissionSignal.aborted) return false;
+						job.log.record({ type: "worker_permission", status: "waiting", toolName: request.tool_name, input: request.input, reason: request.decision_reason });
+						refresh();
+						try {
+							const allowed = await ctx.ui.confirm(`Claude Code: allow ${safeText(request.tool_name)}?`,
+								safeText([request.decision_reason, request.blocked_path, JSON.stringify(request.input, null, 2)].filter(Boolean).join("\n\n")), { signal: permissionSignal, timeout: 60_000 });
+							job.log.record({ type: "worker_permission", status: permissionSignal.aborted ? "cancelled" : allowed ? "allowed" : "denied", toolName: request.tool_name });
+							return allowed && !permissionSignal.aborted && !controller.signal.aborted;
+						} catch (error) {
+							job.log.record({ type: "worker_permission", status: "error", toolName: request.tool_name, error: error.message });
+							throw error;
+						} finally { refresh(); }
+					},
 					onProgress: (event) => {
-						if (event.type === "system" && event.subtype === "init" && event.session_id) remember(event.session_id, ctx.cwd);
+						if (job.detached) return;
+						job.log.record(event);
+						if (event.type === "system" && event.subtype === "init" && event.session_id) {
+							remember(event.session_id, ctx.cwd);
+							persistRun(job.log.snapshot());
+						}
 						const delta = event.type === "stream_event" && event.event?.delta;
 						if (delta?.type === "text_delta") preview = (preview + safeText(delta.text)).slice(-2_000);
 						if (event.type === "assistant") {
 							const blocks = event.message?.content || [];
 							preview = safeText(blocks.filter((block) => block.type === "text").map((block) => block.text).join("\n")).slice(-2_000) || preview;
 						}
-						ctx.ui.setWidget("cc-worker", ["Claude Code worker", ...preview.split("\n").slice(-4)]);
-						onUpdate?.({ content: [{ type: "text", text: preview || "Claude Code is working…" }], details: { sessionId: lastSession?.sessionId } });
+						refresh();
+						onUpdate?.({ content: [{ type: "text", text: `${job.log.snapshot().currentActivity || "Claude Code is working…"}\n${preview}` }], details: { sessionId: lastSession?.sessionId, logPath: job.log.snapshot().logPath } });
 					},
 				});
+				controller.signal.throwIfAborted();
 				remember(result.sessionId, ctx.cwd);
-				lastStatus = result.permissionDenials.length ? "Finished with permission denials" : "Finished";
-				return result;
+				const disposition = Object.hasOwn(DISPOSITION_STATUS, result.disposition) ? result.disposition : "unfinished";
+				job.log.finish({ ...result, disposition, status: DISPOSITION_STATUS[disposition], reason: result.reason || (disposition === "unfinished" ? "No terminal task disposition reported; completion unverified." : undefined) });
+				persistRun(job.log.snapshot());
+				return { ...lastRun, text: safeText(result.text || ""), activity: lastRun };
 			} catch (error) {
-				lastStatus = controller.signal.aborted ? "Stopped" : `Failed: ${safeText(error.message)}`;
-				throw error;
+				const failure = new Error(safeText(error.message));
+				if (job.log) {
+					const diagnostics = error.outcome || result || {};
+					const outcome = { ...diagnostics, disposition: "unfinished", status: `Unfinished/interrupted (${controller.signal.aborted ? "Stopped" : "Failed"})`, reason: diagnostics.reason || (controller.signal.aborted ? "Worker stopped before task completion." : safeText(error.message)), error: failure.message };
+					let loggingError;
+					try { job.log.finish(outcome); } catch (logError) { loggingError = logError; }
+					// Never merge raw CLI outcome fields back over the sanitized log snapshot.
+					const retained = job.log.snapshot();
+					if (loggingError) retained.error += `\nActivity log write failed: ${safeText(loggingError.message)}`;
+					failure.outcome = retained;
+					// session_tree is post-navigation: never persist an abandoned job on its new branch.
+					// The private log still retains the interruption when no pre-navigation hook ran.
+					if (!job.detached) {
+						if (retained.sessionId) remember(retained.sessionId, ctx.cwd);
+						persistRun(retained);
+						pi.sendMessage({ customType: "cc-worker", content: formatRunReport(retained), details: runDetails(retained), display: true }, { triggerTurn: false });
+					}
+				}
+				throw failure;
 			} finally {
+				clearInterval(refreshTimer);
 				signal?.removeEventListener("abort", abort);
 				ctx.ui.setStatus("cc-worker", undefined);
 				ctx.ui.setWidget("cc-worker", undefined);
@@ -105,25 +166,36 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 
 	for (const [name, resume] of [["cc", false], ["cc-followup", true]]) {
 		pi.registerCommand(name, {
-			description: resume ? "Resume the last Claude Code worker with a follow-up instruction" : "Delegate a task to subscription-authenticated Claude Code",
+			description: resume ? "Resume the saved Claude Code task with missing input or a recovery instruction" : "Supervise a bounded task through subscription-authenticated Claude Code",
 			async handler(args, ctx) {
-				// Direct commands display the result without starting a Pi model turn.
 				void start(args, resume, ctx).then((result) => {
-					pi.sendMessage({ customType: "cc-worker", content: report(result), display: true }, { triggerTurn: false });
+					pi.sendMessage({ customType: "cc-worker", content: formatRunReport(result.activity, result.text), details: runDetails(result.activity), display: true }, { triggerTurn: false });
 				}).catch((error) => ctx.ui.notify(safeText(error.message), "error"));
 			},
 		});
 	}
 
 	pi.registerCommand("cc-status", {
-		description: "Show Claude Code worker status and the saved session ID",
-		handler: async (_args, ctx) => ctx.ui.notify([
-			active ? "Claude Code worker: running" : `Claude Code worker: ${lastStatus}`,
-			lastSession?.sessionId ? `Session: ${lastSession.sessionId}` : "",
-		].filter(Boolean).join("\n"), "info"),
+		description: "Show worker activity, elapsed time and retained terminal diagnostics",
+		handler: async (_args, ctx) => {
+			const state = active?.log?.snapshot() || lastRun;
+			ctx.ui.notify(state ? formatRunReport(state, "") : `No worker activity recorded.${lastSession?.sessionId ? `\nSession: ${lastSession.sessionId}` : ""}`, "info");
+		},
+	});
+	pi.registerCommand("cc-log", {
+		description: "Inspect the latest worker's retained activity timeline; expand it for tool inputs/results",
+		handler: async (_args, ctx) => {
+			const state = active?.log?.snapshot() || lastRun;
+			if (!state) return ctx.ui.notify("No worker activity recorded.", "info");
+			try {
+				const records = readActivityLog(state.logPath);
+				pi.sendMessage({ customType: "cc-worker-log", content: formatActivityLog(state, records),
+					details: { expandedText: formatActivityLog(state, records, { expanded: true }), logPath: state.logPath }, display: true }, { triggerTurn: false });
+			} catch (error) { ctx.ui.notify(`Cannot read worker activity log: ${safeText(error.message)}`, "error"); }
+		},
 	});
 	pi.registerCommand("cc-stop", {
-		description: "Stop the active Claude Code worker; preserve its session and existing file changes",
+		description: "Stop the active worker; preserve its session, activity log and existing file changes",
 		handler: async (_args, ctx) => {
 			if (!active) return ctx.ui.notify("No Claude Code worker is running.", "info");
 			active.controller.abort();
@@ -133,20 +205,27 @@ export function registerClaudeWorker(pi, parameters, { run = runClaude } = {}) {
 
 	pi.registerTool({
 		name: "claude_worker", label: "Claude Code worker",
-		description: "Delegate one bounded task to the real Claude Code CLI using the user's subscription. Requires human consent; keeps Claude Code tools, hooks and permission checks. Runs in the current project: do not concurrently modify the same files. Set resume=true to continue the saved worker session. Pi's coordinating model still uses its own provider. No worktree or automatic commit/push is created by this integration.",
+		description: "Supervise one bounded task through Claude Code using the user's subscription and existing native auto permissions. Requires human consent. Returns finished, needs_input or unfinished, with Claude Code's evidence-backed self-report (not independent Pi certification), diagnostics and a private activity log. Defaults: at most 8 host continuations and a 30-minute transport budget after subscription authentication (10-second preflight timeout). Set resume=true to supply missing input or recover the saved task in the same directory. Do not concurrently modify the same files. Pi's coordinating model still uses its own provider. No worktree, rollback or automatic commit/push is created.",
 		parameters,
 		async execute(_id, params, signal, onUpdate, ctx) {
-			if (!ctx.hasUI || !await ctx.ui.confirm("Delegate task to Claude Code?", safeText(params.prompt), { signal })) {
-				throw new Error("Claude Code delegation was not approved.");
-			}
+			if (!ctx.hasUI || !await ctx.ui.confirm("Delegate task to Claude Code?", safeText(params.prompt), { signal })) throw new Error("Claude Code delegation was not approved.");
 			const result = await start(params.prompt, params.resume === true, ctx, signal, onUpdate);
-			return { content: [{ type: "text", text: report(result) }], details: { sessionId: result.sessionId, permissionDenials: result.permissionDenials } };
+			return { content: [{ type: "text", text: formatRunReport(result.activity, result.text) }], details: runDetails(result.activity) };
 		},
 	});
 
 	pi.on("session_start", async (_event, ctx) => restore(ctx));
-	pi.on("session_tree", async (_event, ctx) => {
+	// Finish the interruption record while appendEntry still belongs to the launching branch.
+	pi.on("session_before_tree", async () => {
 		if (active) { active.controller.abort(); await active.done.catch(() => {}); }
+	});
+	// The launching command/tool reports failures; cleanup only waits for it to settle.
+	pi.on("session_tree", async (_event, ctx) => {
+		if (active) {
+			active.detached = true;
+			active.controller.abort();
+			await active.done.catch(() => {});
+		}
 		restore(ctx);
 	});
 	pi.on("session_shutdown", async () => {
