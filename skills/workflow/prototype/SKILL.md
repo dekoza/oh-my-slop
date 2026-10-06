@@ -41,7 +41,20 @@ This is distinct from *absorbing*: lifting a validated reducer keeps the **decis
 The _answer_ is the only thing worth keeping from a prototype. The prototype itself is a primary source — commit it, don't delete it.
 
 1. **Fold the validated decision into the real code.** Lift the validated reducer/interface/decision into production, held to the same bar as any production code (real tests, error handling, abstractions — the throwaway exemptions end the moment it's absorbed). This is the only thing that stays on main.
-2. **Capture the prototype as a primary source.** Commit the prototype itself to a throwaway branch *out of main* and leave a context pointer to that branch on the implementation issue (using `tea` / Gitea — see `docs/agents/issue-tracker.md`). The main branch keeps only the validated decision.
+2. **Capture the prototype as a primary source.** List the files the prototype owns: the files it created, plus existing files it edited that held no other uncommitted work when it started. A file holding someone else's uncommitted work is not owned — leave it out and report it. From the repository root, run this as one script with the owned files as arguments and `capture_branch` naming a new throwaway branch *out of main*. It commits them on that branch in a temporary worktree, leaves your checkout untouched, and checks that each file comes back byte-exact:
+
+```sh
+set -euo pipefail
+capture_dir="$(mktemp -d)"
+git worktree add -b "$capture_branch" "$capture_dir" HEAD
+tar -cf - -- "$@" | tar -xf - -C "$capture_dir"
+git -C "$capture_dir" add -- "$@"
+git -C "$capture_dir" commit -m "prototype: preserve $capture_branch"
+git worktree remove "$capture_dir"
+for path; do git cat-file blob "$capture_branch:$path" | cmp -- - "$path"; done
+```
+
+   Leave a context pointer to that branch on the implementation issue (using `tea` / Gitea — see `docs/agents/issue-tracker.md`). The main branch keeps only the validated decision.
 3. **Record the answer.** Capture the answer in a `NOTES.md` next to the prototype (or a commit message / ADR / issue if the prototype leaves no trace):
 
 ```markdown
@@ -56,6 +69,20 @@ The _answer_ is the only thing worth keeping from a prototype. The prototype its
 ```
 
 If the user is around, fill this in as a quick conversation. If not, leave the template with the fields stubbed so the verdict can be filled before the throwaway branch is abandoned. Never leave a prototype rotting in the repo.
+
+4. **Clean only what was captured.** After a successful capture, run this with the same branch and files. It stops on a staged file or on any file that no longer matches its captured bytes, and removes nothing else — unrelated tracked and untracked files, other branches and worktrees stay as they are:
+
+```sh
+set -euo pipefail
+git diff --cached --quiet -- "$@"
+for path; do git cat-file blob "$capture_branch:$path" | cmp -s -- - "$path"; done
+for path; do
+  if git cat-file -e "HEAD:$path" 2>/dev/null; then git restore --source=HEAD --worktree -- "$path"
+  else rm -- "$path"; fi
+done
+```
+
+   A failed capture or a failed check means no cleanup: report what remains.
 
 ## Reference
 
