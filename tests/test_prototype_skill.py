@@ -462,6 +462,37 @@ def test_documented_example_requires_an_explicit_configuration(tmp_path: Path) -
     assert result.returncode != 0 and "--env" in result.stderr
 
 
+FIXTURE_PROJECT = REPO_ROOT / "tests/fixtures/prototype"
+
+
+@contextlib.contextmanager
+def serve_fixture(env: str) -> Iterator[str]:
+    server = subprocess.Popen([sys.executable, "app.py", "--env", env, "--port", "0"], cwd=FIXTURE_PROJECT,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        match = re.search(r"http://127\.0\.0\.1:\d+", server.stdout.readline())
+        assert match, "the fixture project announces its loopback address"
+        yield match.group(0)
+    finally:
+        server.terminate()
+        server.wait(timeout=10)
+
+
+@pytest.mark.parametrize("env", ["development", "production"])
+def test_fixture_project_is_a_settings_page_with_no_prototype_yet(env: str) -> None:
+    """The representative task's input: a real settings page, explicit startup
+    configuration, project-native logic and stub data, and no prototype (#258)."""
+    with serve_fixture(env) as base:
+        status, page = fetch(base + "/settings")
+        assert status == 200 and "<h1>Settings</h1>" in page
+        assert "prototype-bar" not in page and "data-variant" not in page
+        assert fetch(base + "/prototype/settings")[0] == 404
+    readme = (FIXTURE_PROJECT / "README.md").read_text(encoding="utf-8")
+    assert "python3 app.py --env development" in readme and "--env production" in readme
+    logic = (FIXTURE_PROJECT / "settings_logic.py").read_text(encoding="utf-8")
+    assert "http" not in logic and "print(" not in logic  # the logic module serves and prints nothing
+
+
 def test_browser_check_stays_outside_the_repository_test_run() -> None:
     """The real-browser check needs system Playwright, which the repository's test
     environment lacks: pytest must neither collect it nor import Playwright through it."""
