@@ -1,4 +1,13 @@
-"""Real-browser evidence for the prototype skill's UI switcher and production exclusion (#258).
+"""Real-browser evidence for the prototype skill's UI switcher and production exclusion (#258)
+and for browser views of logic prototypes (#259, --logic).
+
+Logic mode (#259): drives a browser view of a logic prototype by its visible button or
+link names, and after each action requires the page to show the state the project's own
+module computes when called directly (--module with initial() and step()). It then
+repeats the run on a copy whose module carries one changed transition (--mutate): the
+page must follow the change, and must not offer an action the changed module refuses.
+A view that re-implements the logic, in JavaScript or in a private copy, cannot pass.
+By default it checks the three-file example in references/logic.md.
 
 Not a pytest module: it needs system Playwright and an installed Chromium, which the
 repository's environment does not provide. Run it from the repository root under an
@@ -44,6 +53,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -58,6 +68,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 UI_REFERENCE = REPO_ROOT / "skills/workflow/prototype/references/ui.md"
+LOGIC_REFERENCE = REPO_ROOT / "skills/workflow/prototype/references/logic.md"
 CHROMIUM = "/usr/bin/chromium"
 LAUNCH_TIMEOUT_MS = 20_000
 READY_TIMEOUT_S = 20
@@ -372,17 +383,101 @@ def reference_page(run: Run, start: str, cwd: Path, page_path: str) -> dict:
     return {"carried": carried, "assets": assets}
 
 
+def documented_logic_example(out: Path) -> Path:
+    """logic.md's example files: python blocks whose first line names the file."""
+    folder = out / "logic-example"
+    folder.mkdir(parents=True, exist_ok=True)
+    found = 0
+    for block in re.findall(r"```python\n(.*?)\n```", LOGIC_REFERENCE.read_text(encoding="utf-8"), re.DOTALL):
+        match = re.match(r"# (\S+\.py)\n", block)
+        if match:
+            (folder / match.group(1)).write_text(block + "\n", encoding="utf-8")
+            found += 1
+    check(found >= 2, "logic.md documents no named example files")
+    return folder
+
+
+def native_state(folder: Path, module: str, actions: list[str]) -> dict | None:
+    """What the project's own module computes for these actions, called directly; None
+    when the module itself refuses one of them."""
+    script = (f"import json, sys\nimport {module} as m\nstate = m.initial()\n"
+              "for a in sys.argv[1:]:\n    state = m.step(state, a)\nprint(json.dumps(state))\n")
+    result = subprocess.run([sys.executable, "-c", script, *actions], cwd=folder,
+                            capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        check("Error" in result.stderr, f"native module {module} failed to run: {result.stderr.strip()[-300:]}")
+        return None
+    return json.loads(result.stdout)
+
+
+def logic(run: Run, folder: Path, start: str, module: str, actions: list[str], key: str, label: str,
+          must_accept_all: bool) -> list[str]:
+    """Drive a browser view of the logic by its visible action names; after each action the
+    page must show the state the native module itself computes. Where the module refuses
+    the next action, the page must not offer it, and the run stops there."""
+    shown = []
+    with Server(start, "logic", folder, run.out / f"server-logic-{label}.log") as server:
+        page = run.new_page()
+        run.visit(page, server.base + "/")
+        for index, action in enumerate(actions):
+            control = page.get_by_role("button", name=action, exact=True).or_(
+                page.get_by_role("link", name=action, exact=True))
+            if native_state(folder, module, actions[:index + 1]) is None:
+                check(not must_accept_all, f"logic {label}: the module refuses {action!r} after {actions[:index]}")
+                check(control.count() == 0,
+                      f"logic {label}: the page offers {action!r}, which the module refuses after {actions[:index]}")
+                shown.append(f"<{action} refused>")
+                break
+            check(control.count() >= 1, f"logic {label}: no button or link named {action!r} after {actions[:index]}")
+            control.first.click()
+            page.wait_for_load_state("load")
+            page.wait_for_timeout(SWITCH_SETTLE_MS)
+            expected = str(native_state(folder, module, actions[:index + 1])[key])
+            check(re.search(rf"(?<![\w-]){re.escape(expected)}(?![\w-])", page.inner_text("body")) is not None,
+                  f"logic {label}: after {actions[:index + 1]} the page does not show {key}={expected!r}")
+            shown.append(expected)
+        (run.out / f"dom-logic-{label}.html").write_text(page.content(), encoding="utf-8")
+        page.close()
+    return shown
+
+
+def logic_scenario(run: Run, folder: Path, mutated: Path, start: str, module: str, actions: list[str],
+                   key: str, mutation: tuple[str, str]) -> None:
+    original = logic(run, folder, start, module, actions, key, "original", must_accept_all=True)
+    source = mutated / f"{module}.py"
+    text = source.read_text(encoding="utf-8")
+    if mutation[0] in text:  # the caller may hand in a copy that is already changed
+        check(text.count(mutation[0]) == 1, f"mutation text occurs more than once in {source.name}")
+        source.write_text(text.replace(*mutation), encoding="utf-8")
+    check(mutation[1] in source.read_text(encoding="utf-8"), f"{source.name} does not carry the mutation")
+    altered = logic(run, mutated, start, module, actions, key, "mutated", must_accept_all=False)
+    check(altered != original, "the changed module did not change what the browser view shows")
+    run.record["logic"] = {"actions": actions, "state_key": key, "shown": original,
+                           "shown_after_module_change": altered, "mutation": list(mutation)}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--project", type=Path, help="checked project directory (default: the ui.md example)")
+    parser.add_argument("--project", type=Path, help="checked project directory (default: the documented example)")
     parser.add_argument("--start", help="start command with {env} and {port} placeholders")
     parser.add_argument("--reference-project", type=Path, help="untouched project the production page must match")
     parser.add_argument("--page", default="/settings")
     parser.add_argument("--throwaway", default="/prototype/settings")
+    parser.add_argument("--logic", action="store_true",
+                        help="check a browser view of logic instead of UI variants (default: logic.md's example)")
+    parser.add_argument("--module", default="orders_machine", help="logic: the native module (initial/step)")
+    parser.add_argument("--actions", default="pay,cancel,refund", help="logic: comma-separated action names")
+    parser.add_argument("--state-key", default="status", help="logic: the state field the page must show")
+    parser.add_argument("--mutate", default='("paid", "cancel"): "refund_pending"::("paid", "cancel"): "cancelled"',
+                        help="logic: OLD::NEW change to the module that the page must follow")
+    parser.add_argument("--mutated-project", type=Path,
+                        help="logic: a copy of --project to change (default: a copy under --out)")
     args = parser.parse_args()
-    if args.project and not (args.start and args.reference_project):
-        parser.error("--project needs --start and --reference-project")
+    if args.project and not args.start:
+        parser.error("--project needs --start")
+    if args.project and not args.logic and not args.reference_project:
+        parser.error("--project needs --reference-project")
     args.out.mkdir(parents=True, exist_ok=True)
     short_tmp = None
     if len(tempfile.gettempdir()) > 40:  # Chromium's socket path under TMPDIR must stay short
@@ -392,7 +487,23 @@ def main() -> int:
     record: dict = {"chromium": CHROMIUM, "result": "FAIL: did not finish"}
     run = None
     try:
-        if args.project:
+        if args.logic:
+            if args.project:
+                cwd, start = args.project.resolve(), args.start
+            else:
+                cwd = documented_logic_example(args.out)
+                start = f"{shlex.quote(sys.executable)} prototype_orders_web.py --port {{port}}"
+            mutated = (args.mutated_project or args.out / "logic-mutated").resolve()
+            if not mutated.exists():
+                out = args.out.resolve()
+
+                def skip(directory: str, names: list[str]) -> set[str]:  # never copy the evidence into itself
+                    return {n for n in names if n in ("__pycache__", ".git") or Path(directory, n).resolve() == out}
+
+                shutil.copytree(cwd, mutated, ignore=skip)
+            record["subject"] = {"project": str(cwd), "files": digest_tree(cwd),
+                                 "logic.md sha256": hashlib.sha256(LOGIC_REFERENCE.read_bytes()).hexdigest()}
+        elif args.project:
             cwd, start = args.project.resolve(), args.start
             record["subject"] = {"project": str(cwd), "files": digest_tree(cwd)}
             record["reference"] = {"project": str(args.reference_project.resolve()),
@@ -411,12 +522,17 @@ def main() -> int:
             record["browser_version"] = browser.version
             run = Run(browser, args.out, Deadline(SCENARIO_DEADLINE_S))
             try:
-                reference = (reference_page(run, start, args.reference_project.resolve(), args.page)
-                             if args.project else None)
-                with Server(start, "development", cwd, args.out / "server-development.log") as server:
-                    development(run, server.base, args.page, args.throwaway)
-                with Server(start, "production", cwd, args.out / "server-production.log") as server:
-                    production(run, server.base, args.page, args.throwaway, reference)
+                if args.logic:
+                    old, _, new = args.mutate.partition("::")
+                    logic_scenario(run, cwd, mutated, start, args.module, args.actions.split(","),
+                                   args.state_key, (old, new))
+                else:
+                    reference = (reference_page(run, start, args.reference_project.resolve(), args.page)
+                                 if args.project else None)
+                    with Server(start, "development", cwd, args.out / "server-development.log") as server:
+                        development(run, server.base, args.page, args.throwaway)
+                    with Server(start, "production", cwd, args.out / "server-production.log") as server:
+                        production(run, server.base, args.page, args.throwaway, reference)
                 record["result"] = "PASS"
             except BaseException:
                 run.save_failure_artifacts()

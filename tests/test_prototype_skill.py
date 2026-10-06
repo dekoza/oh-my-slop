@@ -662,6 +662,16 @@ def test_changing_the_module_changes_the_browser_view(tmp_path: Path) -> None:
     assert browser_view_state(altered, actions) == native_run(altered, actions)
 
 
+def test_browser_check_offers_a_logic_mode() -> None:
+    """Real-browser evidence for logic views: actions by their visible names, state from
+    the native module, and a changed module the page must follow (#259)."""
+    result = subprocess.run([sys.executable, str(REPO_ROOT / "tests/browser/check_prototype_ui.py"), "--help"],
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    for option in ("--logic", "--module", "--actions", "--state-key", "--mutate"):
+        assert option in result.stdout, option
+
+
 def test_terminal_shell_still_drives_the_same_module(tmp_path: Path) -> None:
     """The terminal presentation stays the default for developers (#259 AC1)."""
     folder = logic_example(tmp_path)
