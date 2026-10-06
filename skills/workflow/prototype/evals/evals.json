@@ -90,6 +90,41 @@
         "The prototype is clearly marked as throwaway and wired through the project's own runtime: no new dependency, package manager, framework or JavaScript build.",
         "Variants perform no real mutations, and nothing is committed to the starting branch, pushed or published."
       ]
+    },
+    {
+      "id": 8,
+      "prompt": "I wrote this rate limiter and I'm not convinced the burst handling is right when two clients share a key. Let me poke at it myself before we merge anything.",
+      "expected_output": "The response picks the logic branch and the terminal presentation: the developer who wrote the logic is the audience, so a small terminal app over a pure module is enough. No browser view is needed.",
+      "files": [],
+      "expectations": [
+        "It selects the logic branch and keeps the rate limiter behind a pure interface.",
+        "It proposes a terminal prototype the developer drives by hand; no browser view is built for this audience.",
+        "It surfaces the full state after every action."
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Use the supplied prototype skill in the supplied disposable Git fixture. subscription_machine.py is the billing logic under question and prototype_subscription.py drives it in a terminal. Our support lead has to judge how cancel behaves after a failed payment, and they never use a terminal. Give them a throwaway browser view they can click through; it must start with python3 prototype_subscription_web.py --port <n> and print its address. Leave the prototype in place. Act within the stated scope rather than just describing a plan. Report commands, effects and remaining obligations.",
+      "expected_output": "Add a browser shell over the same subscription_machine module, in the project's own Python: buttons named after the legal actions send them to the server, the server calls the module, and the page shows the resulting state. The terminal shell keeps working. The check tests/browser/check_prototype_ui.py --logic, run against the workspace with a changed transition in a copy, sees the page follow the module. No installation, external access or publication.",
+      "files": [],
+      "expectations": [
+        "prototype_subscription_web.py serves a browser view whose actions are buttons or links named after the module's legal actions and whose page shows the resulting status.",
+        "tests/browser/check_prototype_ui.py --logic passes on the workspace: after each action the page shows what subscription_machine.py computes, and with one transition changed in a copy the page follows the change.",
+        "There is no JavaScript re-implementation and no private copy of the transitions; subscription_machine.py is unchanged.",
+        "prototype_subscription.py still drives the same module in the terminal.",
+        "No new dependency, runtime or build step, and nothing is committed to the starting branch, pushed or published."
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "Our project is a Node service, and the retry-budget logic lives in retryBudget.js as plain functions. The product owner wants to click through a few scenarios in a browser before we commit to it. What should the prototype look like?",
+      "expected_output": "The response keeps the logic in the project's own JavaScript module and adds a thin browser shell on node:http over that module, alongside or instead of a terminal shell, without bringing in Python or re-implementing the logic in the page.",
+      "files": [],
+      "expectations": [
+        "It selects the logic branch and keeps retryBudget.js as the single implementation under question.",
+        "It proposes a browser shell on node:http (or the project's existing web stack) that calls the module on the server for each action and shows the resulting state.",
+        "It adds no Python or other new runtime and does not re-implement the retry logic in page scripts."
+      ]
     }
   ]
 }

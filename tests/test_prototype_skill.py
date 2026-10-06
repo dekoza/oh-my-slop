@@ -672,6 +672,54 @@ def test_browser_check_offers_a_logic_mode() -> None:
         assert option in result.stdout, option
 
 
+def test_skill_routing_and_catalogue_offer_the_browser_view_without_a_rewrite() -> None:
+    body = " ".join(skill_body().split())
+    logic_branch = body.split("**\"Does this logic / state model feel right?\"**", 1)[1].split("- **", 1)[0]
+    assert "a browser view of the same module" in logic_branch
+    assert "never a JavaScript rewrite" in logic_branch
+    assert "→ both, in sequence" in body  # the three-way choice survives
+    index = (SKILL_ROOT / "references/REFERENCE.md").read_text(encoding="utf-8")
+    assert "people who would rather click" in index and "logic.md" in index
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    row = next(line for line in readme.splitlines()
+               if "skills/workflow/prototype/SKILL.md" in line and line.startswith("|"))
+    assert "optional browser view over the same native logic" in row
+    logic = " ".join((SKILL_ROOT / "references/logic.md").read_text(encoding="utf-8").split())
+    assert "re-implements the logic in JavaScript" in logic  # the excluded replacement is named
+
+
+def test_logic_evals_pair_terminal_browser_and_native_language_cases() -> None:
+    document = json.loads((SKILL_ROOT / "evals/evals.json").read_text(encoding="utf-8"))
+    cases = {case["id"]: case for case in document["evals"]}
+    terminal, browser, node = cases[8], cases[9], cases[10]
+    assert "terminal" in " ".join(terminal["expectations"]) and "no browser view" in " ".join(terminal["expectations"])
+    assert "disposable Git fixture" in browser["prompt"] and "prototype_subscription_web.py" in browser["prompt"]
+    browser_expectations = " ".join(browser["expectations"])
+    assert "--logic" in browser_expectations and "subscription_machine.py" in browser_expectations
+    assert "no JavaScript re-implementation" in browser_expectations
+    node_expectations = " ".join(node["expectations"])
+    assert "node:http" in node_expectations and "no Python" in node_expectations
+    triggers = json.loads((SKILL_ROOT / "evals/trigger-evals.json").read_text(encoding="utf-8"))
+    assert any(t["should_trigger"] and "click through" in t["query"] for t in triggers)
+
+
+def test_logic_fixture_project_is_pure_logic_with_a_terminal_shell(tmp_path: Path) -> None:
+    """Case 9's input: a native module with the initial/actions/step shape and its
+    terminal prototype; no browser view yet (#259)."""
+    import ast
+
+    folder = REPO_ROOT / "tests/fixtures/prototype/logic"
+    names = sorted(p.name for p in folder.iterdir() if p.is_file())
+    assert names == ["README.md", "prototype_subscription.py", "subscription_machine.py"]
+    tree = ast.parse((folder / "subscription_machine.py").read_text(encoding="utf-8"))
+    functions = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+    assert {"initial", "actions", "step"} <= functions
+    assert not [node for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))]
+    result = subprocess.run([sys.executable, "prototype_subscription.py"], cwd=folder, input="subscribe\nq\n",
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0 and '"status": "active"' in result.stdout, result.stderr
+
+
 def test_terminal_shell_still_drives_the_same_module(tmp_path: Path) -> None:
     """The terminal presentation stays the default for developers (#259 AC1)."""
     folder = logic_example(tmp_path)

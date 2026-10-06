@@ -18,7 +18,7 @@ A prototype is **throwaway code that answers a question**. The question decides 
 
 Identify which question is being answered — from the user's prompt, the surrounding code, or by asking if the user is around:
 
-- **"Does this logic / state model feel right?"** → [Logic](references/logic.md). Build a tiny interactive terminal app that pushes the state machine through cases that are hard to reason about on paper.
+- **"Does this logic / state model feel right?"** → [Logic](references/logic.md). Build a tiny interactive terminal app that pushes the state machine through cases that are hard to reason about on paper. When the people judging it would rather click, add a browser view of the same module — never a JavaScript rewrite.
 - **"What should this look like?"** → [UI](references/ui.md). Generate several radically different UI variations on a single route, switchable via a URL search param and a floating bottom bar.
 - **"Does the logic work *and* how should it surface?"** → both, in sequence. Nail the state model with the Logic branch first, then wrap the validated logic in the UI branch. Don't try to answer both questions in one artifact — a UI mockup over unvalidated logic hides which one you're actually judging.
 

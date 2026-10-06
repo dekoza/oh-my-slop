@@ -36,6 +36,10 @@
     "should_trigger": true
   },
   {
+    "query": "Our support lead wants to click through how refunds and cancellations interact before we build it — can you make something throwaway they can try in a browser, using the logic we already have?",
+    "should_trigger": true
+  },
+  {
     "query": "Give me a design direction for this product — colour palette, typography, spacing scale — no code, just the system.",
     "should_trigger": false
   },
