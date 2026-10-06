@@ -462,6 +462,21 @@ def test_documented_example_requires_an_explicit_configuration(tmp_path: Path) -
     assert result.returncode != 0 and "--env" in result.stderr
 
 
+def test_browser_check_stays_outside_the_repository_test_run() -> None:
+    """The real-browser check needs system Playwright, which the repository's test
+    environment lacks: pytest must neither collect it nor import Playwright through it."""
+    import ast
+
+    script = REPO_ROOT / "tests/browser/check_prototype_ui.py"
+    tree = ast.parse(script.read_text(encoding="utf-8"))
+    top_level = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
+    names = {alias.name for node in top_level for alias in node.names} | {
+        node.module for node in top_level if isinstance(node, ast.ImportFrom) and node.module}
+    assert not any(name.startswith("playwright") for name in names)
+    assert not script.name.startswith("test_")
+    assert "/usr/bin/chromium" in script.read_text(encoding="utf-8")
+
+
 def test_ui_reference_no_longer_relies_on_undeclared_template_settings() -> None:
     """The old sample gated only the bar on an undeclared settings.DEBUG and its
     switcher changed just the label and URL (#258)."""
