@@ -17,20 +17,22 @@ the readiness deadline.
 
 The switcher is found by the hooks ui.md declares: a `.prototype-bar` element listing
 its variants in `data-variants`, `#prev-variant`, `#next-variant` and `#variant-label`.
-What counts is what the page shows: hidden elements are ignored, and a switch may
-navigate or update the page and its URL in place.
+A switch may navigate or update the page and its URL in place.
 
-Development: variants differ in visible structure (tags and text, ignoring attributes,
-case and whitespace); initial and direct selection, next/previous, wrapping, a label
-that names the shown variant without naming all of them, the keyboard focus guard and
-reload persistence are judged on the visible page, not the URL or label alone.
+Development asks what the page shows, so hidden elements are ignored: variants differ
+in visible structure (tags and text, ignoring attributes, case and whitespace); initial
+and direct selection, next/previous, wrapping, a label that names the shown variant
+without naming all of them, the keyboard focus guard and reload persistence are judged
+on the visible page, not the URL or label alone. Animated transitions longer than the
+switch settle time are not waited for.
 
-Production: the throwaway route is absent; the real page, read after it settles, shows
-the same for every variant name seen in development and an unknown one, offered through
-the selection parameter the switcher used, a few common parameter names and a cookie of
+Production asks what the page carries, hidden elements and template content included:
+the throwaway route is absent; the real page, read after it settles, is the same for
+every variant name seen in development and an unknown one, offered through the
+selection parameter the switcher used, a few common parameter names and a cookie of
 each of those names; no switcher appears; and the page carries what the reference
-project carries, hidden elements and template content included, with the same scripts
-(differences only in styles are recorded as a warning). The ui.md example, which has no reference, must instead differ from every
+project carries, with the same scripts (differences only in styles are recorded as a
+warning). The ui.md example, which has no reference, must instead differ from every
 development variant. Other selection channels are not probed. Only owned loopback
 servers are started, each in its own process group, and they are always stopped.
 """
