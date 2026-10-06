@@ -6,6 +6,7 @@ by the matched evals in skills/workflow/prototype/evals/evals.json.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -163,6 +164,19 @@ def test_planning_only_completion_records_then_captures_and_edits_no_production_
         assert "Delete the TUI shell" not in done_step and "Fold the validated decision" not in done_step, name
 
 
+def test_partly_owned_files_are_captured_but_never_cleaned_wholesale() -> None:
+    """Capture is evidence and changes no checkout; cleanup takes wholly owned files only."""
+    done = " ".join(section(skill_body(), "## When done").split())
+    capture = done.split("**Capture the prototype as a primary source.**", 1)[1].split("```sh", 1)[0]
+    cleanup = done.split("**Clean only what was captured.**", 1)[1].split("```sh", 1)[0]
+
+    assert "every file the prototype created or edited" in capture
+    assert "leave it out" not in capture
+    assert "wholly owned" in cleanup
+    assert "someone else's uncommitted work" in cleanup
+    assert "remove only the prototype's lines by hand, or report them" in cleanup
+
+
 def test_pointer_follows_the_configured_tracker_not_a_hardcoded_forge() -> None:
     texts = {"SKILL.md": skill_body()} | {
         name: (SKILL_ROOT / "references" / name).read_text(encoding="utf-8") for name in ("logic.md", "ui.md")}
@@ -183,3 +197,27 @@ def test_branch_choice_and_notes_structure_are_preserved() -> None:
     assert fields == ["Question", "Hypothesis", "Approach", "Answer", "Confidence", "Branch", "Next step"]
     assert "fold validated decision into production" not in notes
     assert "separately authorized implementation" in notes
+
+
+def test_evals_reward_preservation_not_automatic_production_folding() -> None:
+    """Case 4 no longer rewards folding into production; fixture cases pair the
+    full wrap-up with a partly owned file whose user edit must survive (#257)."""
+    document = json.loads((SKILL_ROOT / "evals/evals.json").read_text(encoding="utf-8"))
+    cases = {case["id"]: case for case in document["evals"]}
+    assert len(cases) == len(document["evals"])
+
+    wrap_up = " ".join(cases[4]["expectations"])
+    assert "It describes folding the validated decision into production." not in cases[4]["expectations"]
+    assert "does not fold variant A into production" in wrap_up
+    assert "before any cleanup" in wrap_up
+    assert "configured tracker" in wrap_up
+
+    for case_id in (5, 6):
+        assert "disposable Git fixture" in cases[case_id]["prompt"], case_id
+        expectations = " ".join(cases[case_id]["expectations"])
+        assert "new throwaway branch" in expectations, case_id
+        assert "separately authorized implementation" in expectations, case_id
+        assert "docs/agents/issue-tracker.md" in expectations and "no tea, gh or push" in expectations, case_id
+    assert "app/orders.py" in " ".join(cases[5]["expectations"])
+    assert "heading fix" in " ".join(cases[6]["expectations"])
+    assert "not restored to HEAD" in " ".join(cases[6]["expectations"])

@@ -54,7 +54,7 @@ The _answer_ is what a prototype is for, and its source is the evidence behind t
 ```
 
    If the user is around, fill this in as a quick conversation. If not, stub the fields so the verdict can be filled in later from the captured branch.
-2. **Capture the prototype as a primary source.** List the files the prototype owns: the files it created, plus existing files it edited that held no other uncommitted work when it started. A file holding someone else's uncommitted work is not owned — leave it out and report it. From the repository root, run this as one script with the owned files as arguments and `capture_branch` naming a new throwaway branch *out of main*. It commits them on that branch in a temporary worktree, leaves your checkout untouched, and checks that each file comes back byte-exact:
+2. **Capture the prototype as a primary source.** Capture every file the prototype created or edited, including `NOTES.md`. From the repository root, run this as one script with those files as arguments and `capture_branch` naming a new throwaway branch *out of main*. It commits them on that branch in a temporary worktree, leaves your checkout untouched, and checks that each file comes back byte-exact:
 
 ```sh
 set -euo pipefail
@@ -68,7 +68,7 @@ for path; do git cat-file blob "$capture_branch:$path" | cmp -- - "$path"; done
 ```
 
 3. **Leave a pointer.** Record the branch and its capture commit (`git rev-parse "$capture_branch"`) where the answer will be read: on the implementation issue, following the configured tracker's conventions (they should have been provided to you — tell the user to run `/setup-project-skills` if not), or in a commit message or ADR when there is no issue. The branch is local. Pushing the branch publishes it: push only to the configured remote and with authority to publish; otherwise report it as local-only.
-4. **Clean only what was captured.** After a successful capture, run this with the same branch and files. It stops on a staged file or on any file that no longer matches its captured bytes, and removes nothing else — unrelated tracked and untracked files, other branches and worktrees stay as they are:
+4. **Clean only what was captured.** Clean only the files the prototype wholly owns: the files it created, plus existing files it edited that held no other uncommitted work when it started. A file that also holds someone else's uncommitted work is not wholly owned: leave it out of the recipe, then remove only the prototype's lines by hand, or report them. After a successful capture, run this with the same branch and the wholly owned files. It stops on a staged file or on any file that no longer matches its captured bytes, and removes nothing else — unrelated tracked and untracked files, other branches and worktrees stay as they are:
 
 ```sh
 set -euo pipefail
