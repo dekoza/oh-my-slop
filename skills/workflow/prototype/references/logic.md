@@ -36,7 +36,7 @@ The right shape depends on the question:
 
 Pick whichever shape best fits the question being asked, *not* whichever is easiest to wire to a TUI. Keep it pure: no I/O, no terminal code, no `print` for control flow. The TUI imports it and calls into it; nothing flows the other direction.
 
-This is what makes the prototype useful past its own lifetime. When the question's been answered, the validated reducer / machine / function set can be lifted into the real module — the TUI shell gets deleted.
+This is what makes the prototype useful past its own lifetime. When the question's been answered, a separately authorized implementation can lift the validated reducer / machine / function set into the real module; the TUI shell is never lifted.
 
 ### 4. Build the smallest TUI that exposes the state
 
@@ -67,4 +67,4 @@ No build step. No configuration. One command, one screen.
 
 ### 6. When done
 
-Capture the answer — the validated decision — somewhere durable (commit message, ADR, issue, or a `NOTES.md` next to the prototype). Delete the TUI shell. Keep the logic module if it's worth lifting into the real codebase.
+Follow the prototype skill's When done: record the answer in `NOTES.md`, capture the logic module, the TUI shell and the notes on a throwaway branch, leave a pointer, and only then clean up the owned files. Lifting the logic module into the real codebase is a separately authorized implementation.

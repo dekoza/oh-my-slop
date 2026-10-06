@@ -137,3 +137,49 @@ def test_failed_capture_or_changed_file_prevents_any_cleanup(prototyped: Path, f
     assert cleanup.returncode != 0
     assert {path: (repo / path).read_bytes() for path in OWNED} == owned_bytes
     assert snapshot(repo) == before
+
+
+def section(text: str, heading: str) -> str:
+    return text.split(heading, 1)[1].split("\n## ", 1)[0]
+
+
+def test_planning_only_completion_records_then_captures_and_edits_no_production_code() -> None:
+    """Finishing a prototype ends with findings; folding them in is separate work (#248 AC9)."""
+    done = " ".join(section(skill_body(), "## When done").split())
+
+    assert "Finishing a planning prototype edits no production code" in done
+    assert "Fold the validated decision into the real code" not in done
+    assert "separately authorized implementation" in done
+    assert "normal production quality gates" in done
+    # Decision evidence is captured with the source, so NOTES.md is written first.
+    order = [done.index(step) for step in (
+        "**Record the answer.**", "**Capture the prototype as a primary source.**",
+        "**Leave a pointer.**", "**Clean only what was captured.**")]
+    assert order == sorted(order)
+    for name in ("logic.md", "ui.md"):
+        reference = " ".join((SKILL_ROOT / "references" / name).read_text(encoding="utf-8").split())
+        done_step = reference.split("When done", 1)[1].split("##", 1)[0]
+        assert "the prototype skill's When done" in done_step, name
+        assert "Delete the TUI shell" not in done_step and "Fold the validated decision" not in done_step, name
+
+
+def test_pointer_follows_the_configured_tracker_not_a_hardcoded_forge() -> None:
+    texts = {"SKILL.md": skill_body()} | {
+        name: (SKILL_ROOT / "references" / name).read_text(encoding="utf-8") for name in ("logic.md", "ui.md")}
+    for name, text in texts.items():
+        assert not re.search(r"\btea\b|Gitea|docs/agents/", text), name
+    pointer = " ".join(section(skill_body(), "## When done").split()).split("**Leave a pointer.**", 1)[1]
+    pointer = pointer.split("**Clean only what was captured.**", 1)[0]
+    assert "configured tracker" in pointer and "/setup-project-skills" in pointer
+    assert "capture commit" in pointer
+    assert "Pushing the branch publishes it" in pointer
+
+
+def test_branch_choice_and_notes_structure_are_preserved() -> None:
+    body = skill_body()
+    assert "→ both, in sequence" in body
+    notes = body.split("```markdown", 1)[1].split("```", 1)[0]
+    fields = re.findall(r"^- \*\*(.+?):\*\*", notes, re.MULTILINE)
+    assert fields == ["Question", "Hypothesis", "Approach", "Answer", "Confidence", "Branch", "Next step"]
+    assert "fold validated decision into production" not in notes
+    assert "separately authorized implementation" in notes

@@ -120,7 +120,7 @@ def settings_prototype(request):
 
 ### 4. When done
 
-Capture the answer — which variant won and why — somewhere durable (commit message, ADR, issue, or a `NOTES.md` next to the prototype). Fold the validated decision (the winning variant) into the real page, held to the same bar as production code. The prototype itself — losing variants, switcher bar, and `NOTES.md` — is committed as a primary source to a throwaway branch out of main (see the `prototype` skill, Rule 7); leave a context pointer to that branch on the implementation issue.
+Follow the prototype skill's When done: record which variant won and why in `NOTES.md`, capture every variant, the switcher and the notes on a throwaway branch, leave a pointer, and only then clean up the owned files — including your edits to the host page. Building the winning variant into the real page is a separately authorized implementation, held to the same bar as production code.
 
 ## Anti-patterns
 
