@@ -794,6 +794,11 @@ def test_logic_check_reads_human_labels_and_knows_every_reachable_action(tmp_pat
     # Playwright searches the pattern, so it must be anchored: "pay" is not "payment_failed".
     assert not check.name_pattern("pay").search("payment_failed")
     assert check.shows("past_due", "Status: Past due") and not check.shows("past_due", "Status: past due-ish")
+    # The whole-phrase fallback for labels such as "Cancel subscription" (#259 round 6).
+    phrase = check.phrase_pattern("cancel")
+    assert phrase.search("Cancel subscription") and phrase.search("Undo cancel")
+    assert not check.phrase_pattern("pay").search("Retry payment")
+    assert not check.phrase_pattern("subscribe").search("Re-subscribe")
     folder = logic_example(tmp_path)
     assert check.native_universe(folder, "orders_machine") == ["cancel", "pay", "refund", "ship"]
     # A machine with a cycle and a growing history still yields every action (the fixture).

@@ -472,9 +472,15 @@ def carried_action_selector(name: str) -> str:
     return f'button[value="{quoted}"]{usable}, [data-action="{quoted}"]{usable}'
 
 
+def phrase_pattern(value: str) -> re.Pattern:
+    """The value's words as a whole phrase inside longer text ("Cancel subscription" for
+    cancel), in any readable spelling; "pay" does not match "payment"."""
+    return re.compile(rf"(?<![\w-]){words_regex(value)}(?![\w-])", re.IGNORECASE)
+
+
 def shows(value: str, text: str) -> bool:
     """The page text names this value as a whole word, in any readable spelling."""
-    return re.search(rf"(?<![\w-]){words_regex(value)}(?![\w-])", text, re.IGNORECASE) is not None
+    return phrase_pattern(value).search(text) is not None
 
 
 def native_state(folder: Path, module: str, actions: list[str]) -> dict | None:
@@ -513,10 +519,13 @@ def logic(run: Run, folder: Path, start: str, module: str, actions: list[str], k
                 return exact
             # "Cancel subscription" for cancel: the action's words as a whole phrase in the
             # name, accepted only when exactly one control reads that way.
-            phrase = re.compile(rf"(?<![\w-]){words_regex(name)}(?![\w-])", re.IGNORECASE)
-            loose = (page.get_by_role("button", name=phrase, disabled=False)
-                     .or_(page.get_by_role("link", name=phrase, disabled=False)))
+            loose = phrase_controls(name)
             return loose if loose.count() == 1 else exact
+
+        def phrase_controls(name: str):
+            phrase = phrase_pattern(name)
+            return (page.get_by_role("button", name=phrase, disabled=False)
+                    .or_(page.get_by_role("link", name=phrase, disabled=False)))
 
         known = set(actions) | set(native_universe(folder, module))  # every action the module can offer
 
@@ -524,8 +533,12 @@ def logic(run: Run, folder: Path, start: str, module: str, actions: list[str], k
             known.update(legal)
             for name in sorted(known):
                 offered = control(name).count() > 0
+                ambiguous = phrase_controls(name).count()
+                note = (f" ({ambiguous} controls contain its words, so the label match is ambiguous)"
+                        if not offered and ambiguous > 1 else "")
                 check(offered == (name in legal), f"logic {label}: after {done} the page "
-                      f"{'offers' if offered else 'does not offer'} {name!r}; the module's legal actions are {legal}")
+                      f"{'offers' if offered else 'does not offer'} {name!r}{note}; "
+                      f"the module's legal actions are {legal}")
 
         offers_exactly(native_answer(folder, module, [])["legal"], [])
         for index, action in enumerate(actions):
