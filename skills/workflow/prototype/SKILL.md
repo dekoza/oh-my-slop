@@ -32,7 +32,7 @@ The branches produce very different artifacts — getting this wrong wastes the 
 4. **No persistence by default.** State lives in memory. Persistence is the thing the prototype is _checking_, not something it should depend on. If the question explicitly involves a database, hit a scratch DB or a local file with a clear "PROTOTYPE — wipe me" name.
 5. **Skip the polish — while it's throwaway.** No tests, no error handling beyond what makes the prototype _runnable_, no abstractions. The point is to learn something fast, preserve it, and clean it up. These exemptions never carry over into production code.
 6. **Surface the state.** After every action (logic) or on every variant switch (UI), print or render the full relevant state so the user can see what changed.
-7. **Preserve it before cleanup.** When done, record the answer, capture the prototype as a **primary source** on a throwaway branch *out of main*, leave a pointer to it, and only then clean up the files it wholly owns (When done, below).
+7. **Preserve it before cleanup.** When done, record the answer, capture the prototype as a **primary source** on a throwaway branch that is never merged into main, leave a pointer to it, and only then clean up the files it wholly owns (When done, below).
 
 ## When done
 
@@ -52,23 +52,27 @@ The _answer_ is what a prototype is for, and its source is the evidence behind t
 ```
 
    If the user is around, fill this in as a quick conversation. If not, stub the fields so the verdict can be filled in later from the captured branch.
-2. **Capture the prototype as a primary source.** Capture every file the prototype created or edited, including `NOTES.md`. From the repository root, run this as one script with those files as arguments and `capture_branch` naming a new throwaway branch *out of main*. It commits them on that branch in a temporary worktree, leaves your checkout untouched, and checks that each file comes back byte-exact:
+2. **Capture the prototype as a primary source.** Capture every file the prototype created or edited, including `NOTES.md`. Save this script outside the repository as `capture.sh` and run it from the repository root as `capture_branch=prototype/<name> bash capture.sh <file>…`, naming a new throwaway branch. The branch starts at the current HEAD and is never merged into main. The script commits the files there in a temporary worktree, leaves your checkout untouched, and checks that each file comes back byte-exact:
 
-```sh
+```bash
 set -euo pipefail
 capture_dir="$(mktemp -d)"
 git worktree add -b "$capture_branch" "$capture_dir" HEAD
+trap 'git worktree remove --force "$capture_dir"; git branch -D "$capture_branch"' ERR
 tar -cf - -- "$@" | tar -xf - -C "$capture_dir"
 git -C "$capture_dir" add -- "$@"
-git -C "$capture_dir" commit -m "prototype: preserve $capture_branch"
+git -C "$capture_dir" commit -m "chore(prototype): preserve $capture_branch"
 git worktree remove "$capture_dir"
+trap - ERR
 for path; do git cat-file blob "$capture_branch:$path" | cmp -- - "$path"; done
 ```
 
-3. **Leave a pointer.** Record the branch and its capture commit (`git rev-parse "$capture_branch"`) where the answer will be read: on the implementation issue, following the configured tracker's conventions (they should have been provided to you — tell the user to run `/setup-project-skills` if not), or in a commit message or ADR when there is no issue. The branch is local. Pushing the branch publishes it: push only to the configured remote and with authority to publish; otherwise report it as local-only.
-4. **Clean only what was captured.** Clean only the files the prototype wholly owns: the files it created, plus existing files it edited that held no other uncommitted work when it started. A file that also holds someone else's uncommitted work is not wholly owned: leave it out of the recipe, then remove only the prototype's lines by hand, or report them. After a successful capture, run this with the same branch and the wholly owned files. It stops on a staged file or on any file that no longer matches its captured bytes, and removes nothing else — unrelated tracked and untracked files, other branches and worktrees stay as they are:
+   If a step fails — a missing file, or a pre-commit hook rejecting throwaway code — the script removes its own worktree and branch and stops. That is a failed capture: report it, and don't bypass the hook without the user's say-so. Line-ending or clean filters can fail the final check even though the commit exists; report that too instead of cleaning up.
 
-```sh
+3. **Leave a pointer.** Record the branch and its capture commit (`git rev-parse "$capture_branch"`) where the answer will be read: on the implementation issue, following the configured tracker's conventions (they should have been provided to you — tell the user to run `/setup-project-skills` if not), or in a commit message or ADR when there is no issue. The branch is local. Pushing the branch publishes it: push only to the configured remote and with authority to publish; otherwise report it as local-only.
+4. **Clean only what was captured.** Clean only the files the prototype wholly owns: the files it created, plus existing files it edited that held no other uncommitted work when it started. A file that also holds someone else's uncommitted work is not wholly owned: leave it out of the recipe, then remove only the prototype's lines by hand, or report them. After a successful capture, save this as `cleanup.sh` and run `capture_branch=prototype/<name> bash cleanup.sh <file>…` with the same branch and the wholly owned files. It stops on a staged file or on any file that no longer matches its captured bytes, and removes nothing else — unrelated tracked and untracked files, other branches and worktrees stay as they are:
+
+```bash
 set -euo pipefail
 git diff --cached --quiet -- "$@"
 for path; do git cat-file blob "$capture_branch:$path" | cmp -s -- - "$path"; done

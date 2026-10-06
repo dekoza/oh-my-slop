@@ -34,16 +34,29 @@ def git(repo: Path, *args: str, expected: int = 0) -> str:
     return result.stdout
 
 
-def recipe(marker: str) -> str:
-    blocks = re.findall(r"```sh\n(.*?)\n```", skill_body(), re.DOTALL)
-    found = [block for block in blocks if marker in block]
-    assert len(found) == 1, f"document exactly one sh recipe containing {marker!r}"
+def git_bytes(repo: Path, *args: str) -> bytes:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, check=True, timeout=15,
+        env={**os.environ, **ISOLATED_GIT},
+    ).stdout
+
+
+SCRIPTS = {"capture.sh": "worktree add", "cleanup.sh": "restore --source=HEAD"}
+
+
+def recipe(script: str) -> str:
+    blocks = re.findall(r"```bash\n(.*?)\n```", skill_body(), re.DOTALL)
+    found = [block for block in blocks if SCRIPTS[script] in block]
+    assert len(found) == 1, f"document exactly one bash recipe for {script}"
     return found[0]
 
 
-def run_recipe(repo: Path, marker: str) -> subprocess.CompletedProcess[str]:
+def run_recipe(repo: Path, script: str, paths: tuple[str, ...] = OWNED) -> subprocess.CompletedProcess[str]:
+    """Run the recipe the way the skill says: saved outside the repository, files as arguments."""
+    saved = repo.parent / script
+    saved.write_text(recipe(script) + "\n", encoding="utf-8")
     return subprocess.run(
-        ["bash", "-c", recipe(marker), "recipe", *OWNED], cwd=repo, capture_output=True,
+        ["bash", str(saved), *paths], cwd=repo, capture_output=True,
         text=True, timeout=30, env={**os.environ, **ISOLATED_GIT, "capture_branch": CAPTURE_BRANCH},
     )
 
@@ -94,7 +107,7 @@ def test_capture_preserves_source_and_notes_then_cleanup_removes_only_owned_file
     before = snapshot(repo)
     owned_bytes = {path: (repo / path).read_bytes() for path in OWNED}
 
-    capture = run_recipe(repo, "worktree add")
+    capture = run_recipe(repo, "capture.sh")
     assert capture.returncode == 0, capture.stdout + capture.stderr
     # Capture changes no checkout state: the throwaway branch is built beside it.
     assert snapshot(repo) == before
@@ -103,11 +116,9 @@ def test_capture_preserves_source_and_notes_then_cleanup_removes_only_owned_file
     assert git(repo, "rev-parse", f"{CAPTURE_BRANCH}^") == before["head"]
     assert sorted(git(repo, "diff", "--name-only", "HEAD", CAPTURE_BRANCH).split()) == sorted(OWNED)
     for path, data in owned_bytes.items():  # recovery: each source file comes back byte-exact
-        shown = subprocess.run(["git", "-C", str(repo), "show", f"{CAPTURE_BRANCH}:{path}"],
-                               capture_output=True, check=True, timeout=15)
-        assert shown.stdout == data, path
+        assert git_bytes(repo, "show", f"{CAPTURE_BRANCH}:{path}") == data, path
 
-    cleanup = run_recipe(repo, "restore --source=HEAD")
+    cleanup = run_recipe(repo, "cleanup.sh")
     assert cleanup.returncode == 0, cleanup.stdout + cleanup.stderr
     assert not (repo / OWNED[0]).exists() and not (repo / OWNED[1]).exists()
     assert (repo / "app/settings.html").read_text(encoding="utf-8") == "<h1>Settings</h1>\n"
@@ -124,20 +135,53 @@ def test_failed_capture_or_changed_file_prevents_any_cleanup(prototyped: Path, f
         # A retained branch of the same name is not overwritten and is not a capture.
         git(repo, "branch", CAPTURE_BRANCH, "prototype/older-question")
         retained = git(repo, "rev-parse", CAPTURE_BRANCH)
-        capture = run_recipe(repo, "worktree add")
+        capture = run_recipe(repo, "capture.sh")
         assert capture.returncode != 0
         assert git(repo, "rev-parse", CAPTURE_BRANCH) == retained
     else:
-        capture = run_recipe(repo, "worktree add")
+        capture = run_recipe(repo, "capture.sh")
         assert capture.returncode == 0, capture.stdout + capture.stderr
         (repo / OWNED[0]).write_text("VARIANTS = 'abcd'  # edited after capture\n", encoding="utf-8")
     before = snapshot(repo)
     owned_bytes = {path: (repo / path).read_bytes() for path in OWNED}
 
-    cleanup = run_recipe(repo, "restore --source=HEAD")
+    cleanup = run_recipe(repo, "cleanup.sh")
     assert cleanup.returncode != 0
     assert {path: (repo / path).read_bytes() for path in OWNED} == owned_bytes
     assert snapshot(repo) == before
+
+
+@pytest.mark.parametrize("failure", ["rejecting-hook", "missing-file"])
+def test_capture_failing_midway_rolls_back_its_own_worktree_and_branch(prototyped: Path, failure: str) -> None:
+    """A hook rejection or a missing file leaves no capture debris that blocks a retry."""
+    repo = prototyped
+    paths = OWNED
+    if failure == "rejecting-hook":
+        hook = repo / ".git/hooks/pre-commit"
+        hook.write_text("#!/bin/sh\necho 'lint: prototype code rejected' >&2\nexit 1\n", encoding="utf-8")
+        hook.chmod(0o755)
+    else:
+        paths = OWNED + ("app/prototype-settings/missing.py",)
+    before = snapshot(repo)
+    owned_bytes = {path: (repo / path).read_bytes() for path in OWNED}
+
+    capture = run_recipe(repo, "capture.sh", paths)
+    assert capture.returncode != 0
+    git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{CAPTURE_BRANCH}", expected=1)
+    assert snapshot(repo) == before
+    assert {path: (repo / path).read_bytes() for path in OWNED} == owned_bytes
+
+
+def test_skill_documents_how_to_run_each_recipe() -> None:
+    """A recipe run as `bash -c '<recipe>' file…` would take the first file as $0."""
+    done = " ".join(section(skill_body(), "## When done").split())
+    assert "`capture_branch=prototype/<name> bash capture.sh <file>…`" in done
+    assert "`capture_branch=prototype/<name> bash cleanup.sh <file>…`" in done
+    assert "outside the repository" in done
+    assert "```sh" not in skill_body()
+    # The recipe branches from HEAD, which cleanup restores from; it is not cut from main.
+    assert "out of main" not in skill_body()
+    assert "starts at the current HEAD and is never merged into main" in done
 
 
 def section(text: str, heading: str) -> str:
@@ -167,8 +211,8 @@ def test_planning_only_completion_records_then_captures_and_edits_no_production_
 def test_partly_owned_files_are_captured_but_never_cleaned_wholesale() -> None:
     """Capture is evidence and changes no checkout; cleanup takes wholly owned files only."""
     done = " ".join(section(skill_body(), "## When done").split())
-    capture = done.split("**Capture the prototype as a primary source.**", 1)[1].split("```sh", 1)[0]
-    cleanup = done.split("**Clean only what was captured.**", 1)[1].split("```sh", 1)[0]
+    capture = done.split("**Capture the prototype as a primary source.**", 1)[1].split("```bash", 1)[0]
+    cleanup = done.split("**Clean only what was captured.**", 1)[1].split("```bash", 1)[0]
 
     assert "every file the prototype created or edited" in capture
     assert "leave it out" not in capture
