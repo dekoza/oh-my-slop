@@ -408,11 +408,9 @@ def documented_example() -> str:
 
 
 @contextlib.contextmanager
-def serve_example(tmp_path: Path, env: str) -> Iterator[str]:
-    script = tmp_path / "prototype_example.py"
-    script.write_text(documented_example() + "\n", encoding="utf-8")
-    server = subprocess.Popen([sys.executable, str(script), "--env", env, "--port", "0"],
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+def serve(argv: list[str], cwd: Path) -> Iterator[str]:
+    """Start an owned loopback server that announces its address first; always stop it."""
+    server = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     try:
         line = server.stdout.readline()
         match = re.search(r"http://127\.0\.0\.1:\d+", line)
@@ -420,7 +418,19 @@ def serve_example(tmp_path: Path, env: str) -> Iterator[str]:
         yield match.group(0)
     finally:
         server.terminate()
-        server.wait(timeout=10)
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=10)
+
+
+@contextlib.contextmanager
+def serve_example(tmp_path: Path, env: str) -> Iterator[str]:
+    script = tmp_path / "prototype_example.py"
+    script.write_text(documented_example() + "\n", encoding="utf-8")
+    with serve([sys.executable, str(script), "--env", env, "--port", "0"], tmp_path) as base:
+        yield base
 
 
 def fetch(url: str) -> tuple[int, str]:
@@ -465,32 +475,25 @@ def test_documented_example_requires_an_explicit_configuration(tmp_path: Path) -
 FIXTURE_PROJECT = REPO_ROOT / "tests/fixtures/prototype"
 
 
-@contextlib.contextmanager
-def serve_fixture(env: str) -> Iterator[str]:
-    server = subprocess.Popen([sys.executable, "app.py", "--env", env, "--port", "0"], cwd=FIXTURE_PROJECT,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    try:
-        match = re.search(r"http://127\.0\.0\.1:\d+", server.stdout.readline())
-        assert match, "the fixture project announces its loopback address"
-        yield match.group(0)
-    finally:
-        server.terminate()
-        server.wait(timeout=10)
-
-
 @pytest.mark.parametrize("env", ["development", "production"])
 def test_fixture_project_is_a_settings_page_with_no_prototype_yet(env: str) -> None:
     """The representative task's input: a real settings page, explicit startup
     configuration, project-native logic and stub data, and no prototype (#258)."""
-    with serve_fixture(env) as base:
+    import ast
+
+    with serve([sys.executable, "app.py", "--env", env, "--port", "0"], FIXTURE_PROJECT) as base:
         status, page = fetch(base + "/settings")
         assert status == 200 and "<h1>Settings</h1>" in page
         assert "prototype-bar" not in page and "data-variant" not in page
         assert fetch(base + "/prototype/settings")[0] == 404
     readme = (FIXTURE_PROJECT / "README.md").read_text(encoding="utf-8")
     assert "python3 app.py --env development" in readme and "--env production" in readme
-    logic = (FIXTURE_PROJECT / "settings_logic.py").read_text(encoding="utf-8")
-    assert "http" not in logic and "print(" not in logic  # the logic module serves and prints nothing
+    # The logic module is pure: it imports no I/O, serving or process machinery.
+    logic = ast.parse((FIXTURE_PROJECT / "settings_logic.py").read_text(encoding="utf-8"))
+    imported = {alias.name for node in ast.walk(logic) if isinstance(node, (ast.Import, ast.ImportFrom))
+                for alias in node.names} | {node.module for node in ast.walk(logic)
+                                            if isinstance(node, ast.ImportFrom) and node.module}
+    assert not imported & {"http", "http.server", "socket", "os", "subprocess", "sys"}
 
 
 def test_browser_check_stays_outside_the_repository_test_run() -> None:
@@ -537,6 +540,20 @@ def test_ui_evals_check_rendered_switching_and_production_exclusion() -> None:
     assert "404" in expectations and "?variant=" in expectations
     assert "settings_logic.py" in expectations
     assert "no new dependency" in expectations
+
+
+def test_ui_reference_declares_the_switcher_hooks_and_derives_them_from_one_list() -> None:
+    """Checks and agents find the switcher by declared hooks; the bar's variant list
+    comes from the same mapping the server renders, so a new variant is reachable."""
+    ui = " ".join((SKILL_ROOT / "references/ui.md").read_text(encoding="utf-8").split())
+    wiring = ui.split("### 3. Wire them together", 1)[1].split("```python", 1)[0]
+    for hook in ("`.prototype-bar`", "`data-variants`", "`#prev-variant`", "`#next-variant`", "`#variant-label`"):
+        assert hook in wiring, hook
+    example = documented_example()
+    assert "json.dumps(list(VARIANTS))" in example and "[\"a\",\"b\",\"c\"]" not in example
+    assert "e.altKey || e.ctrlKey || e.metaKey" in example  # browser shortcuts stay the browser's
+    for raw in ("<th>{k}</th>", "<summary>{k}</summary>", '" | ".join(SETTINGS)'):
+        assert raw not in example, raw  # every interpolated string is escaped
 
 
 def test_ui_reference_no_longer_relies_on_undeclared_template_settings() -> None:

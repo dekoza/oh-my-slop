@@ -38,6 +38,8 @@ ROUTES = {"/settings": render_settings}
 
 
 def make_handler(config: dict):
+    """Build the request handler; `config` is the startup configuration every route may read."""
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             route = ROUTES.get(urlsplit(self.path).path)

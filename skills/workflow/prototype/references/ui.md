@@ -61,7 +61,7 @@ Three things must hold, and only running the page shows them:
 - **A reload keeps the selection**, because the URL carries it.
 - **Production excludes the prototype on the server.** Read one explicit setting when the server starts — never an undeclared template variable. With prototypes off, don't register throwaway routes, ignore `?variant=` on the real page, and render no switcher. Hiding the bar is not exclusion.
 
-This sketch shows all three with the Python standard library only. Adapt it to the project's own framework and configuration rather than copying its server:
+Keep the switcher's hooks whatever the framework — a `.prototype-bar` element listing the variant names in `data-variants`, with `#prev-variant`, `#next-variant` and `#variant-label` — so every prototype can be checked the same way. This sketch shows all three with the Python standard library only. Adapt it to the project's own framework and configuration rather than copying its server:
 
 ```python
 """Prototype variants on an existing page, plus a throwaway route.
@@ -71,6 +71,7 @@ Prototypes exist only when the server starts with --env development.
 """
 import argparse
 import html
+import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
@@ -78,13 +79,14 @@ SETTINGS = {"name": "Ada", "email": "ada@example.com", "theme": "dark"}  # stub 
 
 VARIANTS = {  # structurally different layouts over the same data
     "a": lambda: "<table>" + "".join(
-        f"<tr><th>{k}</th><td>{html.escape(v)}</td></tr>" for k, v in SETTINGS.items()) + "</table>",
+        f"<tr><th>{html.escape(k)}</th><td>{html.escape(v)}</td></tr>" for k, v in SETTINGS.items()) + "</table>",
     "b": lambda: "".join(
-        f"<details open><summary>{k}</summary>{html.escape(v)}</details>" for k, v in SETTINGS.items()),
-    "c": lambda: "<nav>" + " | ".join(SETTINGS) + "</nav><p>" + html.escape(SETTINGS["name"]) + "</p>",
+        f"<details open><summary>{html.escape(k)}</summary>{html.escape(v)}</details>" for k, v in SETTINGS.items()),
+    "c": lambda: "<nav>" + " | ".join(html.escape(k) for k in SETTINGS) + "</nav><p>"
+    + html.escape(SETTINGS["name"]) + "</p>",
 }
 
-SWITCHER = """<div class="prototype-bar" data-variants='["a","b","c"]'
+SWITCHER = """<div class="prototype-bar" data-variants="VARIANT_NAMES"
   style="position:fixed;bottom:0;left:0;right:0;display:flex;gap:8px;justify-content:center;padding:8px">
   <button type="button" id="prev-variant">&#8592; Prev</button>
   <span id="variant-label"></span>
@@ -103,6 +105,7 @@ SWITCHER = """<div class="prototype-bar" data-variants='["a","b","c"]'
   document.getElementById('prev-variant').addEventListener('click', function () { go(-1); });
   document.getElementById('next-variant').addEventListener('click', function () { go(1); });
   document.addEventListener('keydown', function (e) {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;  // leave browser shortcuts to the browser
     if (e.target.closest('input, textarea, select, [contenteditable]')) return;
     if (e.key === 'ArrowLeft') go(-1);
     else if (e.key === 'ArrowRight') go(1);
@@ -134,7 +137,8 @@ def make_handler(prototypes: bool):
             else:
                 self.send_error(404)
                 return
-            bar = SWITCHER if prototypes else ""
+            names = html.escape(json.dumps(list(VARIANTS)))  # the bar lists exactly what the server renders
+            bar = SWITCHER.replace("VARIANT_NAMES", names) if prototypes else ""
             body = f"<!doctype html><html><body><header>Acme</header>{main}{bar}</body></html>".encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
