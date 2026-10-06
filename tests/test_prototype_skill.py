@@ -53,14 +53,19 @@ def recipe(script: str) -> str:
     return found[0]
 
 
-def run_recipe(repo: Path, script: str, paths: tuple[str, ...] = OWNED) -> subprocess.CompletedProcess[str]:
-    """Run the recipe the way the skill says: saved outside the repository, files as arguments."""
+def run_recipe(repo: Path, script: str, paths: tuple[str, ...] = OWNED, cwd: Path | None = None,
+               branch: str | None = CAPTURE_BRANCH) -> subprocess.CompletedProcess[str]:
+    """Run the recipe the way the skill says: saved outside the repository, files as
+    arguments. Its temporary directories land in an owned, initially empty TMPDIR."""
     saved = repo.parent / script
     saved.write_text(recipe(script) + "\n", encoding="utf-8")
-    return subprocess.run(
-        ["bash", str(saved), *paths], cwd=repo, capture_output=True,
-        text=True, timeout=30, env={**os.environ, **ISOLATED_GIT, "capture_branch": CAPTURE_BRANCH},
-    )
+    temp = repo.parent / "tmp"
+    temp.mkdir(exist_ok=True)
+    env = {**os.environ, **ISOLATED_GIT, "TMPDIR": str(temp)}
+    if branch is not None:
+        env["capture_branch"] = branch
+    return subprocess.run(["bash", str(saved), *paths], cwd=cwd or repo, capture_output=True,
+                          text=True, timeout=30, env=env)
 
 
 @pytest.fixture
@@ -145,6 +150,7 @@ def test_failed_capture_or_changed_file_prevents_any_cleanup(prototyped: Path, f
         capture = run_recipe(repo, "capture.sh")
         assert capture.returncode != 0
         assert git(repo, "rev-parse", CAPTURE_BRANCH) == retained
+        assert list((repo.parent / "tmp").iterdir()) == []  # its temp directory went too
     else:
         capture = run_recipe(repo, "capture.sh")
         assert capture.returncode == 0, capture.stdout + capture.stderr
@@ -159,7 +165,7 @@ def test_failed_capture_or_changed_file_prevents_any_cleanup(prototyped: Path, f
     cleanup = run_recipe(repo, "cleanup.sh")
     assert cleanup.returncode != 0
     if failure == "staged":
-        assert "staged" in cleanup.stderr
+        assert "staged" in cleanup.stderr and OWNED[0] in cleanup.stderr
     assert {path: (repo / path).read_bytes() for path in OWNED} == owned_bytes
     assert snapshot(repo) == before
 
@@ -183,6 +189,22 @@ def test_capture_failing_midway_rolls_back_its_own_worktree_and_branch(prototype
     git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{CAPTURE_BRANCH}", expected=1)
     assert snapshot(repo) == before
     assert {path: (repo / path).read_bytes() for path in OWNED} == owned_bytes
+    assert list((repo.parent / "tmp").iterdir()) == []
+
+
+def test_capture_keeps_its_commit_when_a_hook_dirties_the_temporary_worktree(prototyped: Path) -> None:
+    """Once the commit exists the rollback is over: a post-commit hook that leaves an
+    untracked file must not make the capture delete the commit it just made."""
+    repo = prototyped
+    hook = repo / ".git/hooks/post-commit"
+    hook.write_text("#!/bin/sh\necho generated > junk.txt\n", encoding="utf-8")
+    hook.chmod(0o755)
+
+    capture = run_recipe(repo, "capture.sh")
+    assert capture.returncode == 0, capture.stdout + capture.stderr
+    pointer = capture.stdout.splitlines()[-1]
+    assert pointer == git(repo, "rev-parse", CAPTURE_BRANCH).strip()
+    assert git(repo, "worktree", "list", "--porcelain").count("worktree ") == 2  # main + kept
 
 
 def test_capture_whose_final_check_fails_keeps_its_commit_and_blocks_cleanup(prototyped: Path) -> None:
@@ -203,21 +225,27 @@ def test_capture_whose_final_check_fails_keeps_its_commit_and_blocks_cleanup(pro
 
 
 @pytest.mark.parametrize("script", ["capture.sh", "cleanup.sh"])
-def test_recipes_refuse_to_run_outside_the_repository_root(prototyped: Path, script: str) -> None:
-    """From a subdirectory, root-relative paths would be captured or removed at the wrong place."""
+@pytest.mark.parametrize("where", ["subdirectory", "outside-any-repository", "no-branch-name"])
+def test_recipes_refuse_to_start_without_a_root_and_a_branch(prototyped: Path, script: str, where: str) -> None:
+    """From a subdirectory, root-relative paths would be captured or removed at the
+    wrong place; outside a repository or without a branch name nothing can be captured."""
     repo = prototyped
     owned_bytes = {path: (repo / path).read_bytes() for path in OWNED}
-    saved = repo.parent / script
-    saved.write_text(recipe(script) + "\n", encoding="utf-8")
-    result = subprocess.run(
-        ["bash", str(saved), "variants/layout.py"], cwd=repo / "app/prototype-settings",
-        capture_output=True, text=True, timeout=30,
-        env={**os.environ, **ISOLATED_GIT, "capture_branch": CAPTURE_BRANCH},
-    )
+    if where == "subdirectory":
+        result = run_recipe(repo, script, ("variants/layout.py",), cwd=repo / "app/prototype-settings")
+        assert "repository root" in result.stderr
+    elif where == "outside-any-repository":
+        outside = repo.parent / "not-a-repo"
+        outside.mkdir()
+        result = run_recipe(repo, script, ("layout.py",), cwd=outside)
+        assert "staged" not in result.stderr  # no misleading reason
+    else:
+        result = run_recipe(repo, script, branch=None)
+        assert "capture_branch" in result.stderr
     assert result.returncode != 0
-    assert "repository root" in result.stderr
     git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{CAPTURE_BRANCH}", expected=1)
     assert {path: (repo / path).read_bytes() for path in OWNED} == owned_bytes
+    assert list((repo.parent / "tmp").iterdir()) == []
 
 
 def test_skill_documents_how_to_run_each_recipe() -> None:
@@ -285,6 +313,7 @@ def test_partly_owned_files_are_captured_but_never_cleaned_wholesale() -> None:
     failed_capture = done.split("**Leave a pointer.**", 1)[0].rsplit("```", 1)[1]
     assert "an ignored path" in failed_capture and "a hook that rewrites files" in failed_capture
     assert "capture again under a new branch name" in failed_capture
+    assert "delete the kept branch only with the user's say-so" in failed_capture
     for name in ("logic.md", "ui.md"):
         done_step = reference_done_step(name)
         assert "wholly owns" in done_step, name
@@ -354,4 +383,6 @@ def test_evals_reward_preservation_not_automatic_production_folding() -> None:
     # Following the skill removes the created NOTES.md, so a strict grader must not fail it.
     assert "settings_variants.html and NOTES.md are removed only after" in " ".join(cases[6]["expectations"])
     # The skill itself writes the issue pointer and the capture branch.
-    assert "other than the pointer on issue #12, and the pre-existing branches and worktrees are unchanged" in " ".join(cases[6]["expectations"])
+    # The skill itself writes the issue pointer (which the tracker may commit) and the capture branch.
+    assert ("other than the pointer on issue #12, and the pre-existing branches (apart from a commit that "
+            "only records that pointer) and worktrees are unchanged") in " ".join(cases[6]["expectations"])
