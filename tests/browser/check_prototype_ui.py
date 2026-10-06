@@ -6,11 +6,13 @@ visible button or link names, and after each action requires the page to show th
 the project's own module computes when called directly (--module with initial(),
 actions(state) and step(state, action); an action outside actions(state) is a refusal,
 and any exception is a failure). The state is looked for in the page's #state element
-when it has one, else in the whole page. It then
-repeats the run on a copy whose module carries one changed transition (--mutate): the
-page must follow the change, and must not offer an action the changed module refuses.
-A view that re-implements the logic, in JavaScript or in a private copy, cannot pass.
-By default it checks the three-file example in references/logic.md.
+when it has one, else in the whole page. At the start and after every action the page
+must offer exactly the module's legal actions among all actions seen so far. It then
+repeats the run on a copy whose module carries one change (--mutate): the page must
+follow it. Choose a change inside step() rather than in a transition table, so a page
+that copies the logic, or runs its own step() over a table the module exports, cannot
+follow it; the default does that for references/logic.md's three-file example, which is
+also what it checks by default.
 
 Not a pytest module: it needs system Playwright and an installed Chromium, which the
 repository's environment does not provide. Run it from the repository root under an
@@ -82,7 +84,12 @@ SETTLE_MS = 1_500  # production: client-side changes later than this after load 
 FOCUS_GUARD_WAIT_MS = 3_000  # a switch later than this after the key press is not observed
 UNKNOWN_VARIANT = "no-such-variant"
 COMMON_SELECTION_PARAMS = ("variant", "layout", "design", "option", "prototype", "v")
-ADDRESS = re.compile(r"http://127\.0\.0\.1:\d+")
+ADDRESS = re.compile(r"http://(?:127\.0\.0\.1|localhost):\d+")
+# The default change edits code inside step(), not the TRANSITIONS table, so a page that
+# runs its own step() over a table exported by the module cannot follow it.
+DEFAULT_MUTATION = ('{"status": TRANSITIONS[(state["status"], action)],'
+                    '::{"status": "refund_hold" if (state["status"], action) == ("paid", "cancel")'
+                    ' else TRANSITIONS[(state["status"], action)],')
 # Development question, "what does the page show?": visible tags and text in document
 # order, attributes ignored, text casefolded and whitespace collapsed; hidden elements
 # (display, visibility, opacity), templates and the switcher left out.
@@ -403,14 +410,15 @@ def documented_logic_example(out: Path) -> Path:
 NO_BYTECODE = {"PYTHONDONTWRITEBYTECODE": "1"}  # never leave __pycache__ in a checked project
 
 
-def native_state(folder: Path, module: str, actions: list[str]) -> dict | None:
-    """What the project's own Python module computes for these actions, called directly.
-    None when an action is not among the module's actions(state); any exception or exit is
-    a failure, so a broken module can never pass as a refusal."""
+def native_answer(folder: Path, module: str, actions: list[str]) -> dict | None:
+    """What the project's own Python module computes for these actions, called directly:
+    the state and the actions legal in it. None when an action is not among the module's
+    actions(state); any exception or exit is a failure, so a broken module can never pass
+    as a refusal."""
     script = (f"import json, sys\nimport {module} as m\nstate = m.initial()\n"
               "for a in sys.argv[1:]:\n    if a not in m.actions(state):\n"
               "        print(json.dumps({'refused': a}))\n        break\n    state = m.step(state, a)\n"
-              "else:\n    print(json.dumps({'state': state}))\n")
+              "else:\n    print(json.dumps({'state': state, 'legal': sorted(m.actions(state))}))\n")
     result = subprocess.run([sys.executable, "-c", script, *actions], cwd=folder, capture_output=True,
                             text=True, timeout=30, env={**os.environ, **NO_BYTECODE})
     check(result.returncode == 0, f"native module {module} failed: {result.stderr.strip()[-300:]}")
@@ -421,7 +429,12 @@ def native_state(folder: Path, module: str, actions: list[str]) -> dict | None:
         answer = None
     check(isinstance(answer, dict) and ("state" in answer or "refused" in answer),
           f"native module {module} gave no readable answer: {result.stdout.strip()[-200:]!r}")
-    return answer.get("state")
+    return None if "refused" in answer else answer
+
+
+def native_state(folder: Path, module: str, actions: list[str]) -> dict | None:
+    answer = native_answer(folder, module, actions)
+    return None if answer is None else answer["state"]
 
 
 def apply_mutation(source: Path, mutation: tuple[str, str]) -> None:
@@ -443,21 +456,33 @@ def logic(run: Run, folder: Path, start: str, module: str, actions: list[str], k
     with Server(start, "logic", folder, run.out / f"server-logic-{label}.log") as server:
         page = run.new_page()
         run.visit(page, server.base + "/")
+
+        def control(name: str):
+            return page.get_by_role("button", name=name, exact=True).or_(page.get_by_role("link", name=name, exact=True))
+
+        known = set(actions)  # every action seen so far: scripted, or legal in a visited state
+
+        def offers_exactly(legal: list[str], done: list[str]) -> None:
+            known.update(legal)
+            for name in sorted(known):
+                offered = control(name).count() > 0
+                check(offered == (name in legal), f"logic {label}: after {done} the page "
+                      f"{'offers' if offered else 'does not offer'} {name!r}; the module's legal actions are {legal}")
+
+        offers_exactly(native_answer(folder, module, [])["legal"], [])
         for index, action in enumerate(actions):
-            control = page.get_by_role("button", name=action, exact=True).or_(
-                page.get_by_role("link", name=action, exact=True))
-            native = native_state(folder, module, actions[:index + 1])
+            native = native_answer(folder, module, actions[:index + 1])
             if native is None:
                 check(not must_accept_all, f"logic {label}: the module refuses {action!r} after {actions[:index]}")
-                check(control.count() == 0,
+                check(control(action).count() == 0,
                       f"logic {label}: the page offers {action!r}, which the module refuses after {actions[:index]}")
                 shown.append(f"<{action} refused>")
                 break
-            check(control.count() >= 1, f"logic {label}: no button or link named {action!r} after {actions[:index]}")
-            control.first.click()
+            control(action).first.click()
             page.wait_for_load_state("load")
             page.wait_for_timeout(SWITCH_SETTLE_MS)
-            expected = str(native[key])
+            offers_exactly(native["legal"], actions[:index + 1])
+            expected = str(native["state"][key])
             # Prefer the state the page declares (#state) when it has one; else the whole page.
             shown_text = page.inner_text("#state") if page.locator("#state").count() else page.inner_text("body")
             check(re.search(rf"(?<![\w-]){re.escape(expected)}(?![\w-])", shown_text) is not None,
@@ -499,7 +524,7 @@ def main() -> int:
     parser.add_argument("--actions", default="pay,cancel,refund", help="logic: comma-separated action names")
     parser.add_argument("--state-key", default="status", help="logic: the state field the page must show")
     parser.add_argument("--mutate", type=mutation,
-                        default='("paid", "cancel"): "refund_pending"::("paid", "cancel"): "cancelled"',
+                        default=DEFAULT_MUTATION,
                         help="logic: OLD::NEW change to the module that the page must follow")
     parser.add_argument("--mutated-project", type=Path,
                         help="logic: a copy of --project to change, reused if it exists "

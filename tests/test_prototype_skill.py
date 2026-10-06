@@ -695,6 +695,10 @@ def test_logic_evals_pair_terminal_browser_and_native_language_cases() -> None:
     terminal, browser, node = cases[8], cases[9], cases[10]
     assert "terminal" in " ".join(terminal["expectations"]) and "no browser view" in " ".join(terminal["expectations"])
     assert "disposable Git fixture" in browser["prompt"] and "prototype_subscription_web.py" in browser["prompt"]
+    # The grading contract is stated, not hidden: a free port and the address it really serves.
+    assert "--port 0 picks a free port" in browser["prompt"] and "http://127.0.0.1:<port>" in browser["prompt"]
+    # Case 7's settings project stays as it was: the logic fixture is not part of its input.
+    assert "excluding its logic/ subdirectory" in cases[7]["expected_output"]
     browser_expectations = " ".join(browser["expectations"])
     assert "--logic" in browser_expectations and "subscription_machine.py" in browser_expectations
     assert "no JavaScript re-implementation" in browser_expectations
@@ -717,7 +721,8 @@ def test_logic_fixture_project_is_pure_logic_with_a_terminal_shell() -> None:
     assert {"initial", "actions", "step"} <= functions
     assert not [node for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))]
     result = subprocess.run([sys.executable, "prototype_subscription.py"], cwd=folder, input="subscribe\nq\n",
-                            capture_output=True, text=True, timeout=15)
+                            capture_output=True, text=True, timeout=15,
+                            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})  # keep the fixture clean
     assert result.returncode == 0 and '"status": "active"' in result.stdout, result.stderr
 
 
@@ -757,6 +762,24 @@ def test_logic_check_tells_a_refused_action_from_a_broken_module(tmp_path: Path)
         "def step(state, action):\n    sys.exit(3)\n", encoding="utf-8")
     with pytest.raises(check.Failure):
         check.native_state(folder, "exiting_machine", ["pay"])
+
+
+def test_logic_check_knows_the_legal_actions_and_changes_step_itself(tmp_path: Path) -> None:
+    """The check compares the offered controls with the module's actions(state), and its
+    default change edits step() itself, so a page that runs its own step() over the
+    module's exported table cannot follow it (#259 second SPEC review)."""
+    import ast
+
+    check = browser_check_module()
+    folder = logic_example(tmp_path)
+    assert check.native_answer(folder, "orders_machine", ["pay"]) == {
+        "state": {"status": "paid", "history": ["pay"]}, "legal": ["cancel", "ship"]}
+    assert check.native_answer(folder, "orders_machine", []) ["legal"] == ["cancel", "pay"]
+    old, new = check.DEFAULT_MUTATION.split("::")
+    module = (folder / "orders_machine.py").read_text(encoding="utf-8")
+    step = next(node for node in ast.parse(module).body if isinstance(node, ast.FunctionDef) and node.name == "step")
+    assert old.strip() in ast.get_source_segment(module, step)  # the change lands inside step()
+    assert "TRANSITIONS = " not in old
 
 
 def test_logic_check_never_changes_the_checked_project(tmp_path: Path) -> None:
