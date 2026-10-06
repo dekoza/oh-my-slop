@@ -95,14 +95,19 @@ def test_refine_ticket_routes_explicit_ticket_through_authorized_readiness() -> 
     frontmatter, body = split_template(template)
     assert 'argument-hint: "<ticket-number>"' in frontmatter
     assert body.strip() == (
-        "Use the `humanify` skill to refine ticket $@ through human-authorized "
-        "agent readiness. " + FALLBACK_CLAUSE
+        "Use the `humanify` skill to refine the single ticket-number argument $@ "
+        "via its `/refine-ticket` flow. " + FALLBACK_CLAUSE
     )
     # Authority and ambiguous-input handling belong to the owner, not the shim.
     owner = (find_skill_dir(SKILLS_DIR, "humanify") / "SKILL.md").read_text(
         encoding="utf-8"
     )
     assert "unambiguously" in owner
+    assert "exactly one positive ticket number" in owner
+    assert "optionally prefixed with `#`" in owner
+    assert "before any ticket work" in owner
+    assert "missing, invalid or ambiguous" in owner
+    assert "`/refine-ticket <ticket-number>`" in owner
     assert "Implementation starts in a separate session." in owner
     assert "Never infer readiness from design confirmation." in owner
 

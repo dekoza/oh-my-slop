@@ -264,7 +264,7 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 | **`/handoff`** | Compact the conversation into a handoff document for another agent. References artifacts, redacts secrets, saves to temp. |
 | **`/humanify <ticket>`** | Turn a human-blocked ticket into agent-implementable work; you decide, the agent drives refinement through authorized readiness. |
 | **`/implement-spec <spec> [instructions]`** | Implement one approved ticket graph in a supervised session, with a combined branch/PR and explicit publication boundaries. |
-| **`/refine-ticket <ticket-number>`** | Forward the supplied ticket arguments to `humanify` for human-authorized agent readiness; ambiguity, authority and separate implementation remain with the skill. |
+| **`/refine-ticket <ticket-number>`** | Refine exactly one positive ticket number (optional `#` prefix) through `humanify` to human-authorized agent readiness; reject missing, invalid or ambiguous arguments before ticket work. Implementation starts separately. |
 | **`/fixrev <pull_request>`** | Fix review findings and target-branch conflicts through `fix-pr`, verify and publish to the same PR; leave merging separate. |
 | **`/revmerge <pull_request>`** | Review both axes, post the review as a new comment on the PR, and merge only without blockers; route owner decisions through `grilling`. |
 | **`/questionnaire <topic>`** | Turn an unanswerable decision into a Markdown questionnaire for the one person who can fill it in. |
