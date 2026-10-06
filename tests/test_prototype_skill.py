@@ -115,8 +115,12 @@ def test_capture_preserves_source_and_notes_then_cleanup_removes_only_owned_file
     # The branch holds exactly the owned files, on top of the prototyped commit.
     assert git(repo, "rev-parse", f"{CAPTURE_BRANCH}^") == before["head"]
     assert sorted(git(repo, "diff", "--name-only", "HEAD", CAPTURE_BRANCH).split()) == sorted(OWNED)
+    # The pointer is the capture commit the script prints; it alone recovers every file.
+    pointer = capture.stdout.splitlines()[-1]
+    assert pointer == git(repo, "rev-parse", CAPTURE_BRANCH).strip()
+    assert git(repo, "cat-file", "-t", pointer).strip() == "commit"
     for path, data in owned_bytes.items():  # recovery: each source file comes back byte-exact
-        assert git_bytes(repo, "show", f"{CAPTURE_BRANCH}:{path}") == data, path
+        assert git_bytes(repo, "show", f"{pointer}:{path}") == data, path
 
     cleanup = run_recipe(repo, "cleanup.sh")
     assert cleanup.returncode == 0, cleanup.stdout + cleanup.stderr
