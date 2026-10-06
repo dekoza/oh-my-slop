@@ -125,13 +125,14 @@ def test_capture_preserves_source_and_notes_then_cleanup_removes_only_owned_file
     cleanup = run_recipe(repo, "cleanup.sh")
     assert cleanup.returncode == 0, cleanup.stdout + cleanup.stderr
     assert not (repo / OWNED[0]).exists() and not (repo / OWNED[1]).exists()
+    assert not (repo / "app/prototype-settings").exists()  # emptied by cleanup, so removed
     assert (repo / "app/settings.html").read_text(encoding="utf-8") == "<h1>Settings</h1>\n"
     assert snapshot(repo) == before
     assert git(repo, "status", "--porcelain=v1", "--untracked-files=all").splitlines() == [
         " M app/other.py", "?? app/user_draft.txt"]
 
 
-@pytest.mark.parametrize("failure", ["branch-exists", "changed-after-capture"])
+@pytest.mark.parametrize("failure", ["branch-exists", "changed-after-capture", "staged"])
 def test_failed_capture_or_changed_file_prevents_any_cleanup(prototyped: Path, failure: str) -> None:
     """Cleanup re-verifies the capture itself, so it cannot follow a failed one."""
     repo = prototyped
@@ -145,12 +146,18 @@ def test_failed_capture_or_changed_file_prevents_any_cleanup(prototyped: Path, f
     else:
         capture = run_recipe(repo, "capture.sh")
         assert capture.returncode == 0, capture.stdout + capture.stderr
-        (repo / OWNED[0]).write_text("VARIANTS = 'abcd'  # edited after capture\n", encoding="utf-8")
+        if failure == "staged":
+            # Removing a staged file would leave its index entry behind.
+            git(repo, "add", "--", OWNED[0])
+        else:
+            (repo / OWNED[0]).write_text("VARIANTS = 'abcd'  # edited after capture\n", encoding="utf-8")
     before = snapshot(repo)
     owned_bytes = {path: (repo / path).read_bytes() for path in OWNED}
 
     cleanup = run_recipe(repo, "cleanup.sh")
     assert cleanup.returncode != 0
+    if failure == "staged":
+        assert "staged" in cleanup.stderr
     assert {path: (repo / path).read_bytes() for path in OWNED} == owned_bytes
     assert snapshot(repo) == before
 
