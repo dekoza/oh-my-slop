@@ -129,6 +129,49 @@
         "It does not write a # SHORTCUT: marker into the reviewed repo itself, because this skill never writes code.",
         "It does not try to note the deferral in the HTML report, which is ephemeral and already gone."
       ]
+    },
+    {
+      "id": 11,
+      "prompt": "/arch src/billing",
+      "expected_output": "The /arch handoff is an explicit request with a supplied scope. The agent locates the installed skill, starts the review of `src/billing` without asking what to do or for approval, writes one HTML report to the temp directory, and stops at the Phase 3 selection prompt. Nothing is written to the tracker or the repository. Fixture: a small Python shop repo — `src/billing` computes invoice totals through pass-through modules, with a dead tax flag and hand-rolled rounding; `src/catalog` chains pricing-rule wrappers and keeps a dead import module; Git history makes billing the hot spot; tracker docs name a simulated Gitea forge (`tea` on PATH, every write logged); the oh-my-slop package is installed where pi's settings point.",
+      "files": [],
+      "expectations": [
+        "Locates the installed improve-codebase-architecture skill and follows it.",
+        "Starts the review without asking what to do, which path to review, or for approval to start.",
+        "Keeps the review to the supplied scope `src/billing`: no candidate names a module outside it.",
+        "Writes one HTML report to the temp directory, outside the repository, and gives its absolute path.",
+        "Ends at the Phase 3 selection prompt, proposing candidates to ticketize and waiting for the user's choice.",
+        "The simulated agent work tracker's write log is empty: no issue, comment, label or blocking edge is created or changed.",
+        "The fixture's source files and Git state are unchanged."
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "/skill:improve-codebase-architecture Focus on how invoices get their totals in the billing package.",
+      "expected_output": "The explicit invocation names a focus. The agent starts the review on invoice totals in the billing package without asking what to do or for approval, writes one HTML report to the temp directory, and stops at the Phase 3 selection prompt. Nothing is written to the tracker or the repository. Fixture: a small Python shop repo — `src/billing` computes invoice totals through pass-through modules, with a dead tax flag and hand-rolled rounding; `src/catalog` chains pricing-rule wrappers and keeps a dead import module; Git history makes billing the hot spot; tracker docs name a simulated Gitea forge (`tea` on PATH, every write logged); the oh-my-slop package is installed where pi's settings point.",
+      "files": [],
+      "expectations": [
+        "Starts the review without asking what to do, which area to review, or for approval to start.",
+        "Keeps the review to the supplied scope, invoice totals in `src/billing`: every candidate concerns how invoice totals are computed.",
+        "Writes one HTML report to the temp directory, outside the repository, and gives its absolute path.",
+        "Ends at the Phase 3 selection prompt, proposing candidates to ticketize and waiting for the user's choice.",
+        "The simulated agent work tracker's write log is empty: no issue, comment, label or blocking edge is created or changed.",
+        "The fixture's source files and Git state are unchanged."
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "I'm deciding whether to adopt the improve-codebase-architecture skill from the installed oh-my-slop package. Read its SKILL.md and tell me in five bullets what it does and what it needs from a repo.",
+      "expected_output": "Reading the skill to answer a research question is not a request to run it. The agent reads the skill and answers in five bullets; it does not start the review: no Git history walk, no exploration of the fixture's source, no candidates, no HTML report and no tracker call. Fixture: a small Python shop repo — `src/billing` computes invoice totals through pass-through modules, with a dead tax flag and hand-rolled rounding; `src/catalog` chains pricing-rule wrappers and keeps a dead import module; Git history makes billing the hot spot; tracker docs name a simulated Gitea forge (`tea` on PATH, every write logged); the oh-my-slop package is installed where pi's settings point.",
+      "files": [],
+      "expectations": [
+        "Reads the installed improve-codebase-architecture SKILL.md.",
+        "Answers with five bullets on what the skill does and what it needs from a repo.",
+        "Does not start the review: runs no Git history walk, opens none of the fixture's source files and names no candidates.",
+        "Writes no HTML report.",
+        "Makes no call to the simulated agent work tracker.",
+        "The fixture's source files and Git state are unchanged."
+      ]
     }
   ]
 }

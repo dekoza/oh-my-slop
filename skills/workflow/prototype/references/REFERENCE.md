@@ -10,4 +10,5 @@
 ## Quick routing
 
 - "Does this state model feel right?" → `logic.md`
+- "Show this logic to people who would rather click" → `logic.md`, step 5: a browser view of the same module
 - "What should this page look like?" → `ui.md`

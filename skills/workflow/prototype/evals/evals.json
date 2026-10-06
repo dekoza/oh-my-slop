@@ -16,13 +16,15 @@
     {
       "id": 2,
       "prompt": "What should the dashboard look like? I want to see a few options.",
-      "expected_output": "The response selects the UI prototype branch and proposes 3 radically different layout variants on a single route.",
+      "expected_output": "The response selects the UI prototype branch and proposes 3 radically different layout variants on a single route, with a switcher that changes the rendered variant and keeps it on reload, and with the prototype excluded from production on the server rather than merely hidden.",
       "files": [],
       "expectations": [
         "It selects the UI branch (visual design question).",
         "It proposes 3 variants (not 1, not 10).",
         "It uses the ?variant= URL param pattern.",
-        "It prefers sub-shape A (existing page) over sub-shape B (new page)."
+        "It prefers sub-shape A (existing page) over sub-shape B (new page).",
+        "Its switcher changes the rendered variant, not just the label or URL, and the selection survives a reload.",
+        "It excludes the prototype from production on the server, from explicit configuration, rather than only hiding the switcher."
       ]
     },
     {
@@ -40,12 +42,90 @@
     {
       "id": 4,
       "prompt": "The prototype answered its question \u2014 the variant A layout is the winner. What do I do next?",
-      "expected_output": "The response describes the capture-not-delete process: fold the winning variant into production, commit the prototype as a primary source to a throwaway branch, and leave a context pointer on the implementation issue.",
+      "expected_output": "The response describes preserve-before-cleanup for a planning prototype: record the answer in NOTES.md, capture the prototype and notes on a throwaway branch that is never merged into main and verify recovery, leave a pointer through the configured tracker, then clean only the owned files. Building variant A into the real page is a separately authorized implementation, not part of finishing the prototype.",
       "files": [],
       "expectations": [
-        "It describes folding the validated decision into production.",
-        "It describes committing the prototype to a throwaway branch out of main.",
-        "It mentions leaving a context pointer on the implementation issue."
+        "It records the answer (question, answer, confidence, next step) in NOTES.md before capturing.",
+        "It captures the prototype source and NOTES.md on a throwaway branch that is never merged into main and verifies recovery before any cleanup.",
+        "It leaves a pointer to the branch and capture commit following the configured tracker's conventions, not a hardcoded forge CLI.",
+        "It does not fold variant A into production as part of finishing; building it is a separately authorized implementation under normal quality gates.",
+        "It distinguishes the validated decision or reusable pure interface from the throwaway shell; it does not impose a blanket from-scratch rewrite on later authorized implementation.",
+        "Cleanup removes only the prototype's owned files, after the capture is verified.",
+        "Inspection, staging and restoration use literal Git pathspecs so wildcard characters in an owned filename cannot select unrelated files."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Use the supplied prototype skill in the supplied disposable Git fixture. The order-cancellation logic prototype (scripts/prototype_orders.py and scripts/orders_machine.py) answered its question: a cancel after payment must refund before shipping, confidence high. Wrap it up. The project's tracker conventions are in docs/agents/issue-tracker.md (a local markdown tracker) and the implementation issue is #12. app/orders.py has my uncommitted refactor, notes/todo.txt is my untracked list, and the branch prototype/older-question and the worktree at ../kept belong to someone else. Act within the stated scope rather than just describing a plan. Report commands, effects and remaining obligations.",
+      "expected_output": "Execute against a real repository: write NOTES.md beside the prototype, commit the two prototype files and NOTES.md on a new throwaway branch, verify that they come back byte-exact, record the branch and capture commit on local issue #12 as docs/agents/issue-tracker.md prescribes, and only then remove the captured files. app/orders.py, notes/todo.txt, prototype/older-question and ../kept stay exactly as they were. No production module adopts the refund rule; that is a separately authorized implementation. No installation, external access or publication.",
+      "files": [],
+      "expectations": [
+        "A new throwaway branch holds scripts/prototype_orders.py, scripts/orders_machine.py and a NOTES.md recording question, answer, confidence and next step, each byte-identical to the files before cleanup.",
+        "The prototype files leave the checkout only after that capture exists; nothing else is removed or restored.",
+        "app/orders.py's uncommitted refactor, notes/todo.txt, the prototype/older-question branch and the ../kept worktree are unchanged.",
+        "No production module is edited to adopt the decision; the next step names a separately authorized implementation.",
+        "The pointer to the branch and capture commit is recorded on issue #12 as docs/agents/issue-tracker.md prescribes, with no tea, gh or push call."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Use the supplied prototype skill in the supplied disposable Git fixture. The settings-page UI prototype (three variants in templates/settings_variants.html, plus the ?variant= switch you added to templates/settings.html) answered the layout question: variant B wins, confidence medium. Clean up the prototype. While you were prototyping I also fixed the heading typo in templates/settings.html; that edit is mine. Tracker conventions: docs/agents/issue-tracker.md (a local markdown tracker); implementation issue #12. Act within the stated scope rather than just describing a plan. Report commands, effects and remaining obligations.",
+      "expected_output": "Execute against a real repository. templates/settings.html is not wholly owned: it holds the prototype switch and the user's heading fix. Capture templates/settings_variants.html, the prototype's settings.html edits and NOTES.md on a new throwaway branch before any cleanup. Remove settings_variants.html only after verifying the capture. Do not restore settings.html to HEAD: either remove only the switch lines, leaving the heading fix byte-identical, or leave the file and report the remaining prototype lines. Variant B is not built into the page. The pointer follows docs/agents/issue-tracker.md. No installation, external access or publication.",
+      "files": [],
+      "expectations": [
+        "templates/settings_variants.html, the prototype's templates/settings.html edits and a NOTES.md (question, answer, confidence, next step) are captured on a new throwaway branch before any cleanup.",
+        "The user's heading fix in templates/settings.html survives byte-for-byte: the file is not restored to HEAD, and any prototype lines left in it are reported or removed without touching the fix.",
+        "templates/settings_variants.html and NOTES.md are removed only after the capture is verified; files the prototype did not create or edit, other than the pointer on issue #12, and the pre-existing branches (apart from a commit that only records that pointer) and worktrees are unchanged.",
+        "Variant B is not built into the production page; the next step names a separately authorized implementation.",
+        "The pointer to the branch and capture commit is recorded on issue #12 as docs/agents/issue-tracker.md prescribes, with no tea, gh or push call."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Use the supplied prototype skill in the supplied copy of the Acme settings project. Prototype three structurally different layouts for the existing /settings page from its stub data, so I can flip between them in the browser, and put the same variants on a separately named throwaway route at /prototype/settings. Keep the project's start command (python3 app.py --env development or --env production) and its --env configuration. Leave the prototype in place for me to try; do not clean it up. Act within the stated scope rather than just describing a plan. Report commands, effects and remaining obligations.",
+      "expected_output": "Execute against the copied tests/fixtures/prototype project (excluding its logic/ subdirectory, the input of case 9), then judge the produced wiring as it stands with tests/browser/check_prototype_ui.py under both startup configurations. In development the switcher on /settings and /prototype/settings changes the rendered variant, wraps, ignores arrow keys in a focused input and survives reload. In production the throwaway route is absent, the real page ignores ?variant= and no switcher renders. Stub data and project-native logic are reused; no installation, external access or publication.",
+      "files": [],
+      "expectations": [
+        "In development, tests/browser/check_prototype_ui.py finds a switcher on /settings and /prototype/settings whose next/previous controls and arrow keys change the rendered variant (wrapping at both ends), leave a focused input alone, and keep the selection on reload.",
+        "In production, /prototype/settings returns 404 with or without a trailing slash, /settings renders the same in the browser for every variant name used in development and for an unknown one, and no switcher appears, checked by the same script.",
+        "The three variants are structurally different layouts over the stub data from settings_logic.py; settings_logic.py is unchanged and the production /settings page renders as before (the script compares it with the untouched project via --reference-project).",
+        "The prototype is clearly marked as throwaway and wired through the project's own runtime: no new dependency, package manager, framework or JavaScript build.",
+        "Variants perform no real mutations, and nothing is committed to the starting branch, pushed or published."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "I wrote this rate limiter and I'm not convinced the burst handling is right when two clients share a key. Let me poke at it myself before we merge anything.",
+      "expected_output": "The response picks the logic branch and the terminal presentation: the developer who wrote the logic is the audience, so a small terminal app over a pure module is enough. No browser view is needed.",
+      "files": [],
+      "expectations": [
+        "It selects the logic branch and keeps the rate limiter behind a pure interface.",
+        "It proposes a terminal prototype the developer drives by hand; no browser view is built for this audience.",
+        "It surfaces the full state after every action."
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Use the supplied prototype skill in the supplied disposable Git fixture. subscription_machine.py is the billing logic under question and prototype_subscription.py drives it in a terminal. Our support lead has to judge how cancel behaves after a failed payment, and they never use a terminal. Give them a throwaway browser view they can click through; it must start with python3 prototype_subscription_web.py --port <n>, where --port 0 picks a free port, and print the address it actually serves as http://127.0.0.1:<port>. Leave the prototype in place. Act within the stated scope rather than just describing a plan. Report commands, effects and remaining obligations.",
+      "expected_output": "Add a browser shell over the same subscription_machine module, in the project's own Python: buttons named after the legal actions send them to the server, the server calls the module, and the page shows the resulting state. The terminal shell keeps working. The check tests/browser/check_prototype_ui.py --logic, run against the workspace with a changed transition in a copy, sees the page follow the module. No installation, external access or publication.",
+      "files": [],
+      "expectations": [
+        "prototype_subscription_web.py serves a browser view whose actions are buttons or links named after the module's legal actions and whose page shows the resulting status.",
+        "tests/browser/check_prototype_ui.py --logic passes on the workspace: after each action the page shows what subscription_machine.py computes, and with one transition changed in a copy the page follows the change.",
+        "There is no JavaScript re-implementation and no private copy of the transitions; subscription_machine.py is unchanged.",
+        "prototype_subscription.py still drives the same module in the terminal.",
+        "No new dependency, runtime or build step, and nothing is committed to the starting branch, pushed or published."
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "Our project is a Node service, and the retry-budget logic lives in retryBudget.js as plain functions. The product owner wants to click through a few scenarios in a browser before we commit to it. What should the prototype look like?",
+      "expected_output": "The response keeps the logic in the project's own JavaScript module and adds a thin browser shell on node:http over that module, alongside or instead of a terminal shell, without bringing in Python or re-implementing the logic in the page.",
+      "files": [],
+      "expectations": [
+        "It selects the logic branch and keeps retryBudget.js as the single implementation under question.",
+        "It proposes a browser shell on node:http (or the project's existing web stack) that calls the module on the server for each action and shows the resulting state.",
+        "It adds no Python or other new runtime and does not re-implement the retry logic in page scripts."
       ]
     }
   ]

@@ -38,7 +38,7 @@ When 5+ failures exist, the feedback loop strategy changes:
 2. **Cluster by root cause** — same exception type, same traceback module, same fixture.
 3. **Run cluster subsets** between fixes — `pytest tests/payments/ tests/campaigns/ -x`.
 4. **Keep the environment warm** — stay in a Docker shell, don't restart containers per invocation.
-5. **Full suite after each cluster** — not after each fix, not only at the end.
+5. **Run proportionate project gates** — use [testing-workflow](../../testing-workflow/SKILL.md) and the project's check policy for required affected-tier/cross-cluster checks between waves and broader regression gates. Whole-product E2E/full suites run when the project/risk requires them, not automatically per cluster. Explicit full-suite mandates remain mandatory; missing required coverage is a gap, not success.
 
 See [Multi-Failure Triage](../SKILL.md#multi-failure-triage-when-5-failures-exist) for the full workflow.
 

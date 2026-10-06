@@ -2,6 +2,17 @@
   "skill_name": "humanify",
   "evals": [
     {
+      "id": 11,
+      "prompt": "Response simulation only; no live tracker or invented receipts. Compare /refine-ticket with no arguments, with 0, with -3, with portal/42, with 42 43, and with #42. The current project has a configured tracker. State the next action for each; do not infer a ticket from conversation history. Also state whether this guard rejects an explicit repository/number reference supplied to /humanify itself.",
+      "expected_output": "Rejects missing, nonpositive, nonnumeric and multiple arguments before any ticket work, asks through grilling for one positive ticket number, accepts #42 on the configured tracker, and keeps humanify\u0027s wider reference forms unchanged.",
+      "files": [],
+      "expectations": [
+        "Requires exactly one positive ticket number with optional # prefix for /refine-ticket and does not silently choose a ticket.",
+        "Uses grilling with a recommendation to obtain a valid invocation before tracker reads or writes for invalid cases.",
+        "Accepts #42 without granting readiness or implementation, and does not apply the command-specific restriction to /humanify\u0027s explicit reference forms."
+      ]
+    },
+    {
       "id": 10,
       "prompt": "Continue /humanify sample/controller #124. Supplied fixture only: return proposed brief/recording actions and status, no real writes or invented receipts. The bounded status-filter brief is complete and checked against the existing CLI seam and EnrollmentStore.list shape; filters never mutate state, and registration/enablement changes are excluded. A native blocker #79 owns delivery of the approved scrubbed dataset at fixtures/enrollments.scrubbed.json. Its required shape is accepted, but the dataset is not delivered and #79 is open. The operator has explicitly authorized publishing this exact brief and marking #124 ready-for-agent; no dispatch, blocker closure or dependency rewrite. Project policy defines ready-for-agent as sufficient and authorized, with prerequisite eligibility independent. The current ticket is ready-for-human, workflow:implement, enhancement, open and unassigned. No other gap or material change exists.",
       "expected_output": "Publish and read back the checked brief and scoped grant before the authorized state transition, retaining #79 and reporting prepared/authorized but blocked rather than runnable or needs-info.",

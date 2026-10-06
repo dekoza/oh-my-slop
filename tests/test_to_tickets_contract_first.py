@@ -1,4 +1,5 @@
-"""#191: contract-first ordering, walking skeleton first, one language per builder.
+"""#191: contract-first ordering, walking skeleton first, one language per builder;
+#256: reuse of sufficient accepted unchanged interfaces with recorded evidence.
 
 Decision evidence: docs/surveys/swarm-forge-adoption-survey-2026-08-30.md,
 adoption item 5 and the two #135 notes. The skill emits an explicit inspected
@@ -7,6 +8,7 @@ ordering contract; an external executor's enforcement is not presumed here.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from scripts.validate_refs import find_skill_dir
@@ -65,3 +67,103 @@ def test_implement_names_the_shared_vocabulary_as_a_builder_input() -> None:
     assert "`CONTEXT.md`" in text
     # Not a write target: N parallel slices must not race on one glossary file.
     assert "leave the glossary edit to the map's owner" in text
+
+
+def _normalized(text: str) -> str:
+    return " ".join(text.split())
+
+
+def test_unchanged_accepted_interface_is_reused_with_recorded_evidence() -> None:
+    """A sufficient accepted interface that stays unchanged needs no new contract
+    ticket, but the plan records where the accepted shape lives, who owns it and
+    what accepted it; a filename or a closed issue alone proves nothing (#256)."""
+    text = _normalized(skill_text("to-tickets"))
+
+    assert "**Reuse a sufficient accepted interface that stays unchanged.**" in text
+    # Each consuming ticket, not a plan-level preamble, carries the evidence (a
+    # budget trim once weakened this to "consumers record"; see #256 runs).
+    assert "each consuming ticket's impact surface records its authoritative source, its owner and the acceptance evidence" in text
+    # Positive definition first, so a closed issue that links an accepting test counts.
+    assert "the accepted artifact plus the test or review that accepted it" in text
+    assert "A filename or a closed issue alone is not acceptance evidence" in text
+    display = text.split("For each ticket, show:", 1)[1].split("Show the proposed concurrent sets", 1)[0]
+    assert "stable inputs (source, owner, evidence)" in display
+
+
+def test_contract_tickets_cover_new_or_changed_interfaces_only() -> None:
+    """The contract-first rule and its quiz no longer demand a contract ticket for
+    every crossing interface; they demand one for each new or changed interface
+    and recorded evidence for each reused one (#256)."""
+    text = _normalized(skill_text("to-tickets"))
+
+    assert "One contract ticket per cross-component interface, first." not in text
+    assert "**One contract ticket per new or changed cross-component interface, first.**" in text
+    assert "When tickets fall on both sides of one, a new or changed interface between them" in text
+    quiz = text.split("Does the work span more than one component", 1)[1].split("- Should any", 1)[0]
+    assert "each new or changed one" in quiz
+    assert "each reused one its recorded evidence" in quiz
+
+
+def test_missing_reuse_evidence_or_a_changed_shape_is_not_reuse() -> None:
+    """Without source, owner or acceptance evidence an interface is unknown impact
+    that blocks approval; changing, versioning or editing the shape is a contract
+    or an overlap, never reuse. Both ticket templates ask for the evidence (#256)."""
+    text = _normalized(skill_text("to-tickets"))
+    reuse = text.split("**Reuse a sufficient accepted interface that stays unchanged.**", 1)[1].split("**The last ticket", 1)[0]
+
+    assert "Missing source, owner or evidence makes the interface unknown impact, not reusable" in reuse
+    assert "investigate it or plan its contract ticket" in reuse
+    assert "keep its dependents unapproved until it resolves" in reuse
+    assert "Changing or versioning the shape, or editing its files, is never reuse" in reuse
+    for template in ("<local-ticket-template>", "<issue-template>"):
+        block = text.split(template, 1)[1].split("</" + template[1:], 1)[0]
+        assert "accepted unchanged inputs with source, owner and acceptance evidence" in block, template
+
+
+def test_catalogue_states_interface_reuse() -> None:
+    """The README row tells planners that accepted unchanged interfaces are reused
+    and that contract tickets are for new or changed ones (#256)."""
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    row = next(line for line in readme.splitlines() if "skills/workflow/to-tickets/SKILL.md" in line and line.startswith("|"))
+
+    assert "contract-first ordering for new or changed interfaces" in row
+    assert "reuse of evidenced unchanged ones" in row
+
+
+def _evals() -> dict[int, dict]:
+    skill_dir = find_skill_dir(SKILLS_ROOT, "to-tickets")
+    assert skill_dir is not None
+    document = json.loads((skill_dir / "evals" / "evals.json").read_text(encoding="utf-8"))
+    cases = {case["id"]: case for case in document["evals"]}
+    assert len(cases) == len(document["evals"])
+    return cases
+
+
+def test_planning_evals_pair_every_interface_reuse_outcome() -> None:
+    """Paired planning cases cover sufficient reuse, missing evidence or ownership,
+    a new shape, a new version and mutable overlap (#256)."""
+    cases = _evals()
+    assert {1, 2, 3, 4, 5, 6} <= cases.keys()
+
+    # Case 3 is the sufficient-reuse positive control, so it supplies the evidence.
+    assert "accepted in ADR-0007" in cases[3]["prompt"]
+    assert any("authoritative source, owner and acceptance evidence" in e for e in cases[3]["expectations"])
+    assert any("registry" in e for e in cases[3]["expectations"])  # mutable overlap
+    # Case 4 reuses EnrollmentStore.list, so it supplies that evidence too. Its ADR
+    # number must not name a real ADR of this repository, which a run could open.
+    assert "accepted in ADR-0013" in cases[4]["prompt"]
+    assert not list((REPO_ROOT / "docs" / "adr").glob("0013-*"))
+    assert any("EnrollmentStore.list" in e and "acceptance evidence" in e for e in cases[4]["expectations"])
+    # Case 5's concurrency must rest on inspection, not on directory names.
+    assert "Inspection confirms" in cases[5]["prompt"]
+
+    reuse_and_gap = " ".join(cases[5]["expectations"])
+    assert "no contract ticket and no producer edge" in reuse_and_gap
+    assert "Does not treat docs/notify.md or closed issue #12 as acceptance evidence" in reuse_and_gap
+    assert "unknown impact" in reuse_and_gap
+
+    new_shapes = " ".join(cases[6]["expectations"])
+    assert "new PricingQuote version" in new_shapes
+    assert "not by editing v2" in new_shapes
+    assert "OrderPlaced" in new_shapes
+    assert "against a stub" in new_shapes

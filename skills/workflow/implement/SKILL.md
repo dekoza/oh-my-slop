@@ -10,6 +10,7 @@ requires:
   - construction-craft
   - domain-modeling
   - git-discipline
+  - pr
   - review-spec
   - review-standards
   - tdd
@@ -121,6 +122,9 @@ Once committed, use the `two-axis-review` skill to review the work against both 
 **Fix every blocking finding** within the authorized repair budget. Make each repair an **additive commit**, re-run affected checks and the axis that raised it, and re-run the other axis too when the repair affects its evidence. Any change after review invalidates the previous candidate's approval for the affected work. Final verification and both review outcomes must cover the exact head handed off or published; revalidate after any further change.
 
 ## Open the pull request
+
+Use the `pr` skill to prepare the body or branch-only presentation handoff,
+without changing publication authority or the gates below.
 
 In standalone mode, the PR is part of this invocation, not a follow-up — every standalone run ends with one open when a forge is configured. Branch-only delivery uses the handoff below instead.
 

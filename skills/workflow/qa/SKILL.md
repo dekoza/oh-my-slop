@@ -47,7 +47,7 @@ Before filing, decide whether this is a **single issue** or needs to be **broken
 Break down when:
 
 - The fix spans multiple independent areas (e.g. "the form validation is wrong AND the success message is missing AND the redirect is broken")
-- There are clearly separable concerns that different people could work on in parallel
+- There are clearly separable concerns
 - The user describes something that has multiple distinct failure modes or symptoms
 
 Keep as a single issue when:
@@ -63,13 +63,24 @@ No hit — create issues per the tracker doc's "publish to the issue tracker" co
 
 Issues must be **durable** — they should still make sense after major refactors. Write from the user's perspective.
 
+#### State: clarity and authority
+
+Choose one state role per issue — `ready-for-agent` or `ready-for-human` — by judging two things separately:
+
+- **Clarity** — concrete reproduction steps and an unambiguous expected behavior make the issue well specified, nothing more.
+- **Authority** — a human grant, under the project's authority rules, that covers implementing this issue's scope. A request to run QA, file, capture or publish issues is permission to publish, not implementation authority.
+
+Choose `ready-for-agent` only when both hold. Otherwise choose `ready-for-human` — acting on the issue needs human judgment (a design decision, manual verification, an enhancement the user described only loosely), or only the grant is missing — and record in the issue's additional context the missing decision or action, its owner and the next action.
+
+When the user has already granted implementation for this scope in the session ("file these and let an agent fix them"), reuse it without asking again, and quote the grant in the issue's additional context so a later agent can check it. A grant does not stretch to changed scope: an issue that reaches beyond what was granted — another area, a different behavior, an open design choice — is `ready-for-human`, while issues inside the grant keep it. A requirement only a human may carry out stays `ready-for-human` whatever the grant.
+
 #### Labels (forge-backed trackers only)
 
 Apply exactly three labels to every issue at creation time, resolving the category and state roles through the project's triage label mapping — never hardcode their strings. Create any label missing from the tracker before applying it. On the local-markdown tracker, skip labelling entirely.
 
 1. **One category — `bug` or `enhancement`, chosen per issue** from the substance of the report. A QA session catches both kinds; don't blanket-apply `bug`.
 2. **`workflow:implement`** — so the next workflow is explicit: these issues are picked up through `/implement`, not triage discovery.
-3. **One state — `ready-for-agent` or `ready-for-human`, chosen per issue.** Apply `ready-for-agent` when the reproduction steps are concrete and the expected behavior is unambiguous; `ready-for-human` when acting on the issue needs human judgment — a design decision, manual verification, or an enhancement the user described only loosely.
+3. **The state role chosen above** — `ready-for-agent` or `ready-for-human`.
 
 #### For a single issue
 
@@ -122,7 +133,7 @@ Use this template for each sub-issue:
 
 - #<issue-number> (if this issue can't be fixed until another is resolved)
 
-Or "None — can start immediately" if no blockers.
+Or "None known" if no blocker is known.
 
 ## Additional context
 
@@ -132,9 +143,9 @@ Or "None — can start immediately" if no blockers.
 When creating a breakdown:
 
 - **Prefer many thin issues over few thick ones** — each should be independently fixable and verifiable
-- **Mark blocking relationships honestly** — if issue B genuinely can't be tested until issue A is fixed, say so. If they're independent, mark both as "None — can start immediately"
+- **Mark blocking relationships honestly** — if issue B genuinely can't be tested until issue A is fixed, say so. If no blocker is known, write "None known"
 - **Create issues in dependency order** so you can reference real issue numbers in "Blocked by"
-- **Maximize parallelism** — the goal is that multiple people (or agents) can grab different issues simultaneously
+- **Record blockers, not a schedule** — scheduling follows the gates named under After filing
 
 #### Rules for all issue bodies
 
@@ -145,7 +156,9 @@ When creating a breakdown:
 - **Reproduction steps are mandatory** — if you can't determine them, ask the user
 - **Keep it concise** — a developer should be able to read the issue in 30 seconds
 
-After filing, print all issue URLs (with blocking relationships summarized) and ask: "Next issue, or are we done?"
+#### After filing
+
+Read each filed issue back and confirm its body — and, on a forge-backed tracker, its labels — landed as intended; a failed or unconfirmed write is reported as such, not as filed. Filing — with any label creation and deduplication comments it needs — is the session's only tracker effect: no assignment, claim, branch, fix or dispatch follows from it, even for a `ready-for-agent` issue. That label records clarity and authority, not eligibility: blockers, claims and prerequisites still decide when the work may start and whether slices may run side by side. Then print all issue URLs (with blocking relationships and each state's reason summarized) and ask: "Next issue, or are we done?"
 
 ### 5. Continue the session
 

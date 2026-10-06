@@ -5,6 +5,8 @@ description: >
   failures at once. Triggers on: "diagnose", "debug this", "something broken",
   "no idea why", "flaky", "slow since", "fix multiple failing tests".
 license: MIT (adapted from mattpocock/skills)
+requires:
+  - testing-workflow
 ---
 
 # Diagnosing Bugs
@@ -17,7 +19,7 @@ When exploring the codebase, read the project's domain glossary — `CONTEXT.md`
 
 This skill has you show commands, outputs and captured artifacts. **Redact every secret first** — write `<REDACTED>` in its place. Build loops against env vars, so the credential stays in the environment rather than in what you show. Captured artifacts carry auth headers: quote only the lines that carry the signal.
 
-**The whole skill in one breath:** build a **tight feedback loop** — one command that is *fast (seconds), deterministic, and red-capable* (goes red on this exact bug) — then minimize the repro, test hypotheses against the loop one variable at a time, fix, and convert the repro into a permanent regression test. If 5+ failures exist at once, run Multi-Failure Triage first; otherwise start at Phase 1.
+**The whole skill in one breath:** build a **tight feedback loop** — one command that is *fast (seconds), deterministic, and red-capable* (goes red on this exact bug) — then minimize the repro and test hypotheses one variable at a time. Record a representative **permanent regression observed red** for this bug's reason before **production repair**; verify it green and rerun the original scenario afterward. If 5+ failures exist at once, run Multi-Failure Triage first; otherwise start at Phase 1.
 
 ## Multi-Failure Triage (when 5+ failures exist)
 
@@ -173,11 +175,13 @@ Wave N offenders: [offender_1 (module A, 12 failures), offender_2 (module B, 8 f
 
 ### Step 3 — FIX WAVE
 
-**Goal:** Fix all offender candidates in one batch.
+**Goal:** Repair the ranked offender candidates as vertical slices within the wave.
 
-Fix each offender. For each fix:
+Work each offender through this sequence:
 
-- Write a regression test (TDD catch-up). This is mandatory — the fix is incomplete without it.
+- Record a representative **permanent regression observed red** for this bug's reason on unfixed code before **production repair**. Reuse an existing permanent test if its observed failure reaches the actual boundary; a throwaway loop alone is not that record.
+- Apply the bounded repair, verify the permanent regression green, and rerun the original scenario before moving to the next offender.
+- Remove only owned temporary instrumentation; preserve unrelated instrumentation and work. Verify actual removal, then rerun the permanent regression, original scenario and appropriate checks on the cleaned candidate as in Phase 5.
 - One commit per offender (or one commit per module if offenders are related).
 - **Do not fix scattered non-offenders.** Resist the urge to "knock out easy ones" — they're hardest to cluster and you'll dig rabbit holes.
 
@@ -297,18 +301,14 @@ Count remaining failures:
 
 ---
 
-### Step 7 — FULL REGRESSION GATE
+### Step 7 — PROJECT REGRESSION GATE
 
-**Goal:** Confirm nothing broke outside the failing tier.
+**Goal:** Verify the required regression coverage on the cleaned candidate.
 
-Run the **entire** test suite (all tiers):
+Use [testing-workflow](../testing-workflow/SKILL.md) and the project's check policy to choose proportionate affected-tier checks and broader gates. Run required cross-cluster checks between waves; reserve whole-product E2E/full suites for the project/risk conditions that require them, not automatically after every cluster. Explicit repository full-suite mandates still apply. Missing or failed required coverage blocks completion.
 
-```
-pytest tests/ -n auto --dist loadgroup --timeout 600
-```
-
-- **All green:** Done. Commit.
-- **Any red:** These are new issues, not part of the original triage. Diagnose each as a separate bug using the single-bug workflow.
+- **Required checks green:** Done. Commit.
+- **Any new red:** Diagnose the new failure as a separate bug using the single-bug workflow; do not weaken its assertion.
 
 **After the fires are out:** if the triage revealed E2E-only assertions that lower tiers could carry (the usual reason triage was this slow), schedule the `restore-test-pyramid` skill — see the tier-strategy section of `testing-workflow`.
 
@@ -320,7 +320,7 @@ pytest tests/ -n auto --dist loadgroup --timeout 600
 |-------------|-------------|
 | Fix one failure, run full suite, repeat | Wastes time per iteration on known-passing tests |
 | "Knock out scattered ones for momentum" | Scattered failures are hardest to cluster — you'll dig rabbit holes when a shared fixture is the real culprit |
-| Skip full-suite checks until the very end | Silent regressions accumulate. If cluster A's fix breaks cluster B's passing tests, you won't know until hours later |
+| Skip required affected checks between clusters | Cross-cluster regressions accumulate; use the project's proportionate checks between waves and its required broader gates |
 | Assume N failures = N fixes | Clusters collapse the count. Diagnose first, count later |
 | Start triage without calibrating xdist | Parallelism-induced failures look like real bugs. You'll chase ghosts. |
 | Forget `--dist loadgroup` with xdist | Grouped tests land on different workers → nondeterministic failures → debugging the wrong problem |
@@ -476,13 +476,19 @@ Once it's red, shrink the repro to the **smallest scenario that still goes red**
 
 Why bother: a minimal repro shrinks the hypothesis space in Phase 3 (fewer moving parts left to suspect) and becomes the clean regression test in Phase 5.
 
-Done when **every remaining element is load-bearing** — removing any one of them makes the loop go green.
+**Preserve boundary correspondence.** Record the original trigger, runtime conditions and user-visible assertion. Keep the minimised repro at the **same boundary** or demonstrate that its narrower seam still carries the same causal path and symptom. Recheck that correspondence after each cut: a green helper, a mocked substitute that bypasses the failing boundary, or a wrong failure is not representative coverage. For example, successful server logic alone cannot prove a reconnect/DOM failure is covered.
+
+**Name a coverage gap when the representative permanent regression cannot be established.** State the missing boundary, required evidence or access, and the next bounded owner action. Keep any narrower test's limited result, but do not claim verified completion or replace an unavailable original scenario with a pretend browser/server demonstration.
+
+Done when **every remaining element is load-bearing** — removing any one of them makes the loop go green — and the repro still represents the original failure.
 
 Do not proceed until you have reproduced **and** minimised.
 
 ## Phase 3 — Hypothesise
 
 With a tight, minimised, red loop — now you can form hypotheses.
+
+Plan scoped, reversible diagnostic changes within existing authority before changing code. Restore those changes after measurement and retain experiment receipts separately from final production repair. Record the permanent regression on genuinely unfixed code before that final repair; do not repair first and undo it merely to fabricate retroactive red, or relabel a production fix as an experiment afterward.
 
 For each hypothesis:
 
@@ -519,15 +525,17 @@ If the hypothesis is about internal state (data flow, timing, caching), add inst
   failure point. Tells you whether an element was never rendered, was
   removed by another script, or is CSS-hidden.
 
-Keep instrumentation temporary. Remove it after the hypothesis is confirmed.
+Record which temporary instrumentation this session owns, including its files, hooks and log paths. Preserve unrelated instrumentation and work. Remove only the owned additions after measurement; verify actual removal and rerun the appropriate loop on the cleaned candidate. If cleanup happens before repair, the genuine bug should still reproduce. Phase 5 requires cleaned-candidate verification after the final repair too.
 
 ### Completion criterion
 
 Phase 4 is done when instrumentation has **confirmed the hypothesis** with concrete data. Not "the logs look suspicious" — "the log shows variable X is None at line Y, which matches the hypothesis."
 
-## Phase 5 — Fix + regression test
+## Phase 5 — Permanent regression + repair
 
-Apply the fix. Run the feedback loop — it should go green.
+Record a representative **permanent regression observed red** for this bug's reason on unfixed code before **production repair**. Convert the minimised repro into the project's normal test collection, or reuse an existing permanent regression. Run it and retain the actual failing assertion/output; an exploratory loop or a failure from broken imports/setup is not sufficient.
+
+Apply the repair. Verify the same permanent regression green, then rerun the original scenario to check the user's symptom at its original boundary.
 
 **Recovery paths when it doesn't go to plan:**
 
@@ -536,9 +544,10 @@ Apply the fix. Run the feedback loop — it should go green.
 
 Then:
 
-- [ ] **Regression test.** Convert the minimised repro into a permanent test. This is the most important output of the debugging process.
-- [ ] **Run the full suite.** Ensure the fix doesn't break anything else.
-- [ ] **Remove temporary instrumentation.** Clean up logs, asserts, and debug code.
+- [ ] **Preserve the permanent regression.** Keep its assertion and normal collection path; retain the pre-repair red and post-repair green evidence.
+- [ ] **Run proportionate project checks.** Delegate affected tiers, broader gates and execution to [testing-workflow](../testing-workflow/SKILL.md) and the project's policy. Run full suites when explicitly required; do not require whole-product E2E/full suites after every cluster. Missing or failed required coverage remains a gap.
+- [ ] **Remove only owned temporary instrumentation.** Use the session's ownership record; preserve unrelated instrumentation, logs and work. Verify actual removal in the files/hooks/diff, not just a promise to clean up.
+- [ ] **Reverify the cleaned candidate.** Rerun the permanent regression and original scenario after cleanup, plus the appropriate project checks. Earlier green evidence does not prove the cleaned candidate.
 - [ ] **Document the root cause.** If the bug was non-obvious, add a comment at the fix site explaining the root cause and the fix. Not "fixed bug" — "X was None because Y; added guard at Z."
 
 ### Completion criterion
@@ -546,9 +555,11 @@ Then:
 Phase 5 is done when:
 
 - The feedback loop goes green on the fix.
-- A regression test exists and passes.
-- The full test suite passes.
-- Temporary instrumentation is removed.
+- A representative permanent regression was observed red for the bug's reason before repair and is now green.
+- The original scenario has been rerun and the user's symptom is resolved.
+- Required proportionate project checks pass; explicit full-suite mandates remain satisfied.
+- Actual removal of owned temporary instrumentation is verified; unrelated instrumentation and work are preserved.
+- The permanent regression, original scenario and appropriate checks have been rerun on the cleaned candidate.
 - The root cause is documented.
 
 ### Before applying the fix, verify the test expectation is correct

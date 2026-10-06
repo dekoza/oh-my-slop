@@ -36,6 +36,12 @@ not the destination. Implementation starts in a separate session.
 
 ## 1. Establish the destination
 
+**Validate `/refine-ticket` first:** require exactly one positive ticket number,
+optionally prefixed with `#`, in the forwarded arguments. For missing, invalid or ambiguous
+input (including multiple arguments), use `grilling` to request `/refine-ticket <ticket-number>`
+before any ticket work rather than choosing a ticket. This command-specific guard does not
+restrict `/humanify`'s other explicit ticket-reference forms.
+
 Read the project's tracker binding and label mapping, then the complete ticket, comments,
 governing scope, approved amendments and native dependencies. Inspect prerequisite outputs,
 relevant code, contracts and tests rather than asking the human to supply discoverable facts.

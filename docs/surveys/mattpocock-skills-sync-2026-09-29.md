@@ -260,3 +260,21 @@ The setup, Wayfinder and ticket-skill changes remove retired contracts and prese
 [pre-commit]: https://github.com/mattpocock/skills/blob/d81f3a183412e71a5b1e84ca21bc1a35eea03a60/skills/misc/setup-pre-commit/SKILL.md#L15-L45
 [exercises]: https://github.com/mattpocock/skills/blob/d81f3a183412e71a5b1e84ca21bc1a35eea03a60/skills/misc/scaffold-exercises/SKILL.md#L8-L30
 [shoehorn]: https://github.com/mattpocock/skills/blob/d81f3a183412e71a5b1e84ca21bc1a35eea03a60/skills/misc/migrate-to-shoehorn/SKILL.md#L10-L25
+
+## Current #248 decision: PR presentation (#251)
+
+The owner-confirmed [selective adoption #248](http://192.168.129.37:30008/minder/oh-my-slop/issues/248)
+selects an independent model-invoked [pr reference](../../skills/reference/pr/SKILL.md),
+implemented under [#251](http://192.168.129.37:30008/minder/oh-my-slop/issues/251).
+Its presentation owners are implement's PR body/branch-only handoff, implement-spec's
+combined delivery and fix-pr's existing repair comment. Templates, machine metadata,
+configured domain docs and each owner's publication/candidate gates remain authoritative.
+At the supplied #251 base, #250's committed-candidate repair is already integrated
+under the explicitly authorized run-local exception; native issues remain open.
+
+This current decision does not rewrite the historical inspection, results or deferrals
+above. The candidate and its [evaluation definitions/limits](../../skills/reference/pr/evals/README.md)
+do not by themselves establish measured lift, independent review or owner qualitative
+acceptance. Current evidence is owned by the supervised run; missing gates remain
+unfinished, and no consumer pilot or efficiency claim is added. Retrospective, router,
+editorial and external orchestration decisions remain outside this slice.

@@ -149,6 +149,18 @@ def test_fresh_workers_have_their_own_input_and_reporting_trust_boundary() -> No
     assert "mark the redaction" in body
 
 
+def test_pr_handoff_is_at_standalone_presentation_without_branch_only_publication() -> None:
+    metadata, body = skill_parts()
+    assert "pr" in metadata["requires"]
+    presentation = body.split("## Open the pull request", 1)[1].split(
+        "## Return the branch-only handoff", 1
+    )[0]
+    assert "Use the `pr` skill" in presentation
+    assert "body or branch-only presentation handoff" in presentation
+    assert "without changing publication authority" in presentation
+    assert "In branch-only mode, do not push, open a PR, close tickets" in body
+
+
 def test_requirement_trace_can_cite_verified_unchanged_prerequisites() -> None:
     _, body = skill_parts()
     assert "already satisfied at the base" in body

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from scripts.validate_refs import iter_skill_dirs
@@ -53,6 +54,13 @@ def test_local_router_migration_uses_a_settings_relative_exclusion() -> None:
     # Pi's exact exclusion matcher does not expand '~' after the '-' prefix.
     assert '"extensions": ["-extensions/local-router/index.ts"]' in section
     assert "PI_LOCAL_ROUTER_BASE_URL" in section
+
+
+def test_readme_link_skills_example_counts_the_bundled_skills() -> None:
+    readme_text = load_readme()
+    match = re.search(r"# link all (\d+) into ~/.claude/skills", readme_text)
+    assert match, "Claude Code linking example has no skill count"
+    assert int(match.group(1)) == len(iter_skill_paths())
 
 
 def test_readme_lists_every_bundled_extension() -> None:

@@ -9,6 +9,7 @@ skill no longer had; these tests exist so that cannot recur silently.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -94,15 +95,22 @@ def test_refine_ticket_routes_explicit_ticket_through_authorized_readiness() -> 
     assert named_skill(template) == "humanify"
     frontmatter, body = split_template(template)
     assert 'argument-hint: "<ticket-number>"' in frontmatter
-    assert "$1" in body and "$@" in body
-    assert "exactly one positive ticket number" in body
-    assert "ask for `/refine-ticket <ticket-number>` before any ticket work" in body
-    assert "current project's configured tracker" in body
-    assert "human-authorized agent readiness" in body
-    assert "implementation in a separate session" in body
-    assert "construction-craft" in body
-    assert FALLBACK_CLAUSE in body
-    assert "Cleopatra" not in body
+    assert body.strip() == (
+        "Use the `humanify` skill to refine the single ticket-number argument $@ "
+        "via its `/refine-ticket` flow. " + FALLBACK_CLAUSE
+    )
+    # Authority and ambiguous-input handling belong to the owner, not the shim.
+    owner = (find_skill_dir(SKILLS_DIR, "humanify") / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "unambiguously" in owner
+    assert "exactly one positive ticket number" in owner
+    assert "optionally prefixed with `#`" in owner
+    assert "before any ticket work" in owner
+    assert "missing, invalid or ambiguous" in owner
+    assert "`/refine-ticket <ticket-number>`" in owner
+    assert "Implementation starts in a separate session." in owner
+    assert "Never infer readiness from design confirmation." in owner
 
 
 def test_fixrev_routes_review_and_conflict_repairs_to_one_owner() -> None:
@@ -118,8 +126,8 @@ def test_fixrev_routes_review_and_conflict_repairs_to_one_owner() -> None:
     assert "disable-model-invocation: true" in skill_frontmatter("fix-pr")
 
 
-def test_revmerge_routes_user_decisions_through_grilling() -> None:
-    """The PR review command must not bypass the user's decision format."""
+def test_revmerge_routes_publication_and_merge_to_its_explicit_owner_flow() -> None:
+    """Only /revmerge requests comment/merge; ordinary review stays read-only."""
     template = PROMPTS_DIR / "revmerge.md"
 
     assert template.exists(), "/revmerge is not installed as a prompt template"
@@ -127,9 +135,36 @@ def test_revmerge_routes_user_decisions_through_grilling() -> None:
     frontmatter, body = split_template(template)
     assert "<pull_request>" in frontmatter
     assert "$@" in body
-    assert "any decision requires my input" in body
-    assert "`grilling` skill" in body
-    assert "wait for my answer before proceeding" in body
+    assert body.strip() == (
+        "Use the `two-axis-review` skill to review, comment on and merge the pull "
+        "request $@ via its `/revmerge` flow."
+    )
+    owner_dir = find_skill_dir(SKILLS_DIR, "two-axis-review")
+    owner = (owner_dir / "SKILL.md").read_text(encoding="utf-8")
+    assert "references/revmerge.md" in owner
+    flow = (owner_dir / "references/revmerge.md").read_text(encoding="utf-8")
+    assert "Wait for both axes to complete" in flow
+    assert "new discussion comment" in flow
+    assert "no blocking findings" in flow
+    assert "`grilling` skill" in flow
+    assert "wait for the owner's answer" in flow
+    assert "changed head or target" in flow
+    assert "read back" in flow
+    assert "ordinary review grants neither publication nor merge" in owner
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    row = next(line for line in readme.splitlines() if "**`/revmerge " in line)
+    assert "new comment" in row
+    assert "merge only without blockers" in row
+    assert "`grilling`" in row
+
+
+def test_restored_command_evals_have_unique_case_ids() -> None:
+    """Restoring command coverage must not alias an existing scenario."""
+    for name in ("humanify", "two-axis-review"):
+        path = find_skill_dir(SKILLS_DIR, name) / "evals/evals.json"
+        cases = json.loads(path.read_text(encoding="utf-8"))["evals"]
+        ids = [case["id"] for case in cases]
+        assert len(ids) == len(set(ids)), f"{name} has duplicate eval case IDs"
 
 
 def test_every_template_names_a_skill_that_exists() -> None:

@@ -21,6 +21,10 @@ This skill runs both axes and aggregates their findings. **Each axis is its own 
 standards) the smell baseline. They are independently invocable, so a caller who wants one axis
 runs that skill directly and skips this one.
 
+**Bound authority:** ordinary review grants neither publication nor merge. Only an explicit
+`/revmerge` request selects the [PR comment-and-merge flow](references/revmerge.md);
+read that branch before reviewing the PR. Other review invocations keep their existing scope.
+
 When the caller has **selected compact** evidence transport, use the
 [compact-evidence branch](references/compact-evidence.md) before launching either axis.
 It preserves this skill's independent scopes and full reports; it changes their evidence
