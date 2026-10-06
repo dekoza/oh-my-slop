@@ -28,9 +28,9 @@ reload persistence are judged on the visible page, not the URL or label alone.
 Production: the throwaway route is absent; the real page, read after it settles, shows
 the same for every variant name seen in development and an unknown one, offered through
 the selection parameter the switcher used, a few common parameter names and a cookie of
-each of those names; no switcher appears; and the page shows what the reference project
-shows and carries the same scripts (differences only in styles are recorded as a
-warning). The ui.md example, which has no reference, must instead differ from every
+each of those names; no switcher appears; and the page carries what the reference
+project carries, hidden elements and template content included, with the same scripts
+(differences only in styles are recorded as a warning). The ui.md example, which has no reference, must instead differ from every
 development variant. Other selection channels are not probed. Only owned loopback
 servers are started, each in its own process group, and they are always stopped.
 """
@@ -67,15 +67,31 @@ FOCUS_GUARD_WAIT_MS = 3_000  # a switch later than this after the key press is n
 UNKNOWN_VARIANT = "no-such-variant"
 COMMON_SELECTION_PARAMS = ("variant", "layout", "design", "option", "prototype", "v")
 ADDRESS = re.compile(r"http://127\.0\.0\.1:\d+")
-# Visible tags and text in document order: attributes ignored, text casefolded and
-# whitespace collapsed, hidden elements and the switcher left out.
+# Development question, "what does the page show?": visible tags and text in document
+# order, attributes ignored, text casefolded and whitespace collapsed; hidden elements
+# (display, visibility, opacity), templates and the switcher left out.
 VISIBLE = """() => {
   const norm = (text) => text.toLowerCase().replace(/\\s+/g, ' ').trim();
+  const shown = (node) => node.checkVisibility({visibilityProperty: true, opacityProperty: true});
   const walk = (node) => {
     if (node.nodeType === Node.TEXT_NODE) return norm(node.textContent);
     if (node.nodeType !== Node.ELEMENT_NODE) return '';
-    if (node.matches('.prototype-bar, script, style, template') || !node.checkVisibility()) return '';
+    if (node.matches('.prototype-bar, script, style, template') || !shown(node)) return '';
     const inner = Array.from(node.childNodes).map(walk).filter(Boolean).join(',');
+    return node.tagName.toLowerCase() + '(' + inner + ')';
+  };
+  return walk(document.body);
+}"""
+# Production question, "what does the page carry?": every element, hidden or not,
+# including template content, so prototype markup cannot hide in the real page.
+CARRIED = """() => {
+  const norm = (text) => text.toLowerCase().replace(/\\s+/g, ' ').trim();
+  const walk = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) return norm(node.textContent);
+    if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) return Array.from(node.childNodes).map(walk).filter(Boolean).join(',');
+    if (node.nodeType !== Node.ELEMENT_NODE || node.matches('.prototype-bar, script, style')) return '';
+    const kids = node.tagName === 'TEMPLATE' ? [node.content] : Array.from(node.childNodes);
+    const inner = kids.map(walk).filter(Boolean).join(',');
     return node.tagName.toLowerCase() + '(' + inner + ')';
   };
   return walk(document.body);
@@ -196,13 +212,13 @@ class Run:
         self.pages.append(page)
         return page
 
-    def visit(self, page, url: str, settle: bool = False) -> str:
+    def visit(self, page, url: str, settle: bool = False, view: str = VISIBLE) -> str:
         self.deadline.check()
         page.goto(url)
         if settle:
             page.wait_for_load_state("networkidle")
             page.wait_for_timeout(SETTLE_MS)
-        return page.evaluate(VISIBLE)
+        return page.evaluate(view)
 
     def save_failure_artifacts(self) -> None:
         for index, page in enumerate(self.pages):
@@ -315,23 +331,25 @@ def production(run: Run, base: str, page_path: str, throwaway: str, reference: d
                 check(answer == (200, plain_body), f"production {page_path}: {how} {key}={name} changes the response")
     context = run.browser.new_context()
     page = run.new_page(context)
-    plain = run.visit(page, base + page_path, settle=True)
+    carried = run.visit(page, base + page_path, settle=True, view=CARRIED)
+    plain = page.evaluate(VISIBLE)
     assets = page.evaluate(ASSETS)
     (run.out / "dom-production.html").write_text(page.content(), encoding="utf-8")
     check(page.locator(".prototype-bar").count() == 0, f"production {page_path}: switcher rendered")
-    for key in used:  # the page itself, after it settles
+    for key in used:  # the page itself, after it settles, hidden markup included
         for name in names:
-            check(run.visit(page, f"{base}{page_path}?{key}={quote(name)}", settle=True) == plain
+            check(run.visit(page, f"{base}{page_path}?{key}={quote(name)}", settle=True, view=CARRIED) == carried
                   and page.locator(".prototype-bar").count() == 0,
                   f"production {page_path}?{key}={name}: the settled page differs from the real page")
     context.close()
     if reference is not None:
-        check(plain == reference["visible"], f"production {page_path} no longer shows what the untouched project shows")
+        check(carried == reference["carried"],
+              f"production {page_path} no longer carries what the untouched project carries (hidden markup included)")
         check(assets["scripts"] == reference["assets"]["scripts"],
               f"production {page_path} carries scripts the untouched project does not")
         if assets["styles"] != reference["assets"]["styles"]:
             run.record["warnings"].append(f"production {page_path} carries styles the untouched project does not")
-        basis = "shows what the reference project shows, with the same scripts"
+        basis = "carries what the reference project carries, hidden markup and scripts included"
     else:
         variant_views = {view for info in run.record["development"].values() for view in info["visible"].values()}
         check(plain not in variant_views, f"production {page_path} shows a prototype variant")
@@ -344,12 +362,12 @@ def production(run: Run, base: str, page_path: str, throwaway: str, reference: d
 def reference_page(run: Run, start: str, cwd: Path, page_path: str) -> dict:
     with Server(start, "production", cwd, run.out / "server-reference-production.log") as server:
         page = run.new_page()
-        visible = run.visit(page, server.base + page_path, settle=True)
+        carried = run.visit(page, server.base + page_path, settle=True, view=CARRIED)
         assets = page.evaluate(ASSETS)
         (run.out / "dom-reference.html").write_text(page.content(), encoding="utf-8")
         page.close()
-    (run.out / "reference.json").write_text(json.dumps({"visible": visible, "assets": assets}, indent=2))
-    return {"visible": visible, "assets": assets}
+    (run.out / "reference.json").write_text(json.dumps({"carried": carried, "assets": assets}, indent=2))
+    return {"carried": carried, "assets": assets}
 
 
 def main() -> int:
@@ -364,8 +382,10 @@ def main() -> int:
     if args.project and not (args.start and args.reference_project):
         parser.error("--project needs --start and --reference-project")
     args.out.mkdir(parents=True, exist_ok=True)
+    short_tmp = None
     if len(tempfile.gettempdir()) > 40:  # Chromium's socket path under TMPDIR must stay short
-        os.environ["TMPDIR"] = tempfile.mkdtemp(prefix="cpu-", dir="/tmp")
+        short_tmp = tempfile.TemporaryDirectory(prefix="cpu-", dir="/tmp")
+        os.environ["TMPDIR"] = tempfile.tempdir = short_tmp.name
     started = time.monotonic()
     record: dict = {"chromium": CHROMIUM, "result": "FAIL: did not finish"}
     run = None
@@ -408,6 +428,8 @@ def main() -> int:
     finally:
         record["seconds"] = round(time.monotonic() - started, 2)
         (args.out / "result.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
+        if short_tmp is not None:
+            short_tmp.cleanup()
     print(json.dumps({k: record[k] for k in ("result", "warnings", "seconds") if k in record}, indent=2))
     if record["result"] != "PASS":
         print(record["result"], file=sys.stderr)
