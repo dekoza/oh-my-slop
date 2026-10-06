@@ -85,8 +85,8 @@
       "files": [],
       "expectations": [
         "In development, tests/browser/check_prototype_ui.py finds a switcher on /settings and /prototype/settings whose next/previous controls and arrow keys change the rendered variant (wrapping at both ends), leave a focused input alone, and keep the selection on reload.",
-        "In production, /prototype/settings returns 404, /settings renders the same with or without ?variant=, and no switcher appears, checked by the same script.",
-        "The three variants are structurally different layouts over the stub data from settings_logic.py; settings_logic.py is unchanged and the production /settings page renders as before.",
+        "In production, /prototype/settings returns 404 with or without a trailing slash, /settings renders the same in the browser for every variant name used in development and for an unknown one, and no switcher appears, checked by the same script.",
+        "The three variants are structurally different layouts over the stub data from settings_logic.py; settings_logic.py is unchanged and the production /settings page renders as before (the script compares it with the untouched project via --reference-project).",
         "The prototype is clearly marked as throwaway and wired through the project's own runtime: no new dependency, package manager, framework or JavaScript build.",
         "Variants perform no real mutations, and nothing is committed, pushed or published."
       ]

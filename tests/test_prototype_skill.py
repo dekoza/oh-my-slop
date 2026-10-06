@@ -537,7 +537,8 @@ def test_ui_evals_check_rendered_switching_and_production_exclusion() -> None:
     assert "/prototype/settings" in task["prompt"] and "--env" in task["prompt"]
     expectations = " ".join(task["expectations"])
     assert "tests/browser/check_prototype_ui.py" in expectations
-    assert "404" in expectations and "?variant=" in expectations
+    assert "404" in expectations and "every variant name used in development" in expectations
+    assert "--reference-project" in expectations  # production page judged against the untouched project
     assert "settings_logic.py" in expectations
     assert "no new dependency" in expectations
 
