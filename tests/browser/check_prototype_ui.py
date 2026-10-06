@@ -526,8 +526,9 @@ def main() -> int:
                     return {n for n in names if n in ("__pycache__", ".git") or Path(directory, n).resolve() == out}
 
                 shutil.copytree(cwd, mutated, ignore=skip)
-            record["subject"] = {"project": str(cwd), "files": digest_tree(cwd),
-                                 "logic.md sha256": hashlib.sha256(LOGIC_REFERENCE.read_bytes()).hexdigest()}
+            record["subject"] = {"project": str(cwd), "files": digest_tree(cwd)}
+            if not args.project:  # only the documented example comes from the repository
+                record["subject"]["logic.md sha256"] = hashlib.sha256(LOGIC_REFERENCE.read_bytes()).hexdigest()
         elif args.project:
             cwd, start = args.project.resolve(), args.start
             record["subject"] = {"project": str(cwd), "files": digest_tree(cwd)}

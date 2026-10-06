@@ -770,6 +770,21 @@ def test_logic_check_refuses_a_stale_mutated_copy(tmp_path: Path) -> None:
     assert "already exists" in result.stderr
 
 
+def test_logic_check_on_a_project_needs_no_repository_files(tmp_path: Path) -> None:
+    """Graders run a copy of the check outside the repository; project mode must not read
+    the repository's logic.md (it failed before the browser started)."""
+    copied = tmp_path / "check_prototype_ui.py"
+    copied.write_bytes((REPO_ROOT / "tests/browser/check_prototype_ui.py").read_bytes())
+    project = logic_example(tmp_path)
+    out = tmp_path / "out"
+    subprocess.run([sys.executable, str(copied), "--logic", "--out", str(out), "--project", str(project),
+                    "--start", "python3 prototype_orders_web.py --port {port}"],
+                   capture_output=True, text=True, timeout=60)
+    result = json.loads((out / "result.json").read_text(encoding="utf-8"))
+    assert "logic.md" not in result["result"], result["result"]
+    assert "files" in result["subject"]
+
+
 def test_logic_example_is_safe_to_copy() -> None:
     """One request at a time keeps the shared state consistent; the Node note names the
     two things node:http does not give you (#259 review)."""
