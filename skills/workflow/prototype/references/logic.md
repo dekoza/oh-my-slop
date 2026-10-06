@@ -56,7 +56,129 @@ Behaviour:
 
 The whole frame should fit on one screen.
 
-### 5. Make it runnable in one command
+### 5. Or show the same logic in a browser — only when the audience needs it
+
+The terminal stays the default: it is the fastest way for whoever wrote the logic to push it through cases. Reach for a browser view when the people judging the answer would rather click than type — a product owner, support, a stakeholder demo — or when the question is about what someone sees while the state changes.
+
+The browser view is a second **shell**, not a second implementation. It imports the same pure module the terminal drives, from the project's own runtime: a few lines of the project's web stack, or the standard library's HTTP server when there is none. Each button sends an action to the server, the server calls the module, and the page re-renders the full state — exactly what the terminal frame shows. No logic lives in the page, so there is nothing to keep in step.
+
+Do **not** build a standalone page that re-implements the logic in JavaScript: it tests a copy, and the answer you get is about the copy. Do not add a runtime or a JavaScript rewrite the project doesn't already have just to get buttons.
+
+A complete example, three files next to each other — the logic under question, the terminal shell, and the optional browser shell over the same module:
+
+```python
+# orders_machine.py
+"""Order cancellation logic under question (pure: no I/O, no printing)."""
+
+TRANSITIONS = {
+    ("new", "pay"): "paid",
+    ("new", "cancel"): "cancelled",
+    ("paid", "ship"): "shipped",
+    ("paid", "cancel"): "refund_pending",
+    ("refund_pending", "refund"): "cancelled",
+}
+
+
+def initial() -> dict:
+    return {"status": "new", "history": []}
+
+
+def actions(state: dict) -> list[str]:
+    """The actions that are legal right now."""
+    return sorted(action for (status, action) in TRANSITIONS if status == state["status"])
+
+
+def step(state: dict, action: str) -> dict:
+    if action not in actions(state):
+        raise ValueError(f"{action!r} is not legal in {state['status']!r}")
+    return {"status": TRANSITIONS[(state["status"], action)], "history": state["history"] + [action]}
+```
+
+```python
+# prototype_orders.py
+"""PROTOTYPE - drive the order logic by hand: python3 prototype_orders.py"""
+import json
+
+import orders_machine as machine
+
+state = machine.initial()
+while True:
+    print("\033[2J\033[H" + json.dumps(state, indent=2))
+    print("  ".join(f"[{a}]" for a in machine.actions(state)) + "  [q] quit")
+    try:
+        choice = input("> ").strip()
+    except EOFError:
+        break
+    if choice == "q":
+        break
+    if choice in machine.actions(state):
+        state = machine.step(state, choice)
+```
+
+```python
+# prototype_orders_web.py
+"""PROTOTYPE - the same order logic in a browser: python3 prototype_orders_web.py [--port 8000]"""
+import argparse
+import html
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
+
+import orders_machine as machine
+
+state = machine.initial()
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/state.json":
+            self.reply(200, json.dumps(state), "application/json")
+        elif self.path == "/":
+            buttons = "".join(
+                f'<button name="action" value="{html.escape(a)}">{html.escape(a)}</button>'
+                for a in machine.actions(state))
+            page = (f'<!doctype html><title>PROTOTYPE orders</title><h1>PROTOTYPE: order logic</h1>'
+                    f'<pre id="state">{html.escape(json.dumps(state, indent=2))}</pre>'
+                    f'<form method="post" action="/action">{buttons}</form>')
+            self.reply(200, page, "text/html; charset=utf-8")
+        else:
+            self.reply(404, "not found", "text/plain")
+
+    def do_POST(self):
+        global state
+        length = int(self.headers.get("Content-Length", 0))
+        action = parse_qs(self.rfile.read(length).decode()).get("action", [""])[0]
+        if self.path != "/action" or action not in machine.actions(state):
+            self.reply(400, "not a legal action", "text/plain")
+            return
+        state = machine.step(state, action)  # the project's own logic decides
+        self.send_response(303)
+        self.send_header("Location", "/")
+        self.end_headers()
+
+    def reply(self, status, body, content_type):
+        data = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args):
+        pass
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=8000)
+    server = ThreadingHTTPServer(("127.0.0.1", parser.parse_args().port), Handler)
+    print(f"serving on http://127.0.0.1:{server.server_port}", flush=True)
+    server.serve_forever()
+```
+
+In a Node project the same split holds: the module stays the project's own JavaScript or TypeScript, the terminal shell reads lines with `node:readline`, and the browser shell is a few lines of `node:http` over that same module. In any language, check the claim the browser view makes: change one transition in the module and the page must follow.
+
+### 6. Make it runnable in one command
 
 Whatever the project's existing task runner supports:
 
@@ -65,6 +187,6 @@ Whatever the project's existing task runner supports:
 
 No build step. No configuration. One command, one screen.
 
-### 6. When done
+### 7. When done
 
-Follow the prototype skill's When done: record the answer in `NOTES.md`, capture the logic module, the TUI shell and the notes on a throwaway branch, leave a pointer, and only then clean up the files it wholly owns. Lifting the logic module into the real codebase is a separately authorized implementation.
+Follow the prototype skill's When done: record the answer in `NOTES.md`, capture the logic module, its shells (the terminal one and any browser view) and the notes on a throwaway branch, leave a pointer, and only then clean up the files it wholly owns. Lifting the logic module into the real codebase is a separately authorized implementation.

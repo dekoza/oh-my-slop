@@ -19,6 +19,7 @@ import select
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
@@ -576,3 +577,95 @@ def test_ui_reference_no_longer_relies_on_undeclared_template_settings() -> None
     text = (SKILL_ROOT / "references/ui.md").read_text(encoding="utf-8")
     assert "settings.DEBUG" not in text
     assert "history.replaceState" not in text  # a URL-only change leaves the variant unrendered
+
+
+# --- #259: an optional browser view over the same project-native logic -------------
+
+LOGIC_FILES = ("orders_machine.py", "prototype_orders.py", "prototype_orders_web.py")
+
+
+def logic_example(tmp_path: Path, mutate: tuple[str, str] | None = None) -> Path:
+    """Write logic.md's example files, each a python block whose first line names it."""
+    text = (SKILL_ROOT / "references/logic.md").read_text(encoding="utf-8")
+    blocks = {}
+    for block in re.findall(r"```python\n(.*?)\n```", text, re.DOTALL):
+        match = re.match(r"# (\S+\.py)\n", block)
+        if match:
+            blocks[match.group(1)] = block
+    assert set(blocks) == set(LOGIC_FILES), sorted(blocks)
+    folder = tmp_path / "logic-example"
+    folder.mkdir(parents=True)
+    for name, block in blocks.items():
+        if mutate and name == "orders_machine.py":
+            assert block.count(mutate[0]) == 1, mutate[0]
+            block = block.replace(*mutate)
+        (folder / name).write_text(block + "\n", encoding="utf-8")
+    return folder
+
+
+def post(url: str, fields: dict[str, str]) -> int:
+    data = urllib.parse.urlencode(fields).encode()
+    request = urllib.request.Request(url, data=data, method="POST")
+    opener = urllib.request.build_opener(NoRedirect)
+    try:
+        with opener.open(request, timeout=10) as response:
+            return response.status
+    except urllib.error.HTTPError as error:
+        return error.code
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def native_run(folder: Path, actions: list[str]) -> dict:
+    """The state the project's own module reaches, called directly in a fresh process."""
+    script = ("import json, sys, orders_machine as m\nstate = m.initial()\n"
+              "for a in sys.argv[1:]:\n    state = m.step(state, a)\nprint(json.dumps(state))\n")
+    result = subprocess.run([sys.executable, "-c", script, *actions], cwd=folder,
+                            capture_output=True, text=True, timeout=15, check=True)
+    return json.loads(result.stdout)
+
+
+def browser_view_state(folder: Path, actions: list[str]) -> dict:
+    with serve([sys.executable, "prototype_orders_web.py", "--port", "0"], folder) as base:
+        for action in actions:
+            assert post(base + "/action", {"action": action}) == 303, action
+        status, body = fetch(base + "/state.json")
+        assert status == 200
+        return json.loads(body)
+
+
+def test_browser_view_serves_the_project_native_logic(tmp_path: Path) -> None:
+    """The browser shell imports the same pure module the terminal shell drives; its
+    state after a sequence of actions is what the module itself computes (#259)."""
+    folder = logic_example(tmp_path)
+    actions = ["pay", "cancel", "refund"]
+    assert browser_view_state(folder, actions) == native_run(folder, actions)
+    with serve([sys.executable, "prototype_orders_web.py", "--port", "0"], folder) as base:
+        assert post(base + "/action", {"action": "ship-to-mars"}) == 400  # only legal actions
+        page = fetch(base + "/")[1]
+        assert 'name="action" value="pay"' in page and 'value="ship"' not in page  # legal now
+        assert "<script" not in page  # no client-side copy of the logic
+
+
+def test_changing_the_module_changes_the_browser_view(tmp_path: Path) -> None:
+    """A second, independent implementation could not stand in: alter one transition in
+    the native module and the browser view follows it (#259)."""
+    original = logic_example(tmp_path / "original")
+    altered = logic_example(tmp_path / "altered", mutate=('("paid", "cancel"): "refund_pending"',
+                                                           '("paid", "cancel"): "cancelled"'))
+    actions = ["pay", "cancel"]
+    assert browser_view_state(original, actions)["status"] == "refund_pending"
+    assert browser_view_state(altered, actions)["status"] == "cancelled"
+    assert browser_view_state(altered, actions) == native_run(altered, actions)
+
+
+def test_terminal_shell_still_drives_the_same_module(tmp_path: Path) -> None:
+    """The terminal presentation stays the default for developers (#259 AC1)."""
+    folder = logic_example(tmp_path)
+    result = subprocess.run([sys.executable, "prototype_orders.py"], cwd=folder, input="pay\nq\n",
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    assert '"status": "paid"' in result.stdout
