@@ -32,13 +32,11 @@ The branches produce very different artifacts — getting this wrong wastes the 
 4. **No persistence by default.** State lives in memory. Persistence is the thing the prototype is _checking_, not something it should depend on. If the question explicitly involves a database, hit a scratch DB or a local file with a clear "PROTOTYPE — wipe me" name.
 5. **Skip the polish — while it's throwaway.** No tests, no error handling beyond what makes the prototype _runnable_, no abstractions. The point is to learn something fast, preserve it, and clean it up. These exemptions never carry over into production code.
 6. **Surface the state.** After every action (logic) or on every variant switch (UI), print or render the full relevant state so the user can see what changed.
-7. **Preserve it before cleanup.** When done, record the answer, capture the prototype as a **primary source** on a throwaway branch *out of main*, leave a pointer to it, and only then clean up the files it owns (When done, below).
-
-Finishing a prototype is not adopting it. Lifting a validated reducer into production keeps the **decision**, not the prototype, and it is separate work: a separately authorized implementation under the normal production quality gates — real tests, error handling and the abstractions you skipped.
+7. **Preserve it before cleanup.** When done, record the answer, capture the prototype as a **primary source** on a throwaway branch *out of main*, leave a pointer to it, and only then clean up the files it wholly owns (When done, below).
 
 ## When done
 
-The _answer_ is what a prototype is for, and its source is the evidence behind that answer: preserve both before any cleanup. Finishing a planning prototype edits no production code; folding the answer in is a separately authorized implementation under the normal production quality gates.
+The _answer_ is what a prototype is for, and its source is the evidence behind that answer: preserve both before any cleanup. Finishing a planning prototype edits no production code. Lifting a validated reducer into production keeps the **decision**, not the prototype, and is a separately authorized implementation under the normal production quality gates — real tests, error handling and the abstractions you skipped.
 
 1. **Record the answer.** Write a `NOTES.md` next to the prototype, so it is captured with the source (if the prototype leaves no files, record the answer in a commit message, ADR or issue instead):
 
