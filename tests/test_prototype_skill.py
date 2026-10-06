@@ -548,6 +548,10 @@ def test_ui_evals_check_rendered_switching_and_production_exclusion() -> None:
     assert "tests/browser/check_prototype_ui.py" in expectations
     assert "404" in expectations and "every variant name used in development" in expectations
     assert "--reference-project" in expectations  # production page judged against the untouched project
+    # Preserving the prototype commits it to a throwaway capture branch (#257), so the
+    # expectation forbids commits on the starting branch, not every commit (decided
+    # after the #258 runs, which all captured that way).
+    assert "nothing is committed to the starting branch, pushed or published" in expectations
     assert "settings_logic.py" in expectations
     assert "no new dependency" in expectations
 

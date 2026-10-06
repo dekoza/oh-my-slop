@@ -88,7 +88,7 @@
         "In production, /prototype/settings returns 404 with or without a trailing slash, /settings renders the same in the browser for every variant name used in development and for an unknown one, and no switcher appears, checked by the same script.",
         "The three variants are structurally different layouts over the stub data from settings_logic.py; settings_logic.py is unchanged and the production /settings page renders as before (the script compares it with the untouched project via --reference-project).",
         "The prototype is clearly marked as throwaway and wired through the project's own runtime: no new dependency, package manager, framework or JavaScript build.",
-        "Variants perform no real mutations, and nothing is committed, pushed or published."
+        "Variants perform no real mutations, and nothing is committed to the starting branch, pushed or published."
       ]
     }
   ]
