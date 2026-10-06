@@ -17,7 +17,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPO_ROOT / "skills/workflow/prototype"
 ISOLATED_GIT = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_EDITOR": "true"}
-OWNED = ("app/prototype-settings/variants.py", "app/prototype-settings/NOTES.md", "app/settings.html")
+# NOTES.md comes first so its parent empties only after the nested file goes: that
+# second-level directory is removed only by `rmdir -p`.
+OWNED = ("app/prototype-settings/NOTES.md", "app/prototype-settings/variants/layout.py", "app/settings.html")
 CAPTURE_BRANCH = "prototype/settings-layout"
 
 
@@ -82,8 +84,8 @@ def prototyped(tmp_path: Path) -> Path:
     (repo / "app/other.py").write_text("LIMIT = 2  # user's edit\n", encoding="utf-8")
     (repo / "app/user_draft.txt").write_text("precious untracked\n", encoding="utf-8")
     # The prototype: new owned files plus an owned edit of a page that was clean.
-    (repo / "app/prototype-settings").mkdir()
-    (repo / "app/prototype-settings/variants.py").write_text("VARIANTS = 'abc'\n", encoding="utf-8")
+    (repo / "app/prototype-settings/variants").mkdir(parents=True)
+    (repo / "app/prototype-settings/variants/layout.py").write_text("VARIANTS = 'abc'\n", encoding="utf-8")
     (repo / "app/prototype-settings/NOTES.md").write_text(
         "# Prototype: settings layout\n- **Question:** which layout?\n", encoding="utf-8")
     (repo / "app/settings.html").write_text("<h1>Settings</h1>\n{% variant %}\n", encoding="utf-8")
@@ -150,7 +152,7 @@ def test_failed_capture_or_changed_file_prevents_any_cleanup(prototyped: Path, f
             # Removing a staged file would leave its index entry behind.
             git(repo, "add", "--", OWNED[0])
         else:
-            (repo / OWNED[0]).write_text("VARIANTS = 'abcd'  # edited after capture\n", encoding="utf-8")
+            (repo / OWNED[1]).write_text("VARIANTS = 'abcd'  # edited after capture\n", encoding="utf-8")
     before = snapshot(repo)
     owned_bytes = {path: (repo / path).read_bytes() for path in OWNED}
 
@@ -180,6 +182,41 @@ def test_capture_failing_midway_rolls_back_its_own_worktree_and_branch(prototype
     assert capture.returncode != 0
     git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{CAPTURE_BRANCH}", expected=1)
     assert snapshot(repo) == before
+    assert {path: (repo / path).read_bytes() for path in OWNED} == owned_bytes
+
+
+def test_capture_whose_final_check_fails_keeps_its_commit_and_blocks_cleanup(prototyped: Path) -> None:
+    """A line-ending filter makes the stored bytes differ: the commit stays for
+    inspection, the capture reports failure, and cleanup refuses with a reason."""
+    repo = prototyped
+    git(repo, "config", "core.autocrlf", "true")
+    (repo / OWNED[1]).write_bytes(b"VARIANTS = 'abc'\r\n")
+    owned_bytes = {path: (repo / path).read_bytes() for path in OWNED}
+
+    capture = run_recipe(repo, "capture.sh")
+    assert capture.returncode != 0
+    git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{CAPTURE_BRANCH}")
+    cleanup = run_recipe(repo, "cleanup.sh")
+    assert cleanup.returncode != 0
+    assert f"{OWNED[1]} does not match its capture" in cleanup.stderr
+    assert {path: (repo / path).read_bytes() for path in OWNED} == owned_bytes
+
+
+@pytest.mark.parametrize("script", ["capture.sh", "cleanup.sh"])
+def test_recipes_refuse_to_run_outside_the_repository_root(prototyped: Path, script: str) -> None:
+    """From a subdirectory, root-relative paths would be captured or removed at the wrong place."""
+    repo = prototyped
+    owned_bytes = {path: (repo / path).read_bytes() for path in OWNED}
+    saved = repo.parent / script
+    saved.write_text(recipe(script) + "\n", encoding="utf-8")
+    result = subprocess.run(
+        ["bash", str(saved), "variants/layout.py"], cwd=repo / "app/prototype-settings",
+        capture_output=True, text=True, timeout=30,
+        env={**os.environ, **ISOLATED_GIT, "capture_branch": CAPTURE_BRANCH},
+    )
+    assert result.returncode != 0
+    assert "repository root" in result.stderr
+    git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{CAPTURE_BRANCH}", expected=1)
     assert {path: (repo / path).read_bytes() for path in OWNED} == owned_bytes
 
 
@@ -242,6 +279,12 @@ def test_partly_owned_files_are_captured_but_never_cleaned_wholesale() -> None:
     assert "when it started" not in cleanup
     assert "remove only the prototype's lines by hand, or report them" in cleanup
     assert "`git status --short` before the prototype's first edit" in skill_body()
+    # Wrap-up often starts in a later session that noted nothing at the start.
+    assert "If no status was noted, treat any change you cannot attribute to the prototype as someone else's" in cleanup
+    assert "even one that was already empty" in cleanup
+    failed_capture = done.split("**Leave a pointer.**", 1)[0].rsplit("```", 1)[1]
+    assert "an ignored path" in failed_capture and "a hook that rewrites files" in failed_capture
+    assert "capture again under a new branch name" in failed_capture
     for name in ("logic.md", "ui.md"):
         done_step = reference_done_step(name)
         assert "wholly owns" in done_step, name
@@ -310,3 +353,5 @@ def test_evals_reward_preservation_not_automatic_production_folding() -> None:
     assert "not restored to HEAD" in " ".join(cases[6]["expectations"])
     # Following the skill removes the created NOTES.md, so a strict grader must not fail it.
     assert "settings_variants.html and NOTES.md are removed only after" in " ".join(cases[6]["expectations"])
+    # The skill itself writes the issue pointer and the capture branch.
+    assert "other than the pointer on issue #12, and the pre-existing branches and worktrees are unchanged" in " ".join(cases[6]["expectations"])

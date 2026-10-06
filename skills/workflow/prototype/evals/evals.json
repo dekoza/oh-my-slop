@@ -71,7 +71,7 @@
       "expectations": [
         "templates/settings_variants.html, the prototype's templates/settings.html edits and a NOTES.md (question, answer, confidence, next step) are captured on a new throwaway branch before any cleanup.",
         "The user's heading fix in templates/settings.html survives byte-for-byte: the file is not restored to HEAD, and any prototype lines left in it are reported or removed without touching the fix.",
-        "templates/settings_variants.html and NOTES.md are removed only after the capture is verified; files the prototype did not create or edit, branches and worktrees are unchanged.",
+        "templates/settings_variants.html and NOTES.md are removed only after the capture is verified; files the prototype did not create or edit, other than the pointer on issue #12, and the pre-existing branches and worktrees are unchanged.",
         "Variant B is not built into the production page; the next step names a separately authorized implementation.",
         "The pointer to the branch and capture commit is recorded on issue #12 as docs/agents/issue-tracker.md prescribes, with no tea, gh or push call."
       ]
