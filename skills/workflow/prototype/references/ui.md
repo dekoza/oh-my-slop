@@ -55,68 +55,110 @@ Variants must be **structurally different** — different layout, different info
 
 ### 3. Wire them together
 
-Create a single switcher component on the route:
+Three things must hold, and only running the page shows them:
+
+- **Switching changes what is rendered.** The controls navigate to the new `?variant=`, so the server renders that variant. Changing only the label or the URL leaves the old variant on screen.
+- **A reload keeps the selection**, because the URL carries it.
+- **Production excludes the prototype on the server.** Read one explicit setting when the server starts — never an undeclared template variable. With prototypes off, don't register throwaway routes, ignore `?variant=` on the real page, and render no switcher. Hiding the bar is not exclusion.
+
+This sketch shows all three with the Python standard library only. Adapt it to the project's own framework and configuration rather than copying its server:
 
 ```python
-# Django view
-def settings_prototype(request):
-    variant = request.GET.get("variant", "a")
-    # ... existing data fetching ...
-    return render(request, "settings/prototype.html", {
-        "variant": variant,
-        # ... context ...
-    })
-```
+"""Prototype variants on an existing page, plus a throwaway route.
 
-```html
-{# Template with variant switcher #}
-{% if variant == "a" %}
-  {% include "settings/variant_a.html" %}
-{% elif variant == "b" %}
-  {% include "settings/variant_b.html" %}
-{% else %}
-  {% include "settings/variant_c.html" %}
-{% endif %}
+Run: python3 prototype_example.py --env development|production [--port 8000]
+Prototypes exist only when the server starts with --env development.
+"""
+import argparse
+import html
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
-{# Floating bottom bar — gated on DEBUG so a stray prototype can't ship it to users #}
-{% if settings.DEBUG %}
-<div class="prototype-bar" style="position:fixed;bottom:0;left:0;right:0;display:flex;gap:8px;padding:8px;background:#f8f9fa;border-top:1px solid #dee2e6;align-items:center;justify-content:center;" data-variants='["a","b","c"]'>
-  <button class="btn btn-sm btn-outline-secondary" id="prev-variant">&#8592; Prev</button>
-  <span class="badge bg-primary" id="variant-label">Variant A</span>
-  <button class="btn btn-sm btn-outline-secondary" id="next-variant">Next &#8594;</button>
+SETTINGS = {"name": "Ada", "email": "ada@example.com", "theme": "dark"}  # stub data
+
+VARIANTS = {  # structurally different layouts over the same data
+    "a": lambda: "<table>" + "".join(
+        f"<tr><th>{k}</th><td>{html.escape(v)}</td></tr>" for k, v in SETTINGS.items()) + "</table>",
+    "b": lambda: "".join(
+        f"<details open><summary>{k}</summary>{html.escape(v)}</details>" for k, v in SETTINGS.items()),
+    "c": lambda: "<nav>" + " | ".join(SETTINGS) + "</nav><p>" + html.escape(SETTINGS["name"]) + "</p>",
+}
+
+SWITCHER = """<div class="prototype-bar" data-variants='["a","b","c"]'
+  style="position:fixed;bottom:0;left:0;right:0;display:flex;gap:8px;justify-content:center;padding:8px">
+  <button type="button" id="prev-variant">&#8592; Prev</button>
+  <span id="variant-label"></span>
+  <button type="button" id="next-variant">Next &#8594;</button>
 </div>
 <script>
-  (function() {
-    var bar = document.querySelector('.prototype-bar');
-    if (!bar) return;
-    var variants = JSON.parse(bar.dataset.variants);
-    var url = new URLSearchParams(location.search);
-    var idx = variants.indexOf(url.get('variant') || variants[0]);
-    if (idx < 0) idx = 0;
-    var label = document.getElementById('variant-label');
-    function update() {
-      label.textContent = 'Variant ' + variants[idx].toUpperCase();
-      url.set('variant', variants[idx]);
-      history.replaceState({}, '', '?' + url.toString());
-    }
-    document.getElementById('prev-variant').addEventListener('click', function() {
-      idx = (idx - 1 + variants.length) % variants.length;
-      update();
-    });
-    document.getElementById('next-variant').addEventListener('click', function() {
-      idx = (idx + 1) % variants.length;
-      update();
-    });
-    document.addEventListener('keydown', function(e) {
-      if (e.target.matches('input, textarea, [contenteditable]')) return;
-      if (e.key === 'ArrowLeft') { idx = (idx - 1 + variants.length) % variants.length; update(); }
-      else if (e.key === 'ArrowRight') { idx = (idx + 1) % variants.length; update(); }
-    });
-    update();
-  })();
-</script>
-{% endif %}
+(function () {
+  var variants = JSON.parse(document.querySelector('.prototype-bar').dataset.variants);
+  var params = new URLSearchParams(location.search);
+  var idx = Math.max(0, variants.indexOf(params.get('variant')));
+  document.getElementById('variant-label').textContent = 'Variant ' + variants[idx].toUpperCase();
+  function go(step) {  // navigate: the server renders the chosen variant, and a reload keeps it
+    params.set('variant', variants[(idx + step + variants.length) % variants.length]);
+    location.search = params.toString();
+  }
+  document.getElementById('prev-variant').addEventListener('click', function () { go(-1); });
+  document.getElementById('next-variant').addEventListener('click', function () { go(1); });
+  document.addEventListener('keydown', function (e) {
+    if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+    if (e.key === 'ArrowLeft') go(-1);
+    else if (e.key === 'ArrowRight') go(1);
+  });
+})();
+</script>"""
+
+
+def legitimate_settings() -> str:
+    rows = "".join(f"<li>{k}: {html.escape(v)}</li>" for k, v in SETTINGS.items())
+    return f"<main><h1>Settings</h1><ul>{rows}</ul></main>"
+
+
+def variant(query: dict) -> str:
+    chosen = query.get("variant", ["a"])[0]
+    chosen = chosen if chosen in VARIANTS else "a"
+    return f'<main data-variant="{chosen}">{VARIANTS[chosen]()}</main>'
+
+
+def make_handler(prototypes: bool):
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            url = urlsplit(self.path)
+            query = parse_qs(url.query)
+            if url.path == "/settings":  # the real page; variants only when enabled
+                main = variant(query) if prototypes else legitimate_settings()
+            elif url.path == "/prototype/settings" and prototypes:  # throwaway route
+                main = variant(query)
+            else:
+                self.send_error(404)
+                return
+            bar = SWITCHER if prototypes else ""
+            body = f"<!doctype html><html><body><header>Acme</header>{main}{bar}</body></html>".encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    return Handler
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--env", required=True, choices=["development", "production"])
+    parser.add_argument("--port", type=int, default=8000)
+    args = parser.parse_args()
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(args.env == "development"))
+    print(f"serving on http://127.0.0.1:{server.server_port} ({args.env})", flush=True)
+    server.serve_forever()
 ```
+
+In a framework project the same three points map onto its own mechanisms: register the throwaway route only under the configuration that enables prototypes, read `?variant=` only when it is enabled, and pass that same flag explicitly to whatever renders the switcher. Then start the server in each configuration and check it: in development, flip variants and reload in a browser; in production, request the throwaway route and the real page with `?variant=`.
 
 ### 4. When done
 

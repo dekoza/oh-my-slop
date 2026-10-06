@@ -1,15 +1,25 @@
 """#257: a prototype's source and decision evidence survive before scoped cleanup.
+#258: the documented UI switcher wiring renders the chosen variant and production
+excludes prototypes on the server.
 
 The Git fixtures execute the skill's public recipes in real throwaway repositories;
-they are not a model or a safety controller. Model behaviour is covered separately
-by the matched evals in skills/workflow/prototype/evals/evals.json.
+they are not a model or a safety controller. The HTTP checks run the documented UI
+example under each startup configuration; real-browser behaviour (switching, reload)
+is covered by tests/browser/check_prototype_ui.py, which needs system Playwright and is
+deliberately not collected here. Model behaviour is covered separately by the matched
+evals in skills/workflow/prototype/evals/evals.json.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import subprocess
+import sys
+import urllib.error
+import urllib.request
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -387,3 +397,74 @@ def test_evals_reward_preservation_not_automatic_production_folding() -> None:
     # The skill itself writes the issue pointer (which the tracker may commit) and the capture branch.
     assert ("other than the pointer on issue #12, and the pre-existing branches (apart from a commit that "
             "only records that pointer) and worktrees are unchanged") in " ".join(cases[6]["expectations"])
+
+
+def documented_example() -> str:
+    """The runnable example in ui.md's wiring step, verbatim."""
+    text = (SKILL_ROOT / "references/ui.md").read_text(encoding="utf-8")
+    blocks = [b for b in re.findall(r"```python\n(.*?)\n```", text, re.DOTALL) if "--env" in b]
+    assert len(blocks) == 1, "ui.md documents exactly one runnable example taking --env"
+    return blocks[0]
+
+
+@contextlib.contextmanager
+def serve_example(tmp_path: Path, env: str) -> Iterator[str]:
+    script = tmp_path / "prototype_example.py"
+    script.write_text(documented_example() + "\n", encoding="utf-8")
+    server = subprocess.Popen([sys.executable, str(script), "--env", env, "--port", "0"],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        line = server.stdout.readline()
+        match = re.search(r"http://127\.0\.0\.1:\d+", line)
+        assert match, f"no loopback address announced: {line!r}"
+        yield match.group(0)
+    finally:
+        server.terminate()
+        server.wait(timeout=10)
+
+
+def fetch(url: str) -> tuple[int, str]:
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            return response.status, response.read().decode("utf-8")
+    except urllib.error.HTTPError as error:
+        return error.code, error.read().decode("utf-8")
+
+
+def test_documented_example_excludes_prototypes_on_the_production_server(tmp_path: Path) -> None:
+    """Production omits the throwaway route and renders the legitimate page whatever
+    the selection parameter says; a hidden bar alone would not pass (#248 AC10)."""
+    with serve_example(tmp_path, "production") as base:
+        status, plain = fetch(base + "/settings")
+        assert status == 200
+        assert "prototype-bar" not in plain and "data-variant=" not in plain
+        assert fetch(base + "/settings?variant=b") == (200, plain)
+        assert fetch(base + "/prototype/settings")[0] == 404
+
+
+def test_documented_example_renders_the_selected_variant_in_development(tmp_path: Path) -> None:
+    with serve_example(tmp_path, "development") as base:
+        pages = {v: fetch(f"{base}/settings?variant={v}") for v in "abc"}
+        assert all(status == 200 for status, _ in pages.values())
+        assert len({body for _, body in pages.values()}) == 3  # the server renders each variant
+        for v, (_, body) in pages.items():
+            assert f'data-variant="{v}"' in body and "prototype-bar" in body
+        assert fetch(base + "/settings?variant=zzz")[1] == pages["a"][1]  # unknown falls back
+        status, throwaway = fetch(base + "/prototype/settings")
+        assert status == 200 and "prototype-bar" in throwaway
+
+
+def test_documented_example_requires_an_explicit_configuration(tmp_path: Path) -> None:
+    script = tmp_path / "prototype_example.py"
+    script.write_text(documented_example() + "\n", encoding="utf-8")
+    result = subprocess.run([sys.executable, str(script), "--port", "0"],
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode != 0 and "--env" in result.stderr
+
+
+def test_ui_reference_no_longer_relies_on_undeclared_template_settings() -> None:
+    """The old sample gated only the bar on an undeclared settings.DEBUG and its
+    switcher changed just the label and URL (#258)."""
+    text = (SKILL_ROOT / "references/ui.md").read_text(encoding="utf-8")
+    assert "settings.DEBUG" not in text
+    assert "history.replaceState" not in text  # a URL-only change leaves the variant unrendered
