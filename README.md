@@ -140,7 +140,7 @@ while the router is offline; use another provider until it returns.
 ## Skills
 
 <details>
-<summary><strong>Skills (70)</strong></summary>
+<summary><strong>Skills (71)</strong></summary>
 
 Grouped by what you came looking for: an API surface (**Reference**), a way of
 working (**Practice**), a job to run (**Workflow**), or the agent's own toolkit
@@ -195,6 +195,7 @@ How to work well — disciplines, design vocabulary, and the book-derived practi
 | **[Testing Workflow](skills/practice/testing-workflow/SKILL.md)** | TDD mandatory (red-green-refactor), use `tee` not `head`/`tail`/`>`, Playwright rules (headless, navigation via UI not URLs), Docker test environment (compose.test.yml, no public ports). |
 | **[UI Design Direction](skills/practice/ui-design-direction/SKILL.md)** | UI/UX direction and hostile design-lead critique for dashboards, landing pages, admin tools, mobile apps, typography, chart choices, trust signals, hierarchy, and conversion friction. |
 | **[Webapp Testing](skills/practice/webapp-testing/SKILL.md)** | Playwright workflow for local webapp testing — server lifecycle, rendered-DOM reconnaissance, browser logs, screenshots, and recorded video artifacts for repros and walkthroughs. |
+| **[Writing for Agents](skills/practice/writing-for-agents/SKILL.md)** | Writing documents agents consume — skills, AGENTS.md / CLAUDE.md, pointer-reached docs — so each run follows the same process. |
 
 #### Workflow
 
