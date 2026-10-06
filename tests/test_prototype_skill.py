@@ -677,7 +677,7 @@ def test_skill_routing_and_catalogue_offer_the_browser_view_without_a_rewrite() 
     body = " ".join(skill_body().split())
     logic_branch = body.split("**\"Does this logic / state model feel right?\"**", 1)[1].split("- **", 1)[0]
     assert "a browser view of the same module" in logic_branch
-    assert "never a JavaScript rewrite" in logic_branch
+    assert "never a re-implementation in page scripts" in logic_branch  # reads right for Node projects too
     assert "→ both, in sequence" in body  # the three-way choice survives
     index = (SKILL_ROOT / "references/REFERENCE.md").read_text(encoding="utf-8")
     assert "people who would rather click" in index and "logic.md" in index
@@ -738,12 +738,40 @@ def test_logic_check_tells_a_refused_action_from_a_broken_module(tmp_path: Path)
     folder = logic_example(tmp_path)
     assert check.native_state(folder, "orders_machine", ["pay"])["status"] == "paid"
     assert check.native_state(folder, "orders_machine", ["refund"]) is None  # ValueError: refused
-    (folder / "broken_machine.py").write_text("def initial():\n    return {}\n\ndef step(state, action):\n"
+    (folder / "broken_machine.py").write_text("def initial():\n    return {}\n\ndef actions(state):\n"
+                                              "    return ['pay']\n\ndef step(state, action):\n"
                                               "    return undefined_name\n", encoding="utf-8")
     with pytest.raises(check.Failure, match="NameError"):
         check.native_state(folder, "broken_machine", ["pay"])
     with pytest.raises(check.Failure, match="ModuleNotFoundError"):
         check.native_state(folder, "no_such_module", ["pay"])
+    # Refusal means "not among actions(state)": a bug that happens to raise ValueError,
+    # or a module that exits with any code, is a failure, never a refusal.
+    (folder / "buggy_machine.py").write_text(
+        "def initial():\n    return {'status': 'new'}\n\ndef actions(state):\n    return ['pay']\n\n"
+        "def step(state, action):\n    x, y = (1, 2, 3)\n", encoding="utf-8")
+    with pytest.raises(check.Failure, match="ValueError"):
+        check.native_state(folder, "buggy_machine", ["pay"])
+    (folder / "exiting_machine.py").write_text(
+        "import sys\n\ndef initial():\n    return {'status': 'new'}\n\ndef actions(state):\n    return ['pay']\n\n"
+        "def step(state, action):\n    sys.exit(3)\n", encoding="utf-8")
+    with pytest.raises(check.Failure):
+        check.native_state(folder, "exiting_machine", ["pay"])
+
+
+def test_logic_check_never_changes_the_checked_project(tmp_path: Path) -> None:
+    """--mutated-project must be a separate copy: pointing it at the project, inside it or
+    around it would rewrite the user's own module (#259 review)."""
+    project = logic_example(tmp_path)
+    before = (project / "orders_machine.py").read_bytes()
+    for mutated in (project, project / "copy", project.parent):
+        out = tmp_path / f"out-{mutated.name}"
+        result = subprocess.run([sys.executable, str(REPO_ROOT / "tests/browser/check_prototype_ui.py"),
+                                 "--logic", "--out", str(out), "--project", str(project),
+                                 "--start", "python3 prototype_orders_web.py --port {port}",
+                                 "--mutated-project", str(mutated)], capture_output=True, text=True, timeout=60)
+        assert result.returncode != 0 and "separate copy" in result.stderr, (mutated, result.stderr)
+    assert (project / "orders_machine.py").read_bytes() == before
 
 
 def test_logic_check_mutation_guards(tmp_path: Path) -> None:

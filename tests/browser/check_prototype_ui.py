@@ -1,9 +1,12 @@
 """Real-browser evidence for the prototype skill's UI switcher and production exclusion (#258)
 and for browser views of logic prototypes (#259, --logic).
 
-Logic mode (#259): drives a browser view of a logic prototype by its visible button or
-link names, and after each action requires the page to show the state the project's own
-module computes when called directly (--module with initial() and step()). It then
+Logic mode (#259, Python modules only): drives a browser view of a logic prototype by its
+visible button or link names, and after each action requires the page to show the state
+the project's own module computes when called directly (--module with initial(),
+actions(state) and step(state, action); an action outside actions(state) is a refusal,
+and any exception is a failure). The state is looked for in the page's #state element
+when it has one, else in the whole page. It then
 repeats the run on a copy whose module carries one changed transition (--mutate): the
 page must follow the change, and must not offer an action the changed module refuses.
 A view that re-implements the logic, in JavaScript or in a private copy, cannot pass.
@@ -155,8 +158,7 @@ class Server:
         self.log = log.open("w", encoding="utf-8")
         argv = shlex.split(start.format(env=env, port=0))
         self.process = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=self.log, text=True,
-                                        start_new_session=True,  # no bytecode left in the checked project
-                                        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+                                        start_new_session=True, env={**os.environ, **NO_BYTECODE})
         found: list[str] = []
         ready = threading.Event()
 
@@ -398,22 +400,28 @@ def documented_logic_example(out: Path) -> Path:
     return folder
 
 
-REFUSED_EXIT = 3
+NO_BYTECODE = {"PYTHONDONTWRITEBYTECODE": "1"}  # never leave __pycache__ in a checked project
 
 
 def native_state(folder: Path, module: str, actions: list[str]) -> dict | None:
     """What the project's own Python module computes for these actions, called directly.
-    None only when the module refuses an action the documented way (ValueError); any other
-    error is a failure, so a broken module cannot pass as a refusal."""
+    None when an action is not among the module's actions(state); any exception or exit is
+    a failure, so a broken module can never pass as a refusal."""
     script = (f"import json, sys\nimport {module} as m\nstate = m.initial()\n"
-              "for a in sys.argv[1:]:\n    try:\n        state = m.step(state, a)\n"
-              f"    except ValueError:\n        sys.exit({REFUSED_EXIT})\nprint(json.dumps(state))\n")
+              "for a in sys.argv[1:]:\n    if a not in m.actions(state):\n"
+              "        print(json.dumps({'refused': a}))\n        break\n    state = m.step(state, a)\n"
+              "else:\n    print(json.dumps({'state': state}))\n")
     result = subprocess.run([sys.executable, "-c", script, *actions], cwd=folder, capture_output=True,
-                            text=True, timeout=30, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
-    if result.returncode == REFUSED_EXIT:
-        return None
+                            text=True, timeout=30, env={**os.environ, **NO_BYTECODE})
     check(result.returncode == 0, f"native module {module} failed: {result.stderr.strip()[-300:]}")
-    return json.loads(result.stdout)
+    lines = result.stdout.strip().splitlines()
+    try:
+        answer = json.loads(lines[-1]) if lines else None
+    except json.JSONDecodeError:
+        answer = None
+    check(isinstance(answer, dict) and ("state" in answer or "refused" in answer),
+          f"native module {module} gave no readable answer: {result.stdout.strip()[-200:]!r}")
+    return answer.get("state")
 
 
 def apply_mutation(source: Path, mutation: tuple[str, str]) -> None:
@@ -517,6 +525,8 @@ def main() -> int:
                 cwd = documented_logic_example(args.out)
                 start = f"{shlex.quote(sys.executable)} prototype_orders_web.py --port {{port}}"
             mutated = (args.mutated_project or args.out / "logic-mutated").resolve()
+            check(mutated != cwd and cwd not in mutated.parents and mutated not in cwd.parents,
+                  f"the changed module must live in a separate copy outside {cwd}, not {mutated}")
             check(args.mutated_project is not None or not mutated.exists(),
                   f"{mutated} already exists; use a fresh --out so an old changed copy is never checked")
             if not mutated.exists():

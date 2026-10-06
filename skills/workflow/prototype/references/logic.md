@@ -60,7 +60,7 @@ The whole frame should fit on one screen.
 
 The terminal stays the default: it is the fastest way for whoever wrote the logic to push it through cases. Reach for a browser view when the people judging the answer would rather click than type — a product owner, support, a stakeholder demo — or when the question is about what someone sees while the state changes.
 
-The browser view is a second **shell**, not a second implementation. It imports the same pure module the terminal drives, from the project's own runtime: a few lines of the project's web stack, or the standard library's HTTP server when there is none. Each button sends an action to the server, the server calls the module, and the page re-renders the full state — exactly what the terminal frame shows. No logic lives in the page, so there is nothing to keep in step.
+The browser view is a second **shell**, not a second implementation. It imports the same pure module the terminal drives, from the project's own runtime: a few lines of the project's web stack, or the standard library's HTTP server when there is none. Each button sends an action to the server, the server calls the module, and the page re-renders the full state — exactly what the terminal frame shows. No logic lives in the page, so there is nothing to keep in step. Give the module an `actions(state)` that lists what is legal right now, and let both shells offer only those.
 
 Do **not** build a standalone page that re-implements the logic in JavaScript: it tests a copy, and the answer you get is about the copy. Do not add a runtime or a JavaScript rewrite the project doesn't already have just to get buttons.
 
