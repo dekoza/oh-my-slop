@@ -1,6 +1,7 @@
 """#257: a prototype's source and decision evidence survive before scoped cleanup.
 #258: the documented UI switcher wiring renders the chosen variant and production
 excludes prototypes on the server.
+#259: an optional browser view of a logic prototype drives the same native module.
 
 The Git fixtures execute the skill's public recipes in real throwaway repositories;
 they are not a model or a safety controller. The HTTP checks run the documented UI
@@ -703,7 +704,7 @@ def test_logic_evals_pair_terminal_browser_and_native_language_cases() -> None:
     assert any(t["should_trigger"] and "click through" in t["query"] for t in triggers)
 
 
-def test_logic_fixture_project_is_pure_logic_with_a_terminal_shell(tmp_path: Path) -> None:
+def test_logic_fixture_project_is_pure_logic_with_a_terminal_shell() -> None:
     """Case 9's input: a native module with the initial/actions/step shape and its
     terminal prototype; no browser view yet (#259)."""
     import ast
@@ -718,6 +719,66 @@ def test_logic_fixture_project_is_pure_logic_with_a_terminal_shell(tmp_path: Pat
     result = subprocess.run([sys.executable, "prototype_subscription.py"], cwd=folder, input="subscribe\nq\n",
                             capture_output=True, text=True, timeout=15)
     assert result.returncode == 0 and '"status": "active"' in result.stdout, result.stderr
+
+
+def browser_check_module():
+    """The check imports Playwright only inside main(), so its helpers load under pytest."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("check_prototype_ui", REPO_ROOT / "tests/browser/check_prototype_ui.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_logic_check_tells_a_refused_action_from_a_broken_module(tmp_path: Path) -> None:
+    """Only the module's own ValueError means "refused"; any other error is a failure,
+    so a broken changed module cannot pass as a refusal (#259 review)."""
+    check = browser_check_module()
+    folder = logic_example(tmp_path)
+    assert check.native_state(folder, "orders_machine", ["pay"])["status"] == "paid"
+    assert check.native_state(folder, "orders_machine", ["refund"]) is None  # ValueError: refused
+    (folder / "broken_machine.py").write_text("def initial():\n    return {}\n\ndef step(state, action):\n"
+                                              "    return undefined_name\n", encoding="utf-8")
+    with pytest.raises(check.Failure, match="NameError"):
+        check.native_state(folder, "broken_machine", ["pay"])
+    with pytest.raises(check.Failure, match="ModuleNotFoundError"):
+        check.native_state(folder, "no_such_module", ["pay"])
+
+
+def test_logic_check_mutation_guards(tmp_path: Path) -> None:
+    check = browser_check_module()
+    source = tmp_path / "m.py"
+    source.write_text('T = {"a": "b"}\n', encoding="utf-8")
+    check.apply_mutation(source, ('"a": "b"', '"a": "c"'))
+    assert source.read_text(encoding="utf-8") == 'T = {"a": "c"}\n'
+    source.write_text('T = {"a": "b", "x": "a": "b"}\n', encoding="utf-8")
+    with pytest.raises(check.Failure, match="more than once"):
+        check.apply_mutation(source, ('"a": "b"', '"a": "c"'))
+    source.write_text('T = {"z": "y"}\n', encoding="utf-8")
+    with pytest.raises(check.Failure, match="does not carry the mutation"):
+        check.apply_mutation(source, ('"a": "b"', '"a": "c"'))
+
+
+def test_logic_check_refuses_a_stale_mutated_copy(tmp_path: Path) -> None:
+    """Reusing an --out directory must not check an old changed copy (#259 review)."""
+    out = tmp_path / "out"
+    (out / "logic-mutated").mkdir(parents=True)
+    result = subprocess.run([sys.executable, str(REPO_ROOT / "tests/browser/check_prototype_ui.py"),
+                             "--logic", "--out", str(out)], capture_output=True, text=True, timeout=60)
+    assert result.returncode != 0
+    assert "already exists" in result.stderr
+
+
+def test_logic_example_is_safe_to_copy() -> None:
+    """One request at a time keeps the shared state consistent; the Node note names the
+    two things node:http does not give you (#259 review)."""
+    folder_text = (SKILL_ROOT / "references/logic.md").read_text(encoding="utf-8")
+    web = next(b for b in re.findall(r"```python\n(.*?)\n```", folder_text, re.DOTALL)
+               if b.startswith("# prototype_orders_web.py"))
+    assert "ThreadingHTTPServer" not in web and "HTTPServer((" in web
+    node = " ".join(folder_text.split()).split("In a Node project", 1)[1].split("###", 1)[0]
+    assert "URLSearchParams" in node and "escape" in node
 
 
 def test_terminal_shell_still_drives_the_same_module(tmp_path: Path) -> None:

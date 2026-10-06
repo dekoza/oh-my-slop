@@ -155,7 +155,8 @@ class Server:
         self.log = log.open("w", encoding="utf-8")
         argv = shlex.split(start.format(env=env, port=0))
         self.process = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=self.log, text=True,
-                                        start_new_session=True)
+                                        start_new_session=True,  # no bytecode left in the checked project
+                                        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
         found: list[str] = []
         ready = threading.Event()
 
@@ -397,17 +398,32 @@ def documented_logic_example(out: Path) -> Path:
     return folder
 
 
+REFUSED_EXIT = 3
+
+
 def native_state(folder: Path, module: str, actions: list[str]) -> dict | None:
-    """What the project's own module computes for these actions, called directly; None
-    when the module itself refuses one of them."""
+    """What the project's own Python module computes for these actions, called directly.
+    None only when the module refuses an action the documented way (ValueError); any other
+    error is a failure, so a broken module cannot pass as a refusal."""
     script = (f"import json, sys\nimport {module} as m\nstate = m.initial()\n"
-              "for a in sys.argv[1:]:\n    state = m.step(state, a)\nprint(json.dumps(state))\n")
-    result = subprocess.run([sys.executable, "-c", script, *actions], cwd=folder,
-                            capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        check("Error" in result.stderr, f"native module {module} failed to run: {result.stderr.strip()[-300:]}")
+              "for a in sys.argv[1:]:\n    try:\n        state = m.step(state, a)\n"
+              f"    except ValueError:\n        sys.exit({REFUSED_EXIT})\nprint(json.dumps(state))\n")
+    result = subprocess.run([sys.executable, "-c", script, *actions], cwd=folder, capture_output=True,
+                            text=True, timeout=30, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+    if result.returncode == REFUSED_EXIT:
         return None
+    check(result.returncode == 0, f"native module {module} failed: {result.stderr.strip()[-300:]}")
     return json.loads(result.stdout)
+
+
+def apply_mutation(source: Path, mutation: tuple[str, str]) -> None:
+    """Change one transition in a copy of the module; a copy already changed is kept."""
+    text = source.read_text(encoding="utf-8")
+    if mutation[0] in text:
+        check(text.count(mutation[0]) == 1, f"mutation text occurs more than once in {source.name}")
+        text = text.replace(*mutation)
+        source.write_text(text, encoding="utf-8")
+    check(mutation[1] in text, f"{source.name} does not carry the mutation")
 
 
 def logic(run: Run, folder: Path, start: str, module: str, actions: list[str], key: str, label: str,
@@ -422,7 +438,8 @@ def logic(run: Run, folder: Path, start: str, module: str, actions: list[str], k
         for index, action in enumerate(actions):
             control = page.get_by_role("button", name=action, exact=True).or_(
                 page.get_by_role("link", name=action, exact=True))
-            if native_state(folder, module, actions[:index + 1]) is None:
+            native = native_state(folder, module, actions[:index + 1])
+            if native is None:
                 check(not must_accept_all, f"logic {label}: the module refuses {action!r} after {actions[:index]}")
                 check(control.count() == 0,
                       f"logic {label}: the page offers {action!r}, which the module refuses after {actions[:index]}")
@@ -432,8 +449,10 @@ def logic(run: Run, folder: Path, start: str, module: str, actions: list[str], k
             control.first.click()
             page.wait_for_load_state("load")
             page.wait_for_timeout(SWITCH_SETTLE_MS)
-            expected = str(native_state(folder, module, actions[:index + 1])[key])
-            check(re.search(rf"(?<![\w-]){re.escape(expected)}(?![\w-])", page.inner_text("body")) is not None,
+            expected = str(native[key])
+            # Prefer the state the page declares (#state) when it has one; else the whole page.
+            shown_text = page.inner_text("#state") if page.locator("#state").count() else page.inner_text("body")
+            check(re.search(rf"(?<![\w-]){re.escape(expected)}(?![\w-])", shown_text) is not None,
                   f"logic {label}: after {actions[:index + 1]} the page does not show {key}={expected!r}")
             shown.append(expected)
         (run.out / f"dom-logic-{label}.html").write_text(page.content(), encoding="utf-8")
@@ -444,12 +463,7 @@ def logic(run: Run, folder: Path, start: str, module: str, actions: list[str], k
 def logic_scenario(run: Run, folder: Path, mutated: Path, start: str, module: str, actions: list[str],
                    key: str, mutation: tuple[str, str]) -> None:
     original = logic(run, folder, start, module, actions, key, "original", must_accept_all=True)
-    source = mutated / f"{module}.py"
-    text = source.read_text(encoding="utf-8")
-    if mutation[0] in text:  # the caller may hand in a copy that is already changed
-        check(text.count(mutation[0]) == 1, f"mutation text occurs more than once in {source.name}")
-        source.write_text(text.replace(*mutation), encoding="utf-8")
-    check(mutation[1] in source.read_text(encoding="utf-8"), f"{source.name} does not carry the mutation")
+    apply_mutation(mutated / f"{module}.py", mutation)
     altered = logic(run, mutated, start, module, actions, key, "mutated", must_accept_all=False)
     check(altered != original, "the changed module did not change what the browser view shows")
     run.record["logic"] = {"actions": actions, "state_key": key, "shown": original,
@@ -464,15 +478,24 @@ def main() -> int:
     parser.add_argument("--reference-project", type=Path, help="untouched project the production page must match")
     parser.add_argument("--page", default="/settings")
     parser.add_argument("--throwaway", default="/prototype/settings")
+    def mutation(value: str) -> tuple[str, str]:
+        old, separator, new = value.partition("::")
+        if not (separator and old and new):
+            raise argparse.ArgumentTypeError("expected OLD::NEW with both parts non-empty")
+        return old, new
+
     parser.add_argument("--logic", action="store_true",
-                        help="check a browser view of logic instead of UI variants (default: logic.md's example)")
-    parser.add_argument("--module", default="orders_machine", help="logic: the native module (initial/step)")
+                        help="check a browser view of a Python logic module instead of UI variants "
+                             "(default: logic.md's example)")
+    parser.add_argument("--module", default="orders_machine", help="logic: the native Python module (initial/step)")
     parser.add_argument("--actions", default="pay,cancel,refund", help="logic: comma-separated action names")
     parser.add_argument("--state-key", default="status", help="logic: the state field the page must show")
-    parser.add_argument("--mutate", default='("paid", "cancel"): "refund_pending"::("paid", "cancel"): "cancelled"',
+    parser.add_argument("--mutate", type=mutation,
+                        default='("paid", "cancel"): "refund_pending"::("paid", "cancel"): "cancelled"',
                         help="logic: OLD::NEW change to the module that the page must follow")
     parser.add_argument("--mutated-project", type=Path,
-                        help="logic: a copy of --project to change (default: a copy under --out)")
+                        help="logic: a copy of --project to change, reused if it exists "
+                             "(default: a fresh copy under --out)")
     args = parser.parse_args()
     if args.project and not args.start:
         parser.error("--project needs --start")
@@ -494,6 +517,8 @@ def main() -> int:
                 cwd = documented_logic_example(args.out)
                 start = f"{shlex.quote(sys.executable)} prototype_orders_web.py --port {{port}}"
             mutated = (args.mutated_project or args.out / "logic-mutated").resolve()
+            check(args.mutated_project is not None or not mutated.exists(),
+                  f"{mutated} already exists; use a fresh --out so an old changed copy is never checked")
             if not mutated.exists():
                 out = args.out.resolve()
 
@@ -523,9 +548,9 @@ def main() -> int:
             run = Run(browser, args.out, Deadline(SCENARIO_DEADLINE_S))
             try:
                 if args.logic:
-                    old, _, new = args.mutate.partition("::")
+                    run.record.pop("development")  # UI-mode field; logic mode records its own
                     logic_scenario(run, cwd, mutated, start, args.module, args.actions.split(","),
-                                   args.state_key, (old, new))
+                                   args.state_key, args.mutate)
                 else:
                     reference = (reference_page(run, start, args.reference_project.resolve(), args.page)
                                  if args.project else None)

@@ -121,12 +121,12 @@ while True:
 import argparse
 import html
 import json
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
 import orders_machine as machine
 
-state = machine.initial()
+state = machine.initial()  # one request at a time (HTTPServer), so no lock is needed
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -146,7 +146,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global state
-        length = int(self.headers.get("Content-Length", 0))
+        length = int(self.headers.get("Content-Length") or 0)
         action = parse_qs(self.rfile.read(length).decode()).get("action", [""])[0]
         if self.path != "/action" or action not in machine.actions(state):
             self.reply(400, "not a legal action", "text/plain")
@@ -171,12 +171,12 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8000)
-    server = ThreadingHTTPServer(("127.0.0.1", parser.parse_args().port), Handler)
+    server = HTTPServer(("127.0.0.1", parser.parse_args().port), Handler)
     print(f"serving on http://127.0.0.1:{server.server_port}", flush=True)
     server.serve_forever()
 ```
 
-In a Node project the same split holds: the module stays the project's own JavaScript or TypeScript, the terminal shell reads lines with `node:readline`, and the browser shell is a few lines of `node:http` over that same module. In any language, check the claim the browser view makes: change one transition in the module and the page must follow.
+In a Node project the same split holds: the module stays the project's own JavaScript or TypeScript, the terminal shell reads lines with `node:readline`, and the browser shell is `node:http` over that same module. Node gives you neither a form parser nor an HTML escape: collect the request body from the stream and read it with `URLSearchParams`, and escape action names and state with a small helper before putting them in the page. In any language, check the claim the browser view makes: change one transition in the module and the page must follow.
 
 ### 6. Make it runnable in one command
 
