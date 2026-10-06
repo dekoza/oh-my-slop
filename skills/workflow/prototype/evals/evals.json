@@ -41,7 +41,7 @@
     },
     {
       "id": 4,
-      "prompt": "The prototype answered its question — the variant A layout is the winner. What do I do next?",
+      "prompt": "The prototype answered its question \u2014 the variant A layout is the winner. What do I do next?",
       "expected_output": "The response describes preserve-before-cleanup for a planning prototype: record the answer in NOTES.md, capture the prototype and notes on a throwaway branch that is never merged into main and verify recovery, leave a pointer through the configured tracker, then clean only the owned files. Building variant A into the real page is a separately authorized implementation, not part of finishing the prototype.",
       "files": [],
       "expectations": [
