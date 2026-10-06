@@ -40,11 +40,11 @@
     {
       "id": 4,
       "prompt": "The prototype answered its question \u2014 the variant A layout is the winner. What do I do next?",
-      "expected_output": "The response describes preserve-before-cleanup for a planning prototype: record the answer in NOTES.md, capture the prototype and notes on a throwaway branch out of main and verify recovery, leave a pointer through the configured tracker, then clean only the owned files. Building variant A into the real page is a separately authorized implementation, not part of finishing the prototype.",
+      "expected_output": "The response describes preserve-before-cleanup for a planning prototype: record the answer in NOTES.md, capture the prototype and notes on a throwaway branch that is never merged into main and verify recovery, leave a pointer through the configured tracker, then clean only the owned files. Building variant A into the real page is a separately authorized implementation, not part of finishing the prototype.",
       "files": [],
       "expectations": [
         "It records the answer (question, answer, confidence, next step) in NOTES.md before capturing.",
-        "It captures the prototype source and NOTES.md on a throwaway branch out of main and verifies recovery before any cleanup.",
+        "It captures the prototype source and NOTES.md on a throwaway branch that is never merged into main and verifies recovery before any cleanup.",
         "It leaves a pointer to the branch and capture commit following the configured tracker's conventions, not a hardcoded forge CLI.",
         "It does not fold variant A into production as part of finishing; building it is a separately authorized implementation under normal quality gates.",
         "Cleanup removes only the prototype's owned files, after the capture is verified."
@@ -52,7 +52,7 @@
     },
     {
       "id": 5,
-      "prompt": "Use the supplied prototype skill in the supplied disposable Git fixture. The order-cancellation logic prototype (scripts/prototype_orders.py and scripts/orders_machine.py) answered its question: a cancel after payment must refund before shipping, confidence high. Wrap it up. The project's tracker conventions are in docs/agents/issue-tracker.md and the implementation issue is #12. app/orders.py has my uncommitted refactor, notes/todo.txt is my untracked list, and the branch prototype/older-question and the worktree at ../kept belong to someone else. Act within the stated scope rather than just describing a plan. Report commands, effects and remaining obligations.",
+      "prompt": "Use the supplied prototype skill in the supplied disposable Git fixture. The order-cancellation logic prototype (scripts/prototype_orders.py and scripts/orders_machine.py) answered its question: a cancel after payment must refund before shipping, confidence high. Wrap it up. The project's tracker conventions are in docs/agents/issue-tracker.md (a local markdown tracker) and the implementation issue is #12. app/orders.py has my uncommitted refactor, notes/todo.txt is my untracked list, and the branch prototype/older-question and the worktree at ../kept belong to someone else. Act within the stated scope rather than just describing a plan. Report commands, effects and remaining obligations.",
       "expected_output": "Execute against a real repository: write NOTES.md beside the prototype, commit the two prototype files and NOTES.md on a new throwaway branch, verify that they come back byte-exact, record the branch and capture commit on local issue #12 as docs/agents/issue-tracker.md prescribes, and only then remove the captured files. app/orders.py, notes/todo.txt, prototype/older-question and ../kept stay exactly as they were. No production module adopts the refund rule; that is a separately authorized implementation. No installation, external access or publication.",
       "files": [],
       "expectations": [
@@ -65,13 +65,13 @@
     },
     {
       "id": 6,
-      "prompt": "Use the supplied prototype skill in the supplied disposable Git fixture. The settings-page UI prototype (three variants in templates/settings_variants.html, plus the ?variant= switch you added to templates/settings.html) answered the layout question: variant B wins, confidence medium. Clean up the prototype. While you were prototyping I also fixed the heading typo in templates/settings.html; that edit is mine. Tracker conventions: docs/agents/issue-tracker.md; implementation issue #12. Act within the stated scope rather than just describing a plan. Report commands, effects and remaining obligations.",
+      "prompt": "Use the supplied prototype skill in the supplied disposable Git fixture. The settings-page UI prototype (three variants in templates/settings_variants.html, plus the ?variant= switch you added to templates/settings.html) answered the layout question: variant B wins, confidence medium. Clean up the prototype. While you were prototyping I also fixed the heading typo in templates/settings.html; that edit is mine. Tracker conventions: docs/agents/issue-tracker.md (a local markdown tracker); implementation issue #12. Act within the stated scope rather than just describing a plan. Report commands, effects and remaining obligations.",
       "expected_output": "Execute against a real repository. templates/settings.html is not wholly owned: it holds the prototype switch and the user's heading fix. Capture templates/settings_variants.html, the prototype's settings.html edits and NOTES.md on a new throwaway branch before any cleanup. Remove settings_variants.html only after verifying the capture. Do not restore settings.html to HEAD: either remove only the switch lines, leaving the heading fix byte-identical, or leave the file and report the remaining prototype lines. Variant B is not built into the page. The pointer follows docs/agents/issue-tracker.md. No installation, external access or publication.",
       "files": [],
       "expectations": [
         "templates/settings_variants.html, the prototype's templates/settings.html edits and a NOTES.md (question, answer, confidence, next step) are captured on a new throwaway branch before any cleanup.",
         "The user's heading fix in templates/settings.html survives byte-for-byte: the file is not restored to HEAD, and any prototype lines left in it are reported or removed without touching the fix.",
-        "templates/settings_variants.html is removed only after the capture is verified; other files, branches and worktrees are unchanged.",
+        "templates/settings_variants.html and NOTES.md are removed only after the capture is verified; files the prototype did not create or edit, branches and worktrees are unchanged.",
         "Variant B is not built into the production page; the next step names a separately authorized implementation.",
         "The pointer to the branch and capture commit is recorded on issue #12 as docs/agents/issue-tracker.md prescribes, with no tea, gh or push call."
       ]

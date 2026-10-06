@@ -296,8 +296,11 @@ def test_evals_reward_preservation_not_automatic_production_folding() -> None:
     assert "before any cleanup" in wrap_up
     assert "configured tracker" in wrap_up
 
+    assert "out of main" not in json.dumps(document)
     for case_id in (5, 6):
         assert "disposable Git fixture" in cases[case_id]["prompt"], case_id
+        # The fixture's tracker doc, not this repository's tea doc, defines the pointer.
+        assert "a local markdown tracker" in cases[case_id]["prompt"], case_id
         expectations = " ".join(cases[case_id]["expectations"])
         assert "new throwaway branch" in expectations, case_id
         assert "separately authorized implementation" in expectations, case_id
@@ -305,3 +308,5 @@ def test_evals_reward_preservation_not_automatic_production_folding() -> None:
     assert "app/orders.py" in " ".join(cases[5]["expectations"])
     assert "heading fix" in " ".join(cases[6]["expectations"])
     assert "not restored to HEAD" in " ".join(cases[6]["expectations"])
+    # Following the skill removes the created NOTES.md, so a strict grader must not fail it.
+    assert "settings_variants.html and NOTES.md are removed only after" in " ".join(cases[6]["expectations"])
