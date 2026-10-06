@@ -2,7 +2,7 @@
   "skill_name": "humanify",
   "evals": [
     {
-      "id": 9,
+      "id": 11,
       "prompt": "Response simulation only; no live tracker or invented receipts. Compare /refine-ticket with no arguments, with 0, with -3, with portal/42, with 42 43, and with #42. The current project has a configured tracker. State the next action for each; do not infer a ticket from conversation history. Also state whether this guard rejects an explicit repository/number reference supplied to /humanify itself.",
       "expected_output": "Rejects missing, nonpositive, nonnumeric and multiple arguments before any ticket work, asks through grilling for one positive ticket number, accepts #42 on the configured tracker, and keeps humanify\u0027s wider reference forms unchanged.",
       "files": [],

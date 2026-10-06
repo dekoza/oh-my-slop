@@ -9,6 +9,7 @@ skill no longer had; these tests exist so that cannot recur silently.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -155,6 +156,15 @@ def test_revmerge_routes_publication_and_merge_to_its_explicit_owner_flow() -> N
     assert "new comment" in row
     assert "merge only without blockers" in row
     assert "`grilling`" in row
+
+
+def test_restored_command_evals_have_unique_case_ids() -> None:
+    """Restoring command coverage must not alias an existing scenario."""
+    for name in ("humanify", "two-axis-review"):
+        path = find_skill_dir(SKILLS_DIR, name) / "evals/evals.json"
+        cases = json.loads(path.read_text(encoding="utf-8"))["evals"]
+        ids = [case["id"] for case in cases]
+        assert len(ids) == len(set(ids)), f"{name} has duplicate eval case IDs"
 
 
 def test_every_template_names_a_skill_that_exists() -> None:
