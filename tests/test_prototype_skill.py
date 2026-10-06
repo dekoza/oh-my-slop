@@ -782,6 +782,25 @@ def test_logic_check_knows_the_legal_actions_and_changes_step_itself(tmp_path: P
     assert "TRANSITIONS = " not in old
 
 
+def test_logic_check_reads_human_labels_and_knows_every_reachable_action(tmp_path: Path) -> None:
+    """A support-lead page may say "Payment failed" or "Past due"; and the check knows every
+    action the module can ever offer, not only those of the states it visited (#259 delta)."""
+    check = browser_check_module()
+    pattern = check.name_pattern("payment_failed")
+    for label in ("payment_failed", "Payment failed", "PAYMENT-FAILED", "  payment failed "):
+        assert pattern.fullmatch(label), label
+    for label in ("payment", "payment failed twice", "paymentfailed"):
+        assert not pattern.fullmatch(label), label
+    # Playwright searches the pattern, so it must be anchored: "pay" is not "payment_failed".
+    assert not check.name_pattern("pay").search("payment_failed")
+    assert check.shows("past_due", "Status: Past due") and not check.shows("past_due", "Status: past due-ish")
+    folder = logic_example(tmp_path)
+    assert check.native_universe(folder, "orders_machine") == ["cancel", "pay", "refund", "ship"]
+    # A machine with a cycle and a growing history still yields every action (the fixture).
+    assert check.native_universe(REPO_ROOT / "tests/fixtures/prototype/logic", "subscription_machine") == [
+        "cancel", "pay", "payment_failed", "period_ends", "reactivate", "subscribe"]
+
+
 def test_logic_check_never_changes_the_checked_project(tmp_path: Path) -> None:
     """--mutated-project must be a separate copy: pointing it at the project, inside it or
     around it would rewrite the user's own module (#259 review)."""

@@ -165,7 +165,8 @@ class Server:
         self.log = log.open("w", encoding="utf-8")
         argv = shlex.split(start.format(env=env, port=0))
         self.process = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=self.log, text=True,
-                                        start_new_session=True, env={**os.environ, **NO_BYTECODE})
+                                        start_new_session=True,  # unbuffered: a plain print() of the address arrives
+                                        env={**os.environ, **NO_BYTECODE, "PYTHONUNBUFFERED": "1"})
         found: list[str] = []
         ready = threading.Event()
 
@@ -432,13 +433,45 @@ def native_answer(folder: Path, module: str, actions: list[str]) -> dict | None:
     return None if "refused" in answer else answer
 
 
+def native_universe(folder: Path, module: str, limit: int = 500) -> list[str]:
+    """Every action the module offers in any state reachable from initial() (bounded), so a
+    page offering an action that no visited state allows is still caught."""
+    # Breadth-first: states often carry a growing history, so depth-first would loop down
+    # one branch and never reach the rest of the machine within the bound.
+    script = (f"import collections, json\nimport {module} as m\n"
+              "seen, frontier, found = set(), collections.deque([m.initial()]), set()\n"
+              f"while frontier and len(seen) < {limit}:\n    state = frontier.popleft()\n"
+              "    key = json.dumps(state, sort_keys=True)\n    if key in seen:\n        continue\n"
+              "    seen.add(key)\n    for a in m.actions(state):\n        found.add(a)\n"
+              "        frontier.append(m.step(state, a))\nprint(json.dumps(sorted(found)))\n")
+    result = subprocess.run([sys.executable, "-c", script], cwd=folder, capture_output=True, text=True,
+                            timeout=60, env={**os.environ, **NO_BYTECODE})
+    check(result.returncode == 0, f"native module {module} failed while listing actions: {result.stderr.strip()[-300:]}")
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def name_pattern(name: str) -> re.Pattern:
+    """A control or status may read "Payment failed" for payment_failed: case, spaces,
+    underscores and hyphens between the words do not matter."""
+    words = [w for w in re.split(r"[\s_-]+", name) if w]
+    # Anchored: Playwright searches a name pattern, so "pay" must not match "payment_failed".
+    return re.compile(r"^\s*" + r"[\s_-]+".join(map(re.escape, words)) + r"\s*$", re.IGNORECASE)
+
+
+def shows(value: str, text: str) -> bool:
+    words = [w for w in re.split(r"[\s_-]+", value) if w]
+    body = r"[\s_-]+".join(map(re.escape, words))
+    return re.search(rf"(?<![\w-]){body}(?![\w-])", text, re.IGNORECASE) is not None
+
+
 def native_state(folder: Path, module: str, actions: list[str]) -> dict | None:
     answer = native_answer(folder, module, actions)
     return None if answer is None else answer["state"]
 
 
 def apply_mutation(source: Path, mutation: tuple[str, str]) -> None:
-    """Change one transition in a copy of the module; a copy already changed is kept."""
+    """Apply OLD -> NEW once to a copy of the module (ideally inside step()); a copy that
+    already carries NEW is kept."""
     text = source.read_text(encoding="utf-8")
     if mutation[0] in text:
         check(text.count(mutation[0]) == 1, f"mutation text occurs more than once in {source.name}")
@@ -456,11 +489,13 @@ def logic(run: Run, folder: Path, start: str, module: str, actions: list[str], k
     with Server(start, "logic", folder, run.out / f"server-logic-{label}.log") as server:
         page = run.new_page()
         run.visit(page, server.base + "/")
+        page.wait_for_timeout(SWITCH_SETTLE_MS)  # pages that build their controls after a fetch
 
-        def control(name: str):
-            return page.get_by_role("button", name=name, exact=True).or_(page.get_by_role("link", name=name, exact=True))
+        def control(name: str):  # an enabled button or a link whose name reads as the action
+            pattern = name_pattern(name)
+            return page.get_by_role("button", name=pattern, disabled=False).or_(page.get_by_role("link", name=pattern))
 
-        known = set(actions)  # every action seen so far: scripted, or legal in a visited state
+        known = set(actions) | set(native_universe(folder, module))  # every action the module can offer
 
         def offers_exactly(legal: list[str], done: list[str]) -> None:
             known.update(legal)
@@ -485,7 +520,7 @@ def logic(run: Run, folder: Path, start: str, module: str, actions: list[str], k
             expected = str(native["state"][key])
             # Prefer the state the page declares (#state) when it has one; else the whole page.
             shown_text = page.inner_text("#state") if page.locator("#state").count() else page.inner_text("body")
-            check(re.search(rf"(?<![\w-]){re.escape(expected)}(?![\w-])", shown_text) is not None,
+            check(shows(expected, shown_text),
                   f"logic {label}: after {actions[:index + 1]} the page does not show {key}={expected!r}")
             shown.append(expected)
         (run.out / f"dom-logic-{label}.html").write_text(page.content(), encoding="utf-8")
