@@ -239,6 +239,8 @@ def test_recipes_refuse_to_start_without_a_root_and_a_branch(prototyped: Path, s
         outside.mkdir()
         result = run_recipe(repo, script, ("layout.py",), cwd=outside)
         assert "staged" not in result.stderr  # no misleading reason
+        # Git's own fatal "not a git repository" exit, at the root check, before anything else.
+        assert result.returncode == 128, result.stderr
     else:
         result = run_recipe(repo, script, branch=None)
         assert "capture_branch" in result.stderr
@@ -382,7 +384,6 @@ def test_evals_reward_preservation_not_automatic_production_folding() -> None:
     assert "not restored to HEAD" in " ".join(cases[6]["expectations"])
     # Following the skill removes the created NOTES.md, so a strict grader must not fail it.
     assert "settings_variants.html and NOTES.md are removed only after" in " ".join(cases[6]["expectations"])
-    # The skill itself writes the issue pointer and the capture branch.
     # The skill itself writes the issue pointer (which the tracker may commit) and the capture branch.
     assert ("other than the pointer on issue #12, and the pre-existing branches (apart from a commit that "
             "only records that pointer) and worktrees are unchanged") in " ".join(cases[6]["expectations"])
