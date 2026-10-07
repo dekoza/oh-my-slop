@@ -36,6 +36,42 @@
     "should_trigger": true
   },
   {
+    "query": "You're done with the cron-to-queue migration. Write me the final report, and end it with whatever you still need me to decide: the old crontab entry on prod and whether to open a PR.",
+    "should_trigger": true
+  },
+  {
+    "query": "Before you close out ticket #88, what's still mine to decide? The advisory findings and the missing glossary term are both open.",
+    "should_trigger": true
+  },
+  {
+    "query": "The PR repair is pushed. Wrap up, and put the leftovers to me properly: the vacuous export-gate test, the PR description that no longer matches, and merging.",
+    "should_trigger": true
+  },
+  {
+    "query": "The combined run is finished. Give me your closing report, including the approvals you need from me, like closing the parent spec and following up the advisories.",
+    "should_trigger": true
+  },
+  {
+    "query": "The merge is committed. Report back, and lay out the two follow-ups I have to sign off on: the timeout values that now disagree and deleting the merged branch.",
+    "should_trigger": true
+  },
+  {
+    "query": "Give me a quick status update on the migration: what's done and which tests ran. Nothing for me to decide, I just need the summary.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write the final report for ticket #83. Everything was already approved and the label is applied, so just confirm what happened.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarize what changed in this PR for the changelog entry.",
+    "should_trigger": false
+  },
+  {
+    "query": "List the commands you ran this session and their exit codes.",
+    "should_trigger": false
+  },
+  {
     "query": "Red-team this migration plan and give me the three strongest arguments against it.",
     "should_trigger": false
   },

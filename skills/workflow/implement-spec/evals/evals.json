@@ -67,6 +67,17 @@
         "Links actual combined checks and equivalent outcomes, exposes missing evidence and recovery limits without imaginary CI/screenshots.",
         "Writes only authorized local drafts and retains coordinator-only publication, branch-only workers, final review and human acceptance."
       ]
+    },
+    {
+      "id": 7,
+      "prompt": "Response simulation of the end of `implement-spec` step 5 for spec #40 in sample/fetcher. No tools, commands, worker dispatch or tracker calls. Combined-PR delivery was authorized; the operator approved closing references for implementation tickets #41-#43 only. Write the closing message you send the operator now.\n\nState: base a11c0de; integrated head 8e77c10 contains #41, #42 and #43, each with integrated checks and reviews recorded in the ledger. Final checks on 8e77c10: full suite 1,131 passed, typecheck clean. Final two-axis review a11c0de...8e77c10: 0 blocking; advisories: duplicated delay computation (reported in the #41 handoff) and a retry log message missing the attempt number. Combined PR #47 is open with 'Closes #41', 'Closes #42', 'Closes #43'; CI pending. Combined repair budget: 1 of 2 rounds used. Worker handoffs returned the glossary gap 'backoff ceiling' (CONTEXT.md lacks it); the #41/#43 RetryPolicy overlap was already ordered and integrated. Parent spec #40 and human-review ticket #44 are open; closing #40 needs the operator's own authorization, and #44 is the operator's acceptance review. Worktrees are retained; the test Postgres stack this run started has been stopped.",
+      "expected_output": "Report the integrated delivery with evidence and 'implementation complete; human acceptance pending', then ask every open operator choice (advisory follow-up, glossary gap, parent-spec closure authorization) as one grilling round; wait.",
+      "files": [],
+      "expectations": [
+        "Reports base and integrated head, final checks and review outcomes, PR #47 with CI pending, remaining budget, and that implementation is complete with human acceptance pending, without claiming any issue closed.",
+        "Asks the operator ALL three open choices — the advisory findings' follow-up, the 'backoff ceiling' glossary gap, and authorization to close parent spec #40 — as numbered questions in one round, each with its own recommendation; none appears only as a status bullet.",
+        "Does not close #40 or #44, merge, file tickets or edit CONTEXT.md, and waits for the operator's answers."
+      ]
     }
   ]
 }

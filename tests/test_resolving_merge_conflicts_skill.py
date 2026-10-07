@@ -206,7 +206,7 @@ def test_testing_workflow_handoff_resolves_through_declared_closure() -> None:
 def test_functional_evals_supplement_unchanged_trigger_controls_and_catalogue() -> None:
     evals = json.loads((SKILL_ROOT / "evals/evals.json").read_text(encoding="utf-8"))
     assert evals["skill_name"] == "resolving-merge-conflicts"
-    assert [case["id"] for case in evals["evals"]] == [1, 2, 3]
+    assert [case["id"] for case in evals["evals"]] == [1, 2, 3, 4]
     for case in evals["evals"]:
         assert case["prompt"] and case["expected_output"]
         assert len(case["expectations"]) == 3

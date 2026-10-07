@@ -2,9 +2,11 @@
 name: grilling
 description: >
   Use when the user wants a plan, decision, or idea sharpened through questioning
-  before acting on it, or when another skill needs the interview primitive. Triggers
-  on: "grill me", "grill this plan", "stress-test this design with questions",
-  "interview me about this".
+  before acting on it, when another skill needs the interview primitive, or whenever
+  the agent presents open decisions, options, or approvals to the user, including
+  follow-ups at the end of a final report. Triggers on: "grill me", "grill this plan",
+  "stress-test this design with questions", "interview me about this", "what's left
+  for me to decide?", "anything you need me to approve?".
 license: MIT (adapted from mattpocock/skills)
 ---
 

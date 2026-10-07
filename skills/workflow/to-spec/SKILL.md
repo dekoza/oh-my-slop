@@ -3,6 +3,8 @@ name: to-spec
 description: Synthesize the current discussion into a scoped spec and publish it to the configured agent work tracker.
 license: MIT (adapted from mattpocock/skills)
 disable-model-invocation: true
+requires:
+  - grilling
 ---
 
 Synthesize the current discussion and inspected codebase into a proportionate spec. Preserve confirmed decisions, acceptance conditions, exclusions and deliberate deferrals; attribute their authoritative sources. Expose material gaps without inventing decisions or restarting the interview.
@@ -23,11 +25,11 @@ Reuse already-approved seams and testing decisions. Ask only about a consequenti
 
 3. Write the spec using the template below. Include independently checkable acceptance conditions and preserve explicit unresolved gaps, their owners and next actions. Keep the authoritative spec consistent rather than making the reader reconstruct current decisions from comments.
 
-4. Publish only within applicable authority, following the tracker's convention; read current content first and preserve unrelated concurrent edits. Reuse adequate publication approval. If it is missing, retain the draft and ask for the exact missing effect. Read back the spec and authority record; reconcile uncertain writes before retrying.
+4. Publish only within applicable authority, following the tracker's convention; read current content first and preserve unrelated concurrent edits. Reuse adequate publication approval. If it is missing, retain the draft and ask for the exact missing effect through `grilling`. Read back the spec and authority record; reconcile uncertain writes before retrying.
 
-Choose any state transition through the configured label mapping and its authority rules. Publication of a parent spec does not authorize agent implementation or make its future tickets ready. Record publication-only approval as such; do not default to `ready-for-agent`. Verify any authorized state change and report the spec link, known gaps and next owner without starting ticket production or implementation.
+Choose any state transition through the configured label mapping and its authority rules. Publication of a parent spec does not authorize agent implementation or make its future tickets ready. Record publication-only approval as such; do not default to `ready-for-agent`. Verify any authorized state change and report the spec link, known gaps and next owner without starting ticket production or implementation. Close with one round of the `grilling` skill for every gap or grant the user owns — numbered questions, a recommendation for each, then wait. Reuse grants already given; a report with nothing left to decide asks nothing.
 
-**Complete when:** the synthesis preserves the agreed scope and its unresolved obligations, and authorized publication/state changes are read back. Otherwise report a preserved draft awaiting the exact decision/authority, or publication unverified.
+**Complete when:** the synthesis preserves the agreed scope and its unresolved obligations, and authorized publication/state changes are read back. Otherwise report the preserved draft and ask the exact missing decision/authority through `grilling`, or report publication unverified.
 
 <spec-template>
 

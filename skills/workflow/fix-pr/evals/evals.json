@@ -61,6 +61,18 @@
         "Cites actual equivalent checks, exposes missing/simulated proof and names external-effect recovery prerequisites without claiming code revert unsends email.",
         "Only authorized draft files change; accepted committed-candidate/additive/current-check-and-review and publication gates remain intact."
       ]
+    },
+    {
+      "id": 6,
+      "prompt": "Response simulation of the closing step of /fix-pr 1647 for sample/ledger. Use only these facts; no tools, Git, forge calls or new receipts. Write the closing message you send the user now.\n\nState reached: both review findings are fixed (a stale cursor on journal replay; missing disposal revalidation). How strict revalidation must be was asked through grilling earlier and the user chose 'revalidate on every disposal'. The PR head was merged with its current target main at T7 (merge commit, no rewrite). Candidate head H9 is committed; review base B4. Required checks on H9: `pytest tests/ledger` 212 passed; full unit suite 1,904 passed. Both review axes on B4...H9: standards 0 blocking and 1 advisory (helper name `_jr` is unclear); spec 0 blocking. H9 was pushed normally to the existing PR head; readback shows head H9, target main at T7, mergeable. The repair comment is posted and read back. CI is still running. While fixing, you found that tests/export/test_gate.py asserts the wrong field, so it passes vacuously; this predates the PR and is outside its ticket. The PR body's item 1 says 'desks keep reading the snapshot', but after the integrated target change, desks on an epoch-advanced Edge now read the journal, so the PR body misdescribes behaviour the user will ship. Repair budget: 1 of 2 rounds used. Nobody asked for a merge and you have no merge authority.",
+      "expected_output": "Report the verified repair state, then close with a grilling round that asks every open human choice (vacuous export-gate test follow-up, PR-body item 1 correction; merging if raised) with a recommendation each, and wait.",
+      "files": [],
+      "expectations": [
+        "Reports the verified state with evidence: head H9 on the same open PR, the required check results, both review-axis outcomes, and CI as still pending rather than passed.",
+        "Puts BOTH open human choices — what to do about the pre-existing vacuous tests/export/test_gate.py, and whether/how to correct PR-body item 1 (desks now read the journal) — to the user as numbered questions, each with its own recommendation; neither appears only as a status bullet or in a 'still yours to decide' style list.",
+        "Every other decision the response leaves to the user (for example merging or the advisory `_jr` finding, if raised) is phrased as a numbered question with a recommendation or explicitly marked as not needing a decision now; none is left as a bare status item.",
+        "Does not merge, file the follow-up ticket, or edit the PR body itself, does not treat its own recommendations as accepted, and waits for the user's answers."
+      ]
     }
   ]
 }
