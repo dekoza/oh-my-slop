@@ -1,0 +1,124 @@
+# Grilling evaluation
+
+## Decision handoffs ask through grilling — #265
+
+This is the shared record for #265. It covers the method and every result. The READMEs of
+[fix-pr](../../fix-pr/evals/README.md), [implement](../../implement/evals/README.md),
+[implement-spec](../../implement-spec/evals/README.md),
+[to-spec](../../to-spec/evals/README.md) and
+[resolving-merge-conflicts](../../../practice/resolving-merge-conflicts/evals/README.md)
+carry each skill's own rows.
+
+### What changed
+
+The closing and pause wording in five workflow skills told the agent to *report* the next
+owner decision. Each of those handoff sites now asks the human through `grilling`, or
+returns the choice to the coordinating caller, whose final question uses `grilling`. The
+fix-pr rule now covers non-blocking follow-ups, PR-text corrections, approvals and the
+merge choice. A decision-free report asks nothing. An answer authorizes only what it names.
+grilling's description now also triggers when the agent presents open decisions, options
+or approvals, including in a final report. Its body is unchanged.
+
+### Method
+
+- **Arms.** Baseline is the skill text at b26faa0, copied before editing. Candidate is the
+  committed text at 54101a0. The candidate prompts were rebuilt from that commit and match
+  the evaluated prompts byte for byte. Only the skill text differs between arms. In both
+  arms the prompt supplies `grilling` as the supporting skill.
+- **Runner.** `claude -p` (Claude Code 2.1.293), model `claude-opus-5-5`, effort high.
+  Tools and MCP servers are disabled, the working directory is neutral, and sessions are
+  not persisted. The operator's global instructions load in both arms. They already make
+  grilling mandatory for decision requests, as in the session that reported the failure.
+- **Runs.** Each run is a single-response simulation: the situation is given, and the run
+  writes the closing or handoff message. Each arm ran each scenario 3 times, 54 runs in
+  total (US$5.56, about 0.8M tokens, no retries). The scenarios and assertions were frozen
+  before the first baseline run.
+- **Grading.** One blind grader per scenario. Responses from both arms were shuffled under
+  neutral labels, and arm names and paths were withheld. The graders are Claude subagents
+  of the session that wrote the change.
+
+### Results
+
+Each cell gives runs passing that assertion, out of 3 per arm. "Coverage" is the assertion
+that every open human choice in the scenario is asked as a numbered question with its own
+recommendation.
+
+| Scenario (skill eval id) | Key assertion | Baseline | Candidate |
+| --- | --- | --- | --- |
+| fix-pr closing decisions (fix-pr 6) | coverage of the two main choices | 3/3 | 3/3 |
+| | the other choices left to the user (advisory, merge) also asked, none left as status | 0/3 | 3/3 |
+| fix-pr, long transcript (workspace only) | coverage of the two main choices | 3/3 | 3/3 |
+| | the other choices also asked | 0/3 | 2/3 |
+| implement standalone (implement 17) | coverage | 0/3 | 3/3 |
+| implement branch-only, caller handoff (implement 18) | all obligations returned to the coordinator | 1/3 | 3/3 |
+| implement-spec closing (implement-spec 7) | coverage, in one round | 0/3 | 3/3 |
+| conflicts, direct user (resolving-merge-conflicts 4) | coverage | 1/3 | 3/3 |
+| to-spec closing decisions (to-spec 2) | coverage | 0/3 | 3/3 |
+| to-spec decision-free control (to-spec 3) | asks no questions | 2/3 | 3/3 |
+| grilling final report (grilling 5) | independent choices asked, dependent one deferred | 3/3 | 3/3 |
+
+All assertions together: baseline 72/93, candidate 92/93. The aggregator reports pass
+rates of 76.8% and 99.1%. Both arms passed every assertion not shown above, except the
+implement-spec waiting assertion (baseline 2/3, candidate 3/3).
+
+### What this does and does not show
+
+- **The original fix-pr failure was not reproduced.** In both fix-pr conditions, all 6
+  baseline runs asked the two main choices as numbered questions with recommendations.
+  The status-only pattern appeared only for secondary choices. All 6 baseline runs left the
+  advisory finding (and sometimes merging) as status lines such as "Merging remains your
+  separate call." Do not cite this as reproduction of the reported session.
+- **The failure class does occur at baseline in the other skills.** In implement,
+  implement-spec, resolving-merge-conflicts and to-spec, baseline runs listed open
+  choices as "unresolved obligations" or "open items" without questions. That held in
+  11 of 12 coverage runs.
+- **Controls held.** In the branch-only handoff, no run in either arm interviewed the
+  human. In the decision-free to-spec control, the candidate asked nothing in 3/3 runs.
+- **Ceiling.** The grilling scenario passed at ceiling in both arms (12/12 assertions
+  each), so it does not discriminate.
+
+### Limits
+
+- The scenarios, assertions and change were written by the same author.
+- One model, 3 trials per arm, single-response simulations, not live sessions.
+- The graders belong to the same model family as the responders.
+- Assertions that pass in every run carry no comparative signal. The graders flagged
+  fix-pr assertions 2 and 4 and implement-spec assertion 3.
+- **Fixture flaw (decided after the outcome).** The long-transcript fixture shows
+  truncated test logs that contradict its stated totals. Responses in both arms flagged
+  the contradiction. Assertion 1 accepted responses that reported the evidence as found.
+  This affects both arms equally and no comparison depends on it.
+- The long-transcript variant was added after the short fix-pr baseline was seen. It is
+  kept in the workspace only, because its generated prompt is about 50 KB.
+- No operator qualitative review has taken place yet.
+
+### Trigger evals
+
+[trigger-evals.json](trigger-evals.json) gained 5 final-report positives, which present
+open owner choices, and 4 decision-free near-misses. That makes 28 queries: 14 positive
+and 14 negative.
+
+Description preflight passes: starts with "Use when", 2 sentences, 74 words, 6
+user-shaped triggers.
+
+**Trigger rates were not measured. This is unresolved, not a pass.** The skill-creator
+runner (`scripts.run_loop`, measure-only, seed-42 holdout of 0.4) failed on every query
+in both arms:
+
+- `anthropic/claude-sonnet-5-5` through opencode returned "out of extra usage".
+- The free opencode models refused to run outside the OpenCode app.
+
+Measuring through Copilot or OpenAI quota needs the owner's approval.
+
+### Evidence workspace
+
+The workspace is `/home/minder/.local/state/oh-my-slop/delivery-265-20261008/`. It holds:
+
+- the requirement list and frozen scenarios (`eval-kit/scenarios.json`)
+- the runner scripts
+- base and candidate skill copies, and the prompts for both arms
+- the raw JSON of each run, with timing
+- the blind bundles and grader key
+- per-run `grading.json`, `iteration-1/benchmark.{json,md}` and the static viewer
+  `iteration-1/review.html`
+- the failed trigger-run logs

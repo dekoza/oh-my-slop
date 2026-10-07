@@ -86,3 +86,15 @@ required coverage, stop at a repair limit and preserve unrelated/untracked state
 Deliver the agreed combined PR or branch-only result while retaining human-owned
 acceptance. Compare dispatch effort with manually running the same slices; proposed
 actions and skill-load receipts are not execution proof. This pilot has not run.
+
+## Closing decisions through grilling — #265
+
+Case 7 ends a combined delivery with three operator choices: advisory follow-up, a glossary
+gap returned by a worker, and authorization to close the parent spec. Method, limits and
+the full table are in the
+[shared #265 record](../../grilling/evals/README.md#decision-handoffs-ask-through-grilling--265).
+
+Over 3 matched trials per arm, baseline asked all three as one numbered round with
+recommendations in 0/3 runs. It listed them as "unresolved obligations", folded them
+together, or ended with "The run stops here." The candidate did so in 3/3 runs.
+No run closed issues, merged or filed tickets.

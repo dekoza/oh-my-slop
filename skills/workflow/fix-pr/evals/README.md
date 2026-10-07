@@ -1,5 +1,20 @@
 # Fix PR evaluation
 
+## Closing decisions through grilling — #265
+
+Case 6 ends a verified repair with two open human choices: a pre-existing vacuous export
+test and a PR body that misdescribes shipped behaviour. An advisory finding and merging
+are also left open. Method, limits and the full table are in the
+[shared #265 record](../../grilling/evals/README.md#decision-handoffs-ask-through-grilling--265).
+
+Over 3 matched trials per arm, both arms asked the two main choices as numbered `grilling`
+questions with recommendations: baseline 3/3, candidate 3/3. **The reported session
+failure was not reproduced**, including in a long-transcript variant (also 3/3 versus
+3/3). The difference lies in the other choices left to the user. Baseline runs left the
+advisory finding, and sometimes the merge, as status lines in 6/6 runs across both
+variants. Candidate runs asked them as questions in 3/3 short and 2/3 long runs. No
+run merged, edited the PR body or filed a ticket.
+
 ## Committed-candidate repair — #250
 
 The current contract commits the inspected repair before committed-diff review, records
