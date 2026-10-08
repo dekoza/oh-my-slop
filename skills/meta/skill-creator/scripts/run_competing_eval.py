@@ -9,8 +9,9 @@ as the only tool. A consultation is an executed `read` of a catalog stub's SKILL
 the system prompt also names every stub path, so text matching would always fire.
 
 Each run records the catalog pi actually exposed and its ordered consultations.
-A run whose catalog differs from the requested one, or that fails to finish, is
-kept as an error and never counted as a non-selection.
+A run whose catalog differs from the requested one, whose event stream holds a
+malformed line, or that fails to finish, is kept as an error and never counted as a
+non-selection.
 """
 
 import argparse
@@ -71,16 +72,32 @@ def build_command(pi: str, stub_dirs: list[Path], model: str, thinking: str, que
     return cmd
 
 
-def parse_events(stdout: str) -> list[dict]:
-    events = []
-    for line in stdout.splitlines():
+def parse_events(stdout: str) -> tuple[list[dict], list[int]]:
+    """Events of a pi JSON stream, plus the 1-based numbers of lines that are not one.
+
+    A dropped line could be the read that made the selection, so callers must treat
+    any malformed line as damaged evidence. Blank lines carry nothing and are skipped.
+    """
+    events, malformed = [], []
+    for number, line in enumerate(stdout.splitlines(), start=1):
+        if not line.strip():
+            continue
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
-            continue
+            event = None
         if isinstance(event, dict):
             events.append(event)
-    return events
+        else:
+            malformed.append(number)
+    return events, malformed
+
+
+def stream_error(malformed: list[int]) -> str | None:
+    """Why a pi event stream cannot be trusted, or None."""
+    if malformed:
+        return f"pi emitted {len(malformed)} malformed event line(s), first at line {malformed[0]}"
+    return None
 
 
 def exposed_system_prompt(events: list[dict]) -> tuple[list[str], list[dict]]:
@@ -134,11 +151,11 @@ def exposure_error(sections: list[str], exposed: list[dict], catalog: dict[str, 
     return None
 
 
-def attribute(stdout: str, stubs: dict[str, Path], cwd: Path) -> dict:
+def attribute(events: list[dict], stubs: dict[str, Path], cwd: Path) -> dict:
     """Ordered consultations of catalog stubs in one pi event stream."""
     by_path = {path.resolve(): name for name, path in stubs.items()}
     consultations = []
-    for event in parse_events(stdout):
+    for event in events:
         if event.get("type") != "tool_execution_start" or event.get("toolName") != "read":
             continue
         raw = Path(str((event.get("args") or {}).get("path", "")))
@@ -173,16 +190,18 @@ def run_query(pi: str, catalog: dict[str, str], model: str, thinking: str, query
             rc, stdout, stderr = None, as_text(exc.stdout), as_text(exc.stderr)
         log.write_text(json.dumps({"cmd": cmd, "rc": rc, "stdout": stdout, "stderr": stderr})
                        + "\n", encoding="utf-8")
-        events = parse_events(stdout)
+        events, malformed = parse_events(stdout)
         sections, exposed = exposed_system_prompt(events)
         if rc is None:
             error = f"pi timed out after {timeout}s"
         else:
             error = (completion_error(rc, events)
+                     or stream_error(malformed)
                      or exposure_error(sections, exposed, catalog, stubs))
         record = {"status": "error" if error else "complete", "error": error, "log": str(log),
-                  "system_sections": sections, "exposed_catalog": exposed}
-        record.update(attribute(stdout, stubs, cwd))
+                  "malformed_lines": malformed, "system_sections": sections,
+                  "exposed_catalog": exposed}
+        record.update(attribute(events, stubs, cwd))
         return record
 
 

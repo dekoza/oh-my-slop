@@ -331,6 +331,9 @@ description, `grilling` was often read *second*, after the owning skill. See
   gets a fresh temp dir and one stub per skill in the catalog. Each stub carries that
   skill's description and a one-line body. Skill discovery,
   extensions, MCP, context files and prompt templates are off; `read` is the only tool.
+  The PR #268 repair later made the harness error on any malformed event line; the measured
+  version skipped such lines. All 26,244 lines of the 60 retained event streams parse as
+  event objects, so the repaired harness would classify every run the same way.
 - **Catalog.** `council`, `court-jester`, `grilling` and `prototype`, in that order in every
   run. The competitors' descriptions are their frontmatter at b96713f. Only the `grilling`
   description differs between arms.
@@ -339,8 +342,9 @@ description, `grilling` was often read *second*, after the owning skill. See
   `rules`, `docs`, `skills`, `cwd`), makes the run an error. All 60 runs exposed exactly the
   four requested skills and only those sections.
 - **Selection.** A consultation is an executed `read` of a stub, in order. The first one is
-  the selection. A run with no read is a no-selection. A run that fails, times out or ends
-  with an error is kept as an error and its query gets no verdict. There were no errors.
+  the selection. A run with no read is a no-selection. A run that fails, times out, ends
+  with an error or emits a malformed event line is kept as an error, and its query gets no
+  verdict. There were no errors.
 - **Arms.**
   - Base: the description at b26faa0, before #265.
   - Current: the shipped description at b96713f.

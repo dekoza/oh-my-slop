@@ -28,7 +28,9 @@ Query directives (space-separated words):
   read:<name>      read that skill's SKILL.md (in order)
   readrel:<name>   read it by a path relative to the working directory
   readother        read a file that is not a skill
-  crash            exit 1 before agent_end
+  garble:<name>    emit that skill's read event as a truncated, malformed JSON line
+  nonobject        emit a valid JSON line that is not an event object
+  crash           exit 1 before agent_end
   noend            exit 0 without agent_end
   stoperror        end the assistant message with stopReason "error"
   ambient          add an extra skill to the catalog the harness did not supply
@@ -84,6 +86,14 @@ for word in words:
         path = os.path.relpath(by_name[word[8:]], os.getcwd())
     elif word == "readother":
         path = "/etc/hostname"
+    elif word.startswith("garble:"):
+        line = json.dumps({"type": "tool_execution_start", "toolName": "read",
+                           "args": {"path": by_name[word[7:]]}})
+        print(line[:-5], flush=True)
+        continue
+    elif word == "nonobject":
+        print(json.dumps(["tool_execution_start"]), flush=True)
+        continue
     else:
         continue
     emit({"type": "tool_execution_start", "toolName": "read", "args": {"path": path}})
@@ -269,6 +279,20 @@ def test_unfinished_run_is_an_error_with_its_raw_output_kept(
     assert reason in record["error"]
     log = json.loads(Path(record["log"]).read_text())
     assert "stdout" in log and "stderr" in log
+
+
+@pytest.mark.parametrize("query", ["garble:grilling", "nonobject"])
+def test_malformed_event_line_makes_the_run_an_error_not_a_passing_no_selection(
+    fake_pi, catalog, tmp_path, query
+):
+    # Dropping the damaged line would leave a clean, passing no-selection.
+    results = run(fake_pi, catalog, tmp_path, [{"query": query, "expected": None}])
+
+    record = only_run(results)
+    assert record["status"] == "error"
+    assert "malformed event line" in record["error"]
+    assert summary_row(results, "current")["pass"] is None
+    assert results["arms"]["current"]["totals"]["errors"] == 1
 
 
 def test_timed_out_run_is_an_error_not_a_crash_of_the_whole_evaluation(

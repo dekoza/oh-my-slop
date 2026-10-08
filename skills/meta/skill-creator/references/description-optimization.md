@@ -112,8 +112,8 @@ python -m scripts.run_competing_eval \
 
 Each run records the catalog pi exposed and the ordered consultations, so the owning skill
 read first is distinguished from the skill under test consulted afterwards. A run that fails,
-times out, or exposes a catalog or system-prompt section the harness did not request is kept
-as an error, and its query gets no verdict. Report the first-selection counts per query and
+times out, emits a malformed event line, or exposes a catalog or system-prompt section the
+harness did not request is kept as an error, and its query gets no verdict. Report the first-selection counts per query and
 arm, not only the pass totals. Keep every input except the tested description identical across
 the arms you compare.
 
