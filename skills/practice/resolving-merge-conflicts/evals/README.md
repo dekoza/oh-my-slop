@@ -15,3 +15,6 @@ deleted the branch, pushed or aborted.
 The caller-return branch, used when another skill such as `fix-pr` invokes this one, was
 not measured separately. The worker-to-caller control is
 [implement case 18](../../../workflow/implement/evals/README.md#closing-decisions-through-grilling--265).
+
+These figures are measurements pending owner direction, not a claimed lift. The shared
+record explains why.

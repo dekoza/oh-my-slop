@@ -51,3 +51,6 @@ Over 3 matched trials per arm:
   left retention as status. The candidate did so in 3/3 runs.
 - **Case 3.** Baseline asked nothing in 2/3 runs; one run handed a readiness decision
   back. The candidate asked nothing in 3/3 runs.
+
+These figures are measurements pending owner direction, not a claimed lift. The shared
+record explains why.

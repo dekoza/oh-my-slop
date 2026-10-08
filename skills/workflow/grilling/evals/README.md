@@ -14,8 +14,10 @@ carry each skill's own rows.
 The closing and pause wording in five workflow skills told the agent to *report* the next
 owner decision. Each of those handoff sites now asks the human through `grilling`, or
 returns the choice to the coordinating caller, whose final question uses `grilling`. The
-fix-pr rule now covers non-blocking follow-ups, PR-text corrections and approvals. If it
-raises merging, it asks as the user's own decision, and a yes never lets fix-pr merge. A decision-free report asks nothing. An answer authorizes only what it names.
+fix-pr rule now covers non-blocking follow-ups, PR-text corrections, approvals and the
+merge choice left at the close. Merging stays the user's own action, and a yes never lets
+fix-pr merge. A decision-free report asks nothing. An answer authorizes only what it
+names.
 grilling's description now also triggers when the agent presents open decisions, options
 or approvals, including in a final report. Its body is unchanged.
 
@@ -81,8 +83,15 @@ All assertions together, as measured, not as a lift claim:
 
 - **Final text:** baseline 72/93, candidate 93/93.
 - **Initial commit 54101a0:** candidate 92/93; the long fix-pr variant scored 2/3. The
-  aggregator reports pass rates of 76.8% and 99.1% for this iteration. Both arms passed every assertion not shown above, except the
+  aggregator reports pass rates of 76.8% and 99.1% for this iteration.
+
+Under both texts, both arms passed every assertion not shown in the table, except the
 implement-spec waiting assertion (baseline 2/3, candidate 3/3).
+
+**Known eval gap.** fix-pr case 6 assertion 3 was frozen before the repair. It accepts
+merging "if raised" or marked as not needing a decision now. The final fix-pr rule is
+stricter: it always asks the merge choice. So this assertion does not check that part of
+the final rule. The assertion was left unchanged because its runs are already graded.
 
 ### What this does and does not show
 

@@ -98,3 +98,6 @@ Over 3 matched trials per arm, baseline asked all three as one numbered round wi
 recommendations in 0/3 runs. It listed them as "unresolved obligations", folded them
 together, or ended with "The run stops here." The candidate did so in 3/3 runs.
 No run closed issues, merged or filed tickets.
+
+These figures are measurements pending owner direction, not a claimed lift. The shared
+record explains why.
