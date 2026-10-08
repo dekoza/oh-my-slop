@@ -14,6 +14,7 @@ kept as an error and never counted as a non-selection.
 """
 
 import argparse
+import hashlib
 import html
 import json
 import re
@@ -174,8 +175,11 @@ def run_query(pi: str, catalog: dict[str, str], model: str, thinking: str, query
                        + "\n", encoding="utf-8")
         events = parse_events(stdout)
         sections, exposed = exposed_system_prompt(events)
-        error = (f"pi timed out after {timeout}s" if rc is None else completion_error(rc, events)
-                 or exposure_error(sections, exposed, catalog, stubs))
+        if rc is None:
+            error = f"pi timed out after {timeout}s"
+        else:
+            error = (completion_error(rc, events)
+                     or exposure_error(sections, exposed, catalog, stubs))
         record = {"status": "error" if error else "complete", "error": error, "log": str(log),
                   "system_sections": sections, "exposed_catalog": exposed}
         record.update(attribute(stdout, stubs, cwd))
@@ -187,11 +191,19 @@ def run_competition(eval_set: list[dict], competitors: list[Path], arms: dict[st
                     pi: str = "pi", num_workers: int = 4, timeout: int = 300,
                     threshold: float = 0.5) -> dict:
     shared = dict(load_skill(path) for path in competitors)
-    catalogs = {}
-    for arm, path in arms.items():
-        name, description = load_skill(path)
-        catalogs[arm] = dict(sorted({**shared, name: description}.items()))
-    jobs = [(arm, i, r) for arm in arms for i in range(len(eval_set)) for r in range(runs_per_query)]
+    versions = {arm: load_skill(path) for arm, path in arms.items()}
+    targets = {name for name, _ in versions.values()}
+    if len(targets) != 1:
+        raise ValueError(f"every arm must supply a version of the same skill, got {sorted(targets)}")
+    (target,) = targets
+    if target in shared:
+        raise ValueError(f"{target} is both a competitor and the skill under test")
+    catalogs = {arm: dict(sorted({**shared, target: description}.items()))
+                for arm, (_, description) in versions.items()}
+    unknown = {item["expected"] for item in eval_set} - {None, target, *shared}
+    if unknown:
+        raise ValueError(f"expected skills missing from the catalog: {sorted(unknown)}")
+    jobs =[(arm, i, r) for arm in arms for i in range(len(eval_set)) for r in range(runs_per_query)]
 
     def work(job):
         arm, i, r = job
@@ -202,8 +214,7 @@ def run_competition(eval_set: list[dict], competitors: list[Path], arms: dict[st
     with ThreadPoolExecutor(max_workers=num_workers) as pool:
         records = dict(pool.map(work, jobs))
     results = {"arms": {}}
-    for arm, path in arms.items():
-        target = load_skill(path)[0]
+    for arm in arms:
         rows = []
         for i, item in enumerate(eval_set):
             runs = [records[(arm, i, r)] for r in range(runs_per_query)]
@@ -241,3 +252,79 @@ def summarize(runs: list[dict], expected: str | None, target: str, threshold: fl
         "multiple": sum(run["outcome"] == "multiple" for run in complete),
         "pass": verdict,
     }
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def pi_version(pi: str) -> str:
+    try:
+        result = subprocess.run([pi, "--version"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"unknown ({exc})"
+    return (result.stdout or result.stderr).strip()
+
+
+def parse_arm(value: str) -> tuple[str, Path]:
+    label, sep, path = value.partition("=")
+    if not sep or not label or not path:
+        raise argparse.ArgumentTypeError(f"expected LABEL=SKILL_DIR, got {value!r}")
+    return label, Path(path)
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--eval-set", required=True, type=Path,
+                        help='JSON list of {"query": ..., "expected": skill name or null}')
+    parser.add_argument("--competitor", action="append", type=Path, default=[],
+                        help="skill directory offered in every arm (repeatable)")
+    parser.add_argument("--arm", action="append", type=parse_arm, required=True,
+                        help="LABEL=SKILL_DIR: one version of the skill under test (repeatable)")
+    parser.add_argument("--model", required=True, help="pi model, e.g. openai-codex/gpt-6.1-sol")
+    parser.add_argument("--thinking", default="high")
+    parser.add_argument("--runs-per-query", type=int, default=3)
+    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--timeout", type=int, default=300, help="seconds per run")
+    parser.add_argument("--trigger-threshold", type=float, default=0.5)
+    parser.add_argument("--pi", default="pi", help="pi executable")
+    parser.add_argument("--out", required=True, type=Path, help="directory for logs and results")
+    args = parser.parse_args(argv)
+
+    eval_set = json.loads(args.eval_set.read_text(encoding="utf-8"))
+    args.out.mkdir(parents=True, exist_ok=True)
+    results = run_competition(
+        eval_set=eval_set, competitors=args.competitor, arms=dict(args.arm), model=args.model,
+        thinking=args.thinking, runs_per_query=args.runs_per_query, out_dir=args.out,
+        pi=args.pi, num_workers=args.num_workers, timeout=args.timeout,
+        threshold=args.trigger_threshold,
+    )
+    settings = {
+        "model": args.model,
+        "thinking": args.thinking,
+        "runs_per_query": args.runs_per_query,
+        "trigger_threshold": args.trigger_threshold,
+        "timeout": args.timeout,
+        "pi_version": pi_version(args.pi),
+        "harness_sha256": sha256(Path(__file__)),
+        "eval_set": str(args.eval_set),
+        "eval_set_sha256": sha256(args.eval_set),
+        "competitors": [str(path) for path in args.competitor],
+        "arms": {label: str(path) for label, path in args.arm},
+    }
+    results = {"settings": settings, **results}
+    (args.out / "results.json").write_text(
+        json.dumps(results, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    for arm, data in results["arms"].items():
+        totals = data["totals"]
+        print(f"{arm}: {totals['passed']}/{totals['queries']} pass, "
+              f"incomplete={totals['incomplete']}, errors={totals['errors']}")
+        for row in data["queries"]:
+            s = row["summary"]
+            print(f"  [{s['pass']}] expected={row['expected']} first={s['first']} "
+                  f"{data['target']}_first={s['target_first']} "
+                  f"{data['target']}_consulted={s['target_consulted']}: {row['query'][:60]}")
+
+
+if __name__ == "__main__":
+    main()

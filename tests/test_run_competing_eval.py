@@ -356,3 +356,44 @@ def test_errored_runs_leave_the_query_incomplete_instead_of_failing_it(
     totals = results["arms"]["current"]["totals"]
     assert totals == {"queries": 1, "passed": 0, "failed": 0, "incomplete": 1, "runs": 2,
                       "errors": 2}
+
+
+def test_expectation_naming_a_skill_outside_the_catalog_is_rejected(fake_pi, catalog, tmp_path):
+    with pytest.raises(ValueError, match="wayfinder"):
+        run(fake_pi, catalog, tmp_path, [{"query": "plain", "expected": "wayfinder"}])
+
+
+def test_arms_must_vary_one_and_the_same_skill(fake_pi, catalog, tmp_path):
+    catalog["arms"]["other"] = write_skill(tmp_path / "x", "qa", "Use when filing bugs.")
+
+    with pytest.raises(ValueError, match="same skill"):
+        run(fake_pi, catalog, tmp_path, [{"query": "plain", "expected": None}])
+
+
+def test_cli_writes_results_with_provenance(fake_pi, catalog, tmp_path):
+    eval_set = tmp_path / "set.json"
+    eval_set.write_text(json.dumps([{"query": "read:prototype", "expected": "prototype"}]))
+    out = tmp_path / "cli-out"
+
+    rce.main([
+        "--eval-set", str(eval_set),
+        "--competitor", str(catalog["competitors"][0]),
+        "--competitor", str(catalog["competitors"][1]),
+        "--arm", f"base={catalog['arms']['base']}",
+        "--arm", f"current={catalog['arms']['current']}",
+        "--model", "fake/model",
+        "--thinking", "high",
+        "--runs-per-query", "2",
+        "--pi", str(fake_pi),
+        "--out", str(out),
+    ])
+
+    results = json.loads((out / "results.json").read_text())
+    settings = results["settings"]
+    assert settings["model"] == "fake/model"
+    assert settings["thinking"] == "high"
+    assert settings["runs_per_query"] == 2
+    assert len(settings["eval_set_sha256"]) == 64
+    assert len(settings["harness_sha256"]) == 64
+    assert "pi_version" in settings
+    assert results["arms"]["current"]["totals"]["passed"] == 1
