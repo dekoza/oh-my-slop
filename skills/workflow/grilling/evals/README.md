@@ -198,10 +198,21 @@ Reading:
   to adjacent skills. With `grilling` as the only skill on offer, the harness cannot show
   those skills winning, so this over-triggering is partly an artifact of the setup.
 - **One regression is attributable to the change.** The "mock up" near-miss fired 0/3 at
-  base and 3/3 for the candidate. The likely cause is the added word "options", which
-  overlaps with offering design variations.
-- Revising the description needs owner authorization, because the repair budget is
-  spent.
+  base and 3/3 for the candidate.
+
+**Follow-up test of the word "options".** The suspected cause was the word "options".
+The owner authorized one extra round to remove it, then re-run the same split, route
+and harness (60 runs; `triggers/pi-codex-r3/`).
+
+- With the word removed, the result was the same: candidate 6/10, base 5/10, with
+  identical cells, and "mock up" still fired 3/3. The hypothesis is falsified, and the
+  cause of the regression is unknown.
+- The owner then chose to keep the committed description, "options" included. The
+  removal had no measured effect, and keeping the wording keeps the behavioral-eval
+  prompts byte-identical to the shipped text.
+- The regression remains an open, documented note; it is not fixed.
+- The "mock up" near-miss belongs to `prototype`. Whether `prototype` would win when
+  installed beside `grilling` is unmeasured, because this harness offers only one skill.
 
 ### Evidence workspace
 
@@ -221,3 +232,6 @@ The workspace is `/home/minder/.local/state/oh-my-slop/delivery-265-20261008/`. 
 - the pi trigger measurement: harness `eval-kit/pi_triggers.py`, detector check
   `eval-kit/check_detector.py` with its output `triggers/check_detector.log`, per-run logs and `triggers/pi-codex/results.json`,
   summary `triggers/pi-codex.log`
+- the follow-up test with "options" removed: `triggers/pi-codex-r3/` and
+  `triggers/pi-codex-r3.log`
+- the first pi probe: `triggers/pi-probe/`
