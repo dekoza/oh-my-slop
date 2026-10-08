@@ -23,9 +23,10 @@ reproduced, these are measurements awaiting owner direction, not a claimed lift.
 
 With `grilling` held at the candidate text (the shared record's
 [matched-support comparison](../../grilling/evals/README.md#matched-support-comparison)),
-the base fix-pr wording left the secondary choices as status in all 3 long runs. In the
-short variant they passed in 2/3 runs, 0/3 under a strict reading. The candidate passed
-in 3/3 of both.
+the base fix-pr wording failed assertion 3 in all 3 long runs, leaving the secondary
+choices as status. In the short variant 2/3 runs passed it, because those runs left no
+secondary choice to the user; counting them as failures gives 0/3. Candidate runs passed
+it in 3/3 of both variants.
 
 ## Committed-candidate repair — #250
 

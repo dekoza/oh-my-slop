@@ -15,8 +15,8 @@ deleted the branch, pushed or aborted.
 
 With `grilling` held at the candidate text (the shared record's
 [matched-support comparison](../../../workflow/grilling/evals/README.md#matched-support-comparison)),
-the base wording also asked both choices in 3/3 runs. This scenario therefore shows no
-effect of the conflicts wording itself.
+the base wording also asked both choices in 3/3 runs. This scenario shows no measured
+difference between the base and candidate conflicts wording.
 
 The caller-return branch, used when another skill such as `fix-pr` invokes this one, was
 not measured separately. The worker-to-caller control is
