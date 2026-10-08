@@ -1,0 +1,42 @@
+[
+  {
+    "query": "Can you walk me through the design decisions for this scheduler by asking me about them, rather than just handing me a proposal?",
+    "expected": "grilling"
+  },
+  {
+    "query": "The combined run is finished. Give me your closing report, including the approvals you need from me, like closing the parent spec and following up the advisories.",
+    "expected": "grilling"
+  },
+  {
+    "query": "The bug report is too vague to turn into a ticket — I need to question the reporter properly first, one thing at a time.",
+    "expected": "grilling"
+  },
+  {
+    "query": "This wayfinding ticket asks whether tenants share one database or get their own. Run the questioning process with me to resolve it.",
+    "expected": "grilling"
+  },
+  {
+    "query": "The merge is committed. Report back, and lay out the two follow-ups I have to sign off on: the timeout values that now disagree and deleting the merged branch.",
+    "expected": "grilling"
+  },
+  {
+    "query": "Summarize what changed in this PR for the changelog entry.",
+    "expected": null
+  },
+  {
+    "query": "Run a pre-mortem on this rollout — assume it failed badly and tell me why.",
+    "expected": "court-jester"
+  },
+  {
+    "query": "I want five independent perspectives to weigh in and peer-review each other before I commit to this vendor.",
+    "expected": "council"
+  },
+  {
+    "query": "Mock up three radically different versions of the settings screen so I can see which direction works.",
+    "expected": "prototype"
+  },
+  {
+    "query": "Convene the council on whether we go with Postgres or DynamoDB for this workload.",
+    "expected": "council"
+  }
+]

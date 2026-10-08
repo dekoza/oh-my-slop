@@ -282,8 +282,9 @@ and harness (60 runs; `triggers/pi-codex-r3/`).
   removal had no measured effect, and keeping the wording keeps the behavioral-eval
   prompts byte-identical to the shipped text.
 - The regression remains an open, documented note; it is not fixed.
-- The "mock up" near-miss belongs to `prototype`. Whether `prototype` would win when
-  installed beside `grilling` is unmeasured, because this harness offers only one skill.
+- The "mock up" near-miss belongs to `prototype`. This harness offers only one skill, so
+  it cannot show whether `prototype` wins when installed beside `grilling`. #267 measured
+  that: see [Competing-skill selection](#competing-skill-selection--267).
 
 ### Evidence workspace
 
@@ -309,3 +310,123 @@ The workspace is `/home/minder/.local/state/oh-my-slop/delivery-265-20261008/`. 
 - the follow-up test with "options" removed: `triggers/pi-codex-r3/` and
   `triggers/pi-codex-r3.log`
 - the first pi probe: `triggers/pi-probe/`
+
+## Competing-skill selection — #267
+
+The #265 trigger measurement offered `grilling` as the only skill, so it could not show
+whether an adjacent skill wins its own query when both are installed. This measurement offers
+`grilling` beside the owning skills of the near-misses.
+
+**Result: the widened description takes no near-miss from its owning skill.** Every run of
+the four adjacent-skill queries read the owning skill first, in both arms. No revised
+description was needed, so none was proposed. The widened description keeps both
+final-report positives (3/3 each), which the base description missed. With the widened
+description, `grilling` was often read *second*, after the owning skill. See
+[Reading](#reading).
+
+### Method
+
+- **Harness.** `scripts/run_competing_eval.py` in `skill-creator`, as committed in 62bfe28
+  (SHA-256 `69d8103ced2adcd5e1573a884dee9d0c1b68e62f43b310178f171594ffee0281`). Each run
+  gets a fresh temp dir and one stub per skill in the catalog. Each stub carries that
+  skill's description and a one-line body. Skill discovery,
+  extensions, MCP, context files and prompt templates are off; `read` is the only tool.
+  The PR #268 repair later made the harness error on any malformed event line; the measured
+  version skipped such lines. All 26,244 lines of the 60 retained event streams parse as
+  event objects, so the repaired harness would classify every run the same way.
+- **Catalog.** `council`, `court-jester`, `grilling` and `prototype`, in that order in every
+  run. The competitors' descriptions are their frontmatter at b96713f. Only the `grilling`
+  description differs between arms.
+- **Exposure check.** Every run parses the system prompt pi actually sent. A catalog that
+  differs from the requested one, or a section outside pi's base set (`preamble`, `tools`,
+  `rules`, `docs`, `skills`, `cwd`), makes the run an error. All 60 runs exposed exactly the
+  four requested skills and only those sections.
+- **Selection.** A consultation is an executed `read` of a stub, in order. The first one is
+  the selection. A run with no read is a no-selection. A run that fails, times out, ends
+  with an error or emits a malformed event line is kept as an error, and its query gets no
+  verdict. There were no errors.
+- **Arms.**
+  - Base: the description at b26faa0, before #265.
+  - Current: the shipped description at b96713f.
+- **Queries.** [trigger-competition.json](trigger-competition.json): the 10-query
+  validation split of #265, unchanged. That is skill-creator's `split_eval_set` (holdout 0.4,
+  seed 42) over [trigger-evals.json](trigger-evals.json), whose bytes match the #265 frozen
+  copy. Each query names its owning skill, or `null` for the decision-free control.
+- **Route.** pi 1.1.0, `openai-codex/gpt-6.1-sol`, thinking high, as in #265.
+- **Runs.** 3 per query per arm, 60 in total, no retries, threshold 0.5, 4 parallel workers,
+  300 s timeout per run.
+
+`grilling` descriptions compared, verbatim as pi exposed them:
+
+- Base: "Use when the user wants a plan, decision, or idea sharpened through questioning
+  before acting on it, or when another skill needs the interview primitive. Triggers on:
+  "grill me", "grill this plan", "stress-test this design with questions", "interview me
+  about this"."
+- Current: "Use when the user wants a plan, decision, or idea sharpened through questioning
+  before acting on it, when another skill needs the interview primitive, or whenever the
+  agent presents open decisions, options, or approvals to the user, including follow-ups at
+  the end of a final report. Triggers on: "grill me", "grill this plan", "stress-test this
+  design with questions", "interview me about this", "what's left for me to decide?",
+  "anything you need me to approve?"."
+
+The competitors' exact descriptions are recorded per arm under `catalog` in
+`run-1/results.json`.
+
+### Results
+
+Cells give the first-selected skill per run. "Then grilling" counts runs that read `grilling`
+after the owning skill. Bold marks a cell that misses its expectation.
+
+| Validation query | Owner | Base: first | Current: first | Current: then grilling |
+| --- | --- | --- | --- | --- |
+| walk me through the scheduler's design decisions by asking me | grilling | grilling 3/3 | grilling 3/3 | — |
+| combined run finished; closing report with approvals I need | grilling | **none 2, council 1** | grilling 3/3 | — |
+| bug report too vague; question the reporter first | grilling | grilling 3/3 | grilling 3/3 | — |
+| wayfinding ticket: tenants share one database or not | grilling | grilling 3/3 | grilling 3/3 | — |
+| merge committed; lay out two follow-ups to sign off | grilling | **none 3** | grilling 3/3 | — |
+| summarize what changed in this PR for the changelog | none | none 3 | none 3 | 0/3 |
+| run a pre-mortem on this rollout | court-jester | court-jester 3/3 | court-jester 3/3 | 2/3 |
+| five independent perspectives peer-reviewing | council | council 3/3 | council 3/3 | 3/3 |
+| mock up three radically different settings screens | prototype | prototype 3/3 | prototype 3/3 | 1/3 |
+| convene the council on Postgres vs DynamoDB | council | council 3/3 | council 3/3 | 3/3 |
+
+Base passed 8/10 queries and current 10/10. In base, `grilling` was never read on the five
+non-grilling queries.
+
+### Reading
+
+- **The #265 "mock up" regression does not hold with `prototype` installed.** `prototype` was
+  read first in 3/3 runs of both arms, the same as in the single-skill harness at base. The
+  single-skill result measured whether the description fires when nothing else is offered.
+- **The pre-mortem, five-perspectives and council queries go to their owners.** The
+  single-skill measurement made them look like over-triggering in both arms; with the owners
+  installed, neither arm selected `grilling` first.
+- **The widened description draws second reads.** With the current description, `grilling`
+  was read after the owning skill in 9 of 12 adjacent-query runs (0 of 12 at base). Each stub
+  has a one-line body, so the model met no real instructions after its first read. This harness
+  cannot tell whether a full owning skill would still lead to a second read, or whether
+  reading `grilling` there helps or harms the response. That remains unmeasured.
+- **Base closing-report run 3** read `council` and then `court-jester`, and never `grilling`.
+
+### Limits
+
+- One model on one route, 3 trials per cell. Every first-selection cell came out 3/3 or 0/3
+  except one base cell, which is not evidence of stability.
+- The catalog holds four skills. Other skills that could claim these queries are absent,
+  such as `grill-me`, `grill-with-docs`, `wayfinder`, `qa` and `pr`.
+- Stubs carry the description only. Selection is measured, but not what the model does
+  after reading a full skill body.
+- The validation split was tuned on in #265, so this is not an untouched test set. The 18
+  training queries were not run.
+- The positives and expectations were written by the same author as the descriptions.
+
+### Evidence
+
+The workspace is `/home/minder/.local/state/oh-my-slop/delivery-267-20261008/`. It holds:
+
+- the base `grilling` snapshot `arms/base/grilling/SKILL.md` (from b26faa0)
+- the frozen query set `trigger-competition.frozen.json`
+- the live probe (1 query, 1 run per arm): `probe-set.json`, `probe/` and `probe.log`
+- the measurement: `run-1/results.json`, the per-run logs under `run-1/base/` and
+  `run-1/current/` (command, exit code, raw event stream, stderr), and the summary
+  `run-1.log`

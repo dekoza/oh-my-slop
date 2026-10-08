@@ -65,6 +65,23 @@
         "The final log-triage SKILL.md description matches best_description when a candidate wins, or preserves the original description when no candidate improves validation score.",
         "The response includes the captured optimization log path."
       ]
+    },
+    {
+      "id": 5,
+      "prompt": "The attached `log-triage` description fired on \"Summarize this incident report for executives\" when it was the only skill offered. Using the attached competition set and an explicit available pi model, measure whether it still takes that query when the attached `incident-summarizer` skill is installed beside it, and report which skill each query selects.",
+      "expected_output": "A competing-catalog measurement that offers log-triage and incident-summarizer together, records the first selected skill per run, keeps errored runs out of the verdicts, and reports per-query first selections.",
+      "files": [
+        "evals/files/log-triage/SKILL.md",
+        "evals/files/log-triage/competition-evals.json",
+        "evals/files/incident-summarizer/SKILL.md"
+      ],
+      "expectations": [
+        "The measurement command record contains scripts.run_competing_eval, an explicit non-empty --model value and a --competitor pointing at the incident-summarizer skill directory.",
+        "The results.json catalog for every arm contains exactly the incident-summarizer and log-triage skills.",
+        "The final report includes the first-selected skill counts for the incident-summary query in every arm.",
+        "The final report reports errored or incomplete runs separately from runs that selected no skill.",
+        "The response includes the captured measurement log path."
+      ]
     }
   ]
 }

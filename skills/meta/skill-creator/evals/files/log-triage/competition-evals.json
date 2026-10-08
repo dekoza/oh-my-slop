@@ -1,0 +1,18 @@
+[
+  {
+    "query": "Summarize this incident report for executives; the root cause has already been confirmed.",
+    "expected": "incident-summarizer"
+  },
+  {
+    "query": "The Django worker log in /tmp/worker.log has three tracebacks after deploy; find the first actionable error and cite the lines.",
+    "expected": "log-triage"
+  },
+  {
+    "query": "Compare these two Kubernetes pod logs and tell me which shared exception started the restart loop.",
+    "expected": "log-triage"
+  },
+  {
+    "query": "Configure Fluent Bit to ship container logs to OpenSearch.",
+    "expected": null
+  }
+]
