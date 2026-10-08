@@ -133,14 +133,52 @@ and 14 negative.
 Description preflight passes: starts with "Use when", 2 sentences, 74 words, 6
 user-shaped triggers.
 
-**Trigger rates were not measured. This is unresolved, not a pass.** The skill-creator
-runner (`scripts.run_loop`, measure-only, seed-42 holdout of 0.4) failed on every query
-in both arms:
+**Result: the validation split does not pass.** Base scored 5/10 and candidate 6/10.
+This is not a success claim.
 
-- `anthropic/claude-sonnet-5-5` through opencode returned "out of extra usage".
-- The free opencode models refused to run outside the OpenCode app.
+How it was measured:
 
-Measuring through Copilot or OpenAI quota needs the owner's approval.
+- **Unavailable routes.** The skill-creator opencode runner could not run on any
+  available route. Anthropic was out of extra usage, the free tier refused CLI use, and
+  Copilot rejected every Claude model for opencode.
+- **Route used.** The owner chose pi with `openai-codex/gpt-6.1-sol`, thinking high
+  (pi 1.1.0).
+- **Harness.** `eval-kit/pi_triggers.py` mirrors `scripts/run_eval.py`. Each query runs
+  in a fresh temp dir with only a stub `grilling` skill carrying the description under
+  test. Skill discovery, extensions, MCP and context files are off, and `read` is the
+  only tool.
+- **Trigger rule.** A trigger is an executed `read` of the stub. The system prompt also
+  names the stub path, so text matching would always fire; the detector was checked
+  against that case.
+- **Scope.** The 10 queries are skill-creator's own validation split
+  (`split_eval_set`, holdout 0.4, seed 42), 3 runs per query per arm, 60 runs in total,
+  no retries.
+
+| Validation query | Expected | Base | Candidate |
+| --- | --- | --- | --- |
+| walk me through the scheduler's design decisions by asking me | trigger | 3/3 | 3/3 |
+| combined run finished; closing report with approvals I need | trigger | **0/3** | 3/3 |
+| bug report too vague; question the reporter first | trigger | 3/3 | 3/3 |
+| wayfinding ticket: tenants share one database or not | trigger | 3/3 | 3/3 |
+| merge committed; lay out two follow-ups to sign off | trigger | **0/3** | 3/3 |
+| summarize what changed in this PR for the changelog | none | 0/3 | 0/3 |
+| run a pre-mortem on this rollout | none | **3/3** | **3/3** |
+| five independent perspectives peer-reviewing | none | **3/3** | **3/3** |
+| mock up three radically different settings screens | none | 0/3 | **3/3** |
+| convene the council on Postgres vs DynamoDB | none | **3/3** | **3/3** |
+
+Reading:
+
+- The widened description catches both final-report positives the base missed.
+- The decision-free changelog near-miss stays quiet in both arms.
+- Both arms fire on the pre-mortem, five-perspectives and council queries, which belong
+  to adjacent skills. With `grilling` as the only skill on offer, the harness cannot show
+  those skills winning, so this over-triggering is partly an artifact of the setup.
+- **One regression is attributable to the change.** The "mock up" near-miss fired 0/3 at
+  base and 3/3 for the candidate. The likely cause is the added word "options", which
+  overlaps with offering design variations.
+- Revising the description needs owner authorization, because the repair budget is
+  spent.
 
 ### Evidence workspace
 
