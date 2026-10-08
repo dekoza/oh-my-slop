@@ -9,6 +9,7 @@ always-loaded context pointer; optimize it for correct selection, not for summar
 - Build trigger evals
 - Review the eval set
 - Run measured optimization
+- Measure against competing skills
 - Apply and report
 - Fallbacks
 
@@ -84,6 +85,37 @@ was not preserved.
 Reject a candidate that improves training while regressing validation performance. Inspect
 per-query results because a tied aggregate can hide a lost critical trigger. For an unbiased
 final estimate, run a separately reserved test set after selection.
+
+## Measure against competing skills
+
+`run_eval.py` offers only the skill under test, so a near-miss that fires there may still go to
+its owning skill when both are installed. When a widened description fires on an adjacent
+skill's query, measure selection with `scripts/run_competing_eval.py`. It runs through `pi` and
+offers an explicit catalog: the competitors plus one version of the skill under test per arm.
+
+The eval set names the owning skill per query, or `null` where no skill should be selected:
+
+```json
+{"query": "the user's request", "expected": "prototype"}
+```
+
+Run from the `skill-creator` directory:
+
+```bash
+python -m scripts.run_competing_eval \
+  --eval-set <path-to-competition-set.json> \
+  --competitor <owning-skill-dir> --competitor <owning-skill-dir> \
+  --arm base=<snapshot-skill-dir> --arm current=<skill-dir> \
+  --model <pi-model-id> --runs-per-query 3 \
+  --out <workspace>/<run> 2>&1 | tee <workspace>/<run>.log
+```
+
+Each run records the catalog pi exposed and the ordered consultations, so the owning skill
+read first is distinguished from the skill under test consulted afterwards. A run that fails,
+times out, or exposes a catalog or system-prompt section the harness did not request is kept
+as an error, and its query gets no verdict. Report the first-selection counts per query and
+arm, not only the pass totals. Keep every input except the tested description identical across
+the arms you compare.
 
 ## Apply and report
 
