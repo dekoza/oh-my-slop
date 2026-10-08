@@ -25,8 +25,11 @@ or approvals, including in a final report. Its body is unchanged.
 
 - **Arms.** Baseline is the skill text at b26faa0, copied before editing. Candidate is the
   committed text at 54101a0. The candidate prompts were rebuilt from that commit and match
-  the evaluated prompts byte for byte. Only the skill text differs between arms. In both
-  arms the prompt supplies `grilling` as the supporting skill.
+  the evaluated prompts byte for byte. In both arms the prompt supplies `grilling` as the
+  supporting skill, and its text differs too: baseline prompts carry the base `grilling`
+  description, candidate prompts the widened one. These are **package-level**
+  comparisons, so they cannot isolate a workflow skill's wording. The
+  [matched-support comparison](#matched-support-comparison) holds `grilling` fixed.
 - **Repair round 1.** Review changed only the fix-pr and resolving-merge-conflicts text.
   Their three scenarios were re-run against the final text, with the baseline runs reused
   and freshly blind-graded alongside. The other six scenarios' prompts are byte-identical
@@ -58,7 +61,7 @@ decides whether this evidence satisfies the criterion.
 
 ### Results
 
-Each cell gives runs passing that assertion, out of 3 per arm. "Coverage" is the assertion
+These are package-level results. Each cell gives runs passing that assertion, out of 3 per arm. "Coverage" is the assertion
 that every open human choice in the scenario is asked as a numbered question with its own
 recommendation.
 
@@ -84,7 +87,7 @@ asked the advisory finding in all 6 runs. It asked merging in 3/3 short runs and
 long runs; long run 1 deferred merging with a recommendation until CI and a rerun
 finished, and the assertion accepts that deferral.
 
-All assertions together, as measured, not as a lift claim:
+All assertions together, package-level, as measured, not as a lift claim:
 
 - **Final text:** baseline 72/93, candidate 93/93.
 - **Initial commit 54101a0:** candidate 92/93; the long fix-pr variant scored 2/3. The
@@ -99,6 +102,52 @@ the merge choice left at the close through `grilling`, whose frontier lets a cho
 depends on pending results be deferred explicitly. So a pass shows that merging was not
 left as bare status, not that it was asked. The assertion was left unchanged because its
 runs are already graded.
+
+### Matched-support comparison
+
+The #265 brief requires matching supporting instructions. A third arm, run in the #266
+repair, supplies the base workflow skill text with the candidate `grilling` text
+(`grilling/SKILL.md` at ceb1d23, unchanged since 54101a0). Against the candidate runs it
+differs only in the tested workflow skill; against the baseline, only in `grilling`. A
+block-level check of all eight prompts confirms both.
+
+- **Runs.** The 8 non-grilling scenarios, 3 runs each, 24 in total, with the same runner,
+  model and settings as above (US$2.47, about 0.37M tokens, no retries).
+- **Grading.** One fresh blind grader per scenario, under a written brief. Each bundle
+  shuffles the 3 matched runs with the 3 final-text candidate runs. The candidate runs
+  re-graded at 81/81, as before.
+
+Cells give runs passing the key assertion, out of 3.
+
+| Scenario (skill eval id) | Key assertion | Package baseline | Matched support | Candidate |
+| --- | --- | --- | --- | --- |
+| fix-pr closing decisions (fix-pr 6) | coverage of the two main choices | 3/3 | 3/3 | 3/3 |
+| | the other choices asked or explicitly deferred | 0/3 | 2/3 | 3/3 |
+| fix-pr, long transcript (workspace only) | coverage of the two main choices | 3/3 | 3/3 | 3/3 |
+| | the other choices asked or explicitly deferred | 0/3 | 0/3 | 3/3 |
+| implement standalone (implement 17) | coverage | 0/3 | 0/3 | 3/3 |
+| implement branch-only, caller handoff (implement 18) | all obligations returned to the coordinator | 1/3 | 0/3 | 3/3 |
+| implement-spec closing (implement-spec 7) | coverage, in one round | 0/3 | 2/3 | 3/3 |
+| conflicts, direct user (resolving-merge-conflicts 4) | coverage | 1/3 | 3/3 | 3/3 |
+| to-spec closing decisions (to-spec 2) | coverage | 0/3 | 2/3 | 3/3 |
+| to-spec decision-free control (to-spec 3) | asks no questions | 2/3 | 2/3 | 3/3 |
+
+All assertions over these 8 scenarios: package baseline 60/81, matched support 68/81,
+candidate 81/81. Every other assertion passed in all matched runs.
+
+- **With `grilling` held fixed, the workflow wording still moves 68/81 to 81/81.** The
+  workflow edits carry an effect of their own in every scenario except conflicts.
+- **The widened `grilling` text alone accounts for part of the package result.** It
+  closes the conflicts gap and two thirds of the implement-spec and to-spec coverage gaps.
+  It does nothing for implement 17, the implement 18 handoff or the long fix-pr secondary
+  choices.
+- **Grader leniency favors the matched arm.** In the short fix-pr scenario, two matched
+  runs passed the "other choices" assertion although neither asked about merging or
+  `_jr`. Each stated it would not merge and settled `_jr` itself with a reason. A strict
+  reading gives that cell 0/3 and the arm 66/81. Either reading leaves the conclusions
+  above unchanged.
+- The matched runs ran later than the candidate runs, on the same runner and model. The
+  limits below apply equally.
 
 ### What this does and does not show
 
@@ -238,6 +287,9 @@ The workspace is `/home/minder/.local/state/oh-my-slop/delivery-265-20261008/`. 
   intermediate wording, `iteration-3/` and `blind-r1b/` for the final fix-pr text
 - the failed opencode trigger-run and probe logs (`triggers/base/`, `triggers/candidate/`,
   `triggers/probe-*/`)
+- the matched-support comparison: `matched-support/` (mixed skill root, grader brief,
+  check, assembly and tally scripts), `prompts-matched/`, `matched-run.log`,
+  `iteration-4/` and `blind-r2/`
 - the pi trigger measurement: harness `eval-kit/pi_triggers.py`, detector check
   `eval-kit/check_detector.py` with its output `triggers/check_detector.log`, per-run logs and `triggers/pi-codex/results.json`,
   summary `triggers/pi-codex.log`

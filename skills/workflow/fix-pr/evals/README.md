@@ -7,7 +7,8 @@ test and a PR body that misdescribes shipped behaviour. An advisory finding and 
 are also left open. Method, limits and the full table are in the
 [shared #265 record](../../grilling/evals/README.md#decision-handoffs-ask-through-grilling--265).
 
-Over 3 matched trials per arm, both arms asked the two main choices as numbered `grilling`
+Over 3 trials per arm in the package-level comparison, where the supporting `grilling`
+text also differs between arms, both arms asked the two main choices as numbered `grilling`
 questions with recommendations: baseline 3/3, candidate 3/3. **The reported session
 failure was not reproduced**, including in a long-transcript variant (also 3/3 versus
 3/3). The difference lies in the other choices left to the user. Baseline runs left the
@@ -19,6 +20,12 @@ results are still unknown") with a recommendation. Assertion 3 accepts that defe
 so its 3/3 long pass does not show that merging was asked. An intermediate wording that
 made merging conditional fell to 1/3 and was replaced. No run merged, edited the PR body or filed a ticket. Because the reported failure was not
 reproduced, these are measurements awaiting owner direction, not a claimed lift.
+
+With `grilling` held at the candidate text (the shared record's
+[matched-support comparison](../../grilling/evals/README.md#matched-support-comparison)),
+the base fix-pr wording left the secondary choices as status in all 3 long runs. In the
+short variant they passed in 2/3 runs, 0/3 under a strict reading. The candidate passed
+in 3/3 of both.
 
 ## Committed-candidate repair — #250
 

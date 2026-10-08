@@ -94,10 +94,15 @@ gap returned by a worker, and authorization to close the parent spec. Method, li
 the full table are in the
 [shared #265 record](../../grilling/evals/README.md#decision-handoffs-ask-through-grilling--265).
 
-Over 3 matched trials per arm, baseline asked all three as one numbered round with
+Over 3 trials per arm in the package-level comparison, where the supporting `grilling`
+text also differs between arms, baseline asked all three as one numbered round with
 recommendations in 0/3 runs. It listed them as "unresolved obligations", folded them
 together, or ended with "The run stops here." The candidate did so in 3/3 runs.
 No run closed issues, merged or filed tickets.
+
+With `grilling` held at the candidate text (the shared record's
+[matched-support comparison](../../grilling/evals/README.md#matched-support-comparison)),
+the base wording asked all three in one round in 2/3 runs.
 
 These figures are measurements pending owner direction, not a claimed lift. The shared
 record explains why.
