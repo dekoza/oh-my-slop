@@ -139,8 +139,10 @@ This is not a success claim.
 How it was measured:
 
 - **Unavailable routes.** The skill-creator opencode runner could not run on any
-  available route. Anthropic was out of extra usage, the free tier refused CLI use, and
-  Copilot rejected every Claude model for opencode.
+  route tried. Anthropic was out of extra usage and the free tier refused CLI use.
+  Copilot rejected the three Claude Sonnet models probed: `claude-sonnet-5` and
+  `claude-sonnet-5.5` with "model not supported", `claude-sonnet-4.6` with "not
+  available for integrator opencode". Other Copilot Claude models were not tried.
 - **Route used.** The owner chose pi with `openai-codex/gpt-6.1-sol`, thinking high
   (pi 1.1.0).
 - **Harness.** `eval-kit/pi_triggers.py` mirrors `scripts/run_eval.py`. Each query runs
@@ -153,6 +155,27 @@ How it was measured:
 - **Scope.** The 10 queries are skill-creator's own validation split
   (`split_eval_set`, holdout 0.4, seed 42), 3 runs per query per arm, 60 runs in total,
   no retries.
+- **Not covered.** By owner choice, this deviates from the standard loop:
+  - The 18 training queries were not run. They include 3 of the 5 new final-report
+    positives and 3 of the 4 new decision-free near-misses.
+  - No `run_loop` optimization ran; the candidate description was written by hand.
+  - The decision-free class therefore rests on one validation query (the changelog
+    query) with 3 runs per arm.
+- **Model limitation.** The model is gpt-6.1 through pi, not a Claude runtime. Every
+  cell came out 0/3 or 3/3, so 3 runs show no within-query variance; that is not
+  evidence of stability.
+
+Descriptions compared:
+
+- Base: "Use when the user wants a plan, decision, or idea sharpened through questioning
+  before acting on it, or when another skill needs the interview primitive."
+- Candidate: the current frontmatter, which adds "or whenever the agent presents open
+  decisions, options, or approvals to the user, including follow-ups at the end of a
+  final report" and two triggers.
+
+Both keep the same first four triggers.
+
+In the table, bold marks a cell that misses its expectation.
 
 | Validation query | Expected | Base | Candidate |
 | --- | --- | --- | --- |
@@ -193,4 +216,8 @@ The workspace is `/home/minder/.local/state/oh-my-slop/delivery-265-20261008/`. 
   `iteration-1/review.html`
 - the repair-round runs and blind grades: `iteration-2/` and `blind-r1/` for the
   intermediate wording, `iteration-3/` and `blind-r1b/` for the final fix-pr text
-- the failed trigger-run logs
+- the failed opencode trigger-run and probe logs (`triggers/base/`, `triggers/candidate/`,
+  `triggers/probe-*/`)
+- the pi trigger measurement: harness `eval-kit/pi_triggers.py`, detector check
+  `eval-kit/check_detector.py` with its output `triggers/check_detector.log`, per-run logs and `triggers/pi-codex/results.json`,
+  summary `triggers/pi-codex.log`
