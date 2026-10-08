@@ -14,8 +14,8 @@ carry each skill's own rows.
 The closing and pause wording in five workflow skills told the agent to *report* the next
 owner decision. Each of those handoff sites now asks the human through `grilling`, or
 returns the choice to the coordinating caller, whose final question uses `grilling`. The
-fix-pr rule now covers non-blocking follow-ups, PR-text corrections, approvals and the
-merge choice. A decision-free report asks nothing. An answer authorizes only what it names.
+fix-pr rule now covers non-blocking follow-ups, PR-text corrections and approvals. If it
+raises merging, it asks as the user's own decision, and a yes never lets fix-pr merge. A decision-free report asks nothing. An answer authorizes only what it names.
 grilling's description now also triggers when the agent presents open decisions, options
 or approvals, including in a final report. Its body is unchanged.
 
@@ -25,6 +25,15 @@ or approvals, including in a final report. Its body is unchanged.
   committed text at 54101a0. The candidate prompts were rebuilt from that commit and match
   the evaluated prompts byte for byte. Only the skill text differs between arms. In both
   arms the prompt supplies `grilling` as the supporting skill.
+- **Repair round 1.** Review changed only the fix-pr and resolving-merge-conflicts text.
+  Their three scenarios were re-run against the final text, with the baseline runs reused
+  and freshly blind-graded alongside. The other six scenarios' prompts are byte-identical
+  under the final text.
+  - An intermediate fix-pr wording ("If you raise merging, ask it…") let runs state
+    "Merging is your decision" as status. Its short-variant result fell to 1/3, so it was
+    replaced before commit.
+  - Those graders were told explicitly that such a line counts as status. Earlier graders
+    had already read it that way.
 - **Runner.** `claude -p` (Claude Code 2.1.293), model `claude-opus-5-5`, effort high.
   Tools and MCP servers are disabled, the working directory is neutral, and sessions are
   not persisted. The operator's global instructions load in both arms. They already make
@@ -37,6 +46,14 @@ or approvals, including in a final report. Its body is unchanged.
   neutral labels, and arm names and paths were withheld. The graders are Claude subagents
   of the session that wrote the change.
 
+### Status: behavioral criterion pending owner direction
+
+The #265 brief requires owner direction before any behavioral lift is claimed if the
+original fix-pr failure stays unreproduced. That failure was not reproduced (see below).
+The figures that follow are measurements recorded for that decision. Neither they nor
+this change claim lift or treat the behavioral acceptance criterion as met. The owner
+decides whether this evidence satisfies the criterion.
+
 ### Results
 
 Each cell gives runs passing that assertion, out of 3 per arm. "Coverage" is the assertion
@@ -48,7 +65,7 @@ recommendation.
 | fix-pr closing decisions (fix-pr 6) | coverage of the two main choices | 3/3 | 3/3 |
 | | the other choices left to the user (advisory, merge) also asked, none left as status | 0/3 | 3/3 |
 | fix-pr, long transcript (workspace only) | coverage of the two main choices | 3/3 | 3/3 |
-| | the other choices also asked | 0/3 | 2/3 |
+| | the other choices also asked | 0/3 | 3/3 |
 | implement standalone (implement 17) | coverage | 0/3 | 3/3 |
 | implement branch-only, caller handoff (implement 18) | all obligations returned to the coordinator | 1/3 | 3/3 |
 | implement-spec closing (implement-spec 7) | coverage, in one round | 0/3 | 3/3 |
@@ -57,8 +74,14 @@ recommendation.
 | to-spec decision-free control (to-spec 3) | asks no questions | 2/3 | 3/3 |
 | grilling final report (grilling 5) | independent choices asked, dependent one deferred | 3/3 | 3/3 |
 
-All assertions together: baseline 72/93, candidate 92/93. The aggregator reports pass
-rates of 76.8% and 99.1%. Both arms passed every assertion not shown above, except the
+The table shows the final text. Its fix-pr and conflicts rows come from the repair-round
+runs.
+
+All assertions together, as measured, not as a lift claim:
+
+- **Final text:** baseline 72/93, candidate 93/93.
+- **Initial commit 54101a0:** candidate 92/93; the long fix-pr variant scored 2/3. The
+  aggregator reports pass rates of 76.8% and 99.1% for this iteration. Both arms passed every assertion not shown above, except the
 implement-spec waiting assertion (baseline 2/3, candidate 3/3).
 
 ### What this does and does not show
@@ -121,4 +144,6 @@ The workspace is `/home/minder/.local/state/oh-my-slop/delivery-265-20261008/`. 
 - the blind bundles and grader key
 - per-run `grading.json`, `iteration-1/benchmark.{json,md}` and the static viewer
   `iteration-1/review.html`
+- the repair-round runs and blind grades: `iteration-2/` and `blind-r1/` for the
+  intermediate wording, `iteration-3/` and `blind-r1b/` for the final fix-pr text
 - the failed trigger-run logs

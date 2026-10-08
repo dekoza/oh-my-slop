@@ -12,8 +12,10 @@ questions with recommendations: baseline 3/3, candidate 3/3. **The reported sess
 failure was not reproduced**, including in a long-transcript variant (also 3/3 versus
 3/3). The difference lies in the other choices left to the user. Baseline runs left the
 advisory finding, and sometimes the merge, as status lines in 6/6 runs across both
-variants. Candidate runs asked them as questions in 3/3 short and 2/3 long runs. No
-run merged, edited the PR body or filed a ticket.
+variants. Under the final wording, candidate runs asked them as questions in 3/3 short
+and 3/3 long runs. An intermediate wording that made merging conditional fell to 1/3 and
+was replaced. No run merged, edited the PR body or filed a ticket. Because the reported failure was not
+reproduced, these are measurements awaiting owner direction, not a claimed lift.
 
 ## Committed-candidate repair — #250
 

@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts.validate_refs import find_skill_dir
 from tests.test_skill_requires import declared_requires, split_frontmatter
@@ -54,8 +55,6 @@ def test_fix_pr_asks_non_blocking_follow_ups_and_approvals() -> None:
 
 
 def test_grilling_description_covers_presenting_open_decisions() -> None:
-    import yaml
-
     frontmatter, _ = split_frontmatter(find_skill_dir(SKILLS_DIR, "grilling") / "SKILL.md")
     description = " ".join(yaml.safe_load(frontmatter)["description"].split())
     assert description.startswith(("Use when", "Use whenever"))

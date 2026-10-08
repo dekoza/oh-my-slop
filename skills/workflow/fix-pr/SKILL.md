@@ -30,8 +30,9 @@ while the PR remains conflicted. Leave the PR open; merging it is a separate dec
   user: scope, behavior, ownership or history-policy choices during the repair, and the
   follow-ups, PR-text corrections, approvals and merge choice left at the close, blocking
   or not. Give a recommendation for each and wait for the answer. Resume the authorized
-  repair afterward without asking whether to continue. An answer authorizes only what it
-  names; no merge, follow-up ticket or extra repair is implied.
+  repair afterward without asking whether to continue. Merging stays the user's own
+  action: a yes never lets this skill merge. An answer authorizes only what it names; no
+  follow-up ticket or extra repair is implied.
 - **Bound authority.** Normal publication to the existing PR head follows project policy.
   A published-branch rebase and force push require explicit human permission;
   `--force-with-lease` does not supply it. No PR merge, closure or deployment is implied.
