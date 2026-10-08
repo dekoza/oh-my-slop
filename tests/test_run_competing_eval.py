@@ -30,7 +30,7 @@ Query directives (space-separated words):
   readother        read a file that is not a skill
   garble:<name>    emit that skill's read event as a truncated, malformed JSON line
   nonobject        emit a valid JSON line that is not an event object
-  crash           exit 1 before agent_end
+  crash            exit 1 before agent_end
   noend            exit 0 without agent_end
   stoperror        end the assistant message with stopReason "error"
   ambient          add an extra skill to the catalog the harness did not supply
