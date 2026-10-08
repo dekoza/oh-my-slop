@@ -181,6 +181,29 @@
         "Cites executed candidate-linked checks, permits equivalent outcomes, reports missing CI/baseline/screenshots and external-effect recovery limits honestly.",
         "Writes only authorized local draft artifacts; preserves branch-only publisher ownership and existing committed-candidate/review/repair gates."
       ]
+    },
+    {
+      "id": 17,
+      "prompt": "Response simulation of the completion step of `implement` for ticket #88 in sample/invoices (standalone delivery, Gitea forge). No tools, commands or tracker calls. Write the completion message you send the user now.\n\nState: worktree .worktrees/88-due-dates, branch feat/88-due-dates, base 3c1e0a2, reviewed head 9f4b7d1. The ticket's three requirements are traced: R1 'compute the due date from payment terms' -> invoices/terms.py, tests/test_terms.py::test_net_30; R2 'reject negative terms' -> tests/test_terms.py::test_negative_terms_rejected; R3 'show the due date in the invoice API' -> tests/api/test_invoice_detail.py::test_due_date_field. Full suite 640 passed; typecheck clean. Two-axis review on 3c1e0a2...9f4b7d1: spec 0 findings; standards 0 blocking and 2 advisory: (a) possible Primitive Obsession, payment terms passed as a bare int; (b) `calc()` is a Mysterious Name. PR #91 is open against main with 'Closes #88' (http://forge.example/sample/invoices/pulls/91). The slice needed the term 'grace period', which CONTEXT.md lacks; you used it in identifiers and left CONTEXT.md untouched. You also checked open ticket #90, assigned to another worker, which reads the invoice API response; this slice only adds a field and changes no existing field, and #90 does not read the new one. Repair budget 0 of 2 used. This session started no Docker stacks.",
+      "expected_output": "Report the delivered PR with trace and evidence, then ask the two open human choices (advisory findings, 'grace period' glossary gap) as numbered grilling questions with recommendations; raise no invented #90 decision; wait.",
+      "files": [],
+      "expectations": [
+        "Reports PR #91 (or its URL), base and reviewed head SHAs, checks and both review outcomes, and a requirement trace covering R1-R3.",
+        "Puts BOTH open human choices — what to do with the two advisory standards findings, and whether/how the 'grace period' term should be added to CONTEXT.md by its owner — to the user as numbered questions, each with its own recommendation; neither appears only as a status bullet.",
+        "Raises no approval or blocking-edge question about ticket #90, whose input the slice does not change.",
+        "Does not merge, file follow-up tickets, edit CONTEXT.md or start another ticket, and waits for the user's answers rather than treating its recommendations as accepted."
+      ]
+    },
+    {
+      "id": 18,
+      "prompt": "Response simulation of the handoff step of `implement` in branch-only mode. No tools, commands or tracker calls. The `implement-spec` coordinator, which is your caller and publisher, dispatched you for ticket #41 of spec #40 with base a11c0de, worktree .worktrees/41-retry-policy, branch run40/41-retry-policy and repair limit 2. The human operator talks to the coordinator's session, not to yours. Write your handoff message now.\n\nState: reviewed head 5d2e9b3. Requirements traced: R1 'exponential backoff capped at 30s' -> tests/test_retry.py::test_cap; R2 'jitter is configurable' -> tests/test_retry.py::test_jitter_config. Targeted tests 48 passed; full suite 1,120 passed. Two-axis review on a11c0de...5d2e9b3: 0 blocking, 1 advisory (duplicated delay computation in two call sites). Repair rounds used: 0. During the build you found that ticket #43, not yet dispatched, reads the `RetryPolicy` signature you extended with a `jitter` keyword argument (its default preserves old behaviour): a possible missing blocking edge the coordinator must order. The term 'backoff ceiling' is missing from CONTEXT.md.",
+      "expected_output": "Return the verified slice and its unresolved obligations (#43 overlap, advisory finding, glossary gap) to the coordinator, with evidence and recommendations, without interviewing the human or publishing.",
+      "files": [],
+      "expectations": [
+        "Addresses the handoff to the coordinator/publisher with worktree, branch, base and reviewed head SHAs, check results, both review outcomes and the requirement trace.",
+        "Returns the #43 signature overlap, the advisory finding and the 'backoff ceiling' glossary gap to the coordinator as unresolved obligations with their evidence, rather than putting questions to the human operator directly.",
+        "Does not push, open a PR, comment on or change tracker tickets, or edit CONTEXT.md."
+      ]
     }
   ]
 }

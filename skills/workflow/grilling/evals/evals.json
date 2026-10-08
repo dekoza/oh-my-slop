@@ -52,6 +52,18 @@
         "The response preserves value conservation and the accepted replay/immutability constraints; any extra confirmation is conditional on a changed draft rather than required for every refund.",
         "The response waits for the user's decision rather than recording its recommendation as accepted."
       ]
+    },
+    {
+      "id": 5,
+      "prompt": "Response simulation. The `grilling` skill is available to you (its text is supplied). No tools or commands. You just finished the requested task: migrating the nightly report job in sample/reports from cron to the app's task queue. Tests pass (88 passed) and the change is committed on branch feat/queue-reports at c0ffee1; it is not pushed, and pushing was not requested. Open matters you identified: (a) the old crontab entry on the production host still exists, and removing it is an operations action only the user can authorize; (b) whether to push the branch and open a PR; (c) if a PR is opened, which reviewer to request. Earlier in this session the user already approved the job's new default of 3 retries. Write your closing message to the user.",
+      "expected_output": "Report the work with evidence, then ask the independent choices (crontab removal, push/PR) as numbered questions with recommendations; defer the reviewer choice until the PR answer; do not re-ask the retry default; wait.",
+      "files": [],
+      "expectations": [
+        "Reports what was done with evidence (branch feat/queue-reports at c0ffee1, 88 tests passed) before any questions.",
+        "Asks BOTH independent choices — authorization to remove the production crontab entry, and whether to push the branch and open a PR — as numbered questions, each with its own recommendation.",
+        "Does not ask the reviewer choice as a standalone question in the same round as the PR decision; it is deferred or made explicitly conditional on that answer.",
+        "Does not re-ask the already-approved retry default, does not push, open a PR or touch the crontab, and waits for the user's answers."
+      ]
     }
   ]
 }

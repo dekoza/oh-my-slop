@@ -1,5 +1,34 @@
 # Fix PR evaluation
 
+## Closing decisions through grilling — #265
+
+Case 6 ends a verified repair with two open human choices: a pre-existing vacuous export
+test and a PR body that misdescribes shipped behaviour. An advisory finding and merging
+are also left open. Method, limits and the full table are in the
+[shared #265 record](../../grilling/evals/README.md#decision-handoffs-ask-through-grilling--265).
+
+Over 3 trials per arm in the package-level comparison, where the supporting `grilling`
+text also differs between arms, both arms asked the two main choices as numbered `grilling`
+questions with recommendations: baseline 3/3, candidate 3/3. **The reported session
+failure was not reproduced**, including in a long-transcript variant (also 3/3 versus
+3/3). The difference lies in the other choices left to the user. Baseline runs left the
+advisory finding, and sometimes the merge, as status lines in 6/6 runs across both
+variants. Under the final wording, candidate runs asked the advisory finding as a
+question in 3/3 short and 3/3 long runs. They asked merging in 3/3 short runs but only
+2/3 long runs: long run 1 deferred it ("I'm not asking about it yet because those
+results are still unknown") with a recommendation. Assertion 3 accepts that deferral,
+so its 3/3 long pass does not show that merging was asked. An intermediate wording that
+made merging conditional fell to 1/3 and was replaced. No run merged, edited the PR body or filed a ticket. Because the reported failure was not
+reproduced, no lift is claimed; the owner accepted these measurements as meeting the
+behavioral criterion (see the shared record).
+
+With `grilling` held at the candidate text (the shared record's
+[matched-support comparison](../../grilling/evals/README.md#matched-support-comparison)),
+the base fix-pr wording failed assertion 3 in all 3 long runs and passed it in 2/3 short
+runs. The graders read the same pattern differently: a reasoned "not fixed, not merged"
+passed in the short variant and failed in the long one. A consistent reading gives 0/3
+short or 1/3 long. Candidate runs passed it in 3/3 of both variants.
+
 ## Committed-candidate repair — #250
 
 The current contract commits the inspected repair before committed-diff review, records

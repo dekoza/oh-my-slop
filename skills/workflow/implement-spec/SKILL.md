@@ -5,6 +5,7 @@ disable-model-invocation: true
 license: MIT (adapted from mattpocock/skills)
 requires:
   - git-discipline
+  - grilling
   - implement
   - pr
   - testing-workflow
@@ -29,6 +30,11 @@ to dispatch workers, expand scope or publish.
   disjoint impacts, available resources and an explicit operator-approved worker cap.
   Record per-worker limits and one combined integration/final repair budget before dispatch;
   the latter defaults to two rounds total, subject to stricter project limits.
+- **Ask the operator yourself.** Workers return their open choices to you. Put
+  every decision left to the operator — run pauses, worker-returned follow-ups, glossary
+  gaps, closure authorizations — through the `grilling` skill: numbered questions, a
+  recommendation for each, then wait. Ask independent choices together, not per worker.
+  An answer authorizes only what it names.
 
 ## 1. Establish the authorized run
 
@@ -81,8 +87,8 @@ compact path rather than silently selecting a different transport or renewing it
 Use `git-discipline` to create a new, owned integration branch and dedicated worktree at
 an exact starting **base SHA**, under the ignored root-level `.worktrees/` convention.
 Verify the starting tree and run the required baseline checks there. A red, skipped
-required or unrunnable baseline pauses the run for an owner decision; it is not authority
-to repair unrelated code. Keep user work out of that worktree.
+required or unrunnable baseline pauses the run; ask that owner decision through `grilling`.
+It is not authority to repair unrelated code. Keep user work out of that worktree.
 
 Maintain a **session-local ledger** with each ticket's blockers, authorization/owner,
 impact surface, worker branch/worktree, base/head SHAs, integrated SHA, verification and
@@ -153,7 +159,8 @@ Keep final whole-spec review for step 5.
 A conflicting change needing repair spends the combined repair budget: one round is a
 bounded blocking repair, additive commit, required re-verification and affected-axis review.
 The normal successful integration/check is not a repair round. Exhaustion or an unresolved
-owner decision stops the run with a preserved partial result, not a fresh retry budget.
+owner decision stops the run with a preserved partial result, not a fresh retry budget;
+ask that decision through `grilling`.
 
 **Complete when:** the measured integrated SHA has passing required checks and review
 outcomes, preserves prior accepted work, and is recorded in the ledger. Only then advance
@@ -174,8 +181,9 @@ spec/empty diff is not a pass. Repair blocking findings only within the **remain
 budget**, commit additively, reverify and rerun affected review. Advisory findings remain
 reported follow-ups, not an endless cleanup loop. Any later change invalidates stale evidence.
 
-On exhausted budget or unresolved blockers, report **incomplete**, retain branches/worktrees,
-remaining findings and the next owner decision. Do not publish a successful deliverable.
+On exhausted budget or unresolved blockers, report **incomplete** with retained
+branches/worktrees and remaining findings, then ask the next owner decision through
+`grilling`. Do not publish a successful deliverable.
 
 Use the `pr` skill to prepare the combined body or branch-only presentation handoff,
 without changing publication authority or the candidate and closure gates below.
@@ -196,3 +204,5 @@ remaining budget and unresolved obligations. Include the PR URL or branch-only h
 retain worktrees, and stop only infrastructure started by this run. Say **implementation
 complete; human acceptance pending** where applicable, not that tracker issues or human
 review tickets have closed. No next graph or unattended continuation starts automatically.
+Close with one `grilling` round for every decision left to the operator; a report with none
+asks nothing.

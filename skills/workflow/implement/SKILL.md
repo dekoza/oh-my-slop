@@ -10,6 +10,7 @@ requires:
   - construction-craft
   - domain-modeling
   - git-discipline
+  - grilling
   - pr
   - review-spec
   - review-standards
@@ -62,7 +63,7 @@ In branch-only mode, do not push, open a PR, close tickets or merge into the int
 
 Before building, record the caller's repair limit; otherwise use a repair budget of **two rounds**, subject to stricter project limits. One round means fixing the current blocking findings, committing the repair, rerunning affected checks and obtaining affected-axis re-review. The initial review does not spend a round. Advisory findings are reported, not compulsory cleanup.
 
-When the budget is exhausted with blockers still open, or a consequential decision is unresolved, **stop and report** the preserved partial result, remaining findings and next owner decision. Additional repair needs explicit owner authorization within project limits; do not publish the partial result as successful or start another ticket.
+When the budget is exhausted with blockers still open, or a consequential decision is unresolved, **stop and report** the preserved partial result and remaining findings, then route the next owner decision as **Completion** describes: ask the human through `grilling`, or return it to the caller. Additional repair needs explicit owner authorization within project limits; do not publish the partial result as successful or start another ticket.
 
 ## Scope: one ticket per session
 
@@ -153,3 +154,5 @@ Build the trace by re-reading the ticket and every source it references, not fro
 ## Completion
 
 The invocation is complete when this one ticket-sized slice meets its acceptance criteria, affected checks pass under the project's test policy, both review axes have completed with no blocking finding left open, and the committed head and requirement trace are reported. In standalone mode, its PR is open and reported by URL (or, on a forge-less repo, the branch is pushed if a remote exists and named). In branch-only mode, the verified handoff above is delivered to its publisher without a push or tracker mutation. A required acceptance test skipped for missing prerequisites leaves the slice incomplete; supply an authorized isolated prerequisite or report the coverage gap, never verify different code in the primary checkout. Every Docker stack this session started is down. No other frontier ticket has been started.
+
+**Ask what is left to decide.** When this session reports to the human, close the report — complete or stopped — with one round of the `grilling` skill covering every decision left to them, blocking or not: advisory-finding follow-ups, glossary gaps, the next owner decision. Give a recommendation for each and wait; a report with nothing left to decide asks nothing. In branch-only mode, or whenever a caller coordinates this run, return those choices and their evidence to the caller instead; the session that finally asks the human uses `grilling`. An answer authorizes only what it names, never extra repair, publication, a follow-up ticket or a merge.

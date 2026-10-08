@@ -26,9 +26,13 @@ while the PR remains conflicted. Leave the PR open; merging it is a separate dec
   concurrent claims and unrelated changes. Stage only inspected repair files, never
   another session's work. Do not reset, clean, delete a worktree or rewrite published
   history to make the repair convenient.
-- **Keep decisions human.** Use the `grilling` skill for consequential scope, behavior,
-  ownership or history-policy decisions; give recommendations and wait for the answer.
-  Resume the authorized repair afterward without asking whether to continue.
+- **Keep decisions human.** Use the `grilling` skill for every decision you put to the
+  user: scope, behavior, ownership or history-policy choices during the repair, and the
+  follow-ups, PR-text corrections, approvals and merge choice left at the close, blocking
+  or not. Give a recommendation for each and wait for the answer. Resume the authorized
+  repair afterward without asking whether to continue. Merging stays the user's own
+  action: a yes never lets this skill merge. An answer authorizes only what it names; no
+  follow-up ticket or extra repair is implied.
 - **Bound authority.** Normal publication to the existing PR head follows project policy.
   A published-branch rebase and force push require explicit human permission;
   `--force-with-lease` does not supply it. No PR merge, closure or deployment is implied.
@@ -36,7 +40,8 @@ while the PR remains conflicted. Leave the PR open; merging it is a separate dec
   stricter project limits. A round fixes current blocking findings, commits the repair,
   reruns affected checks and obtains affected-axis review; initial review spends none.
   Report advisory findings rather than expand the repair. If blockers remain when the
-  budget is exhausted, stop and report preserved state and the next owner decision.
+  budget is exhausted, stop and report preserved state, then ask the next owner decision
+  through `grilling`.
 
 ## 1. Bind the PR and repair scope
 
@@ -125,7 +130,8 @@ that record too. Unknown mergeability is unverified, not a claim that conflicts 
 is conflict-free, required local checks and repair review passed, and the published record
 matches the observed head. Report the PR URL and remaining CI/review status. If blocked,
 report the exact outstanding finding, conflict, authority or verification with its owner and
-next action; do not call the repair complete or merge the PR.
+next action; do not call the repair complete or merge the PR. Close the report with one
+`grilling` round for every decision left to the user; a report with none asks nothing.
 
 Regression scenarios: [evals/evals.json](evals/evals.json).
 Evidence and limits: [evals/README.md](evals/README.md).

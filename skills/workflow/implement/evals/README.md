@@ -74,3 +74,26 @@ actually commits, tests or publishes correctly. Dry-run answers likewise establi
 proposed actions only. No paid external model sessions, forge writes or Cleopatra milestone
 execution were performed. Actual worker and combined-run behavior still needs the
 bounded pilot described in the coordinator's eval notes.
+
+## Closing decisions through grilling — #265
+
+Case 17 ends a standalone delivery with two open human choices: what to do with two
+advisory findings, and a glossary gap. Case 18 is the branch-only control: the same kinds
+of obligations go to the coordinator, not the human. Method, limits and the full table are
+in the [shared #265 record](../../grilling/evals/README.md#decision-handoffs-ask-through-grilling--265).
+
+Over 3 trials per arm in the package-level comparison, where the supporting `grilling`
+text also differs between arms:
+
+- **Case 17.** Baseline asked both choices as numbered questions with recommendations in
+  0/3 runs. It listed them as status. The candidate did so in 3/3 runs.
+- **Case 18.** Baseline returned every obligation to the coordinator in 1/3 runs; two runs
+  mentioned the advisory finding only in the review section. The candidate did so in 3/3
+  runs. No run in either arm questioned the human directly or published anything.
+
+With `grilling` held at the candidate text (the shared record's
+[matched-support comparison](../../grilling/evals/README.md#matched-support-comparison)),
+the base wording scored 0/3 on case 17 and 0/3 on case 18.
+
+These figures are measurements, not a claimed lift; the owner accepted them as meeting
+the behavioral criterion. The shared record explains why.
