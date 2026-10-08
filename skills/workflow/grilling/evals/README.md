@@ -51,13 +51,13 @@ or approvals, including in a final report. Its body is unchanged.
   neutral labels, and arm names and paths were withheld. The graders are Claude subagents
   of the session that wrote the change.
 
-### Status: behavioral criterion pending owner direction
+### Status: criterion accepted by the owner, no lift claimed
 
 The #265 brief requires owner direction before any behavioral lift is claimed if the
 original fix-pr failure stays unreproduced. That failure was not reproduced (see below).
-The figures that follow are measurements recorded for that decision. Neither they nor
-this change claim lift or treat the behavioral acceptance criterion as met. The owner
-decides whether this evidence satisfies the criterion.
+On 2026-10-08 the owner accepted the package-level and matched-support evidence as
+meeting the behavioral acceptance criterion, worded as measured differences. No lift is
+claimed: several differences are one run in 3.
 
 ### Results
 
@@ -135,8 +135,8 @@ Cells give runs passing the key assertion, out of 3.
 All assertions over these 8 scenarios: package baseline 60/81, matched support 68/81,
 candidate 81/81. Every other assertion passed in all matched runs.
 
-These are measured run differences, not a lift claim; they await the same owner direction
-as the package-level results.
+These are measured run differences, not a lift claim; the owner's acceptance under
+[Status](#status-criterion-accepted-by-the-owner-no-lift-claimed) covers them.
 
 - **Matched support versus candidate** (`grilling` held fixed, only the workflow text
   differs): the candidate scored higher in every scenario except conflicts, where both
@@ -144,17 +144,21 @@ as the package-level results.
   one run in 3.
 - **Package baseline versus matched support** (only the `grilling` text differs): matched
   support scored higher on conflicts (1/3 to 3/3), implement-spec 7 and to-spec 2 (0/3 to
-  2/3 each), and the fix-pr short secondary choices (0/3 to 2/3). It showed no difference
+  2/3 each), and the fix-pr short secondary choices (0/3 to 2/3, but see the grading
+  note below). It showed no difference
   on implement 17, the long fix-pr secondary choices or to-spec 3, and scored 0/3 against
   1/3 on implement 18. This pair was graded in different rounds by different graders:
   the baseline in the earlier blind rounds, matched support in a later round under a
-  written brief. Only the matched-support and candidate runs share a grading round.
-- **Assertion scope.** In the fix-pr short scenario, two matched runs passed the "other
-  choices" assertion although neither asked about merging or `_jr`. Each said it would
-  not merge and settled `_jr` itself with a reason, so neither left that choice to the
-  user. The assertion covers only choices left to the user, as noted under
-  [Results](#results). Counting those two runs as failures gives that cell 0/3 and the arm
-  66/81.
+  written brief. Matched support shares a grading round only with the candidate runs.
+- **Grading note: the fix-pr "other choices" cells are graded inconsistently.** In the
+  short scenario, two matched runs passed assertion 3 although neither asked about
+  merging or `_jr`. Each said it had not merged and gave a reason for leaving `_jr`
+  unfixed. The long-transcript grader failed matched run 2, which does the same ("It is
+  advisory, so I did not fix it"; "I have not merged the PR"). The assertion covers only
+  choices left to the user, as noted under [Results](#results), and the two graders read
+  that differently. A consistent strict reading gives the short cell 0/3 and the arm
+  66/81. A consistent lenient reading gives the long cell 1/3 and the arm 69/81. The
+  candidate scores 3/3 in both cells under either reading.
 - The matched runs ran later than the candidate runs, on the same runner and model. The
   limits below apply equally.
 

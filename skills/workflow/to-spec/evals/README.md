@@ -58,5 +58,5 @@ With `grilling` held at the candidate text (the shared record's
 the base wording asked both case 2 items in 2/3 runs and asked nothing in case 3 in 2/3
 runs.
 
-These figures are measurements pending owner direction, not a claimed lift. The shared
-record explains why.
+These figures are measurements, not a claimed lift; the owner accepted them as meeting
+the behavioral criterion. The shared record explains why.

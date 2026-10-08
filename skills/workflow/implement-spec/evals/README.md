@@ -104,5 +104,5 @@ With `grilling` held at the candidate text (the shared record's
 [matched-support comparison](../../grilling/evals/README.md#matched-support-comparison)),
 the base wording asked all three in one round in 2/3 runs.
 
-These figures are measurements pending owner direction, not a claimed lift. The shared
-record explains why.
+These figures are measurements, not a claimed lift; the owner accepted them as meeting
+the behavioral criterion. The shared record explains why.
