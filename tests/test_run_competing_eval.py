@@ -249,3 +249,110 @@ def test_unrequested_catalog_entry_or_context_makes_the_run_an_error(
     assert reason in record["error"]
     # The evidence is kept, but it is not a selection.
     assert record["consultations"] == ["grilling"]
+
+
+@pytest.mark.parametrize(
+    ("query", "reason"),
+    [
+        ("crash", "exited 1"),
+        ("noend", "no agent_end"),
+        ("stoperror", "stopReason error"),
+    ],
+)
+def test_unfinished_run_is_an_error_with_its_raw_output_kept(
+    fake_pi, catalog, tmp_path, query, reason
+):
+    results = run(fake_pi, catalog, tmp_path, [{"query": query, "expected": None}])
+
+    record = only_run(results)
+    assert record["status"] == "error"
+    assert reason in record["error"]
+    log = json.loads(Path(record["log"]).read_text())
+    assert "stdout" in log and "stderr" in log
+
+
+def test_timed_out_run_is_an_error_not_a_crash_of_the_whole_evaluation(
+    fake_pi, catalog, tmp_path
+):
+    slow = fake_pi.parent / "slow-pi"
+    slow.write_text("#!/bin/sh\nsleep 5\n", encoding="utf-8")
+    slow.chmod(0o755)
+
+    results = rce.run_competition(
+        eval_set=[{"query": "plain", "expected": None}],
+        competitors=catalog["competitors"],
+        arms=catalog["arms"],
+        model="fake/model",
+        thinking="high",
+        runs_per_query=1,
+        out_dir=tmp_path / "out",
+        pi=str(slow),
+        timeout=1,
+    )
+
+    record = only_run(results)
+    assert record["status"] == "error"
+    assert "timed out" in record["error"]
+
+
+def summary_row(results: dict, arm: str, index: int = 0) -> dict:
+    return results["arms"][arm]["queries"][index]["summary"]
+
+
+def test_owner_winning_first_passes_even_when_the_target_is_consulted_afterwards(
+    fake_pi, catalog, tmp_path
+):
+    results = run(
+        fake_pi, catalog, tmp_path,
+        [{"query": "read:prototype read:grilling", "expected": "prototype"}],
+        runs=3,
+    )
+
+    row = summary_row(results, "current")
+    assert row["completed"] == 3
+    assert row["first"] == {"prototype": 3}
+    assert row["expected_first"] == 3
+    assert row["target_first"] == 0
+    assert row["target_consulted"] == 3
+    assert row["multiple"] == 3
+    assert row["pass"] is True
+
+
+def test_target_read_first_on_another_skills_query_counts_as_taken(fake_pi, catalog, tmp_path):
+    results = run(
+        fake_pi, catalog, tmp_path,
+        [{"query": "read:grilling read:prototype", "expected": "prototype"}],
+        runs=3,
+    )
+
+    row = summary_row(results, "base")
+    assert row["first"] == {"grilling": 3}
+    assert row["expected_first"] == 0
+    assert row["target_first"] == 3
+    assert row["pass"] is False
+
+
+def test_no_selection_passes_only_where_no_skill_is_expected(fake_pi, catalog, tmp_path):
+    results = run(
+        fake_pi, catalog, tmp_path,
+        [{"query": "plain", "expected": None}, {"query": "plain again", "expected": "grilling"}],
+    )
+
+    assert summary_row(results, "current", 0)["first"] == {"(none)": 1}
+    assert summary_row(results, "current", 0)["pass"] is True
+    assert summary_row(results, "current", 1)["pass"] is False
+
+
+def test_errored_runs_leave_the_query_incomplete_instead_of_failing_it(
+    fake_pi, catalog, tmp_path
+):
+    results = run(fake_pi, catalog, tmp_path, [{"query": "crash", "expected": None}], runs=2)
+
+    row = summary_row(results, "current")
+    assert row["completed"] == 0
+    assert row["errors"] == 2
+    assert row["first"] == {}
+    assert row["pass"] is None
+    totals = results["arms"]["current"]["totals"]
+    assert totals == {"queries": 1, "passed": 0, "failed": 0, "incomplete": 1, "runs": 2,
+                      "errors": 2}

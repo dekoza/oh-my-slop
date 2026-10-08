@@ -19,6 +19,7 @@ import json
 import re
 import subprocess
 import tempfile
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -34,6 +35,7 @@ SKILL_ENTRY = re.compile(
 )
 # pi 1.1.0's system prompt sections with context files, extensions and templates off.
 SYSTEM_SECTIONS = {"preamble", "tools", "rules", "docs", "skills", "cwd"}
+NO_SELECTION = "(none)"
 
 
 def normalize(text: str) -> str:
@@ -96,6 +98,27 @@ def exposed_system_prompt(events: list[dict]) -> tuple[list[str], list[dict]]:
     return [], []
 
 
+def as_text(output: str | bytes | None) -> str:
+    """TimeoutExpired carries bytes even when the run was in text mode."""
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace")
+    return output or ""
+
+
+def completion_error(rc: int, events: list[dict]) -> str | None:
+    """Why a pi run did not finish cleanly, or None."""
+    if rc != 0:
+        return f"pi exited {rc}"
+    if not any(event.get("type") == "agent_end" for event in events):
+        return "pi produced no agent_end event"
+    for event in events:
+        message = event.get("message") or {}
+        if (event.get("type") == "message_end" and message.get("role") == "assistant"
+                and message.get("stopReason") in {"error", "aborted"}):
+            return f"assistant message ended with stopReason {message['stopReason']}"
+    return None
+
+
 def exposure_error(sections: list[str], exposed: list[dict], catalog: dict[str, str],
                    stubs: dict[str, Path]) -> str | None:
     """Why the exposed prompt differs from the requested catalog, or None."""
@@ -142,20 +165,27 @@ def run_query(pi: str, catalog: dict[str, str], model: str, thinking: str, query
             stubs[name] = stub_dir / "SKILL.md"
             stubs[name].write_text(build_stub(name, description), encoding="utf-8")
         cmd = build_command(pi, [p.parent for p in stubs.values()], model, thinking, query)
-        result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
-        log.write_text(json.dumps({"cmd": cmd, "rc": result.returncode, "stdout": result.stdout,
-                                   "stderr": result.stderr}) + "\n", encoding="utf-8")
-        sections, exposed = exposed_system_prompt(parse_events(result.stdout))
-        error = exposure_error(sections, exposed, catalog, stubs)
+        try:
+            result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+            rc, stdout, stderr = result.returncode, result.stdout, result.stderr
+        except subprocess.TimeoutExpired as exc:
+            rc, stdout, stderr = None, as_text(exc.stdout), as_text(exc.stderr)
+        log.write_text(json.dumps({"cmd": cmd, "rc": rc, "stdout": stdout, "stderr": stderr})
+                       + "\n", encoding="utf-8")
+        events = parse_events(stdout)
+        sections, exposed = exposed_system_prompt(events)
+        error = (f"pi timed out after {timeout}s" if rc is None else completion_error(rc, events)
+                 or exposure_error(sections, exposed, catalog, stubs))
         record = {"status": "error" if error else "complete", "error": error, "log": str(log),
                   "system_sections": sections, "exposed_catalog": exposed}
-        record.update(attribute(result.stdout, stubs, cwd))
+        record.update(attribute(stdout, stubs, cwd))
         return record
 
 
 def run_competition(eval_set: list[dict], competitors: list[Path], arms: dict[str, Path],
                     model: str, thinking: str, runs_per_query: int, out_dir: Path,
-                    pi: str = "pi", num_workers: int = 4, timeout: int = 300) -> dict:
+                    pi: str = "pi", num_workers: int = 4, timeout: int = 300,
+                    threshold: float = 0.5) -> dict:
     shared = dict(load_skill(path) for path in competitors)
     catalogs = {}
     for arm, path in arms.items():
@@ -172,10 +202,42 @@ def run_competition(eval_set: list[dict], competitors: list[Path], arms: dict[st
     with ThreadPoolExecutor(max_workers=num_workers) as pool:
         records = dict(pool.map(work, jobs))
     results = {"arms": {}}
-    for arm in arms:
+    for arm, path in arms.items():
+        target = load_skill(path)[0]
         rows = []
         for i, item in enumerate(eval_set):
             runs = [records[(arm, i, r)] for r in range(runs_per_query)]
-            rows.append({"query": item["query"], "expected": item["expected"], "runs": runs})
-        results["arms"][arm] = {"catalog": catalogs[arm], "queries": rows}
+            rows.append({"query": item["query"], "expected": item["expected"], "runs": runs,
+                         "summary": summarize(runs, item["expected"], target, threshold)})
+        summaries = [row["summary"] for row in rows]
+        totals = {
+            "queries": len(rows),
+            "passed": sum(s["pass"] is True for s in summaries),
+            "failed": sum(s["pass"] is False for s in summaries),
+            "incomplete": sum(s["pass"] is None for s in summaries),
+            "runs": len(rows) * runs_per_query,
+            "errors": sum(s["errors"] for s in summaries),
+        }
+        results["arms"][arm] = {"target": target, "catalog": catalogs[arm], "queries": rows,
+                                "totals": totals}
     return results
+
+
+def summarize(runs: list[dict], expected: str | None, target: str, threshold: float) -> dict:
+    """Per-query selection counts; a query with any errored run gets no verdict."""
+    complete = [run for run in runs if run["status"] == "complete"]
+    first = Counter(run["first"] or NO_SELECTION for run in complete)
+    expected_first = sum(run["first"] == expected for run in complete)
+    verdict = None
+    if complete and len(complete) == len(runs):
+        verdict = expected_first / len(complete) >= threshold
+    return {
+        "completed": len(complete),
+        "errors": len(runs) - len(complete),
+        "first": dict(first.most_common()),
+        "expected_first": expected_first,
+        "target_first": sum(run["first"] == target for run in complete),
+        "target_consulted": sum(target in run["consultations"] for run in complete),
+        "multiple": sum(run["outcome"] == "multiple" for run in complete),
+        "pass": verdict,
+    }
