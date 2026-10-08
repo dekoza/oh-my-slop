@@ -349,7 +349,24 @@ description, `grilling` was often read *second*, after the owning skill. See
   seed 42) over [trigger-evals.json](trigger-evals.json), whose bytes match the #265 frozen
   copy. Each query names its owning skill, or `null` for the decision-free control.
 - **Route.** pi 1.1.0, `openai-codex/gpt-6.1-sol`, thinking high, as in #265.
-- **Runs.** 3 per query per arm, 60 in total, no retries, threshold 0.5.
+- **Runs.** 3 per query per arm, 60 in total, no retries, threshold 0.5, 4 parallel workers,
+  300 s timeout per run.
+
+`grilling` descriptions compared, verbatim as pi exposed them:
+
+- Base: "Use when the user wants a plan, decision, or idea sharpened through questioning
+  before acting on it, or when another skill needs the interview primitive. Triggers on:
+  "grill me", "grill this plan", "stress-test this design with questions", "interview me
+  about this"."
+- Current: "Use when the user wants a plan, decision, or idea sharpened through questioning
+  before acting on it, when another skill needs the interview primitive, or whenever the
+  agent presents open decisions, options, or approvals to the user, including follow-ups at
+  the end of a final report. Triggers on: "grill me", "grill this plan", "stress-test this
+  design with questions", "interview me about this", "what's left for me to decide?",
+  "anything you need me to approve?"."
+
+The competitors' exact descriptions are recorded per arm under `catalog` in
+`run-1/results.json`.
 
 ### Results
 
