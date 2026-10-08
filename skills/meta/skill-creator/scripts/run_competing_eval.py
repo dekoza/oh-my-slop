@@ -307,10 +307,10 @@ def main(argv: list[str] | None = None) -> None:
         "timeout": args.timeout,
         "pi_version": pi_version(args.pi),
         "harness_sha256": sha256(Path(__file__)),
-        "eval_set": str(args.eval_set),
+        "eval_set": str(args.eval_set.resolve()),
         "eval_set_sha256": sha256(args.eval_set),
-        "competitors": [str(path) for path in args.competitor],
-        "arms": {label: str(path) for label, path in args.arm},
+        "competitors": [str(path.resolve()) for path in args.competitor],
+        "arms": {label: str(path.resolve()) for label, path in args.arm},
     }
     results = {"settings": settings, **results}
     (args.out / "results.json").write_text(
