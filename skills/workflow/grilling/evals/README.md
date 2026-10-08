@@ -65,9 +65,9 @@ recommendation.
 | Scenario (skill eval id) | Key assertion | Baseline | Candidate |
 | --- | --- | --- | --- |
 | fix-pr closing decisions (fix-pr 6) | coverage of the two main choices | 3/3 | 3/3 |
-| | the other choices left to the user (advisory, merge) also asked, none left as status | 0/3 | 3/3 |
+| | the other choices left to the user (advisory, merge) asked or explicitly deferred, none left as status | 0/3 | 3/3 |
 | fix-pr, long transcript (workspace only) | coverage of the two main choices | 3/3 | 3/3 |
-| | the other choices also asked | 0/3 | 3/3 |
+| | the other choices asked or explicitly deferred | 0/3 | 3/3 |
 | implement standalone (implement 17) | coverage | 0/3 | 3/3 |
 | implement branch-only, caller handoff (implement 18) | all obligations returned to the coordinator | 1/3 | 3/3 |
 | implement-spec closing (implement-spec 7) | coverage, in one round | 0/3 | 3/3 |
@@ -79,6 +79,11 @@ recommendation.
 The table shows the final text. Its fix-pr and conflicts rows come from the repair-round
 runs.
 
+The fix-pr "other choices" rows count assertion passes, not questions. The candidate
+asked the advisory finding in all 6 runs. It asked merging in 3/3 short runs and 2/3
+long runs; long run 1 deferred merging with a recommendation until CI and a rerun
+finished, and the assertion accepts that deferral.
+
 All assertions together, as measured, not as a lift claim:
 
 - **Final text:** baseline 72/93, candidate 93/93.
@@ -88,10 +93,12 @@ All assertions together, as measured, not as a lift claim:
 Under both texts, both arms passed every assertion not shown in the table, except the
 implement-spec waiting assertion (baseline 2/3, candidate 3/3).
 
-**Known eval gap.** fix-pr case 6 assertion 3 was frozen before the repair. It accepts
-merging "if raised" or marked as not needing a decision now. The final fix-pr rule is
-stricter: it always asks the merge choice. So this assertion does not check that part of
-the final rule. The assertion was left unchanged because its runs are already graded.
+**Assertion scope.** fix-pr case 6 assertion 3 was frozen before the repair. It accepts
+merging "if raised" or marked as not needing a decision now. The final fix-pr rule puts
+the merge choice left at the close through `grilling`, whose frontier lets a choice that
+depends on pending results be deferred explicitly. So a pass shows that merging was not
+left as bare status, not that it was asked. The assertion was left unchanged because its
+runs are already graded.
 
 ### What this does and does not show
 
