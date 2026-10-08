@@ -204,9 +204,11 @@ Reading:
 The owner authorized one extra round to remove it, then re-run the same split, route
 and harness (60 runs; `triggers/pi-codex-r3/`).
 
+- The tested clause read "presents open decisions or approvals to the user, including
+  follow-ups at the end of a final report".
 - With the word removed, the result was the same: candidate 6/10, base 5/10, with
-  identical cells, and "mock up" still fired 3/3. The hypothesis is falsified, and the
-  cause of the regression is unknown.
+  identical cells, and "mock up" still fired 3/3. For this model and harness the
+  hypothesis is falsified, and the cause of the regression is unknown.
 - The owner then chose to keep the committed description, "options" included. The
   removal had no measured effect, and keeping the wording keeps the behavioral-eval
   prompts byte-identical to the shipped text.
