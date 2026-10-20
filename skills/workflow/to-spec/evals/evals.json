@@ -34,6 +34,39 @@
         "Asks no decision or approval questions (no grilling round, no request to reconfirm publication, readiness or implementation), because every decision and grant is already settled.",
         "Does not start ticket production or implementation."
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "Proposed-action simulation of to-spec for sample/controller. No tools, tracker calls, edits or invented receipts. Return the exact proposed publication actions and closing message, not the full spec. The spec's design decisions, exclusions, acceptance conditions and testing seam are confirmed and recorded; no requirements decision or maintainer evaluation remains. The spec is not an implementation ticket. The configured agent work tracker requires a new issue for a spec. Its available state roles are needs-triage (maintainer needs to evaluate the issue), needs-info (waiting for reporter information), ready-for-agent (fully specified and authorized for agent implementation), ready-for-human (human implementation), and wontfix (will not be actioned). No configured convention requires every spec to carry a state label. The owner grants: publish this spec and its authority record, link it from map #82, and read the result back. Implementation, ticket production and readiness transitions have not been authorized. Recommend the appropriate publication effects and stop there.",
+      "expected_output": "Publish the owner-confirmed parent spec and authority record without adding any fallback triage/readiness state; retain separate implementation authority and do not reopen settled decisions.",
+      "files": [],
+      "expectations": [
+        "Proposes publication and readback of the spec/authority plus a link from map #82, without claiming these simulated writes happened.",
+        "Proposes no needs-triage, needs-info, ready-for-agent, ready-for-human or other fallback state label merely because publication is not implementation approval.",
+        "Treats settled requirements as settled; does not ask to re-triage them, solicit readiness approval unprompted, or start ticket production/implementation."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Proposed-action simulation of to-spec for sample/controller #84. No tools or real writes. Return exact proposed recording actions and the closing message. Every design decision is settled and the spec is sufficient for its parent-spec purpose. The existing issue #84 carries needs-info and enhancement labels from an earlier reporter exchange; its body contains unrelated concurrent edits. The configured label mapping defines needs-info as waiting on reporter information, needs-triage as maintainer evaluation, and ready-for-agent as authorized agent implementation. The owner grants only updating the spec body and authority record in #84 and reading it back, preserving unrelated content. No label or other state transition has been authorized. Choose the publication behavior.",
+      "expected_output": "Update/read back the approved content while preserving unrelated edits and existing labels; identify that publication alone does not authorize cleanup or substitution of stale states.",
+      "files": [],
+      "expectations": [
+        "Limits proposed writes to the approved body/authority update and preserves unrelated concurrent content.",
+        "Preserves existing needs-info and enhancement labels: does not add a fallback state, replace needs-info with needs-triage, or silently remove the stale label.",
+        "Separates content publication from state-change authority without inventing implementation permission or asking to reapprove the publication grant."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Proposed-action simulation of to-spec for sample/controller #85. No tools or real writes. Return exact proposed recording actions and closing questions. The user has not chosen whether disabled enrollments are retained for 7 or 30 days. Record that as an unresolved user-owned decision, not an invented retention policy. The configured needs-triage role means maintainer evaluation is required. The maintainer has not evaluated this proposal and explicitly grants: publish this candidate spec to a new issue, label it needs-triage for that evaluation, read back the content, authority and label, and ask me the retention question. No implementation or readiness approval is granted.",
+      "expected_output": "Honor the meaningful, explicitly authorized needs-triage transition and ask the actual unresolved retention decision; do not generalize unlabeled publication into a blanket ban on triage states.",
+      "files": [],
+      "expectations": [
+        "Proposes needs-triage for the explicitly pending maintainer evaluation under the owner's grant, with readback of content/authority/label.",
+        "Preserves retention as unresolved and asks its numbered decision question with a recommendation rather than silently choosing 7 or 30 days.",
+        "Does not infer implementation or ready-for-agent authorization and does not claim simulated writes were executed."
+      ]
     }
   ]
 }

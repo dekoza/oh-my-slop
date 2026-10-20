@@ -60,3 +60,31 @@ runs.
 
 These figures are measurements, not a claimed lift; the owner accepted them as meeting
 the behavioral criterion. The shared record explains why.
+
+## Publication-only state labels
+
+Cases 4–6 cover the state-selection mistake observed while publishing the spec for
+Book Nukem map #994: withholding implementation approval was incorrectly treated as
+a reason to recommend `needs-triage`, although no maintainer evaluation was pending.
+The owner authorized clarifying the skill and extending these evaluations.
+
+- **Case 4:** publish a settled new parent spec without a fallback triage/readiness state.
+- **Case 5:** preserve existing labels when only content publication is authorized;
+  recognizing a stale label does not grant permission to remove or replace it.
+- **Case 6:** honor meaningful, explicitly authorized `needs-triage` for actual pending
+  maintainer evaluation; unlabeled publication is not a blanket ban on state changes.
+
+These are proposed-action simulations, not tracker writes or operational proof.
+Prompts and assertions were frozen before the wording change. A single baseline
+executor handled all six cases in one shared context and already chose the intended
+behavior in cases 4–6. The session incident supports the small clarification, but
+these baseline results do not reproduce it or establish measured improvement.
+
+The original and final snapshots were evaluated using the same six prompts, model
+and reasoning settings, with one executor per configuration and six cases sharing
+each executor's context. Independent grading found **19/19 assertions passing in
+both configurations**, with no observed regression or measured lift. Shared context
+and one run do not establish reliability; group timing/tokens cannot be apportioned
+to individual cases. The unchanged user-invoked description requires no trigger
+evaluation. Qualitative comparison remains for owner review; structural tests do
+not grade these responses.
