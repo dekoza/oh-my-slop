@@ -22,6 +22,25 @@ brief retains its local scope, evidence, impact, verification, authority and res
 Builders and independent reviewers still gather their own applicable standards.
 These are proposed-action simulations, not live tracker or publication evidence.
 
+### Matched decision smoke — 2026-10-21
+
+Cases 7–9 and Gitea's large-response recovery case were compared with immutable old/new
+skill snapshots, the same fixtures and `openai-codex/gpt-6.1-sol` at medium reasoning.
+Baseline source: `376186d`; candidate sources: `acd5317` and `d454b57`. One executor per
+configuration handled all four cases in shared context. Independent grading found **8/8
+assertions satisfied in both configurations**: no behavioral lift was demonstrated.
+
+The assertions were visible to both executors. These are decision/brief smoke checks,
+not blind comparisons, independent repeated cases, live fixture operations or human
+qualitative acceptance. The baseline already requested the intended combined grant and
+used compact policy pointers. Nullable/large-file recipe execution is tested separately;
+its success does not establish remote recovery or status handling. Grouped timing/token
+metadata cannot be allocated to individual cases or used to claim efficiency gains.
+
+Local-only outputs, grades, metadata and the static review viewer are under
+`/tmp/ticket-retro-eval.eITXUa/`; open `iteration-1/review.html` for Outputs and Benchmark.
+These are not packaged/forge-hosted artifacts. Human qualitative review remains pending.
+
 ## Interface reuse (#256)
 
 A sufficient accepted interface that stays unchanged is reused without a new contract

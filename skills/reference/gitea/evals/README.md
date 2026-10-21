@@ -59,6 +59,10 @@ fixture execution or a successful recovery receipt.
 The documented summary recipe is separately executed by `tests/test_gitea_skill.py` against
 large local JSON files with null, empty, populated and malformed collection fields. Those
 checks prove the recipe's file/shape handling, not remote API status or write recovery.
+A matched proposed-action smoke comparison satisfied both recovery assertions on old and
+new guidance, with no measured behavioral lift; the shared
+[comparison record](../../../workflow/to-tickets/evals/README.md#matched-decision-smoke--2026-10-21)
+retains the assertion-visibility, shared-context and human-review limitations.
 
 ## Grade and report
 
