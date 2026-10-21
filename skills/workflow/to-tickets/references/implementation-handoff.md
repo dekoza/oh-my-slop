@@ -25,6 +25,17 @@ not mandatory headings or a second template.
   and publication boundaries, and each unfinished obligation's durable location,
   owner and next action. Preserve human-only outcomes and separate implementation.
 
+## Concise briefs
+
+Keep ticket-specific outcomes/exclusions, acceptance, mutable impact/edges, scoped authority
+and residual owners in the brief. Use precise authoritative pointers (path and section,
+contract version or decision/comment link) for shared foundations, verification policy and
+workflow rules rather than copying those policies into every ticket. Name the applicable
+checks and ticket-specific exceptions; a reference replaces boilerplate, not the six facts.
+Pointers must be available to a fresh worker without private chat or temporary local files.
+The builder and independent reviewer still gather applicable project standards themselves;
+brief pointers do not transfer the builder's legwork to review.
+
 ## Sufficiency check
 
 Read the current authoritative brief and governing amendments against the relevant
@@ -48,7 +59,11 @@ independent preparation while affected work remains provisional.
 - **Authority:** the actual human grant covers this checked scope and effects under
   project policy. Design confirmation, publication approval, recommendations and
   labels do not supply missing implementation/readiness authority. An explicit grant
-  may combine effects; reuse it rather than ask again.
+  may combine effects; reuse it rather than ask again. For a newly audited graph, recommend
+  one combined publication/readiness grant for sufficient slices, naming missing-input
+  exceptions and human-only work. A historical parent-only publication grant does not select
+  publication-only for the new graph. Respect an explicit publication-only choice without
+  another readiness question; never infer readiness from the planning invocation.
 - **Eligibility:** verified prerequisite outputs, tracker blocking relationships,
   ownership/claims and other execution gates allow work now. Prepared and authorized
   but blocked is not takeable; retain ordinary gates and any explicitly authorized

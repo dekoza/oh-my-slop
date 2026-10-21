@@ -37,11 +37,10 @@ Complete when the foundation owner and each ticket's impact are evidenced, or th
 ### 3. Draft vertical slices
 
 Read the [implementation handoff criteria](references/implementation-handoff.md).
-Prepare an actual durable brief for each implementation ticket in the project's format,
-with those six facts or unambiguous authoritative pointers. Own factual investigation and
-in-scope drafting repairs before handoff; `humanify` is for exceptional repair, not a required
-finishing session for every new ticket. Preserve confirmed decisions, exclusions and deferrals,
-while leaving routine engineering choices to the implementer.
+Write each durable brief in the project's format: keep ticket-specific decisions local and
+use precise authoritative pointers for shared policies, not repeated boilerplate. Establish
+all six handoff facts before approval; `humanify` is exceptional repair, not a finishing step.
+Preserve confirmed decisions, exclusions and deferrals; leave routine construction choices open.
 
 Break the work into **tracer bullet** tickets.
 
@@ -105,7 +104,7 @@ When the breakdown still needs approval, present inspected findings and ask the 
 - Does the work span more than one component — module, service, package? If so, which interfaces cross a boundary, which component owns each, and does each new or changed one have a contract ticket that its dependents are blocked by — and each reused one its recorded evidence?
 - Should any tickets be merged or split further?
 
-Reuse sufficient grants; publication approval alone is not readiness authorization. Request missing effects in one precise proposal naming the bounded graph, agent-ready slices, limits, blockers and human-only work. This grants no automatic dispatch, merge or closure.
+Reuse sufficient grants; publication approval alone is not readiness authorization. After brief/graph checks, recommend publication and scoped readiness together for qualified tickets. Request only missing effects in one proposal naming the graph, exceptions, limits, blockers and human-only work; no automatic dispatch, merge or closure.
 
 Complete when the brief checks and graph audit pass and the applicable scoped approvals are recorded. If publication alone is authorized, retain the missing readiness decision rather than asking twice or granting it yourself. Otherwise preserve the provisional breakdown with exact gaps/owners; do not publish an unresolved graph as ready.
 
@@ -241,8 +240,8 @@ Every other ticket of this run blocks this one, so it becomes takeable only when
 
 </review-ticket-template>
 
-In every implementation-ticket form, include the shared handoff facts in the project's brief format or add authoritative pointers; the templates are a starting shape, not permission to omit decisions, verification, authority or residual ownership. The terminal human review uses its own outcome, not an implementation brief.
+Every implementation form must satisfy the shared handoff criteria through local facts or authoritative pointers. Human review uses its own outcome.
 
-In either form, include concrete current paths when they establish impact ownership or disjointness; keep speculative implementation detail and code snippets out. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
+Name current paths where they establish impact ownership or disjointness. Include code only when a prototype snippet fixes a decision more precisely than prose: retain its decision-rich state/schema/type, identify the prototype, and omit the demo and speculative construction detail.
 
 Hand off to the `implement` skill in fresh sessions, clearing context between tickets. Default to one ticket at a time; parallel execution is eligible only for approved, proven-disjoint sets and is not launched by this planning skill. Include the pause-and-replan rule from Critical rules in each handoff.

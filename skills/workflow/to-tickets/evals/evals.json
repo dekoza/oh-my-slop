@@ -80,6 +80,36 @@
         "The new-version contract ticket still obeys scaffolding, prerequisite and impact blockers and is not automatically unblocked.",
         "Ends with the terminal human review ticket, blocked by every other ticket."
       ]
+    },
+    {
+      "id": 7,
+      "prompt": "Prepare the final approval request and proposed executor states for implementation tickets from an agreed parent spec. The parent's historical grant authorized publication of that parent only, not downstream implementation/readiness. The current user has now invoked to-tickets for that parent. Inspection and brief/impact audits are complete: A and B have sufficient bounded briefs, B is blocked by A, no concurrency is proposed; C requires a protected supplier fixture that the operator has not supplied; R is the mandatory human review blocked by A, B and C. Existing foundation and contracts are verified sufficient. Canonical labels: ready-for-agent means sufficiently specified and human-authorized; needs-info means missing input; ready-for-human means human-only work; needs-triage means evaluation still needed. There is no new material design decision. Do not publish, change states or start implementation. Return the bounded approval proposal you recommend to the user, proposed states, missing inputs and limits.",
+      "expected_output": "Request one bounded publication-and-readiness grant for sufficient slices, preserving missing-input and human-only states without dispatch.",
+      "files": [],
+      "expectations": [
+        "Recommends a single explicit combined publication-and-readiness grant for sufficient A/B instead of recommending publication-only and needs-triage for both.",
+        "Keeps C awaiting its named fixture and R human-only, preserves A-to-B and all review blockers, and does not start implementation or infer that consent already exists."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "The graph and implementation briefs are sufficient and already approved. The human explicitly authorizes publication only and explicitly withholds agent readiness. A blocks B; the mandatory human review R is blocked by both. Do not publish in this simulation. State the intended labels, authority record, frontier and any question actually required now. The operator does not want another readiness question in this invocation.",
+      "expected_output": "Honor the explicit publication-only grant without agent-readiness transitions or another readiness interview.",
+      "files": [],
+      "expectations": [
+        "Preserves the explicit publication-only grant, emits no ready-for-agent transition and does not repeat the readiness question.",
+        "Retains the blocked human review and reports no agent frontier or dispatched implementation."
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Return two actual proposed implementation briefs for an approved serial graph, A then B, plus the human review. A adds a disabled-only filter and B adds an enabled-only filter to the existing status CLI. Both change src/status.mjs and tests/status.test.mjs. Existing foundation is accepted; neither changes any component interface. Confirmed policy is in specs/status-filters.md section 2: selectors never mutate enrollment and registration/scheduler changes are excluded. The stable input EnrollmentStore.list is owned by enrollment, accepted in ADR-0013 and tests/enrollment-store.contract.test.mjs, and returns id/enabled rows. The canonical testing policy is docs/testing.md section Status filters: focused node --test tests/status.test.mjs, then the full suite. Both builder and independent reviewer must gather applicable project standards themselves. The human has already authorized this exact graph's publication and A/B readiness, not dispatch/closure. All input facts are supplied; do not run anything or ask for approval again. Keep each brief decision-rich and refer to canonical shared policies rather than reproducing them.",
+      "expected_output": "Produce compact, sufficient local briefs with precise canonical policy pointers and per-ticket decisions, evidence, authority and residual owners; preserve builder and independent reviewer standards gathering.",
+      "files": [],
+      "expectations": [
+        "Both A/B briefs retain local outcome/exclusions, accepted interface source/owner/evidence, concrete impact and blocking edges, checkable acceptance, and scoped authority/residual ownership.",
+        "Both briefs use precise specs/status-filters.md and docs/testing.md references instead of copying shared policy paragraphs; no reviewer-only standards policy or mandatory humanify step is introduced."
+      ]
     }
   ]
 }

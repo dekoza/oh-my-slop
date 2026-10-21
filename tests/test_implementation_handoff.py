@@ -4,6 +4,7 @@ Static contract guards complement the frozen behavior comparisons; they do not
 establish that a model produces sufficient briefs or executes publication safely.
 """
 
+import json
 from pathlib import Path
 import re
 
@@ -58,6 +59,40 @@ def test_ticket_publication_cannot_default_to_agent_readiness() -> None:
     assert "ready-for-agent` by default" not in publication
     assert "**Status:** ready-for-agent" not in publication
     assert "publication approval alone is not readiness authorization" in text
+
+
+def test_ticket_approval_recommends_scoped_readiness_without_dispatch() -> None:
+    text = " ".join(skill_path("to-tickets").read_text().split())
+    approval = text.split("### 4. Check briefs", 1)[1].split("### 5. Publish", 1)[0]
+    assert "recommend publication and scoped readiness together" in approval
+    assert "qualified tickets" in approval
+    assert "publication approval alone is not readiness authorization" in approval
+    assert "If publication alone is authorized" in approval
+    assert "no automatic dispatch, merge or closure" in approval
+
+
+def test_approval_evals_pair_combined_grants_with_publication_only_control() -> None:
+    path = skill_path("to-tickets").parent / "evals/evals.json"
+    cases = {case["id"]: case for case in json.loads(path.read_text())["evals"]}
+    assert {7, 8} <= cases.keys()
+    assert "parent" in cases[7]["prompt"]
+    assert "needs-info" in cases[7]["prompt"]
+    assert any("combined" in item and "readiness" in item for item in cases[7]["expectations"])
+    assert "explicitly withholds agent readiness" in cases[8]["prompt"]
+    assert any("does not repeat" in item for item in cases[8]["expectations"])
+
+
+def test_briefs_use_canonical_policy_pointers_without_losing_local_facts() -> None:
+    text = " ".join(skill_path("to-tickets").read_text().split())
+    drafting = text.split("### 3. Draft", 1)[1].split("<vertical-slice-rules>", 1)[0]
+    assert "precise authoritative pointers" in drafting
+    assert "repeated boilerplate" in drafting
+    reference = ROOT / "skills/workflow/to-tickets/references/implementation-handoff.md"
+    compact = reference.read_text().split("## Concise briefs", 1)[1]
+    for fact in ("ticket-specific", "verification policy", "authority", "residual"):
+        assert fact in compact
+    assert "builder and independent reviewer" in compact
+    assert "private chat" in compact
 
 
 def test_repaired_brief_distinguishes_readiness_from_blocked_eligibility() -> None:

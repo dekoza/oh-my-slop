@@ -11,6 +11,17 @@ handoff (case 4), and interface reuse against new shapes and versions (cases 5â€
 This is a technique evaluation with discipline pressure cases. The skill remains
 user-invoked; trigger evaluation is not applicable.
 
+## Approval boundary regression
+
+Cases 7â€“8 pair a new graph whose sufficient slices need a combined publication/readiness
+grant with an explicit publication-only control. A historical parent-only grant must not
+make publication-only the recommended handoff for a newly prepared graph. Missing-input
+slices, human review and native blockers retain their gates; neither case starts work.
+Case 9 checks compact briefs: canonical policy pointers replace copied rules while each
+brief retains its local scope, evidence, impact, verification, authority and residual owners.
+Builders and independent reviewers still gather their own applicable standards.
+These are proposed-action simulations, not live tracker or publication evidence.
+
 ## Interface reuse (#256)
 
 A sufficient accepted interface that stays unchanged is reused without a new contract
