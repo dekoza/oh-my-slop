@@ -143,7 +143,12 @@ Report the named ticket, **worktree path**, branch, **base SHA** and **reviewed 
 
 ## Bring down what you brought up
 
-If anything in this session started Docker containers — test infrastructure, a dev stack, a one-off `docker compose run`, a warm E2E environment — bring down each stack **you** started before reporting completion, using the same compose file you started it with (`docker compose -f compose.test.yml down`, etc.). Dev and test stacks have independent lifecycles, so bringing one down does not touch the other (see `docker-discipline`). Add `-v` only for volumes this session created. Leave stacks that were already running when the session began exactly as they were.
+Before starting Docker resources, apply the shared
+[resource lifecycle](../../practice/docker-discipline/references/resource-lifecycle.md).
+Close that exact owned scope on successful, blocked and failed exits, including disposable
+volumes and temporary images, not only running stacks. Report verified removals, retained
+resources with owners/expiry, and any failed or unverified cleanup. Preserve borrowed
+resources and source worktrees; a stopped stack alone is not a clean closeout.
 
 ## Requirement trace
 
@@ -153,6 +158,6 @@ Build the trace by re-reading the ticket and every source it references, not fro
 
 ## Completion
 
-The invocation is complete when this one ticket-sized slice meets its acceptance criteria, affected checks pass under the project's test policy, both review axes have completed with no blocking finding left open, and the committed head and requirement trace are reported. In standalone mode, its PR is open and reported by URL (or, on a forge-less repo, the branch is pushed if a remote exists and named). In branch-only mode, the verified handoff above is delivered to its publisher without a push or tracker mutation. A required acceptance test skipped for missing prerequisites leaves the slice incomplete; supply an authorized isolated prerequisite or report the coverage gap, never verify different code in the primary checkout. Every Docker stack this session started is down. No other frontier ticket has been started.
+The invocation is complete when this one ticket-sized slice meets its acceptance criteria, affected checks pass under the project's test policy, both review axes have completed with no blocking finding left open, and the committed head and requirement trace are reported. In standalone mode, its PR is open and reported by URL (or, on a forge-less repo, the branch is pushed if a remote exists and named). In branch-only mode, the verified handoff above is delivered to its publisher without a push or tracker mutation. A required acceptance test skipped for missing prerequisites leaves the slice incomplete; supply an authorized isolated prerequisite or report the coverage gap, never verify different code in the primary checkout. Owned Docker resources satisfy the lifecycle closeout above. No other frontier ticket has been started.
 
 **Ask what is left to decide.** When this session reports to the human, close the report — complete or stopped — with one round of the `grilling` skill covering every decision left to them, blocking or not: advisory-finding follow-ups, glossary gaps, the next owner decision. Give a recommendation for each and wait; a report with nothing left to decide asks nothing. In branch-only mode, or whenever a caller coordinates this run, return those choices and their evidence to the caller instead; the session that finally asks the human uses `grilling`. An answer authorizes only what it names, never extra repair, publication, a follow-up ticket or a merge.

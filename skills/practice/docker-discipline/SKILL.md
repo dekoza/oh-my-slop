@@ -14,6 +14,14 @@ Rules for authoring Docker configs. Every rule traces to a real production issue
 For how Docker itself behaves (networking, storage, BuildKit, registries,
 diagnosis), load the `docker` skill — it owns reference and troubleshooting.
 
+## Resource lifecycle (critical)
+
+Before creating test, review or CI resources, apply the
+[resource lifecycle](references/resource-lifecycle.md): establish ownership and bounded
+reuse, register exact-scope cleanup, and verify closeout on successful and failed exits.
+When authoring CI, include failure/cancellation verification and an owned stale-run
+recovery path. Completion requires receipts for disposal or explicit retained obligations.
+
 ## Dockerfile Rules
 
 ### Non-Root User, UID-Matched (Critical)
@@ -119,7 +127,9 @@ services:
     environment:
       DATABASE_URL: postgresql://test_user:test_password@testdb:5432/test_db
     volumes:
-      - .:/app
+      # Preserve dependencies installed in the image; mount only source.
+      - ./src:/app/src
+      - ./tests:/app/tests
     networks:
       - test-net
     # NO ports — intentionally not exposed
@@ -146,6 +156,7 @@ give it an independent lifecycle.
 
 ## Task Routing
 
+- Resource ownership, per-run environments, cache retention, teardown or CI crash recovery -> `references/resource-lifecycle.md`
 - Dockerfile structure, non-root user, secrets, multi-stage -> This SKILL.md (main content)
 - Build cache optimization, COPY ordering -> `references/gotchas.md` (Build Cache Invalidation section)
 - Volume mount issues, bind mount overrides -> `references/gotchas.md` (Bind Mounts Override Build Artifacts section)

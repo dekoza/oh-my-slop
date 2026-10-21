@@ -281,7 +281,9 @@ pytest tests/<tier>/ --lf -n auto --dist loadgroup --timeout 600 --json-report -
 
 **If regressions found:** fix → re-run step 4 for the affected module → re-run step 5 until clean.
 
-**Operational note:** `.pytest_cache` must persist across Docker runs for `--lf` to work. Mount it as a volume:
+**Operational note:** persist `.pytest_cache` across reruns within the declared test run
+for `--lf`. Apply the shared [resource lifecycle](../docker-discipline/references/resource-lifecycle.md)
+for ownership, retention and closeout; persistence is not indefinite retention. For example:
 
 ```yaml
 volumes:

@@ -258,12 +258,12 @@ Common mismatch:
 ### 15. Disk pressure and cache sprawl are first-class Docker failures
 **Why**: Image layers, stopped containers, local volumes, and BuildKit cache all consume daemon storage and cause slow builds, failed pulls, and host instability.
 
-Start with:
+Inspect the selected daemon and builder read-only:
 
 ```console
 $ docker system df
 $ docker system df -v
-$ docker buildx prune --verbose
+$ docker buildx du
 ```
 
 Look for:
@@ -273,12 +273,17 @@ Look for:
 - oversized local volumes
 - runaway `data-root` growth on the daemon host
 
+Apply the [resource lifecycle](../../../practice/docker-discipline/references/resource-lifecycle.md)
+before proposing removals. Reclaimable space, a matching prefix or dangling status does
+not establish disposal authority. Explain permanent loss and recovery prerequisites;
+obtain scoped authorization before deleting existing data.
+
 Practical responses:
 
-- prune build cache intentionally
-- remove obsolete images and stopped containers
-- inspect large volumes before deleting anything
-- move or resize daemon storage only as a host-level change
+- remove only identified disposable resources with ownership and consumer checks
+- give intentional caches explicit bounds and an accountable cleanup mechanism
+- inspect large volumes before deleting anything; use Docker APIs, not storage-directory deletion
+- move or resize daemon storage only as a separately authorized host-level change
 
 **Warning**: Do not treat disk pressure as a random host problem. Docker and BuildKit have their own storage behaviors and cleanup tools.
 

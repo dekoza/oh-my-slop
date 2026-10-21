@@ -8,6 +8,11 @@ Scenarios 8–10 add committed-candidate review, explicitly authorized branch-on
 delivery and stopping at the caller's repair limit. The skill body is the policy;
 these scenarios test it rather than define a second worker protocol.
 
+Scenario 3 now includes exact Compose project/file/environment scope, disposable database
+and test-cache volumes, blocked/failing exits, and preservation of borrowed resources.
+The shared [Docker lifecycle comparison](../../../practice/docker-discipline/evals/README.md)
+records the supporting response-only scenarios and their limitations.
+
 ## Baseline and comparison
 
 The pre-edit skill was snapshotted from `cfdfe53` before drafting. The evaluation

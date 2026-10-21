@@ -30,6 +30,10 @@ any implementation code.
    that can expose a pre-existing failure. Use targeted tests during development, then run every
    affected tier before completion. Leave the full suite to CI unless the project requires it or
    you are diagnosing a CI failure; do not launch all E2E tests for an isolated change.
+5. **Close owned runtime resources.** Before Docker startup, apply the
+   [resource lifecycle](../docker-discipline/references/resource-lifecycle.md).
+   Keep reusable test infrastructure warm only within its declared run; verify disposal
+   or report owned leftovers on success, failure and blocked exits.
 
 ## Test tiers
 
@@ -135,7 +139,7 @@ Integration and E2E tests run in isolated Docker:
   healthchecked) on an internal network — **no host port mapping**.
 - **Separate compose file** — `compose.test.yml`, not profiles in the main compose; dev
   `docker compose down` must not affect tests.
-- Persist `.pytest_cache` as a volume so `--lf` works across runs.
+- Persist `.pytest_cache` within the owned run so `--lf` works across reruns; longer reuse requires an explicit bounded cache policy.
 
 Chromium in a slim Python image needs system libraries — install in `Dockerfile.test` before
 the browser install:
