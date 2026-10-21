@@ -2,6 +2,8 @@
 
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -63,3 +65,56 @@ def test_entry_point_exposes_read_grammar_and_reference_gate() -> None:
     assert "Before the first tracker call" in text
     assert "after compaction" in text
     assert "references/issues.md" in text and "references/api-scripting.md" in text
+
+
+@pytest.mark.parametrize(
+    ("assignees", "expected"),
+    [(None, []), ([], []), ([{"login": "worker"}], ["worker"])],
+)
+def test_documented_large_issue_summary_handles_nullable_assignees(
+    tmp_path: Path, assignees: list[dict[str, str]] | None, expected: list[str],
+) -> None:
+    text = (GITEA / "references/api-scripting.md").read_text(encoding="utf-8")
+    recipe = re.search(r"python - response\.json <<'PY'\n(.*?)\nPY", text, re.DOTALL)
+    assert recipe is not None, "Expose a runnable file-backed issue summary recipe"
+    response = tmp_path / "response.json"
+    response.write_text(
+        json.dumps({"number": 900, "body": "x" * 300_000, "assignees": assignees}),
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, "-", str(response)],
+        input=recipe.group(1), capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"number": 900, "assignees": expected}
+    assert len(result.stdout) < 200
+
+
+@pytest.mark.parametrize("assignees", [{}, "unexpected", 42])
+def test_documented_issue_summary_refuses_invalid_collection_shape(
+    tmp_path: Path, assignees: object,
+) -> None:
+    text = (GITEA / "references/api-scripting.md").read_text(encoding="utf-8")
+    recipe = re.search(r"python - response\.json <<'PY'\n(.*?)\nPY", text, re.DOTALL)
+    assert recipe is not None
+    response = tmp_path / "response.json"
+    response.write_text(json.dumps({"number": 900, "assignees": assignees}), encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "-", str(response)],
+        input=recipe.group(1), capture_output=True, text=True, check=False,
+    )
+    assert result.returncode != 0
+    assert "Expected an assignees list or null" in result.stderr
+    assert result.stdout == ""
+
+
+def test_api_orchestration_reuses_qualified_helpers_and_recovers_saved_identity() -> None:
+    text = " ".join((GITEA / "references/api-scripting.md").read_text().split())
+    section = text.split("## Bounded orchestration data", 1)[1].split("## Pagination", 1)[0]
+    assert "existing tested API handling" in section
+    assert "repository and login binding" in section
+    assert "IDs, paths and statuses" in section
+    assert "complete saved JSON" in section
+    assert "reconcile that identity" in section
+    assert "rather than recreating an issue" in section

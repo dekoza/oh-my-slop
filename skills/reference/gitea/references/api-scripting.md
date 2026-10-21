@@ -5,6 +5,7 @@
 - Endpoint and output contracts
 - File and stdin bodies
 - Verify HTTP and application outcomes
+- Bounded orchestration data
 - Pagination and complete exports
 - CLI display data
 - Debugging and recovery
@@ -138,6 +139,45 @@ Preserve the full error body. Piping `-i`'s combined streams into a JSON parser,
 trimming them with `head`/`tail`, can hide the actual cause and create secondary parse
 errors. An unexpected listing, empty stdout or parse error calls for command help
 and the reference—not guessed flags and suppressed stderr.
+
+## Bounded orchestration data
+
+Before writing an API loop, inspect the project's helper inventory and existing tested
+API handling. Reuse a suitable helper after checking explicit repository and login binding,
+HTTP/error handling and endpoint response shape; a helper's name alone is not qualification.
+Otherwise use the file-backed patterns above rather than inventing a second client.
+
+Keep full responses and briefs in files; retain only IDs, paths and statuses in orchestration
+state. Parse complete saved JSON in a process, not a truncating file-reader tool, and emit
+only the fields needed next. Tool-output truncation is not valid JSON or a reason to repeat
+a request. Normalize collections only where the API permits null; reject unexpected shapes.
+
+For an issue GET whose HTTP status was already checked, this recipe reads the complete
+saved response and emits compact metadata even when `assignees` is null:
+
+```sh
+python - response.json <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    issue = json.load(stream)
+assignees = issue.get("assignees")
+if assignees is None:
+    assignees = []
+if not isinstance(assignees, list):
+    raise ValueError("Expected an assignees list or null")
+print(json.dumps({
+    "number": issue["number"],
+    "assignees": [user["login"] for user in assignees],
+}))
+PY
+```
+
+Retain a successful write's identity before optional metadata processing. If later processing
+fails, reconcile that identity through a scoped read before any retry; a local parsing or
+state-size error does not prove the remote write failed. Resume from saved files/IDs rather
+than recreating an issue or repeating an accepted effect.
 
 ## Pagination and complete exports
 

@@ -47,6 +47,19 @@ without retaining earlier syntax, rather than merely saying compaction happened.
   raw JSON. Bare stdin does not supply a body. Preserve these failure cases in the
   fixture rather than silently correcting the model's command.
 
+## Large-response recovery case
+
+Case 11 isolates a local processing failure after successful creation: issue900 already
+exists, its complete response exceeds reader limits, nullable assignees are present and
+large brief data cannot fit in orchestration state. The project supplies a qualified-helper
+lead; the executor must audit it, retain files plus small identity/state and reconcile900
+before any possible retry. A proposed-action answer is only a decision smoke check, not
+fixture execution or a successful recovery receipt.
+
+The documented summary recipe is separately executed by `tests/test_gitea_skill.py` against
+large local JSON files with null, empty, populated and malformed collection fields. Those
+checks prove the recipe's file/shape handling, not remote API status or write recovery.
+
 ## Grade and report
 
 Use `evals.json` expectations as binary claims with transcript/state evidence.

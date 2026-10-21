@@ -115,6 +115,16 @@
         "A missing issue is reported on its selected tracker without silent cross-forge fallback.",
         "No work ticket is created on the intake tracker."
       ]
+    },
+    {
+      "id": 11,
+      "prompt": "Plan recovery of a tracker publication loop, without calling a live service or writing tickets. Binding: repo owner/project, login LocalForge. A create succeeded and its issue number 900 is saved, but a later metadata step crashed. The full issue response is on disk at run/900-response.json, more than 50 KB, and contains assignees:null. The file-reader tool truncates at 50 KB; codemode store holds at most 262144 JSON characters; the existing full-brief array is 450000 characters. The project helper inventory documents a tested API parser and issue normalization that treats null assignees as an empty list; inspect its binding/status behavior before deciding whether to reuse it. Explain the next requests/data-handling steps and what state to retain. No new create should be presumed safe merely because the loop failed.",
+      "expected_output": "Reuse suitable tested API handling and recover saved write identity using complete file-backed JSON and compact nullable-safe metadata, without duplicate creation.",
+      "files": [],
+      "expectations": [
+        "Reuses or audits the existing tested helper, preserves explicit repo/login and HTTP status checking, and normalizes nullable collections before iteration.",
+        "Keeps full responses/briefs in files, parses complete JSON outside the truncating reader, stores only small IDs/paths/status in orchestration memory, and reconciles issue900 before any possible retry rather than recreating it."
+      ]
     }
   ]
 }
