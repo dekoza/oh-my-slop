@@ -1,6 +1,11 @@
 # Code quality without longer delivery: tools, historical evidence and a pstack benchmark
 
-25 October 2026 · Analysis and benchmark design · No skill changes or replay trials
+25 October 2026 · Original analysis and benchmark design · No skill changes
+
+Follow-up: the [bounded six-case pilot](pstack-quality-pilot-2026-10-25.md) ran twelve
+synthetic baseline/candidate attempts after separate budget approval. Both arms completed
+3/6 assigned cases; turn censoring and a control-fixture problem prevent an improvement
+claim. This page records the original historical analysis, not those later trial results.
 
 ## Answer
 
@@ -331,13 +336,13 @@ The [case-blueprint manifest](pstack-quality-benchmark-cases-2026-10-25.json) co
 
 The semantic investigation is purposive, with clipped-record limitations documented per case. It does not adjudicate all 638 screened leads. The broader ponytail false-positive complaint, a separate rollout-order review correction and another October incomplete-review lead remain unverified here; they are not added as corroborating failures.
 
-The next useful experiment is a small frozen set covering the retry-sequence gap, timeout/output discipline, collector correctness, settled-decision reuse and ordinary-success/real-failure controls. The larger registry supplies additional development cases; it is not a request to run every case immediately. Prepare fixtures and obtain an explicit run budget before executing model replays. Retain an untouched family holdout. Reject an adaptation that merely adds work on already-green cases.
+The original proposed next experiment was a small frozen set covering the retry-sequence gap, timeout/output discipline, collector correctness, settled-decision reuse and ordinary-success/real-failure controls. The later pilot exercised only a subset of mechanisms and controls; its scope and limitations are recorded in the follow-up above. The larger registry remains development material, not a completed replay suite. Further trials require their own explicit budget. Retain an untouched family holdout and reject an adaptation that merely adds work on already-green cases.
 
 Repository validation during this analysis: **1,122 passed, one failed** in `uv run pytest`; the sole failure still expects the pre-existing deleted `prompts/implement-spec.md`. That deletion was left untouched. The required targeted reference/frontmatter tests passed **371**, and reference validation passed. No extension or manifest changed; no separate Node suite was required.
 
 ## Tool documentation and methodological provenance
 
-The tool research used successfully retrieved official documentation or official repository sources below. Some initially attempted endpoints returned 403/404; the conclusions use available official alternatives, not those failed fetches. These moving upstream documents establish documented capabilities and limitations, not the installed versions, runtime compatibility or execution cost on this machine. No mutation, security, property or model-replay benchmark was run.
+The tool research used successfully retrieved official documentation or official repository sources below. Some initially attempted endpoints returned 403/404; the conclusions use available official alternatives, not those failed fetches. These moving upstream documents establish documented capabilities and limitations, not the installed versions, runtime compatibility or execution cost on this machine. No mutation, security, property or model-replay benchmark was run during this original analysis; the later bounded synthetic pilot is documented separately above.
 
 The proposed experimental design is methodological reasoning, not an outcome measured in the histories. It extends the existing [evaluation workflow](../../skills/meta/skill-creator/references/evaluation-workflow.md) and [schema/metric guidance](../../skills/meta/skill-creator/references/schemas.md), rather than replacing their owner. Complete-pair summaries should be accompanied by all-assigned outcomes so incomplete comparisons do not disappear from the effectiveness denominator.
 
