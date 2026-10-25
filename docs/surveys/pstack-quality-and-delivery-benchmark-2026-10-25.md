@@ -8,6 +8,9 @@ synthetic baseline/candidate attempts after separate budget approval. Both arms 
 claim. This page records the original historical analysis, not those later trial results.
 The [v2 offline preparation](pstack-quality-pilot-v2-preparation-2026-10-25.md) repairs the
 control and evaluator, proposes a revised ceiling, and authorizes no further inference.
+A [separately approved baseline calibration](pstack-quality-baseline-calibration-2026-10-25.md)
+then completed B1, B3 and corrected B7 successfully within that ceiling. It ran no candidate
+arm and establishes no adaptation benefit.
 
 ## Answer
 
