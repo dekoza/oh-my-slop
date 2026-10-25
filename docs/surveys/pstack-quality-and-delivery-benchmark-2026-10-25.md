@@ -6,6 +6,8 @@ Follow-up: the [bounded six-case pilot](pstack-quality-pilot-2026-10-25.md) ran 
 synthetic baseline/candidate attempts after separate budget approval. Both arms completed
 3/6 assigned cases; turn censoring and a control-fixture problem prevent an improvement
 claim. This page records the original historical analysis, not those later trial results.
+The [v2 offline preparation](pstack-quality-pilot-v2-preparation-2026-10-25.md) repairs the
+control and evaluator, proposes a revised ceiling, and authorizes no further inference.
 
 ## Answer
 
