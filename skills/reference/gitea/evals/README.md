@@ -64,6 +64,52 @@ new guidance, with no measured behavioral lift; the shared
 [comparison record](../../../workflow/to-tickets/evals/README.md#matched-decision-smoke--2026-10-21)
 retains the assertion-visibility, shared-context and human-review limitations.
 
+## Partial delivery and body-fidelity cases
+
+Cases 12–14 are proposed-action smoke checks, not fixture execution or publication
+receipts. Use the same three-case prompt, model and tools for old/candidate guidance;
+record their shared-context/low-sample limitations separately from real transport
+probes. Case12 tests an unfinished umbrella reference, case13 a proven one-LF
+ordinary-prose difference, and case14 byte-exact publication with both LF-only and
+indentation-change variants. Grade safe wording, transport choice and recovery
+identity separately: correctly finding the existing comment does not make a
+trimming transport exact.
+
+For a tool-backed follow-up, the fixture must model the observed paths rather than
+silently preserving every input: positional comment add/edit trims outer whitespace;
+`-F body=@file` removes one terminal LF; encoded JSON `-d @payload.json` preserves
+the source body. These are tea 0.15.1 client-probe observations, not a server contract.
+A synthetic merge matcher must recognize closing syntax even when negated, keep a
+non-closing umbrella reference open and journal the resulting state; its behavior
+is a fixture, not independent proof of Gitea's parser. Historical timeline and
+session evidence live in [verification scope](../references/verification.md).
+
+`tests/test_gitea_skill.py` executes the documented JSON construction recipe for
+final-LF, extra-LF, leading-space/indented-code, UTF-8/CRLF and no-final-LF inputs.
+It checks decoded payload fidelity and untouched source bytes. Other assertions
+pin the safe partial-delivery example and recovery guidance; these documentation
+tests do not measure general model reliability or a real merge.
+
+### Matched decision smoke — 2026-10-26
+
+Old guidance passed 5/6 proposed-action assertions; the candidate passed 6/6.
+The discriminating assertion was exact transport choice: the baseline preferred
+`-F body=@review.md`, while the candidate selected encoded JSON. Both already
+produced safe partial-PR wording and accepted the stipulated prose-only LF
+difference, so this smoke shows no measured lift on those two branches. The
+historical closure/session evidence and real-client loopback results remain the
+separate basis for those corrections.
+
+Each configuration ran one shared-context three-case bundle using the same default
+general-purpose agent configuration; the resolved model ID was not captured.
+The coordinating author graded the saved outputs, without blinding or an independent
+grader. Per-case timing/token data are unavailable; bundled metrics were retained.
+The standard static review viewer and benchmark were generated outside the skill;
+human qualitative review remains pending. This is a sanity check, not a general
+reliability rate, live publication result or reference-retrieval benchmark.
+Description triggering was not measured: the description is unchanged, and the
+observed failures concern reference content rather than skill selection.
+
 ## Grade and report
 
 Use `evals.json` expectations as binary claims with transcript/state evidence.

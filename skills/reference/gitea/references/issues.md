@@ -108,11 +108,14 @@ For a workflow marker comment, read the complete comments collection, find the
 marker, and edit/reuse the existing comment or add one if absent. Read it back before
 claiming success or closing the ticket.
 
-**Preserve exact bodies with file input.** Issues and PRs have a native file body
-(0.16.0+ `--description-file`); for comment bodies the CLI has no file flag — use the
-API reference's `-F body=@file` or encoded JSON `-d @file` recipes; shell command
-substitution strips trailing newlines. The same reference explains HTTP verification
-and pagination.
+**Preserve exact bodies with encoded JSON.** Issues and PRs have a native file body
+(0.16.0+ `--description-file`); comments have no native file flag. For exact comment
+text, use the API reference's [body-fidelity recipe](api-scripting.md#body-fidelity-and-newline-recovery)
+and `-d @payload.json`. In observed tea 0.15.1 paths, comment `add`/`edit` trims outer
+whitespace and `-F body=@file` removes one terminal LF. Shell command substitution
+also strips trailing newlines. Keep ordinary prose verification distinct from
+byte-exact publication; read the same comment before any repair, not a duplicate
+POST. The API reference owns HTTP verification and pagination too.
 `edit` also accepts the body as an argument, via `--description`, on stdin, or
 (interactively) via `$EDITOR`. Since 0.15.0 `add` accepts the body via `-d/--description`
 as an alternative to the positional argument. `tea comments` has no `--fields`.

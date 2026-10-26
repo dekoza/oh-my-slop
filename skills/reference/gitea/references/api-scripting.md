@@ -4,6 +4,7 @@
 
 - Endpoint and output contracts
 - File and stdin bodies
+- Body fidelity and newline recovery
 - Verify HTTP and application outcomes
 - Bounded orchestration data
 - Pagination and complete exports
@@ -58,10 +59,11 @@ force a string. This was checked with the real tea binary against a loopback fix
 
 ## File and stdin bodies
 
-Prefer a plain file-backed call when a body contains Markdown, shell-looking text
-or exact whitespace. Command substitution strips trailing newlines; it cannot
-preserve an exact file body, even when quoted safely. A worktree guard may also
-refuse complex substitutions. Keep the guard and use the file interface instead.
+Prefer a plain file-backed JSON call when a body contains Markdown, shell-looking
+text or exact whitespace. Command substitution strips trailing newlines; quoting
+cannot restore them. `-F body=@file` is a different path and can also remove a
+terminal LF; use the exact-body recipe below when fidelity matters. A worktree
+guard may refuse complex substitutions: preserve the guard and use the file interface.
 
 Since tea 0.16.0, issue and PR create/edit have a native file body
 (`--description-file <path|->`, byte-exact — verified via logged request bodies);
@@ -72,17 +74,14 @@ on a silent open pipe).
 
 | Input you have | Supply it as |
 |---|---|
-| Markdown/text for the comment's `body` field | `-F body=@review.md` |
+| Markdown/text requiring exact `body` content | Encode as JSON, then `-d @payload.json` (recipe below) |
+| Text where one terminal LF may be removed | `-F body=@review.md` (observed on 0.15.1; not byte-exact) |
 | A complete JSON object, such as `{"body":"..."}` | `-d @payload.json` |
 | Complete JSON on stdin | `-d @-` with stdin redirected or piped |
 | One literal string field | `-f body='short text'` |
 
 ```sh
-# The text file becomes one body field, retaining its contents.
-tea api --repo OWNER/REPO --login LOGIN -i -X POST \
-  '/repos/OWNER/REPO/issues/INDEX/comments' -F body=@review.md
-
-# payload.json is already the complete API request object.
+# payload.json contains the complete request object, including its body string.
 tea api --repo OWNER/REPO --login LOGIN -i -X POST \
   '/repos/OWNER/REPO/issues/INDEX/comments' -d @payload.json
 
@@ -92,7 +91,7 @@ tea api --repo OWNER/REPO --login LOGIN -i -X POST \
 
 # Edit an existing comment by global comment ID.
 tea api --repo OWNER/REPO --login LOGIN -i -X PATCH \
-  '/repos/OWNER/REPO/issues/comments/COMMENT_ID' -F body=@review.md
+  '/repos/OWNER/REPO/issues/comments/COMMENT_ID' -d @payload.json
 ```
 
 Read existing comments for the workflow's marker **before** choosing add versus
@@ -103,6 +102,50 @@ write response, not proof that the exact intended content survived.
 cannot repair that omission. Use `-d @file` or `-d @-`; tea handles the JSON request
 content type for supplied bodies. Serialize JSON with a JSON encoder when constructing
 complete payloads, rather than interpolating Markdown into a JSON string.
+
+## Body fidelity and newline recovery
+
+**Choose the contract before writing.** For byte-exact file publication, preserve
+all UTF-8 source text, including terminal newlines, CRLF and indentation. Construct
+a JSON request with a real encoder, then send `-d @payload.json`:
+
+```sh
+python - body.md payload.json <<'PY'
+import json
+from pathlib import Path
+import sys
+
+body = Path(sys.argv[1]).read_bytes().decode("utf-8")
+Path(sys.argv[2]).write_text(json.dumps({"body": body}, ensure_ascii=False), encoding="utf-8")
+PY
+```
+
+Use fresh payload paths. After checking HTTP status, parse the saved API readback
+and compare its decoded `body` to the source decoded the same way. Comparing the
+raw JSON representation would confuse JSON escaping with a content change.
+
+**Distinguish transport paths.** Loopback probes of tea 0.15.1 observed comment
+`add`/`edit` positional bodies trimming outer whitespace, and `-F body=@file`
+removing one terminal LF. JSON `-d @payload.json` preserved the tested text. These
+are client/operation observations, not evidence that Gitea always strips newlines
+or that a different tea version has the same behavior. Native 0.16.0
+`--description-file` is a separate issue/PR path; see the verification record.
+
+For ordinary prose, prepare a payload without incidental outer whitespace and
+verify that constructed payload, leaving the source file untouched. If a successful
+write differs only by a known terminal LF removal, record that precise difference
+and distinguish verified prose from byte-exact publication. Do not label an
+otherwise verified prose update corrupt or repeatedly repost it to restore an LF
+through the same trimming path. Exact-file requests still require exact readback.
+
+**Reconcile before repair.** Keep the returned identity and read the same comment
+before any retry; newline mismatch is not proof the write failed. On an exact-body
+mismatch, PATCH that comment with encoded JSON and verify again, rather than POST a
+duplicate. Inspect lengths and escaped endings to locate the discrepancy without
+dumping private bodies. Never use broad `strip()` / `rstrip()` comparisons to hide
+content, leading spaces, Markdown hard-break spaces, indentation or extra blank-line
+changes. If more than the specifically verified terminal LF differs, retain a real
+content-mismatch failure; do not silently downgrade an exact publication to prose.
 
 ## Verify HTTP and application outcomes
 

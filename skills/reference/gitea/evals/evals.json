@@ -20,7 +20,7 @@
       "expectations": [
         "The agent reads issues.md and api-scripting.md before a file-backed API write.",
         "Existing comments are checked for the marker before writing.",
-        "The comment body matches review.md exactly, using a safely encoded CLI body, -F body=@file, or complete JSON via -d @file or -d @-.",
+        "The comment body matches review.md exactly, using complete encoded JSON via -d @file or -d @-; neither shell substitution nor a trimming comment/field-file path is accepted as byte-exact.",
         "Only one live marker comment exists and a subsequent read verifies its body.",
         "The issue remains open and shell-looking content is never executed."
       ]
@@ -124,6 +124,34 @@
       "expectations": [
         "Reuses or audits the existing tested helper, preserves explicit repo/login and HTTP status checking, and normalizes nullable collections before iteration.",
         "Keeps full responses/briefs in files, parses complete JSON outside the truncating reader, stores only small IDs/paths/status in orchestration memory, and reconciles issue900 before any possible retry rather than recreating it."
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "Draft only the opening paragraph of a Gitea PR delivering the analytics subset of umbrella issue #42. User explicitly requires umbrella #42 to stay open because logistics is unfinished. There is no child ticket. Include the issue reference and make the limitation unmistakable. This is a proposed-action smoke case: no tracker calls or publication.",
+      "expected_output": "A non-closing reference and positive open-state wording, without a negated closing command.",
+      "expectations": [
+        "The draft references #42 without a closing verb immediately before its reference, including in negated sentences or quotations.",
+        "The draft states that #42 remains open and logistics is unfinished; it invents no child issue or publication authority."
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "An authorized ordinary-prose comment update used tea 0.15.1 comments edit with repo fixture/app, login eval, comment901 and a positional BODY via Python subprocess argv, no shell substitution. BODY was exactly Summary\\n\\nEvidence retained.\\n. Successful readback of comment901 gives exactly Summary\\n\\nEvidence retained. Explain next steps and what success you can claim. The user requested the prose update, not byte-exact file publication. This is a proposed-action smoke case, not an executed publication.",
+      "expected_output": "The agent reconciles the known terminal-LF trim and reports verified prose without a duplicate or a false byte-exact claim.",
+      "expectations": [
+        "The response identifies the observed terminal-LF removal on this CLI path, not a failed or missing write, and claims at most verified prose rather than exact file fidelity.",
+        "The plan retains comment901 and avoids duplicate POSTs, repeated same-path newline repair and broad strip/rstrip comparisons."
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "User requires byte-exact publication of review.md to existing marker comment901 in fixture/app, login eval; file has a final LF, leading spaces and an indented code block. A previous CLI update succeeded but readback lacks the final LF; another fixture variant also alters the code-block indentation. State the transport/verification/recovery plan for both variants, including how to avoid duplicate comments. This is a proposed-action smoke case: no live tracker calls or claimed execution.",
+      "files": ["evals/files/review.md"],
+      "expected_output": "Exact encoded JSON PATCH/readback for the same comment, without normalizing away either whitespace mismatch.",
+      "expectations": [
+        "The plan uses a real JSON encoder and -d @payload.json or -d @- for the source text, not -F body=@file, shell substitution or trimming comment argv as an exact path.",
+        "The plan reconciles and PATCHes the existing marker comment, compares the decoded body exactly, and treats both missing LF and changed indentation as unsatisfied byte-exact publication rather than accepting strip/rstrip equality."
       ]
     }
   ]

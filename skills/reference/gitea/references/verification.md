@@ -1,6 +1,42 @@
 # Verification scope
 
-## Current observations — 2026-09-15
+## Closure and body-fidelity observations — 2026-10-26
+
+Runtime for the client probe: installed tea **0.15.1**. The loopback server used
+dummy credentials and isolated HOME/XDG config; it recorded outbound JSON, not
+real Gitea persistence. No live mutation was used for the probe.
+
+| Evidence source | Observed behavior |
+|---|---|
+| Read-only Indyq issue188 timeline and PR218/294/297 bodies | All three PRs have `pull_ref` / `ref_action: closes` entries; their merge times match subsequent issue `close` events. The prose used negated closing phrases. Reopening after each partial delivery repaired state but left the wording hazard. PR257 used a non-closing reference and is not among those closure events. This supports safe positive wording, not interpreting negation as a parser escape. |
+| Authorized issue188 reopen/comment reconciliation in the same session | A tea `comments edit` positional body written through subprocess argv lost its one terminal LF; no shell substitution was involved. Exact content readback succeeded after identifying that sole difference. This was ordinary-prose tracker correction, not proof of byte-exact file transport. |
+| Isolated loopback `comments add` and `comments edit`, positional body | Input `  Summary\n\n    code\n\n` became `Summary\n\n    code`: outer whitespace trimmed, interior indentation preserved in this sample. |
+| Same fixture, API `-F body=@file` | Two terminal LF characters became one; a separate one-LF input lost that LF. Leading spaces and interior indentation survived. This path is not byte-exact. |
+| Same fixture, API JSON `-d @payload.json` and literal `-f body=...` argv | Both preserved the complete tested body string. The JSON file path avoids argv/shell-substitution hazards and is the documented exact-file recipe. |
+
+Recent Pi session evidence independently shows the recurring failure. These are
+local JSONL session identifiers and UTC timestamps, not shipped artifacts; the
+selected records did not reliably capture a tea version. They establish the
+observed write/readback behavior, while the loopback probe above isolates the client.
+
+| Session identifier / UTC window | Narrow evidence and recovery |
+|---|---|
+| Indyq, 2026-10-25 17:28:09–17:28:45, 01a17403-33cd-7335-983a-82c621d08bbf, lines 104–111 | `comments edit` via Python subprocess argv: 9,173 expected / 9,172 actual characters, final LF absent. Broad `rstrip()` equality was an initial diagnostic, not exact proof. The agent removed the LF from its local draft and rewrote the same comment; later equality proved the modified draft, not preservation of the original file. |
+| Indyq, 2026-10-26 18:22:11–18:22:39, 01a1796f-24ad-7315-8f64-fac88a1c9eef, lines 42–49 | `comments add` via subprocess argv: 6,074 / 6,073; a full line-preserving diff isolated the final LF. The retained draft was adjusted and matched the existing comment without another write. Neither argv case involved shell substitution. |
+| Nukem2, 2026-10-26 09:44:38–09:45:26, 01a17791-19f2-72e3-b331-71f89f261a66, lines 52–57 | Comment POST with `-F body=@file`: 7,213 / 7,212; an explicit whole-body comparison established exactly one missing terminal LF. JSON-encoded `-d @payload.json` PATCH of that same comment, HTTP200 and fresh GET then matched the original complete body, including LF. This contradicts blanket server-normalization explanations. |
+| Nukem2, 2026-10-25 16:53:20–16:53:57, 01a173ce-68d0-702c-b596-f9432d3da0de, lines 95–104 | PR creation with `-F body=@file`: HTTP201 but 3,465 / 3,464 characters on readback. The draft was changed to remove its final LF before exact verification passed. File input alone did not preserve the original body. |
+
+Keep original inputs and observed bodies separate during diagnosis. Adapting a draft
+to a proven prose normalization is not evidence that the original exact file was
+published; accepting broad whitespace equality can conceal a second mismatch.
+
+The missing-repository probe attempt made no HTTP request; a subsequent attempt
+hit an existing dummy-login name. Both were setup failures, not body-behavior
+results. The successful probe used a fresh isolated config and temporary Git repo.
+No 0.16.0 comment/field-file re-probe or fresh description-file probe was performed;
+keep those version/operation boundaries separate from the September observations.
+
+## Prior observations — 2026-09-15
 
 Runtime: tea **0.16.0** (installed binary; help tree byte-identical to the official
 v0.16.0 linux-amd64 release build apart from the version stamp); the configured

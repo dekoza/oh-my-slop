@@ -109,6 +109,42 @@ def test_documented_issue_summary_refuses_invalid_collection_shape(
     assert result.stdout == ""
 
 
+@pytest.mark.parametrize("body", ["Summary\n", "Summary\n\n", "  Summary\n\n    code  \n", "Zażółć\r\n", "No final LF"])
+def test_documented_exact_body_recipe_preserves_whitespace(tmp_path: Path, body: str) -> None:
+    text = (GITEA / "references/api-scripting.md").read_text(encoding="utf-8")
+    recipe = re.search(r"python - body\.md payload\.json <<'PY'\n(.*?)\nPY", text, re.DOTALL)
+    assert recipe is not None, "Expose a JSON-body recipe that preserves the source text"
+    source = tmp_path / "body.md"
+    payload = tmp_path / "payload.json"
+    source.write_bytes(body.encode("utf-8"))
+    result = subprocess.run(
+        [sys.executable, "-", str(source), str(payload)],
+        input=recipe.group(1), capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(payload.read_text(encoding="utf-8")) == {"body": body}
+    assert source.read_bytes() == body.encode("utf-8")
+
+
+def test_partial_pr_wording_avoids_automatic_closure() -> None:
+    text = (GITEA / "references/pulls.md").read_text(encoding="utf-8")
+    section = text.split("## Issue references and merge actions", 1)[1].split("## ", 1)[0]
+    assert "Refs #42" in section and "#42 remains open" in section
+    assert "negation" in section.lower()
+    assert "timeline" in section and "ref_action" in section
+    examples = "\n".join(re.findall(r"```[^\n]*\n(.*?)```", section, re.DOTALL))
+    assert not re.search(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#42\b", examples, re.I)
+
+
+def test_body_fidelity_guidance_distinguishes_transport_from_content() -> None:
+    text = (GITEA / "references/api-scripting.md").read_text(encoding="utf-8")
+    section = text.split("## Body fidelity and newline recovery", 1)[1].split("## ", 1)[0]
+    assert "0.15.1" in section and "-F body=@file" in section and "-d @payload.json" in section
+    assert "ordinary prose" in section and "byte-exact" in section
+    assert "strip()" in section and "rstrip()" in section
+    assert "same comment" in section and "terminal LF" in section
+
+
 def test_api_orchestration_reuses_qualified_helpers_and_recovers_saved_identity() -> None:
     text = " ".join((GITEA / "references/api-scripting.md").read_text().split())
     section = text.split("## Bounded orchestration data", 1)[1].split("## Pagination", 1)[0]

@@ -50,7 +50,38 @@ fall through to the markdown detail view.
 - Anything parsing PR titles must tolerate the `WIP: ` prefix.
 - Unlike `gh pr create --draft`, no separate draft state is set.
 
-### agit flow
+## Issue references and merge actions
+
+**Use non-closing references for partial delivery.** An umbrella issue stays open
+until its full acceptance is delivered; a PR implementing one subset references it:
+
+```text
+Refs #42 — analytics subset only.
+#42 remains open; convention logistics is outstanding.
+```
+
+Use a closing keyword only for the exact issue this PR fully resolves and is
+intended to close. If a separately tracked child is complete, close that child and
+reference its unfinished parent. Publication does not authorize a merge.
+
+**Treat closing phrases as machine syntax.** Gitea's keyword matcher ignores
+negation: a closing verb immediately before an issue reference can schedule closure
+even inside a sentence saying the issue must stay open. Use the positive form above
+rather than relying on quotes or Markdown formatting as an escape. Inspect tables
+and quotations too. Preserve a hazardous exact quotation in linked evidence outside
+the parsed PR body; flag any conflict with a required body format to its workflow
+owner instead of silently rewriting the quotation.
+
+Before publication, inspect the whole body for unintended closing phrases. Read
+back the resulting body and issue links. When diagnosing repeated closure, inspect
+`GET /repos/OWNER/REPO/issues/INDEX/timeline` for `pull_ref` entries whose
+`ref_action` is `closes`, and correlate the `close` event with the PR merge time.
+Apply the API reference's pagination rules; a reopen repairs state, not the phrase
+that triggered it. Rewrite an authorized PR body before merge rather than relying
+on a negated instruction. See [verification scope](verification.md) for observed
+closure events.
+
+## agit flow
 
 `--agit` (with optional `--topic`) creates an agit-flow PR. It requires a remote — omitting one fails with `remote is required for agit flow PR`.
 
