@@ -39,6 +39,7 @@ while the PR remains conflicted. Leave the PR open; merging it is a separate dec
 - **Bound repairs.** Record the caller's repair limit, otherwise use two rounds subject to
   stricter project limits. A round fixes current blocking findings, commits the repair,
   reruns affected checks and obtains affected-axis review; initial review spends none.
+  Include verified in-scope sibling defects in the current round, not a separate loop.
   Report advisory findings rather than expand the repair. If blockers remain when the
   budget is exhausted, stop and report preserved state, then ask the next owner decision
   through `grilling`.
@@ -77,12 +78,20 @@ blanket ours/theirs selection is not a semantic resolution. Ask via `grilling` w
 intents conflict and the governing requirements do not settle the choice. Finish only the
 merge/rebase belonging to this repair; retain unrelated edits and files.
 
+Before editing the integrated result, follow the shared
+[invariant preflight](../implement/references/invariant-preflight.md): challenge each
+finding's faulty assumption across its affected sibling paths and map concrete
+counterexamples to focused regressions. Keep this a bounded defect-family inspection;
+a whole-PR hardening sweep needs explicit operator scope. Preserve mandatory checks
+and report any operator-limited verification gaps. The preflight is not independent review.
+
 Address actionable review findings in the integrated result. Use the `tdd` skill for code
 fixes and regression coverage, including interactions between target changes and PR changes.
 Explain disputed or superseded findings with evidence instead of silently dropping them.
 
 **Ready when:** the authorized Git operation is complete, no unresolved conflict remains,
-and each finding has a concrete fix or an explicit unresolved decision/blocker.
+and each finding and verified in-scope sibling defect has a concrete fix or an explicit
+unresolved decision/blocker, with its counterexample and affected verification recorded.
 
 ## 3. Verify and publish the repaired head
 

@@ -1,5 +1,19 @@
 # Implement worker contract evaluation
 
+## Failure-path preflight — 2026-10-26
+
+Case 19 adds source-inspection of interrupted preparation and post-server-commit local
+acknowledgement persistence. It asks for concrete counterexamples and minimal meaningful
+verification before independent review, not another queue or recovery feature. Both
+`implement` and `fix-pr` now reach the same invariant-preflight reference; native routing
+tests check its shipped path and ordering. Mandatory project gates and ticket scope remain.
+
+The paired body-only response exercise and its reference-loading limitation are recorded
+in the [shared repair evaluation](../../fix-pr/evals/README.md#bounded-invariant-preflight--2026-10-26).
+The baseline already spotted the displayed hazards; no measured prevention/discovery or
+test-efficiency improvement is claimed. Candidate grading and human qualitative review
+remain pending. These responses are not browser, database or actual workflow execution.
+
 ## Scope
 
 The existing scenarios 1–7 remain controls for one-ticket scope, standalone PR

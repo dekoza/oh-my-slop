@@ -1,5 +1,28 @@
 # Fix PR evaluation
 
+## Bounded invariant preflight — 2026-10-26
+
+Cases 7–8 add an unreported sibling eligibility defect beside the reported consignment
+omission. Case 7 is source-inspection response simulation; case 8 is executable in an
+operator-owned disposable Python fixture, with no forge/Git/production authority. The
+shared construction reference lives with `implement`; `fix-pr` reaches the same file.
+Whole-PR hardening remains explicitly scoped, and mandatory project checks still apply.
+
+`tests/test_invariant_preflight.py` verifies both reachable pre-review pointers and the
+new eval inputs. Its executable public-interface oracle rejects both the original fixture
+and a reported-defect-only subtraction patch, and accepts a complete eligibility repair.
+That proves the fixture discriminates the sibling defect, not model compliance. Pure
+Python stock examples establish no PostgreSQL concurrency or production ownership policy.
+
+Baseline skill snapshots, frozen task/assertion files and execution artifacts are retained
+outside the package in `/tmp/fixrev-preflight-eval-HXeLrh/`. Two body-only baseline
+responses already identified the supplied hazards; no discovery lift is established.
+Their candidate comparison deliberately permits only skill-body/task reads, so it does
+not certify following the newly disclosed reference. The committed cases permit that
+reference. An additional executable old/new fixture pair checks actual repairs with
+held-out public-interface cases. Candidate outcomes, formal grading and human qualitative
+review remain pending; do not infer success from these scenario definitions.
+
 ## Closing decisions through grilling — #265
 
 Case 6 ends a verified repair with two open human choices: a pre-existing vacuous export

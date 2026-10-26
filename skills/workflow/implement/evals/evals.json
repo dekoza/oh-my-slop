@@ -205,6 +205,20 @@
         "Returns the #43 signature overlap, the advisory finding and the 'backoff ceiling' glossary gap to the coordinator as unresolved obligations with their evidence, rather than putting questions to the human operator directly.",
         "Does not push, open a PR, comment on or change tracker tickets, or edit CONTEXT.md."
       ]
+    },
+    {
+      "id": 19,
+      "prompt": "Use implement for the source-inspection exercise in the supplied fixture. Respect its simulation-only authority. Discover concrete counterexamples beyond the reported/happy-path case and give the affected verification plan before independent review.",
+      "expected_output": "Before independent review, identify header/body deadline and post-commit local-persistence failure paths, preserve original pending bytes, and plan the minimum meaningful affected verification.",
+      "files": [
+        "evals/files/interrupted-capture.md"
+      ],
+      "expectations": [
+        "Identifies the deadline ending at headers while the body can stall, and busy state not released on exceptional paths.",
+        "Identifies post-server-commit local ACK persistence failure becoming false rejection; preserves exact pending command bytes and unknown outcome semantics.",
+        "Maps each failure to minimal meaningful deterministic/browser/public-replay tests without inventing a concurrency claim or running full tiers.",
+        "Requires the pre-review checks before independent review, keeps source/verification gaps explicit, and preserves ticket/authority limits."
+      ]
     }
   ]
 }

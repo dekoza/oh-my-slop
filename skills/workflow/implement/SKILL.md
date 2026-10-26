@@ -110,11 +110,25 @@ pass it is to have read what it will cite.
 
 When the target repo has a `CONTEXT.md` — or whatever its domain doc layout (the one `/setup-project-skills` writes) names as the glossary — read it before editing, and use its terms in identifiers, tests, and commit messages. Parallel builders drift into synonymous vocabularies when each reads only its own ticket; one shared language is an input to every builder, not something the reviewer catches afterwards. When the slice needs a term the glossary lacks, or changes what an existing term means, do not coin a synonym: name the gap the way the `domain-modeling` skill would, in the delivery report (and standalone PR body), and leave the glossary edit to the map's owner — `CONTEXT.md` is one file shared by every slice running beside yours. A repo with no glossary gets no new one from this step: proceed silently.
 
+## Challenge failure paths before review
+
+Before the first edit, follow the shared
+[invariant preflight](references/invariant-preflight.md) for this ticket's critical
+invariants: record source-backed counterexamples, trace affected writers/readers and
+interruption paths, and select the smallest credible regressions. Extend this record
+during construction and recheck it against the committed candidate before independent
+review. This self-check is not a third review axis or permission to broaden the ticket.
+
 ## Build and verify
 
 Use the `tdd` skill, at pre-agreed seams. An approved ticket/spec may already establish those seams; inspect and reuse that agreement. Ask only about consequential unresolved interfaces, rather than demanding a second approval of an accepted contract.
 
-Run typechecking regularly, single test files regularly, and the full test suite once at the end. For E2E tests, follow the `testing-workflow` skill's "E2E policy for implementation runs" — per-slice targeted runs, full E2E delegated to the PR's CI check, never a full in-session E2E run without consent. Follow the project's mandatory checks (AGENTS.md / CLAUDE.md) if it declares any.
+Use focused RED/GREEN selections during construction, then consolidate affected checks
+on the final candidate with applicable type/lint/import/migration checks. Preserve the
+mandatory end gates from `testing-workflow` and project policy (AGENTS.md / CLAUDE.md);
+an explicit operator test limit leaves omitted required checks as verification gaps,
+not passes. Follow the project's actual E2E and automation policy rather than assume
+an available CI check. Full E2E needs the required consent; the preflight does not grant it.
 
 Commit the inspected candidate to the worktree's branch **before review**. Stage only the slice's inspected changes, including relevant new files; preserve unrelated work. Record the fixed **base SHA** and candidate SHA, and confirm their committed diff contains the slice. The reviewers inspect committed history, not uncommitted edits.
 
