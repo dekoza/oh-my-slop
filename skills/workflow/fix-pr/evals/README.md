@@ -14,14 +14,41 @@ and a reported-defect-only subtraction patch, and accepts a complete eligibility
 That proves the fixture discriminates the sibling defect, not model compliance. Pure
 Python stock examples establish no PostgreSQL concurrency or production ownership policy.
 
-Baseline skill snapshots, frozen task/assertion files and execution artifacts are retained
-outside the package in `/tmp/fixrev-preflight-eval-HXeLrh/`. Two body-only baseline
-responses already identified the supplied hazards; no discovery lift is established.
-Their candidate comparison deliberately permits only skill-body/task reads, so it does
-not certify following the newly disclosed reference. The committed cases permit that
-reference. An additional executable old/new fixture pair checks actual repairs with
-held-out public-interface cases. Candidate outcomes, formal grading and human qualitative
-review remain pending; do not infer success from these scenario definitions.
+Immutable baseline skill snapshots, frozen task/assertion files, command logs, reports,
+grades and the standard viewer are archived outside the package at
+`/home/minder/.local/state/oh-my-slop/fixrev-invariant-preflight-HXeLrh/`. Original executions
+used `/tmp/fixrev-preflight-eval-HXeLrh/`; the archive preserves those original path records.
+Source under comparison is the pre-edit `de4f9e2` body versus the candidate in `665f532`.
+Only the selected workflow body/reference changes; both arms use the same task facts,
+`openai-codex/gpt-6.1-sol`, high thinking, tools and fixture content. Configuration paths
+differ to isolate writes. There is one trial per configuration, with no model retries.
+
+Independent grading of both body-only response pairs found **4/4 versus 4/4** in each
+case (repair and implementation). Those prompts deliberately permit only skill-body/task
+reads, so they do not certify following the disclosed reference; committed cases 7/19
+permit it. The prompts supply the hazards, and baselines already identify them: no
+assertion-measured planning or discovery lift. The standard viewer is
+`iteration-1/review.html`: Outputs contains responses/reports and grades; Benchmark
+contains aggregate results and limits. Human qualitative acceptance remains pending.
+
+The executable pair also ties **4/4 versus 4/4** under coordinator source/oracle grading.
+Both repaired public paths pass held-out eligibility/backing cases. Coordinator reruns of
+each added suite reject the unchanged original (16 failing subtests each) and pass the
+repairs (3 baseline / 4 candidate test methods). Command logs are retained under
+`executable/*/coordinator-check.log`; method counts do not measure test efficiency.
+Compact model conversation exports retain command/edit ordering and tool-result excerpts,
+not complete raw tool arguments/results; no stronger model execution audit is claimed.
+The candidate read the shared reference; both arms preserved fixture-only authority.
+This is actual pure-Python construction, not database/browser, real PR publication or
+production certification. Across all three exercises the aggregate is **12/12 per arm**;
+no correctness, reliability or time/token-efficiency improvement is established.
+
+Repository verification: `uv run pytest` **1,128 passed**;
+`node --test tests/node/*.mjs` **128 passed**; Markdown reference validation passed.
+Native and model RED/GREEN evidence is retained. Skill names, command arguments,
+independent axes, mandatory gates and publication authority remain unchanged. The
+configured package uses the local primary source checkout; this worktree was not silently
+installed over its unrelated staged/untracked changes or the inactive managed clone.
 
 ## Closing decisions through grilling — #265
 

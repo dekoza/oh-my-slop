@@ -10,9 +10,11 @@ tests check its shipped path and ordering. Mandatory project gates and ticket sc
 
 The paired body-only response exercise and its reference-loading limitation are recorded
 in the [shared repair evaluation](../../fix-pr/evals/README.md#bounded-invariant-preflight--2026-10-26).
-The baseline already spotted the displayed hazards; no measured prevention/discovery or
-test-efficiency improvement is claimed. Candidate grading and human qualitative review
-remain pending. These responses are not browser, database or actual workflow execution.
+Independent grading ties at **4/4 per arm** for the implementation response pair. The
+baseline already spotted the displayed hazards; no measured prevention/discovery or
+test-efficiency improvement is claimed. Human qualitative review remains pending.
+These responses are not browser, database or actual implementation-workflow execution;
+the separately recorded executable fixture exercises `fix-pr`, not this worker.
 
 ## Scope
 
