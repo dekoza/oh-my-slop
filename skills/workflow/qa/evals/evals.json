@@ -55,6 +55,45 @@
         "Makes no assignment, claim, branch, code change, fix or dispatch; the fixture's source files and Git state are unchanged.",
         "The simulated agent work tracker's write log holds only the creation of the two filed issues, plus any label creation: no relabelling, closure, state edit or blocking edge, and no comment other than a deduplication comment, on any other issue."
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "Run the capture-correction session (id 4) from evals/files/feedback-sessions.json as a turn-by-turn tabletop simulation using this version of qa. Process each turn using only facts available so far. Record each public response, internal entry state and intended tracker effects. Simulated effects are not evidence of actual tracker writes.",
+      "expected_output": "Minimal receipts during capture; stable entries retain the correction and reject stale analysis. Ending publishes only the corrected modal report, retains the ambiguous dashboard observation and its prepared review questions, and asks no questions.",
+      "files": ["evals/files/feedback-sessions.json"],
+      "expectations": [
+        "Before End feedback, public responses contain only capture receipts and no questions, analysis reports or tracker writes.",
+        "The Save correction updates the original stable entry rather than becoming a separate issue, and the stale background result does not restore the persistence claim.",
+        "After End feedback, exactly one corrected modal issue is proposed for publication with deduplication and readback, and no issue claims the phone number fails to persist.",
+        "The dashboard observation is retained with original wording and prepared review questions, rather than an invented redesign or reproduction.",
+        "The closing response asks no questions and separates published issues from unresolved observations; publication is not implementation authority."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Run the invited-review session (id 5) from evals/files/feedback-sessions.json as a turn-by-turn tabletop simulation using this version of qa. Process each turn using only facts available so far. Record each public response, internal entry state and intended tracker effects. Simulated effects are not evidence of actual tracker writes.",
+      "expected_output": "Questions are prepared silently and asked only after Review feedback, with original context and bounded grilling-style decision recommendations. Skipping import leaves it unresolved; capture resumes, and ending publishes only sufficiently specified reports without treating a recommendation as the user's answer.",
+      "files": ["evals/files/feedback-sessions.json"],
+      "expectations": [
+        "The first public response is a minimal receipt with no questions or tracker writes, while review questions are prepared internally for both ambiguous entries.",
+        "Only after Review feedback does the assistant ask numbered questions restoring each entry's original context and explaining the consequence of the ambiguity.",
+        "Review uses grilling-style recommendations for decisions but does not recommend factual answers about which customer rows were lost or treat its own recommendation as accepted.",
+        "The explicit filter request is preserved without removing dashboard content; skipped import questions remain unresolved and are not re-asked after Resume capture or End feedback.",
+        "After capture resumes there are no further questions, and publication waits for End feedback, using shared deduplication, authority and readback rules."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Run the end-with-pending-and-failure session (id 6) from evals/files/feedback-sessions.json as a turn-by-turn tabletop simulation using this version of qa. Process each turn using only facts available so far. Record each public response, internal entry state and intended tracker effects. Simulated effects are not evidence of actual tracker writes.",
+      "expected_output": "The explicit end remains final even while analysis completes. An unresolved duplicate choice is queued for invited review rather than interrupting or creating a duplicate. Tracker verification failure is reported honestly; the export ambiguity and prepared questions survive in a session record with no closing questionnaire.",
+      "files": ["evals/files/feedback-sessions.json"],
+      "expectations": [
+        "Public capture responses and background completions contain no questions, unsolicited analysis reports or tracker writes.",
+        "End feedback closes capture without a confirmation prompt; pending analysis is reconciled without restarting capture or review.",
+        "Existing issue #42 is linked as a possible match; the extend-versus-separate decision stays unresolved without a question, duplicate creation or unsolicited comment.",
+        "The permission-denied readback is reported as unverified or failed, never as successful publication or a verified update.",
+        "The incomplete export observation and prepared review questions are preserved in a session record, with no invented reproduction, implementation or closing questionnaire."
+      ]
     }
   ]
 }

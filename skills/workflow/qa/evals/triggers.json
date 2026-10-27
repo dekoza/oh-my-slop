@@ -1,0 +1,22 @@
+[
+  {"query":"Start a feedback session for the customer admin app. I have a mixture of bugs and rough edges to report.","should_trigger":true},
+  {"query":"I want to braindump app feedback and review the unclear entries afterwards.","should_trigger":true},
+  {"query":"Let's do QA on checkout. Clicking Cancel submits the order; file that report, don't fix it.","should_trigger":true},
+  {"query":"Log these bugs on our project tracker: sorting is backwards and the edit modal never closes.","should_trigger":true},
+  {"query":"File an issue for this: saving a customer silently loses the phone number. I expected it to persist.","should_trigger":true},
+  {"query":"Capture my observations about the app under development. Some are feature requests, some are bugs.","should_trigger":true},
+  {"query":"I have feedback about the invoice screen. Let me send it in separate messages before we discuss it.","should_trigger":true},
+  {"query":"Report a bug: cancelling customer deletion deletes the customer anyway. Please just create a ticket.","should_trigger":true},
+  {"query":"QA session: the CSV import drops the final row every time; record it for the developers.","should_trigger":true},
+  {"query":"Please collect this list of development-app feedback as tracker issues rather than implementing changes.","should_trigger":true},
+  {"query":"Give me feedback on this pull request against our documented coding standards.","should_trigger":false},
+  {"query":"Grill me about the trade-offs in this feedback-collection product before we choose an architecture.","should_trigger":false},
+  {"query":"Implement ticket #42: fix the customer sort order using the accepted spec.","should_trigger":false},
+  {"query":"Reproduce this failed save in the browser and capture a screenshot and console logs; do not file tickets.","should_trigger":false},
+  {"query":"Give feedback on this SKILL.md description and why it triggers on unrelated requests.","should_trigger":false},
+  {"query":"Red-team this feedback procedure and identify its strongest failure modes.","should_trigger":false},
+  {"query":"Run the tests for the feedback extension and report failures.","should_trigger":false},
+  {"query":"Write a pull request description for the feedback-session changes.","should_trigger":false},
+  {"query":"I want UI design feedback on the dashboard's typography, palette and accessibility, not tracker issues.","should_trigger":false},
+  {"query":"Debug why the app's feedback form hangs after submit; investigate and fix the underlying bug.","should_trigger":false}
+]

@@ -1,0 +1,39 @@
+{
+  "environment": {
+    "application": "Customer admin under development; no implementation changes are authorized.",
+    "tracker": "Simulated agent work tracker. Record intended searches, writes and readbacks in the transcript; never call a real tracker. Successful simulated creates return a URL and the stored body and labels on readback.",
+    "investigation": "Only the facts supplied in each scenario are available. Additional behavior, user expectations and root causes are unknown."
+  },
+  "sessions": [
+    {
+      "id": 4,
+      "name": "capture-correction",
+      "turns": [
+        {"role": "user", "text": "Start a feedback session for customer admin.\n- In Customers, open Ada, change the phone number and click Save. The Save button does nothing, every time.\n- The dashboard feels cluttered."},
+        {"role": "user", "text": "Correction to the first entry: the phone number DOES save; reopening Ada shows the new number. The edit modal stays open after Save. I expected it to close after a successful save. Happens every time."},
+        {"role": "background", "text": "An analysis started before the correction returns a provisional draft saying the Save button never persists the phone number."},
+        {"role": "user", "text": "End feedback."}
+      ]
+    },
+    {
+      "id": 5,
+      "name": "invited-review",
+      "turns": [
+        {"role": "user", "text": "Start feedback on customer admin. The dashboard feels cluttered. Also, importing customers sometimes loses rows."},
+        {"role": "user", "text": "Review feedback."},
+        {"role": "user", "text": "For the dashboard, the problem is that I cannot find overdue invoices. I want an overdue-invoices filter, but keep all the existing dashboard content. Skip the import questions; I don't remember. Resume capture."},
+        {"role": "user", "text": "One more: clicking the Customers column heading sorts the list ascending every time; clicking it again still sorts ascending. I expect the second click to reverse the sort. End feedback."}
+      ]
+    },
+    {
+      "id": 6,
+      "name": "end-with-pending-and-failure",
+      "turns": [
+        {"role": "user", "text": "Start feedback. In Customers, open Ada, click Delete and then Cancel. Ada is deleted every time. Cancel should leave Ada unchanged. Also, CSV export seems wrong, but I can't explain how yet."},
+        {"role": "background", "text": "Delete-dialog investigation remains pending. Read-only tracker search found existing open issue #42 covering Cancel deleting a customer. No issue has yet been created or updated. A provisional export draft has no reproduction steps or expected output."},
+        {"role": "user", "text": "End feedback."},
+        {"role": "background", "text": "Delete-dialog investigation confirms the reported behavior. Simulated tracker readback of #42 fails with permission denied. A session-record write, if attempted, succeeds."}
+      ]
+    }
+  ]
+}

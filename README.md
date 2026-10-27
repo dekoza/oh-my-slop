@@ -219,7 +219,7 @@ Rituals you run — session and tracker state, from interview through implementa
 | **[Ponytail Audit](skills/workflow/ponytail-audit/SKILL.md)** | Scan for over-engineering — dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead feature flags. Read-only, ranked by impact. |
 | **[Ponytail Debt](skills/workflow/ponytail-debt/SKILL.md)** | Harvest `SHORTCUT:` markers left during development. Flags missing upgrade paths. Optionally writes `SHORTCUT-DEBT.md` for tracking. |
 | **[Prototype](skills/workflow/prototype/SKILL.md)** | Throwaway prototyping discipline — logic branch (terminal app for state machines, with an optional browser view over the same native logic) or UI branch (radically different variants on one route, a switcher that renders the chosen variant and survives reload; production excludes prototypes on the server). Seven universal rules: pure interface, throwaway, one command, no persistence, skip polish, surface state, preserve before a scoped cleanup. A planning prototype ends with findings; production adoption is separately authorized. |
-| **[QA](skills/workflow/qa/SKILL.md)** | Interactive QA session — user reports bugs conversationally, agent clarifies, explores the codebase for domain language, and files durable user-focused tracker issues (single or dependency-ordered breakdowns); concrete reproduction and expectation make an issue well specified, and only a scoped human grant makes it agent-ready. |
+| **[QA](skills/workflow/qa/SKILL.md)** | Interactive per-issue QA, plus quiet app-feedback sessions through `/feedback`: capture observations and corrections, prepare questions for invited review, then reconcile and file clear reports when the user ends capture. Preserve unresolved feedback in a session record; publication alone grants no implementation authority. |
 | **[Retro](skills/workflow/retro/SKILL.md)** | Manually review the current or explicitly named session; rank evidence-backed prevention proposals against upkeep and noise. Inspect checks and wiring; apply nothing. |
 | **[Research](skills/workflow/research/SKILL.md)** | Delegate reading legwork to a background agent — primary sources only, every claim cited, findings landed as a Markdown note in the repo. |
 | **[Review Spec](skills/workflow/review-spec/SKILL.md)** | The spec axis of a two-axis review, independently invocable — missing requirements, scope creep, and requirements implemented wrongly, each quoting the spec line it rests on. Review only, never edits. |
@@ -253,10 +253,11 @@ About the agent and its own toolkit, not about your code.
 Prompt templates are slash commands — type `/name` in the editor and it expands into a request that hands off to a bundled skill. Each template is an entry point, not a second copy of the flow: the skill stays the single source of truth, and the template exists because it forwards its arguments, which `/skill:<name>` cannot. So `/arch ~/some/repo` reviews another tree in one shot.
 
 <details>
-<summary><strong>Prompt templates (15)</strong></summary>
+<summary><strong>Prompt templates (16)</strong></summary>
 
 | Command | What it does |
 |---|---|
+| **`/feedback [app or initial feedback]`** | Capture app feedback without questions; “Review feedback” invites clarification, “End feedback” reconciles and files clear reports without a closing interview. |
 | **`/jester <plan>`** | Stress-test a plan with adversarial reasoning — auto-selects the strongest critique mode (socratic, dialectic, pre-mortem, red team, evidence audit). |
 | **`/council <decision>`** | 5 independent advisors + anonymized peer review + chairman synthesis. For high-stakes decisions where being wrong is expensive. |
 | **`/audit [path]`** | Ranked bloat/over-engineering findings — dead code, reinvented stdlib, speculative abstractions, pass-through wrappers, dead flags. |
@@ -274,6 +275,14 @@ Prompt templates are slash commands — type `/name` in the editor and it expand
 | **`/proto <question> [logic\|ui]`** | Throwaway prototype — terminal app for state machines or radically different UI variants on one route. |
 
 </details>
+
+`/feedback` adds quiet capture to the existing `qa` skill; ordinary interactive QA
+keeps its per-issue clarification and filing. Feedback sessions accept prose, lists
+and successive messages, retain original context and corrections, and prepare
+questions silently. Only an explicit review invitation permits questions. “Resume
+capture” returns to receipts; “End feedback” finishes without questions, files clear
+reports, and preserves unresolved entries and review questions in a session record.
+Run `/reload` in an active pi session to load the new template.
 
 `/fixrev` now routes its existing review-repair job through `fix-pr` and also resolves
 conflicts with the PR's actual target branch. It retains `grilling` for human decisions,

@@ -1,20 +1,28 @@
 ---
 name: qa
 description: >
-  Interactive QA session: the user reports bugs or issues conversationally, the agent
-  clarifies, explores the codebase in the background for domain language, and files
-  durable, user-focused issues on the project tracker. Triggers on: "QA session",
-  "let's do QA", "file an issue for this", "report a bug", "log these bugs",
-  "bug triage", or when the user describes problems they want captured as tracker
-  issues rather than fixed immediately.
+  Use when the user starts a QA or app-feedback session, wants to braindump
+  observations about an app under development, or asks to file bugs or feature
+  requests as tracker issues rather than fix them. Also use for "let's do QA",
+  "start feedback", "file an issue for this", or "log these bugs".
 license: MIT (adapted from mattpocock/skills)
+requires:
+  - grilling
 ---
 
 # QA Session
 
-Run an interactive QA session. The user describes problems they're encountering. You clarify, explore the codebase for context, and file issues that are durable, user-focused, and use the project's domain language.
+Capture app observations and file durable, user-focused issues in the project's domain language.
 
-The issue tracker and triage label vocabulary should have been provided to you — tell the user to run `/setup-project-skills` if not. File to the **agent work tracker** it names: these issues are agent-created, so they belong there even though the reports originate with a human. If no tracker has been provided, default to the local-markdown tracker.
+## Session contract
+
+- **Route** `/feedback` and requests to start an app-feedback or braindump session to **feedback capture**: no questions until invited, no tracker writes until the user ends capture. Read [the feedback procedure](references/feedback.md) before responding to the first entry; it governs capture, invited review and ending.
+- **Preserve** ordinary **interactive QA** for requests such as "let's do QA" or "file this bug" without a feedback-session request. Use the per-issue flow below; input format alone never switches branches.
+- **Separate** publication from implementation authority in both branches. Report observations, established facts and unresolved questions separately; recommendations are not user requirements.
+
+Feedback sessions replace steps 1–2 and 5 below with their own procedure, and use shared steps 3–4 only after capture ends. Their unresolved feedback observations stay in the session record, not fabricated issue bodies.
+
+The issue tracker and triage label vocabulary should have been provided to you — in interactive QA, tell the user to run `/setup-project-skills` if not; in feedback capture, record missing setup quietly and use the fallback below. File to the **agent work tracker** it names: these issues are agent-created, so they belong there even though the reports originate with a human. If no tracker has been provided, default to the local-markdown tracker.
 
 ## For each issue the user raises
 
@@ -38,7 +46,7 @@ While talking to the user, kick off an Agent (subagent_type=Explore) in the back
 - Understand what the feature is supposed to do
 - Identify the user-facing behavior boundary
 
-This context helps you write a better issue — but the issue itself should NOT reference specific files, line numbers, or internal implementation details.
+This context helps you write a better issue — but the issue itself should NOT reference specific files, line numbers, or internal implementation details. Read-only investigation and drafting confer no permission to change app code.
 
 ### 3. Assess scope: single issue or breakdown?
 
@@ -57,7 +65,7 @@ Keep as a single issue when:
 
 ### 4. File the issue(s)
 
-First, dedup: search the tracker for an open issue already covering this behavior — by domain concept (step 2 gave you the terms), not just the user's wording. On a hit, show it and ask: extend that issue (post the new evidence as a comment under the ``🤖 `qa` — additional report`` marker per the tracker doc's "Robot comments" convention) or file separately.
+First, dedup: search the tracker for an open issue already covering this behavior — by domain concept (investigation gave you the terms), not just the user's wording. On a hit in interactive QA, show it and use the `grilling` skill to ask: extend that issue (post the new evidence as a comment under the ``🤖 `qa` — additional report`` marker per the tracker doc's "Robot comments" convention) or file separately. In a feedback session, preserve an unanswered extend-versus-separate choice in the session record for invited review; neither comment nor create a duplicate without that decision.
 
 No hit — create issues per the tracker doc's "publish to the issue tracker" convention. Do NOT ask the user to review first — just file and share URLs.
 
@@ -153,13 +161,13 @@ When creating a breakdown:
 - **Redact credential-looking strings** — tokens, keys, session cookies, `.env` values inside pasted logs or repro steps never reach the tracker; replace each with a placeholder that keeps its shape (`<redacted 40-char hex>`)
 - **Use the project's domain language** (check the domain glossary if one exists)
 - **Describe behaviors, not code** — "the sync service fails to apply the patch" not "applyPatch() throws on line 42"
-- **Reproduction steps are mandatory** — if you can't determine them, ask the user
+- **Reproduction steps are mandatory** for published reports — describe the current user workflow for an enhancement. If you can't determine them, ask in interactive QA; in a feedback session, prepare questions for invited review and retain the observation unpublished until sufficiently specified.
 - **Keep it concise** — a developer should be able to read the issue in 30 seconds
 
 #### After filing
 
-Read each filed issue back and confirm its body — and, on a forge-backed tracker, its labels — landed as intended; a failed or unconfirmed write is reported as such, not as filed. Filing — with any label creation and deduplication comments it needs — is the session's only tracker effect: no assignment, claim, branch, fix or dispatch follows from it, even for a `ready-for-agent` issue. That label records clarity and authority, not eligibility: blockers, claims and prerequisites still decide when the work may start and whether slices may run side by side. Then print all issue URLs (with blocking relationships and each state's reason summarized) and ask: "Next issue, or are we done?"
+Read each filed issue back and confirm its body — and, on a forge-backed tracker, its labels — landed as intended; a failed or unconfirmed write is reported as such, not as filed. Filing — with any label creation and deduplication comments it needs — is the session's only tracker effect: no assignment, claim, branch, fix or dispatch follows from it, even for a `ready-for-agent` issue. That label records clarity and authority, not eligibility: blockers, claims and prerequisites still decide when the work may start and whether slices may run side by side. Then print all issue URLs (with blocking relationships and each state's reason summarized). Only in interactive QA, ask: "Next issue, or are we done?" Feedback sessions use their closing summary without a question.
 
 ### 5. Continue the session
 
-Keep going until the user says they're done. Each issue is independent — don't batch them.
+In interactive QA, keep going until the user says they're done. Each issue is independent — don't batch them. Feedback capture instead groups related observations and ends only on the user's explicit instruction, as defined in its procedure.
