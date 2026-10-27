@@ -116,6 +116,17 @@ def test_bundled_global_guidance_and_repository_pointer_share_the_outcome_rule()
     })
 
 
+def test_research_evals_distinguish_successful_recovery_from_interruption() -> None:
+    document = json.loads((skill_path("research").parent / "evals/evals.json").read_text())
+    cases = document["evals"]
+    assert any("successful-recovery" in case["prompt"] or "successful transport repair" in case["prompt"]
+               for case in cases)
+    assert any("timeout" in case["prompt"] or "timed out" in case["prompt"] for case in cases)
+    recovered = next(case for case in cases if "successful transport repair" in case["prompt"])
+    assert any("actually" in item and "report" in item for item in recovered["expectations"])
+    assert any("grant" in item for item in recovered["expectations"])
+
+
 def test_research_documents_a_checkable_coordinator_closeout() -> None:
     text = skill_path("research").read_text(encoding="utf-8")
     assert_concepts(text, {

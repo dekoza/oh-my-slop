@@ -174,6 +174,14 @@ Use the configured local-tracker equivalent when there is no forge.
 
 Read current content before writing; preserve unrelated concurrent edits. Publish the definitive
 brief and authorization record, then read them back **before** applying the authorized state change.
+
+**Finish a publication-only checkpoint.** If the checked brief is published under
+publication-only approval and readiness remains undecided, ask the named-ticket readiness
+question in this same invocation through `grilling`; report status alongside the question,
+not instead of it. An explicitly declined or deferred readiness answer ends that branch:
+preserve it without re-asking. A limited grant alone is not that refusal. Apply no readiness
+transition until the answer actually grants it.
+
 For implementation handoff, replace the applicable human/info state label with the project's
 agent-ready label, preserve category/unrelated labels and dependencies, and use the implementation
 workflow label only as approved by project policy. Keep the ticket open and preserve ownership.
