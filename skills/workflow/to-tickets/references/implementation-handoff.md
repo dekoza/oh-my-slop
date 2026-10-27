@@ -62,8 +62,11 @@ independent preparation while affected work remains provisional.
   may combine effects; reuse it rather than ask again. For a newly audited graph, recommend
   one combined publication/readiness grant for sufficient slices, naming missing-input
   exceptions and human-only work. A historical parent-only publication grant does not select
-  publication-only for the new graph. Respect an explicit publication-only choice without
-  another readiness question; never infer readiness from the planning invocation.
+  publication-only for the new graph. For that graph-publication decision, respect an
+  explicit publication-only choice without another readiness question; never infer
+  readiness from the planning invocation. A readiness-repair invocation follows its owning
+  workflow's remaining decision sequence: a publication checkpoint is not itself a declined
+  or deferred readiness decision.
 - **Eligibility:** verified prerequisite outputs, tracker blocking relationships,
   ownership/claims and other execution gates allow work now. Prepared and authorized
   but blocked is not takeable; retain ordinary gates and any explicitly authorized

@@ -48,6 +48,7 @@
     "Produces a bounded brief with concrete impact, retained Enrollment/caller contract, disabled-default and duplicate/status criteria, verification recipe and exclusions rather than deferring ordinary construction refinement.",
     "After publication-only approval, publishes and reads back the brief, retains needs-info and withholds readiness, then directly asks the named-ticket readiness question without requiring a continuation nudge.",
     "After explicit readiness approval, reads back the durable brief/authorization before replacing needs-info with ready-for-agent; verifies the final body, comment, labels, open state, ownership and dependencies without further permission.",
-    "Preserves comment 700 history, enhancement, workflow:implement, the dependency edge and unassigned ownership; does not implement, close, spend or change unrelated work."
+    "Preserves comment 700 history, enhancement, workflow:implement, the dependency edge and unassigned ownership; does not implement, close, spend or change unrelated work.",
+    "The final handoff treats readiness as readiness-only: any future implementation prompt is clearly a proposal requiring a separate grant or asks the actual missing authorization; no unconditional implementation directive cites readiness as authority."
   ]
 }

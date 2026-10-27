@@ -110,6 +110,17 @@
         "Both A/B briefs retain local outcome/exclusions, accepted interface source/owner/evidence, concrete impact and blocking edges, checkable acceptance, and scoped authority/residual ownership.",
         "Both briefs use precise specs/status-filters.md and docs/testing.md references instead of copying shared policy paragraphs; no reviewer-only standards policy or mandatory humanify step is introduced."
       ]
+    },
+    {
+      "id": 10,
+      "prompt": "Compare scope using only these fixture facts; no live calls. A newly audited graph has sufficient briefs; the human explicitly chooses publication only after a combined graph-publication/readiness offer. A separate humanify invocation has the specific outcome of agent-ready refinement and receives an interim publication-only grant while readiness remains undecided. State the boundaries for each without executing another workflow.",
+      "expected_output": "Preserve the graph-publication-only choice without another readiness question, while leaving readiness-repair checkpoint sequencing to humanify; neither supplies implementation authority.",
+      "files": [],
+      "expectations": [
+        "For new-graph planning, respects the explicit publication-only choice without repeating the readiness request or applying readiness labels.",
+        "Does not generalize the graph-publication stopping rule into a prohibition on the readiness repairer's remaining human decision sequence.",
+        "No publication, readiness or recommendation is treated as ungranted implementation, merge, closure or live authority."
+      ]
     }
   ]
 }

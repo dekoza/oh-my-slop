@@ -116,6 +116,21 @@ def test_bundled_global_guidance_and_repository_pointer_share_the_outcome_rule()
     })
 
 
+def test_brief_authority_distinguishes_graph_publication_from_readiness_repair() -> None:
+    reference = ROOT / "skills/workflow/to-tickets/references/implementation-handoff.md"
+    assert_concepts(reference.read_text(), {
+        "graph-specific publication choice": r"graph.publication decision",
+        "repair workflow owns remaining decisions": r"readiness.repair.{0,100}owning.{0,50}decision",
+        "limited grant is not a deferral": r"publication checkpoint.{0,100}declined.{0,30}deferred",
+    })
+
+
+def test_readiness_handoff_evals_do_not_turn_readiness_into_implementation_authority() -> None:
+    cases = json.loads((skill_path("humanify").parent / "evals/evals.json").read_text())["evals"]
+    assert any("implementation restart prompt" in item and "separate implementation authorization" in item
+               for case in cases for item in case["expectations"])
+
+
 def test_research_evals_distinguish_successful_recovery_from_interruption() -> None:
     document = json.loads((skill_path("research").parent / "evals/evals.json").read_text())
     cases = document["evals"]

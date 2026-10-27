@@ -202,10 +202,12 @@ When the brief and authorized state are verified but execution is gated, report
 the preserved artifact, exact missing decision/action, owner and resume condition. These are pauses,
 not successful completion; ordinary remaining agent work is never a reason to end the invocation.
 
-Apply the [continuation contract](../handoff/references/workflow-continuation.md) when
-reporting completion or a real pause. Include the concrete separate-session invocation
-with its durable approval and exclusions; a readiness grant is not implementation or
-live-action authority beyond what it explicitly names. Return a coordinated
-handoff to its caller. Do not repeat adequate approval or begin the next workflow here.
+Apply the [continuation contract](../handoff/references/workflow-continuation.md) at a real
+pause or when an established larger goal remains. Carry an already authorized separate-session
+action in its restart prompt with the durable grant and exclusions. If implementation
+permission is missing, the next actor is the human: give the actual authorization question
+or a clearly labelled proposal, not an instruction to run `implement` under readiness alone.
+If agent readiness was the whole requested outcome, report it complete without inventing
+another approval ceremony. Return coordinated handoffs to the caller; begin no next workflow.
 
 Behavioral regression scenarios: [evals/evals.json](evals/evals.json).
