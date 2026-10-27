@@ -1,0 +1,2 @@
+# Research worker result
+Inspection of source.md found an insecure readiness probe. It does not prove the current beta host passes or fails: no host calls occurred. Recommend a small code-only readiness-probe/runbook slice, separately prepared and approved; exclude ingress redesign, renewal qualification and deployment. Save these findings with their source citation. No code, host or tracker changes were made.

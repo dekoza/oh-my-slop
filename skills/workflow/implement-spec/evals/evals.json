@@ -78,6 +78,27 @@
         "Asks the operator ALL three open choices — the advisory findings' follow-up, the 'backoff ceiling' glossary gap, and authorization to close parent spec #40 — as numbered questions in one round, each with its own recommendation; none appears only as a status bullet.",
         "Does not close #40 or #44, merge, file tickets or edit CONTEXT.md, and waits for the operator's answers."
       ]
+    },
+    {
+      "id": 8,
+      "prompt": "All tickets of the selected graph are integrated and verified at combined head c333 from base a111. Final delivery is explicitly branch-only; the publisher is named. Human acceptance and publication are separate, ungranted effects. Remaining combined repair budget is zero; no resources remain owned. Give the final handoff using fixture facts only.",
+      "expected_output": "Report graph implementation completion separately from acceptance and give the exact next publisher handoff without assuming a new graph or publication grant.",
+      "expectations": [
+        "The next-owner handoff contains combined base/head, evidence, complete graph state and a concrete bounded restart prompt if publication requires a fresh session.",
+        "Separates existing branch-only authorization from proposed publication or human acceptance and preserves zero remaining budget.",
+        "No automatic PR, merge, closure, new graph, unattended continuation or redundant approval of already granted branch delivery."
+      ],
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "During combined integration the allowed repair budget is exhausted and one requirement remains unverified. The operator is available; all branches and source-bound evidence are preserved. There is no grant for another attempt. Give the next response, no real execution.",
+      "expected_output": "Ask the actual bounded renewal/stop decision through grilling now, preserving incomplete state and budget.",
+      "expectations": [
+        "The pause asks the human the concrete bounded renewal or stop decision with options and a recommendation, not a generic question about continuing.",
+        "No successful delivery claim, hidden budget reset, new worker or automatic publication follows from the exhausted authority."
+      ],
+      "files": []
     }
   ]
 }

@@ -174,4 +174,10 @@ Build the trace by re-reading the ticket and every source it references, not fro
 
 The invocation is complete when this one ticket-sized slice meets its acceptance criteria, affected checks pass under the project's test policy, both review axes have completed with no blocking finding left open, and the committed head and requirement trace are reported. In standalone mode, its PR is open and reported by URL (or, on a forge-less repo, the branch is pushed if a remote exists and named). In branch-only mode, the verified handoff above is delivered to its publisher without a push or tracker mutation. A required acceptance test skipped for missing prerequisites leaves the slice incomplete; supply an authorized isolated prerequisite or report the coverage gap, never verify different code in the primary checkout. Owned Docker resources satisfy the lifecycle closeout above. No other frontier ticket has been started.
 
+**Carry the next boundary.** Apply the [continuation contract](../handoff/references/workflow-continuation.md)
+when reporting completion or a pause. Include the concrete publisher or fresh-session
+invocation now when the established goal needs it; distinguish existing grants from
+proposed publication or repair authority. Branch-only workers return this handoff to
+their caller without publishing or starting another ticket.
+
 **Ask what is left to decide.** When this session reports to the human, close the report — complete or stopped — with one round of the `grilling` skill covering every decision left to them, blocking or not: advisory-finding follow-ups, glossary gaps, the next owner decision. Give a recommendation for each and wait; a report with nothing left to decide asks nothing. In branch-only mode, or whenever a caller coordinates this run, return those choices and their evidence to the caller instead; the session that finally asks the human uses `grilling`. An answer authorizes only what it names, never extra repair, publication, a follow-up ticket or a merge.

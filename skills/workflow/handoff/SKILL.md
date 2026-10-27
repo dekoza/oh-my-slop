@@ -4,6 +4,8 @@ description: Compact the current conversation into a handoff document — goal, 
 argument-hint: "What will the next session be used for?"
 #disable-model-invocation: true
 license: MIT (adapted from mattpocock/skills)
+requires:
+  - grilling
 ---
 
 # Handoff
@@ -26,8 +28,9 @@ What we're trying to accomplish. One paragraph.
 
 ## What's next
 
-- The next concrete steps, in order.
-- Any blockers or open questions.
+- The next actor and concrete action; any blockers or actual decisions needed.
+- A copyable restart prompt carrying existing authority, evidence, limits and exclusions.
+  Clearly distinguish already granted actions from proposals requiring approval.
 
 ## Decisions
 
@@ -54,6 +57,7 @@ Skills the next agent should load:
 4. **Keep it under 500 words.** A handoff that's longer than a page is a document, not a handoff.
 5. **Save to temp, not workspace.** The handoff is a session artifact, not a project artifact. Write it to `$TMPDIR`, `/tmp`, or `%TEMP%` — never into the repo.
 6. **Record decisions, not just state.** Capture the choices made and why, so the next agent doesn't reopen settled questions or silently contradict them.
+7. **Apply the [continuation contract](references/workflow-continuation.md) at session closeout.** Include the restart prompt now rather than wait for a next-step nudge. Preserve approval references and remaining budget; a fresh session does not require approval already granted, expand it, or reset its limits. If a consequential choice remains, ask through `grilling` or return it to the coordinating caller. Saving the handoff does not execute its proposed work.
 
 ## When to use
 

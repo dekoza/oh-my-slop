@@ -204,5 +204,8 @@ remaining budget and unresolved obligations. Include the PR URL or branch-only h
 retain worktrees, and stop only infrastructure started by this run. Say **implementation
 complete; human acceptance pending** where applicable, not that tracker issues or human
 review tickets have closed. No next graph or unattended continuation starts automatically.
+Apply the [continuation contract](../handoff/references/workflow-continuation.md) to this
+completion or pause: deliver the concrete next-owner handoff, including a restart prompt
+when a fresh session is required, with existing grants and remaining limits intact.
 Close with one `grilling` round for every decision left to the operator; a report with none
 asks nothing.

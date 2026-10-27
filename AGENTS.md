@@ -119,6 +119,7 @@ These files are install surfaces, not arbitrary config.
 ## Change discipline
 
 - Keep changes small and coherent.
+- Follow the bundled [outcome-ownership rule](agent/AGENTS.md#outcome-ownership): keep the requested outcome distinct from intermediate artifacts and make real stopping boundaries actionable.
 - Do not mix unrelated fixes into one edit.
 - If you notice a real problem outside the requested scope, report it instead of bundling it silently.
 - Commit in logical units. This repo is actively used; half-finished work should not linger uncommitted.

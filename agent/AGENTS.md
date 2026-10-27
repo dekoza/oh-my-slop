@@ -39,6 +39,15 @@ Evidence integrity, technical accuracy, security caution, and destructive-action
 - When a signature is embedded in a JSON payload, reconstruct the payload with an empty signature field before HMAC verification.
 - Use `hmac.compare_digest()` for constant-time token and signature comparison.
 
+### Outcome ownership
+
+Keep the requested outcome distinct from intermediate artifacts. After answers, worker
+results and successful recovery, continue available in-scope, authorized agent work.
+At a real approval, external, budget or fresh-session boundary, supply the next action
+or decision and its owner, carrying existing authority and limits. Stop when the requested
+outcome is verified complete. This rule grants no additional effects and does not restart
+an explicit user stop or abort.
+
 ---
 
 ## ROUTING (Load Skills Based on Project Context)

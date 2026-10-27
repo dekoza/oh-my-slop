@@ -194,4 +194,10 @@ When the brief and authorized state are verified but execution is gated, report
 the preserved artifact, exact missing decision/action, owner and resume condition. These are pauses,
 not successful completion; ordinary remaining agent work is never a reason to end the invocation.
 
+Apply the [continuation contract](../handoff/references/workflow-continuation.md) when
+reporting completion or a real pause. Include the concrete separate-session invocation
+with its durable approval and exclusions; a readiness grant is not implementation or
+live-action authority beyond what it explicitly names. Return a coordinated
+handoff to its caller. Do not repeat adequate approval or begin the next workflow here.
+
 Behavioral regression scenarios: [evals/evals.json](evals/evals.json).

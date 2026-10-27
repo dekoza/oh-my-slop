@@ -142,5 +142,11 @@ report the exact outstanding finding, conflict, authority or verification with i
 next action; do not call the repair complete or merge the PR. Close the report with one
 `grilling` round for every decision left to the user; a report with none asks nothing.
 
+At completion or a pause, apply the
+[continuation contract](../handoff/references/workflow-continuation.md): supply the
+concrete next action or restart prompt for any established remaining goal. A verified
+repair is not merge authority; exhausted-budget renewal is a real decision, not a reset.
+Return a coordinated repair's handoff to its caller instead of independently dispatching.
+
 Regression scenarios: [evals/evals.json](evals/evals.json).
 Evidence and limits: [evals/README.md](evals/README.md).

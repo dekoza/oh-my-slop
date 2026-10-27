@@ -127,6 +127,32 @@
         "It proposes a browser shell on node:http (or the project's existing web stack) that calls the module on the server for each action and shows the resulting state.",
         "It adds no Python or other new runtime and does not re-implement the retry logic in page scripts."
       ]
+    },
+    {
+      "id": 11,
+      "prompt": "Use the supplied prototype skill to finish the selected design's closeout. The human's answer is: 'Perfect. V3 is selected; record that choice on #69.' This is an isolated local-tracker fixture: issue.json is #69, source.md contains the captured source and tested behaviors, and NOTES.md is the existing prototype note. Capture and ownership-safe cleanup are already complete and verified in source.md; do not repeat them. The current publication grant permits updating issue.json and NOTES.md with the design decision and handoff. Production implementation, remote publication, merge and closure are not authorized. Act on the permitted local artifacts and give me the completion response.",
+      "expected_output": "Update the allowed local decision records with a consolidated selected-design handoff and immediately ask the real persistence-policy decision; preserve the separate implementation boundary.",
+      "files": [
+        "evals/files/selected-design/source.md",
+        "evals/files/selected-design/issue.json",
+        "evals/files/selected-design/NOTES.md"
+      ],
+      "expectations": [
+        "Actual local issue/note writes consolidate the human-selected V3, capture/source pointer, demonstrated behavior and production acceptance gaps.",
+        "The output raises the unresolved browser/device-versus-account persistence decision through a bounded options/recommendation question instead of encoding a default.",
+        "A concrete next bounded handoff is supplied without another generic next-step prompt; the throwaway source is not treated as production code.",
+        "The issue stays open and production, remote publication, merge and cleanup are not performed or fabricated."
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "The throwaway prototype is captured and pointer recorded. The human has not selected a design and says they need to try it tomorrow. No production or cleanup work remains authorized. Close out this prototype session using only those facts.",
+      "expected_output": "Preserve the provisional verdict and human review boundary without inventing acceptance or a new production project.",
+      "files": [],
+      "expectations": [
+        "The handoff preserves pending human selection and evidence, without a fabricated final approval or mandatory next project.",
+        "No automatic production implementation, publication, cleanup or merge follows from the captured prototype."
+      ]
     }
   ]
 }

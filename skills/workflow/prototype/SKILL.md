@@ -8,6 +8,8 @@ description: >
   state machine", "mock up a few versions of this screen", "explore what this UI could
   look like".
 license: MIT (adapted from mattpocock/skills)
+requires:
+  - grilling
 ---
 
 # Prototype
@@ -74,6 +76,19 @@ git rev-parse "$capture_branch"
    If a step fails — a missing file, an ignored path, or a pre-commit hook rejecting throwaway code — the script removes its own worktree and branch and stops. That is a failed capture: report it, and don't force an ignored path or bypass the hook without the user's say-so. Line-ending or clean filters, or a hook that rewrites files, can fail the final check even though the commit exists; the branch stays for inspection. Report that too instead of cleaning up, and capture again under a new branch name once the cause is settled; delete the kept branch only with the user's say-so.
 
 3. **Leave a pointer.** Record the branch and its capture commit (the last line `capture.sh` prints) where the answer will be read: on the implementation issue, following the configured tracker's conventions (they should have been provided to you — tell the user to run `/setup-project-skills` if not), or in a commit message or ADR when there is no issue. The branch is local. Pushing the branch publishes it, including anyone else's uncommitted edits captured in partly owned files: push only to the configured remote and with authority to publish; otherwise report it as local-only.
+
+   **Consolidate the production handoff when a design is selected:** the human's selection,
+   capture/source pointer, demonstrated behavior and still-unverified production acceptance
+   criteria belong together in that record. Reuse adequate existing capture and cleanup
+   evidence. Update the record within authority, or return the proposed handoff without
+   claiming publication.
+
+   Apply the [continuation contract](../handoff/references/workflow-continuation.md) at
+   closeout: supply the next bounded action or invocation, and ask consequential unresolved
+   product choices through `grilling` with options and a recommendation instead of merely
+   listing them as status. A coordinated prototype returns these choices to its caller.
+   Production remains a separately authorized implementation, never promotion of the
+   throwaway shell.
 4. **Clean only what was captured.** Clean only the files the prototype wholly owns. A file is wholly owned when every uncommitted change in it is the prototype's: a file it created, or an existing file whose only edits are its own. Check each one just before cleanup with `git --literal-pathspecs diff -- <file>` against the status you noted at the start. Keep Git pathspecs literal in inspection, staging and restoration: shell quoting and `--` alone still allow Git to expand wildcard characters in a filename. If no status was noted, treat any change you cannot attribute to the prototype as someone else's. A file with any other uncommitted edit, made before the prototype or since, is not wholly owned: leave it out of the recipe, then remove only the prototype's lines by hand, or report them. After a successful capture, save this as `cleanup.sh` and run `capture_branch=prototype/<name> bash cleanup.sh <file>…` with the same branch and the wholly owned files. It stops on a staged file or on any file that no longer matches its captured bytes, and removes nothing else except directories its removals leave empty, even one that was already empty before the prototype wrote into it — unrelated tracked and untracked files, other branches and worktrees stay as they are:
 
 ```bash
