@@ -271,4 +271,14 @@ Temporary artifacts can disappear; the selected source citations, findings and r
 - `uv run pytest`: **1,165 passed / 4 failed**. The failures concern the already-deleted `prompts/implement-spec.md`, README exposure of `enhumanize` (two tests), and `enhumanize`'s body-size budget. Those surfaces were already part of unrelated working-tree changes and were not modified by this audit. No clean-suite claim is made.
 - The full suite included the markdown-reference and skill-frontmatter selections; no extension behavior or install surface was changed by this report.
 - The 100-case ledger was checked for unique, exact packet coverage and matching original source paths/lines. Aggregate conversation/follow-up arithmetic and selected source excerpts were checked directly.
-- No proposed skill change has been implemented or behaviorally evaluated; repository structural tests do not establish reduced nudging.
+- At the audit's completion, no proposed skill change had been implemented or behaviorally evaluated; repository structural tests do not establish reduced nudging.
+
+## Implementation follow-up
+
+A subsequent request implemented the targeted workflow/reference and bundled-guidance changes
+through `a2b466d`, without adding a skill, command or runtime mechanism. The historical audit
+and its working-tree test result above are retained as provenance, not current validation.
+See the [implementation evidence, comparison limits and activation steps](../../skills/workflow/handoff/evals/README.md).
+The final complete local readiness run required only its two actual approval replies, preserved
+separate implementation authority and used no rescue nudge. That observation is not a general
+zero-nudge guarantee or human qualitative acceptance.
