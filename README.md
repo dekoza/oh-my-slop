@@ -51,7 +51,7 @@ Skills here are grouped into buckets — `skills/reference/`, `skills/practice/`
 `scripts/link-skills.sh` links each skill in at the depth Claude Code expects:
 
 ```bash
-scripts/link-skills.sh                 # link all 71 into ~/.claude/skills
+scripts/link-skills.sh                 # link all 74 into ~/.claude/skills
 scripts/link-skills.sh --dry-run       # print what it would do, change nothing
 scripts/link-skills.sh --prune         # also drop links to skills this repo no longer has
 scripts/link-skills.sh ~/somewhere     # or point it at another directory
@@ -68,6 +68,13 @@ Run [`/setup-project-skills`](skills/meta/setup-project-skills/SKILL.md) once pe
 - **Domain docs** — where the glossary and ADRs live, and whether the repo is single- or multi-context.
 
 Skip it and the skills still run, falling back to a local-markdown tracker and the canonical label names — but each one re-derives your setup from scratch every session, and they will not always agree with each other. The setup is what makes them agree.
+
+For technical projects centered on research and process documentation, use
+[`setup-research-project`](skills/meta/setup-research-project/SKILL.md) instead. It
+sets up a compact project overview, durable session journals and an agent workflow
+for saving evidence, attempted methods, results and decisions. It asks which language
+to use (English by default), works without Git, and treats Unforget as optional recall
+rather than the project record. It adds no tracker, hooks or development scaffolding.
 
 Each skill follows the same structure:
 
@@ -140,7 +147,7 @@ while the router is offline; use another provider until it returns.
 ## Skills
 
 <details>
-<summary><strong>Skills (71)</strong></summary>
+<summary><strong>Skills (74)</strong></summary>
 
 Grouped by what you came looking for: an API surface (**Reference**), a way of
 working (**Practice**), a job to run (**Workflow**), or the agent's own toolkit
@@ -185,6 +192,7 @@ How to work well — disciplines, design vocabulary, and the book-derived practi
 | **[Docker Discipline](skills/practice/docker-discipline/SKILL.md)** | Mandatory Docker workflow — non-root UID matching host, USER after RUN, port merge behavior, separate compose.test.yml for lifecycle independence, healthchecks. Enforces patterns agents otherwise skip. |
 | **[Documentation Lifecycle](skills/practice/documentation-lifecycle/SKILL.md)** | Spec-first documentation workflow — feature specs, specification interviews, ADRs, exact reference docs, runbooks, Diátaxis user docs, and documentation drift triage. |
 | **[Domain-Driven Design](skills/practice/domain-driven-design/SKILL.md)** | Strategic design (Bounded Contexts, Context Mapping, Subdomains), tactical patterns (Entities, Value Objects, Aggregates, Domain Events), Ubiquitous Language discipline, integration patterns (ACL, OHS). Synthesized from Evans + Vernon. |
+| **[Enhumanize](skills/practice/enhumanize/SKILL.md)** | Rewrite AI-sounding prose while preserving its meaning and the writer's voice. |
 | **[Enterprise Patterns](skills/practice/enterprise-patterns/SKILL.md)** | Infrastructure decisions around a domain — business-logic pattern by force (Transaction Script/Table Module/Domain Model), Unit of Work, Identity Map, offline concurrency, session-state placement, Remote Facade, forbidden-pattern review blockers. Defers domain modeling to DDD. Based on Patterns of Enterprise Application Architecture (Fowler). |
 | **[Git Discipline](skills/practice/git-discipline/SKILL.md)** | Git workflow — commit after every wave, conventional commits, untracked files sacred, FORBIDDEN commands (git clean, reset --hard, rm -rf on user files), no force push without permission. |
 | **[Legacy Code](skills/practice/legacy-code/SKILL.md)** | Safe changes to untested/unclear code — characterization tests, seams, dependency breaking, sprout/wrap techniques. Based on Working Effectively with Legacy Code (Feathers). |
@@ -206,6 +214,7 @@ Rituals you run — session and tracker state, from interview through implementa
 | **[Cleanroom Rewrite](skills/workflow/cleanroom-rewrite/SKILL.md)** | Reimplement a codebase from scratch based on behavioral spec, without copying implementation. Legal reimplementations, spec-driven rewrites, two-agent processes. |
 | **[Court Jester](skills/workflow/court-jester/SKILL.md)** | Structured adversarial reasoning for stress-testing plans, proposals, architecture, and strategy. Devil's-advocate reviews, pre-mortems, red teams, assumption checks. |
 | **[Domain Modeling](skills/workflow/domain-modeling/SKILL.md)** | Active domain-model discipline — challenge terms against the glossary, sharpen fuzzy language, stress-test with scenarios, update CONTEXT.md inline, offer ADRs sparingly (hard-to-reverse + surprising + real trade-off). |
+| **[Feature Milestones](skills/workflow/feature-milestones/SKILL.md)** | Reconstruct a fragmented backlog as finite delivery milestones with explicit finish lines, shared blockers, complete ticket accounting, and approval before tracker changes. |
 | **[Fix PR](skills/workflow/fix-pr/SKILL.md)** | Repair review findings and conflicts against the PR's actual target; commit before review, bind checks/review/publication to fixed candidate SHAs, and recertify after changes. Update the same open PR without implicit merge or history-rewrite authority. |
 | **[Grill Me](skills/workflow/grill-me/SKILL.md)** | User-invoked wrapper: run a grilling session on the current plan or design. |
 | **[Grill With Docs](skills/workflow/grill-with-docs/SKILL.md)** | Grilling session that also maintains docs as decisions land — CONTEXT.md glossary entries and ADRs via domain-modeling. |
@@ -242,6 +251,7 @@ About the agent and its own toolkit, not about your code.
 |-------|---------------|
 | **[Git Guardrails (Claude Code)](skills/meta/git-guardrails-claude-code/SKILL.md)** | Set up PreToolUse hooks that block dangerous git commands (push, reset --hard, clean, branch -D) — git-discipline enforced by machinery, not prompts. |
 | **[Setup Project Skills](skills/meta/setup-project-skills/SKILL.md)** | Run once per repo to configure the workflow skills — issue tracker bindings (agent work vs human intake), triage label vocabulary, and domain doc layout — written to `docs/agents/` and pointed at from CLAUDE.md/AGENTS.md. |
+| **[Setup Research Project](skills/meta/setup-research-project/SKILL.md)** | Configure Markdown-first research continuity: a compact overview, session journals, evidence and process documentation, with optional Unforget recall. |
 | **[Skill Creator](skills/meta/skill-creator/SKILL.md)** | Meta-skill for creating, modifying, and benchmarking other skills — evals, variance analysis, and description optimization for triggering accuracy. |
 | **[Websearch](skills/meta/websearch/SKILL.md)** | Search the web via locally installed SearXNG instance. Configurable endpoint via `/skill:websearch url`. |
 | **[Writing Great Skills](skills/meta/writing-great-skills/SKILL.md)** | Prose-level craft reference for skill authoring — leading words, no-ops, negation, context vs cognitive load, premature completion, progressive disclosure. Complements skill-creator's eval workflow. |

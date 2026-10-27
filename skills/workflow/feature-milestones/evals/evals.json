@@ -1,0 +1,37 @@
+{
+  "skill_name": "feature-milestones",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Group this project's fragmented open backlog into finishable feature milestones so I can see what remains to deliver each feature. Prepare a proposal for approval; do not change the tracker. Use the supplied snapshot as the available tracker evidence.",
+      "expected_output": "A complete, evidence-linked feature completion proposal, including deferred work and shared blockers, not permanent area buckets.",
+      "files": ["evals/files/backlog.md"],
+      "expectations": [
+        "Every open issue 1, 2, 3, 4, 5, 7 and 8 has an explicit disposition, with no additional open issue invented.",
+        "Milestones name finite usable outcomes rather than the permanent areas Orders and Platform.",
+        "The initial order-intake milestone excludes historical replay, citing closed issue 6 or decision comment 61.",
+        "Issue 5 is treated as a later enhancement, not required for initial order intake.",
+        "Shared issue 3 remains visible as blocking both initial order intake and label printing without being duplicated.",
+        "Order-intake completion includes rollout issue 2 and validation issue 8; completed implementation alone is not delivery proof.",
+        "Each proposed milestone has explicit completion requirements and exclusions.",
+        "Issue 7 has an explicit unassigned or unresolved disposition rather than a forced feature assignment.",
+        "The proposal leaves tracker state unchanged and requests mapping approval."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Continue the feature milestone reorganization from this operation snapshot. Explain what is established, what remains incomplete, and the next safe actions. Use only the supplied evidence; do not contact a real tracker.",
+      "expected_output": "An honest incomplete review and recovery plan that preserves approval boundaries, avoids duplicate creation and does not imply full readiness.",
+      "files": ["evals/files/recovery.md"],
+      "expectations": [
+        "The output reports inventory coverage as incomplete: 50 records observed against total 53, with 3 unseen issues not silently discarded.",
+        "The output reports issue 12 discussion incomplete: 2 of 5 comments observed, so its delivery boundary is provisional.",
+        "The timed-out milestone creation is checked by readback before any retry or dependent assignment.",
+        "Issue 10 changed scope after approval and is withheld for renewed approval rather than silently applying its stale assignment.",
+        "Issue 11 remains unassigned because it was explicitly excluded from the approved mapping.",
+        "The output does not claim the feature delivered based on 100 percent closed tickets while rollout validation is unknown.",
+        "The output does not close or create tickets, rewrite specs, or claim the tracker reorganization complete."
+      ]
+    }
+  ]
+}
